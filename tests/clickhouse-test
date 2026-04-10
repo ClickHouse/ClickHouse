@@ -42,7 +42,7 @@ from argparse import ArgumentParser, Namespace
 from ast import literal_eval as make_tuple
 from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timedelta
-from errno import EPERM, ESRCH
+from errno import ESRCH
 from ssl import SSLEOFError
 from subprocess import PIPE, Popen
 from time import sleep, time
@@ -105,24 +105,8 @@ def detect_cgroup_version():
         return 1
     return None
 
+
 CGROUP_VERSION = detect_cgroup_version()
-
-
-BASH = "/bin/bash"
-
-def shell_get_output(cmd: str) -> str:
-    res = subprocess.run(
-        cmd,
-        shell=True,
-        executable=BASH,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    return res.stdout.strip()
 
 
 class SharedEngineReplacer:
@@ -603,7 +587,10 @@ def kill_process_group(pgid, fatal_log):
     try:
         print(f"Processes left in process group {pgid}:")
         print(
-            '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
+            subprocess.check_output(
+                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+            ).decode("utf-8"),
+            end="",
         )
 
         if SANITIZED:
@@ -613,7 +600,10 @@ def kill_process_group(pgid, fatal_log):
         print(f"Killing process group {pgid}")
         print(f"Processes in process group {pgid}:")
         print(
-            '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
+            subprocess.check_output(
+                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+            ).decode("utf-8"),
+            end="",
         )
 
         if CAPTURE_CLIENT_STACKTRACE:
@@ -637,7 +627,16 @@ def kill_process_group(pgid, fatal_log):
                 print(f"Cannot read {fatal_log}. Ignoring.")
 
             if not client_printed_stacktrace:
-                processes = [p[0] for p in pgrep(pgid=pgid, command="clickhouse")]
+                pgrep = subprocess.run(
+                    f"pgrep --pgroup {pgid} clickhouse",
+                    shell=True,
+                    capture_output=True,
+                    text=False,
+                )
+                processes = pgrep.stdout.decode("utf-8").strip().split("\n")
+                processes = map(lambda x: x.strip(), processes)
+                processes = filter(lambda x: len(x) > 0, processes)
+                processes = list(map(lambda x: int(x.strip()), processes))
                 for child in processes:
                     print(get_stacktraces_from_gdb(child))
         # NOTE: this still may leave some processes, that had been
@@ -655,17 +654,7 @@ def kill_process_group(pgid, fatal_log):
         # We need minimal delay to let processes handle SIGTERM - 0.1 (this may
         # not be enough, but at least something)
         sleep(0.1)
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except OSError as e:
-            # SIGTERM above succeeded, so we have permission to signal this group.
-            # EPERM here is a macOS-specific behavior: killpg returns EPERM when
-            # the group contains zombie processes (already exited after SIGTERM
-            # but not yet reaped). Linux ignores zombies in killpg instead.
-            if e.errno in (ESRCH, EPERM):
-                print(f"Got {e.strerror} while sending SIGKILL to {pgid}. Ignoring.")
-            else:
-                raise
+        os.killpg(pgid, signal.SIGKILL)
     except OSError as e:
         if e.errno == ESRCH:
             print(f"Got ESRCH while killing {pgid}. Ignoring.")
@@ -684,14 +673,21 @@ def cleanup_child_processes(pid):
             return
         raise
     print(
-        '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(ppid=pid)),
+        subprocess.check_output(
+            f"pgrep --parent {pid} -a", shell=True, stderr=subprocess.STDOUT
+        ).decode("utf-8"),
+        end="",
     )
     # Due to start_new_session=True, it is not enough to kill by PGID, we need
     # to look at children processes as well.
     # But we are hoping that nobody creates session in the tests (though it is
     # possible via timeout(), but we are assuming that they will be killed by
     # timeout).
-    processes = [p[0] for p in pgrep(ppid=pid)]
+    pgrep = subprocess.check_output(
+        f"pgrep --parent {pid}", shell=True, stderr=subprocess.STDOUT
+    )
+    proc_list = pgrep.decode("utf-8").strip().split("\n")
+    processes = list(map(lambda x: int(x.strip()), proc_list))
     for child in processes:
         try:
             child_pgid = os.getpgid(child)
@@ -919,7 +915,8 @@ def get_transactions_list(args):
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(pid):
     try:
-        return shell_get_output(f"gdb -batch -ex 'thread apply all backtrace' -p {pid}")
+        cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {pid}"
+        return subprocess.check_output(cmd, shell=True).decode("utf-8")
     except Exception as e:
         print(f"Error occurred while receiving stack traces from gdb (for {pid}): {e}")
         return None
@@ -934,6 +931,8 @@ def get_stacktraces_from_clickhouse(args):
             "--skip_unavailable_shards=1",
         ]
     )
+
+    msg = ""
 
     if args.replicated_database:
         msg = (
@@ -965,29 +964,35 @@ def get_stacktraces_from_clickhouse(args):
         )
 
     try:
-        return shell_get_output(msg)
+        return subprocess.check_output(
+            msg,
+            shell=True,
+            stderr=subprocess.STDOUT,
+        ).decode("utf-8")
     except Exception as e:
         print(f"Error occurred while receiving stack traces from client: {e}")
         return None
 
-def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[str]]:
-    ps = shell_get_output("ps -eo pid,ppid,pgid,command").splitlines()[1:]
-    ps = [p.split(None, 3) for p in ps]
-    ps = [[int(p[0]), int(p[1]), int(p[2]), p[3]] for p in ps]
-
-    if ppid is not None:
-        ps = [p for p in ps if p[1] == ppid]
-    if pgid is not None:
-        ps = [p for p in ps if p[2] == pgid]
-    if command is not None:
-        ps = [p for p in ps if command in p[3]]
-    return ps
 
 def get_all_server_pids():
     """Get PIDs of clickhouse-server processes belonging to the current process group.
+
+    Scoping to the process group avoids attaching gdb to unrelated servers on
+    shared runners where multiple test jobs may run concurrently.
     """
-    pgid = os.getpgrp()
-    return [p[0] for p in pgrep(pgid=pgid, command="clickhouse-server")]
+    try:
+        pgid = os.getpgrp()
+        output = subprocess.check_output(
+            f"pgrep -g {pgid} -x clickhouse-server",
+            shell=True,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+        ).strip()
+        if output:
+            return [int(p) for p in output.split()]
+    except Exception:
+        pass
+    return []
 
 
 def is_asan_build():
@@ -1055,7 +1060,9 @@ def get_server_pid():
 
     for cmd in commands:
         try:
-            output = shell_get_output(cmd)
+            output = subprocess.check_output(
+                cmd, shell=True, stderr=subprocess.STDOUT, universal_newlines=True
+            )
             if output:
                 return int(output)
         except Exception as e:
@@ -2775,7 +2782,7 @@ class TestCase:
             preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, self.memory_limit)
 
         # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
+        proc = Popen(command, shell=True, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
 
         try:
             proc.wait(args.timeout)

@@ -748,3 +748,11 @@ If there's a refresh in progress for the given view on the current replica, inte
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
+
+## SYSTEM FLUSH OBJECT STORAGE QUEUE {#flush-object-storage-queue}
+
+Blocks until the given file has been processed or permanently failed by the given [S3Queue](../../engines/table-engines/integrations/s3queue.md) or [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) table. Returns immediately if the file was already processed. Raises an error if the file has permanently failed (all retries exhausted).
+
+```sql
+SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
+```
