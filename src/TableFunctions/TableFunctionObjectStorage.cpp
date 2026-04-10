@@ -321,7 +321,6 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
     UNUSED(factory);
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration, false>>(
-    {
         {
             .description=R"(The table function can be used to read the data stored on GCS.)",
             .examples{{GCSDefinition::name, "SELECT * FROM gcs(url, access_key_id, secret_access_key)", ""}},
@@ -331,7 +330,6 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
     );
 
     factory.registerFunction<TableFunctionObjectStorage<COSNDefinition, StorageS3Configuration, false>>(
-    {
         {
             .description=R"(The table function can be used to read the data stored on COSN.)",
             .examples{{COSNDefinition::name, "SELECT * FROM cosn(url, access_key_id, secret_access_key)", ""}},
@@ -341,7 +339,6 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
     );
 
     factory.registerFunction<TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration, false>>(
-    {
         {
             .description=R"(The table function can be used to read the data stored on OSS.)",
             .examples{{OSSDefinition::name, "SELECT * FROM oss(url, access_key_id, secret_access_key)", ""}},

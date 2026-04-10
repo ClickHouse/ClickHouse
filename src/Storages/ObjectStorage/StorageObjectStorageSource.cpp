@@ -190,7 +190,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         return distributed_iterator;
     }
 
-    configuration->update(object_storage, local_context, true);
+    configuration->update(object_storage, local_context);
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();

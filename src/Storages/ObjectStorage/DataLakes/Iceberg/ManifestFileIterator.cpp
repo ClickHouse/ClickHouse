@@ -234,7 +234,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     auto dump_metadata = [&]()->String { return manifest_file_deserializer_->getMetadataContent(); };
     insertRowToLogTable(
         context_,
-        manifest_file_deserializer_->getMetadataContent(),
+        dump_metadata,
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
         common_path_,
         path_to_manifest_file_,
@@ -382,9 +382,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             row_index,
             path_to_manifest_file);
 
-    auto dump_metadata = [&]()->String { return manifest_file_deserializer->getContent(row_index); };
     if (parsed_entry->status == ManifestEntryStatus::DELETED)
     {
+        auto dump_metadata = [&]()->String { return manifest_file_deserializer->getContent(row_index); };
         insertRowToLogTable(
             context,
             dump_metadata,

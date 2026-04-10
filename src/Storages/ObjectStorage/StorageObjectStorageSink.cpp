@@ -142,7 +142,7 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     std::optional<FormatSettings> format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_)
-    : PartitionedSink(configuration_->partition_strategy, context_, sample_block_)
+    : PartitionedSink(configuration_->getPartitionStrategy(), context_, sample_block_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , query_settings(configuration_->getQuerySettings(context_))

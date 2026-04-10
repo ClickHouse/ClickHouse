@@ -25,6 +25,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <algorithm>

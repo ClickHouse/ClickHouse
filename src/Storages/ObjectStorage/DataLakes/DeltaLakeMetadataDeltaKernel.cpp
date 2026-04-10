@@ -116,7 +116,7 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     : log(getLogger("DeltaLakeMetadata"))
     , kernel_helper(DB::getKernelHelper(configuration_.lock(), object_storage_))
     , object_storage(object_storage_)
-    , format_name(configuration_.lock()->format)
+    , format_name(configuration_.lock()->getFormat())
     /// TODO: Supports size limit, not just elements limit.
     /// TODO: Support weight function (by default weight = 1 for all elements).
     /// TODO: Add a setting for cache size.

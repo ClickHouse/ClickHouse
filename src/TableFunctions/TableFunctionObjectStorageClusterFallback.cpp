@@ -203,8 +203,7 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
     UNUSED(factory);
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionS3ClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the data stored on S3 in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {"s3", "SELECT * FROM s3(url, format, structure)", ""},
@@ -212,15 +211,13 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionAzureClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the data stored on Azure Blob Storage in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -237,15 +234,13 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 #endif
 
 #if USE_HDFS
     factory.registerFunction<TableFunctionHDFSClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the data stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -260,15 +255,13 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 #endif
 
 #if USE_AVRO
     factory.registerFunction<TableFunctionIcebergClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the Iceberg table stored on different object store in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -291,13 +284,11 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 
     factory.registerFunction<TableFunctionIcebergLocalClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the Iceberg table stored on shared disk in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -312,15 +303,13 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 #endif
 
 #if USE_AVRO && USE_AWS_S3
     factory.registerFunction<TableFunctionIcebergS3ClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -335,15 +324,13 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionIcebergAzureClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the Iceberg table stored on Azure object store in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -358,15 +345,13 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 #endif
 
 #if USE_AVRO && USE_HDFS
     factory.registerFunction<TableFunctionIcebergHDFSClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -380,16 +365,14 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 #endif
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #   if USE_AWS_S3
     factory.registerFunction<TableFunctionDeltaLakeClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the DeltaLake table stored on object store in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -404,12 +387,10 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
     factory.registerFunction<TableFunctionDeltaLakeS3ClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the DeltaLake table stored on object store in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -424,14 +405,12 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 #   endif
 #   if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionDeltaLakeAzureClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the DeltaLake table stored on object store in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -446,16 +425,14 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 #   endif
 #endif
 
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionHudiClusterFallback>(
-    {
-        .documentation = {
+        {
             .description=R"(The table function can be used to read the Hudi table stored on object store in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {
@@ -469,8 +446,7 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = false
-    }
+        {.allow_readonly = false}
     );
 #endif
 }

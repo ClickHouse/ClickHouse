@@ -176,7 +176,7 @@ StorageObjectStorage::StorageObjectStorage(
         if (configuration->isDataLakeConfiguration())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported for DataLake engines");
 
-        if (configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+        if (configuration->getPartitionStrategyType() == PartitionStrategyFactory::StrategyType::HIVE)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported with hive partition strategy");
 
         if (columns.empty())

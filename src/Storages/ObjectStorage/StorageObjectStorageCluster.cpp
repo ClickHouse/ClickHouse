@@ -107,7 +107,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
 
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->getFormat() == "auto");
-    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && (!configuration->needsUpdateForSchemaConsistency() || catalog);
+    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && catalog;
 
     auto log_ = getLogger("StorageObjectStorageCluster");
 
@@ -146,10 +146,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         tryLogCurrentException(log_);
     }
 
-    // For tables need to update configuration on each read
-    // because data can be changed after previous update
-    update_configuration_on_read_write = !is_table_function;
-
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
     if (need_resolve_columns_or_format)
@@ -175,7 +171,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
-    if (is_table_function && configuration->isDataLakeConfiguration())
+
+    if (!do_lazy_init && is_table_function && configuration->isDataLakeConfiguration())
     {
         /// For datalake table functions, always pin the current snapshot version so that
         /// query execution uses the same snapshot as query analysis (logical-race fix).
@@ -598,8 +595,6 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
-}
-
 void StorageObjectStorageCluster::readFallBackToPure(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -760,8 +755,7 @@ IDataLakeMetadata * StorageObjectStorageCluster::getExternalMetadata(ContextPtr 
 
     configuration->update(
         object_storage,
-        query_context,
-        /* if_not_updated_before */false);
+        query_context);
 
     return configuration->getExternalMetadata();
 }
@@ -958,13 +952,6 @@ bool StorageObjectStorageCluster::supportsSubcolumns() const
     return IStorageCluster::supportsSubcolumns();
 }
 
-bool StorageObjectStorageCluster::supportsDynamicSubcolumns() const
-{
-    if (pure_storage)
-        return pure_storage->supportsDynamicSubcolumns();
-    return IStorageCluster::supportsDynamicSubcolumns();
-}
-
 bool StorageObjectStorageCluster::supportsTrivialCountOptimization(const StorageSnapshotPtr & snapshot, ContextPtr context) const
 {
     if (pure_storage)
@@ -1007,56 +994,11 @@ bool StorageObjectStorageCluster::parallelizeOutputAfterReading(ContextPtr conte
     return IStorageCluster::parallelizeOutputAfterReading(context);
 }
 
-bool StorageObjectStorageCluster::supportsImport() const
+Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
     if (pure_storage)
-        return pure_storage->supportsImport();
-    return IStorageCluster::supportsImport();
-}
-
-SinkToStoragePtr StorageObjectStorageCluster::import(
-    const std::string & file_name,
-    Block & block_with_partition_values,
-    const std::function<void(const std::string &)> & new_file_path_callback,
-    bool overwrite_if_exists,
-    std::size_t max_bytes_per_file,
-    std::size_t max_rows_per_file,
-    const std::optional<FormatSettings> & format_settings_,
-    ContextPtr context)
-{
-    if (pure_storage)
-        return pure_storage->import(
-            file_name,
-            block_with_partition_values,
-            new_file_path_callback,
-            overwrite_if_exists,
-            max_bytes_per_file,
-            max_rows_per_file,
-            format_settings_,
-            context);
-    return IStorageCluster::import(
-        file_name,
-        block_with_partition_values,
-        new_file_path_callback,
-        overwrite_if_exists,
-        max_bytes_per_file,
-        max_rows_per_file,
-        format_settings_,
-        context);
-}
-
-void StorageObjectStorageCluster::commitExportPartitionTransaction(
-    const String & transaction_id,
-    const String & partition_id,
-    const Strings & exported_paths,
-    ContextPtr local_context)
-{
-    if (pure_storage)
-    {
-        pure_storage->commitExportPartitionTransaction(transaction_id, partition_id, exported_paths, local_context);
-        return;
-    }
-    IStorageCluster::commitExportPartitionTransaction(transaction_id, partition_id, exported_paths, local_context);
+        return pure_storage->executeCommand(command_name, args, context);
+    return IStorageCluster::executeCommand(command_name, args, context);
 }
 
 }

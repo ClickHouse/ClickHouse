@@ -101,6 +101,7 @@ public:
         auto result = BaseStorageConfiguration::getRawPath().path;
         return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
     }
+    void setRawPath(const StorageObjectStorageConfiguration::Path & path) override { BaseStorageConfiguration::setRawPath(path); }
 
     void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
@@ -246,7 +247,7 @@ public:
     std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
         const DataLakeTableStateSnapshot & state, ContextPtr context) const override
     {
-        assertInitialized();
+        assertInitializedDL();
         auto metadata = current_metadata->buildStorageMetadataFromState(state, context);
         if (metadata)
             LOG_TEST(log, "Built storage metadata from state with columns: {}",
@@ -256,7 +257,7 @@ public:
 
     bool shouldReloadSchemaForConsistency(ContextPtr context) const override
     {
-        assertInitialized();
+        assertInitializedDL();
         return current_metadata->shouldReloadSchemaForConsistency(context);
     }
 
@@ -531,10 +532,11 @@ public:
     void initialize(
         ASTs & engine_args,
         ContextPtr local_context,
-        bool with_table_structure) override
+        bool with_table_structure,
+        const StorageID * table_id = nullptr) override
     {
         createDynamicConfiguration(engine_args, local_context);
-        getImpl().initialize(engine_args, local_context, with_table_structure);
+        getImpl().initialize(engine_args, local_context, with_table_structure, table_id);
     }
 
     ObjectStorageType getType() const override { return getImpl().getType(); }
@@ -544,10 +546,10 @@ public:
     std::string getNamespaceType() const override { return getImpl().getNamespaceType(); }
 
     Path getRawPath() const override { return getImpl().getRawPath(); }
+    void setRawPath(const Path & path) override { getImpl().setRawPath(path); }
     const String & getRawURI() const override { return getImpl().getRawURI(); }
     const Path & getPathForRead() const override { return getImpl().getPathForRead(); }
     Path getPathForWrite(const std::string & partition_id) const override { return getImpl().getPathForWrite(partition_id); }
-    Path getPathForWrite(const std::string & partition_id, const std::string & filename_override) const override { return getImpl().getPathForWrite(partition_id, filename_override); }
 
     void setPathForRead(const Path & path) override { getImpl().setPathForRead(path); }
 
@@ -573,18 +575,18 @@ public:
     void check(ContextPtr context) override { getImpl().check(context); }
     void validateNamespace(const String & name) const override { getImpl().validateNamespace(name); }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override
-        { return getImpl().createObjectStorage(context, is_readonly); }
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override
+        { return getImpl().createObjectStorage(context, is_readonly, refresh_credentials_callback); }
     bool isStaticConfiguration() const override { return getImpl().isStaticConfiguration(); }
 
     bool isDataLakeConfiguration() const override { return getImpl().isDataLakeConfiguration(); }
 
+    bool supportsTotalRows(ContextPtr context, ObjectStorageType storage_type) const override { return getImpl().supportsTotalRows(context, storage_type); }
     std::optional<size_t> totalRows(ContextPtr context) override { return getImpl().totalRows(context); }
+    bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override { return getImpl().supportsTotalBytes(context, storage_type); }
     std::optional<size_t> totalBytes(ContextPtr context) override { return getImpl().totalBytes(context); }
     bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata, ContextPtr context) const override
         { return getImpl().isDataSortedBySortingKey(storage_metadata, context); }
-
-    bool needsUpdateForSchemaConsistency() const override  { return getImpl().needsUpdateForSchemaConsistency(); }
 
     IDataLakeMetadata * getExternalMetadata() override { return getImpl().getExternalMetadata(); }
 
@@ -624,11 +626,15 @@ public:
             hive_parameters);
     }
 
+    void setSchemaHash(const String & hash) override { getImpl().setSchemaHash(hash); }
+
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context) override
         { getImpl().initPartitionStrategy(partition_by, columns, context); }
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const override
-        { return getImpl().getStorageSnapshotMetadata(local_context); }
+    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const override { return getImpl().getTableStateSnapshot(local_context); }
+    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot & state, ContextPtr local_context) const override
+        { return getImpl().buildStorageMetadataFromState(state, local_context); }
+    bool shouldReloadSchemaForConsistency(ContextPtr local_context) const override { return getImpl().shouldReloadSchemaForConsistency(local_context); }
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
         { return getImpl().tryGetTableStructureFromMetadata(local_context); }
 
@@ -650,11 +656,12 @@ public:
 
     void update(
         ObjectStoragePtr object_storage_ptr,
-        ContextPtr context,
-        bool if_not_updated_before) override
+        ContextPtr context) override
     {
-        getImpl().update(object_storage_ptr, context, if_not_updated_before);
+        getImpl().update(object_storage_ptr, context);
     }
+    void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context) override
+        { return getImpl().lazyInitializeIfNeeded(object_storage, local_context); }
 
     void create(
         ObjectStoragePtr object_storage,
@@ -821,6 +828,8 @@ public:
 
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
         { return getImpl().optimize(metadata_snapshot, context, format_settings); }
+
+    bool supportsPrewhere() const override { return getImpl().supportsPrewhere(); }
 
     void drop(ContextPtr context) override { getImpl().drop(context); }
 

@@ -179,7 +179,7 @@ public:
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams & hive_parameters);
 
-    virtual static String computeSchemaHash(const ColumnsDescription & columns);
+    static String computeSchemaHash(const ColumnsDescription & columns);
     virtual void setSchemaHash(const String & hash);
 
     virtual void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);

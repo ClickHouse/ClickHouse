@@ -52,24 +52,6 @@ public:
         const ASTInsertQuery & query,
         ContextPtr context) override;
 
-    bool supportsImport() const override;
-
-    SinkToStoragePtr import(
-        const std::string & file_name,
-        Block & block_with_partition_values,
-        const std::function<void(const std::string &)> & new_file_path_callback,
-        bool overwrite_if_exists,
-        std::size_t max_bytes_per_file,
-        std::size_t max_rows_per_file,
-        const std::optional<FormatSettings> & format_settings_,
-        ContextPtr context) override;
-
-    void commitExportPartitionTransaction(
-        const String & transaction_id,
-        const String & partition_id,
-        const Strings & exported_paths,
-        ContextPtr local_context) override;
-
     void drop() override;
 
     void dropInnerTableIfAny(bool sync, ContextPtr context) override;
@@ -92,7 +74,7 @@ public:
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 
-    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache) const override;
+    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -123,6 +105,8 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
+    Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
+
     CancellationCode killMutation(const String & mutation_id) override;
 
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
@@ -152,8 +136,6 @@ public:
     bool supportsPartitionBy() const override;
 
     bool supportsSubcolumns() const override;
-
-    bool supportsDynamicSubcolumns() const override;
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
