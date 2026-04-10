@@ -3,6 +3,7 @@
 // Include this first, because `#define _asan_poison_address` from
 // llvm/Support/Compiler.h conflicts with its forward declaration in
 // sanitizer/asan_interface.h
+#include <functional>
 #include <memory>
 #include <type_traits>
 
@@ -904,14 +905,17 @@ class FunctionBinaryArithmetic : public IFunction
         return assert_cast<const ColumnVector<T> &>(column).getData()[row];
     }
 
-    static bool integralDivisionOverflowOrNullAtRow(
+    /// Type dispatch for integral division/modulo overflow is block-invariant; resolve it once per block
+    /// and only load operands per row (avoids repeated castBothTypes in the hot loop).
+    static std::function<bool(size_t)> buildIntegralDivisionOverflowCheckerForBlock(
         const DataTypePtr & left_type,
         const DataTypePtr & right_type,
         const ColumnPtr & left_column_prepared,
-        const ColumnPtr & right_column_prepared,
-        size_t row)
+        const ColumnPtr & right_column_prepared)
     {
-        return castBothTypes(
+        std::function<bool(size_t)> check_row = [](size_t) { return false; };
+
+        castBothTypes(
             removeLowCardinalityAndNullable(left_type).get(),
             removeLowCardinalityAndNullable(right_type).get(),
             [&](const auto & left_, const auto & right_) -> bool
@@ -922,15 +926,22 @@ class FunctionBinaryArithmetic : public IFunction
                 {
                     using A = typename LDT::FieldType;
                     using B = typename RDT::FieldType;
-                    if constexpr (std::is_integral_v<A> && std::is_integral_v<B>)
+                    /// Include wide integers (Int128/Int256); std::is_integral_v is false for those types.
+                    if constexpr (is_integer<A> && is_integer<B>)
                     {
-                        A a = getNumericValueFromColumn<A>(*left_column_prepared, row);
-                        B b = getNumericValueFromColumn<B>(*right_column_prepared, row);
-                        return divisionLeadsToFPE(a, b);
+                        check_row = [left_column_prepared, right_column_prepared](size_t row) -> bool
+                        {
+                            A a = getNumericValueFromColumn<A>(*left_column_prepared, row);
+                            B b = getNumericValueFromColumn<B>(*right_column_prepared, row);
+                            return divisionLeadsToFPE(a, b);
+                        };
+                        return true; /// Matched the concrete type pair; stop castTypeToEither search.
                     }
                 }
                 return false;
             });
+
+        return check_row;
     }
 
     static FunctionOverloadResolverPtr
@@ -2690,18 +2701,26 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     right_prepared = prepareNumericColumnForIntegralFPECheck(right_argument.column);
                 }
 
+                const std::function<bool(size_t)> integral_overflow_at_row = [&]
+                {
+                    if constexpr (integral_div_or_modulo_overflow_to_null)
+                    {
+                        return buildIntegralDivisionOverflowCheckerForBlock(
+                            left_argument.type,
+                            right_argument.type,
+                            left_prepared,
+                            right_prepared);
+                    }
+                    return std::function<bool(size_t)>{};
+                }();
+
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     bool is_null = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
                     if constexpr (integral_div_or_modulo_overflow_to_null)
                     {
                         if (!is_null)
-                            is_null = integralDivisionOverflowOrNullAtRow(
-                                left_argument.type,
-                                right_argument.type,
-                                left_prepared,
-                                right_prepared,
-                                i);
+                            is_null = integral_overflow_at_row(i);
                     }
                     null_map_data[i] = is_null;
                 }
