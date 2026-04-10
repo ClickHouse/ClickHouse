@@ -17,13 +17,14 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 replicated_max_mutations_in_one_entry;
 }
 
 using MergeCore = DistributedMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>;
 
 ReplicatedMergeTreeBaseMergePredicate::ReplicatedMergeTreeBaseMergePredicate(const ReplicatedMergeTreeQueue & queue_, std::optional<PartitionIdsHint> partition_ids_hint_)
-    : MergeCore(std::move(partition_ids_hint_))
+    : MergeCore(std::move(partition_ids_hint_), (*queue_.storage.getSettings())[MergeTreeSetting::materialize_projections_on_merge])
     , queue(queue_)
 {
 }

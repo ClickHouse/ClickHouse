@@ -147,7 +147,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_statistics_on_merge;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
-    extern const MergeTreeSettingsBool materialize_projections_on_merge;
 }
 
 namespace ErrorCodes
@@ -1162,15 +1161,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts don't have it (commit-order projection)", projection.name);
             global_ctx->projections_to_rebuild.push_back(&projection);
         }
-        else if ((*global_ctx->data->getSettings())[MergeTreeSetting::materialize_projections_on_merge])
-        {
-            global_ctx->projections_to_rebuild.push_back(&projection);
-        }
         else
         {
             chassert(projection_parts.size() < global_ctx->future_part->parts.size());
-            LOG_DEBUG(ctx->log, "Projection {} is not merged because some parts don't have it", projection.name);
-            continue;
+            global_ctx->projections_to_rebuild.push_back(&projection);
         }
     }
 
