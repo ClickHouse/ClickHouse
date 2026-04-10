@@ -445,16 +445,15 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
+    UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
 private:
     /// Iterates over a ColumnArray(String) slice and adds each element as a document.
     void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
-    UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
     String index_column_name;
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
-    PostingListCodecPtr posting_list_codec;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     MergeTreeIndexTextPostprocessorPtr postprocessor;

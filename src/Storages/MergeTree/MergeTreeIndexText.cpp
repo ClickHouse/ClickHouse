@@ -1465,7 +1465,6 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
     , tokenizer(tokenizer_)
-    , posting_list_codec(posting_list_codec_)
     , granule_builder(params, tokenizer_, posting_list_codec_)
     , preprocessor(preprocessor_)
     , postprocessor(postprocessor_)
