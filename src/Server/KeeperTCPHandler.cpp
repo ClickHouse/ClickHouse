@@ -29,6 +29,7 @@
 #    include <Common/HistogramMetrics.h>
 #    include <Common/OpenTelemetryTracingContext.h>
 #    include <Coordination/KeeperCommon.h>
+#    include <Coordination/SessionRequest.h>
 #    include <Common/ZooKeeper/KeeperSpans.h>
 
 #    include <Compression/CompressionFactory.h>
@@ -554,22 +555,22 @@ void KeeperTCPHandler::runImpl()
                     break;
                 }
 
-                auto [received_op, received_xid] = receiveRequest();
+                auto received = receiveRequest();
                 packageReceived();
                 log_long_operation("Receiving request");
 
-                if (received_op == Coordination::OpNum::Close)
+                if (received.opnum == Coordination::OpNum::Close)
                 {
-                    LOG_DEBUG(log, "Received close event with xid {} for session id #{}", received_xid, session_id);
-                    close_xid = received_xid;
+                    LOG_DEBUG(log, "Received close event with xid {} for session id #{}", received.xid, session_id);
+                    close_xid = received.xid;
                     close_received = true;
                 }
-                else if (received_op == Coordination::OpNum::Heartbeat)
+                else if (received.opnum == Coordination::OpNum::Heartbeat)
                 {
                     LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
                 }
-                else
-                    operations[received_xid] = Poco::Timestamp();
+                else if (received.accepted)
+                    operations[received.xid] = Poco::Timestamp();
 
                 /// Each request restarts session stopwatch
                 session_stopwatch.restart();
@@ -742,10 +743,8 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
     return *in;
 }
 
-std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
+KeeperTCPHandler::ReceivedRequest KeeperTCPHandler::receiveRequest()
 {
-    const UInt64 receive_start_time = ZooKeeperOpentelemetrySpans::now();
-
     std::optional<LimitReadBuffer> limited_buffer_holder;
     /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size
     /// (this should be done on per-request basis)
@@ -803,28 +802,40 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         {
             request->tracing_context.emplace();
             request->tracing_context->deserialize(read_buffer);
-
-            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.receive_request, request->tracing_context, receive_start_time);
-            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                request->spans.receive_request,
-                [&]
-                {
-                    return std::vector<OpenTelemetry::SpanAttribute>{
-                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                        {"keeper.session_id", session_id},
-                        {"keeper.xid", request->xid},
-                    };
-                });
         }
     }
 
-    if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
+    /// Create SessionRequest at the earliest point -- all lifecycle
+    /// goes through setState from here on.
+    using namespace std::chrono;
+    auto keeper_req = std::make_shared<SessionRequest>();
+    keeper_req->session_id = session_id;
+    keeper_req->request = request;
+    keeper_req->cached_bytes_size = request->bytesSize();
+    keeper_req->time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    keeper_req->use_xid_64 = use_xid_64;
+    keeper_req->setState(RequestState::Received);
+
+    auto error = keeper_dispatcher->putRequest(std::move(keeper_req), cached_session);
+    if (error != Coordination::Error::ZOK)
+    {
+        auto resp = request->makeResponse();
+        resp->xid = request->xid;
+        resp->error = error;
+        resp->write(getWriteBuffer(), use_xid_64);
+        flushWriteBuffer();
+        packageSent();
+
+        if (error == Coordination::Error::ZSESSIONEXPIRED)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
+
+        return {opnum, xid, /*accepted=*/false};
+    }
 
     if (keeper_context->shouldLogRequests())
         LOG_TRACE(log, "Received request:\n{}", request->toString(/*short_format=*/true));
 
-    return std::make_pair(opnum, xid);
+    return {opnum, xid, /*accepted=*/true};
 }
 
 void KeeperTCPHandler::packageSent()

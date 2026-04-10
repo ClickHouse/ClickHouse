@@ -135,8 +135,12 @@ public:
 
     void forceRecovery();
 
-    /// Put request to ClickHouse Keeper
+    /// Put request to ClickHouse Keeper (legacy overload used by KeeperOverDispatcher)
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
+
+    /// Put request to ClickHouse Keeper via SessionRequest.
+    /// If `session` is provided, uses it directly; otherwise looks up via session_registry_.
+    Coordination::Error putRequest(SessionRequestPtr keeper_req, const KeeperSessionPtr & session = nullptr);
 
     /// Put local read request to ClickHouse Keeper
     bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);

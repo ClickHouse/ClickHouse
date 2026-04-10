@@ -1,5 +1,6 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperSession.h>
+#include <Coordination/SessionRequest.h>
 #include <libnuraft/async.hxx>
 
 #include <Poco/Path.h>
@@ -519,6 +520,103 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     }
     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
     return true;
+}
+
+Coordination::Error KeeperDispatcher::putRequest(SessionRequestPtr keeper_req, const KeeperSessionPtr & session)
+{
+    auto resolved_session = session;
+    if (!resolved_session)
+    {
+        resolved_session = session_registry_.findSession(keeper_req->session_id);
+        if (!resolved_session)
+        {
+            LOG_WARNING(log,
+                "putRequest: session {} not found for xid {} op {}",
+                keeper_req->session_id, keeper_req->request->xid,
+                Coordination::opNumToString(keeper_req->request->getOpNum()));
+            return Coordination::Error::ZSESSIONEXPIRED;
+        }
+    }
+
+    if (keeper_context->isShutdownCalled())
+        return Coordination::Error::ZSESSIONEXPIRED;
+
+    /// Backpressure: reject if the global pending request count exceeds the
+    /// configured limit. Close bypasses -- it is critical for ephemeral cleanup
+    /// and must not be delayed until session timeout under queue pressure.
+    bool is_close = keeper_req->request->getOpNum() == Coordination::OpNum::Close;
+    const auto max_queue_size = configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size];
+    if (!is_close && max_queue_size > 0 && requests_queue->size() >= max_queue_size)
+    {
+        LOG_WARNING(log,
+            "Request rejected for session {} xid {} op {}: pending count {} >= limit {}",
+            keeper_req->session_id,
+            keeper_req->request->xid,
+            Coordination::opNumToString(keeper_req->request->getOpNum()),
+            requests_queue->size(),
+            static_cast<uint64_t>(max_queue_size));
+        return Coordination::Error::ZCONNECTIONLOSS;
+    }
+
+    /// Memory soft limit: reject write-like requests before they enter
+    /// the session FIFO. The request never touches active_requests or the
+    /// subqueue, so no cleanup is needed on rejection.
+    Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
+    if (configuration_and_settings->standalone_keeper
+        && isExceedingMemorySoftLimit()
+        && checkIfRequestIncreaseMem(keeper_req->request))
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
+        LOG_WARNING(log,
+            "Request rejected due to memory soft limit {} for session {} op {}, allocated {}, RSS {}",
+            ReadableSize(mem_soft_limit),
+            keeper_req->session_id,
+            Coordination::opNumToString(keeper_req->request->getOpNum()),
+            ReadableSize(total_memory_tracker.get()),
+            ReadableSize(total_memory_tracker.getRSS()));
+        return Coordination::Error::ZOUTOFMEMORY;
+    }
+
+    /// Convert SessionRequest fields to KeeperRequestForSession for the existing
+    /// session->addRequest path. Once the session layer is fully migrated to
+    /// SessionRequestPtr, this conversion will be removed.
+    KeeperRequestForSession request_info;
+    request_info.session_id = keeper_req->session_id;
+    request_info.request = keeper_req->request;
+    request_info.time = keeper_req->time;
+    request_info.use_xid_64 = keeper_req->use_xid_64;
+
+    auto add_result = resolved_session->addRequest(request_info);
+    switch (add_result.result)
+    {
+        case KeeperSession::AddResult::Accepted:
+        {
+            if (add_result.goes_to_raft)
+            {
+                ZooKeeperOpentelemetrySpans::maybeInitialize(
+                    keeper_req->request->spans.dispatcher_requests_queue,
+                    keeper_req->request->tracing_context);
+
+                if (keeper_req->request->getOpNum() == Coordination::OpNum::Close)
+                {
+                    if (!requests_queue->push(std::move(request_info)))
+                        throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push request to queue");
+                }
+                else if (!requests_queue->tryPush(std::move(request_info),
+                    configuration_and_settings->coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+                {
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
+                }
+                CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+            }
+            return Coordination::Error::ZOK;
+        }
+        case KeeperSession::AddResult::SessionClosed:
+            return Coordination::Error::ZSESSIONEXPIRED;
+        case KeeperSession::AddResult::QueueFull:
+            return Coordination::Error::ZCONNECTIONLOSS;
+    }
+    UNREACHABLE();
 }
 
 bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)

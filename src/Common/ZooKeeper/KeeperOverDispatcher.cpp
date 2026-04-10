@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
+#include <Coordination/SessionRequest.h>
 
 namespace DB::ErrorCodes
 {
@@ -74,7 +75,18 @@ void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCall
         callback_state->callbacks[request->xid] = std::move(callback);
     }
 
-    keeper_dispatcher->putRequest(request, session_id, false);
+    /// In-process path -- skip setState(Received) and receive_start_time_us
+    /// because there is no wire receive. use_xid_64 stays false (default).
+    using namespace std::chrono;
+    auto keeper_req = std::make_shared<DB::SessionRequest>();
+    keeper_req->session_id = session_id;
+    keeper_req->cached_bytes_size = request->bytesSize();
+    auto saved_request = request; /// save before move for error response
+    keeper_req->request = std::move(request);
+    keeper_req->time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    auto err = keeper_dispatcher->putRequest(std::move(keeper_req));
+    if (err != Coordination::Error::ZOK)
+        failCallback(saved_request->xid, saved_request->makeResponse(), err);
 }
 
 void KeeperOverDispatcher::failCallback(XID xid, ZooKeeperResponsePtr response, Coordination::Error error)

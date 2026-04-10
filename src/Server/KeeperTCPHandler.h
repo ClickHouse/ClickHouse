@@ -122,7 +122,13 @@ private:
     static bool isHandShake(int32_t handshake_length);
     bool tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer & in);
 
-    std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
+    struct ReceivedRequest
+    {
+        Coordination::OpNum opnum;
+        Coordination::XID xid;
+        bool accepted; /// false if rejected inline (queue full, session dead, etc.)
+    };
+    ReceivedRequest receiveRequest();
 
     void packageSent();
     void packageReceived();

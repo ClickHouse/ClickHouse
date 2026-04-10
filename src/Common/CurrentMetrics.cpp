@@ -376,6 +376,16 @@
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
+    M(KeeperRequestsInitial, "Number of Keeper requests in Initial (pre-dispatch) state") \
+    M(KeeperRequestsReceived, "Number of Keeper requests in Received state") \
+    M(KeeperRequestsPendingRaft, "Number of Keeper requests waiting to be pulled by the scheduler") \
+    M(KeeperRequestsInRaft, "Number of Keeper requests submitted to Raft and awaiting commit") \
+    M(KeeperRequestsRaftResponseReady, "Number of Keeper requests with Raft response attached, awaiting delivery") \
+    M(KeeperRequestsPendingLocal, "Number of Keeper local read requests waiting behind writes") \
+    M(KeeperRequestsExecutingLocal, "Number of Keeper local read requests currently executing") \
+    M(KeeperRequestsCompleted, "Number of Keeper requests completed but not yet sent to client") \
+    M(KeeperRequestsSendingResponse, "Number of Keeper requests being written to the client socket") \
+    M(KeeperRequestsSent, "Number of Keeper requests in Sent (terminal) state") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
