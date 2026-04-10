@@ -1,0 +1,11 @@
+default_normal_view_sql_security = DEFINER
+1
+1
+default_normal_view_sql_security = INVOKER
+1
+default_normal_view_sql_security = NONE
+1
+functional check
+2
+2
+2
