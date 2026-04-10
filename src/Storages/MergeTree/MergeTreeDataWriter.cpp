@@ -807,6 +807,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
+    /// Zero-level parts should never use a more complex map serialization than the base setting.
+    /// For example, if map_serialization_version = 'basic', zero-level parts must also use 'basic',
+    /// even if map_serialization_version_for_zero_level_parts is independently set to 'with_buckets'.
+    auto effective_map_serialization_for_zero_level = std::min(
+        (*data_settings)[MergeTreeSetting::map_serialization_version],
+        (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts]);
+
     SerializationInfo::Settings settings
     {
         (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
@@ -814,7 +821,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
-        (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
+        effective_map_serialization_for_zero_level,
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);
@@ -993,6 +1000,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+
+    /// Same as in writeTempPartImpl: cap zero-level map serialization at the base level.
+    auto effective_map_serialization_for_zero_level = std::min(
+        (*data_settings)[MergeTreeSetting::map_serialization_version],
+        (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts]);
+
     SerializationInfo::Settings settings
     {
         (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
@@ -1000,7 +1013,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
-        (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
+        effective_map_serialization_for_zero_level,
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);
