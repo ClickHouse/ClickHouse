@@ -147,7 +147,7 @@ void BorrowFromCacheObjectStorage::removeObjectsIfExist(const StoredObjects & ob
                 /* remote_path */ object.remote_path,
                 /* local_path */ object.local_path,
                 /* data_size */ object.bytes_size,
-                /* elapsed_microseconds */ objects.size() > 0 ? elapsed / objects.size() : elapsed,
+                /* elapsed_microseconds */ !objects.empty() ? elapsed / objects.size() : elapsed,
                 /* error_code */ 0,
                 /* error_message */ "",
                 time_now);
