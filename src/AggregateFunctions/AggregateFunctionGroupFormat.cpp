@@ -36,6 +36,19 @@ struct GroupFormatData
     MutableColumns columns;
 };
 
+UInt64 getSerializationProtocolVersion(const ContextPtr & context)
+{
+    if (!context)
+        return DBMS_TCP_PROTOCOL_VERSION;
+
+    const auto & client_info = context->getClientInfo();
+    if (client_info.connection_tcp_protocol_version)
+        return client_info.connection_tcp_protocol_version;
+    if (client_info.client_tcp_protocol_version)
+        return client_info.client_tcp_protocol_version;
+    return DBMS_TCP_PROTOCOL_VERSION;
+}
+
 class AggregateFunctionGroupFormat final : public IAggregateFunctionDataHelper<GroupFormatData, AggregateFunctionGroupFormat>
 {
 public:
@@ -51,6 +64,7 @@ public:
         , format_settings(std::move(format_settings_))
         , context(std::move(context_))
     {
+        serialization_protocol_version = getSerializationProtocolVersion(context);
         size_t num_columns = argument_types.size();
         for (size_t i = 0; i < num_columns; ++i)
         {
@@ -147,7 +161,7 @@ public:
             const auto & column = state.columns[i];
             const auto & type = argument_types[i];
             auto serialization = type->getDefaultSerialization();
-            NativeWriter::writeData(*serialization, column->getPtr(), buf, std::nullopt, 0, num_rows, DBMS_TCP_PROTOCOL_VERSION);
+            NativeWriter::writeData(*serialization, column->getPtr(), buf, std::nullopt, 0, num_rows, serialization_protocol_version);
         }
     }
 
@@ -234,6 +248,7 @@ private:
     FormatSettings format_settings;
     ContextPtr context;
     Block header;
+    UInt64 serialization_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
 };
 
 AggregateFunctionPtr createAggregateFunctionGroupFormat(
