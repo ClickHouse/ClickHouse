@@ -610,24 +610,14 @@ public:
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
-        const UInt8 * null_map,
+        const UInt8 * /* null_map */,
         Arena * arena,
-        ssize_t) const override
+        ssize_t if_argument_pos) const override
     {
-        if (filter_is_only_null)
-            return;
-
-        auto nested_columns = getNestedColumns(columns);
-        for (size_t row = row_begin; row < row_end; ++row)
-        {
-            if (null_map && null_map[row])
-                continue;
-
-            if (!filter(columns, row))
-                continue;
-
-            nested_function->add(place, nested_columns.data(), row, arena);
-        }
+        /// The null_map here is the merged payload-null mask from the Null combinator.
+        /// Since the nested function preserves nullable payload, we must NOT skip
+        /// those rows — just delegate to addBatchSinglePlace which filters by If condition only.
+        addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
