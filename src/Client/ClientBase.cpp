@@ -3548,7 +3548,10 @@ void ClientBase::runInteractive()
     initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    /// AI SQL generation is disabled for the embedded client (SSH and WebSocket protocols)
+    /// because it accesses the environment (API keys) which could be a security concern.
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -3805,7 +3808,8 @@ void ClientBase::runNonInteractive()
         initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     if (!buzz_house && !queries_files.empty())
