@@ -12,7 +12,6 @@ EC2 describe-snapshots call.
 
 import hashlib
 import os
-import signal
 import time
 import traceback
 from typing import Dict, List, Optional, Tuple
@@ -29,8 +28,6 @@ TAG_ARCH = "arch"
 # Mount points and device helpers
 _CACHE_MOUNT = "/mnt/docker-cache"
 _DOCKER_MOUNT = "/var/lib/docker"
-_CACHE_DOCKERD_SOCK = "/var/run/docker-cache.sock"
-_CACHE_DOCKERD_PID = "/var/run/docker-cache.pid"
 
 
 # ---------------------------------------------------------------------------
@@ -72,37 +69,63 @@ def _ec2_client(region: str):
     return boto3.client("ec2", region_name=region)
 
 
-def _find_free_device() -> str:
-    """Return the first free /dev/xvd[f-z] device name."""
+def _get_block_devices() -> set:
+    """Return the set of current block device paths."""
+    out = Shell.get_output("lsblk -dpno NAME 2>/dev/null") or ""
+    return {line.strip() for line in out.splitlines() if line.strip()}
+
+
+def _find_free_device(instance_id: str, region: str) -> str:
+    """Return a device name not already attached to this instance.
+
+    On Nitro instances /dev/xvd* files do not exist on the filesystem even
+    when the attachment point is in use, so we query the EC2 API instead.
+    """
     import string
+
+    ec2 = _ec2_client(region)
+    resp = ec2.describe_instances(InstanceIds=[instance_id])
+    used = set()
+    for res in resp.get("Reservations", []):
+        for inst in res.get("Instances", []):
+            for bdm in inst.get("BlockDeviceMappings", []):
+                used.add(bdm.get("DeviceName", ""))
 
     for letter in string.ascii_lowercase[5:]:  # f..z
         dev = f"/dev/xvd{letter}"
-        if not os.path.exists(dev):
+        if dev not in used:
             return dev
     raise RuntimeError("No free /dev/xvd* device found")
 
 
-def _resolve_device(requested_device: str) -> str:
-    """After attaching an EBS volume as e.g. /dev/xvdf, the kernel may
-    expose it as /dev/nvme*n1. Wait up to 30 s and return the actual path."""
-    for _ in range(30):
-        if os.path.exists(requested_device):
-            return requested_device
-        # On Nitro instances the device appears as /dev/nvme*n1 but we can
-        # find it via lsblk or by scanning /dev/disk/by-id/.
-        # Simple approach: look for a new block device that appeared.
+def _wait_for_new_device(
+    before: set, volume_id: str, timeout: int = 60
+) -> str:
+    """Wait for a new block device to appear after an EBS attach.
+
+    On Nitro instances the requested /dev/xvd* name is ignored and the volume
+    shows up as /dev/nvme*n1.  We detect it by diffing lsblk output before
+    and after the attach.  As a fallback, we also check the NVMe serial which
+    contains the volume-id (without the dash).
+    """
+    vol_serial = volume_id.replace("-", "").replace("vol", "vol")
+    for _ in range(timeout):
+        after = _get_block_devices()
+        new_devs = after - before
+        if new_devs:
+            dev = sorted(new_devs)[0]
+            print(f"EBS docker cache: new device [{dev}] appeared")
+            return dev
+        # Also try matching by NVMe serial (works even if lsblk diff missed it)
+        out = Shell.get_output("lsblk -dpno NAME,SERIAL 2>/dev/null") or ""
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and vol_serial in parts[1].replace("-", ""):
+                print(f"EBS docker cache: matched device [{parts[0]}] by serial")
+                return parts[0]
         time.sleep(1)
-    # Last resort: try lsblk
-    out = Shell.get_output("lsblk -dpno NAME,SERIAL 2>/dev/null") or ""
-    for line in out.strip().splitlines():
-        parts = line.split()
-        if len(parts) >= 2 and requested_device.replace("/dev/", "").replace(
-            "xvd", "vol"
-        ) in parts[1].replace("-", ""):
-            return parts[0]
     raise RuntimeError(
-        f"Device {requested_device} did not appear within 30 seconds"
+        f"No new block device appeared for volume {volume_id} within {timeout}s"
     )
 
 
@@ -183,7 +206,6 @@ def create_cache_snapshot(
     volume_id = None
     device = None
     mounted = False
-    dockerd_pid = None
 
     try:
         # 1. Create volume
@@ -206,7 +228,8 @@ def create_cache_snapshot(
         _wait_for_volume_status(ec2, volume_id, "available")
 
         # 2. Attach
-        device = _find_free_device()
+        devs_before = _get_block_devices()
+        device = _find_free_device(instance_id, region)
         print(f"EBS docker cache: attaching [{volume_id}] as [{device}]")
         ec2.attach_volume(
             Device=device,
@@ -214,7 +237,7 @@ def create_cache_snapshot(
             VolumeId=volume_id,
         )
         _wait_for_volume_status(ec2, volume_id, "in-use")
-        actual_device = _resolve_device(device)
+        actual_device = _wait_for_new_device(devs_before, volume_id)
 
         # 3. Format and mount
         Shell.check(f"sudo mkfs.ext4 -q {actual_device}", verbose=True, strict=True)
@@ -226,59 +249,51 @@ def create_cache_snapshot(
         )
         mounted = True
 
-        # 4. Start secondary dockerd
-        print("EBS docker cache: starting secondary dockerd")
-        Shell.check(
-            f"sudo dockerd"
-            f" --data-root {_CACHE_MOUNT}"
-            f" --host unix://{_CACHE_DOCKERD_SOCK}"
-            f" --pidfile {_CACHE_DOCKERD_PID}"
-            f" --exec-root /var/run/docker-cache"
-            f" >/dev/null 2>&1 &",
-            verbose=True,
-        )
-        # Wait for the socket to appear
-        for i in range(30):
-            if os.path.exists(_CACHE_DOCKERD_SOCK):
-                break
-            time.sleep(1)
-        else:
-            raise RuntimeError("Secondary dockerd did not start within 30s")
+        # 4. Stop primary Docker, remount EBS as /var/lib/docker, pull images
+        # This is simpler and more reliable than running a secondary dockerd.
+        # At this point all images are already built and pushed to the registry,
+        # so we no longer need the primary Docker.
+        print("EBS docker cache: stopping primary Docker")
+        Shell.check("sudo systemctl stop docker docker.socket containerd", verbose=True)
 
-        # Read the PID for cleanup
-        if os.path.exists(_CACHE_DOCKERD_PID):
-            with open(_CACHE_DOCKERD_PID, "r") as f:
-                dockerd_pid = int(f.read().strip())
+        # Move current docker+containerd data aside
+        # EBS is already mounted at _CACHE_MOUNT from step 3
+        Shell.check("sudo mv /var/lib/docker /var/lib/docker.bak", verbose=True)
+        Shell.check("sudo mv /var/lib/containerd /var/lib/containerd.bak", verbose=True)
+        Shell.check(f"sudo mkdir -p {_DOCKER_MOUNT}", verbose=True, strict=True)
+        Shell.check("sudo mkdir -p /var/lib/containerd", verbose=True, strict=True)
+        # Create subdirs on the EBS for docker and containerd
+        Shell.check(f"sudo mkdir -p {_CACHE_MOUNT}/docker {_CACHE_MOUNT}/containerd", verbose=True, strict=True)
+        Shell.check(f"sudo mount --bind {_CACHE_MOUNT}/docker /var/lib/docker", verbose=True, strict=True)
+        Shell.check(f"sudo mount --bind {_CACHE_MOUNT}/containerd /var/lib/containerd", verbose=True, strict=True)
+
+        print("EBS docker cache: starting Docker with EBS data-root")
+        Shell.check("sudo systemctl start docker", verbose=True, strict=True)
 
         # 5. Pull all images
-        docker_cmd = f"sudo docker -H unix://{_CACHE_DOCKERD_SOCK}"
+        Shell.check("df -h", verbose=True)
         for config in docker_configs:
             tag = f"{digests[config.name]}_{arch}"
             image_ref = f"{config.name}:{tag}"
             print(f"EBS docker cache: pulling [{image_ref}]")
-            if not Shell.check(f"{docker_cmd} pull {image_ref}", verbose=True):
+            if not Shell.check(f"docker pull {image_ref}", verbose=True):
                 print(f"WARNING: EBS docker cache: failed to pull [{image_ref}], skipping")
 
         # Show what we have
-        Shell.check(f"{docker_cmd} images", verbose=True)
+        Shell.check("docker images", verbose=True)
+        Shell.check("df -h", verbose=True)
 
-        # 6. Stop dockerd
-        if dockerd_pid:
-            print(f"EBS docker cache: stopping secondary dockerd (pid={dockerd_pid})")
-            try:
-                os.kill(dockerd_pid, signal.SIGTERM)
-                for _ in range(30):
-                    try:
-                        os.kill(dockerd_pid, 0)
-                        time.sleep(1)
-                    except OSError:
-                        break
-            except OSError:
-                pass
-            dockerd_pid = None
-
-        # 7. Unmount
+        # 6. Stop Docker, unmount EBS, restore original docker/containerd data
+        print("EBS docker cache: stopping Docker, restoring original state")
+        Shell.check("sudo systemctl stop docker docker.socket containerd", verbose=True)
+        Shell.check(f"sudo umount /var/lib/docker", verbose=True, strict=True)
+        Shell.check(f"sudo umount /var/lib/containerd", verbose=True, strict=True)
         Shell.check(f"sudo umount {_CACHE_MOUNT}", verbose=True, strict=True)
+        Shell.check("sudo rm -rf /var/lib/docker /var/lib/containerd", verbose=True)
+        Shell.check("sudo mv /var/lib/docker.bak /var/lib/docker", verbose=True)
+        Shell.check("sudo mv /var/lib/containerd.bak /var/lib/containerd", verbose=True)
+        Shell.check("sudo systemctl start docker", verbose=True)
+
         mounted = False
 
         # 8. Detach volume
@@ -316,14 +331,19 @@ def create_cache_snapshot(
         return None
 
     finally:
-        # Cleanup on failure
-        if dockerd_pid:
-            try:
-                os.kill(dockerd_pid, signal.SIGKILL)
-            except OSError:
-                pass
+        # Cleanup on failure: restore original Docker/containerd state
         if mounted:
-            Shell.check(f"sudo umount {_CACHE_MOUNT}", verbose=True)
+            Shell.check("sudo systemctl stop docker docker.socket containerd 2>/dev/null", verbose=True)
+            Shell.check("sudo umount /var/lib/docker 2>/dev/null", verbose=True)
+            Shell.check("sudo umount /var/lib/containerd 2>/dev/null", verbose=True)
+            Shell.check(f"sudo umount {_CACHE_MOUNT} 2>/dev/null", verbose=True)
+            if os.path.exists("/var/lib/docker.bak"):
+                Shell.check("sudo rm -rf /var/lib/docker", verbose=True)
+                Shell.check("sudo mv /var/lib/docker.bak /var/lib/docker", verbose=True)
+            if os.path.exists("/var/lib/containerd.bak"):
+                Shell.check("sudo rm -rf /var/lib/containerd", verbose=True)
+                Shell.check("sudo mv /var/lib/containerd.bak /var/lib/containerd", verbose=True)
+            Shell.check("sudo systemctl start docker", verbose=True)
         if volume_id:
             try:
                 ec2.detach_volume(VolumeId=volume_id)
@@ -371,7 +391,8 @@ def mount_cache_volume(snapshot_id: str) -> Optional[str]:
         _wait_for_volume_status(ec2, volume_id, "available")
 
         # Attach
-        device = _find_free_device()
+        devs_before = _get_block_devices()
+        device = _find_free_device(instance_id, region)
         print(f"EBS docker cache: attaching [{volume_id}] as [{device}]")
         ec2.attach_volume(
             Device=device,
@@ -379,16 +400,18 @@ def mount_cache_volume(snapshot_id: str) -> Optional[str]:
             VolumeId=volume_id,
         )
         _wait_for_volume_status(ec2, volume_id, "in-use")
-        actual_device = _resolve_device(device)
+        actual_device = _wait_for_new_device(devs_before, volume_id)
 
-        # Mount at /var/lib/docker
-        Shell.check(f"sudo mkdir -p {_DOCKER_MOUNT}", verbose=True, strict=True)
+        # Mount EBS and bind-mount docker + containerd subdirs
+        Shell.check(f"sudo mkdir -p {_CACHE_MOUNT}", verbose=True, strict=True)
         Shell.check(
-            f"sudo mount -o noatime {actual_device} {_DOCKER_MOUNT}",
+            f"sudo mount -o noatime {actual_device} {_CACHE_MOUNT}",
             verbose=True,
             strict=True,
         )
         mounted = True
+        Shell.check(f"sudo mount --bind {_CACHE_MOUNT}/docker {_DOCKER_MOUNT}", verbose=True, strict=True)
+        Shell.check(f"sudo mount --bind {_CACHE_MOUNT}/containerd /var/lib/containerd", verbose=True, strict=True)
 
         # Start Docker
         print("EBS docker cache: starting Docker with cached images")
@@ -402,7 +425,9 @@ def mount_cache_volume(snapshot_id: str) -> Optional[str]:
         traceback.print_exc()
         # Attempt recovery: unmount, restart Docker normally
         if mounted:
-            Shell.check(f"sudo umount {_DOCKER_MOUNT}", verbose=True)
+            Shell.check("sudo umount /var/lib/docker 2>/dev/null", verbose=True)
+            Shell.check("sudo umount /var/lib/containerd 2>/dev/null", verbose=True)
+            Shell.check(f"sudo umount {_CACHE_MOUNT} 2>/dev/null", verbose=True)
         Shell.check("sudo systemctl start docker", verbose=True)
         if volume_id:
             try:
@@ -424,7 +449,9 @@ def cleanup_cache_volume(volume_id: str) -> None:
 
     print(f"EBS docker cache: cleaning up volume [{volume_id}]")
     Shell.check("sudo systemctl stop docker docker.socket containerd", verbose=True)
-    Shell.check(f"sudo umount {_DOCKER_MOUNT}", verbose=True)
+    Shell.check("sudo umount /var/lib/docker 2>/dev/null", verbose=True)
+    Shell.check("sudo umount /var/lib/containerd 2>/dev/null", verbose=True)
+    Shell.check(f"sudo umount {_CACHE_MOUNT}", verbose=True)
 
     try:
         ec2.detach_volume(VolumeId=volume_id)

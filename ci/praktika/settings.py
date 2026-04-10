@@ -130,7 +130,7 @@ class _Settings:
     # EBS Docker Cache: pre-populate Docker's image store from EBS snapshots
     # to eliminate image pull latency on CI runners
     ENABLE_EBS_DOCKER_CACHE: bool = False
-    EBS_DOCKER_CACHE_VOLUME_SIZE_GB: int = 50
+    EBS_DOCKER_CACHE_VOLUME_SIZE_GB: int = 100
     EBS_DOCKER_CACHE_VOLUME_TYPE: str = "gp3"
     EBS_DOCKER_CACHE_MAX_SNAPSHOTS_PER_ARCH: int = 3
 

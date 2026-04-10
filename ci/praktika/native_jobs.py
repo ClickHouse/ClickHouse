@@ -213,6 +213,10 @@ def _build_dockers(workflow, job_name):
         and job_name != Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
         and not Info().is_local_run
     ):
+        # Free disk space from buildx before pulling images for the snapshot
+        _clean_buildx_volumes()
+        Shell.check("docker system prune -f", verbose=True)
+
         from .ebs_docker_cache import (
             _get_arch,
             calc_combined_digest,
@@ -263,8 +267,8 @@ def _build_dockers(workflow, job_name):
                     results.append(
                         Result.create_from(
                             name="EBS Docker Cache",
-                            status=Result.Status.SUCCESS,
-                            info="snapshot creation failed (non-fatal)",
+                            status=Result.Status.FAILED,
+                            info="snapshot creation failed",
                         )
                     )
                 cleanup_old_snapshots(
