@@ -96,7 +96,6 @@ private:
   *      M(CLASS_NAME, String) \
   *      M(CLASS_NAME, UInt64)
   *
-  * struct MySettings;
   * MY_SETTINGS_SUPPORTED_TYPES(MySettings, DECLARE_SETTING_TRAIT)
   *
   * struct MySettings
@@ -120,21 +119,8 @@ private:
   *     DECLARE(String, s, "default", "Description of s", 0) \
   *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description", 0, stable)
   *
-  * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
-  * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
-  *
-  * struct MySettingsImpl : public BaseSettings<MySettingsTraits>
-  * {
-  * };
-  *
-  * #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-  *     MySettings##TYPE NAME = &MySettingsImpl::NAME;
-  *
-  * namespace MySetting
-  * {
-  *     APPLY_FOR_MYSETTINGS(INITIALIZE_SETTING_EXTERN, SETTING_SKIP_TRAIT)
-  * }
-  * #undef INITIALIZE_SETTING_EXTERN
+  * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MY_SETTINGS_SUPPORTED_TYPES)
+  * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MySettings, MySetting)
   *
   * MY_SETTINGS_SUPPORTED_TYPES(MySettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
   */
