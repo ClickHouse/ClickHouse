@@ -71,6 +71,21 @@ struct MaybeSpan
     }
 
     MaybeSpan(MaybeSpan &&) noexcept = default;
+
+    MaybeSpan & operator=(MaybeSpan && other) noexcept
+    {
+        if (this == &other)
+            return *this;
+
+        chassert(operation_name == other.operation_name);
+        chassert(kind == other.kind);
+        chassert(&histogram == &other.histogram);
+
+        start_time_us = other.start_time_us;
+        span = std::move(other.span);
+
+        return *this;
+    }
 };
 
 struct ZooKeeperOpentelemetrySpans
@@ -119,10 +134,10 @@ struct ZooKeeperOpentelemetrySpans
 
     static void maybeFinalizeImpl(
         MaybeSpan & maybe_span,
-        std::vector<OpenTelemetry::SpanAttribute> attributes = {},
-        OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
-        const String & error_message = {},
-        UInt64 finish_time_us = now());
+        std::vector<OpenTelemetry::SpanAttribute> attributes,
+        OpenTelemetry::SpanStatus status,
+        const String & error_message,
+        UInt64 finish_time_us);
 };
 
 }
