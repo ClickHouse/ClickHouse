@@ -9345,7 +9345,7 @@ Block MergeTreeData::getSkipIndexAggregationBlock(
             const DataTypePtr data_type = index_desc.data_types[hyperrect_idx];
 
             AggregateFunctionProperties properties;
-            auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {data_type}, {}, properties);
+            auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {data_type}, agg_desc.parameters, properties);
             agg_columns.push_back({agg_desc.column_name, data_type, ColumnAggregateFunction::create(func), func, is_min, hyperrect_idx});
         }
 

@@ -27,6 +27,8 @@ INSERT INTO test_skip_index_minmax_agg VALUES
     (7, 40, 10, 400.0, 400.0, 40, 3);
 
 SET optimize_use_skip_index_aggregation = 1;
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
 
@@ -164,6 +166,8 @@ INSERT INTO test_col_stats_agg VALUES
     (7, 40, 10, 400.0, 400.0, NULL, 3);
 
 SET optimize_use_skip_index_aggregation = 1;
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
 

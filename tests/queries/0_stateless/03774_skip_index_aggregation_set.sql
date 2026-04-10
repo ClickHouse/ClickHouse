@@ -20,6 +20,8 @@ INSERT INTO test_skip_index_set_agg VALUES
     (7, 40, 'p3');
 
 SET optimize_use_skip_index_aggregation = 1;
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
 SET count_distinct_optimization = false;
@@ -123,6 +125,8 @@ ORDER BY id;
 INSERT INTO test_skip_index_set_param VALUES (1, 10), (2, 20), (3, 5), (4, 30), (5, 15), (6, 2), (7, 40);
 
 SET optimize_use_skip_index_aggregation = 1;
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
 
