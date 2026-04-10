@@ -521,6 +521,28 @@ void ReadFromRemote::addLazyPipe(
 
     std::shared_ptr<const ActionsDAG> pushed_down_filters = filter_actions_dag;
 
+    /// Override cluster_for_parallel_replicas to match the distributed table's cluster,
+    /// same as addPipe() does. Without this, the _shard_num scalar from the distributed
+    /// execution can mismatch the parallel replicas cluster shard count, causing a crash
+    /// in prepareClusterForParallelReplicas (STID 5066).
+    if (context->canUseTaskBasedParallelReplicas())
+    {
+        if (context->getSettingsRef()[Setting::cluster_for_parallel_replicas].changed)
+        {
+            const String cluster_for_parallel_replicas = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
+            if (cluster_for_parallel_replicas != cluster_name)
+                LOG_INFO(
+                    log,
+                    "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is "
+                    "used: {}",
+                    cluster_for_parallel_replicas,
+                    cluster_name);
+        }
+
+        LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
+        context->setSetting("cluster_for_parallel_replicas", cluster_name);
+    }
+
     const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
     const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
     if (!storage)

@@ -965,27 +965,6 @@ void TCPHandler::runImpl()
                 return;
             }
 
-            /// If the exception happened during initial query parsing (before
-            /// `query_context` was created at the end of `processQuery`), the
-            /// input buffer is in an unknown state: the failing read may have
-            /// consumed only part of the packet, leaving trailing bytes that
-            /// will be misinterpreted as the next packet on this connection.
-            /// The only safe option is to close the connection.
-            if (!query_state->query_context)
-            {
-                try
-                {
-                    std::lock_guard lock(*callback_mutex);
-                    sendException(*exception, send_exception_with_stack_trace);
-                }
-                catch (...) // NOLINT(bugprone-empty-catch)
-                {
-                    /// Ok: failed to send the exception, but we're closing anyway.
-                }
-                query_state->cancelOut(out);
-                return;
-            }
-
             if (thread_trace_context)
                 thread_trace_context->root_span.addAttribute(*exception);
 
@@ -2238,6 +2217,18 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     {
         client_info.read(*in, client_tcp_protocol_version);
 
+        /// Validate query_kind: only INITIAL_QUERY and SECONDARY_QUERY are valid
+        /// in a Query packet. NO_QUERY and any other value would bypass the
+        /// INITIAL_QUERY check in settings constraint enforcement, falling into
+        /// the lenient clamp path. NO_QUERY also causes ClientInfo::read to
+        /// skip parsing the remaining fields, leaving them uninitialized.
+        if (client_info.query_kind != ClientInfo::QueryKind::INITIAL_QUERY
+            && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unexpected query kind in Query packet: {}",
+                static_cast<int>(client_info.query_kind));
+
         correctQueryClientInfo(session->getClientInfo(), client_info);
         const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
         if (config_ref[ServerSetting::validate_tcp_client_information])
@@ -2268,9 +2259,19 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     }
 
     readVarUInt(stage, *in);
+    if (stage >= QueryProcessingStage::MAX && stage != QueryProcessingStage::QueryPlan)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unknown query processing stage: {}",
+            stage);
     state->stage = QueryProcessingStage::Enum(stage);
 
     readVarUInt(compression, *in);
+    if (compression > 1)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unknown compression state: {}",
+            compression);
     state->compression = static_cast<Protocol::Compression>(compression);
     last_block_in.compression = state->compression;
 
