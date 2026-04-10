@@ -23,7 +23,13 @@ result	String
 0
 -- Custom system prompt accepted
 0
--- Temperature argument accepted
+-- Temperature: Float32
+0
+-- Temperature: Float64
+0
+-- Temperature: zero
+0
+-- Temperature: without system prompt (prompt, temp)
 0
 -- Named collection with no prompt
 -- Setting defaults

@@ -201,8 +201,17 @@ SELECT count() FROM (SELECT aiGenerateContent(x, 'You are a pirate') AS result F
 -- 14. Temperature argument
 -- =============================================================================
 
-SELECT '-- Temperature argument accepted';
+SELECT '-- Temperature: Float32';
 SELECT count() FROM (SELECT aiGenerateContent(x, 'system', toFloat32(0.5)) AS result FROM _03300_input);
+
+SELECT '-- Temperature: Float64';
+SELECT count() FROM (SELECT aiGenerateContent(x, 'system', 0.5) AS result FROM _03300_input);
+
+SELECT '-- Temperature: zero';
+SELECT count() FROM (SELECT aiGenerateContent(x, 'system', toFloat32(0.0)) AS result FROM _03300_input);
+
+SELECT '-- Temperature: without system prompt (prompt, temp)';
+SELECT count() FROM (SELECT aiGenerateContent(x, toFloat32(0.5)) AS result FROM _03300_input);
 
 -- =============================================================================
 -- 15. Named collection arg with too few remaining args
