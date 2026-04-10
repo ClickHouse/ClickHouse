@@ -628,7 +628,13 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
     {
         response.response->enqueue_ts = std::chrono::steady_clock::now();
         if (response.request)
-            ZooKeeperOpentelemetrySpans::maybeInitialize(response.request->spans.dispatcher_responses_queue, response.request->tracing_context);
+        {
+            const UInt64 enqueue_time_us = ZooKeeperOpentelemetrySpans::now();
+            ZooKeeperOpentelemetrySpans::maybeInitialize(
+                response.request->spans.dispatcher_responses_queue,
+                response.request->tracing_context,
+                enqueue_time_us);
+        }
         if (!responses_queue.push(response))
         {
             ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -1480,7 +1486,13 @@ void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSessi
                 response_for_session.request = request_for_session.request;
             response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
             if (response_for_session.request)
-                ZooKeeperOpentelemetrySpans::maybeInitialize(response_for_session.request->spans.dispatcher_responses_queue, response_for_session.request->tracing_context);
+            {
+                const UInt64 enqueue_time_us = ZooKeeperOpentelemetrySpans::now();
+                ZooKeeperOpentelemetrySpans::maybeInitialize(
+                    response_for_session.request->spans.dispatcher_responses_queue,
+                    response_for_session.request->tracing_context,
+                    enqueue_time_us);
+            }
             if (!responses_queue.push(response_for_session))
                 LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
         }
