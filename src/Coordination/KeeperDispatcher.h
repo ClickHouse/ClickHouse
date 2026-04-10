@@ -11,6 +11,7 @@
 #include <functional>
 #include <unordered_set>
 #include <Coordination/KeeperServer.h>
+#include <Coordination/KeeperSessionRegistry.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
@@ -20,11 +21,6 @@
 
 namespace DB
 {
-/// Callback invoked by setResponse and finishSession to deliver responses to clients.
-/// Must be safe for concurrent invocation: setResponse (from responseThread) and
-/// finishSession (from dead session cleaner) may invoke copies of the same callback
-/// concurrently for the same session.
-using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
 /// Highlevel wrapper for ClickHouse Keeper.
 /// Process user requests via consensus and return responses.
@@ -32,7 +28,6 @@ class KeeperDispatcher
 {
 private:
     using RequestsQueue = ConcurrentBoundedQueue<KeeperRequestForSession>;
-    using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
     /// Size depends on coordination settings
@@ -43,20 +38,7 @@ private:
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
 
-    mutable std::mutex live_sessions_mutex;
-    std::unordered_set<int64_t> live_sessions;
-
-    mutable std::mutex session_to_response_callback_mutex;
-    /// These two maps looks similar, but serves different purposes.
-    /// The first map is subscription map for normal responses like
-    /// (get, set, list, etc.). Dispatcher determines callback for each response
-    /// using session id from this map.
-    SessionToResponseCallback session_to_response_callback;
-
-    /// But when client connects to the server for the first time it doesn't
-    /// have session_id. It request it from server. We give temporary
-    /// internal id for such requests just to much client with its response.
-    SessionToResponseCallback new_session_id_response_callback;
+    KeeperSessionRegistry session_registry_;
 
     /// Reading and batching new requests from client handlers
     ThreadFromGlobalPool request_thread;
@@ -78,9 +60,6 @@ private:
     KeeperConfigurationAndSettingsPtr configuration_and_settings;
 
     LoggerPtr log;
-
-    /// Counter for new session_id requests.
-    std::atomic<int64_t> internal_session_id_counter{0};
 
     KeeperSnapshotManagerS3 snapshot_s3;
 

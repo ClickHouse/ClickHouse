@@ -25,6 +25,7 @@ bool isLocalDisk(const IDisk & disk);
 
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
+class KeeperSessionRegistry;
 
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
