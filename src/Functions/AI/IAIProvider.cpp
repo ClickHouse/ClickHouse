@@ -9,7 +9,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 /// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
@@ -29,12 +28,6 @@ String IAIProvider::sanitizeTextForAI(const String & input)
     return output;
 }
 
-
-AIEmbeddingResponse IAIProvider::embed(const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Provider '{}' does not support embeddings", providerName());
-}
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key)
 {

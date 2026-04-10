@@ -4,7 +4,6 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/JSON/Object.h>
 #include <memory>
-#include <vector>
 
 namespace DB
 {
@@ -27,19 +26,6 @@ struct AIResponse
     String finish_reason;
 };
 
-struct AIEmbeddingRequest
-{
-    std::vector<String> inputs;
-    String model;
-    UInt64 dimensions = 0;
-};
-
-struct AIEmbeddingResponse
-{
-    std::vector<std::vector<Float32>> embeddings;
-    UInt64 input_tokens = 0;
-};
-
 class IAIProvider
 {
 public:
@@ -48,7 +34,7 @@ public:
     virtual String providerName() const = 0;
 
     virtual AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) = 0;
-    virtual AIEmbeddingResponse embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts);
+
 protected:
     String sanitizeTextForAI(const String & input);
 };
