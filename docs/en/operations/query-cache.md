@@ -4,6 +4,7 @@ sidebar_label: 'Query cache'
 sidebar_position: 65
 slug: /operations/query-cache
 title: 'Query cache'
+doc_type: 'guide'
 ---
 
 # Query cache
@@ -77,7 +78,7 @@ For maximum control, it is generally recommended to provide settings `use_query_
 `enable_reads_from_query_cache` only with specific queries. It is also possible to enable caching at user or profile level (e.g. via `SET
 use_query_cache = true`) but one should keep in mind that all `SELECT` queries may return cached results then.
 
-The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The content of the query cache is displayed in system table
+The query cache can be cleared using statement `SYSTEM CLEAR QUERY CACHE`. The content of the query cache is displayed in system table
 [system.query_cache](system-tables/query_cache.md). The number of query cache hits and misses since database start are shown as events
 "QueryCacheHits" and "QueryCacheMisses" in system table [system.events](system-tables/events.md). Both counters are only updated for
 `SELECT` queries which run with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". Field `query_cache_usage`
@@ -90,7 +91,8 @@ changed (see below) but doing so is not recommended for security reasons.
 
 Query results are referenced in the query cache by the [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of
 their query. This means that caching is agnostic to upper/lowercase, for example `SELECT 1` and `select 1` are treated as the same query. To
-make the matching more natural, all query-level settings related to the query cache are removed from the AST.
+make the matching more natural, all query-level settings related to the query cache and [output formatting](settings/settings-formats.md))
+are removed from the AST.
 
 If the query was aborted due to an exception or user cancellation, no entry is written into the query cache.
 
@@ -151,6 +153,9 @@ cache evicts entries "lazily", i.e. when an entry becomes stale, it is not immed
 is to be inserted into the query cache, the database checks whether the cache has enough free space for the new entry. If this is not the
 case, the database tries to remove all stale entries. If the cache still has not enough free space, the new entry is not inserted.
 
+If the query is run via HTTP, then ClickHouse sets the `Age` and `Expires` headers with the age (in seconds) and expiration timestamp of the
+cached entry.
+
 Entries in the query cache are compressed by default. This reduces the overall memory consumption at the cost of slower writes into / reads
 from the query cache. To disable compression, use setting [query_cache_compress_entries](/operations/settings/settings#query_cache_compress_entries).
 
@@ -166,7 +171,7 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 1';
 SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 ```
 
-To remove only entries with tag `tag` from the query cache, you can use statement `SYSTEM DROP QUERY CACHE TAG 'tag'`.
+To remove only entries with tag `tag` from the query cache, you can use statement `SYSTEM CLEAR QUERY CACHE TAG 'tag'`.
 
 ClickHouse reads table data in blocks of [max_block_size](/operations/settings/settings#max_block_size) rows. Due to filtering, aggregation,
 etc., result blocks are typically much smaller than 'max_block_size' but there are also cases where they are much bigger. Setting
@@ -180,7 +185,7 @@ result blocks. While this behavior is a good default, it can be suppressed using
 [query_cache_squash_partial_results](/operations/settings/settings#query_cache_squash_partial_results).
 
 Also, results of queries with non-deterministic functions are not cached by default. Such functions include
-- functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) etc.
+- functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions) etc.
 - [user-defined functions](../sql-reference/statements/create/function.md) without tag `<deterministic>true</deterministic>` in their XML
   definition,
 - functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#now),
@@ -194,7 +199,7 @@ Also, results of queries with non-deterministic functions are not cached by defa
   [`runningDifference()`](../sql-reference/functions/other-functions.md#runningDifference),
   [`blockSize()`](../sql-reference/functions/other-functions.md#blockSize) etc.,
 - functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
-  [`queryID()`](/sql-reference/functions/other-functions#queryid),
+  [`queryID()`](/sql-reference/functions/other-functions#queryID),
   [`getMacro()`](../sql-reference/functions/other-functions.md#getMacro) etc.
 
 To force caching of results of queries with non-deterministic functions regardless, use setting

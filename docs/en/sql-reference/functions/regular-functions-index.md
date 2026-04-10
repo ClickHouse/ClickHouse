@@ -2,6 +2,7 @@
 description: 'Landing page for Regular Functions'
 slug: /sql-reference/functions/regular-functions
 title: 'Regular functions'
+doc_type: 'landing-page'
 ---
 
 | Page                                             | Description                                                                                                                     |
@@ -14,7 +15,6 @@ title: 'Regular functions'
 | [Hash](/sql-reference/functions/hash-functions)  | Hashing functions.                                                                                                              |
 | [UUIDs](/sql-reference/functions/uuid-functions) | Functions for Working with UUIDs.                                                                                               |
 | [Time-Series](/sql-reference/functions/time-series-functions) | Functions for working with time series                                                                             |
-| [Time-Series Analysis](/sql-reference/functions/time-series-analysis-functions) | Functions for time series analysis.                                                              |
 | [Random Numbers](/sql-reference/functions/random-functions) | Functions for random number generation.                                                                                         |
 | [NLP](/sql-reference/functions/nlp-functions)    | Functions for Natural Language Processing.                                                                                      |
 | [Conditional](/sql-reference/functions/conditional-functions) | Conditional functions.                                                                                                          |

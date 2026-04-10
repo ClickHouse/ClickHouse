@@ -264,7 +264,7 @@ struct BloomFilterHash
             for (size_t index = 0, size = vec.size(); index < size; ++index)
             {
                 ColumnString::Offset current_offset = offsets[index + pos - 1];
-                size_t length = offsets[index + pos] - current_offset - 1 /* terminating zero */;
+                size_t length = offsets[index + pos] - current_offset;
                 UInt64 city_hash = CityHash_v1_0_2::CityHash64(
                     reinterpret_cast<const char *>(&data[current_offset]), length);
 

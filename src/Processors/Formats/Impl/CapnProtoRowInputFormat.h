@@ -40,6 +40,7 @@ private:
     std::shared_ptr<CapnProtoSchemaParser> parser;
     capnp::StructSchema schema;
     std::unique_ptr<CapnProtoSerializer> serializer;
+    UInt64 max_message_size;
 };
 
 class CapnProtoSchemaReader : public IExternalSchemaReader

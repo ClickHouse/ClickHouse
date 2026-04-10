@@ -6,9 +6,9 @@
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <mutex>
 #include <queue>
-#include <stack>
 #include <vector>
 
+#include <boost/container/devector.hpp>
 
 namespace DB
 {
@@ -120,7 +120,7 @@ public:
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
     using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     using NodePtr = std::unique_ptr<Node>;
@@ -162,7 +162,7 @@ private:
 
     /// Update graph after processor (pid) returned ExpandPipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
-    UpdateNodeStatus expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
+    UpdateNodeStatus expandPipeline(boost::container::devector<uint64_t> & stack, uint64_t pid);
 
     std::shared_ptr<Processors> processors;
     std::vector<bool> source_processors;

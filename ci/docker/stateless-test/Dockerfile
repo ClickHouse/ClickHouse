@@ -1,5 +1,8 @@
 # docker build -t clickhouse/stateless-test .
 ARG FROM_TAG=latest
+ARG REDPANDA_VERSION=v25.1.3
+FROM docker.redpanda.com/redpandadata/redpanda:${REDPANDA_VERSION} AS redpanda
+
 FROM clickhouse/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
@@ -22,7 +25,6 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # Install additional packages not included in test-base
 RUN apt-get update -y \
     && apt-get install --yes --no-install-recommends \
-        awscli \
         brotli \
         lz4 \
         expect \
@@ -32,12 +34,10 @@ RUN apt-get update -y \
         mysql-client=8.0* \
         ncdu \
         netcat-openbsd \
+        openssh-client \
         odbcinst \
-        openjdk-11-jre-headless \
         openssl \
         postgresql-client \
-        python3 \
-        python3-pip \
         qemu-user-static \
         sqlite3 \
         tree \
@@ -56,11 +56,10 @@ RUN apt-get update -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-# Install Node.js 20 from NodeSource (azurite 3.34 fails with 24)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+    && unzip -q awscliv2.zip \
+    && ./aws/install \
+    && rm awscliv2.zip
 
 ARG PROTOC_VERSION=25.1
 RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip \
@@ -68,7 +67,7 @@ RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PR
     && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
 COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cd /tmp/clickhouse-odbc-tmp \
@@ -101,8 +100,17 @@ ENV MINIO_ROOT_PASSWORD="clickhouse"
 RUN chmod 777 /home
 ENV HOME="/home"
 
-RUN npm install -g azurite@3.34.0 \
-    && npm install -g tslib
+# Download azurite-rs (Azure Blob Storage emulator in Rust)
+# https://github.com/ClickHouse/azurite-rs
+ARG AZURITE_RS_VERSION=v0.1.0-3a51c3f
+RUN arch=${TARGETARCH:-amd64} \
+    && curl -fsSL "https://github.com/ClickHouse/azurite-rs/releases/download/${AZURITE_RS_VERSION}/azurite-rs-linux-${arch}.tar.gz" | tar -xz -C /usr/local/bin/ \
+    && mv /usr/local/bin/azurite-rs-linux-${arch} /usr/local/bin/azurite-rs \
+    && chmod +x /usr/local/bin/azurite-rs
+
+# Install Redpanda (Kafka-compatible broker, no JVM required)
+COPY --from=redpanda /opt/redpanda /opt/redpanda
+ENV PATH="/opt/redpanda/bin:${PATH}"
 
 ENV PYTHONPATH=".:./ci"
 

@@ -4,6 +4,7 @@
 #include <Coordination/KeeperContext.h>
 
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/Defines.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
@@ -16,6 +17,8 @@
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
+#include <base/getMemoryAmount.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -39,6 +42,11 @@ extern const int ROCKSDB_ERROR;
 
 }
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 write_snapshot_version;
+}
+
 KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr coordination_settings_)
     : disk_selector(std::make_shared<DiskSelector>())
     , standalone_keeper(standalone_keeper_)
@@ -53,6 +61,10 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::CREATE_IF_NOT_EXISTS,
         KeeperFeatureFlag::REMOVE_RECURSIVE,
         KeeperFeatureFlag::MULTI_WATCHES,
+        KeeperFeatureFlag::CHECK_STAT,
+        KeeperFeatureFlag::PERSISTENT_WATCHES,
+        KeeperFeatureFlag::TRY_REMOVE,
+        KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
     };
 
     for (const auto feature_flag : enabled_by_default_feature_flags)
@@ -201,7 +213,7 @@ bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::
     {
         "s3"sv,
         "s3_plain"sv,
-        "local"sv
+        "local"sv,
     };
 
     if (std::all_of(
@@ -371,6 +383,15 @@ const std::unordered_map<std::string, std::string> & KeeperContext::getSystemNod
 const KeeperFeatureFlags & KeeperContext::getFeatureFlags() const
 {
     return feature_flags;
+}
+
+SnapshotVersion KeeperContext::getWriteSnapshotVersion() const
+{
+    const uint64_t version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
+    if (version < SnapshotVersion::V6 || version > MAX_SUPPORTED_SNAPSHOT_VERSION)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported write snapshot version {} (must be between {} and {})",
+            version, SnapshotVersion::V6, MAX_SUPPORTED_SNAPSHOT_VERSION);
+    return static_cast<SnapshotVersion>(version);
 }
 
 void KeeperContext::dumpConfiguration(WriteBufferFromOwnString & buf) const
@@ -556,6 +577,26 @@ void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfig
         memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
 }
 
+void KeeperContext::initializeKeeperMemorySoftLimit(Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+{
+    UInt64 memory_soft_limit = 0;
+    if (config.has("keeper_server.max_memory_usage_soft_limit"))
+        memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+
+    if (memory_soft_limit == 0)
+    {
+        Float64 ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio", 0.9);
+        size_t physical_server_memory = getMemoryAmount();
+        if (ratio > 0 && physical_server_memory > 0)
+        {
+            memory_soft_limit = static_cast<UInt64>(static_cast<Float64>(physical_server_memory) * ratio);
+            config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
+        }
+    }
+
+    LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
+}
+
 bool KeeperContext::setShutdownCalled()
 {
     std::unique_lock local_logs_preprocessed_lock(local_logs_preprocessed_cv_mutex);
@@ -626,6 +667,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
     {
         case Coordination::OpNum::FilteredList:
             return feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST);
+        case Coordination::OpNum::FilteredListWithStatsAndData:
+            return feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA);
         case Coordination::OpNum::MultiRead:
             return feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ);
         case Coordination::OpNum::CreateIfNotExists:
@@ -634,6 +677,18 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS);
         case Coordination::OpNum::RemoveRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
+        case Coordination::OpNum::CheckStat:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
+        case Coordination::OpNum::Create2:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
+        case Coordination::OpNum::TryRemove:
+            return feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE);
+        case Coordination::OpNum::SetWatch:
+        case Coordination::OpNum::SetWatch2:
+        case Coordination::OpNum::AddWatch:
+        case Coordination::OpNum::CheckWatch:
+        case Coordination::OpNum::RemoveWatch:
+            return feature_flags.isEnabled(KeeperFeatureFlag::PERSISTENT_WATCHES);
         case Coordination::OpNum::Close:
         case Coordination::OpNum::Error:
         case Coordination::OpNum::Create:

@@ -14,7 +14,7 @@ namespace
 class ExecutableFunctionToday : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionToday(time_t time_) : day_value(time_) {}
+    explicit ExecutableFunctionToday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
 
     String getName() const override { return "today"; }
 
@@ -67,6 +67,8 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    bool allowsOmittingParentheses() const override { return true; }
+
     size_t getNumberOfArguments() const override { return 0; }
 
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<TodayOverloadResolver>(); }
@@ -75,7 +77,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_unique<FunctionBaseToday>(DayNum(DateLUT::instance().toDayNum(time(nullptr)).toUnderType()));
+        return std::make_unique<FunctionBaseToday>(DayNum(static_cast<UInt16>(DateLUT::instance().toDayNum(time(nullptr)))));
     }
 };
 
@@ -98,13 +100,23 @@ R"(
 │ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
 └────────────┴────────────┴──────────────┘
 )"
-        }
+        },
+        {"SQL standard syntax without parentheses", R"(
+SELECT TODAY, CURDATE,CURRENT_DATE
+        )",
+        R"(
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ 2025-03-04 │ 2025-03-04 │   2025-03-04 │
+└────────────┴────────────┴──────────────┘
+        )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
-    factory.registerFunction<TodayOverloadResolver>(documentation);
+    factory.registerFunction<TodayOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }

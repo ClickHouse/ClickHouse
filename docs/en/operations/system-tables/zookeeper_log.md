@@ -4,6 +4,7 @@ description: 'System table containing information about the parameters of the re
 keywords: ['system table', 'zookeeper_log']
 slug: /operations/system-tables/zookeeper_log
 title: 'system.zookeeper_log'
+doc_type: 'reference'
 ---
 
 # system.zookeeper_log

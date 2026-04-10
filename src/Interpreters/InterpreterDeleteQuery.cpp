@@ -31,7 +31,7 @@ namespace Setting
     extern const SettingsUInt64 lightweight_deletes_sync;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsLightweightDeleteMode lightweight_delete_mode;
-    extern const SettingsBool allow_experimental_lightweight_update;
+    extern const SettingsBool enable_lightweight_update;
 }
 
 namespace MergeTreeSetting
@@ -74,15 +74,16 @@ BlockIO InterpreterDeleteQuery::execute()
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
-    if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+    if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
+        && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
-        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
@@ -129,8 +130,8 @@ BlockIO InterpreterDeleteQuery::execute()
 
         auto supports_lightweight_update = [&] -> std::expected<void, PreformattedMessage>
         {
-            if (!settings[Setting::allow_experimental_lightweight_update])
-                return std::unexpected(PreformattedMessage::create("Lightweight updates are not allowed. Set 'allow_experimental_lightweight_update = 1' to allow them"));
+            if (!settings[Setting::enable_lightweight_update])
+                return std::unexpected(PreformattedMessage::create("Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them"));
 
             return table->supportsLightweightUpdate();
         }();

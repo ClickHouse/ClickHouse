@@ -20,7 +20,7 @@ fi
 
 $CLICKHOUSE_CLIENT --query "
     SET insert_keeper_fault_injection_probability = 0.0;
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
 
     DROP TABLE IF EXISTS t_lwu_on_fly SYNC;
 
@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     UPDATE t_lwu_on_fly SET s = 'foo' WHERE id >= 500
 " &
 

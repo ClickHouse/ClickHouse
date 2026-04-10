@@ -1,6 +1,6 @@
 import sys
 
-from ci.jobs.scripts.workflow_hooks.pr_description import Labels
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 
 

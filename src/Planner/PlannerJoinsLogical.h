@@ -6,7 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -27,5 +27,9 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     const NameSet & outer_scope_columns,
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context);
+
+/// Get label to annotate table in query plan,
+/// it allows to display join order in compact form in EXPLAIN PLAN output.
+String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_internal_aliases);
 
 }

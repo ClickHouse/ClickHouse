@@ -209,7 +209,7 @@ struct LogEntryStorage
 
     void refreshCache();
 
-    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end) const;
+    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end, int64_t max_size_bytes = 0) const;
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
@@ -272,6 +272,14 @@ private:
 
     mutable SharedMutex commit_logs_cache_mutex;
     mutable InMemoryCache commit_logs_cache TSA_GUARDED_BY(commit_logs_cache_mutex);
+
+    /// Cache optimization: stores max(lastCommittedIndex from getEntry, cleanUpTo parameter).
+    /// Invariant: cache is cleaned to at least this index. Used by getEntry to skip
+    /// the exclusive lock on commit_logs_cache_mutex when the committed index has not advanced.
+    /// Both getEntry and cleanUpTo write to this; writes are conditional (only advance, never regress)
+    /// so that an external cleanUpTo with a lower compaction index does not invalidate the optimization.
+    /// Reset to 0 in clear().
+    mutable std::atomic<uint64_t> last_cleaned_committed_index{0};
 
     LogEntryPtr latest_config;
     uint64_t latest_config_index = 0;
@@ -361,8 +369,8 @@ public:
     /// Get entry with latest config in logstore
     LogEntryPtr getLatestConfigChange() const;
 
-    /// Return log entries between [start, end)
-    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index);
+    /// Return log entries between [start, end) with optional byte size limit
+    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index, int64_t max_size_bytes = 0);
 
     /// Return entry at position index
     LogEntryPtr entryAt(uint64_t index) const;
@@ -420,8 +428,10 @@ private:
 
     void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
 
-    /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
+    /// Remove all changelogs from disk with start_index bigger than remove_after_log_start_index
     void removeAllLogsAfter(uint64_t remove_after_log_start_index);
+    /// Remove all changelogs from disk with start index smaller than remove_before_log_start_index
+    void removeAllLogFilesBefore(uint64_t remove_before_log_start_index);
     /// Remove all logs from disk
     void removeAllLogs();
     /// Init writer for existing log with some entries already written

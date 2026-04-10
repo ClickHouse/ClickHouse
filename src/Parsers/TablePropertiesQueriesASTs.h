@@ -26,8 +26,7 @@ struct ASTExistsViewQueryIDAndQueryNames
 {
     static constexpr auto ID = "ExistsViewQuery";
     static constexpr auto Query = "EXISTS VIEW";
-    /// No temporary view are supported, just for parsing
-    static constexpr auto QueryTemporary = "";
+    static constexpr auto QueryTemporary = "EXISTS TEMPORARY VIEW";
 };
 
 
@@ -50,8 +49,7 @@ struct ASTShowCreateViewQueryIDAndQueryNames
 {
     static constexpr auto ID = "ShowCreateViewQuery";
     static constexpr auto Query = "SHOW CREATE VIEW";
-    /// No temporary view are supported, just for parsing
-    static constexpr auto QueryTemporary = "";
+    static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY VIEW";
 };
 
 struct ASTShowCreateDatabaseQueryIDAndQueryNames
@@ -88,7 +86,7 @@ class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDa
 public:
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTExistsDatabaseQuery>(*this);
+        auto res = make_intrusive<ASTExistsDatabaseQuery>(*this);
         res->children.clear();
         cloneTableOptions(*res);
         return res;
@@ -110,7 +108,7 @@ class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShow
 public:
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTShowCreateDatabaseQuery>(*this);
+        auto res = make_intrusive<ASTShowCreateDatabaseQuery>(*this);
         res->children.clear();
         cloneTableOptions(*res);
         return res;
@@ -134,7 +132,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTDescribeQuery>(*this);
+        auto res = make_intrusive<ASTDescribeQuery>(*this);
         res->children.clear();
         if (table_expression)
         {

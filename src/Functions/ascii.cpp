@@ -28,7 +28,7 @@ struct AsciiImpl
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = doAscii(data, prev_offset, offsets[i] - prev_offset - 1);
+            res[i] = doAscii(data, prev_offset, offsets[i] - prev_offset);
             prev_offset = offsets[i];
         }
     }
@@ -96,7 +96,7 @@ Returns the ASCII code point of the first character of string `s` as an `Int32`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAscii>(documentation, FunctionFactory::Case::Insensitive);
 }

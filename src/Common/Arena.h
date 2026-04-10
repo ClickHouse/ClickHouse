@@ -247,11 +247,10 @@ public:
     char * allocContinue(size_t additional_bytes, char const *& range_start,
                          size_t start_alignment = 0)
     {
-        /*
-         * Allocating zero bytes doesn't make much sense. Also, a zero-sized
-         * range might break the invariant that the range begins at least before
-         * the current MemoryChunk end.
-         */
+        /** Allocating zero bytes doesn't make much sense. Also, a zero-sized
+          * range might break the invariant that the range begins at least before
+          * the current MemoryChunk end.
+          */
         assert(additional_bytes > 0);
 
         if (!range_start)

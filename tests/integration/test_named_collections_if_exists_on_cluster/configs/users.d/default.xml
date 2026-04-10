@@ -1,4 +1,9 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <format_display_secrets_in_show_and_select>1</format_display_secrets_in_show_and_select>
+        </default>
+    </profiles>
     <users>
         <default>
             <password></password>

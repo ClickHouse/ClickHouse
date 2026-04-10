@@ -6,14 +6,38 @@
 #include <Backups/BackupIO_Default.h>
 #include <Common/Logger.h>
 #include <Disks/DiskType.h>
+#include <Disks/IDisk.h>
 #include <IO/S3Common.h>
 #include <IO/S3Settings.h>
 #include <Interpreters/Context_fwd.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
+
+#include <functional>
+
 
 namespace DB
 {
+
+class S3BackupDiskClientFactory
+{
+public:
+    struct Entry
+    {
+        std::shared_ptr<S3::Client> backup_client;
+        std::weak_ptr<const S3::Client> disk_reported_client;
+    };
+    using CreateFn = std::function<Entry(DiskPtr)>;
+    explicit S3BackupDiskClientFactory(const CreateFn & create_fn_);
+    std::shared_ptr<S3::Client> getOrCreate(DiskPtr disk);
+
+private:
+    const CreateFn create_fn;
+
+    mutable std::mutex clients_mutex;
+    /// Disk name to client entry;
+    std::unordered_map<std::string, Entry> clients TSA_GUARDED_BY(clients_mutex);
+};
 
 /// Represents a backup stored to AWS S3.
 class BackupReaderS3 : public BackupReaderDefault
@@ -71,8 +95,9 @@ public:
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
 
     void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) override;
-    void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                          bool copy_encrypted, UInt64 start_pos, UInt64 length) override;
+    void copyFileFromDisk(
+        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
+        override;
 
     void copyFile(const String & destination, const String & source, size_t size) override;
 
@@ -87,6 +112,7 @@ private:
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
     S3Capabilities s3_capabilities;
+    S3BackupDiskClientFactory disk_client_factory;
     BlobStorageLogWriterPtr blob_storage_log;
 };
 

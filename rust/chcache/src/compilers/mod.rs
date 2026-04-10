@@ -1,2 +1,2 @@
-pub mod rustc;
 pub mod clang;
+pub mod rustc;

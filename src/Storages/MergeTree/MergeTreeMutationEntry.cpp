@@ -134,7 +134,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 
     *buf >> "commands: ";
-    commands->readText(*buf);
+    commands->readText(*buf, false);
     *buf >> "\n";
 
     if (buf->eof())

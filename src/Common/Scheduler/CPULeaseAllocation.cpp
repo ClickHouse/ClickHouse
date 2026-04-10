@@ -52,6 +52,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_SCHEDULER_NODE;
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
@@ -208,9 +209,27 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
 
 CPULeaseAllocation::~CPULeaseAllocation()
 {
+    free();
+}
+
+void CPULeaseAllocation::free()
+{
     std::unique_lock lock{mutex};
+
+    if (shutdown)
+        return;
+
     shutdown = true;
     acquirable.store(false, std::memory_order_relaxed);
+
+    // Wake up all preempted threads
+    while (true)
+    {
+        if (size_t thread_num = threads.preempted.find_first(); thread_num != boost::dynamic_bitset<>::npos)
+            resetPreempted(thread_num);
+        else
+            break; // No preempted threads, we are done
+    }
 
     // Properly cancel pending resource request (if any)
     requests.cancel(lock);
@@ -281,9 +300,10 @@ size_t CPULeaseAllocation::upscale()
     return max_threads;
 }
 
-void CPULeaseAllocation::downscale(size_t thread_num)
+void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
 {
-    ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
+    if (!shutdown_)
+        ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
 
     chassert(threads.leased[thread_num]);
     threads.leased.reset(thread_num);
@@ -433,12 +453,20 @@ bool CPULeaseAllocation::renew(Lease & lease)
     }
 
     std::unique_lock lock{mutex};
+
     if (exception)
         throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "CPU Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
 
     consume(lock, delta_ns);
 
     report_span.reset();
+
+    if (shutdown) // Allocation is being destroyed, worker thread should stop
+    {
+        downscale(lease.slot_id, /* shutdown = */ true);
+        lease.reset();
+        return false;
+    }
 
     // Check if we need to decrease number of running threads (i.e. `acquired`).
     // We want number of `acquired` slots to be less than number of `allocated` slots.
@@ -477,13 +505,18 @@ bool CPULeaseAllocation::renew(Lease & lease)
             CurrentMetrics::Increment preempted_increment(CurrentMetrics::ConcurrencyControlPreempted);
             acquired_increment.sub(1);
 
-            if (!waitForGrant(lock, thread_num))
+            bool wait_succeeded = waitForGrant(lock, thread_num);
+            if (!wait_succeeded || shutdown)
             {
-                // Timeout - worker thread should stop, but query continues
-                downscale(thread_num);
+                // Timeout or exception or shutdown - worker thread should stop
+                // Only count as downscale if actually timed out, not just shutdown
+                downscale(thread_num, /* shutdown = */ wait_succeeded);
                 lease.reset();
                 return false;
             }
+
+            if (settings.on_resume)
+                settings.on_resume(thread_num);
 
             if (exception) // Stop the query
                 throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "CPU Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
@@ -503,8 +536,25 @@ bool CPULeaseAllocation::waitForGrant(std::unique_lock<std::mutex> & lock, size_
 
     auto predicate = [this, thread_num]
     {
-        return !threads.preempted[thread_num] || exception;
+        return !threads.preempted[thread_num] || exception || shutdown;
     };
+
+    // It is important to call on_preempt w/o lock to avoid deadlock due to recursive locking:
+    // renew() -> ExecutorTasks::preempt() -> ExecutorTasks::finish() -> free()
+    if (settings.on_preempt)
+    {
+        lock.unlock();
+        try
+        {
+            settings.on_preempt(thread_num);
+        }
+        catch (...)
+        {
+            lock.lock();
+            throw;
+        }
+        lock.lock();
+    }
 
     if (timeout == std::chrono::milliseconds::max())
     {
@@ -563,7 +613,18 @@ void CPULeaseAllocation::release(Lease & lease)
 
     // Report the last chunk of consumed resource
     std::unique_lock lock{mutex};
-    consume(lock, delta_ns);
+    try
+    {
+        consume(lock, delta_ns);
+    }
+    catch (const Exception & e)
+    {
+        // `consume` may call `schedule` which may call `enqueueRequest` on a scheduler queue
+        // that is being destructed (e.g. when a workload is dropped while queries are still running).
+        // Since `release` is called from Lease destructor, we must not throw.
+        if (e.code() != ErrorCodes::INVALID_SCHEDULER_NODE)
+            throw;
+    }
 
     // Release the slot
     downscale(lease.slot_id);

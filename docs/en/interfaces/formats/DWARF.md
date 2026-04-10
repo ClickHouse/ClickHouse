@@ -6,6 +6,7 @@ keywords: ['DWARF']
 output_format: false
 slug: /interfaces/formats/DWARF
 title: 'DWARF'
+doc_type: 'reference'
 ---
 
 | Input | Output  | Alias |

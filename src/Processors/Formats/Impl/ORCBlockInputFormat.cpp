@@ -114,7 +114,7 @@ static void getFileReaderAndSchema(
     if (is_stopped)
         return;
 
-    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, ArrowMemoryPool::instance());
+    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, arrow::default_memory_pool());
     if (!result.ok())
         throw Exception::createDeprecated(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     file_reader = std::move(result).ValueOrDie();
@@ -167,13 +167,13 @@ void ORCSchemaReader::initializeIfNeeded()
     if (file_reader)
         return;
 
+    std::atomic<int> is_stopped = 0;
+    getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
+
     if (auto status = file_reader->ReadMetadata(); status.ok())
         metadata = status.ValueUnsafe();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading incorrect metadata of ORC {}", status.status().message());
-
-    std::atomic<int> is_stopped = 0;
-    getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
 }
 
 NamesAndTypesList ORCSchemaReader::readSchema()

@@ -1,5 +1,3 @@
-SET allow_experimental_full_text_index = 1;
-
 -- Issue 84805: the no-op and ngram tokenizers crash for empty inputs
 
 SELECT 'Test no_op tokenizer';
@@ -8,7 +6,7 @@ DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'no_op') )
+    INDEX idx str TYPE text(tokenizer = 'array') )
 ENGINE = MergeTree()
 ORDER BY tuple();
 
@@ -20,7 +18,7 @@ SELECT 'Test ngram tokenizer';
 
 CREATE TABLE tab (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'ngram') )
+    INDEX idx str TYPE text(tokenizer = 'ngrams') )
 ENGINE = MergeTree()
 ORDER BY tuple();
 

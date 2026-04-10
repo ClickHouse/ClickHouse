@@ -52,7 +52,7 @@ Returns a random distributed `Float64` number with uniform distribution between 
     )";
     FunctionDocumentation::Syntax syntax = "randCanonical([x])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a random Float64 number.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -60,7 +60,7 @@ Returns a random distributed `Float64` number with uniform distribution between 
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCanonicalRand>(documentation);
 }

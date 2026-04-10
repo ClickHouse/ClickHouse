@@ -68,6 +68,20 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool hasInformationAboutMonotonicity() const override
+    {
+        if constexpr (requires { Impl::has_information_about_monotonicity; })
+            return Impl::has_information_about_monotonicity;
+        return false;
+    }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    {
+        if constexpr (requires(const IDataType & t, const Field & f) { Impl::getMonotonicityForRange(t, f, f); })
+            return Impl::getMonotonicityForRange(type, left, right);
+        return {};
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
@@ -86,7 +100,8 @@ public:
             if (Impl::is_fixed_to_constant)
             {
                 ResultType res = 0;
-                Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
+                if (input_rows_count)
+                    Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
 
                 return result_type->createColumnConst(col_fixed->size(), toField(res));
             }

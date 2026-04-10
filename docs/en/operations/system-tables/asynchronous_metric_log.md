@@ -4,6 +4,7 @@ description: 'System table containing historical values for `system.asynchronous
 keywords: ['system table', 'asynchronous_metric_log']
 slug: /operations/system-tables/asynchronous_metric_log
 title: 'system.asynchronous_metric_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

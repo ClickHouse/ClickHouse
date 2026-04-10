@@ -88,6 +88,13 @@ public:
     StoragePtr
     execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
 
+    /// Returns actual table structure after enforcing source access checks.
+    /// Use this instead of getActualTableStructure() from outside execute().
+    ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
+
+    /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
+    void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
+
     virtual ~ITableFunction() = default;
 
 protected:
@@ -106,13 +113,22 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
+
+protected:
+    /// The URI of function for permission checking. Can be empty string if not applicable.
+    /// For example for url('https://foo.bar') URI would be 'https://foo.bar'.
+    virtual const String & getFunctionURI() const
+    {
+        static const String empty;
+        return empty;
+    }
+
+    String getFunctionURINormalized() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.
 struct TableFunctionProperties
 {
-    FunctionDocumentation documentation;
-
     /** It is determined by the possibility of modifying any data or making requests to arbitrary hostnames.
       *
       * If users can make a request to an arbitrary hostname, they can get the info from the internal network

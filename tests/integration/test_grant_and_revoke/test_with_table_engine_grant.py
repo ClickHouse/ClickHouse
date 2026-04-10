@@ -386,6 +386,26 @@ def test_implicit_create_temporary_table_grant():
         "CREATE TEMPORARY TABLE tmp(name String)", user="A"
     )
 
+def test_implicit_create_temporary_view_grant():
+    instance.query("CREATE USER A")
+    expected_error = "Not enough privileges"
+
+    # No privs -> should fail
+    assert expected_error in instance.query_and_get_error(
+        "CREATE TEMPORARY VIEW tmp(name String) AS SELECT 'x'", user="A"
+    )
+
+    # Grant the correct privilege for temp views
+    instance.query("GRANT CREATE VIEW ON *.* TO A")
+
+    # Now it should succeed
+    instance.query("CREATE TEMPORARY VIEW tmp(name String) AS SELECT 'x'", user="A")
+
+    # Revoke and ensure it fails again
+    instance.query("REVOKE CREATE VIEW ON *.* FROM A")
+    assert expected_error in instance.query_and_get_error(
+        "CREATE TEMPORARY VIEW tmp2(name String) AS SELECT 'y'", user="A"
+    )
 
 def test_introspection():
     instance.query("CREATE USER A")

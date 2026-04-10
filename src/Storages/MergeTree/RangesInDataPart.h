@@ -1,15 +1,13 @@
 #pragma once
 
-#include <unordered_map>
-#include <vector>
-
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/VectorSearchUtils.h>
 
+#include <deque>
 
 namespace DB
 {
@@ -26,9 +24,14 @@ struct RangesInDataPartDescription
     size_t rows = 0;
     String projection_name;
 
-    void serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const;
+    /// Initiator-provided hint for task sizing on replicas. Technically, all replicas send this value with the
+    /// initial announcement request, but we always use the value from the replica local to the coordinator.
+    /// The initiator computes this per part after PK analysis and propagates back to replicas in read request responses.
+    size_t min_marks_per_task = 0;
+
+    void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
-    void deserialize(ReadBuffer & in, UInt64 parallel_protocol_version);
+    void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
     String getPartOrProjectionName() const;
 };
 
@@ -36,13 +39,48 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
 {
     using std::deque<RangesInDataPartDescription>::deque;
 
-    void serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const;
+    void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
-    void deserialize(ReadBuffer & in, UInt64 parallel_protocol_version);
+    void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
 
     void merge(const RangesInDataPartsDescription & other);
 };
 
+struct PartOffsetRange
+{
+    size_t begin;
+    size_t end;
+};
+
+struct PartOffsetRanges : public std::vector<PartOffsetRange>
+{
+    /// Tracks the total number of rows to determine if using the projection index is worthwhile.
+    size_t total_rows = 0;
+
+    /// Used to determine whether offsets can fit in 32-bit or require 64-bit.
+    size_t max_part_offset = 0;
+
+    /// Returns true if the ranges collectively cover the full range [0, total_rows)
+    bool isContiguousFullRange() const { return total_rows == max_part_offset + 1; }
+
+    /// Checks if the given offset falls within any of the stored ranges.
+    /// Each range is treated as a half-open interval: [begin, end)
+    bool contains(UInt64 offset) const
+    {
+        if (empty())
+            return false;
+
+        /// Binary search for the first range whose 'begin' is greater than offset.
+        auto it = std::upper_bound(begin(), end(), offset, [](UInt64 value, const auto & range) { return value < range.begin; });
+
+        if (it == begin())
+            return false;
+
+        /// The range before 'it' might contain the offset.
+        --it;
+        return offset < it->end;
+    }
+};
 
 /// A vehicle which transports additional information to optimize searches
 struct RangesInDataPartReadHints
@@ -60,6 +98,15 @@ struct RangesInDataPart
     MarkRanges ranges;
     MarkRanges exact_ranges;
     RangesInDataPartReadHints read_hints;
+
+    /// The above "ranges" member is the selected ranges after index analysis.
+    /// Index analysis has 2 steps : 1) Filter by primary key   2) Filter by skip indexes
+    /// Below member saves a snapshot of the selected ranges after primary key analysis (optional),
+    /// currently done only for use_skip_indexes_if_final_exact_mode=1
+    std::optional<MarkRanges> ranges_snapshot_after_pk_analysis;
+
+    /// Offset ranges from parent part, used during projection index reading.
+    PartOffsetRanges parent_ranges;
 
     RangesInDataPart(
         const DataPartPtr & data_part_,
@@ -94,5 +141,6 @@ struct RangesInDataParts : public std::vector<RangesInDataPart>
     size_t getMarksCountAllParts() const;
     size_t getRowsCountAllParts() const;
 };
+using RangesInDataPartsPtr = std::shared_ptr<const RangesInDataParts>;
 
 }

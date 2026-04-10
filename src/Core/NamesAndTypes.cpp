@@ -70,6 +70,23 @@ String NameAndTypePair::dump() const
     return out.str();
 }
 
+void NameAndTypePair::setDelimiterAndTypeInStorage(const String & name_in_storage_, DataTypePtr type_in_storage_)
+{
+    chassert(name.starts_with(name_in_storage_));
+    if (name_in_storage_.size() == name.size())
+    {
+        /// Not a subcolumn anymore.
+        chassert(type->equals(*type_in_storage_));
+        subcolumn_delimiter_position.reset();
+    }
+    else
+    {
+        chassert(name.at(name_in_storage_.size()) == '.');
+        subcolumn_delimiter_position = name_in_storage_.size();
+    }
+    type_in_storage = type_in_storage_;
+}
+
 void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
@@ -233,7 +250,7 @@ NamesAndTypesList NamesAndTypesList::eraseNames(const NameSet & names) const
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-    HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash> types;
+    HashMapWithSavedHash<std::string_view, const DataTypePtr *, StringViewHash> types;
 
     for (const auto & column : *this)
         types[column.name] = &column.type;

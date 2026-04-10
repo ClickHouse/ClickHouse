@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/Progress.h>
-#include <IO/PeekableWriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
@@ -29,11 +28,14 @@ public:
         statistics.applied_limit = true;
         statistics.rows_before_limit = rows_before_limit_;
     }
+
     void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
     {
         statistics.applied_aggregation = true;
         statistics.rows_before_aggregation = rows_before_aggregation_;
     }
+
+    bool supportsSpecialSerializationKinds() const override { return settings.allow_special_serialization_kinds; }
 
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

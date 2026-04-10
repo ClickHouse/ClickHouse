@@ -26,6 +26,7 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IInputFormat;
 struct ConnectionTimeouts;
 class NamedCollection;
+struct StorageID;
 class PullingPipelineExecutor;
 
 /**
@@ -105,6 +106,7 @@ protected:
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
+    bool supports_prewhere = false;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
 
@@ -127,6 +129,12 @@ protected:
         size_t max_block_size) const;
 
     virtual bool supportsSubsetOfColumns(const ContextPtr & context) const;
+
+    /// Things required for PREWHERE.
+    bool supportsPrewhere() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    ColumnSizeByName getColumnSizes() const override;
 
     bool prefersLargeBlocks() const override;
 
@@ -188,7 +196,8 @@ public:
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
-        bool need_only_count_ = false);
+        bool need_only_count_ = false,
+        StorageID storage_id_ = StorageID::createEmpty());
 
     ~StorageURLSource() override;
 
@@ -235,6 +244,7 @@ private:
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
     bool need_only_count;
+    StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
@@ -319,7 +329,7 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
@@ -333,7 +343,7 @@ public:
         std::string addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context);
+    static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
 
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
     /// If `headers(...)` argument is present, parses it and moves it to the end of the array.

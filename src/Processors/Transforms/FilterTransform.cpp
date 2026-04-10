@@ -1,6 +1,9 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -30,7 +33,7 @@ namespace ErrorCodes
 
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
 {
-    return filter_type->onlyNull() || isUInt8(removeLowCardinalityAndNullable(filter_type));
+    return filter_type->canBeUsedInBooleanContext();
 }
 
 auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
@@ -70,7 +73,7 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    QueryConditionCacheWriterPtr query_condition_cache_writer_)
+    std::optional<std::pair<UInt64, String>> condition_)
     : ISimpleTransform(
             header_,
             std::make_shared<const Block>(transformHeader(*header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_)),
@@ -80,7 +83,7 @@ FilterTransform::FilterTransform(
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
-    , query_condition_cache_writer(query_condition_cache_writer_)
+    , condition(condition_)
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -102,6 +105,9 @@ FilterTransform::FilterTransform(
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
         always_false = always_false || ConstantFilterDescription(*column).always_false;
+
+    if (condition.has_value())
+        query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 }
 
 IProcessor::Status FilterTransform::prepare()
@@ -187,7 +193,24 @@ void FilterTransform::doTransform(Chunk & chunk)
         filter_column = filter_column->convertToFullColumnIfConst();
 
     if (filter_column->isSparse())
-        filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
+    {
+        /// SparseFilterDescription only supports Sparse(UInt8) and Sparse(Nullable(UInt8)).
+        /// For other types (e.g. Float64 when WHERE uses sin(col)), fall back to the
+        /// regular FilterDescription which converts any numeric type to a boolean filter.
+        const auto * column_sparse = typeid_cast<const ColumnSparse *>(filter_column.get());
+        const auto & values_column = column_sparse->getValuesColumn();
+        if (typeid_cast<const ColumnUInt8 *>(&values_column)
+            || (typeid_cast<const ColumnNullable *>(&values_column)
+                && typeid_cast<const ColumnUInt8 *>(&assert_cast<const ColumnNullable &>(values_column).getNestedColumn())))
+        {
+            filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
+        }
+        else
+        {
+            filter_column = filter_column->convertToFullColumnIfSparse();
+            filter_description = std::make_unique<FilterDescription>(*filter_column);
+        }
+    }
     else
         filter_description = std::make_unique<FilterDescription>(*filter_column);
 
@@ -263,7 +286,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 
 void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
 {
-    if (!query_condition_cache_writer)
+    if (!query_condition_cache)
         return;
 
     if (!mark_ranges_info)
@@ -273,9 +296,11 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         if (!buffered_mark_ranges_info)
             return;
 
-        query_condition_cache_writer->addRanges(
+        query_condition_cache->write(
             buffered_mark_ranges_info->table_uuid,
             buffered_mark_ranges_info->part_name,
+            condition->first,
+            condition->second,
             buffered_mark_ranges_info->mark_ranges,
             buffered_mark_ranges_info->marks_count,
             buffered_mark_ranges_info->has_final_mark);
@@ -296,9 +321,11 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
 
         if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
         {
-            query_condition_cache_writer->addRanges(
+            query_condition_cache->write(
                 buffered_mark_ranges_info->table_uuid,
                 buffered_mark_ranges_info->part_name,
+                condition->first,
+                condition->second,
                 buffered_mark_ranges_info->mark_ranges,
                 buffered_mark_ranges_info->marks_count,
                 buffered_mark_ranges_info->has_final_mark);

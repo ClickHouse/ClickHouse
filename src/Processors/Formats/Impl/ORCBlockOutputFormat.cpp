@@ -243,7 +243,7 @@ template <typename ColumnType>
 void ORCBlockOutputFormat::writeStrings(
         orc::ColumnVectorBatch & orc_column,
         const IColumn & column,
-        const PaddedPODArray<UInt8> * /*null_bytemap*/)
+        const PaddedPODArray<UInt8> * null_bytemap)
 {
     orc::StringVectorBatch & string_orc_column = dynamic_cast<orc::StringVectorBatch &>(orc_column);
     const auto & string_column = assert_cast<const ColumnType &>(column);
@@ -252,8 +252,8 @@ void ORCBlockOutputFormat::writeStrings(
     string_orc_column.length.resize(string_column.size());
     for (size_t i = 0; i != string_column.size(); ++i)
     {
-        const std::string_view & string = string_column.getDataAt(i).toView();
-        string_orc_column.data[i] = const_cast<char *>(string.data());
+        const std::string_view string = string_column.getDataAt(i);
+        string_orc_column.data[i] = (null_bytemap && (*null_bytemap)[i]) ? nullptr : const_cast<char *>(string.data());
         string_orc_column.length[i] = string.size();
     }
 }
@@ -452,7 +452,7 @@ void ORCBlockOutputFormat::writeColumn(
                     column,
                     type,
                     null_bytemap,
-                    [](Int128 value){ return orc::Int128(value >> 64, (value << 64) >> 64); });
+                    [](Int128 value){ return orc::Int128(static_cast<Int64>(value >> 64), static_cast<UInt64>((value << 64) >> 64)); });
             break;
         }
         case TypeIndex::Decimal256:

@@ -4,6 +4,7 @@ sidebar_label: 'TRUNCATE'
 sidebar_position: 52
 slug: /sql-reference/statements/truncate
 title: 'TRUNCATE Statements'
+doc_type: 'reference'
 ---
 
 # TRUNCATE Statements

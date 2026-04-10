@@ -26,7 +26,7 @@ function wait_for_mutation_cleanup()
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_mutations_counters;
 
-    CREATE TABLE t_mutations_counters (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_mutations_counters (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
 
     INSERT INTO t_mutations_counters VALUES (1, 2) (2, 3);
 

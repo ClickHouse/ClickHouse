@@ -7,6 +7,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
+#include <Common/SharedMutex.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -14,13 +15,19 @@
 #include <Core/Settings.h>
 
 #include <numeric>
-#include <shared_mutex>
 #include <fmt/format.h>
 
 
 namespace CurrentMetrics
 {
     extern const Metric TemporaryFilesForJoin;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ExternalJoinCompressedBytes;
+    extern const Event ExternalJoinUncompressedBytes;
+    extern const Event ExternalJoinWritePart;
 }
 
 namespace DB
@@ -259,7 +266,12 @@ GraceHashJoin::GraceHashJoin(
     , max_num_buckets(max_num_buckets_)
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
-    , tmp_data(tmp_data_->childScope(CurrentMetrics::TemporaryFilesForJoin))
+    , tmp_data(tmp_data_->childScope({
+            .current_metric = CurrentMetrics::TemporaryFilesForJoin,
+            .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
+            .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
+            .num_files = ProfileEvents::ExternalJoinWritePart,
+        }, table_join->temporaryFilesBufferSize(), table_join->temporaryFilesCodec()))
     , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
 {
@@ -387,8 +399,8 @@ void GraceHashJoin::addBuckets(const size_t bucket_count)
     for (size_t i = 0; i < bucket_count; ++i)
         try
         {
-            TemporaryBlockStreamHolder left_file(left_sample_block, tmp_data.get());
-            TemporaryBlockStreamHolder right_file(std::make_shared<const Block>(prepareRightBlock(*right_sample_block)), tmp_data.get());
+            TemporaryBlockStreamHolder left_file(left_sample_block, tmp_data);
+            TemporaryBlockStreamHolder right_file(std::make_shared<const Block>(prepareRightBlock(*right_sample_block)), tmp_data);
 
             BucketPtr new_bucket = std::make_shared<FileBucket>(current_size + i, std::move(left_file), std::move(right_file), log);
             tmp_buckets.emplace_back(std::move(new_bucket));
@@ -439,16 +451,23 @@ JoinResultPtr GraceHashJoin::joinBlock(Block block)
     Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
 
     block = std::move(blocks[current_bucket->idx]);
+    flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
+    blocks.clear();
 
     auto res = hash_join->joinBlock(std::move(block));
-    flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
     return res;
 }
 
 void GraceHashJoin::setTotals(const Block & block)
 {
-    if (block.rows() > 0)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Totals are not supported for GraceHashJoin, got '{}'", block.dumpStructure());
+    std::lock_guard lock(totals_mutex);
+    IJoin::setTotals(block);
+}
+
+const Block & GraceHashJoin::getTotals() const
+{
+    std::lock_guard lock(totals_mutex);
+    return IJoin::getTotals();
 }
 
 size_t GraceHashJoin::getTotalRowCount() const
@@ -528,6 +547,17 @@ public:
             if (not_processed)
             {
                 auto res = not_processed->next();
+                if (res.is_last && res.next_block)
+                {
+                    res.next_block->filterBySelector();
+                    auto next_block = std::move(*res.next_block).getSourceBlock();
+                    if (next_block.rows() > 0)
+                    {
+                        auto new_res = hash_join->joinBlock(std::move(next_block));
+                        std::lock_guard lock(extra_block_mutex);
+                        not_processed_results.emplace_back(std::move(new_res));
+                    }
+                }
                 if (!res.is_last)
                 {
                     std::lock_guard lock(extra_block_mutex);
@@ -602,6 +632,17 @@ public:
         auto res = hash_join->joinBlock(block);
         auto next = res->next();
 
+        if (next.is_last && next.next_block)
+        {
+            next.next_block->filterBySelector();
+            auto next_block = std::move(*next.next_block).getSourceBlock();
+            if (next_block.rows() > 0)
+            {
+                auto new_res = hash_join->joinBlock(std::move(next_block));
+                std::lock_guard lock(extra_block_mutex);
+                not_processed_results.emplace_back(std::move(new_res));
+            }
+        }
         if (!next.is_last)
         {
             std::lock_guard lock(extra_block_mutex);
@@ -623,7 +664,7 @@ public:
     std::mutex extra_block_mutex;
     std::list<JoinResultPtr> not_processed_results TSA_GUARDED_BY(extra_block_mutex);
 
-    std::shared_mutex eof_mutex;
+    SharedMutex eof_mutex;
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
@@ -660,8 +701,8 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         }
         hash_join->onBuildPhaseFinish();
 
-        LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
-            bucket_idx, hash_join->getTotalRowCount(), num_rows);
+        LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
+            bucket_idx, hash_join->getTotalRowCount(), num_rows, ReadableSize(hash_join->getTotalByteCount()));
 
         return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
     }

@@ -5,15 +5,15 @@ sidebar_label: 'UPDATE'
 sidebar_position: 39
 slug: /sql-reference/statements/update
 title: 'The Lightweight UPDATE Statement'
+doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 :::note
-Lightweight updates are currently experimental.
-To enable them, please first run `SET allow_experimental_lightweight_update = 1`.
+Lightweight updates are currently beta.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
@@ -22,7 +22,7 @@ It is called "lightweight update" to contrast it to the [`ALTER TABLE ... UPDATE
 It is only available for the [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) table engine family.
 
 ```sql
-UPDATE [db.]table SET column1 = expr1 [, ...] [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
 ```
 
 The `filter_expr` must be of type `UInt8`. This query updates values of the specified columns to the values of the corresponding expressions in rows for which the `filter_expr` takes a non-zero value.
@@ -46,9 +46,10 @@ The updated values are:
 - **Immediately visible** in `SELECT` queries through patches application
 - **Physically materialized** only during subsequent merges and mutations
 - **Automatically cleaned up** once all active parts have the patches materialized
+
 ## Lightweight updates requirements {#lightweight-update-requirements}
 
-Lightweight updates are supported for [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/engines/table-engines/mergetree-family/collapsingmergetree) engines and their [`Replicated`](/engines/table-engines/mergetree-family/replication.md) and [`Shared`](/cloud/reference/shared-merge-tree) versions.
+Lightweight updates are supported for [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/versionedcollapsingmergetree) engines and their [`Replicated`](/engines/table-engines/mergetree-family/replication.md) and [`Shared`](/cloud/reference/shared-merge-tree) versions.
 
 To use lightweight updates, materialization of `_block_number` and `_block_offset` columns must be enabled using table settings [`enable_block_number_column`](/operations/settings/merge-tree-settings#enable_block_number_column) and [`enable_block_offset_column`](/operations/settings/merge-tree-settings#enable_block_offset_column).
 
@@ -122,3 +123,4 @@ The join mode is slower and requires more memory than the merge mode, but it is 
 
 - [`ALTER UPDATE`](/sql-reference/statements/alter/update) - Heavy `UPDATE` operations
 - [Lightweight `DELETE`](/sql-reference/statements/delete) - Lightweight `DELETE` operations
+- [`APPLY PATCHES`](/sql-reference/statements/alter/apply-patches) - Force physical materialization of patches to data parts (mutation operation)

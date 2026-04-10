@@ -83,6 +83,7 @@
         INNER JOIN my_table AS t39 ON t38.id = t39.id
         INNER JOIN my_table AS t40 ON t39.id = t40.id
         SETTINGS join_algorithm = '{join_algorithm}'
+               , query_plan_use_new_logical_join_step = 0 -- FIXME: improve join logical to physical conversion to make huge queries with small tables faster
         FORMAT Null
     </query>
 </test>
