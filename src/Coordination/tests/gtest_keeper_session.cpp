@@ -370,13 +370,6 @@ TEST_F(KeeperSessionTest, NonMonotonicXIDs)
     ASSERT_EQ(delivered_requests[2]->request->xid, -4);
 }
 
-/// Test: Closed session rejects requests.
-TEST_F(KeeperSessionTest, ClosedStateRejectsRequests)
-{
-    session->finalizeWithErrors(Coordination::Error::ZSESSIONEXPIRED);
-    ASSERT_NE(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
-}
-
 /// Test: Close is terminal — no reads can be deferred behind it.
 TEST_F(KeeperSessionTest, CloseIsTerminal_RejectsSubsequentRequests)
 {
@@ -451,20 +444,6 @@ TEST_F(KeeperSessionTest, CloseDeliveredByDrainCompleted_NotByAttach)
     ASSERT_FALSE(session->canAcceptRequests());
 }
 
-/// Test: after session failure, session rejects all new requests.
-TEST_F(KeeperSessionTest, SessionFailure_NoNewRequestsAccepted)
-{
-    ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
-    ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeReadRequest(2))));
-
-    auto submitted = submitOne();
-    failSession();
-
-    /// Session is terminated — no new requests accepted.
-    ASSERT_NE(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeReadRequest(3))));
-    ASSERT_EQ(local_reads.size(), 0);
-}
-
 /// Test: Write behind reads gets New state, then promoted after reads complete.
 TEST_F(KeeperSessionTest, WriteBehindReads_PromotedAfterReadsDrain)
 {
@@ -479,35 +458,6 @@ TEST_F(KeeperSessionTest, WriteBehindReads_PromotedAfterReadsDrain)
     auto w2 = submitOne();
     ASSERT_NE(w2.request, nullptr);
     ASSERT_EQ(w2.request->xid, 2);
-}
-
-/// Test: Write arrives while read is still "active" (not yet completed).
-/// This tests the New -> RaftProcessing promotion path.
-TEST_F(KeeperSessionTest, WriteBehindActiveRead_PromotedOnCompletion)
-{
-    /// Default read handler already fills response synchronously.
-    /// Re-create session via registry->
-    registry->detachSession(1);
-    auto callback = [this](std::vector<SessionRequestPtr> batch)
-    {
-        for (auto & req : batch)
-            delivered_requests.push_back(std::move(req));
-    };
-    registry->registerSession(/*session_id=*/2, std::move(callback));
-    session = registry->findSession(2);
-
-    /// R1 dispatched immediately. Response filled synchronously.
-    ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeReadRequest(1))));
-    ASSERT_EQ(local_reads.size(), 1);
-    ASSERT_EQ(delivered_requests.size(), 1); // R1 delivered via drainCompleted
-
-    /// Now queue is empty. Write goes to RaftProcessing directly.
-    ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(2))));
-
-    auto submitted = submitOne();
-    commitSubmitted(submitted);
-    ASSERT_EQ(delivered_requests.size(), 2);
-    ASSERT_EQ(delivered_requests[1]->request->xid, 2);
 }
 
 /// Test: Read-Write-Read-Write pattern with interleaved completion.
@@ -833,8 +783,142 @@ TEST(KeeperSessionLimitTest, AddRequest_RejectsWhenActiveRequestLimitReached)
     ASSERT_NE(KeeperSession::AddResult::Accepted, session->addRequest(makeReq(3)));
 }
 
-/// Test: SessionRequest default state is New.
-TEST(SessionRequestTest, DefaultStateIsUnknown)
+/// --- Close bypass tests ---
+
+/// Test: Close bypasses per-session active request limit.
+TEST(KeeperSessionLimitTest, CloseBypasses_PerSessionLimit)
+{
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::max_session_active_requests] = 2;
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    KeeperRequestsQueue queue{1, 0};
+    KeeperSessionRegistry registry(keeper_context, queue, [](std::span<SessionRequestPtr>) {});
+
+    registry.registerSession(1, [](std::vector<SessionRequestPtr>) {});
+    auto session = registry.findSession(1);
+
+    auto makeReq = [](XID xid, Coordination::OpNum op = Coordination::OpNum::Create)
+    {
+        using namespace std::chrono;
+        Coordination::ZooKeeperRequestPtr zk_req;
+        if (op == Coordination::OpNum::Close)
+        {
+            zk_req = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+            zk_req->xid = xid;
+        }
+        else
+        {
+            auto create = std::make_shared<ZooKeeperCreateRequest>();
+            create->xid = xid;
+            create->path = "/test";
+            zk_req = create;
+        }
+        auto req = std::make_shared<SessionRequest>();
+        req->session_id = 1;
+        req->cached_bytes_size = zk_req->bytesSize();
+        req->request = std::move(zk_req);
+        req->time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+        return req;
+    };
+
+    /// Fill to limit.
+    ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeReq(1)));
+    ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeReq(2)));
+
+    /// Normal request rejected.
+    ASSERT_EQ(KeeperSession::AddResult::QueueFull, session->addRequest(makeReq(3)));
+
+    /// Close still accepted despite limit.
+    ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeReq(Coordination::CLOSE_XID, Coordination::OpNum::Close)));
+}
+
+/// --- onRaftResponse edge cases ---
+
+/// Test: onRaftResponse on Closed session returns NotDelivered.
+TEST_F(KeeperSessionTest, OnRaftResponse_ClosedSession_ReturnsNotDelivered)
+{
+    ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
+    auto submitted = submitOne();
+
+    session->finalizeWithErrors(Coordination::Error::ZSESSIONEXPIRED);
+
+    auto response = submitted.request->makeResponse();
+    response->xid = 1;
+    response->error = Coordination::Error::ZOK;
+    auto result = session->onRaftResponse(1, response);
+    ASSERT_EQ(result, KeeperSession::DeliveryResult::NotDelivered);
+}
+
+/// Test: onRaftResponse on empty FIFO returns NotDelivered.
+TEST_F(KeeperSessionTest, OnRaftResponse_EmptyFifo_ReturnsNotDelivered)
+{
+    auto response = std::make_shared<Coordination::ZooKeeperGetResponse>();
+    response->xid = 1;
+    response->error = Coordination::Error::ZOK;
+    auto result = session->onRaftResponse(1, response);
+    ASSERT_EQ(result, KeeperSession::DeliveryResult::NotDelivered);
+}
+
+/// Test: onRaftResponse with wrong XID returns FifoMismatch.
+TEST_F(KeeperSessionTest, OnRaftResponse_XidMismatch_ReturnsFifoMismatch)
+{
+    ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
+    auto submitted = submitOne();
+
+    auto response = submitted.request->makeResponse();
+    response->xid = 99; /// Wrong XID.
+    response->error = Coordination::Error::ZOK;
+    auto result = session->onRaftResponse(99, response);
+    ASSERT_EQ(result, KeeperSession::DeliveryResult::FifoMismatch);
+}
+
+/// --- KeeperSessionRegistry lifecycle ---
+
+/// Test: register, find, detach, find-after-detach, detach-idempotent.
+TEST(KeeperSessionRegistryTest, RegisterFindDetach)
+{
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    KeeperRequestsQueue queue{1, 0};
+    KeeperSessionRegistry registry(ctx, queue, [](std::span<SessionRequestPtr>) {});
+
+    registry.registerSession(42, [](std::vector<SessionRequestPtr>) {});
+
+    ASSERT_NE(registry.findSession(42), nullptr);
+    ASSERT_EQ(registry.findSession(99), nullptr); /// Non-existent.
+
+    auto detached = registry.detachSession(42);
+    ASSERT_NE(detached, nullptr);
+    ASSERT_EQ(registry.findSession(42), nullptr); /// Gone.
+
+    /// Idempotent — second detach returns nullptr.
+    ASSERT_EQ(registry.detachSession(42), nullptr);
+}
+
+/// Test: shutdown returns all sessions and clears the registry.
+TEST(KeeperSessionRegistryTest, ShutdownReturnsAllSessions)
+{
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    KeeperRequestsQueue queue{1, 0};
+    KeeperSessionRegistry registry(ctx, queue, [](std::span<SessionRequestPtr>) {});
+
+    registry.registerSession(1, [](std::vector<SessionRequestPtr>) {});
+    registry.registerSession(2, [](std::vector<SessionRequestPtr>) {});
+    registry.registerSession(3, [](std::vector<SessionRequestPtr>) {});
+
+    auto sessions = registry.shutdown();
+    ASSERT_EQ(sessions.size(), 3u);
+
+    /// All sessions gone from registry.
+    ASSERT_EQ(registry.findSession(1), nullptr);
+    ASSERT_EQ(registry.findSession(2), nullptr);
+    ASSERT_EQ(registry.findSession(3), nullptr);
+}
+
+/// Test: SessionRequest default state is Initial.
+TEST(SessionRequestTest, DefaultStateIsInitial)
 {
     auto req = makeWriteRequest(1);
     auto env = std::make_shared<SessionRequest>();
@@ -857,8 +941,7 @@ TEST(SessionRequestTest, DestructorSafeOnNeverInitializedSpans)
         /// No lifecycle method called — spans are never initialized.
         /// Destructor must not abort.
     }
-    /// If we get here without abort, the test passes.
-    ASSERT_TRUE(true);
+    /// Test passes by not crashing — no assertion needed.
 }
 
 #endif
