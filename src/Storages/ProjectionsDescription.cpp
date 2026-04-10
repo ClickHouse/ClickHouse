@@ -126,6 +126,8 @@ ProjectionDescription ProjectionDescription::clone() const
     other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
+    if (where_clause_ast)
+        other.where_clause_ast = where_clause_ast->clone();
     other.virtuals = virtuals;
 
     return other;
@@ -324,6 +326,13 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 {
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
+
+    /// Store the WHERE clause AST if present (Issue #74234).
+    /// This will be used by the optimizer to check if a query's WHERE implies
+    /// this projection's WHERE, and during materialization to filter rows.
+    auto projection_where = query.where();
+    if (projection_where)
+        result.where_clause_ast = projection_where->clone();
 
     /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
     /// `_part_offset` as physical columns, which would cause a conflict. Parent table cannot defines `_part_index` as
@@ -642,9 +651,21 @@ Block ProjectionDescription::calculateByQuery(
         if (!select_row_exists)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
 
-        select_row_exists->setExpression(
-            ASTSelectQuery::Expression::WHERE,
-            makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1)));
+        auto row_exists_condition = makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1));
+
+        /// If the projection already has a WHERE clause (e.g., from a filtered projection),
+        /// we must AND the _row_exists condition with the existing WHERE rather than replacing it.
+        /// Otherwise the projection's own filter would be lost during mutations.
+        auto existing_where = select_row_exists->where();
+        if (existing_where)
+        {
+            auto combined_where = makeASTFunction("and", std::move(existing_where), std::move(row_exists_condition));
+            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(combined_where));
+        }
+        else
+        {
+            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(row_exists_condition));
+        }
 
         source_block.insert(block.getByName(RowExistsColumn::name));
     }

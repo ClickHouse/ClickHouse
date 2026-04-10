@@ -1,0 +1,18 @@
+Test 1: Exact match
+2024-01-01 00:00:00	hello
+2024-01-03 00:00:00	foo
+2024-01-05 00:00:00	baz
+Test 2: Stricter match (AND)
+2024-01-03 00:00:00	foo
+2024-01-05 00:00:00	baz
+Test 3: Non-matching (different value)
+2024-01-02 00:00:00	world
+Test 4: No WHERE
+5
+Test 5: Weaker (OR)
+2024-01-01 00:00:00	hello
+2024-01-02 00:00:00	world
+2024-01-03 00:00:00	foo
+2024-01-05 00:00:00	baz
+Test 6: Projection row count
+3

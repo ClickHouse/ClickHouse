@@ -16,6 +16,10 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/IAST.h>
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -31,6 +35,137 @@ namespace Setting
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// Extract AND-connected conjuncts from an AST expression tree.
+/// For example, (a = 1 AND b = 2 AND c = 3) yields {"a = 1", "b = 2", "c = 3"}.
+static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<String> & result)
+{
+    if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and")
+    {
+        for (const auto & child : func->arguments->children)
+            extractConjunctsFromAST(child, result);
+    }
+    else
+    {
+        /// Use the canonical column-name representation for comparison.
+        result.push_back(expr->getColumnName());
+    }
+}
+
+/// Recursively check if an AST tree contains any aliases.
+/// If the projection WHERE uses aliases, textual conjunct matching becomes unsafe
+/// because the same expression may have different canonical representations when aliased.
+static bool containsAliases(const ASTPtr & expr)
+{
+    if (!expr)
+        return false;
+
+    if (!expr->tryGetAlias().empty())
+        return true;
+
+    for (const auto & child : expr->children)
+    {
+        if (containsAliases(child))
+            return true;
+    }
+
+    return false;
+}
+
+/// Recursively check if an AST tree contains calls to known non-deterministic functions.
+/// Non-deterministic predicates (rand(), now(), etc.) evaluate differently at materialization
+/// time vs query time, so textual conjunct matching is unsound for them.
+static bool containsNonDeterministicFunctions(const ASTPtr & expr)
+{
+    if (!expr)
+        return false;
+
+    if (const auto * func = expr->as<ASTFunction>())
+    {
+        /// Conservative list of non-deterministic functions commonly used in WHERE.
+        /// These produce different results on each execution, making textual implication unsafe.
+        static const std::unordered_set<String> non_deterministic = {
+            "rand", "rand32", "rand64", "randConstant", "randUniform", "randNormal",
+            "randBernoulli", "randExponential", "randChiSquared", "randStudentT", "randFisher",
+            "now", "now64", "today", "yesterday", "timeSlot",
+            "generateUUIDv4", "generateULID",
+            "rowNumberInAllBlocks", "rowNumberInBlock",
+            "currentDatabase", "currentUser",
+            "dictGet", "dictGetOrDefault", "dictHas",
+        };
+        if (non_deterministic.contains(func->name))
+            return true;
+    }
+
+    for (const auto & child : expr->children)
+    {
+        if (containsNonDeterministicFunctions(child))
+            return true;
+    }
+
+    return false;
+}
+
+/// Check whether a query's WHERE condition logically implies a projection's WHERE condition.
+/// Uses CNF conjunct containment: every conjunct of the projection's WHERE must appear
+/// (as a textually identical sub-expression) among the conjuncts of the query's WHERE.
+///
+/// Both sides are compared using canonical column-name representations:
+/// - Projection WHERE conjuncts use ASTPtr::getColumnName() (canonical AST serialization)
+/// - Query filter conjuncts use ActionsDAG::Node::result_name (set by the analyzer)
+/// These produce identical strings for semantically equivalent expressions.
+///
+/// Safety guards:
+/// 1. Reject if projection WHERE contains aliases (may differ from analyzer representation)
+/// 2. Reject if projection WHERE contains non-deterministic functions (unsafe for implication)
+///
+/// This is a conservative check — it may reject some valid cases (e.g., range implications),
+/// but it is safe: it will never incorrectly accept a query that doesn't match the projection.
+static bool doesQueryFilterImplyProjectionWhere(
+    const ActionsDAG::Node * query_filter_node,
+    const ASTPtr & projection_where)
+{
+    if (!projection_where)
+        return true; /// No projection filter = always applicable
+
+    if (!query_filter_node)
+        return false; /// Projection has filter but query doesn't
+
+    /// Safety guard 1: reject if projection WHERE contains any aliases.
+    /// Aliases could cause the canonical column-name to differ from the analyzer's
+    /// result_name, leading to false positive implication matches.
+    if (containsAliases(projection_where))
+        return false;
+
+    /// Safety guard 2: reject if projection WHERE contains non-deterministic functions.
+    /// Such expressions evaluate differently at materialization time vs query time,
+    /// so textual equality does not imply semantic equivalence.
+    if (containsNonDeterministicFunctions(projection_where))
+        return false;
+
+    /// Extract projection's WHERE conjuncts from the AST.
+    std::vector<String> proj_conjuncts;
+    extractConjunctsFromAST(projection_where, proj_conjuncts);
+
+    /// Extract query's filter conjuncts using ClickHouse's built-in DAG utility.
+    /// This is the same function used by the filter pushdown optimizer.
+    auto query_atoms = ActionsDAG::extractConjunctionAtoms(query_filter_node);
+
+    /// Build a set of query conjunct names for O(1) lookup.
+    std::unordered_set<String> query_conjunct_names;
+    query_conjunct_names.reserve(query_atoms.size());
+    for (const auto * atom : query_atoms)
+        query_conjunct_names.insert(atom->result_name);
+
+    /// Check that every projection conjunct has an exact match in the query conjuncts.
+    for (const auto & proj_conj : proj_conjuncts)
+    {
+        if (!query_conjunct_names.contains(proj_conj))
+            return false;
+    }
+
+    return true;
+}
 
 /// Normal projection analysis result in case it can be applied.
 /// For now, it is empty.
@@ -248,6 +383,20 @@ std::optional<String> optimizeUseNormalProjections(
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
     for (const auto * projection : normal_projections)
     {
+        /// Skip projections whose WHERE condition is not implied by the query's filter (Issue #74234).
+        /// A projection with WHERE stores only a subset of rows, so we can only use it
+        /// if the query's filter guarantees it won't need rows outside that subset.
+        if (projection->where_clause_ast)
+        {
+            if (!doesQueryFilterImplyProjectionWhere(query.filter_node, projection->where_clause_ast))
+            {
+                LOG_DEBUG(logger,
+                    "Projection {} skipped: query WHERE does not imply projection WHERE",
+                    projection->name);
+                continue;
+            }
+        }
+
         if (!has_all_required_columns(projection))
         {
             /// Check if projection can be used to filter parts or building projection index filters

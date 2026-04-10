@@ -39,6 +39,7 @@ ASTPtr ASTProjectionSelectQuery::clone() const
         */
     CLONE(Expression::WITH);
     CLONE(Expression::SELECT);
+    CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::ORDER_BY);
 
@@ -66,6 +67,13 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     ostr << indent_str << "SELECT";
 
     s.one_line ? select()->format(ostr, s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+
+    if (where())
+    {
+        ostr << s.nl_or_ws << indent_str << "WHERE";
+        ostr << ' ';
+        where()->format(ostr, s, state, frame);
+    }
 
     if (groupBy())
     {
@@ -144,6 +152,8 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     }
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
+    if (where())
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, where()->clone());
 
     /// Attach settings to prevent AST transformations. We already have ignored AST optimizations
     /// for projection queries. Only remaining settings need to be added here.
