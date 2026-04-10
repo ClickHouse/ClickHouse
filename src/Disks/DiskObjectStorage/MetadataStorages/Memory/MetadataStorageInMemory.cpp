@@ -226,8 +226,22 @@ void MetadataStorageInMemoryTransaction::commit(const TransactionCommitOptionsVa
 
     {
         std::unique_lock lock(metadata_storage.metadata_mutex);
-        for (auto & op : operations)
-            op();
+
+        /// Snapshot state before applying, so we can restore on partial failure.
+        auto files_backup = metadata_storage.files;
+        auto directories_backup = metadata_storage.directories;
+
+        try
+        {
+            for (auto & op : operations)
+                op();
+        }
+        catch (...)
+        {
+            metadata_storage.files = std::move(files_backup);
+            metadata_storage.directories = std::move(directories_backup);
+            throw;
+        }
     }
 
     {
