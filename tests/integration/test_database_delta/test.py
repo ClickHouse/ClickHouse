@@ -213,6 +213,72 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
             assert data_clickhouse == data_spark
 
 
+def test_check_database_unity(started_cluster):
+    """
+    Test CHECK DATABASE query on Unity Catalog with a single schema.
+    Creates one schema with multiple tables and verifies CHECK DATABASE works correctly.
+    """
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    node1 = started_cluster.instances["node1"]
+    db_name = f"check_database_{test_uuid}"
+    schema_name = f"test_schema_{test_uuid}"
+
+    # Create a single schema
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
+
+    # Create multiple tables in the same schema
+    table_configs = [
+        (f"table1_{test_uuid}", "col1 int, col2 double", [(1, 1.0)]),
+        (f"table2_{test_uuid}", "col1 int, col2 double", [(2, 2.0)]),
+        (f"table3_{test_uuid}", "col1 int, col2 double", [(3, 3.0)]),
+    ]
+
+    for table_name, table_schema, data_rows in table_configs:
+        # Create table
+        create_query = f"CREATE TABLE {schema_name}.{table_name} ({table_schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
+        execute_spark_query(node1, create_query)
+
+        # Insert data
+        for row in data_rows:
+            execute_spark_query(node1, f"INSERT INTO {schema_name}.{table_name} VALUES {row}")
+
+    # Create ClickHouse database pointing to Unity Catalog
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
+        settings={"allow_database_unity_catalog": "1"},
+    )
+
+    # Verify tables are visible
+    tables = list(
+        sorted(
+            node1.query(
+                f"SHOW TABLES FROM {db_name} LIKE '{schema_name}.%'",
+                settings={"use_hive_partitioning": "0"},
+            )
+            .strip()
+            .split("\n")
+        )
+    )
+
+    print(f"Found tables: {tables}")
+    assert len(tables) == len(table_configs), f"Expected {len(table_configs)} tables, got {len(tables)}"
+
+    # Run CHECK DATABASE - should succeed without errors
+    node1.query(f"CHECK DATABASE {db_name}")
+
+    try:
+        node1.query(
+            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+        )
+        
+        assert "fault when checking database" in node1.query_and_get_error(
+            f"CHECK DATABASE {db_name}"
+        )
+    finally:
+        node1.query(
+            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+        )
+
 def test_multiple_schemes_tables(started_cluster):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
@@ -424,7 +490,6 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=True
 
     # This query will fail if bug exists
     print(node1.query(f"SHOW TABLES FROM {schema_name}"))
-
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_view_with_void(started_cluster, use_delta_kernel):

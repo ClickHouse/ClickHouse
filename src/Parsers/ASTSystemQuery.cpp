@@ -434,6 +434,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ostr << ' ';
+            ostr << quoteString(coverage_test_name);
+            break;
+        }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:

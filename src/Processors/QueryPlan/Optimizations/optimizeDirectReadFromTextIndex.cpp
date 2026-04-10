@@ -1,4 +1,3 @@
-#include <ranges>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -13,7 +12,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -289,6 +287,17 @@ public:
 
         /// Cache for added input nodes for each virtual column.
         std::unordered_map<String, const ActionsDAG::Node *> virtual_column_to_node;
+
+        /// Pre-populate the cache with any text-index virtual column inputs that are already present in this DAG from a previous
+        /// optimization pass. This prevents them from being re-added to `added_columns` when the same DAG is processed again.
+        ///
+        /// See: https://github.com/ClickHouse/ClickHouse/issues/101913#issuecomment-4198784580
+        for (const auto * input : actions_dag.getInputs())
+        {
+            if (input->result_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
+                virtual_column_to_node.emplace(input->result_name, input);
+        }
+
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
         auto nodes_ptrs = actions_dag.getNodesPointers();
 
@@ -690,53 +699,21 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     if (stack.size() < 2)
         return;
 
-    /// Walk up the stack for a FilterStep, collecting any ExpressionSteps along the way.
-    /// When query_plan_merge_expressions = 0, one or more ExpressionSteps may sit between ReadFromMergeTree and FilterStep.
-    QueryPlan::Node * filter_node = nullptr;
-    FilterStep * filter_step = nullptr;
-    std::vector<ExpressionStep *> expression_steps; /// bottom-up order (index 0 = closest to ReadFromMergeTree)
-
-    for (const auto & f : stack | std::views::reverse | std::views::drop(1))
-    {
-        if (auto * fs = typeid_cast<FilterStep *>(f.node->step.get()))
-        {
-            filter_node = f.node;
-            filter_step = fs;
-            break;
-        }
-        if (auto * es = typeid_cast<ExpressionStep *>(f.node->step.get()))
-            expression_steps.push_back(es);
-        else
-            break;
-    }
+    QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
+    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
 
     if (!filter_step)
         return;
 
-    /// Compose the DAG by prepending any ExpressionSteps (bottom-up) into a clone of FilterStep's DAG.
-    ///
-    /// With query_plan_merge_expressions = 0 the new query analyzer inserts ExpressionSteps that rename "msg" to "__table1.msg", so FilterStep's DAG
-    /// has bare INPUT("__table1.msg") nodes that aren't found in the text index header.
-    ///
-    /// After composing, those inputs become ALIAS("__table1.msg") → INPUT("msg"), and getColumnName() follows the alias back to the
-    /// physical name. With query_plan_merge_expressions = 1 the loop is a no-op since expression_steps is empty.
-    const String & filter_column_name = filter_step->getFilterColumnName();
-
-    /// expression_steps is bottom-up (index 0 = closest to ReadFromMergeTree, back() = closest to FilterStep),
-    /// so iterate in reverse to build merge(bottom, merge(..., merge(top, filter_dag)...)).
-    ActionsDAG composed = filter_step->getExpression().clone();
-    for (auto * step : expression_steps | std::views::reverse)
-        composed = ActionsDAG::merge(step->getExpression().clone(), std::move(composed));
-
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, composed, text_index_read_infos, filter_column_name, direct_read_from_text_index && !optimized);
+    ActionsDAG & filter_dag = filter_step->getExpression();
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized);
 
     if (!result_filter_node)
         return;
 
     bool removes_filter_column = filter_step->removesFilterColumn();
     auto new_filter_column_name = result_filter_node->result_name;
-    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), std::move(composed), new_filter_column_name, removes_filter_column);
-    filter_node->children = {frame.node};
+    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
 }
 
 }
