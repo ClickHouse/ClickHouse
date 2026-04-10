@@ -8,7 +8,7 @@ namespace DB
 {
 
 
-static constexpr auto memory_order = std::memory_order_relaxed;
+static constexpr auto MEMORY_ORDER = std::memory_order_relaxed;
 
 class AIQuotaTracker
 {
@@ -23,10 +23,10 @@ public:
         , on_error(on_error_)
     {}
 
-    bool checkBeforeDispatch(UInt64 estimated_input_tokens);
+    bool checkBeforeDispatch();
     void recordResponse(UInt64 in_tokens, UInt64 out_tokens);
     bool handleRowError();
-    bool isQuotaExceeded() const { return quota_exceeded.load(memory_order); }
+    bool isQuotaExceeded() const { return quota_exceeded.load(MEMORY_ORDER); }
     String onError() const { return on_error; }
 
     std::atomic<UInt64> input_tokens{0};

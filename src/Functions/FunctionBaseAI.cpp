@@ -166,7 +166,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        if (text_col->isNullAt(i) || !quota->checkBeforeDispatch(0))
+        if (text_col->isNullAt(i) || !quota->checkBeforeDispatch())
         {
             result_col->insertDefault();
             ++rows_skipped;
@@ -210,6 +210,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
                 if (quota->handleRowError())
                     break;
+
                 throw;
             }
         }
