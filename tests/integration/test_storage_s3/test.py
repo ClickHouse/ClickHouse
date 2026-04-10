@@ -3259,7 +3259,8 @@ def test_gcs_decompressive_transcoding(started_cluster):
 
 def test_gcs_decompressive_transcoding_gz(started_cluster):
     """Same mock but with .log.gz extension. The server signals transcoding via
-    x-goog-stored-content-encoding: gzip, so ClickHouse skips auto-decompression
+    x-goog-stored-content-encoding: gzip + no Content-Encoding + no Content-Length,
+    so ClickHouse skips auto-decompression
     See https://github.com/ClickHouse/ClickHouse/issues/47980"""
     instance = started_cluster.instances["dummy"]
 

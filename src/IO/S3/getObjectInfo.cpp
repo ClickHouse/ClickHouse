@@ -88,10 +88,9 @@ namespace
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
 
-        /// Detect GCS decompressive transcoding: the object was stored with
-        /// Content-Encoding: gzip and GCS decoded it before serving
-        auto stored_encoding_it = object_info.metadata.find("goog-stored-content-encoding");
-        if (stored_encoding_it != object_info.metadata.end() && stored_encoding_it->second == "gzip")
+        /// Detect confirmed decompressive transcoding (set by PocoHTTPClient)
+        auto it = object_info.metadata.find("ch-decompressive-transcoding");
+        if (it != object_info.metadata.end() && it->second == "true")
             object_info.is_server_side_decompressed = true;
 
         if (with_tags && result.GetTagCount() > 0)
