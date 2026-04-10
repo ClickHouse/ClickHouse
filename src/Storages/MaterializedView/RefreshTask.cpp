@@ -62,6 +62,8 @@ namespace ServerSetting
 namespace RefreshSetting
 {
     extern const RefreshSettingsBool all_replicas;
+    extern const RefreshSettingsBool prefer_dependency_replica;
+    extern const RefreshSettingsUInt64 prefer_dependency_replica_delay_ms;
     extern const RefreshSettingsInt64 refresh_retries;
     extern const RefreshSettingsUInt64 refresh_retry_initial_backoff_ms;
     extern const RefreshSettingsUInt64 refresh_retry_max_backoff_ms;
@@ -293,7 +295,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
             set_handle.changeDependencies(deps);
 
         scheduleRefresh(guard);
-        scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
+        scheduling.should_recalculate_dependencies = true;
 
         refresh_settings = {};
         if (new_strategy.settings != nullptr)
@@ -449,10 +451,13 @@ bool RefreshTask::tryJoinBackgroundTask(std::chrono::steady_clock::time_point de
         });
 }
 
-std::chrono::sys_seconds RefreshTask::getNextRefreshTimeslot() const
+RefreshTask::DependencyRefreshInfo RefreshTask::getDependencyInfo() const
 {
     std::lock_guard guard(mutex);
-    return refresh_schedule.advance(coordination.root_znode.last_completed_timeslot);
+    DependencyRefreshInfo info;
+    info.next_refresh_timeslot = refresh_schedule.advance(coordination.root_znode.last_completed_timeslot);
+    info.last_refresh_replica = coordination.root_znode.last_attempt_replica;
+    return info;
 }
 
 void RefreshTask::notify()
@@ -460,7 +465,7 @@ void RefreshTask::notify()
     std::lock_guard guard(mutex);
     if (view && view->getContext()->getRefreshSet().refreshesStopped())
         interruptExecution();
-    scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
+    scheduling.should_recalculate_dependencies = true;
     scheduleRefresh(guard);
 }
 
@@ -824,18 +829,19 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
 
 void RefreshTask::updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock)
 {
+    if (!scheduling.should_recalculate_dependencies)
+        return;
+
     while (true)
     {
         chassert(lock.owns_lock());
-        if (scheduling.dependencies_satisfied_until.time_since_epoch().count() >= 0)
-            return;
+        scheduling.should_recalculate_dependencies = false;
         auto deps = set_handle.getDependencies();
         if (deps.empty())
         {
             scheduling.dependencies_satisfied_until = std::chrono::sys_seconds::max();
             return;
         }
-        scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-2));
         lock.unlock();
 
         /// Consider a dependency satisfied if its next scheduled refresh time is greater than ours.
@@ -854,25 +860,47 @@ void RefreshTask::updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock
 
         const RefreshSet & set = view->getContext()->getRefreshSet();
         auto min_ts = std::chrono::sys_seconds::max();
+        bool need_delay = false;
         for (const StorageID & id : deps)
         {
             auto tasks = set.findTasks(id);
             if (tasks.empty())
+            {
                 min_ts = {}; // missing table, dependency unsatisfied
+            }
             else
-                min_ts = std::min(min_ts, (*tasks.begin())->getNextRefreshTimeslot());
+            {
+                auto info = (*tasks.begin())->getDependencyInfo();
+                need_delay |=
+                    refresh_settings[RefreshSetting::prefer_dependency_replica] &&
+                    info.last_refresh_replica != coordination.replica_name;
+                min_ts = std::min(min_ts, info.next_refresh_timeslot);
+            }
         }
 
         lock.lock();
 
-        if (scheduling.dependencies_satisfied_until.time_since_epoch().count() != -2)
+        if (scheduling.should_recalculate_dependencies)
         {
             /// Dependencies changed again after we started looking at them. Have to re-check.
-            chassert(scheduling.dependencies_satisfied_until.time_since_epoch().count() == -1);
             continue;
         }
 
-        scheduling.dependencies_satisfied_until = min_ts;
+        if (min_ts != scheduling.dependencies_satisfied_until)
+        {
+            scheduling.dependencies_satisfied_until = min_ts;
+            if (need_delay)
+            {
+                UInt64 delay_ms = refresh_settings[RefreshSetting::prefer_dependency_replica_delay_ms];
+                scheduling.dependencies_delay = currentTime() + std::chrono::milliseconds(Int64(delay_ms));
+                LOG_DEBUG(log, "Delaying {} ms for pod affinity (non-preferred replica for dependency chain)", delay_ms);
+            }
+            else
+            {
+                scheduling.dependencies_delay.reset();
+            }
+        }
+
         return;
     }
 }
@@ -906,6 +934,9 @@ RefreshTask::determineNextRefreshTime(std::chrono::sys_seconds now)
         when = refresh_schedule.addRandomSpread(timeslot, znode.randomness);
     else
         when = znode.last_attempt_time + backoff(znode.attempt_number - 1, refresh_settings);
+
+    if (scheduling.dependencies_delay.has_value())
+        when = std::max(when, scheduling.dependencies_delay.value());
 
     znode.previous_attempt_error = "";
     if (!znode.last_attempt_succeeded && znode.last_attempt_time.time_since_epoch().count() != 0)

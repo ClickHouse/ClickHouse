@@ -103,7 +103,7 @@ def started_cluster():
 
         yield cluster
     finally:
-        shutil.rmtree(os.path.join(SCRIPT_DIR, "data/generated/"))
+        shutil.rmtree(os.path.join(SCRIPT_DIR, "data/generated/"), ignore_errors=True)
         cluster.shutdown()
 
 
