@@ -82,6 +82,9 @@ struct MergeTreeReadTaskColumns
     std::vector<NamesAndTypesList> pre_columns;
     /// Column names to read from patch parts.
     std::vector<NamesAndTypesList> patch_columns;
+    /// Column names to read from patch parts for prewhere steps only (used by pipelined reader).
+    /// When populated, `patch_columns` contains only rest-column patches.
+    std::vector<NamesAndTypesList> patch_columns_prewhere;
 
     String dump() const;
     Names getAllColumnNames() const;
@@ -146,6 +149,11 @@ public:
         MergeTreeReaderPtr main;
         std::vector<MergeTreeReaderPtr> prewhere;
         MergeTreePatchReaders patches;
+        MergeTreePatchReaders patches_prewhere;
+        /// Mark ranges aligned with patches_prewhere (one entry per reader).
+        /// Built during createReaders because patches_prewhere may skip patch parts
+        /// with no prewhere columns, so its indices don't match the full patches_mark_ranges.
+        std::vector<MarkRanges> patches_prewhere_ranges;
         MergeTreeReaderPtr prepared_index;
 
         void updateAllMarkRanges(const MarkRanges & ranges);

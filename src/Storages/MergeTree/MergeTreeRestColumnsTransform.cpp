@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeRestColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeReadChunkInfo.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/PatchParts/applyPatchesUtils.h>
 #include <Core/Block.h>
 #include <Common/logger_useful.h>
 
@@ -35,6 +36,14 @@ void MergeTreeRestColumnsTransform::transform(Chunk & chunk)
     {
         rest_reader = std::move(read_chunk_info->rest_reader);
         rest_range_reader.reset();
+    }
+
+    /// Take ownership of rest-column patch readers when present (first chunk of a new task).
+    if (!read_chunk_info->rest_patches.empty())
+    {
+        rest_patch_readers = std::move(read_chunk_info->rest_patches);
+        rest_patches_results.resize(rest_patch_readers.size());
+        rest_patches_mark_ranges = std::move(read_chunk_info->patches_mark_ranges);
     }
 
     auto & read_result = *read_chunk_info->read_result;
@@ -101,8 +110,57 @@ void MergeTreeRestColumnsTransform::transform(Chunk & chunk)
             MergeTreeRangeReader::filterColumns(rest_columns, final_filter);
         }
 
+        /// Helper to apply rest-column patches at a specific stage.
+        const bool has_rest_patches = !rest_patch_readers.empty();
+        ColumnsForPatches rest_cfp;
+        if (has_rest_patches)
+        {
+            const auto & rest_sample_block = rest_range_reader->getReadSampleBlock();
+
+            /// Read patch data for current mark ranges.
+            for (size_t i = 0; i < rest_patch_readers.size(); ++i)
+            {
+                auto & patch_results = rest_patches_results[i];
+
+                while (!patch_results.empty()
+                       && !rest_patch_readers[i]->needOldPatch(read_result, *patch_results.front()))
+                    patch_results.pop_front();
+
+                const auto * last = patch_results.empty() ? nullptr : patch_results.back().get();
+                auto new_patches = rest_patch_readers[i]->readPatches(
+                    rest_patches_mark_ranges[i], read_result, rest_sample_block, last);
+                patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
+            }
+
+            rest_cfp = getColumnsForPatches(rest_sample_block, rest_columns, rest_patch_readers);
+        }
+
+        auto apply_rest_patches = [&](ColumnForPatch::Order order)
+        {
+            if (!has_rest_patches)
+                return;
+
+            const auto & rest_sample_block = rest_range_reader->getReadSampleBlock();
+            Block versions_block;
+            applyPatchesToColumns(
+                rest_patch_readers,
+                rest_patches_results,
+                rest_sample_block,
+                rest_columns,
+                versions_block,
+                /*min_version=*/ {},
+                /*max_version=*/ {},
+                rest_cfp,
+                {order},
+                read_result.getColumnsForPatches());
+        };
+
+        apply_rest_patches(ColumnForPatch::Order::BeforeConversions);
+
         /// Apply on-fly alter conversions.
         rest_reader->performRequiredConversions(rest_columns);
+
+        apply_rest_patches(ColumnForPatch::Order::AfterConversions);
 
         /// Evaluate defaults for missing columns.
         if (should_evaluate_missing_defaults)
@@ -137,6 +195,8 @@ void MergeTreeRestColumnsTransform::transform(Chunk & chunk)
             addDummyColumnWithRowCount(additional_columns, read_result.num_rows);
             rest_reader->evaluateMissingDefaults(additional_columns, rest_columns);
         }
+
+        apply_rest_patches(ColumnForPatch::Order::AfterEvaluatingDefaults);
     }
 
     /// Assemble the full output block from prewhere columns (input chunk) and rest columns.

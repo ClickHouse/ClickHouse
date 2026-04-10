@@ -440,6 +440,52 @@ void addPatchPartsColumns(
     }
 }
 
+void splitPatchColumnsForPrewhere(
+    MergeTreeReadTaskColumns & result,
+    const PatchPartsForReader & patch_parts,
+    const NameSet & prewhere_column_names)
+{
+    if (result.patch_columns.empty())
+        return;
+
+    result.patch_columns_prewhere.resize(patch_parts.size());
+
+    for (size_t i = 0; i < patch_parts.size(); ++i)
+    {
+        NamesAndTypesList prewhere_cols;
+        NamesAndTypesList rest_cols;
+
+        auto system_virtual_names = getVirtualsRequiredForPatch(patch_parts[i]);
+        NameSet system_set(system_virtual_names.begin(), system_virtual_names.end());
+
+        NamesAndTypesList system_cols;
+
+        for (const auto & col : result.patch_columns[i])
+        {
+            if (system_set.contains(col.name))
+            {
+                system_cols.push_back(col);
+                continue;
+            }
+
+            if (prewhere_column_names.contains(col.name))
+                prewhere_cols.push_back(col);
+            else
+                rest_cols.push_back(col);
+        }
+
+        /// Both subsets need system columns for patch matching.
+        if (!prewhere_cols.empty())
+            prewhere_cols.insert(prewhere_cols.end(), system_cols.begin(), system_cols.end());
+
+        if (!rest_cols.empty())
+            rest_cols.insert(rest_cols.end(), system_cols.begin(), system_cols.end());
+
+        result.patch_columns_prewhere[i] = std::move(prewhere_cols);
+        result.patch_columns[i] = std::move(rest_cols);
+    }
+}
+
 MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,

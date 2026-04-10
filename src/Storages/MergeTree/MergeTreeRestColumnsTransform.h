@@ -3,8 +3,10 @@
 #include <Processors/ISimpleTransform.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
 #include <atomic>
+#include <deque>
 
 namespace DB
 {
@@ -38,6 +40,11 @@ private:
     /// Shared counter: bytes read by this transform are accumulated here
     /// and drained by the upstream `MergeTreePrewhereSource` via `getReadProgress`.
     std::shared_ptr<std::atomic<size_t>> rest_bytes_counter;
+
+    /// Rest-column patch readers and their state.
+    MergeTreePatchReaders rest_patch_readers;
+    std::vector<std::deque<PatchReadResultPtr>> rest_patches_results;
+    std::vector<MarkRanges> rest_patches_mark_ranges;
 
     LoggerPtr log = getLogger("MergeTreeRestColumnsTransform");
 };

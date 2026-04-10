@@ -1,6 +1,6 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/PatchParts/applyPatchesUtils.h>
 
 #include <functional>
 
@@ -8,27 +8,6 @@ namespace DB
 {
 
 using RangeReaders = std::vector<MergeTreeRangeReader>;
-
-struct ColumnForPatch
-{
-    enum class Order
-    {
-        /// Apply patch before converting the column to actual type.
-        BeforeConversions,
-        /// Apply patch after converting the column to actual type.
-        AfterConversions,
-        /// Apply patch after evaluating missing defaults for the column.
-        AfterEvaluatingDefaults,
-    };
-
-    ColumnForPatch(const String & column_name_, Order order_) : column_name(column_name_), order(order_) {}
-
-    String column_name;
-    Order order;
-};
-
-using ColumnsForPatch = std::vector<ColumnForPatch>;
-using ColumnsForPatches = std::vector<ColumnsForPatch>;
 
 class MergeTreeReadersChain
 {
@@ -70,20 +49,8 @@ private:
         bool is_last_reader);
 
     void readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result);
-    void addPatchVirtuals(Block & to, const Block & from) const;
     void addPatchVirtuals(ReadResult & result, const Block & header) const;
     void applyPatchesAfterReader(ReadResult & result, size_t reader_index);
-    ColumnsForPatches getColumnsForPatches(const Block & header, const Columns & columns) const;
-
-    void applyPatches(
-        const Block & result_header,
-        Columns & result_columns,
-        Block & versions_block,
-        std::optional<UInt64> min_version,
-        std::optional<UInt64> max_version,
-        const ColumnsForPatches & columns_for_patches,
-        const std::set<ColumnForPatch::Order> & suitable_orders,
-        const Block & additional_columns) const;
 
     RangeReaders range_readers;
     MergeTreePatchReaders patch_readers;

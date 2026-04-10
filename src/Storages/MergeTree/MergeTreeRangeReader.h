@@ -294,6 +294,7 @@ public:
         const FilterWithCachedCount & getFinalFilter() const { return final_filter; }
         size_t getTotalRowsPerGranule() const { return total_rows_per_granule; }
         const Block & getAdditionalColumns() const { return additional_columns; }
+        const Block & getColumnsForPatches() const { return columns_for_patches; }
 
     private:
         friend class MergeTreeRangeReader;

@@ -222,6 +222,35 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.patch_join_cache));
     }
 
+    /// Create prewhere patch readers when patch_columns_prewhere is populated
+    /// (pipelined reader path).
+    for (size_t i = 0; i < read_info->patch_parts.size(); ++i)
+    {
+        if (read_info->task_columns.patch_columns_prewhere.empty()
+            || read_info->task_columns.patch_columns_prewhere[i].empty())
+            continue;
+
+        auto prewhere_patch_reader = createMergeTreeReader(
+            read_info->patch_parts[i].part,
+            read_info->task_columns.patch_columns_prewhere[i],
+            extras.storage_snapshot,
+            read_info->data_part->storage.getSettings(),
+            patches_ranges[i],
+            read_info->const_virtual_fields,
+            extras.uncompressed_cache,
+            extras.mark_cache,
+            /*deserialization_prefixes_cache=*/ nullptr,
+            extras.reader_settings,
+            extras.value_size_map,
+            extras.profile_callback);
+
+        new_readers.patches_prewhere.push_back(getPatchReader(
+            read_info->patch_parts[i],
+            std::move(prewhere_patch_reader),
+            extras.patch_join_cache));
+        new_readers.patches_prewhere_ranges.push_back(patches_ranges[i]);
+    }
+
     return new_readers;
 }
 
@@ -335,10 +364,10 @@ MergeTreeReadersChain MergeTreeReadTask::createPrewhereReadersChain(
     }
 
     /// No main reader — this is a prewhere-only chain.
-    /// Patches are not supported in the prewhere-only chain.
+    /// Prewhere patch readers are passed so that patch columns consumed in prewhere steps are applied.
     /// preserve_last_reader_additional_columns=true because the downstream
     /// RestColumnsTransform needs projected-out columns for DEFAULT evaluation.
-    return MergeTreeReadersChain{std::move(range_readers), {}, /*preserve_last_reader_additional_columns_=*/ true};
+    return MergeTreeReadersChain{std::move(range_readers), task_readers.patches_prewhere, /*preserve_last_reader_additional_columns_=*/ true};
 }
 
 void MergeTreeReadTask::initializeReadersChain(

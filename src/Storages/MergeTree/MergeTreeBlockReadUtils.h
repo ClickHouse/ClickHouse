@@ -29,6 +29,16 @@ void addPatchPartsColumns(
     const Names & all_columns_to_read,
     bool has_lightweight_delete);
 
+/// Splits `patch_columns` into prewhere and rest subsets based on which columns
+/// appear in prewhere steps. Both subsets include patch system virtual columns.
+/// After this call:
+/// - `result.patch_columns_prewhere[i]` has system cols + prewhere data cols from patch i
+/// - `result.patch_columns[i]` has system cols + rest data cols from patch i
+void splitPatchColumnsForPrewhere(
+    MergeTreeReadTaskColumns & result,
+    const PatchPartsForReader & patch_parts,
+    const NameSet & prewhere_column_names);
+
 MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,

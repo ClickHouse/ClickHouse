@@ -3,6 +3,7 @@
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
 namespace DB
 {
@@ -24,6 +25,8 @@ public:
         , task_info(other.task_info)
         , rest_reader(nullptr)
         , remaining_mark_ranges(other.remaining_mark_ranges)
+        , rest_patches(other.rest_patches)
+        , patches_mark_ranges(other.patches_mark_ranges)
     {
     }
 
@@ -49,6 +52,13 @@ public:
 
     /// Mark ranges remaining in the task after this chunk was read.
     MarkRanges remaining_mark_ranges;
+
+    /// Rest-column patch readers. Set on first chunk of a new task, empty on subsequent chunks.
+    /// RestColumnsTransform takes ownership on first use.
+    MergeTreePatchReaders rest_patches;
+
+    /// Patch mark ranges for rest patch readers (one per patch part).
+    std::vector<MarkRanges> patches_mark_ranges;
 };
 
 }

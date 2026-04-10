@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
 #include <Core/Settings.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
@@ -258,6 +259,22 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
             read_task_info.patch_parts,
             all_read_columns,
             has_lightweight_delete);
+
+        if (reader_settings.use_pipelined_mergetree_reader && prewhere_info)
+        {
+            NameSet prewhere_column_names;
+            for (const auto & name : prewhere_info->prewhere_actions.getRequiredColumnsNames())
+                prewhere_column_names.insert(name);
+
+            if (row_level_filter)
+                for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
+                    prewhere_column_names.insert(name);
+
+            splitPatchColumnsForPrewhere(
+                read_task_info.task_columns,
+                read_task_info.patch_parts,
+                prewhere_column_names);
+        }
     }
 
     read_task_info.index_read_tasks = index_read_tasks;

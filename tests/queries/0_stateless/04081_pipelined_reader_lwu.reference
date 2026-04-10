@@ -1,0 +1,18 @@
+rest_only_pipelined
+100	14904990
+rest_only_standard
+100	14904990
+prewhere_only_pipelined
+100
+prewhere_only_standard
+100
+both_pipelined
+100	both_patched	both_patched
+both_standard
+100	both_patched	both_patched
+multistep_pipelined
+0
+multistep_standard
+0
+full_comparison
+1

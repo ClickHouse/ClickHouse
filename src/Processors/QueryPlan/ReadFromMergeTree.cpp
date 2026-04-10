@@ -1093,10 +1093,8 @@ Pipe ReadFromMergeTree::read(
             std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
 
     /// Pipelined reader: split prewhere and rest columns into separate pipeline stages.
-    /// Not supported with patch parts (lightweight updates) yet.
     bool can_use_pipelined_reader = reader_settings.use_pipelined_mergetree_reader
-        && query_info.prewhere_info
-        && !(mutations_snapshot && mutations_snapshot->hasPatchParts());
+        && query_info.prewhere_info;
 
     if (read_type == ReadType::Default
         && can_use_pipelined_reader
@@ -1582,12 +1580,22 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .total_query_nodes = total_query_nodes,
     };
 
+    /// Pipelined reader: split prewhere and rest columns into separate pipeline stages.
+    bool can_use_pipelined_reader = reader_settings.use_pipelined_mergetree_reader
+        && query_info.prewhere_info;
+
+    auto read_in_order_impl = [&](RangesInDataParts parts, UInt64 limit) -> Pipe
+    {
+        if (can_use_pipelined_reader)
+            return readInOrderPipelined(std::move(parts), index_build_context, column_names, pool_settings, read_type, limit);
+        return readInOrder(std::move(parts), index_build_context, column_names, pool_settings, read_type, limit);
+    };
+
     Pipes pipes;
     /// For parallel replicas the split will be performed on the initiator side.
     if (is_parallel_reading_from_replicas)
     {
-        pipes.emplace_back(readInOrder(
-            std::move(parts_with_ranges), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+        pipes.emplace_back(read_in_order_impl(std::move(parts_with_ranges), input_order_info->limit));
     }
     else
     {
@@ -1668,8 +1676,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         }
 
         for (auto && item : split_parts_and_ranges)
-            pipes.emplace_back(readInOrder(
-                std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+            pipes.emplace_back(read_in_order_impl(std::move(item), input_order_info->limit));
     }
 
     Block pipe_header;

@@ -74,7 +74,13 @@ bool MergeTreePrewhereSource::getNewTask()
     current_task_info = task->getInfoPtr();
     current_readers = task->releaseReaders();
     mark_ranges = std::move(task->getMarkRanges());
-    patches_mark_ranges = std::move(task->getPatchesMarkRanges());
+    /// The full mark ranges go to the rest transform (aligned with patches vector
+    /// which has entries for ALL patch parts). The prewhere chain uses
+    /// patches_prewhere_ranges which is aligned with the patches_prewhere vector
+    /// (may skip patch parts with no prewhere columns). These must be separate
+    /// copies because readPatches consumes mark range entries in-place.
+    rest_patches_mark_ranges = std::move(task->getPatchesMarkRanges());
+    patches_mark_ranges = current_readers.patches_prewhere_ranges;
 
     /// Combine mutation steps (per-part on-fly mutations) with query prewhere steps.
     PrewhereExprInfo all_prewhere_actions;
@@ -176,6 +182,30 @@ std::optional<Chunk> MergeTreePrewhereSource::tryGenerate()
         /// RestColumnsTransform takes ownership and uses it for all subsequent chunks.
         if (current_readers.main)
             chunk_info->rest_reader = std::move(current_readers.main);
+
+        /// Pass rest patch readers and their mark ranges on the first chunk of each task.
+        /// Use rest_patches_mark_ranges (the unconsumed copy) because the prewhere chain
+        /// has already consumed entries from patches_mark_ranges via readPatches.
+        /// Filter out patch readers with empty column lists — these arise when
+        /// `splitPatchColumnsForPrewhere` moved all columns to prewhere, leaving
+        /// the rest reader with nothing to read.
+        if (!current_readers.patches.empty())
+        {
+            MergeTreePatchReaders non_empty_patches;
+            std::vector<MarkRanges> non_empty_ranges;
+            for (size_t i = 0; i < current_readers.patches.size(); ++i)
+            {
+                if (current_readers.patches[i]->getReader()->getColumns().empty())
+                    continue;
+                non_empty_patches.push_back(std::move(current_readers.patches[i]));
+                non_empty_ranges.push_back(std::move(rest_patches_mark_ranges[i]));
+            }
+            if (!non_empty_patches.empty())
+            {
+                chunk_info->rest_patches = std::move(non_empty_patches);
+                chunk_info->patches_mark_ranges = std::move(non_empty_ranges);
+            }
+        }
 
         chunk_info->skipped_read_results = std::move(skipped_read_results);
         chunk_info->remaining_mark_ranges = mark_ranges;
