@@ -164,7 +164,7 @@ INSERT INTO test_col_stats_agg VALUES
     (7, 40, 10, 400.0, 400.0, NULL, 3);
 
 -- Force statistics to be recomputed for existing parts
-ALTER TABLE test_col_stats_agg MATERIALIZE STATISTICS;
+ALTER TABLE test_col_stats_agg MATERIALIZE STATISTICS ALL;
 
 SET optimize_use_skip_index_aggregation = 1;
 SET parallel_replicas_local_plan = 1;
@@ -251,7 +251,7 @@ INSERT INTO test_col_stats_and_skip_index VALUES
     (3, 300.0, 2),
     (4, 400.0, 2);
 
-ALTER TABLE test_col_stats_and_skip_index MATERIALIZE STATISTICS;
+ALTER TABLE test_col_stats_and_skip_index MATERIALIZE STATISTICS ALL;
 
 -- Should use column statistics (shown as _column_statistics_aggregation), not skip index
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value), max(value) FROM test_col_stats_and_skip_index) WHERE explain LIKE '%ReadFromPreparedSource%';

@@ -75,6 +75,14 @@ SELECT uniqExact(value) FROM test_skip_index_set_agg;
 -- Re-enable
 SET optimize_use_skip_index_aggregation = 1;
 
+-- ==================================================
+-- Multi-argument uniq must NOT be optimized by single-column set index
+-- ==================================================
+
+-- uniq(value, id) has 2 arguments, should fall back to ReadFromMergeTree
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniq(value, id) FROM test_skip_index_set_agg) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT uniq(value, id) FROM test_skip_index_set_agg;
+
 DROP TABLE test_skip_index_set_agg;
 
 -- ==================================================
@@ -98,3 +106,31 @@ SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqExact(value) FROM test_skip_in
 SELECT uniqExact(value) FROM test_skip_index_set_overflow;
 
 DROP TABLE test_skip_index_set_overflow;
+
+-- ==================================================
+-- Parameterized uniq function tests
+-- ==================================================
+
+DROP TABLE IF EXISTS test_skip_index_set_param;
+CREATE TABLE test_skip_index_set_param (
+    id UInt64,
+    value Int32,
+    INDEX skip_set_value (value) TYPE set(100) GRANULARITY 1
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test_skip_index_set_param VALUES (1, 10), (2, 20), (3, 5), (4, 30), (5, 15), (6, 2), (7, 40);
+
+SET optimize_use_skip_index_aggregation = 1;
+SET parallel_replicas_local_plan = 1;
+SET optimize_aggregation_in_order = 0;
+
+-- Test uniqCombined with explicit parameter - should use skip index and preserve parameter
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqCombined(15)(value) FROM test_skip_index_set_param) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT uniqCombined(15)(value) FROM test_skip_index_set_param;
+
+-- Test uniqUpTo - should use skip index
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqUpTo(3)(value) FROM test_skip_index_set_param) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT uniqUpTo(3)(value) FROM test_skip_index_set_param;
+
+DROP TABLE test_skip_index_set_param;

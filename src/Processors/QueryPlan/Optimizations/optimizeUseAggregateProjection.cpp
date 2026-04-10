@@ -365,12 +365,12 @@ static bool isIndexAggregatable(const String & index_type)
     return index_type == "minmax" || index_type == "set";
 }
 
-static bool canIndexSatisfyAggregate(const String & index_type, const String & aggregate_function_name)
+static bool canIndexSatisfyAggregate(const String & index_type, const String & aggregate_function_name, size_t num_arguments)
 {
     if (index_type == "minmax")
         return aggregate_function_name == "min" || aggregate_function_name == "max";
     if (index_type == "set")
-        return aggregate_function_name.starts_with("uniq");
+        return aggregate_function_name.starts_with("uniq") && num_arguments == 1;
     return false;
 }
 
@@ -692,7 +692,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             bool all_aggregates_satisfied = true;
             for (const auto & agg : aggregates)
             {
-                if (!canIndexSatisfyAggregate(index_type, agg.function->getName()) || agg.argument_names.empty())
+                if (!canIndexSatisfyAggregate(index_type, agg.function->getName(), agg.argument_names.size()) || agg.argument_names.empty())
                 {
                     all_aggregates_satisfied = false;
                     break;

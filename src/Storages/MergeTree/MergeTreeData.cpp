@@ -9512,9 +9512,12 @@ Block MergeTreeData::getSkipIndexAggregationBlock(
         std::vector<AggResultColumnInfo> agg_columns;
         for (const auto & agg_desc : aggregate_descriptions)
         {
-            const String & func_name = agg_desc.function->getName();
+            /// Reuse the original aggregate function to preserve parameters (e.g. uniqCombined(15)).
+            /// The function's argument types may differ from the index column type, so we must
+            /// reconstruct with the index column type but keep the same parameters.
+            const Array & parameters = agg_desc.parameters;
             AggregateFunctionProperties properties;
-            auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {data_type}, {}, properties);
+            auto func = AggregateFunctionFactory::instance().get(agg_desc.function->getName(), NullsAction::EMPTY, {data_type}, parameters, properties);
             agg_columns.push_back({agg_desc.column_name, data_type, ColumnAggregateFunction::create(func), func});
         }
 
