@@ -362,13 +362,10 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
 
     if (only_analyze)
     {
-        auto res_col = ColumnUInt8::create();
-        res_col->getData().push_back(UInt8(0));
-        ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
-        auto result_const_node = std::make_shared<ConstantNode>(std::move(const_value));
-        auto res = result_const_node->getValueStringRepresentation();
-        node = std::move(result_const_node);
-        return {std::move(res)};
+        /// Do not evaluate the scalar subquery in only_analyze mode (EXPLAIN).
+        /// Keep the rewritten subquery to preserve semantics.
+        node = std::move(new_unique_argument);
+        return {"__unique"};
     }
 
     evaluateScalarSubqueryIfNeeded(new_unique_argument, scope, false);
