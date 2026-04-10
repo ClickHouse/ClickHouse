@@ -109,11 +109,11 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
 
     const auto & nc = NamedCollectionFactory::instance().get(collection_name);
 
-    config.provider = nc->getOrDefault<String>("provider", "openai");
+    config.provider = nc->getOrDefault<String>("provider", DEFAULT_AI_PROVIDER);
     config.endpoint = nc->getOrDefault<String>("endpoint", "");
     config.model = nc->getOrDefault<String>("model", "");
     config.api_key = nc->getOrDefault<String>("api_key", "");
-    config.max_tokens = nc->getOrDefault<UInt64>("max_tokens", 1024);
+    config.max_tokens = nc->getOrDefault<UInt64>("max_tokens", DEFAULT_AI_MAX_TOKENS);
     config.temperature = defaultTemperature();
 
     if (config.endpoint.empty())
@@ -169,7 +169,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         String(settings[Setting::ai_on_error].value));
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
-    timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec), 0);
+    timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
     auto throttler = std::make_shared<Throttler>("ai_rps", max_rps);
 

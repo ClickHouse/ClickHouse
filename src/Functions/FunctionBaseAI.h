@@ -10,6 +10,9 @@
 namespace DB
 {
 
+static constexpr auto DEFAULT_AI_PROVIDER = "openai";
+static constexpr UInt64 DEFAULT_AI_MAX_TOKENS = 1024;
+
 class FunctionBaseAI : public IFunction
 {
 public:

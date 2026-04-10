@@ -16,7 +16,7 @@ struct AIRequest
     String response_format_json;
     String model;
     float temperature = 0;
-    UInt64 max_tokens = 1024;
+    UInt64 max_tokens = 0;
 };
 
 struct AIResponse
