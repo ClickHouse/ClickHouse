@@ -106,6 +106,15 @@ MetadataStoragePtr MetadataStorageFactory::create(
     const std::string & compatibility_type_hint) const
 {
     const auto type = getMetadataType(config, config_prefix, compatibility_type_hint);
+
+    /// borrow_from_cache object storage loses all data on restart,
+    /// so it must use in-memory metadata; any persistent metadata type would leave stale entries.
+    if (compatibility_type_hint == "memory" && type != "memory")
+    {
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Object storage type `borrow_from_cache` requires metadata_type='memory', got '{}'", type);
+    }
+
     const auto it = registry.find(type);
 
     if (it == registry.end())
