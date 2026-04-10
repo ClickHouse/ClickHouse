@@ -1,6 +1,5 @@
 #include <Functions/FunctionBaseAI.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Throttler.h>
 #include <Common/Exception.h>
 #include <thread>
 #include <Common/logger_useful.h>
@@ -28,7 +27,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_ai_functions;
     extern const SettingsString default_ai_provider;
     extern const SettingsUInt64 ai_request_timeout_sec;
-    extern const SettingsUInt64 ai_max_rps;
     extern const SettingsUInt64 ai_max_retries;
     extern const SettingsUInt64 ai_retry_initial_delay_ms;
     extern const SettingsString ai_on_error;
@@ -142,7 +140,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     const auto & settings = getContext()->getSettingsRef();
     UInt64 timeout_sec = settings[Setting::ai_request_timeout_sec].value;
-    UInt64 max_rps = settings[Setting::ai_max_rps].value;
     UInt64 max_retries = settings[Setting::ai_max_retries].value;
     UInt64 retry_delay_ms = settings[Setting::ai_retry_initial_delay_ms].value;
 
@@ -156,8 +153,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
-
-    auto throttler = std::make_shared<Throttler>("ai_rps", max_rps);
 
     String system_prompt = buildSystemPrompt(arguments);
     String response_format = buildResponseFormatJSON(arguments);
@@ -195,9 +190,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         {
             try
             {
-                if (max_rps > 0)
-                    throttler->throttle(1, 0);
-
                 AIRequest ai_request;
                 ai_request.system_prompt = system_prompt;
                 ai_request.user_message = user_message;
