@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET distributed_ddl_output_mode='none';
 SET allow_experimental_automatic_fill_on_cluster_mode = false;
 SET cluster_for_automatic_fill_mode = 'test_shard_localhost';
