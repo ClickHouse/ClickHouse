@@ -203,16 +203,29 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         DateTime64 step = normalizeParameter(name, "step", step_param, target_scale);
         DateTime64 window = normalizeParameter(name, "window", window_param, target_scale);
 
+        /// Normalize parameters to consistent Field types (DecimalField<Decimal64> with target_scale).
+        /// This ensures coordinator and replica produce identical DataTypeAggregateFunction during
+        /// Parallel Replicas execution. Without normalization, different constant folding paths may
+        /// produce the same numeric value with different Field types (e.g., Int64 vs Decimal64),
+        /// causing CANNOT_CONVERT_TYPE errors because Field::operator== compares type discriminators.
+        Array normalized_params;
+        normalized_params.push_back(Field(DecimalField<Decimal64>(start_timestamp, target_scale)));
+        normalized_params.push_back(Field(DecimalField<Decimal64>(end_timestamp, target_scale)));
+        normalized_params.push_back(Field(DecimalField<Decimal64>(step, target_scale)));
+        normalized_params.push_back(Field(DecimalField<Decimal64>(window, target_scale)));
+
         if constexpr (is_predict)
         {
-            Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(target_scale));
+            Float64 predict_offset_raw = extractFloatParameter(name, "predict_offset", predict_offset_param);
+            Float64 predict_offset = predict_offset_raw * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(target_scale));
+            normalized_params.push_back(Field(predict_offset_raw));
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_predict>>>
-                (argument_types, parameters, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
+                (argument_types, normalized_params, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
         }
         else
         {
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate_or_resets>>>
-                (argument_types, parameters, start_timestamp, end_timestamp, step, window, target_scale);
+                (argument_types, normalized_params, start_timestamp, end_timestamp, step, window, target_scale);
         }
     }
     else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
@@ -222,16 +235,24 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         Int64 step = extractIntParameter(name, "step", step_param);
         Int64 window = extractIntParameter(name, "window", window_param);
 
+        /// Normalize to Int64 for consistent Field types (same reasoning as DateTime64 path above).
+        Array normalized_params;
+        normalized_params.push_back(Field(Int64(start_timestamp)));
+        normalized_params.push_back(Field(Int64(end_timestamp)));
+        normalized_params.push_back(Field(Int64(step)));
+        normalized_params.push_back(Field(Int64(window)));
+
         if constexpr (is_predict)
         {
             Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param);
+            normalized_params.push_back(Field(predict_offset));
             res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_predict>>>
-                (argument_types, parameters, start_timestamp, end_timestamp, step, window, 0, predict_offset);
+                (argument_types, normalized_params, start_timestamp, end_timestamp, step, window, 0, predict_offset);
         }
         else
         {
             res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate_or_resets>>>
-                (argument_types, parameters, start_timestamp, end_timestamp, step, window, 0);
+                (argument_types, normalized_params, start_timestamp, end_timestamp, step, window, 0);
         }
     }
 
