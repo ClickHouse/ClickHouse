@@ -17,6 +17,8 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr auto default_system_prompt = "You are a helpful assistant. Provide a clear and concise response.";
+
 class FunctionAiGenerateContent final : public FunctionBaseAI
 {
 public:
@@ -60,7 +62,7 @@ protected:
                 return system_prompt;
         }
 
-        return "You are a helpful assistant. Provide a clear and concise response.";
+        return default_system_prompt;
     }
 
     String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
@@ -80,7 +82,7 @@ Generates free-form text content from a prompt using an LLM provider.
 
 The function sends the prompt to the configured AI provider and returns the generated text.
 An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
-If no system prompt is given, the default system prompt is: `You are a helpful assistant. Provide a clear and concise response.`
+If no system prompt is given, the default system prompt is: `)" + String(default_system_prompt) + R"(`
 
 The first argument can optionally be a named collection that specifies the provider, model, endpoint,
 and API key. If omitted, the [default_ai_provider](/operations/settings/settings#default_ai_provider) setting is used.
