@@ -294,7 +294,7 @@ Typical use cases for the postprocessor argument include:
    You can use the postprocessor to discard them by converting them to empty tokens — empty tokens are ignored, i.e., not added to the index.
    Example: `if(col IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', col)`
 2. **Stemming or lemmatization**. Mapping each token to its stem improves search recall by matching morphological variants of the token with the same meaning.
-   For exmaple, a query for "running" would also match "run", searching for "better" finds "good", etc.
+   For example, a query for "running" would also match "run", searching for "better" finds "good", etc.
    ClickHouse provides a built-in [stem](/sql-reference/functions/string-functions.md/#stem) function for several languages.
    Example: `stem('en', col)`
 3. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
