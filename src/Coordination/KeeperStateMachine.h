@@ -14,8 +14,6 @@ namespace DB
 {
 class ResponseForSession;
 
-struct CoordinationSettings;
-using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 using ResponsesQueue = ConcurrentBoundedQueue<KeeperResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
@@ -147,8 +145,6 @@ protected:
     /// snapshot serialization. On `getFileSize` failure the previous value is retained
     /// and a warning is logged; the value self-corrects on the next successful snapshot.
     std::atomic<uint64_t> latest_snapshot_size{0};
-
-    CoordinationSettingsPtr coordination_settings;
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     /// Put processed responses into this queue
