@@ -53,7 +53,6 @@
 namespace ProfileEvents
 {
     extern const Event KeeperServerWriteLockWaitMicroseconds;
-    extern const Event KeeperServerWriteLockHoldMicroseconds;
 }
 
 namespace DB
@@ -345,11 +344,6 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         return std::unique_lock(lock_);
     }
 
-    std::unique_lock<std::mutex> lockCommit()
-    {
-        return std::unique_lock(commit_lock_);
-    }
-
     bool isCommitInProgress() const
     {
         return sm_commit_exec_in_progress_;
@@ -480,7 +474,7 @@ void KeeperServer::forceRecovery()
 {
     // notify threads containing the lock that we want to enter recovery mode
     is_recovering = true;
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
+    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
     auto params = raft_instance->get_current_params();
     enterRecoveryMode(params);
     raft_instance->setConfig(state_manager->load_config());
@@ -686,7 +680,11 @@ void KeeperServer::shutdownRaftServer()
     keeper_context->setServerState(KeeperContext::Phase::SHUTDOWN);
 
     if (create_snapshot_on_exit)
-        raft_instance->create_snapshot();
+    {
+        nuraft::raft_server::create_snapshot_options options;
+        options.serialize_commit_ = true;
+        raft_instance->create_snapshot(options);
+    }
 
     raft_instance.reset();
 
@@ -738,7 +736,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions &
     for (const auto & request_for_session : requests_for_sessions)
         entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(request_for_session));
 
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
+    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
     if (is_recovering)
         return nullptr;
 
@@ -1140,7 +1138,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
     const ClusterUpdateAction & action, bool last_command_was_leader_change)
 {
     using enum ConfigUpdateState;
-    ProfiledMutexLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
+    ProfiledMutexLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
 
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
@@ -1210,7 +1208,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
     if (!diff.empty())
     {
-        ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
+        ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
         last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]).cluster_config;
     }
 
@@ -1219,8 +1217,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
 void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    ProfiledMutexLock server_write_lock(
-        server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
+    ProfiledMutexLock server_write_lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
     if (is_recovering) return;
     constexpr auto sleep_time = 500ms;
 
@@ -1351,8 +1348,12 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
 uint64_t KeeperServer::createSnapshot()
 {
-    auto commit_lock = raft_instance->lockCommit();
-    uint64_t log_idx = raft_instance->create_snapshot();
+    /// serialize_commit_ makes nuraft lock commit_lock_. This guarantees that we call
+    /// enableSnapshotMode() on storage in the state that corresponds to `log_idx`, rather than a
+    /// more recent state.
+    nuraft::raft_server::create_snapshot_options options;
+    options.serialize_commit_ = true;
+    uint64_t log_idx = raft_instance->create_snapshot(options);
     if (log_idx != 0)
         LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);
     else

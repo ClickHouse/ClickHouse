@@ -282,6 +282,10 @@ function fuzz
                 # Give it some time to cool down
                 clickhouse-client --query "SHOW PROCESSLIST"
                 sleep 1
+            elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
+            then
+                # Server is alive but at memory limit, give it time to reclaim
+                sleep 1
             else
                 echo "Server live check returns $?"
                 cat err
