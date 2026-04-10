@@ -432,6 +432,22 @@ void MergeTreeReaderWide::deserializePrefix(
                 streams.erase(*stream_name);
         };
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
+        deserialize_settings.has_uniform_marks_callback =
+            [&](const ISerialization::SubstreamPath & substream_path,
+                size_t max_transitions) -> bool
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, substream_path, ".bin",
+                data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                return false;
+
+            auto it = streams.find(*stream_name);
+            if (it == streams.end())
+                return false;
+
+            return it->second->hasAtMostNDistinctMarks(max_transitions);
+        };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }
 }
