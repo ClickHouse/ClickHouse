@@ -73,6 +73,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
+    extern const CoordinationSettingsUInt64 max_session_active_requests;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
@@ -486,8 +487,23 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     /// Let the session classify the request.  Non-quorum reads are either
     /// dispatched inline or deferred behind in-flight writes and never enter
     /// the global queue.
-    if (session && !session->addRequest(request_info))
-        return true;
+    if (session)
+    {
+        auto add_result = session->addRequest(request_info);
+        if (add_result.result == KeeperSession::AddResult::SessionClosed)
+        {
+            LOG_WARNING(log, "Session {} is not active, rejecting request", session_id);
+            return false;
+        }
+        if (add_result.result == KeeperSession::AddResult::QueueFull)
+        {
+            addErrorResponses({request_info}, Coordination::Error::ZCONNECTIONLOSS);
+            return true;
+        }
+        /// Accepted — if handled locally (non-quorum read), don't push to Raft queue.
+        if (!add_result.goes_to_raft)
+            return true;
+    }
 
     ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
 
@@ -779,7 +795,9 @@ KeeperDispatcher::~KeeperDispatcher()
 
 KeeperSessionPtr KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
-    bool quorum_reads = configuration_and_settings->coordination_settings[CoordinationSetting::quorum_reads];
+    const auto & settings = configuration_and_settings->coordination_settings;
+    bool quorum_reads = settings[CoordinationSetting::quorum_reads];
+    size_t max_session_active_requests = settings[CoordinationSetting::max_session_active_requests];
 
     auto local_read_callback = [this](const KeeperRequestForSession & read_request)
     {
@@ -794,7 +812,7 @@ KeeperSessionPtr KeeperDispatcher::registerSession(int64_t session_id, ZooKeeper
             addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
     };
 
-    return session_registry_.registerSession(session_id, std::move(callback), quorum_reads, std::move(local_read_callback));
+    return session_registry_.registerSession(session_id, std::move(callback), quorum_reads, max_session_active_requests, std::move(local_read_callback));
 }
 
 void KeeperDispatcher::sessionCleanerTask()

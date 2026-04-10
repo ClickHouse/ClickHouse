@@ -21,6 +21,7 @@ KeeperSessionPtr KeeperSessionRegistry::registerSession(
     int64_t session_id,
     ZooKeeperResponseCallback callback,
     bool quorum_reads,
+    size_t max_session_active_requests,
     KeeperSession::LocalReadCallback local_read_callback)
 {
     bool inserted = false;
@@ -29,7 +30,7 @@ KeeperSessionPtr KeeperSessionRegistry::registerSession(
         inserted = live_sessions.insert(session_id).second;
     }
 
-    auto session = std::make_shared<KeeperSession>(session_id, callback, quorum_reads, std::move(local_read_callback));
+    auto session = std::make_shared<KeeperSession>(session_id, callback, quorum_reads, max_session_active_requests, std::move(local_read_callback));
 
     try
     {

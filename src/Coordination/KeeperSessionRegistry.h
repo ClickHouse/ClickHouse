@@ -31,6 +31,7 @@ public:
         int64_t session_id,
         ZooKeeperResponseCallback callback,
         bool quorum_reads,
+        size_t max_session_active_requests,
         KeeperSession::LocalReadCallback local_read_callback);
 
     /// Unregister a session's response callback and close its `KeeperSession`.
