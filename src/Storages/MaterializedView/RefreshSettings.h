@@ -14,6 +14,7 @@ class SettingsChanges;
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, UInt64)
 
+struct RefreshSettings;
 REFRESH_SETTINGS_SUPPORTED_TYPES(RefreshSettings, DECLARE_SETTING_TRAIT)
 
 struct RefreshSettings

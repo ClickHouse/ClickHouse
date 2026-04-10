@@ -22,6 +22,7 @@ struct S3AuthSettingsImpl;
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, String)
 
+struct S3AuthSettings;
 S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, DECLARE_SETTING_TRAIT)
 
 namespace S3

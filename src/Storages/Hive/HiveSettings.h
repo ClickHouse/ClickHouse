@@ -45,6 +45,7 @@ struct HiveSettingsImpl;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
+struct HiveSettings;
 HIVE_SETTINGS_SUPPORTED_TYPES(HiveSettings, DECLARE_SETTING_TRAIT)
 
 /** Settings for the Hive engine.

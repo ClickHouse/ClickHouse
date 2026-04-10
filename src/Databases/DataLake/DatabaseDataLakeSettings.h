@@ -50,6 +50,7 @@ class SettingsChanges;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
+struct DatabaseDataLakeSettings;
 LIST_OF_DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseDataLakeSettings, DECLARE_SETTING_TRAIT)
 
 struct DatabaseDataLakeSettings

@@ -96,6 +96,7 @@ private:
   *      M(CLASS_NAME, String) \
   *      M(CLASS_NAME, UInt64)
   *
+  * struct MySettings;
   * MY_SETTINGS_SUPPORTED_TYPES(MySettings, DECLARE_SETTING_TRAIT)
   *
   * struct MySettings
@@ -154,13 +155,13 @@ public:
     BaseSettings(BaseSettings &&) noexcept = default;
 
     /// Typed subscript access via SettingIndex offset
-    template <typename FieldType>
-    const FieldType & operator[](SettingIndex<FieldType> index) const
+    template <typename Owner, typename FieldType>
+    const FieldType & operator[](SettingIndex<Owner, FieldType> index) const
     {
         return *reinterpret_cast<const FieldType *>(reinterpret_cast<const char *>(this) + index.offset);
     }
-    template <typename FieldType>
-    FieldType & operator[](SettingIndex<FieldType> index)
+    template <typename Owner, typename FieldType>
+    FieldType & operator[](SettingIndex<Owner, FieldType> index)
     {
         return *reinterpret_cast<FieldType *>(reinterpret_cast<char *>(this) + index.offset);
     }

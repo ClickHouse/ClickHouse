@@ -39,6 +39,7 @@ struct RabbitMQSettingsImpl;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
+struct RabbitMQSettings;
 RABBITMQ_SETTINGS_SUPPORTED_TYPES(RabbitMQSettings, DECLARE_SETTING_TRAIT)
 
 struct RabbitMQSettings

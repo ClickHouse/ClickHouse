@@ -19,6 +19,7 @@ struct DistributedSettingsImpl;
     M(CLASS_NAME, Milliseconds) \
     M(CLASS_NAME, UInt64)
 
+struct DistributedSettings;
 DISTRIBUTED_SETTINGS_SUPPORTED_TYPES(DistributedSettings, DECLARE_SETTING_TRAIT)
 
 /** Settings for the Distributed family of engines.

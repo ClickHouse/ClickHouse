@@ -43,6 +43,7 @@ class SettingsChanges;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
+struct StorageObjectStorageSettings;
 STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(StorageObjectStorageSettings, DECLARE_SETTING_TRAIT)
 
 struct StorageObjectStorageSettings

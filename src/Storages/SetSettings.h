@@ -36,6 +36,7 @@ struct SetSettingsImpl;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
+struct SetSettings;
 SET_SETTINGS_SUPPORTED_TYPES(SetSettings, DECLARE_SETTING_TRAIT)
 
 

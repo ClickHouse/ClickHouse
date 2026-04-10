@@ -31,6 +31,7 @@ struct ServerSettingsImpl;
     M(CLASS_NAME, InsertDeduplicationVersions) \
 
 
+struct ServerSettings;
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_TRAIT)
 
 struct ServerSettings

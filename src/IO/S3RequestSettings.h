@@ -23,6 +23,7 @@ struct Settings;
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, String)
 
+struct S3RequestSettings;
 S3REQUEST_SETTINGS_SUPPORTED_TYPES(S3RequestSettings, DECLARE_SETTING_TRAIT)
 
 namespace S3

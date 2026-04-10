@@ -7984,7 +7984,7 @@ IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
 /// SettingOffset namespace: constexpr offsets derived from the generic traits layout.
 /// Used by INITIALIZE_SETTING_EXTERN for the Setting::NAME extern variables.
 #define SETTING_DECLARE_OFFSET_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    inline constexpr SettingIndex<SettingField##TYPE> NAME{ \
+    inline constexpr SettingIndex<Settings, SettingField##TYPE> NAME{ \
         offsetof(SettingsTraits::Data, TYPE##_) \
         + SettingsTraits::settings_layout_.local_index[static_cast<size_t>(SettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE)};
 

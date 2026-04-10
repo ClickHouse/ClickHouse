@@ -46,6 +46,7 @@ struct StorageID;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
+struct ObjectStorageQueueSettings;
 OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(ObjectStorageQueueSettings, DECLARE_SETTING_TRAIT)
 
 struct ObjectStorageQueueSettings

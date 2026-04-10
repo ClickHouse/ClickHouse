@@ -17,6 +17,7 @@ struct ExecutableSettingsImpl;
     M(CLASS_NAME, ExternalCommandStderrReaction) \
     M(CLASS_NAME, UInt64)
 
+struct ExecutableSettings;
 EXECUTABLE_SETTINGS_SUPPORTED_TYPES(ExecutableSettings, DECLARE_SETTING_TRAIT)
 
 /// Settings for ExecutablePool engine.
