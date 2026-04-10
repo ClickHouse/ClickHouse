@@ -139,11 +139,11 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
 }
 
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
 {
     auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
-        ColumnsDescription{},
+        std::move(cached_columns),
         String{},
         source_database_name_or_regexp,
         database_is_regexp,
