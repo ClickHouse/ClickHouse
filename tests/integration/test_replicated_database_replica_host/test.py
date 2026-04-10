@@ -214,8 +214,10 @@ def test_host_id_migration_on_restart(started_cluster):
     # Extract UUID (last colon-separated field)
     uuid = current_host_id.rsplit(":", 1)[-1]
 
-    # Construct a stale host_id: different hostname, same port and UUID
-    stale_host_id = f"stale-old-hostname%3A9000:{uuid}"
+    # Construct a stale host_id: different hostname, same port and UUID.
+    # Use the same format as Cluster::Address::toString: escapeForFileName(host) + ':' + port.
+    # For a plain hostname with no special characters, this is just "hostname:port".
+    stale_host_id = f"stale-old-hostname:9000:{uuid}"
 
     # Overwrite ZooKeeper with the stale host_id directly via kazoo
     zk = cluster.get_kazoo_client("zoo1")
