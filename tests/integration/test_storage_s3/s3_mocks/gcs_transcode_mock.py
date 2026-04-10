@@ -6,7 +6,7 @@ import http.server
 # See https://cloud.google.com/storage/docs/transcoding
 
 DATA = b'{"id":1}\n{"id":2}\n{"id":3}\n'
--
+
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
