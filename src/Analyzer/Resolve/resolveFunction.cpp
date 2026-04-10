@@ -282,6 +282,11 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
 {
     checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
 
+    if (function_node_ptr->getArguments().getNodes().size() != 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Function 'UNIQUE' expects exactly one subquery argument. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
     const auto & unique_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
     auto unique_subquery_argument_node_type = unique_subquery_argument->getNodeType();
     if (unique_subquery_argument_node_type != QueryTreeNodeType::QUERY
