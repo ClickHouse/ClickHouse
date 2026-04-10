@@ -147,8 +147,6 @@ namespace
             writeString(location.file.toString(), out);
             writeChar(':', out);
             writeIntText(location.line, out);
-            writeChar(':', out);
-            writeIntText(location.column, out);
 
             out.finalize();
             result = out.complete();

@@ -8,11 +8,9 @@
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
-#include <Common/JemallocCacheArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
 #include <Common/logger_useful.h>
@@ -472,7 +470,7 @@ uint64_t updateJemallocEpoch()
 {
     uint64_t value = 0;
     size_t size = sizeof(value);
-    je_mallctl("epoch", &value, &size, &value, size);
+    mallctl("epoch", &value, &size, &value, size);
     return value;
 }
 
@@ -1116,11 +1114,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
-    // When force_update is true (SYSTEM RELOAD ASYNCHRONOUS METRICS), always advance the epoch
-    // to guarantee fresh statistics. The update_jemalloc_epoch flag is false when MemoryWorker
-    // owns epoch advancement on the periodic background path, but an explicit user request
-    // should always return up-to-date values.
-    auto epoch = (update_jemalloc_epoch || force_update) ? updateJemallocEpoch() : Jemalloc::getValue<uint64_t>("epoch");
+    auto epoch = update_jemalloc_epoch ? updateJemallocEpoch() : Jemalloc::getValue<uint64_t>("epoch");
     new_values["jemalloc.epoch"]
         = {epoch,
            "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
@@ -1138,26 +1132,12 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
     saveJemallocProf<bool>(new_values, "active");
-    saveJemallocProf<size_t>(new_values, "lg_sample");
     saveJemallocProf<bool>(new_values, "thread_active_init");
     saveAllArenasMetric<size_t>(new_values, "pactive");
     saveAllArenasMetric<size_t>(new_values, "pdirty");
     saveAllArenasMetric<size_t>(new_values, "pmuzzy");
     saveAllArenasMetric<size_t>(new_values, "dirty_purged");
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
-    saveJemallocMetricImpl<size_t>(new_values, "arenas.dirty_decay_ms", "jemalloc.arenas.dirty_decay_ms");
-
-    /// Per-arena metrics for the dedicated cache arena (mark cache, uncompressed cache).
-    if (JemallocCacheArena::isEnabled())
-    {
-        unsigned cache_arena = JemallocCacheArena::getArenaIndex();
-        saveJemallocMetricImpl<size_t>(new_values,
-            fmt::format("stats.arenas.{}.pactive", cache_arena),
-            "jemalloc.cache_arena.pactive");
-        saveJemallocMetricImpl<size_t>(new_values,
-            fmt::format("stats.arenas.{}.pdirty", cache_arena),
-            "jemalloc.cache_arena.pdirty");
-    }
 #endif
 
     /// Process process memory usage according to OS

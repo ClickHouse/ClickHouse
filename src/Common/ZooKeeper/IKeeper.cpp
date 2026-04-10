@@ -134,6 +134,7 @@ bool isUserError(Error zk_return_code)
         || zk_return_code == Error::ZNOTEMPTY;
 }
 
+
 void CreateRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRecursiveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }

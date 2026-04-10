@@ -24,7 +24,6 @@
 #include <base/Decimal.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
-#include <Common/ErrnoException.h>
 
 namespace DB
 {

@@ -39,7 +39,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int CANNOT_READ_ALL_DATA;
-extern const int INSTRUMENTATION_ERROR;
 extern const int LOGICAL_ERROR;
 }
 
@@ -70,7 +69,6 @@ String entryTypeToString(EntryType entry_type)
         case EntryType::EXIT: return "Exit";
         case EntryType::ENTRY_AND_EXIT: return "EntryAndExit";
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong entry_type to convert to String: {}", entry_type);
 }
 
 }
@@ -93,8 +91,9 @@ String InstrumentationManager::InstrumentedPointInfo::toString() const
 
         if (i < parameters.size() - 1)
             parameters_str += ", ";
+        else
+            parameters_str += "]";
     }
-    parameters_str += "]";
 
     return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
         id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
@@ -122,35 +121,16 @@ void InstrumentationManager::ensureInitialization()
 {
     callOnce(initialized, [this]()
     {
-        __xray_init();
         parseInstrumentationMap();
-        if (__xray_set_handler(&InstrumentationManager::dispatchHandler) == 0)
-            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error setting handler");
+        __xray_set_handler(&InstrumentationManager::dispatchHandler);
     });
-}
-
-static void handleXRayPatchingStatus(XRayPatchingStatus status, Int32 function_id, const String & method)
-{
-    switch (status)
-    {
-        case XRayPatchingStatus::FAILED:
-            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error {} the function {}: XRay failed", method, function_id);
-        case XRayPatchingStatus::NOT_INITIALIZED:
-            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error {} the function {}: XRay not initialized", method, function_id);
-
-        /// In case of SUCCESS or ONGOING, there's nothing else to warn about. Everything's sound.
-        case XRayPatchingStatus::SUCCESS: [[fallthrough]];
-        case XRayPatchingStatus::ONGOING:
-            return;
-    }
 }
 
 void InstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
 {
     if (instrumented_points.get<FunctionId>().contains(function_id))
         return;
-    const auto status = __xray_patch_function(function_id);
-    handleXRayPatchingStatus(status, function_id, "patching");
+    __xray_patch_function(function_id);
 }
 
 void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
@@ -160,34 +140,28 @@ void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function id {} to unpatch not previously patched", function_id);
 
     if (count <= 1)
-    {
-        const auto status = __xray_unpatch_function(function_id);
-        handleXRayPatchingStatus(status, function_id, "unpatching");
-    }
+        __xray_unpatch_function(function_id);
 }
 
 bool InstrumentationManager::shouldPatchFunction(String function_to_patch, String full_qualified_function)
 {
-    /// We need to check all occurrences of function_to_patch, not just the first one,
-    /// because earlier matches may be inside template arguments while later ones are not.
     size_t found_pos = full_qualified_function.find(function_to_patch);
-    while (found_pos != std::string::npos)
+    if (found_pos != std::string::npos)
     {
-        /// Check whether the match is within a template argument by counting bracket depth.
-        size_t depth = 0;
+        /// Once we find a possible match, we need to ensure the match is not within a template argument
+        std::stack<bool> brackets;
         for (size_t pos = 0; pos < found_pos; ++pos)
         {
             if (full_qualified_function[pos] == '<')
-                ++depth;
-            else if (full_qualified_function[pos] == '>' && depth > 0)
-                --depth;
+                brackets.push(true);
+            else if (full_qualified_function[pos] == '>')
+                brackets.pop();
         }
 
-        if (depth == 0)
+        if (brackets.empty())
             return true;
 
         LOG_INFO(logger, "Not instrumenting function '{}' because the match is within a template argument: '{}'", function_to_patch, full_qualified_function);
-        found_pos = full_qualified_function.find(function_to_patch, found_pos + 1);
     }
     return false;
 }
@@ -268,7 +242,7 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, Instrumentatio
 
             for (const auto & info : instrumented_points)
             {
-                if (info.function_name == name)
+                if (info.function_name == std::get<String>(id))
                     functions_to_unpatch.push_back(info);
             }
 
@@ -379,6 +353,7 @@ void InstrumentationManager::parseInstrumentationMap()
     auto & instr_map = *instr_map_or_error;
 
     const auto function_addresses = instr_map.getFunctionAddresses();
+    const auto & context = CurrentThread::getQueryContext();
 
     LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map. This takes a few seconds...");
 
@@ -527,7 +502,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
         high_resolution_clock::time_point time;
     };
 
-    /// This is the easiest way to store the elements, because otherwise we'd need to have a mutex to protect a
+    /// This is the easiest way to do store the elements, because otherwise we'd need to have a mutex to protect a
     /// shared std::unordered_map. However, there might be a race condition in which this handler is already triggered
     /// on entry and the function is unpatched immediately afterwards. That's fine, since we're using the instrumented
     /// point ID to know for sure whether this execution is tight to the stored element or not.
@@ -555,12 +530,6 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
         auto it = profile_elements.find(instrumented_point.function_id);
         if (it != profile_elements.end())
         {
-            if (it->second.empty())
-            {
-                profile_elements.erase(it);
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Profile element for instrumented point {} not found", instrumented_point.toString());
-            }
-
             auto & top_entry = it->second.top();
             auto & element = top_entry.element;
             auto previous_time = top_entry.time;

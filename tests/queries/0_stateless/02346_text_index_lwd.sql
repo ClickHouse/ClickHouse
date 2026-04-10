@@ -1,3 +1,5 @@
+SET enable_full_text_index = 1;
+
 -- Some tests for lightweight deleted on a column with text index
 
 DROP TABLE IF EXISTS tab;
