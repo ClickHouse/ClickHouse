@@ -28,7 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_ENOUGH_SPACE;
 }
 
 void LRUFileCachePriority::State::add(uint64_t size_, uint64_t elements_, const CacheStateGuard::Lock &)
@@ -232,8 +231,18 @@ LRUFileCachePriority::iterateImpl(
             {
                 case Entry::State::Active:
                 {
-                    /// TODO: Inroduce a separate pre-Active state for zero size valid entries
+                    /// A newly added entry may have size 0 before the first
+                    /// space reservation completes. It is not yet evictable.
                     return entry.size > 0;
+                }
+                case Entry::State::PreActive:
+                {
+                    /// Entry is being moved between SLRU queues. Size may already be
+                    /// non-zero, but the entry is not evictable until `SLRUIterator::setIterator`
+                    /// transitions it to Active atomically with the iterator pointer update.
+                    /// For SLRU transitions `size > 0` alone is not a sufficient guard, because
+                    /// the SLRUIterator might still point to the old entry.
+                    return false;
                 }
                 case Entry::State::Invalidated:
                 {
@@ -552,12 +561,7 @@ bool LRUFileCachePriority::modifySizeLimits(
 
     if (state->getSize(lock) > max_size_ || state->getElementsCount(lock) > max_elements_)
     {
-        /// This is not a logical error: during dynamic cache resize with SLRU,
-        /// concurrent `tryIncreasePriority` can promote entries from probationary
-        /// to protected queue between eviction candidate collection and this call,
-        /// causing a sub-queue to temporarily exceed its new limit.
-        /// The caller catches this and retries on the next config reload.
-        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot modify size limits to {} in size and {} in elements: "
                         "not enough space freed. Current size: {}/{}, elements: {}/{} ({})",
                         max_size_, max_elements_, state->getSize(lock), max_size.load(),
