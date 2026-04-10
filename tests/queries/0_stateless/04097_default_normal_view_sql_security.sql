@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS test_table;
 DROP VIEW IF EXISTS test_view_default;
 DROP VIEW IF EXISTS test_view_definer;
