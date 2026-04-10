@@ -9,11 +9,18 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <memory>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool st_function_use_spherical;
+}
 
 namespace ErrorCodes
 {
@@ -124,8 +131,6 @@ meaning no point of geometry1 lies outside geometry2 and their interiors interse
 the boundary of geometry2 are NOT considered within.
 
 Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
-
-`ST_Within` is an alias for this function.
     )",
         .syntax = "geoWithinCartesian(geometry1, geometry2)",
         .arguments
@@ -167,8 +172,54 @@ Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
         .introduced_in = {25, 9},
         .category = FunctionDocumentation::Category::Geo});
 
-    /// ST_Within is an alias for geoWithinCartesian.
-    factory.registerAlias("ST_Within", "geoWithinCartesian", FunctionFactory::Case::Insensitive);
+    /// ST_Within dispatches to geoWithinSpherical or geoWithinCartesian
+    /// based on the `st_function_use_spherical` setting.
+    factory.registerFunction("ST_Within", [](ContextPtr context) -> FunctionPtr
+    {
+        if (context->getSettingsRef()[Setting::st_function_use_spherical])
+            return FunctionGeoWithin<SphericalPoint>::create(context);
+        else
+            return FunctionGeoWithin<CartesianPoint>::create(context);
+    }, FunctionDocumentation{
+        .description = R"(
+Returns true if geometry1 is completely inside geometry2, meaning no point of geometry1 lies
+outside geometry2 and their interiors intersect. Points on the boundary of geometry2 are
+NOT considered within.
+
+By default operates in spherical coordinates (longitude, latitude in degrees), consistent
+with BigQuery's `ST_WITHIN`. Set `st_function_use_spherical = false` to use Cartesian coordinates.
+
+Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
+    )",
+        .syntax = "ST_Within(geometry1, geometry2)",
+        .arguments
+        = {{"geometry1",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."},
+           {"geometry2",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
+        .returned_value
+        = {"Returns 1 if geometry1 is within geometry2, 0 otherwise. [`UInt8`](/sql-reference/data-types/int-uint)."},
+        .examples
+        = {{"Point within polygon",
+            R"(
+                SELECT ST_Within(
+                    CAST((5.0, 5.0), 'Point'),
+                    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'))
+            )",
+            R"(
+                ┌─ST_Within()─┐
+                │           1 │
+                └─────────────┘
+            )"}},
+        .introduced_in = {25, 8},
+        .category = FunctionDocumentation::Category::Geo},
+    FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionGeoWithin<SphericalPoint>>(FunctionDocumentation{
         .description = R"(

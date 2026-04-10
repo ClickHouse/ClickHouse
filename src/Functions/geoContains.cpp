@@ -9,11 +9,18 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <memory>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool st_function_use_spherical;
+}
 
 namespace ErrorCodes
 {
@@ -131,7 +138,6 @@ the boundary of geometry1 are NOT considered contained.
 
 Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
 
-`ST_Contains` is an alias for this function.
     )",
         .syntax = "geoContainsCartesian(geometry1, geometry2)",
         .arguments
@@ -173,8 +179,54 @@ Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
         .introduced_in = {25, 9},
         .category = FunctionDocumentation::Category::Geo});
 
-    /// ST_Contains is an alias for geoContainsCartesian.
-    factory.registerAlias("ST_Contains", "geoContainsCartesian", FunctionFactory::Case::Insensitive);
+    /// ST_Contains dispatches to geoContainsSpherical or geoContainsCartesian
+    /// based on the `st_function_use_spherical` setting.
+    factory.registerFunction("ST_Contains", [](ContextPtr context) -> FunctionPtr
+    {
+        if (context->getSettingsRef()[Setting::st_function_use_spherical])
+            return FunctionGeoContains<SphericalPoint>::create(context);
+        else
+            return FunctionGeoContains<CartesianPoint>::create(context);
+    }, FunctionDocumentation{
+        .description = R"(
+Returns true if geometry1 fully contains geometry2, meaning no point of geometry2 lies
+outside geometry1 and their interiors intersect. Points on the boundary of geometry1 are
+NOT considered contained.
+
+By default operates in spherical coordinates (longitude, latitude in degrees), consistent
+with BigQuery's `ST_CONTAINS`. Set `st_function_use_spherical = false` to use Cartesian coordinates.
+
+Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
+    )",
+        .syntax = "ST_Contains(geometry1, geometry2)",
+        .arguments
+        = {{"geometry1",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."},
+           {"geometry2",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
+        .returned_value
+        = {"Returns 1 if geometry1 contains geometry2, 0 otherwise. [`UInt8`](/sql-reference/data-types/int-uint)."},
+        .examples
+        = {{"Polygon contains point",
+            R"(
+                SELECT ST_Contains(
+                    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'),
+                    CAST((5.0, 5.0), 'Point'))
+            )",
+            R"(
+                ┌─ST_Contains()─┐
+                │             1 │
+                └───────────────┘
+            )"}},
+        .introduced_in = {25, 8},
+        .category = FunctionDocumentation::Category::Geo},
+    FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionGeoContains<SphericalPoint>>(FunctionDocumentation{
         .description = R"(

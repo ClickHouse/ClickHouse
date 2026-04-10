@@ -9,11 +9,18 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <memory>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool st_function_use_spherical;
+}
 
 namespace ErrorCodes
 {
@@ -134,7 +141,6 @@ Equivalent to `geoCoversCartesian(geometry1, geometry2) AND geoCoversCartesian(g
 
 Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
 
-`ST_Equals` is an alias for this function.
     )",
         .syntax = "geoEqualsCartesian(geometry1, geometry2)",
         .arguments
@@ -176,8 +182,53 @@ Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
         .introduced_in = {25, 9},
         .category = FunctionDocumentation::Category::Geo});
 
-    /// ST_Equals is an alias for geoEqualsCartesian.
-    factory.registerAlias("ST_Equals", "geoEqualsCartesian", FunctionFactory::Case::Insensitive);
+    /// ST_Equals dispatches to geoEqualsSpherical or geoEqualsCartesian
+    /// based on the `st_function_use_spherical` setting.
+    factory.registerFunction("ST_Equals", [](ContextPtr context) -> FunctionPtr
+    {
+        if (context->getSettingsRef()[Setting::st_function_use_spherical])
+            return FunctionGeoEquals<SphericalPoint>::create(context);
+        else
+            return FunctionGeoEquals<CartesianPoint>::create(context);
+    }, FunctionDocumentation{
+        .description = R"(
+Returns true if two geometries are topologically equal, meaning each geometry covers the other.
+Two geometries are equal if they represent the same spatial region, even if their vertex orderings differ.
+
+By default operates in spherical coordinates (longitude, latitude in degrees), consistent
+with BigQuery's `ST_EQUALS`. Set `st_function_use_spherical = false` to use Cartesian coordinates.
+
+Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
+    )",
+        .syntax = "ST_Equals(geometry1, geometry2)",
+        .arguments
+        = {{"geometry1",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."},
+           {"geometry2",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
+        .returned_value
+        = {"Returns 1 if the two geometries are equal, 0 otherwise. [`UInt8`](/sql-reference/data-types/int-uint)."},
+        .examples
+        = {{"Same polygon",
+            R"(
+                SELECT ST_Equals(
+                    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'),
+                    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'))
+            )",
+            R"(
+                ┌─ST_Equals()─┐
+                │           1 │
+                └─────────────┘
+            )"}},
+        .introduced_in = {25, 8},
+        .category = FunctionDocumentation::Category::Geo},
+    FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionGeoEquals<SphericalPoint>>(FunctionDocumentation{
         .description = R"(

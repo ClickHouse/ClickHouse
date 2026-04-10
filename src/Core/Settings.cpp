@@ -4117,6 +4117,13 @@ Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set to 'lat_lon'.
 )", BETA) \
     DECLARE(Bool, functions_h3_default_if_invalid, false, "If false, h3 functions, e.g. h3CellAreaM2, throw an exception if input is invalid. If true, they return 0 or default value.", 0) \
+    DECLARE(Bool, st_function_use_spherical, true, R"(
+Controls the coordinate system used by `ST_Within`, `ST_Contains`, `ST_CoveredBy`, `ST_Covers`,
+`ST_Equals`, `ST_Intersects`, and `ST_Touches` functions. When true (default), these functions
+operate in spherical coordinates (longitude/latitude in degrees), consistent with BigQuery semantics.
+When false, they operate in Cartesian (flat/planar) coordinates. The explicit `geo*Cartesian` and
+`geo*Spherical` function variants are not affected by this setting.
+)", 0) \
     DECLARE(UInt64, max_wkb_geometry_elements, 1'000'000, R"(
 Maximum number of points, rings, or polygons allowed in a single WKB geometry element during parsing by `readWKB` and related functions. This protects against excessive memory allocations from malformed WKB data. Set to 0 to use the hard-coded limit (100 million).
 )", 0) \

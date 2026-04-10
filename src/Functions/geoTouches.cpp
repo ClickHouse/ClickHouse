@@ -9,11 +9,18 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <memory>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool st_function_use_spherical;
+}
 
 namespace ErrorCodes
 {
@@ -129,7 +136,6 @@ do NOT touch (they share their entire extent, not just boundaries).
 
 Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
 
-`ST_Touches` is an alias for this function.
     )",
         .syntax = "geoTouchesCartesian(geometry1, geometry2)",
         .arguments
@@ -171,8 +177,54 @@ Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
         .introduced_in = {25, 9},
         .category = FunctionDocumentation::Category::Geo});
 
-    /// ST_Touches is an alias for geoTouchesCartesian.
-    factory.registerAlias("ST_Touches", "geoTouchesCartesian", FunctionFactory::Case::Insensitive);
+    /// ST_Touches dispatches to geoTouchesSpherical or geoTouchesCartesian
+    /// based on the `st_function_use_spherical` setting.
+    factory.registerFunction("ST_Touches", [](ContextPtr context) -> FunctionPtr
+    {
+        if (context->getSettingsRef()[Setting::st_function_use_spherical])
+            return FunctionGeoTouches<SphericalPoint>::create(context);
+        else
+            return FunctionGeoTouches<CartesianPoint>::create(context);
+    }, FunctionDocumentation{
+        .description = R"(
+Returns true if two geometries intersect only at their boundaries, with no common interior points.
+
+A point on the boundary of a polygon is considered touching. Two identical points do NOT touch.
+
+By default operates in spherical coordinates (longitude, latitude in degrees), consistent
+with BigQuery's `ST_TOUCHES`. Set `st_function_use_spherical = false` to use Cartesian coordinates.
+
+Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
+    )",
+        .syntax = "ST_Touches(geometry1, geometry2)",
+        .arguments
+        = {{"geometry1",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."},
+           {"geometry2",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
+        .returned_value
+        = {"Returns 1 if the geometries touch, 0 otherwise. [`UInt8`](/sql-reference/data-types/int-uint)."},
+        .examples
+        = {{"Point on polygon boundary",
+            R"(
+                SELECT ST_Touches(
+                    CAST((0.0, 0.0), 'Point'),
+                    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'))
+            )",
+            R"(
+                ┌─ST_Touches()─┐
+                │            1 │
+                └──────────────┘
+            )"}},
+        .introduced_in = {25, 8},
+        .category = FunctionDocumentation::Category::Geo},
+    FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionGeoTouches<SphericalPoint>>(FunctionDocumentation{
         .description = R"(

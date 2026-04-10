@@ -9,11 +9,18 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <memory>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool st_function_use_spherical;
+}
 
 namespace ErrorCodes
 {
@@ -129,7 +136,6 @@ Equivalent to `geoCoversCartesian(geometry2, geometry1)`.
 
 Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
 
-`ST_CoveredBy` is an alias for this function.
     )",
         .syntax = "geoCoveredByCartesian(geometry1, geometry2)",
         .arguments
@@ -171,8 +177,55 @@ Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
         .introduced_in = {25, 9},
         .category = FunctionDocumentation::Category::Geo});
 
-    /// ST_CoveredBy is an alias for geoCoveredByCartesian.
-    factory.registerAlias("ST_CoveredBy", "geoCoveredByCartesian", FunctionFactory::Case::Insensitive);
+    /// ST_CoveredBy dispatches to geoCoveredBySpherical or geoCoveredByCartesian
+    /// based on the `st_function_use_spherical` setting.
+    factory.registerFunction("ST_CoveredBy", [](ContextPtr context) -> FunctionPtr
+    {
+        if (context->getSettingsRef()[Setting::st_function_use_spherical])
+            return FunctionGeoCoveredBy<SphericalPoint>::create(context);
+        else
+            return FunctionGeoCoveredBy<CartesianPoint>::create(context);
+    }, FunctionDocumentation{
+        .description = R"(
+Returns true if no point of geometry1 lies in the exterior of geometry2. Unlike `ST_Within`,
+boundary points of geometry2 ARE considered covered — a point on the edge returns true.
+
+By default operates in spherical coordinates (longitude, latitude in degrees), consistent
+with BigQuery's `ST_COVEREDBY`. Set `st_function_use_spherical = false` to use Cartesian coordinates.
+
+Equivalent to `ST_Covers(geometry2, geometry1)`.
+
+Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
+    )",
+        .syntax = "ST_CoveredBy(geometry1, geometry2)",
+        .arguments
+        = {{"geometry1",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."},
+           {"geometry2",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
+        .returned_value
+        = {"Returns 1 if geometry1 is covered by geometry2, 0 otherwise. [`UInt8`](/sql-reference/data-types/int-uint)."},
+        .examples
+        = {{"Point covered by polygon",
+            R"(
+                SELECT ST_CoveredBy(
+                    CAST((5.0, 5.0), 'Point'),
+                    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'))
+            )",
+            R"(
+                ┌─ST_CoveredBy()─┐
+                │              1 │
+                └────────────────┘
+            )"}},
+        .introduced_in = {25, 8},
+        .category = FunctionDocumentation::Category::Geo},
+    FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionGeoCoveredBy<SphericalPoint>>(FunctionDocumentation{
         .description = R"(
