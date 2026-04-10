@@ -1093,9 +1093,13 @@ Pipe ReadFromMergeTree::read(
             std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
 
     /// Pipelined reader: split prewhere and rest columns into separate pipeline stages.
-    if (read_type == ReadType::Default
-        && reader_settings.use_pipelined_mergetree_reader
+    /// Not supported with patch parts (lightweight updates) yet.
+    bool can_use_pipelined_reader = reader_settings.use_pipelined_mergetree_reader
         && query_info.prewhere_info
+        && !(mutations_snapshot && mutations_snapshot->hasPatchParts());
+
+    if (read_type == ReadType::Default
+        && can_use_pipelined_reader
         && (max_streams > 1 || checkAllPartsOnRemoteFS(parts_with_range)))
         return readFromPoolPipelined(
             std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
@@ -1106,7 +1110,7 @@ Pipe ReadFromMergeTree::read(
             std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
 
     /// Pipelined reader for InOrder path: split prewhere and rest columns into separate pipeline stages.
-    if (reader_settings.use_pipelined_mergetree_reader && query_info.prewhere_info)
+    if (can_use_pipelined_reader)
     {
         auto pipe = readInOrderPipelined(
             parts_with_range, index_build_context, required_columns, pool_settings, read_type, /*limit=*/0);
