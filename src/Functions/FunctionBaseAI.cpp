@@ -30,7 +30,6 @@ namespace Setting
     extern const SettingsUInt64 ai_max_retries;
     extern const SettingsUInt64 ai_retry_initial_delay_ms;
     extern const SettingsString ai_on_error;
-    extern const SettingsUInt64 ai_max_rows_per_query;
     extern const SettingsUInt64 ai_max_input_tokens_per_query;
     extern const SettingsUInt64 ai_max_output_tokens_per_query;
     extern const SettingsUInt64 ai_max_api_calls_per_query;
@@ -144,7 +143,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 retry_delay_ms = settings[Setting::ai_retry_initial_delay_ms].value;
 
     auto quota = std::make_shared<AIQuotaTracker>(
-        settings[Setting::ai_max_rows_per_query].value,
         settings[Setting::ai_max_input_tokens_per_query].value,
         settings[Setting::ai_max_output_tokens_per_query].value,
         settings[Setting::ai_max_api_calls_per_query].value,
@@ -168,14 +166,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        if (text_col->isNullAt(i))
-        {
-            result_col->insertDefault();
-            ++rows_skipped;
-            continue;
-        }
-
-        if (!quota->checkBeforeDispatch(0, 1))
+        if (text_col->isNullAt(i) || !quota->checkBeforeDispatch(0))
         {
             result_col->insertDefault();
             ++rows_skipped;

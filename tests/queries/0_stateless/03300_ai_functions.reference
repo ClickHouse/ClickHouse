@@ -33,11 +33,10 @@ result	String
 0
 -- Named collection with no prompt
 -- Setting defaults
-ai_max_api_calls_per_query	1000
+ai_max_api_calls_per_query	0
 ai_max_input_tokens_per_query	1000000
 ai_max_output_tokens_per_query	500000
 ai_max_retries	3
-ai_max_rows_per_query	100000
 ai_on_error	throw
 ai_on_quota_exceeded	throw
 ai_request_timeout_sec	60

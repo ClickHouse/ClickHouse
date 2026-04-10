@@ -14,27 +14,10 @@ static bool isGracefulQuotaMode(const String & mode)
     return mode == "default";
 }
 
-bool AIQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 batch_rows)
+bool AIQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens)
 {
     if (quota_exceeded.load(std::memory_order_relaxed))
         return false;
-
-    if (max_rows > 0)
-    {
-        UInt64 prev = rows_processed.fetch_add(batch_rows, std::memory_order_relaxed);
-        if (prev + batch_rows > max_rows)
-        {
-            rows_processed.fetch_sub(batch_rows, std::memory_order_relaxed);
-            if (!isGracefulQuotaMode(on_quota_exceeded))
-                throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                    "Limit for AI rows exceeded: {} rows processed, maximum: {}. "
-                    "This is controlled by the 'ai_max_rows_per_query' setting. "
-                    "Set 'ai_on_quota_exceeded' to 'default' to return the default value for remaining rows instead of failing",
-                    prev, max_rows);
-            quota_exceeded.store(true, std::memory_order_relaxed);
-            return false;
-        }
-    }
 
     if (max_input_tokens > 0 && estimated_input_tokens > 0)
     {

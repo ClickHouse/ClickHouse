@@ -71,10 +71,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_max_retries", 3, 3, "New setting"},
             {"ai_retry_initial_delay_ms", 1000, 1000, "New setting"},
             {"ai_on_error", "throw", "throw", "New setting"},
-            {"ai_max_rows_per_query", 100000, 100000, "New setting"},
             {"ai_max_input_tokens_per_query", 1000000, 1000000, "New setting"},
             {"ai_max_output_tokens_per_query", 500000, 500000, "New setting"},
-            {"ai_max_api_calls_per_query", 1000, 1000, "New setting"},
+            {"ai_max_api_calls_per_query", 0, 0, "New setting"},
             {"ai_on_quota_exceeded", "throw", "throw", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
