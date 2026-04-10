@@ -957,6 +957,50 @@ class Runner:
                 results_.append(Result.from_commands_run(name=name, command=check))
             prehook_result = Result.create_from(name="Pre Hooks", results=results_, stopwatch=sw_)
 
+        # --- EBS Docker Cache: mount before run ---
+        ebs_cache_volume_id = None
+        if (
+            res
+            and Settings.ENABLE_EBS_DOCKER_CACHE
+            and job.run_in_docker
+            and not no_docker
+            and not local_run
+        ):
+            try:
+                from .ebs_docker_cache import (
+                    calc_combined_digest,
+                    find_snapshot,
+                    mount_cache_volume,
+                )
+
+                run_config = RunConfig.from_workflow_data()
+                if run_config.digest_dockers:
+                    combined = (
+                        run_config.docker_cache_digest
+                        or calc_combined_digest(run_config.digest_dockers)
+                    )
+                    arch = "arm" if Utils.is_arm() else "amd"
+                    snapshot_id = find_snapshot(
+                        combined, arch, Settings.AWS_REGION
+                    )
+                    if snapshot_id:
+                        ebs_cache_volume_id = mount_cache_volume(snapshot_id)
+                        if ebs_cache_volume_id:
+                            print(
+                                f"EBS docker cache: volume [{ebs_cache_volume_id}] mounted"
+                            )
+                        else:
+                            print(
+                                "WARNING: EBS docker cache mount failed, falling back to pull"
+                            )
+                    else:
+                        print(
+                            f"EBS docker cache: no snapshot for digest=[{combined}] arch=[{arch}]"
+                        )
+            except Exception as e:
+                print(f"WARNING: EBS docker cache: {e}")
+                traceback.print_exc()
+
         if res:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
             run_code = None
@@ -991,6 +1035,15 @@ class Runner:
                 ).dump()
 
             print(f"=== Run script finished ===\n\n")
+
+        # --- EBS Docker Cache: cleanup after run ---
+        if ebs_cache_volume_id:
+            try:
+                from .ebs_docker_cache import cleanup_cache_volume
+
+                cleanup_cache_volume(ebs_cache_volume_id)
+            except Exception as e:
+                print(f"WARNING: EBS docker cache cleanup: {e}")
 
         if run_hooks:
             result = self._get_result_object(

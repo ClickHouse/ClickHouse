@@ -127,6 +127,13 @@ class _Settings:
     # Used by EventFeed and FeedSubscription for PR notification subscriptions
     EVENT_FEED_S3_PATH: str = ""
 
+    # EBS Docker Cache: pre-populate Docker's image store from EBS snapshots
+    # to eliminate image pull latency on CI runners
+    ENABLE_EBS_DOCKER_CACHE: bool = False
+    EBS_DOCKER_CACHE_VOLUME_SIZE_GB: int = 50
+    EBS_DOCKER_CACHE_VOLUME_TYPE: str = "gp3"
+    EBS_DOCKER_CACHE_MAX_SNAPSHOTS_PER_ARCH: int = 3
+
 
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
@@ -180,6 +187,10 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
+    "ENABLE_EBS_DOCKER_CACHE",
+    "EBS_DOCKER_CACHE_VOLUME_SIZE_GB",
+    "EBS_DOCKER_CACHE_VOLUME_TYPE",
+    "EBS_DOCKER_CACHE_MAX_SNAPSHOTS_PER_ARCH",
 ]
 
 

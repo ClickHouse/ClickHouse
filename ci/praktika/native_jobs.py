@@ -206,6 +206,76 @@ def _build_dockers(workflow, job_name):
                 )
             )
 
+    # --- EBS Docker Cache: create snapshot if enabled ---
+    if (
+        Settings.ENABLE_EBS_DOCKER_CACHE
+        and job_status == Result.Status.SUCCESS
+        and job_name != Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
+        and not Info().is_local_run
+    ):
+        from .ebs_docker_cache import (
+            _get_arch,
+            calc_combined_digest,
+            cleanup_old_snapshots,
+            create_cache_snapshot,
+            find_snapshot,
+        )
+
+        try:
+            combined = calc_combined_digest(docker_digests)
+            arch = _get_arch()
+            region = Settings.AWS_REGION
+            existing = find_snapshot(combined, arch, region)
+            if existing:
+                print(
+                    f"EBS docker cache: snapshot already exists [{existing}]"
+                    f" for digest=[{combined}], arch=[{arch}]"
+                )
+                results.append(
+                    Result.create_from(
+                        name="EBS Docker Cache",
+                        status=Result.Status.SKIPPED,
+                        info=f"snapshot exists: {existing}",
+                    )
+                )
+            else:
+                print(
+                    f"EBS docker cache: creating snapshot"
+                    f" for digest=[{combined}], arch=[{arch}]"
+                )
+                snap_id = create_cache_snapshot(
+                    docker_configs=dockers,
+                    digests=docker_digests,
+                    combined_digest=combined,
+                    arch=arch,
+                )
+                if snap_id:
+                    print(f"EBS docker cache: snapshot created [{snap_id}]")
+                    results.append(
+                        Result.create_from(
+                            name="EBS Docker Cache",
+                            status=Result.Status.SUCCESS,
+                            info=f"snapshot_id={snap_id}",
+                        )
+                    )
+                else:
+                    print("WARNING: EBS docker cache: snapshot creation failed")
+                    results.append(
+                        Result.create_from(
+                            name="EBS Docker Cache",
+                            status=Result.Status.SUCCESS,
+                            info="snapshot creation failed (non-fatal)",
+                        )
+                    )
+                cleanup_old_snapshots(
+                    arch=arch,
+                    region=region,
+                    keep=Settings.EBS_DOCKER_CACHE_MAX_SNAPSHOTS_PER_ARCH,
+                )
+        except Exception as e:
+            print(f"WARNING: EBS docker cache failed: {e}")
+            traceback.print_exc()
+
     return Result.create_from(results=results, info=job_info)
 
 
@@ -412,6 +482,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         for docker in dockers:
             workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
                 docker, dockers
+            )
+        if Settings.ENABLE_EBS_DOCKER_CACHE and workflow_config.digest_dockers:
+            from .ebs_docker_cache import calc_combined_digest
+
+            workflow_config.docker_cache_digest = calc_combined_digest(
+                workflow_config.digest_dockers
+            )
+            print(
+                f"EBS docker cache: combined digest [{workflow_config.docker_cache_digest}]"
             )
         workflow_config.dump()
         results.append(

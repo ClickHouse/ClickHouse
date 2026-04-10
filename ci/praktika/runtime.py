@@ -21,6 +21,8 @@ class RunConfig(MetaClasses.Serializable):
     filtered_jobs: Dict[str, str]
     sha: str
     custom_data: Dict[str, Any]
+    # Combined digest of all Docker images, used as EBS snapshot cache key
+    docker_cache_digest: str = ""
 
     @classmethod
     def from_dict(cls, obj):
@@ -36,6 +38,7 @@ class RunConfig(MetaClasses.Serializable):
         for job_name, cache_jobs in cache_jobs.items():
             cache_jobs_deserialized[job_name] = Cache.CacheRecord.from_dict(cache_jobs)
         obj["cache_jobs"] = cache_artifacts_deserialized
+        obj.setdefault("docker_cache_digest", "")
         return RunConfig(**obj)
 
     @classmethod
