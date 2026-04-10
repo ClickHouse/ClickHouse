@@ -104,22 +104,6 @@ private:
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
 public:
-    using SessionAndXID = std::pair</*session ID*/ int64_t, Coordination::XID>;
-
-    struct SessionAndXIDHash
-    {
-        uint64_t operator()(std::pair<int64_t, Coordination::XID>) const;
-    };
-
-    std::mutex read_request_queue_mutex;
-
-    /// Local read requests that are piggy-backed to other raft requests.
-    /// Map: raft request -> read requests.
-    /// The read must be executed immediately after the corresponding raft request is committed.
-    /// Note that the read may belong to a different session than the raft request.
-    /// (So e.g. we can't remove session ID from this map when the session is closed.)
-    std::unordered_map<SessionAndXID, KeeperRequestsForSessions, SessionAndXIDHash> read_request_queue;
-
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
 

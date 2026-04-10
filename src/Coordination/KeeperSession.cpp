@@ -53,4 +53,28 @@ KeeperSession::SessionState KeeperSession::getState() const
     return state;
 }
 
+void KeeperSession::addDeferredRead(Coordination::XID write_xid, const KeeperRequestForSession & read_request)
+{
+    std::lock_guard lock(mutex);
+    deferred_reads_[write_xid].push_back(read_request);
+}
+
+KeeperRequestsForSessions KeeperSession::releaseDeferredReads(Coordination::XID write_xid)
+{
+    std::lock_guard lock(mutex);
+    KeeperRequestsForSessions result;
+    if (auto it = deferred_reads_.find(write_xid); it != deferred_reads_.end())
+    {
+        result = std::move(it->second);
+        deferred_reads_.erase(it);
+    }
+    return result;
+}
+
+void KeeperSession::clearDeferredReads()
+{
+    std::lock_guard lock(mutex);
+    deferred_reads_.clear();
+}
+
 }

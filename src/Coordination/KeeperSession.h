@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Coordination/KeeperCommon.h>
 
 #include <functional>
 #include <mutex>
+#include <unordered_map>
 
 
 namespace DB
@@ -48,11 +50,22 @@ public:
 
     SessionState getState() const;
 
+    /// Add a read request that must wait for the write with the given xid to commit.
+    void addDeferredRead(Coordination::XID write_xid, const KeeperRequestForSession & read_request);
+
+    /// Release all deferred reads waiting for the given write xid.
+    /// Returns the released reads so the caller can dispatch them.
+    KeeperRequestsForSessions releaseDeferredReads(Coordination::XID write_xid);
+
+    /// Clear all deferred reads (e.g. when the session is terminated).
+    void clearDeferredReads();
+
 private:
     const int64_t session_id;
     mutable std::mutex mutex;
     SessionState state{SessionState::Active};
     ResponseCallback callback;
+    std::unordered_map<Coordination::XID, KeeperRequestsForSessions> deferred_reads_;
     LoggerPtr log = getLogger("KeeperSession");
 };
 

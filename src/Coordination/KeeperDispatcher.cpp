@@ -1,6 +1,5 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperSession.h>
-#include <Common/ProfiledLocks.h>
 #include <libnuraft/async.hxx>
 
 #include <Poco/Path.h>
@@ -55,7 +54,6 @@ namespace ProfileEvents
     extern const Event KeeperBatchMaxTotalSize;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
     extern const Event KeeperStaleRequestsSkipped;
-    extern const Event KeeperReadRequestQueueLockWaitMicroseconds;
 }
 
 namespace HistogramMetrics
@@ -296,8 +294,8 @@ void KeeperDispatcher::requestThread()
                             {
                                 const auto & last_request = current_batch.back();
                                 ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
-                                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
-                                read_request_queue[{last_request.session_id, last_request.request->xid}].push_back(request);
+                                if (auto write_session = session_registry_.findSession(last_request.session_id))
+                                    write_session->addDeferredRead(last_request.request->xid, request);
                             }
                             else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
                             {
@@ -664,16 +662,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session)
         {
             KeeperRequestsForSessions pending_reads;
-            {
-                /// check if we have queue of read requests depending on this request to be committed
-                SessionAndXID key(request_for_session.session_id, request_for_session.request->xid);
-                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
-                if (auto it = read_request_queue.find(key); it != read_request_queue.end())
-                {
-                    pending_reads = std::move(it->second);
-                    read_request_queue.erase(it);
-                }
-            }
+            if (auto session = session_registry_.findSession(request_for_session.session_id))
+                pending_reads = session->releaseDeferredReads(request_for_session.request->xid);
 
             /// Dispatch reads outside the lock — putLocalReadRequest and addErrorResponses
             /// push to thread-safe queues, so no lock is needed here.
@@ -979,6 +969,9 @@ void KeeperDispatcher::terminateSession(int64_t session_id)
         close_response->error = Coordination::Error::ZSESSIONEXPIRED;
         callback(close_response, nullptr);
     }
+
+    if (auto session = session_registry_.findSession(session_id))
+        session->clearDeferredReads();
 }
 
 void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error, bool may_have_dependent_reads)
@@ -1002,12 +995,10 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
 
         if (may_have_dependent_reads)
         {
-            SessionAndXID key(request_for_session.session_id, request_for_session.request->xid);
-            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
-            if (auto it = read_request_queue.find(key); it != read_request_queue.end())
+            if (auto session = session_registry_.findSession(request_for_session.session_id))
             {
-                dependent_reads.insert(dependent_reads.end(), std::move_iterator(it->second.begin()), std::move_iterator(it->second.end()));
-                read_request_queue.erase(it);
+                auto reads = session->releaseDeferredReads(request_for_session.request->xid);
+                dependent_reads.insert(dependent_reads.end(), std::move_iterator(reads.begin()), std::move_iterator(reads.end()));
             }
         }
     }
@@ -1671,11 +1662,6 @@ catch (...)
     result->set("status", "error");
     result->set("message", getCurrentExceptionMessage(false));
     return result;
-}
-
-uint64_t KeeperDispatcher::SessionAndXIDHash::operator()(std::pair<int64_t, Coordination::XID> p) const
-{
-    return CityHash_v1_0_2::Hash128to64({uint64_t(p.first), uint64_t(p.second)});
 }
 
 
