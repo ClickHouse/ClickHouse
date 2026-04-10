@@ -4692,6 +4692,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         {
             /// No common columns — degrade to CROSS JOIN (standard SQL behavior).
             join_node_typed.setKind(JoinKind::Cross);
+            join_node_typed.setNatural(false);
             return;
         }
 
@@ -4751,7 +4752,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     {
                         auto left_subquery = std::make_shared<QueryNode>(query_node->getMutableContext());
                         left_subquery->getProjection().getNodes().push_back(projection_node->clone());
-                        left_subquery->getJoinTree() = left_table_expression;
+                        auto subquery_join_tree = left_table_expression;
+                        if (subquery_join_tree->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                            subquery_join_tree = subquery_join_tree->as<ArrayJoinNode &>().getTableExpression();
+                        left_subquery->getJoinTree() = subquery_join_tree;
 
                         IdentifierResolveScope & left_subquery_scope = createIdentifierResolveScope(left_subquery, nullptr /*parent_scope*/);
                         /// We are using alias column mechanism for USING column from projection.
