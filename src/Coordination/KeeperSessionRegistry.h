@@ -4,7 +4,7 @@
 #include <Coordination/KeeperContext.h>
 
 #include <atomic>
-#include <shared_mutex>
+#include <Common/SharedMutex.h>
 #include <unordered_map>
 #include <vector>
 
@@ -58,7 +58,7 @@ public:
     std::vector<KeeperSessionPtr> shutdown();
 
 private:
-    mutable std::shared_mutex mutex;
+    mutable SharedMutex mutex;
 
     /// `sessions` owns the sessions and defines the iteration set; order is stable between register/detach operations but not globally predictable due to swap-and-pop removal.
     /// `session_index` is a derived O(1) lookup from session_id to position in `sessions`.

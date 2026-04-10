@@ -55,11 +55,6 @@ namespace ProfileEvents
     extern const Event KeeperProcessAndResponsesLockWaitMicroseconds;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric KeeperAliveConnections;
-}
-
 namespace DB
 {
 

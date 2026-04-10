@@ -553,7 +553,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         config,
         [this](int64_t id, Coordination::ZooKeeperResponsePtr resp, Coordination::ZooKeeperRequestPtr req) -> bool
         {
-            return routeResponse(id, std::move(resp), std::move(req));
+            return routeResponse(id, resp, std::move(req));
         },
         snapshots_queue,
         keeper_context,

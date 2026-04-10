@@ -214,7 +214,7 @@ RaftBatch KeeperRequestsQueue::waitAndPullRaftBatch(
             return result;
         }
 
-        /// Wait for more data, deadline expiry, or inflight completion.
+        /// Wait for more data, deadline expiry, or in-flight completion.
         {
             std::unique_lock lk(cv_mutex);
 
