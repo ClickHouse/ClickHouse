@@ -781,7 +781,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (!is_size_known)
     {
         use_filesystem_cache = false;
-        use_page_cache = false;
     }
 
     auto modified_read_settings = is_size_known
