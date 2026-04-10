@@ -1417,15 +1417,6 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         });
 }
 
-void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token)
-{
-    bool inserted;
-    TokenToPostingsBuilderMap::LookupResult it;
-    ArenaKeyHolder key_holder{token, *arena};
-    tokens_map.emplace(key_holder, it, inserted);
-    it->getMapped().add(static_cast<UInt32>(current_row), posting_lists);
-    ++num_processed_tokens;
-}
 
 void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
 {
@@ -1514,42 +1505,13 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
     if (postprocessor->hasActions())
     {
-        /// Batch postprocessor path: tokenize the entire column slice and run the postprocessor
-        /// expression once, then insert the resulting tokens into the granule builder row by row.
-        ColumnPtr transformed = postprocessor->processTokensArrayBatch(
-            tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read));
-
-        const auto & result_array = assert_cast<const ColumnArray &>(*transformed);
-        const IColumn::Offsets & result_offsets = result_array.getOffsets();
-        for (size_t i = 0; i < rows_read; ++i)
-        {
-            for (size_t j = result_offsets[i - 1]; j < result_offsets[i]; ++j)
-            {
-                auto ref = result_array.getData().getDataAt(j);
-                granule_builder.addToken(std::string_view(ref.data(), ref.size()));
-            }
-            granule_builder.incrementCurrentRow();
-        }
+        ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
+        ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray &>(*tokenized));
+        addDocumentsFromArray(postprocessed, 0, rows_read);
     }
     else if (isArray(index_column.type))
     {
-        const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
-        const IColumn & column_data = column_array.getData();
-        const auto & column_offsets = column_array.getOffsets();
-        const bool data_is_nullable = column_data.isNullable();
-
-        for (size_t i = offset; i < offset + rows_read; ++i)
-        {
-            for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
-            {
-                if (data_is_nullable && column_data.isNullAt(element_idx))
-                    continue;
-
-                const std::string_view ref = column_data.getDataAt(element_idx);
-                granule_builder.addDocument(ref);
-            }
-            granule_builder.incrementCurrentRow();
-        }
+        addDocumentsFromArray(preprocessed_column, offset, rows_read);
     }
     else
     {
@@ -1567,6 +1529,27 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     }
 
     *pos += rows_read;
+}
+
+void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read)
+{
+    const ColumnArray * column_array = assert_cast<const ColumnArray *>(column.get());
+    const IColumn & column_data = column_array->getData();
+    const IColumn::Offsets & column_offsets = column_array->getOffsets();
+    const bool data_is_nullable = column_data.isNullable();
+
+    for (size_t i = start_row; i < start_row + rows_read; ++i)
+    {
+        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        {
+            if (data_is_nullable && column_data.isNullAt(element_idx))
+                continue;
+
+            const std::string_view ref = column_data.getDataAt(element_idx);
+            granule_builder.addDocument(ref);
+        }
+        granule_builder.incrementCurrentRow();
+    }
 }
 
 MergeTreeIndexText::MergeTreeIndexText(
