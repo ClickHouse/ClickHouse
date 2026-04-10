@@ -80,11 +80,7 @@ private:
     /// Returns true if response was successfully sent to client, false if session doesn't exist on this node.
     bool routeResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
 
-    /// Add error responses for requests to responses queue.
-    /// Clears requests.
-    /// If may_have_dependent_reads is true, also looks at read_request_queue and adds error
-    /// responses for any reads that were piggy-backed to these requests.
-    void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error, bool may_have_dependent_reads = true);
+    void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error);
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments

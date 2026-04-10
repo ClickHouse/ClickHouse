@@ -532,7 +532,7 @@ void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & re
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     KeeperResponseForSession response = processReconfiguration(request_for_session);
     response.response->enqueue_ts = std::chrono::steady_clock::now();
-    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds, ProfileEvents::KeeperProcessAndResponsesLockHoldMicroseconds);
+    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
     if (!response_router(response.session_id, response.response, nullptr))
     {
         ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -1489,7 +1489,7 @@ std::vector<Coordination::ZooKeeperResponsePtr> KeeperStateMachine<Storage>::pro
 
     /// Batch path: acquire both locks once for all reads.
     KEEPER_STORAGE_LOCK_SHARED(storage_lock);
-    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds, ProfileEvents::KeeperProcessAndResponsesLockHoldMicroseconds);
+    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
 
     for (size_t i = 0; i < requests.size(); ++i)
     {

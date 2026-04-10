@@ -252,7 +252,7 @@ void KeeperDispatcher::requestThread()
                         ReadableSize(total_memory_tracker.get()),
                         ReadableSize(total_memory_tracker.getRSS()),
                         request.request->getOpNum());
-                    addErrorResponses({request}, Coordination::Error::ZOUTOFMEMORY, /*may_have_dependent_reads=*/ false);
+                    addErrorResponses({request}, Coordination::Error::ZOUTOFMEMORY);
                     continue;
                 }
 
@@ -593,7 +593,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
                 if (!server->isLeaderAlive())
                 {
-                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
+                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
                     continue;
                 }
 
@@ -887,10 +887,8 @@ void KeeperDispatcher::terminateSession(int64_t session_id)
         session->clearDeferredReads();
 }
 
-void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error, bool may_have_dependent_reads)
+void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error)
 {
-    KeeperRequestsForSessions dependent_reads;
-
     for (const auto & request_for_session : requests_for_sessions)
     {
         auto response = request_for_session.request->makeResponse();
@@ -900,13 +898,6 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
         response->enqueue_ts = std::chrono::steady_clock::now();
         routeResponse(request_for_session.session_id, response);
     }
-
-    /// Cancel reads that we piggy-backed to the request that failed. They're innocent bystanders
-    /// that could otherwise succeed, but we don't have a simple way to run these reads correctly
-    /// in this situation. In particular, there may be later write requests from their sessions that
-    /// already completed; in that case we can't do the read at all, our committed state is too new.
-    if (!dependent_reads.empty())
-        addErrorResponses(dependent_reads, error, /*may_have_dependent_reads=*/ false);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(

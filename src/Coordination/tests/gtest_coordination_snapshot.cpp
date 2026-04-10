@@ -707,9 +707,9 @@ static std::string runFollower(int idx, DB::IKeeperStateMachine & leader, nuraft
     });
 
     auto ctx = makeFollowerContext<Storage>(idx);
-    DB::ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    DB::ResponseRouter noop_router = [](int64_t, Coordination::ZooKeeperResponsePtr, Coordination::ZooKeeperRequestPtr) { return true; };
     DB::SnapshotsQueue snapshots_queue{1};
-    auto follower = std::make_shared<DB::KeeperStateMachine<Storage>>(queue, snapshots_queue, ctx, nullptr);
+    auto follower = std::make_shared<DB::KeeperStateMachine<Storage>>(noop_router, snapshots_queue, ctx, nullptr);
     follower->init();
 
     void * user_snp_ctx = nullptr;
@@ -766,10 +766,10 @@ TYPED_TEST(CoordinationTest, TestReadSnapshotParallelMultiChunk)
     auto snap_buf = manager.serializeSnapshotToBuffer(snap);
     manager.serializeSnapshotBufferToDisk(*snap_buf, 50);
 
-    DB::ResponsesQueue leader_queue(std::numeric_limits<size_t>::max());
+    DB::ResponseRouter leader_noop_router = [](int64_t, Coordination::ZooKeeperResponsePtr, Coordination::ZooKeeperRequestPtr) { return true; };
     DB::SnapshotsQueue leader_snapshots_queue{1};
     auto leader = std::make_shared<DB::KeeperStateMachine<Storage>>(
-        leader_queue, leader_snapshots_queue, leader_ctx, nullptr);
+        leader_noop_router, leader_snapshots_queue, leader_ctx, nullptr);
     leader->init();
 
     nuraft::snapshot s(50, 0, std::make_shared<nuraft::cluster_config>());
