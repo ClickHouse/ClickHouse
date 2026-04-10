@@ -141,7 +141,8 @@ static struct InitFiu
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(patch_parts_reverse_column_order) \
-    ONCE(parallel_replicas_check_read_mode_always)
+    ONCE(parallel_replicas_check_read_mode_always) \
+    REGULAR(wide_part_writer_fail_in_add_streams)
 
 namespace FailPoints
 {

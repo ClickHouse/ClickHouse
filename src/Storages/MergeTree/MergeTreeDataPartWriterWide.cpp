@@ -14,6 +14,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/FailPoint.h>
 #include <IO/NullWriteBuffer.h>
 
 namespace DB
@@ -23,6 +24,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_FILE_NAME;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char wide_part_writer_fail_in_add_streams[];
 }
 
 namespace
@@ -184,7 +191,12 @@ void MergeTreeDataPartWriterWide::addStreams(
             || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 
-        column_streams[stream_name] = std::make_unique<MergeTreeWriterStream<false>>(
+        fiu_do_on(FailPoints::wide_part_writer_fail_in_add_streams,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Wide part writer addStreams");
+        });
+
+        column_streams.emplace(stream_name, std::make_unique<MergeTreeWriterStream<false>>(
             stream_name,
             data_part_storage,
             stream_name, DATA_FILE_EXTENSION,
@@ -193,7 +205,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             max_compress_block_size,
             marks_compression_codec,
             settings.marks_compress_block_size,
-            query_write_settings);
+            query_write_settings));
 
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
@@ -377,7 +389,7 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
 
 void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark)
 {
-    auto & stream = *column_streams[stream_with_mark.stream_name];
+    auto & stream = *column_streams.at(stream_with_mark.stream_name);
     WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
     writeBinaryLittleEndian(stream_with_mark.mark.offset_in_compressed_file, marks_out);
@@ -416,7 +428,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         if (is_offsets && offset_columns.contains(stream_name))
             return;
 
-        auto & stream = *column_streams[stream_name];
+        auto & stream = *column_streams.at(stream_name);
 
         /// There could already be enough data to compress into the new block.
         if (stream.compressed_hashing.offset() >= min_compress_block_size)
@@ -806,8 +818,9 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
 
 void MergeTreeDataPartWriterWide::cancel() noexcept
 {
-     for (auto & stream : column_streams)
-        stream.second->cancel();
+    for (auto & stream : column_streams)
+        if (stream.second)
+            stream.second->cancel();
 
     column_streams.clear();
     serialization_states.clear();
