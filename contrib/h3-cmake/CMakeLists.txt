@@ -10,7 +10,7 @@ endif()
 # call wins, so the later declaration becomes a no-op.
 # Default to OFF: h3o changes user-visible semantics for average area/edge-length
 # functions, so it must be explicitly opted into until full parity is confirmed.
-option(ENABLE_H3O "Enable h3o (Rust H3 implementation)" OFF)
+option(ENABLE_H3O "Enable h3o (Rust H3 implementation)" ON)
 
 if(ENABLE_H3O)
     message(STATUS "Not using C H3 library (Rust h3o is enabled instead)")
