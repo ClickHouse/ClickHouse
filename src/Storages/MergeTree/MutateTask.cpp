@@ -381,8 +381,21 @@ static void splitAndModifyMutationCommands(
                         continue;
                     }
 
+                    if (part_metadata_version > table_metadata_version)
+                    {
+                        /// The part was likely fetched from a more advanced replica whose metadata_version exceeds the
+                        /// local table's metadata_version.  The column exists in the part but has not yet appeared in
+                        /// (or has already been removed from) the local schema.  Skip it — the mutation output will
+                        /// be written with the current table schema, so the column will be absent from the output part,
+                        /// matching how local schema changes are applied.
+                        LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
+                                         "in table {} with metadata version {}. The part was likely fetched from a more advanced replica.",
+                                    column.name, part->name, part_metadata_version,
+                                    part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+                        continue;
+                    }
                     /// StorageMergeTree does not have metadata version
-                    if (part->storage.supportsReplication())
+                    else if (part->storage.supportsReplication())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
                                         "in table {} with metadata version {}",
                                         part->name, part_metadata_version, column.name,
