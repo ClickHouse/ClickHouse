@@ -7752,8 +7752,9 @@ void Context::resetAuditTypes() const
 
 void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & config)
 {
-    /// Reset audit_types if logger.auditlog is absent or audit logging is disabled
-    if (!config.has("logger.auditlog") || !config.getBool("allow_experimental_audit_log", false))
+    /// Reset audit_types if logger.auditlog is absent or empty or audit logging is disabled
+    const auto auditlog_path_prop = config.getString("logger.auditlog", "");
+    if (auditlog_path_prop.empty() || !config.getBool("allow_experimental_audit_log", false))
     {
         disableAuditLogging();
         resetAuditTypes();
