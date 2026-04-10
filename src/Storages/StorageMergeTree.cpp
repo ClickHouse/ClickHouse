@@ -475,6 +475,7 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
 
 void StorageMergeTree::drop()
 {
+    assertNotReadonly();
     shutdown(true);
     dropAllData();
 }
@@ -2409,6 +2410,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
 void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
 {
+    assertNotReadonly();
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
@@ -2470,6 +2472,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
 {
+    assertNotReadonly();
     {
         const auto * partition_ast = partition->as<ASTPartition>();
 
@@ -2586,6 +2589,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
 PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     const PartitionCommand & command, const StorageMetadataPtr &, ContextPtr local_context)
 {
+    assertNotReadonly();
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts);
@@ -2777,6 +2781,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 /// Clang's thread-safety analyzer, which cannot track mutex ownership across `std::lock`.
 void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr local_context) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
+    assertNotReadonly();
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

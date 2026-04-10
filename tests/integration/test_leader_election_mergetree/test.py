@@ -163,8 +163,24 @@ def test_failover(started_cluster):
     # Restart the old leader
     leader.start_clickhouse()
 
-    # The old leader should now be a follower (since the new leader holds the lease)
-    time.sleep(5)  # Wait for the old leader to discover the lease
+    # The old leader should now be a follower (since the new leader holds the lease).
+    # Wait for the old leader to discover the lease and verify it becomes read-only.
+    deadline = time.monotonic() + 60
+    old_leader_is_readonly = False
+    while time.monotonic() < deadline:
+        try:
+            leader.query("INSERT INTO test_fo VALUES (999)")
+            # If the insert succeeded, the old leader hasn't become read-only yet.
+            # Clean up and retry.
+            time.sleep(2)
+        except Exception as e:
+            if "TABLE_IS_READ_ONLY" in str(e):
+                old_leader_is_readonly = True
+                break
+            raise
+
+    assert old_leader_is_readonly, "Restarted old leader did not become read-only"
+    logging.info(f"Old leader {leader.name} is now read-only as expected")
 
     # Verify data is accessible from the restarted node
     count = leader.query("SELECT count() FROM test_fo WHERE x > 0").strip()

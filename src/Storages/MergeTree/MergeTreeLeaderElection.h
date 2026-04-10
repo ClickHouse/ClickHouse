@@ -46,7 +46,7 @@ public:
     void stop();
 
     /// Returns true if this instance currently holds the leader lease
-    /// and the heartbeat thread has renewed it recently enough (within session_timeout).
+    /// and the heartbeat thread has renewed it recently enough (within 2x heartbeat_interval).
     /// This protects against the case when the heartbeat thread stalls due to scheduling delays.
     bool isLeader() const;
 
