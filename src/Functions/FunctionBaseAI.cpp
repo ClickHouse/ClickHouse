@@ -1,8 +1,8 @@
 #include <Functions/FunctionBaseAI.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
-#include <Common/ThreadPool.h>
 #include <Common/Exception.h>
+#include <thread>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Columns/ColumnString.h>
@@ -11,23 +11,10 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
-#include <Common/CurrentMetrics.h>
-
-#include <unordered_map>
-
-namespace CurrentMetrics
-{
-    extern const Metric AIThreads;
-    extern const Metric AIThreadsActive;
-    extern const Metric AIThreadsScheduled;
-}
-
 namespace ProfileEvents
 {
     extern const Event AIInputTokens;
     extern const Event AIOutputTokens;
-    extern const Event AICacheHits;
-    extern const Event AICacheMisses;
     extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
@@ -41,11 +28,9 @@ namespace Setting
     extern const SettingsBool allow_experimental_ai_functions;
     extern const SettingsString default_ai_provider;
     extern const SettingsUInt64 ai_request_timeout_sec;
-    extern const SettingsUInt64 ai_max_concurrent_requests;
     extern const SettingsUInt64 ai_max_rps;
     extern const SettingsUInt64 ai_max_retries;
     extern const SettingsUInt64 ai_retry_initial_delay_ms;
-    extern const SettingsUInt64 ai_cache_ttl_sec;
     extern const SettingsString ai_on_error;
     extern const SettingsUInt64 ai_max_rows_per_query;
     extern const SettingsUInt64 ai_max_input_tokens_per_query;
@@ -157,11 +142,9 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     const auto & settings = getContext()->getSettingsRef();
     UInt64 timeout_sec = settings[Setting::ai_request_timeout_sec].value;
-    UInt64 max_concurrent = settings[Setting::ai_max_concurrent_requests].value;
     UInt64 max_rps = settings[Setting::ai_max_rps].value;
     UInt64 max_retries = settings[Setting::ai_max_retries].value;
     UInt64 retry_delay_ms = settings[Setting::ai_retry_initial_delay_ms].value;
-    UInt64 cache_ttl = settings[Setting::ai_cache_ttl_sec].value;
 
     auto quota = std::make_shared<AIQuotaTracker>(
         settings[Setting::ai_max_rows_per_query].value,
@@ -180,166 +163,86 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     String response_format = buildResponseFormatJSON(arguments);
 
     auto result_col = ColumnString::create();
+    const auto & text_col = arguments[getFirstDataArgIndex(arguments)].column;
 
-    std::unordered_map<UInt128, std::vector<size_t>, UInt128Hash> dedup_map;
+    UInt64 total_api_calls = 0;
+    UInt64 total_input_tokens = 0;
+    UInt64 total_output_tokens = 0;
+    UInt64 rows_processed = 0;
+    UInt64 rows_skipped = 0;
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const auto & text_col = arguments[getFirstDataArgIndex(arguments)].column;
         if (text_col->isNullAt(i))
+        {
+            result_col->insertDefault();
+            ++rows_skipped;
             continue;
+        }
+
+        if (!quota->checkBeforeDispatch(0, 1))
+        {
+            result_col->insertDefault();
+            ++rows_skipped;
+            continue;
+        }
 
         String user_message = buildUserMessage(arguments, i);
-        std::vector<String> cache_args = {user_message, system_prompt};
-        UInt128 key = AIResultCache::buildKey(functionName(), config.model, temperature, cache_args);
-        dedup_map[key].push_back(i);
-    }
+        String result;
+        bool success = false;
 
-    std::unordered_map<UInt128, String, UInt128Hash> results;
-    std::mutex results_mutex;
-
-    std::atomic<UInt64> total_api_calls{0};
-    std::atomic<UInt64> total_input_tokens{0};
-    std::atomic<UInt64> total_output_tokens{0};
-    UInt64 cache_hits = 0;
-    UInt64 cache_misses = 0;
-
-    auto & ai_cache = AIResultCache::instance();
-    std::vector<std::pair<UInt128, size_t>> to_dispatch;
-
-    for (auto & [key, rows] : dedup_map)
-    {
-        auto cached_entry = ai_cache.get(key);
-        if (cached_entry && std::chrono::system_clock::now() <= cached_entry->expires_at)
+        for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            cached_entry->hit_count.fetch_add(1, std::memory_order_relaxed);
-            std::lock_guard lock(results_mutex);
-            results[key] = cached_entry->result;
-            ++cache_hits;
-            quota->rows_processed.fetch_add(rows.size(), std::memory_order_relaxed);
-        }
-        else
-        {
-            to_dispatch.emplace_back(key, rows[0]);
-            ++cache_misses;
-        }
-    }
-
-    if (!to_dispatch.empty())
-    {
-        auto pool = std::make_unique<ThreadPool>(CurrentMetrics::AIThreads, CurrentMetrics::AIThreadsActive, CurrentMetrics::AIThreadsScheduled, max_concurrent, max_concurrent, max_concurrent);
-
-        for (auto & [dispatch_key, representative_row] : to_dispatch)
-        {
-            UInt64 rows_for_key = dedup_map[dispatch_key].size();
-            if (!quota->checkBeforeDispatch(0, rows_for_key))
+            try
             {
-                std::lock_guard lock(results_mutex);
-                results[dispatch_key] = "";
-                continue;
+                if (max_rps > 0)
+                    throttler->throttle(1, 0);
+
+                AIRequest ai_request;
+                ai_request.system_prompt = system_prompt;
+                ai_request.user_message = user_message;
+                ai_request.response_format_json = response_format;
+                ai_request.model = config.model;
+                ai_request.temperature = temperature;
+                ai_request.max_tokens = config.max_tokens;
+
+                auto ai_response = provider->call(ai_request, timeouts);
+
+                quota->recordResponse(ai_response.input_tokens, ai_response.output_tokens);
+                total_input_tokens += ai_response.input_tokens;
+                total_output_tokens += ai_response.output_tokens;
+                ++total_api_calls;
+
+                result = postProcessResponse(ai_response.result);
+                success = true;
+                break;
             }
-
-            pool->scheduleOrThrowOnError([&, dk = dispatch_key, row = representative_row]
+            catch (const Exception & e)
             {
-                String user_message = buildUserMessage(arguments, row);
-
-                for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
+                if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
                 {
-                    try
-                    {
-                        if (max_rps > 0)
-                            throttler->throttle(1, 0);
-
-                        AIRequest ai_request;
-                        ai_request.system_prompt = system_prompt;
-                        ai_request.user_message = user_message;
-                        ai_request.response_format_json = response_format;
-                        ai_request.model = config.model;
-                        ai_request.temperature = temperature;
-                        ai_request.max_tokens = config.max_tokens;
-
-                        auto ai_response = provider->call(ai_request, timeouts);
-
-                        quota->recordResponse(ai_response.input_tokens, ai_response.output_tokens);
-                        total_input_tokens.fetch_add(ai_response.input_tokens, std::memory_order_relaxed);
-                        total_output_tokens.fetch_add(ai_response.output_tokens, std::memory_order_relaxed);
-                        total_api_calls.fetch_add(1, std::memory_order_relaxed);
-
-                        String processed = postProcessResponse(ai_response.result);
-
-                        if (cache_ttl > 0 && ai_response.finish_reason != "length")
-                        {
-                            auto entry = std::make_shared<AICacheEntry>();
-                            entry->result = processed;
-                            entry->function_name = functionName();
-                            entry->model = config.model;
-                            entry->result_size_bytes = processed.size();
-                            entry->created_at = std::chrono::system_clock::now();
-                            entry->expires_at = entry->created_at + std::chrono::seconds(cache_ttl);
-                            ai_cache.set(dk, entry);
-                        }
-
-                        {
-                            std::lock_guard lock(results_mutex);
-                            results[dk] = processed;
-                        }
-                        return;
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
-                        {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms * (1ULL << attempt)));
-                            continue;
-                        }
-
-                        if (quota->handleRowError())
-                        {
-                            std::lock_guard lock(results_mutex);
-                            results[dk] = "";
-                            return;
-                        }
-                        throw;
-                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms * (1ULL << attempt)));
+                    continue;
                 }
-            });
+
+                if (quota->handleRowError())
+                    break;
+                throw;
+            }
         }
 
-        pool->wait();
+        result_col->insertData(result.data(), result.size());
+        if (success)
+            ++rows_processed;
+        else
+            ++rows_skipped;
     }
 
-    ProfileEvents::increment(ProfileEvents::AICacheHits, cache_hits);
-    ProfileEvents::increment(ProfileEvents::AICacheMisses, cache_misses);
-    ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls.load());
-    ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens.load());
-    ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens.load());
-
-    std::vector<String> ordered_results(input_rows_count);
-    UInt64 rows_processed_count = 0;
-    UInt64 rows_skipped_count = 0;
-
-    for (const auto & [key, rows] : dedup_map)
-    {
-        auto it = results.find(key);
-        String value;
-        if (it != results.end())
-            value = it->second;
-
-        for (size_t row : rows)
-        {
-            ordered_results[row] = value;
-            if (value.empty() && quota->isQuotaExceeded())
-                ++rows_skipped_count;
-            else
-                ++rows_processed_count;
-        }
-    }
-
-    ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed_count);
-    ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped_count);
-
-    for (size_t i = 0; i < input_rows_count; ++i)
-        result_col->insertData(ordered_results[i].data(), ordered_results[i].size());
+    ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
+    ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
+    ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
+    ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
+    ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
 
     return result_col;
 }

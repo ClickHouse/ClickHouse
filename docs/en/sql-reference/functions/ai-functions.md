@@ -16,9 +16,6 @@ AI functions can return unpredictable inputs. The result will highly depend on t
 
 All functions are sharing a common infrastructure that provides:
 
-- **Deduplication**: Identical inputs within the same query are sent to the provider only once.
-- **Result caching**: Responses are cached with configurable TTL ([`ai_cache_ttl_sec`](/operations/settings/settings#ai_cache_ttl_sec)) to avoid redundant API calls.
-- **Concurrency**: Multiple API requests are dispatched in parallel (configurable via [`ai_max_concurrent_requests`](/operations/settings/settings#ai_max_concurrent_requests)).
 - **Rate limiting**: Requests per second can be limited using [`ai_max_rps`](/operations/settings/settings#ai_max_rps).
 - **Quota enforcement**: Per-query limits on rows ([`ai_max_rows_per_query`](/operations/settings/settings#ai_max_rows_per_query)), tokens ([`ai_max_input_tokens_per_query`](/operations/settings/settings#ai_max_input_tokens_per_query), [`ai_max_output_tokens_per_query`](/operations/settings/settings#ai_max_output_tokens_per_query)), and API calls ([`ai_max_api_calls_per_query`](/operations/settings/settings#ai_max_api_calls_per_query)).
 - **Retry with backoff**: Transient failures are retried ([`ai_max_retries`](/operations/settings/settings#ai_max_retries)) with exponential backoff ([`ai_retry_initial_delay_ms`](/operations/settings/settings#ai_retry_initial_delay_ms)).
@@ -64,33 +61,23 @@ All AI-related settings are listed in [Settings](/operations/settings/settings) 
 
 ## Observability {#observability}
 
-AI function activity is tracked through ClickHouse [ProfileEvents](/operations/system-tables/query_log) and [CurrentMetrics](/operations/system-tables/metrics):
+AI function activity is tracked through ClickHouse [ProfileEvents](/operations/system-tables/query_log):
 
 | ProfileEvent | Description |
 |-------|-------------|
 | `AIAPICalls` | Number of HTTP requests made to the AI provider. |
 | `AIInputTokens` | Total input tokens consumed. |
 | `AIOutputTokens` | Total output tokens consumed. |
-| `AICacheHits` | Number of results served from cache. |
-| `AICacheMisses` | Number of results that required an API call. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (empty input, quota exceeded, error). |
-
-| CurrentMetric | Description |
-|-------|-------------|
-| `AIThreads` | Number of threads in the AI function thread pool. |
-| `AIThreadsActive` | Number of threads in the AI function thread pool running a task. |
-| `AIThreadsScheduled` | Number of queued or active jobs in the AI function thread pool. |
-| `AICacheSizeInBytes` | Total size of the AI result cache in bytes. |
-| `AICacheEntries` | Total number of entries in the AI result cache. |
 
 Query these events:
 
 ```sql
 SELECT
     ProfileEvents['AIAPICalls'] AS api_calls,
-    ProfileEvents['AICacheHits'] AS cache_hits,
-    ProfileEvents['AIInputTokens'] AS tokens
+    ProfileEvents['AIInputTokens'] AS input_tokens,
+    ProfileEvents['AIOutputTokens'] AS output_tokens
 FROM system.query_log
 WHERE query='query_id'
 AND type = 'QueryFinish'

@@ -3,7 +3,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/AI/IAIProvider.h>
-#include <Functions/AI/AIResultCache.h>
 #include <Functions/AI/AIQuotaTracker.h>
 #include <Interpreters/Context.h>
 
