@@ -13,7 +13,9 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unordered_set>
+#include <vector>
 
 namespace Poco
 {
@@ -182,6 +184,9 @@ public:
         /// Returns resolved address if it does resolve.
         std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
+        /// Recompute `is_local` after fields are set (e.g. when building `Address` outside config parsing).
+        void recomputeIsLocal(UInt16 clickhouse_port) { is_local = isLocal(clickhouse_port); }
+
         auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database, bind_host); }
         bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
@@ -191,6 +196,20 @@ public:
 
     using Addresses = std::vector<Address>;
     using AddressesWithFailover = std::vector<Addresses>;
+
+    /// Input for one shard before connection pools exist. Carries resolved `Address` list plus weight and
+    /// `internal_replication`; `Cluster(settings, name, secret, std::vector<ShardInitSpec>)` passes each row to `addShard`, which
+    /// builds the corresponding `ShardInfo` (pools, local vs remote split, insert paths, etc.).
+    /// Used by `ClusterFactory` when materializing catalog clusters from shard definitions.
+    struct ShardInitSpec
+    {
+        Addresses addresses;
+        UInt32 weight = 1;
+        bool internal_replication = false;
+    };
+
+    /// Build from pre-resolved `ShardInitSpec` rows (no XML config). Used by `ClusterFactory`.
+    Cluster(const Settings & settings, const String & cluster_name_, const String & cluster_secret_, std::vector<ShardInitSpec> && shard_specs);
 
     /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
     ///
@@ -348,6 +367,7 @@ public:
 
     ClusterPtr getCluster(const std::string & cluster_name) const;
     void setCluster(const String & cluster_name, const ClusterPtr & cluster);
+    void removeCluster(const String & cluster_name);
 
     void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
 

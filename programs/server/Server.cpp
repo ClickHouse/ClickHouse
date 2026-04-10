@@ -53,6 +53,7 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
+#include <Common/Clusters/ClusterFactory.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
@@ -1650,6 +1651,9 @@ try
         });
 
     global_context->setPath(path_str);
+
+    /// SQL catalog clusters (`CREATE CLUSTER` / `CREATE SHARD`) — on-disk metadata under `<path>/cluster_metadata/`.
+    ClusterFactory::instance().initialize(path_str);
 
     StatusFile status{path / "status", StatusFile::write_full_info};
 

@@ -349,6 +349,11 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
     impl[cluster_name] = cluster;
 }
 
+void Clusters::removeCluster(const String & cluster_name)
+{
+    std::lock_guard lock(mutex);
+    impl.erase(cluster_name);
+}
 
 void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config)
 {
@@ -621,6 +626,31 @@ Cluster::Cluster(
         ++current_shard_num;
     }
 
+    initMisc();
+}
+
+Cluster::Cluster(
+    const Settings & settings,
+    const String & cluster_name_,
+    const String & cluster_secret_,
+    std::vector<ShardInitSpec> && shard_specs)
+    : secret(cluster_secret_)
+    , name(cluster_name_)
+{
+    UInt32 current_shard_num = 1;
+    for (auto & spec : shard_specs)
+    {
+        addresses_with_failover.push_back(spec.addresses);
+        addShard(
+            settings,
+            std::move(spec.addresses),
+            /* treat_local_as_remote = */ false,
+            current_shard_num,
+            /* current_shard_name = */ "",
+            spec.weight,
+            spec.internal_replication);
+        ++current_shard_num;
+    }
     initMisc();
 }
 

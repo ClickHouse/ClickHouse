@@ -16,6 +16,8 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserShowProcesslistQuery.h>
+#include <Parsers/ParserShowCreateShardQuery.h>
+#include <Parsers/ParserShowCreateClusterQuery.h>
 #include <Parsers/ParserShowTablesQuery.h>
 #include <Parsers/ParserShowColumnsQuery.h>
 #include <Parsers/ParserShowEngineQuery.h>
@@ -51,6 +53,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserDescribeTableQuery describe_table_p;
     ParserDescribeCacheQuery describe_cache_p;
     ParserShowProcesslistQuery show_processlist_p;
+    ParserShowCreateShardQuery show_create_shard_p;
+    ParserShowCreateClusterQuery show_create_cluster_p;
     ParserCreateQuery create_p;
     ParserAlterQuery alter_p;
     ParserRenameQuery rename_p;
@@ -75,6 +79,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
            explain_p.parse(pos, query, expected)
         || select_p.parse(pos, query, expected)
         || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
+        || show_create_shard_p.parse(pos, query, expected)
+        || show_create_cluster_p.parse(pos, query, expected)
         || show_tables_p.parse(pos, query, expected)
         || show_columns_p.parse(pos, query, expected)
         || show_engine_p.parse(pos, query, expected)

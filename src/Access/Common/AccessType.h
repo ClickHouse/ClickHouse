@@ -164,6 +164,8 @@ enum class AccessType : uint8_t
                                          implicitly enabled with any grant on the column */\
     M(SHOW_DICTIONARIES, "", DICTIONARY, SHOW) /* allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>;
                                                   implicitly enabled by any grant on the dictionary */\
+    M(SHOW_CREATE_SHARD, "SHOW CREATE SHARD", GLOBAL, SHOW) /* allows to execute SHOW CREATE SHARD */\
+    M(SHOW_CREATE_CLUSTER, "SHOW CREATE CLUSTER", GLOBAL, SHOW) /* allows to execute SHOW CREATE CLUSTER */\
     M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, DESCRIBE */\
     M(SHOW_FILESYSTEM_CACHES, "", GROUP, ALL) \
     \
@@ -246,6 +248,8 @@ enum class AccessType : uint8_t
     M(CREATE_FUNCTION, "", GLOBAL, CREATE) /* allows to execute CREATE FUNCTION */ \
     M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
     M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
+    M(CREATE_SHARD, "CREATE SHARD", GLOBAL, CREATE) /* allows to execute CREATE SHARD */ \
+    M(CREATE_CLUSTER, "CREATE CLUSTER", GLOBAL, CREATE) /* allows to execute CREATE CLUSTER */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
@@ -257,6 +261,8 @@ enum class AccessType : uint8_t
     M(DROP_FUNCTION, "", GLOBAL, DROP) /* allows to execute DROP FUNCTION */\
     M(DROP_WORKLOAD, "", GLOBAL, DROP) /* allows to execute DROP WORKLOAD */\
     M(DROP_RESOURCE, "", GLOBAL, DROP) /* allows to execute DROP RESOURCE */\
+    M(DROP_SHARD, "DROP SHARD", GLOBAL, DROP) /* allows to execute DROP SHARD */\
+    M(DROP_CLUSTER, "DROP CLUSTER", GLOBAL, DROP) /* allows to execute DROP CLUSTER */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \

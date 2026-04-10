@@ -37,6 +37,12 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTCreateShardQuery.h>
+#include <Parsers/ASTDropShardQuery.h>
+#include <Parsers/ASTCreateClusterQuery.h>
+#include <Parsers/ASTDropClusterQuery.h>
+#include <Parsers/ASTShowCreateShardQuery.h>
+#include <Parsers/ASTShowCreateClusterQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -228,6 +234,14 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterExistsQuery";
     }
+    else if (query->as<ASTShowCreateShardQuery>())
+    {
+        interpreter_name = "InterpreterShowCreateShardQuery";
+    }
+    else if (query->as<ASTShowCreateClusterQuery>())
+    {
+        interpreter_name = "InterpreterShowCreateClusterQuery";
+    }
     else if (query->as<ASTShowCreateTableQuery>() || query->as<ASTShowCreateViewQuery>() || query->as<ASTShowCreateDatabaseQuery>() || query->as<ASTShowCreateDictionaryQuery>())
     {
         interpreter_name = "InterpreterShowCreateQuery";
@@ -308,6 +322,14 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterMoveAccessEntityQuery";
     }
+    else if (query->as<ASTDropShardQuery>())
+    {
+        interpreter_name = "InterpreterDropShardQuery";
+    }
+    else if (query->as<ASTDropClusterQuery>())
+    {
+        interpreter_name = "InterpreterDropClusterQuery";
+    }
     else if (query->as<ASTDropNamedCollectionQuery>())
     {
         interpreter_name = "InterpreterDropNamedCollectionQuery";
@@ -371,6 +393,14 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTCreateIndexQuery>())
     {
         interpreter_name = "InterpreterCreateIndexQuery";
+    }
+    else if (query->as<ASTCreateShardQuery>())
+    {
+        interpreter_name = "InterpreterCreateShardQuery";
+    }
+    else if (query->as<ASTCreateClusterQuery>())
+    {
+        interpreter_name = "InterpreterCreateClusterQuery";
     }
     else if (query->as<ASTCreateNamedCollectionQuery>())
     {
