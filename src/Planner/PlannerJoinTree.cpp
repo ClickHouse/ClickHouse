@@ -1246,6 +1246,26 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         auto dist_table_node = findTableNodeByStorage(inner_query_tree, underlying_dist);
                         if (dist_table_node)
                         {
+                            /// Merge table expression modifiers (FINAL, SAMPLE) from the outer view
+                            /// reference into the distributed table node. The outer modifiers come from
+                            /// the caller (e.g. SELECT * FROM my_view FINAL SAMPLE 0.1); the inner
+                            /// modifiers come from the view body itself. FINAL is OR-ed so either source
+                            /// can enable it; for SAMPLE the outer value takes precedence over the inner.
+                            auto & dist_table = dist_table_node->as<TableNode &>();
+                            const auto outer_modifiers = table_expression_query_info.table_expression->as<const TableNode &>().getTableExpressionModifiers();
+                            if (outer_modifiers)
+                            {
+                                const auto inner_modifiers = dist_table.getTableExpressionModifiers();
+                                bool merged_final = outer_modifiers->hasFinal() || (inner_modifiers && inner_modifiers->hasFinal());
+                                auto merged_sample_size = outer_modifiers->hasSampleSizeRatio()
+                                    ? outer_modifiers->getSampleSizeRatio()
+                                    : (inner_modifiers ? inner_modifiers->getSampleSizeRatio() : std::nullopt);
+                                auto merged_sample_offset = outer_modifiers->hasSampleOffsetRatio()
+                                    ? outer_modifiers->getSampleOffsetRatio()
+                                    : (inner_modifiers ? inner_modifiers->getSampleOffsetRatio() : std::nullopt);
+                                dist_table.setTableExpressionModifiers(TableExpressionModifiers{merged_final, merged_sample_size, merged_sample_offset});
+                            }
+
                             /// Replace the view's table expression in the outer query with the
                             /// inlined inner query tree. StorageDistributed will then replace
                             /// the distributed table node (now deep inside the subquery) with
