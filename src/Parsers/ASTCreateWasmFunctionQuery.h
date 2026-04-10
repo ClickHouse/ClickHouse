@@ -35,6 +35,9 @@ public:
 
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateWasmFunctionQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }

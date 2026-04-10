@@ -13,6 +13,8 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDictionary.h>
@@ -155,6 +157,8 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"Columns definition", [] { return make_intrusive<ASTColumns>(); }},
         {"Storage", [] { return make_intrusive<ASTStorage>(); }},
         {"CreateQuery", [] { return make_intrusive<ASTCreateQuery>(); }},
+        {"CreateSQLFunctionQuery", [] { return make_intrusive<ASTCreateSQLFunctionQuery>(); }},
+        {"CreateWasmFunctionQuery", [] { return make_intrusive<ASTCreateWasmFunctionQuery>(); }},
         {"DropQuery", [] { return make_intrusive<ASTDropQuery>(); }},
         {"InsertQuery", [] { return make_intrusive<ASTInsertQuery>(); }},
         {"AlterCommand", [] { return make_intrusive<ASTAlterCommand>(); }},

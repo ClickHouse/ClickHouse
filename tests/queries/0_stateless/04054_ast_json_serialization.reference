@@ -259,6 +259,9 @@ RT_multi_join	SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON t
 RT_aliases	SELECT a AS x, b AS y FROM t AS u
 RT_refresh	CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 HOUR ENGINE = MergeTree ORDER BY a AS SELECT 1 AS a
 RT_sql_security	CREATE VIEW v DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT 1
+RT_create_sql_function	CREATE FUNCTION myFunc AS x -> (x + 1)
+RT_create_sql_function_ine	CREATE FUNCTION IF NOT EXISTS myFunc AS x -> (x + 1)
+RT_create_or_replace_sql_function	CREATE OR REPLACE FUNCTION myFunc AS x -> (x + 1)
 Idempotent_select	1
 Idempotent_create	1
 Idempotent_dict	1

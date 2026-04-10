@@ -28,6 +28,9 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };

@@ -3,6 +3,8 @@
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 namespace DB
 {
@@ -52,6 +54,39 @@ String ASTCreateSQLFunctionQuery::getFunctionName() const
     if (!is_ok)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected function name, got '{}'", function_name->formatForErrorMessage());
     return name;
+}
+
+void ASTCreateSQLFunctionQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "CreateSQLFunctionQuery");
+
+    w.writeBool("or_replace", or_replace);
+    w.writeBool("if_not_exists", if_not_exists);
+
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+
+    w.writeChild("function_name", function_name);
+    w.writeChild("function_core", function_core);
+}
+
+void ASTCreateSQLFunctionQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    or_replace = r.getBool("or_replace");
+    if_not_exists = r.getBool("if_not_exists");
+    cluster = r.getString("cluster");
+
+    children.clear();
+
+    function_name = r.readChild("function_name");
+    if (function_name)
+        children.push_back(function_name);
+
+    function_core = r.readChild("function_core");
+    if (function_core)
+        children.push_back(function_core);
 }
 
 

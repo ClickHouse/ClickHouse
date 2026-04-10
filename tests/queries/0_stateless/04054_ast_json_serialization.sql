@@ -1510,6 +1510,11 @@ SELECT 'RT_refresh' AS t, formatQueryFromJSON(parseQueryToJSON('CREATE MATERIALI
 -- SQL Security
 SELECT 'RT_sql_security' AS t, formatQueryFromJSON(parseQueryToJSON('CREATE VIEW v DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT 1'));
 
+-- CREATE FUNCTION (SQL)
+SELECT 'RT_create_sql_function' AS t, formatQueryFromJSON(parseQueryToJSON('CREATE FUNCTION myFunc AS (x) -> x + 1'));
+SELECT 'RT_create_sql_function_ine' AS t, formatQueryFromJSON(parseQueryToJSON('CREATE FUNCTION IF NOT EXISTS myFunc AS (x) -> x + 1'));
+SELECT 'RT_create_or_replace_sql_function' AS t, formatQueryFromJSON(parseQueryToJSON('CREATE OR REPLACE FUNCTION myFunc AS (x) -> x + 1'));
+
 -- ==========================================================================
 -- IDEMPOTENCE TESTS: double round-trip
 -- ==========================================================================

@@ -3,6 +3,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 
@@ -129,6 +131,96 @@ static String getAstAsStringLiteral(const ASTPtr & ast)
 void ASTCreateWasmFunctionQuery::setModuleHash(String hash_str)
 {
     module_hash_ast = make_intrusive<ASTLiteral>(hash_str);
+}
+
+void ASTCreateWasmFunctionQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "CreateWasmFunctionQuery");
+
+    w.writeBool("or_replace", or_replace);
+    w.writeBool("if_not_exists", if_not_exists);
+
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+
+    w.writeChild("function_name", function_name_ast);
+    w.writeChild("arguments", arguments_ast);
+    w.writeChild("result_type", result_type_ast);
+    w.writeChild("module_name", module_name_ast);
+    w.writeChild("source_function_name", source_function_name_ast);
+    w.writeChild("module_hash", module_hash_ast);
+    w.writeChild("abi", abi_ast);
+
+    if (!function_settings.empty())
+    {
+        w.writeKey("function_settings");
+        auto & o = w.getOut();
+        const auto & fs = w.getFormatSettings();
+        o << '[';
+        for (size_t i = 0; i < function_settings.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            o << "{\"name\":";
+            writeJSONString(function_settings[i].name, o, fs);
+            w.writeFieldValue("value", function_settings[i].value);
+            o << '}';
+        }
+        o << ']';
+    }
+}
+
+void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    or_replace = r.getBool("or_replace");
+    if_not_exists = r.getBool("if_not_exists");
+    cluster = r.getString("cluster");
+
+    children.clear();
+    function_name_ast = nullptr;
+    arguments_ast = nullptr;
+    result_type_ast = nullptr;
+    module_name_ast = nullptr;
+    module_hash_ast = nullptr;
+    source_function_name_ast = nullptr;
+    abi_ast = nullptr;
+    function_settings.clear();
+
+    if (auto ast = r.readChild("function_name"))
+        setName(std::move(ast));
+    if (auto ast = r.readChild("arguments"))
+        setArguments(std::move(ast));
+    if (auto ast = r.readChild("result_type"))
+        setReturnType(std::move(ast));
+    if (auto ast = r.readChild("module_name"))
+        setModuleName(std::move(ast));
+    if (auto ast = r.readChild("source_function_name"))
+        setSourceFunctionName(std::move(ast));
+    if (auto ast = r.readChild("module_hash"))
+        setModuleHash(std::move(ast));
+    if (auto ast = r.readChild("abi"))
+        setAbi(std::move(ast));
+
+    if (r.has("function_settings"))
+    {
+        auto arr = r.getArray("function_settings");
+        if (!arr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "'function_settings' is not an array during AST JSON deserialization");
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto change_obj = arr->getObject(i);
+            if (!change_obj)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Null element at index {} in 'function_settings' array during AST JSON deserialization", i);
+            SettingChange change;
+            change.name = change_obj->getValue<String>("name");
+            auto value_obj = change_obj->getObject("value");
+            if (!value_obj)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing 'value' at index {} in 'function_settings' array during AST JSON deserialization", i);
+            change.value = JSONObjectReader::readFieldFromObject(*value_obj);
+            function_settings.push_back(std::move(change));
+        }
+    }
 }
 
 ASTCreateWasmFunctionQuery::Definition ASTCreateWasmFunctionQuery::validateAndGetDefinition() const
