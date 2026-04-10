@@ -55,7 +55,7 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 
 #if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
 
-double percentile(const std::vector<uint32_t> & sorted, double p)
+static double percentile(const std::vector<uint32_t> & sorted, double p)
 {
     size_t n = sorted.size();
     size_t idx = static_cast<size_t>(std::ceil(p * static_cast<double>(n))) - 1;
@@ -65,7 +65,7 @@ double percentile(const std::vector<uint32_t> & sorted, double p)
 
 /// Emit p50/p75/p90/p95 of kernel TCP buffer memory for one connection pool group.
 /// Looks up rmem/wmem from the netlink dump by inode.
-void emitTCPBufferPercentiles(
+static void emitTCPBufferPercentiles(
     const std::vector<uint64_t> & inodes,
     const char * group_name,
     const std::unordered_map<uint64_t, TCPSocketMemInfo> & meminfo_by_inode,
@@ -122,7 +122,7 @@ void emitTCPBufferPercentiles(
 
 /// Emit p50/p75/p90/p95 metrics for kernel TCP buffer memory of HTTP connection pool sockets.
 /// Queries sock_diag netlink to get per-socket rmem/wmem, then joins with pool inodes.
-void updateHTTPConnectionPoolTCPBufferMetrics(
+static void updateHTTPConnectionPoolTCPBufferMetrics(
     const HTTPConnectionPools::PoolSocketInodes & pool_inodes,
     AsynchronousMetricValues & new_values)
 {
