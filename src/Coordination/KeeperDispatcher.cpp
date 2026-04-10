@@ -1,4 +1,5 @@
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperSession.h>
 #include <Common/ProfiledLocks.h>
 #include <libnuraft/async.hxx>
 
@@ -213,7 +214,8 @@ void KeeperDispatcher::requestThread()
                     if (req.request->getOpNum() != Coordination::OpNum::Close
                         && req.request->getOpNum() != Coordination::OpNum::SessionID)
                     {
-                        if (!session_registry_.isSessionAlive(req.session_id))
+                        auto session = session_registry_.findSession(req.session_id);
+                        if (!session || !session->canAcceptRequests())
                         {
                             ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
 
@@ -534,7 +536,7 @@ bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
     /// - KeeperOverDispatcher callbacks capture shared_ptr<CallbackState> (always alive)
     /// Note: setResponse is called from responseThread which is single-threaded,
     /// so concurrent setResponse calls for the same session do not happen.
-    /// However, for non-Close responses, finishSession on another thread may
+    /// However, for non-Close responses, terminateSession on another thread may
     /// concurrently invoke a copy of the same callback (for ZSESSIONEXPIRED).
     /// Both current callback implementations handle this safely:
     /// KeeperTCPHandler pushes to a ConcurrentBoundedQueue, and
@@ -721,7 +723,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
             /// When Close commits, remove the session from `live_sessions` so that
             /// stale requests still sitting in the backed-up queue will be filtered.
-            /// This covers the window between Close commit and `finishSession`
+            /// This covers the window between Close commit and `terminateSession`
             /// (e.g. `sessionCleanerTask` expired the session but the TCP handler
             /// hasn't disconnected yet). Fires on ALL nodes via RAFT, which is
             /// how followers learn about closed sessions.
@@ -887,9 +889,9 @@ KeeperDispatcher::~KeeperDispatcher()
     shutdown();
 }
 
-void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
+KeeperSessionPtr KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
-    session_registry_.registerSession(session_id, std::move(callback));
+    return session_registry_.registerSession(session_id, std::move(callback));
 }
 
 void KeeperDispatcher::sessionCleanerTask()
@@ -931,7 +933,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     /// before the Close even enters the queue.
                     /// Close requests are exempt from stale filtering, so the
                     /// Close will still pass through RAFT for ephemeral cleanup.
-                    finishSession(dead_session);
+                    terminateSession(dead_session);
 
                     if (!requests_queue->push(std::move(request_info)))
                         LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
@@ -950,7 +952,7 @@ void KeeperDispatcher::sessionCleanerTask()
     }
 }
 
-void KeeperDispatcher::finishSession(int64_t session_id)
+void KeeperDispatcher::terminateSession(int64_t session_id)
 {
     /// shutdown() method will cleanup sessions if needed
     if (keeper_context->isShutdownCalled())

@@ -57,7 +57,7 @@ KeeperOverDispatcher::KeeperOverDispatcher(
 
 KeeperOverDispatcher::~KeeperOverDispatcher()
 {
-    keeper_dispatcher->finishSession(session_id);
+    keeper_dispatcher->terminateSession(session_id);
 }
 
 void KeeperOverDispatcher::finalize(const String & /* reason */)

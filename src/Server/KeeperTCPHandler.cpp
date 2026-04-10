@@ -528,7 +528,7 @@ void KeeperTCPHandler::runImpl()
                 if (in->eof())
                 {
                     LOG_DEBUG(log, "Client closed connection, session id #{}", session_id);
-                    keeper_dispatcher->finishSession(session_id);
+                    keeper_dispatcher->terminateSession(session_id);
                     break;
                 }
 
@@ -613,7 +613,7 @@ void KeeperTCPHandler::runImpl()
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
                     LOG_DEBUG(log, "Session #{} expired because server shutting down or quorum is not alive", session_id);
-                    keeper_dispatcher->finishSession(session_id);
+                    keeper_dispatcher->terminateSession(session_id);
                     return;
                 }
 
@@ -626,7 +626,7 @@ void KeeperTCPHandler::runImpl()
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
                 LOG_DEBUG(log, "Session #{} expired", session_id);
-                keeper_dispatcher->finishSession(session_id);
+                keeper_dispatcher->terminateSession(session_id);
                 break;
             }
         }
@@ -638,7 +638,7 @@ void KeeperTCPHandler::runImpl()
         LOG_TRACE(log, "Has {} responses in the queue", responses->size());
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
         cancelWriteBuffer();
-        keeper_dispatcher->finishSession(session_id);
+        keeper_dispatcher->terminateSession(session_id);
     }
 }
 

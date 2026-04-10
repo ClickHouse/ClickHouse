@@ -1,4 +1,5 @@
 #include <Coordination/KeeperSessionRegistry.h>
+#include <Coordination/KeeperSession.h>
 
 #include <Common/ProfiledLocks.h>
 #include <Common/CurrentMetrics.h>
@@ -26,7 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void KeeperSessionRegistry::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
+KeeperSessionPtr KeeperSessionRegistry::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
     bool inserted = false;
     {
@@ -34,11 +35,14 @@ void KeeperSessionRegistry::registerSession(int64_t session_id, ZooKeeperRespons
         inserted = live_sessions.insert(session_id).second;
     }
 
+    auto session = std::make_shared<KeeperSession>(session_id, callback);
+
     try
     {
         ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
         if (!session_to_response_callback.try_emplace(session_id, callback).second)
             throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
+        sessions_[session_id] = session;
         CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
     }
     catch (...)
@@ -50,11 +54,14 @@ void KeeperSessionRegistry::registerSession(int64_t session_id, ZooKeeperRespons
         }
         throw;
     }
+
+    return session;
 }
 
 ZooKeeperResponseCallback KeeperSessionRegistry::unregisterSession(int64_t session_id)
 {
     ZooKeeperResponseCallback callback;
+    KeeperSessionPtr session;
     {
         ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
         auto it = session_to_response_callback.find(session_id);
@@ -64,8 +71,26 @@ ZooKeeperResponseCallback KeeperSessionRegistry::unregisterSession(int64_t sessi
             session_to_response_callback.erase(it);
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
+        auto sit = sessions_.find(session_id);
+        if (sit != sessions_.end())
+        {
+            session = std::move(sit->second);
+            sessions_.erase(sit);
+        }
     }
+    /// Close the session object outside the lock.
+    if (session)
+        session->close();
     return callback;
+}
+
+KeeperSessionPtr KeeperSessionRegistry::findSession(int64_t session_id) const
+{
+    ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
+    auto it = sessions_.find(session_id);
+    if (it != sessions_.end())
+        return it->second;
+    return nullptr;
 }
 
 bool KeeperSessionRegistry::isSessionAlive(int64_t session_id) const
@@ -148,11 +173,22 @@ int64_t KeeperSessionRegistry::nextInternalSessionId()
 KeeperSessionRegistry::ShutdownResult KeeperSessionRegistry::clearAllSessions()
 {
     ShutdownResult result;
-    ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
-    result.sessions.reserve(session_to_response_callback.size());
-    for (auto & [session_id, callback] : session_to_response_callback)
-        result.sessions.emplace_back(session_id, std::move(callback));
-    session_to_response_callback.clear();
+    std::vector<KeeperSessionPtr> sessions_to_close;
+    {
+        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds, ProfileEvents::KeeperSessionCallbackLockHoldMicroseconds);
+        result.sessions.reserve(session_to_response_callback.size());
+        for (auto & [session_id, callback] : session_to_response_callback)
+            result.sessions.emplace_back(session_id, std::move(callback));
+        session_to_response_callback.clear();
+
+        sessions_to_close.reserve(sessions_.size());
+        for (auto & [_, session] : sessions_)
+            sessions_to_close.push_back(std::move(session));
+        sessions_.clear();
+    }
+    /// Close session objects outside the lock.
+    for (auto & session : sessions_to_close)
+        session->close();
     return result;
 }
 

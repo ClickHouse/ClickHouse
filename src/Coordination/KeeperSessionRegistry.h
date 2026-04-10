@@ -11,9 +11,9 @@
 namespace DB
 {
 
-/// Callback invoked by `setResponse` and `finishSession` to deliver responses to clients.
+/// Callback invoked by `setResponse` and `terminateSession` to deliver responses to clients.
 /// Must be safe for concurrent invocation: `setResponse` (from `responseThread`) and
-/// `finishSession` (from dead session cleaner) may invoke copies of the same callback
+/// `terminateSession` (from dead session cleaner) may invoke copies of the same callback
 /// concurrently for the same session.
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
@@ -23,14 +23,19 @@ using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeep
 class KeeperSessionRegistry
 {
 public:
-    /// Register a session: adds to both `session_to_response_callback` and `live_sessions`,
-    /// increments `KeeperAliveConnections`. Throws on duplicate session_id.
-    void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
+    /// Register a session: creates a `KeeperSession` object, adds to both
+    /// `session_to_response_callback` and `live_sessions`, increments `KeeperAliveConnections`.
+    /// Throws on duplicate session_id. Returns the new session object.
+    KeeperSessionPtr registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
 
-    /// Unregister a session's response callback. Returns the callback so the caller
-    /// can deliver a final ZSESSIONEXPIRED response outside the lock.
-    /// Decrements `KeeperAliveConnections`. Returns empty callback if not found.
+    /// Unregister a session's response callback and close its `KeeperSession`.
+    /// Returns the callback so the caller can deliver a final ZSESSIONEXPIRED
+    /// response outside the lock. Decrements `KeeperAliveConnections`.
+    /// Returns empty callback if not found.
     ZooKeeperResponseCallback unregisterSession(int64_t session_id);
+
+    /// Look up a session by id. Returns nullptr if not found.
+    KeeperSessionPtr findSession(int64_t session_id) const;
 
     /// Check whether a session is in the live set.
     bool isSessionAlive(int64_t session_id) const;
@@ -81,6 +86,8 @@ private:
     mutable std::mutex session_to_response_callback_mutex;
     /// Normal session response callbacks (keyed by session_id).
     std::unordered_map<int64_t, ZooKeeperResponseCallback> session_to_response_callback;
+    /// Per-session objects (dual-tracked alongside callback map, temporary).
+    std::unordered_map<int64_t, KeeperSessionPtr> sessions_;
     /// Temporary callbacks for new session ID requests (keyed by internal_id).
     std::unordered_map<int64_t, ZooKeeperResponseCallback> new_session_id_response_callback;
 

@@ -170,11 +170,13 @@ public:
     int64_t getSessionID(int64_t session_timeout_ms);
 
     /// Register session and subscribe for responses with callback.
+    /// Returns the `KeeperSessionPtr` wrapping the session state.
     /// The callback must be safe for concurrent invocation — see ZooKeeperResponseCallback.
-    void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
+    KeeperSessionPtr registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
 
-    /// Call if we don't need any responses for this session no more (session was expired)
-    void finishSession(int64_t session_id);
+    /// Terminate a session: unregister callback, close the `KeeperSession` object,
+    /// deliver ZSESSIONEXPIRED, and clean up read request queue.
+    void terminateSession(int64_t session_id);
 
     /// Invoked when a request completes.
     void updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests = 1);
