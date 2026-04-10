@@ -1812,6 +1812,9 @@ void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 
 namespace
 {
+/// Returns false when stdin is unreadable (closed fd, broken pipe, etc.)
+/// because callers use this as a probe: "is there extra stdin data for this INSERT?"
+/// An unreadable stdin simply means there is no extra data, not an error to report.
 bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 {
     try
@@ -1826,9 +1829,18 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
     }
 }
 
-/// Non-blocking check whether stdin has data available.
-/// Uses poll(timeout=0) on the fd to avoid blocking on empty pipes.
-/// Also checks the ReadBuffer's internal buffer for already-read data.
+/// Non-blocking, non-throwing probe: does stdin appear to have data right now?
+/// Uses poll(timeout=0) to avoid blocking on empty pipes (the root cause of the hang).
+///
+/// This is intentionally best-effort: poll(timeout=0) is a point-in-time snapshot,
+/// so data arriving slightly later will be missed. This is acceptable because this
+/// function is only called when INSERT already has a primary data source (inline data
+/// or INFILE), so missing late-arriving stdin data only affects the unusual case of
+/// providing both inline data and piped stdin simultaneously.
+///
+/// Returns false on any error (poll failure, closed/invalid fd) rather than throwing,
+/// because this is an optional probe — a broken stdin should not prevent an INSERT
+/// that already has its data from executing.
 bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
 {
     if (std_in.hasPendingData())
@@ -1847,10 +1859,10 @@ bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
     while (ret < 0 && errno == EINTR);
 
     if (ret < 0)
-        throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot poll stdin (fd {})", fd);
+        return false;
 
     if (ret > 0 && (pfd.revents & (POLLERR | POLLNVAL)))
-        throw Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "poll on stdin (fd {}) returned error revents={}", fd, int(pfd.revents));
+        return false;
 
     return ret > 0 && (pfd.revents & POLLIN);
 }
