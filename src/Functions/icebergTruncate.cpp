@@ -74,7 +74,7 @@ public:
 
         const auto & truncate_type = arguments[1];
         WhichDataType which_truncate(truncate_type);
-        if (!which_truncate.isDecimal64() && !which_truncate.isDecimal32() && !which_truncate.isStringOrFixedString() && !which_truncate.isNativeInteger())
+        if (!which_truncate.isDecimal() && !which_truncate.isStringOrFixedString() && !which_truncate.isNativeInteger())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument must be of native integer type, String/FixedString, Decimal");
 
         if (which_truncate.isStringOrFixedString())
@@ -146,10 +146,14 @@ public:
             else
             {
                 ColumnPtr decimal_scaled;
-                if (const auto * decimal_type = checkDecimal<Decimal32>(*arguments[1].type))
-                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal32>(static_cast<Int32>(value), decimal_type->getScale()));
-                if (const auto * decimal_type = checkDecimal<Decimal64>(*arguments[1].type))
-                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal64>(value, decimal_type->getScale()));
+                if (const auto * decimal_type32 = checkDecimal<Decimal32>(*arguments[1].type))
+                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal32>(static_cast<Int32>(value), decimal_type32->getScale()));
+                else if (const auto * decimal_type64 = checkDecimal<Decimal64>(*arguments[1].type))
+                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal64>(value, decimal_type64->getScale()));
+                else if (const auto * decimal_type128 = checkDecimal<Decimal128>(*arguments[1].type))
+                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal128>(static_cast<Int128>(value), decimal_type128->getScale()));
+                else if (const auto * decimal_type256 = checkDecimal<Decimal256>(*arguments[1].type))
+                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal256>(static_cast<Int256>(value), decimal_type256->getScale()));
 
                 if (!decimal_scaled)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal data type");
