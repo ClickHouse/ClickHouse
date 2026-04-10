@@ -859,7 +859,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_PROJECTION)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_decl, metadata.columns, context);
+        auto projection = ProjectionDescription::getProjectionFromAST(projection_decl, metadata.columns, &metadata.partition_key, context);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
     else if (type == DROP_PROJECTION)
@@ -1332,7 +1332,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
             FunctionNameNormalizer::visit(partition_key.get());
             metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, context));
+                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
         }
     }
 
@@ -1361,7 +1361,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         try
         {
             /// Check if we can still build projection from new metadata.
-            auto new_projection = ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, context);
+            auto new_projection = ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context);
             /// Check if new metadata has the same keys as the old one.
             if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
