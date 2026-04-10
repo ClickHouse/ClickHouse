@@ -19,6 +19,7 @@
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
@@ -32,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
 }
 
 namespace DB::QueryPlanOptimizations
@@ -233,12 +235,11 @@ std::optional<String> optimizeUseNormalProjections(
 
     auto logger = getLogger("optimizeUseNormalProjections");
 
-    auto projection_virtuals = reading->getMergeTreeData().getProjectionVirtualsPtr();
     auto has_all_required_columns = [&](const ProjectionDescription * projection)
     {
         for (const auto & col : required_columns)
         {
-            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection_virtuals->has(col))
+            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection->virtuals->has(col))
                 return false;
         }
 
