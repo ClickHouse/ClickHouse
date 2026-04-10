@@ -50,6 +50,8 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/MergeTreePrewhereSource.h>
+#include <Storages/MergeTree/MergeTreeRestColumnsTransform.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -633,6 +635,76 @@ Pipe ReadFromMergeTree::readFromPool(
     return pipe;
 }
 
+Pipe ReadFromMergeTree::readFromPoolPipelined(
+    RangesInDataParts parts_with_range,
+    const MergeTreeIndexBuildContextPtr & /*index_build_context*/,
+    Names required_columns,
+    PoolSettings pool_settings)
+{
+    size_t total_rows = parts_with_range.getRowsCountAllParts();
+
+    /// For the first version, always use the standard (non-prefetched) pool.
+    auto pool = std::make_shared<MergeTreeReadPool>(
+        std::move(parts_with_range),
+        mutations_snapshot,
+        shared_virtual_fields,
+        index_read_tasks,
+        storage_snapshot,
+        query_info.row_level_filter,
+        query_info.prewhere_info,
+        actions_settings,
+        reader_settings,
+        required_columns,
+        pool_settings,
+        block_size,
+        context,
+        dataflow_cache_updater);
+
+    /// Compute prewhere actions and headers.
+    auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
+        query_info.row_level_filter,
+        query_info.prewhere_info,
+        index_read_tasks,
+        actions_settings,
+        reader_settings.enable_multiple_prewhere_read_steps,
+        reader_settings.force_short_circuit_execution);
+
+    auto result_header = MergeTreeSelectProcessor::transformHeader(
+        pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info);
+
+    auto prewhere_header = MergeTreePrewhereSource::computePrewhereHeader(
+        result_header, pool->getHeader(), prewhere_actions);
+
+    LOG_DEBUG(log, "Pipelined reader: {} prewhere columns, {} total result columns, {} streams",
+        prewhere_header.columns(), result_header.columns(), pool_settings.threads);
+
+    Pipes pipes;
+    for (size_t i = 0; i < pool_settings.threads; ++i)
+    {
+        auto source = std::make_shared<MergeTreePrewhereSource>(
+            prewhere_header,
+            pool,
+            i,
+            prewhere_actions,
+            block_size);
+
+        if (i == 0)
+            source->addTotalRowsApprox(total_rows);
+
+        auto transform = std::make_shared<MergeTreeRestColumnsTransform>(
+            prewhere_header, result_header);
+
+        auto pipe = Pipe(std::move(source));
+        pipe.addTransform(std::move(transform));
+        pipes.emplace_back(std::move(pipe));
+    }
+
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (output_streams_limit && output_streams_limit < pipe.numOutputPorts())
+        pipe.resize(output_streams_limit);
+    return pipe;
+}
+
 Pipe ReadFromMergeTree::readInOrder(
     RangesInDataParts parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -825,6 +897,14 @@ Pipe ReadFromMergeTree::read(
 
     if (read_type == ReadType::ParallelReplicas)
         return readFromPoolParallelReplicas(
+            std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
+
+    /// Pipelined reader: split prewhere and rest columns into separate pipeline stages.
+    if (read_type == ReadType::Default
+        && reader_settings.use_pipelined_mergetree_reader
+        && query_info.prewhere_info
+        && (max_streams > 1 || checkAllPartsOnRemoteFS(parts_with_range)))
+        return readFromPoolPipelined(
             std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
 
     /// Reading from default thread pool is beneficial for remote storage because of new prefetches.

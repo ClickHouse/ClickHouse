@@ -450,6 +450,12 @@ private:
         Names required_columns,
         PoolSettings pool_settings);
 
+    Pipe readFromPoolPipelined(
+        RangesInDataParts parts_with_range,
+        const MergeTreeIndexBuildContextPtr & index_build_context,
+        Names required_columns,
+        PoolSettings pool_settings);
+
     Pipe readFromPoolParallelReplicas(
         RangesInDataParts parts_with_range,
         const MergeTreeIndexBuildContextPtr & index_build_context,

@@ -198,6 +198,11 @@ public:
 
     Readers releaseReaders() { return std::move(readers); }
 
+    /// Accessors for pipelined reader support.
+    MergeTreeReadTaskInfoPtr getInfoPtr() const { return info; }
+    MarkRanges & getMarkRanges() { return mark_ranges; }
+    std::vector<MarkRanges> & getPatchesMarkRanges() { return patches_mark_ranges; }
+
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
 
     static Readers createReaders(
@@ -207,6 +212,13 @@ public:
         const std::vector<MarkRanges> & patches_ranges);
 
     static MergeTreeReadersChain createReadersChain(
+        const Readers & readers,
+        const PrewhereExprInfo & prewhere_actions,
+        const ReadStepsPerformanceCounters & read_steps_performance_counters);
+
+    /// Creates a readers chain with only prewhere readers (no main reader).
+    /// Used by the pipelined MergeTree reader to split prewhere from rest columns.
+    static MergeTreeReadersChain createPrewhereReadersChain(
         const Readers & readers,
         const PrewhereExprInfo & prewhere_actions,
         const ReadStepsPerformanceCounters & read_steps_performance_counters);

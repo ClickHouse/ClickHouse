@@ -897,6 +897,9 @@ Move all viable conditions from WHERE to PREWHERE
     DECLARE(Bool, enable_multiple_prewhere_read_steps, true, R"(
 Move more conditions from WHERE to PREWHERE and do reads from disk and filtering in multiple steps if there are multiple conditions combined with AND
 )", 0) \
+    DECLARE(Bool, use_pipelined_mergetree_reader, false, R"(
+Use pipelined MergeTree reader that splits reading into two pipeline stages: prewhere columns reading with filtering, and rest columns reading. This allows better resource utilization by overlapping IO and compute.
+)", EXPERIMENTAL) \
     DECLARE(Bool, move_primary_key_columns_to_end_of_prewhere, true, R"(
 Move PREWHERE conditions containing primary key columns to the end of AND chain. It is likely that these conditions are taken into account during primary key analysis and thus will not contribute a lot to PREWHERE filtering.
 )", 0) \

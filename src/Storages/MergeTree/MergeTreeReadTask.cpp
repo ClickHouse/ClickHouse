@@ -289,6 +289,56 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     return MergeTreeReadersChain{std::move(range_readers), task_readers.patches};
 }
 
+MergeTreeReadersChain MergeTreeReadTask::createPrewhereReadersChain(
+    const Readers & task_readers,
+    const PrewhereExprInfo & prewhere_actions,
+    const ReadStepsPerformanceCounters & read_steps_performance_counters)
+{
+    if (prewhere_actions.steps.size() != task_readers.prewhere.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "PREWHERE steps count mismatch, actions: {}, readers: {}",
+            prewhere_actions.steps.size(), task_readers.prewhere.size());
+    }
+
+    std::vector<MergeTreeRangeReader> range_readers;
+    range_readers.reserve(prewhere_actions.steps.size() + 1);
+
+    bool can_read_incomplete_granules = task_readers.main->canReadIncompleteGranules()
+        && std::ranges::all_of(task_readers.prewhere, [](const auto & reader)
+        {
+            return reader->canReadIncompleteGranules();
+        });
+
+    if (task_readers.prepared_index)
+    {
+        range_readers.emplace_back(
+            task_readers.prepared_index.get(),
+            Block{},
+            /*prewhere_info_=*/ nullptr,
+            read_steps_performance_counters.getCounterForIndexStep(),
+            /*main_reader_=*/ false,
+            can_read_incomplete_granules);
+    }
+
+    size_t counter_idx = 0;
+    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
+    {
+        range_readers.emplace_back(
+            task_readers.prewhere[i].get(),
+            range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
+            prewhere_actions.steps[i].get(),
+            read_steps_performance_counters.getCountersForStep(counter_idx++),
+            /*main_reader_=*/ false,
+            can_read_incomplete_granules);
+    }
+
+    /// No main reader — this is a prewhere-only chain.
+    /// Patches are not supported in the prewhere-only chain.
+    return MergeTreeReadersChain{std::move(range_readers), {}};
+}
+
 void MergeTreeReadTask::initializeReadersChain(
     const PrewhereExprInfo & prewhere_actions,
     MergeTreeIndexBuildContextPtr index_build_context,

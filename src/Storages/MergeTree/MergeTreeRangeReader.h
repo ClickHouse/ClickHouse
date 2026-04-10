@@ -290,6 +290,10 @@ public:
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
 
+        /// Public accessors for pipelined MergeTree reader support.
+        const FilterWithCachedCount & getFinalFilter() const { return final_filter; }
+        size_t getTotalRowsPerGranule() const { return total_rows_per_granule; }
+
     private:
         friend class MergeTreeRangeReader;
         friend class MergeTreeReadersChain;
