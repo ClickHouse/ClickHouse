@@ -81,9 +81,9 @@ public:
 
     using Bucket = typename Base::Bucket;
 
-    explicit AggregateFunctionTimeseriesLinearRegression(const DataTypes & argument_types_,
+    explicit AggregateFunctionTimeseriesLinearRegression(const DataTypes & argument_types_, const Array & parameters_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_, Float64 predict_offset_ = 0)
-        : Base(argument_types_, start_timestamp_, end_timestamp_, step_, window_, timestamp_scale_)
+        : Base(argument_types_, parameters_, start_timestamp_, end_timestamp_, step_, window_, timestamp_scale_)
         , predict_offset(predict_offset_)
     {
     }
