@@ -77,6 +77,25 @@ void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCall
     keeper_dispatcher->putRequest(request, session_id, false);
 }
 
+void KeeperOverDispatcher::failCallback(XID xid, ZooKeeperResponsePtr response, Coordination::Error error)
+{
+    ResponseCallback cb;
+    {
+        std::lock_guard lock(callback_state->callbacks_mutex);
+        auto it = callback_state->callbacks.find(xid);
+        if (it != callback_state->callbacks.end())
+        {
+            cb = std::move(it->second);
+            callback_state->callbacks.erase(it);
+        }
+    }
+    if (cb)
+    {
+        response->error = error;
+        cb(response);
+    }
+}
+
 void KeeperOverDispatcher::create(
     const String & path,
     const String & data,
@@ -148,7 +167,8 @@ void KeeperOverDispatcher::exists(
         };
     }
 
-    keeper_dispatcher->putLocalReadRequest(request, session_id);
+    if (!keeper_dispatcher->putLocalReadRequest(request, session_id))
+        failCallback(request->xid, request->makeResponse(), Coordination::Error::ZSESSIONEXPIRED);
 }
 
 void KeeperOverDispatcher::get(
@@ -171,7 +191,8 @@ void KeeperOverDispatcher::get(
         };
     }
 
-    keeper_dispatcher->putLocalReadRequest(request, session_id);
+    if (!keeper_dispatcher->putLocalReadRequest(request, session_id))
+        failCallback(request->xid, request->makeResponse(), Coordination::Error::ZSESSIONEXPIRED);
 }
 
 void KeeperOverDispatcher::set(
@@ -217,7 +238,8 @@ void KeeperOverDispatcher::list(
         };
     }
 
-    keeper_dispatcher->putLocalReadRequest(request, session_id);
+    if (!keeper_dispatcher->putLocalReadRequest(request, session_id))
+        failCallback(request->xid, request->makeResponse(), Coordination::Error::ZSESSIONEXPIRED);
 }
 
 void KeeperOverDispatcher::check(
@@ -238,7 +260,8 @@ void KeeperOverDispatcher::check(
         };
     }
 
-    keeper_dispatcher->putLocalReadRequest(request, session_id);
+    if (!keeper_dispatcher->putLocalReadRequest(request, session_id))
+        failCallback(request->xid, request->makeResponse(), Coordination::Error::ZSESSIONEXPIRED);
 }
 
 void KeeperOverDispatcher::sync(
@@ -306,7 +329,8 @@ void KeeperOverDispatcher::getACL(const String & path, GetACLCallback callback)
         };
     }
 
-    keeper_dispatcher->putLocalReadRequest(request, session_id);
+    if (!keeper_dispatcher->putLocalReadRequest(request, session_id))
+        failCallback(request->xid, request->makeResponse(), Coordination::Error::ZSESSIONEXPIRED);
 }
 
 

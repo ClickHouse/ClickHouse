@@ -109,6 +109,10 @@ public:
 private:
     void pushRequest(ZooKeeperRequestPtr request, ResponseCallback callback);
 
+    /// Extract the callback for `xid` and invoke it with an error response.
+    /// Used when putRequest / putLocalReadRequest rejects synchronously.
+    void failCallback(XID xid, ZooKeeperResponsePtr response, Coordination::Error error);
+
     /// Shared state that outlives KeeperOverDispatcher itself.
     /// The response callback registered with KeeperDispatcher captures this by
     /// shared_ptr, so the state remains valid even after ~KeeperOverDispatcher
