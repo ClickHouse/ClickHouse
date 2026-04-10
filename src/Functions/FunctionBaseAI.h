@@ -35,7 +35,7 @@ protected:
     virtual float defaultTemperature() const = 0;
     virtual String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const = 0;
     virtual String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const = 0;
-    virtual String buildResponseFormatJSON(const ColumnsWithTypeAndName & arguments) const { (void)arguments; return ""; }
+    virtual String buildResponseFormatJSON(const ColumnsWithTypeAndName & /*arguments*/) const { return ""; }
     virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
 
     virtual size_t getTextColumnIndex() const { return 0; }

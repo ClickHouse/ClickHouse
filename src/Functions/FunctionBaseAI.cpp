@@ -132,15 +132,11 @@ float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & argument
         return config.temperature;
 
     const auto & last_arg = arguments.back();
-    WhichDataType which(last_arg.type);
-    if (which.isFloat32() || which.isFloat64())
+    if (isFloat(last_arg.type))
     {
         const auto * col_const = typeid_cast<const ColumnConst *>(last_arg.column.get());
         if (col_const)
-        {
-            auto field = (*col_const)[0];
-            return static_cast<float>(field.safeGet<Float64>());
-        }
+            return static_cast<float>((*col_const)[0].safeGet<Float64>());
     }
 
     return config.temperature;
