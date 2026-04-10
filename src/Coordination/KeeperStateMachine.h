@@ -186,7 +186,6 @@ protected:
     mutable std::mutex cluster_config_lock;
     ClusterConfigPtr cluster_config;
 
-    ThreadPool read_pool;
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
 
