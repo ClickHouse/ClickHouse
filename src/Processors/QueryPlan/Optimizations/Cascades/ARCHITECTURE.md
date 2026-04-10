@@ -223,10 +223,15 @@ Cost weights are configurable at query time via:
 SET param__internal_cascades_cost_config = '{"work_weight":1,"network_weight":1,"sequential_weight":1000}';
 ```
 
-The cluster size (number of nodes) is set via:
+The cluster size is derived automatically from the `stateless_worker_client.cluster`
+config (same source as `TaskToHostMap`).  A query parameter overrides it for testing:
 ```sql
 SET param__internal_cascades_cluster_node_count = 20;
 ```
+
+The optimizer explores only two parallelism levels: `{1 node}` (local) and `{N nodes}`
+(full cluster).  Intermediate counts are not explored because they were never chosen
+on TPC-H and would multiply the search space.
 
 **Key files**: `Cost.h/cpp`
 
@@ -245,12 +250,17 @@ A Pareto frontier is maintained: when a new implementation is added, dominated e
 **Transformation rules** (generate logically equivalent expressions):
 - `JoinCommutativity` — swaps join sides (left ↔ right)
 - `TwoPhaseAggregation` — splits aggregation into partial + merge
+- `EagerAggregation` — pushes partial aggregation below joins when GROUP BY keys
+  include the join key (Yan & Larson, VLDB 1995)
 
 **Implementation rules** (generate physical expressions with properties):
-- `HashJoinImplementation` — creates local, broadcast, and shuffle join strategies
-  at each candidate node count
-- `AggregationImplementation` — creates aggregation at required distribution
-- `ParallelReadImplementation` — parallel N-way read from MergeTree
+- `HashJoinImplementation` — creates local, broadcast, and shuffle hash join strategies
+- `MergeJoinImplementation` — creates local and shuffle merge join strategies requiring
+  sorted inputs; composes with `SortedReadImplementation` to avoid hash tables
+- `AggregationImplementation` — creates local, shuffle, partial, and streaming
+  aggregation strategies (streaming requires sorted input by GROUP BY keys)
+- `ParallelReadImplementation` — parallel N-way read, plus sorted-read variant
+  (`SortedReadImplementation`) that preserves MergeTree primary key order
 - `ReplicatedReadImplementation` — full table read on each node (shared storage)
 - `DefaultImplementation` — wraps any step at `{1 node}` as fallback
 - `DistributionPassthrough` — propagates distribution through stateless per-row steps
@@ -284,11 +294,12 @@ derived by `StatisticsDerivation.cpp`.
 | Memo structure | Aligned | Standard groups with logical/physical expressions |
 | Property model | Aligned+ | Distribution + sorting; column equivalence sets extend basic Cascades |
 | Rule categorization | Aligned | Transformation / implementation / enforcer separation |
-| Cost model | Better | Multi-component vs single scalar; configurable weights |
+| Cost model | Aligned | 3-D (work, network, sequential) with configurable weights |
 | Branch-and-bound | Aligned | Cost limits propagated through tasks |
 | Enforcer scheduling | Aligned | `isEnforcedFor` gate + fixed-point composition |
 | Sorting as property | Aligned | Stripped from memo, enforced via composition |
 | `best_implementations` lookup | Aligned | Indexed by distribution shape |
+| Property hashing | Aligned | Structural `ExpressionPropertiesHash` + `boost::hash_combine` for fingerprints |
 
 ### Differences from classic Cascades
 
@@ -299,8 +310,11 @@ then Cascades optimizes only the distribution strategy. This means join order is
 for local cost, not distributed cost. This is an intentional tradeoff — integrating join
 ordering would significantly increase the search space.
 
-**String-based property tracking**: `isOptimizedFor`, `isEnforcedFor` use string
-serialization as set keys. Classic Cascades uses structural hashing.
+**Structural property hashing**: `isOptimizedFor`, `isEnforcedFor`, and physical
+expression deduplication use `ExpressionPropertiesHash` for O(1) lookup.  Expression
+fingerprints (used to deduplicate physical expressions within a group) are computed
+as `size_t` hashes combining step description, strategy, properties, and input group
+IDs via `boost::hash_combine`.
 
 **Statistics dependency**: `estimateReadRowsCount` calls back into pre-Cascades code,
 creating a dependency cycle.
@@ -314,18 +328,21 @@ branch-and-bound pruning as the primary bound.
 
 ### Performance
 
-1. **Replace string-based property keys** with structural hashing of `ExpressionProperties`.
-2. **Decouple statistics** from pre-Cascades code.
-3. **Convergence detection** instead of hard task count limit.
+1. **Decouple statistics** from pre-Cascades code.
+2. **Convergence detection** instead of hard task count limit.
 
 ### Optimizer Features
 
+3. **Runtime bloom filters in Cascades**: The single biggest gap vs StarRocks. See
+   OPTIMIZATION_ROADMAP.md Section 1.2 for the `LargestRoot` + property approach.
 4. **Join ordering in Cascades**: DPHyp for inner joins in
    [PR #98798](https://github.com/ClickHouse/ClickHouse/pull/98798); outer/semi/anti
    support needed.
-5. **Predicate ordering by selectivity**: 4.2x overall TPC-H improvement (Dreseler 2020).
-6. **Constant/value propagation through joins**: Extend
-   [PR #98479](https://github.com/ClickHouse/ClickHouse/pull/98479) to propagate constants.
+5. **Window function distribution**: `WindowStep` currently goes through
+   `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
+   that sets distribution by PARTITION BY key.
+6. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
+   map to existing groups instead of cloning.
 7. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
 
@@ -430,13 +447,14 @@ For **orders** (Group #9, 5.3M rows after date filter):
 | Physical Expression | Distribution | Cost |
 |---|---|---|
 | `ParallelRead` | `{4 nodes}` | 17,960,888 |
-| `ParallelRead` | `{2 nodes}` | 35,921,776 |
 | `ReadFromMergeTree` (local) | `{1 node}` | 71,843,551 |
 | `ShuffleExchange(o_custkey)` | `{4 nodes, by o_custkey}` | 89,904,439 |
 | `ReplicatedRead` | `{4 nodes, replicated}` | 71,843,551 |
 
-`ParallelRead` at 4 nodes is cheapest (1/4 of data per node). `ReplicatedRead` is
-expensive for large tables (each node reads all 5.3M rows).
+`ParallelRead` at 4 nodes is cheapest (1/4 of data per node). `ShuffleExchange`
+is added by `DistributionEnforcer` when a downstream join requires a specific
+partitioning. `ReplicatedRead` is expensive for large tables (each node reads
+all 5.3M rows).
 
 ### Implementation rules: join strategies
 
@@ -445,7 +463,6 @@ For **customer ⋈ orders** (Group #5):
 | Strategy | Distribution | Subtree Cost | Best? |
 |---|---|---|---|
 | **Shuffle HashJoin** (by custkey) | `{4 nodes}` | **2,930,003,018** | **Yes** |
-| Shuffle HashJoin (by custkey) | `{2 nodes}` | 5,572,250,346 | |
 | Local HashJoin | `{1 node}` | 10,836,555,241 | |
 
 Shuffle wins — both tables are large. Broadcasting either side would replicate millions
