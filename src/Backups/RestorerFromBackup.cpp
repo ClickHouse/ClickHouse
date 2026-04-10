@@ -254,10 +254,9 @@ void RestorerFromBackup::logNumberOfDatabasesAndTablesToRestore() const
 
 void RestorerFromBackup::loadSystemAccessTables()
 {
-    if (restore_settings.structure_only)
-        return;
-
     /// Special handling for ACL-related system tables.
+    /// Access entities (users, roles, quotas, etc.) are structural definitions, not data,
+    /// so they should be restored even with structure_only=true.
     std::lock_guard lock{mutex};
     for (const auto & [table_name, table_info] : table_infos)
     {
@@ -302,7 +301,8 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 if (isSystemFunctionsTableName(table_name))
                 {
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
-                    if (!restore_settings.structure_only && table_info.has_data)
+                    /// UDFs are structural definitions so they are restored even with structure_only=true.
+                    if (table_info.has_data)
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
                 }
                 /// Privileges required to restore ACL system tables are checked separately
@@ -842,7 +842,11 @@ void RestorerFromBackup::insertDataToTables()
 
 void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name)
 {
-    if (restore_settings.structure_only)
+    /// Access entities and user-defined functions are structural definitions, not data,
+    /// so they should be restored even with structure_only=true.
+    if (restore_settings.structure_only
+        && !isSystemAccessTableName(table_name)
+        && !isSystemFunctionsTableName(table_name))
         return;
 
     StoragePtr storage;
