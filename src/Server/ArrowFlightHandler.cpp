@@ -1353,7 +1353,7 @@ arrow::Status ArrowFlightHandler::DoPut(
             if (pipeline.pushing())
             {
                 Block header = pipeline.getHeader();
-                auto input = std::make_shared<ArrowFlightSource>(std::move(reader), header);
+                auto input = std::make_shared<ArrowFlightSource>(std::move(reader), header, query_context);
                 pipeline.complete(Pipe(std::move(input)));
             }
             else if (pipeline.pulling())

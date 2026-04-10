@@ -244,7 +244,10 @@ public:
     NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
     Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
-    static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
+    VirtualsDescriptionPtr getCommonVirtuals(VirtualsDescriptionPtr cur_virtuals) const
+    {
+        return std::make_unique<VirtualColumnsDescription>(createCommonVirtuals(*cur_virtuals));
+    }
 
     Names getAllRegisteredNames() const override;
 
@@ -320,10 +323,7 @@ private:
     /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
 
-    /// Description of common virtual columns.
-    static const VirtualColumnsDescription common_virtuals;
-
-    static VirtualColumnsDescription createCommonVirtuals();
+    static VirtualColumnsDescription createCommonVirtuals(const VirtualColumnsDescription & storage_virtuals);
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(

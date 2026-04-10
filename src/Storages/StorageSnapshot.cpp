@@ -62,7 +62,7 @@ StorageSnapshot::StorageSnapshot(
 
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
-    auto res = std::make_shared<StorageSnapshot>(storage, metadata);
+    auto res = std::make_shared<StorageSnapshot>(storage, metadata, virtual_columns);
 
     res->data = std::move(data_);
 
@@ -80,7 +80,6 @@ ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
 {
     auto all_columns = metadata->getColumns().get(options);
-    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
 
     if (options.virtuals_kind != VirtualsKind::None)
     {
@@ -101,7 +100,7 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
             }
         }
 
-        auto common_virtuals_list = common_virtual_columns.getNamesAndTypesList(options.virtuals_kind);
+        auto common_virtuals_list = storage.getCommonVirtuals(virtual_columns)->getNamesAndTypesList(options.virtuals_kind);
         for (const auto & column : common_virtuals_list)
         {
             if (column_names.contains(column.name))
@@ -134,8 +133,7 @@ std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOpt
         if (virtual_column)
             return NameAndTypePair{virtual_column->name, virtual_column->type};
 
-        const auto & common_virtual_columns = IStorage::getCommonVirtuals();
-        auto common_virtual_column = common_virtual_columns.tryGet(column_name, options.virtuals_kind);
+        auto common_virtual_column = storage.getCommonVirtuals(virtual_columns)->tryGet(column_name, options.virtuals_kind);
         if (common_virtual_column)
             return NameAndTypePair{common_virtual_column->name, common_virtual_column->type};
     }
@@ -157,7 +155,8 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
     Block res;
 
     const auto & columns = metadata->getColumns();
-    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
+    const auto common_virtual_columns = storage.getCommonVirtuals(virtual_columns);
+
     for (const auto & column_name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
@@ -172,7 +171,7 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
             const auto & type = virtual_column->type;
             res.insert({type->createColumn(), type, column_name});
         }
-        else if (auto common_virtual_column = common_virtual_columns.tryGet(column_name))
+        else if (auto common_virtual_column = common_virtual_columns->tryGet(column_name))
         {
             const auto & type = common_virtual_column->type;
             res.insert({type->createColumn(), type, column_name});
@@ -190,7 +189,8 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
 {
     ColumnsDescription res;
     const auto & columns = metadata->getColumns();
-    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
+    const auto common_virtual_columns = storage.getCommonVirtuals(virtual_columns);
+
     for (const auto & name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name);
@@ -204,7 +204,7 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
             /// override them.
             res.add({name, virtual_column->type});
         }
-        else if (auto common_virtual_column = common_virtual_columns.tryGet(name))
+        else if (auto common_virtual_column = common_virtual_columns->tryGet(name))
         {
             res.add({name, common_virtual_column->type});
         }
@@ -227,7 +227,6 @@ void StorageSnapshot::check(const Names & column_names) const
 {
     const auto & columns = metadata->getColumns();
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
 
     if (column_names.empty())
     {
@@ -236,6 +235,8 @@ void StorageSnapshot::check(const Names & column_names) const
             "Empty list of columns queried. There are columns: {}", list_of_columns);
     }
 
+    const auto common_virtual_columns = storage.getCommonVirtuals(virtual_columns);
+
     DenseHashSet unique_names;
     unique_names.set_empty_key(std::string_view());
 
@@ -243,7 +244,7 @@ void StorageSnapshot::check(const Names & column_names) const
     {
         bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
             || virtual_columns->has(name)
-            || common_virtual_columns.has(name);
+            || common_virtual_columns->has(name);
 
         if (!has_column)
         {
