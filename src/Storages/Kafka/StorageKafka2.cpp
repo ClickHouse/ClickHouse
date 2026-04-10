@@ -420,8 +420,11 @@ private:
         /// Use the actual number of created consumers, not the configured num_consumers.
         /// Some consumers may have failed to create during startup; iterating over the
         /// configured count would cause acquireConsumer to throw for missing indices.
-        Pipes pipes;
         auto actual_consumers = kafka_storage.num_created_consumers;
+        if (actual_consumers == 0)
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "No Kafka consumers available for direct read");
+
+        Pipes pipes;
         pipes.reserve(actual_consumers);
         auto modified_context = Context::createCopy(getContext());
         modified_context->applySettingsChanges(kafka_storage.settings_adjustments);

@@ -3736,7 +3736,7 @@ def test_kafka2_commit_on_select_semantics(kafka_cluster):
     retries = 50
     while retries > 0:
         result += instance.query(
-            f"SELECT key, value FROM test.{kafka_table_commit}", ignore_error=True
+            f"SELECT key, value FROM test.{kafka_table_commit}"
         )
         if len(TSV(result).lines) >= 5:
             break
@@ -3747,7 +3747,7 @@ def test_kafka2_commit_on_select_semantics(kafka_cluster):
     # Second SELECT should return nothing (offsets were committed)
     time.sleep(1)
     result2 = instance.query(
-        f"SELECT count() FROM test.{kafka_table_commit}", ignore_error=True
+        f"SELECT count() FROM test.{kafka_table_commit}"
     )
     assert int(result2.strip()) == 0
 
@@ -3775,7 +3775,7 @@ def test_kafka2_commit_on_select_semantics(kafka_cluster):
     retries = 50
     while retries > 0:
         result += instance.query(
-            f"SELECT key, value FROM test.{kafka_table_rollback}", ignore_error=True
+            f"SELECT key, value FROM test.{kafka_table_rollback}"
         )
         if len(TSV(result).lines) >= 5:
             break
@@ -3788,7 +3788,7 @@ def test_kafka2_commit_on_select_semantics(kafka_cluster):
     retries = 50
     while retries > 0:
         result2 += instance.query(
-            f"SELECT key, value FROM test.{kafka_table_rollback}", ignore_error=True
+            f"SELECT key, value FROM test.{kafka_table_rollback}"
         )
         if len(TSV(result2).lines) >= 5:
             break
