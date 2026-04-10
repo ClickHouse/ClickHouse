@@ -297,8 +297,9 @@ void ColumnIndex::callForIndexes(std::function<void(size_t, size_t)> && callback
     callForType(std::move(callback_for_type), size_of_type);
 }
 
-std::optional<IColumn::Filter> ColumnIndex::buildUsedRowsFilter(size_t indexed_data_size) const
+std::optional<IColumn::Filter> ColumnIndex::buildUsedRowsFilter(size_t indexed_data_size, double max_unused_ratio = 0.0) const
 {
+    size_t used_rows_threshold = static_cast<size_t>(static_cast<double>(indexed_data_size) * (1.0 - max_unused_ratio));
     size_t used_rows = 0;
     IColumn::Filter filter(indexed_data_size, 0);
     auto create_filter = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
@@ -308,14 +309,14 @@ std::optional<IColumn::Filter> ColumnIndex::buildUsedRowsFilter(size_t indexed_d
             if (!filter[data[i]])
             {
                 filter[data[i]] = 1;
-                if (++used_rows == indexed_data_size)
+                if (++used_rows >= used_rows_threshold)
                     return;
             }
     };
 
     callForType(std::move(create_filter), size_of_type);
 
-    if (used_rows == indexed_data_size)
+    if (used_rows >= used_rows_threshold)
         return std::nullopt;
 
     return filter;
@@ -377,7 +378,7 @@ void ColumnIndex::removeUnusedRowsInIndexedData(MutableColumnPtr & indexed_data)
     indexed_data->filter(filter);
 }
 
-ColumnIndex::CompactIndexedColumnsResult ColumnIndex::buildCompactIndexedColumns(const Columns & indexed_columns) const
+ColumnIndex::CompactIndexedColumnsResult ColumnIndex::buildCompactIndexedColumns(const Columns & indexed_columns, double max_unused_ratio) const
 {
     if (indexed_columns.empty())
         return {getIndexes(), indexed_columns};
@@ -387,7 +388,7 @@ ColumnIndex::CompactIndexedColumnsResult ColumnIndex::buildCompactIndexedColumns
         chassert(indexed_columns[i]->size() == indexed_data_size);
 
     /// First, create a filter for indexed data to filter out all unused rows.
-    auto filter_opt = buildUsedRowsFilter(indexed_data_size);
+    auto filter_opt = buildUsedRowsFilter(indexed_data_size, max_unused_ratio);
     if (!filter_opt.has_value())
         return {getIndexes(), indexed_columns};
 

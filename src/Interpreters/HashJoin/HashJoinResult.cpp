@@ -75,9 +75,9 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
     return right_column;
 }
 
-static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes, bool lazy_columns_indexing)
+static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes)
 {
-    if (!column->isReplicated() && (lazy_columns_indexing || isLazyReplicationUseful(column)))
+    if (isLazyReplicationUseful(column))
     {
         if (!indexes)
             indexes = convertOffsetsToIndexes(offsets);
@@ -151,11 +151,19 @@ static void appendRightColumns(
         auto columns_to_replicate = block.getColumns();
         if (properties.enable_lazy_columns_replication || properties.enable_lazy_columns_indexing)
         {
-            ColumnPtr indexes;
+            std::vector<size_t> positions;
+            positions.reserve(existing_columns + right_keys_to_replicate.size());
             for (size_t i = 0; i < existing_columns; ++i)
-                replicateColumnLazily(columns_to_replicate[i], offsets, indexes, properties.enable_lazy_columns_indexing);
+                positions.push_back(i);
             for (size_t pos : right_keys_to_replicate)
-                replicateColumnLazily(columns_to_replicate[pos], offsets, indexes, properties.enable_lazy_columns_indexing);
+                positions.push_back(pos);
+
+            ColumnPtr indexes;
+            transformColumnsWithSharedIndex(
+                columns_to_replicate,
+                [&](const ColumnPtr & index) { return index->replicate(offsets); },
+                [&](ColumnPtr & col) { replicateColumnLazily(col, offsets, indexes); },
+                positions);
         }
         else
         {

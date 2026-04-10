@@ -1,3 +1,4 @@
+#include <Columns/ColumnReplicated.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/ISink.h>
@@ -195,7 +196,14 @@ void MergeSortingTransform::consume(Chunk chunk)
 
     removeConstColumns(chunk);
 
-    sum_rows_in_blocks += chunk.getNumRows();
+    /// Optimize replicated columns memory layout before accumulating: materialize when
+    /// duplication is low, otherwise compact to release unreferenced nested data.
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    optimizeReplicatedColumnsLayout(columns);
+    chunk.setColumns(std::move(columns), num_rows);
+
+    sum_rows_in_blocks += num_rows;
     sum_bytes_in_blocks += chunk.allocatedBytes();
     chunks.push_back(std::move(chunk));
 

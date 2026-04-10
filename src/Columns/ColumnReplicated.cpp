@@ -128,6 +128,22 @@ ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
     return nested_column->index(*indexes.getIndexes(), 0);
 }
 
+ColumnPtr ColumnReplicated::convertToFullColumnIfReplicationNotUseful(double max_expansion_ratio) const
+{
+    size_t current_bytes = allocatedBytes();
+    size_t nested_rows = nested_column->size();
+    if (nested_rows == 0)
+        return convertToFullColumnIfReplicated();
+
+    double avg_row_bytes = static_cast<double>(nested_column->allocatedBytes()) / static_cast<double>(nested_rows);
+    size_t estimated_materialized_bytes = static_cast<size_t>(static_cast<double>(size()) * avg_row_bytes);
+
+    if (estimated_materialized_bytes <= static_cast<size_t>(static_cast<double>(current_bytes) * max_expansion_ratio))
+        return convertToFullColumnIfReplicated();
+
+    return getPtr();
+}
+
 void ColumnReplicated::insertData(const char * pos, size_t length)
 {
     nested_column->insertData(pos, length);
@@ -702,5 +718,88 @@ bool isLazyReplicationUseful(const ColumnPtr & column)
     return !column->isConst() && !column->isReplicated() && !column->lowCardinality() && (!column->isFixedAndContiguous() || column->sizeOfValueIfFixed() > 8);
 }
 
+void transformColumnsWithSharedIndex(
+    Columns & columns,
+    std::function<ColumnPtr(const ColumnPtr &)> index_transform,
+    std::function<void(ColumnPtr &)> non_replicated_transform,
+    std::span<size_t> positions)
+{
+    ColumnPtr shared_src_index;
+    ColumnPtr shared_result_index;
 
+    auto transform = [&](size_t pos)
+    {
+        auto & col = columns[pos];
+        if (col->isReplicated())
+        {
+            const auto & replicated_col = typeid_cast<const ColumnReplicated &>(*col);
+            const auto & src_index = replicated_col.getIndexesColumn();
+            if (src_index.get() != shared_src_index.get())
+            {
+                shared_src_index = src_index;
+                shared_result_index = index_transform(src_index);
+            }
+            col = ColumnReplicated::create(replicated_col.getNestedColumn(), shared_result_index);
+        }
+        else
+            non_replicated_transform(col);
+    };
+
+    if (positions.empty())
+        for (size_t pos = 0; pos < columns.size(); ++pos)
+            transform(pos);
+    else
+        for (size_t pos : positions)
+            transform(pos);
+}
+
+void optimizeReplicatedColumnsLayout(Columns & columns, double max_unused_ratio, double max_expansion_ratio)
+{
+    /// Step 1: Materialize columns where replication provides little benefit.
+    for (auto & col : columns)
+        col = col->convertToFullColumnIfReplicationNotUseful(max_expansion_ratio);
+
+    /// Step 2: Compact remaining ColumnReplicated columns.
+    ColumnPtr shared_src_index;
+    Columns nested_columns;
+    std::vector<size_t> positions;
+
+    auto compact = [&]
+    {
+        if (positions.empty())
+            return;
+
+        ColumnIndex column_index(shared_src_index);
+        auto result = column_index.buildCompactIndexedColumns(nested_columns, max_unused_ratio);
+
+        if (result.compact_indexes.get() != shared_src_index.get())
+        {
+            for (size_t j = 0; j < positions.size(); ++j)
+                columns[positions[j]] = ColumnReplicated::create(
+                    result.compact_indexed_columns[j], result.compact_indexes);
+        }
+
+        nested_columns.clear();
+        positions.clear();
+    };
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (!columns[i]->isReplicated())
+            continue;
+
+        const auto & rep = typeid_cast<const ColumnReplicated &>(*columns[i]);
+        const auto & src_index = rep.getIndexesColumn();
+
+        if (src_index.get() != shared_src_index.get())
+        {
+            compact();
+            shared_src_index = src_index;
+        }
+
+        nested_columns.push_back(rep.getNestedColumn());
+        positions.push_back(i);
+    }
+    compact();
+}
 }

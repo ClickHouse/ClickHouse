@@ -66,7 +66,7 @@ public:
         Columns compact_indexed_columns;
     };
 
-    CompactIndexedColumnsResult buildCompactIndexedColumns(const Columns & indexed_columns) const;
+    CompactIndexedColumnsResult buildCompactIndexedColumns(const Columns & indexed_columns, double max_unused_ratio = 0.0) const;
 
     /// Collect rows where mask[index] is 1.
     void getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const;
@@ -93,7 +93,7 @@ private:
     template <typename IndexType>
     void convertIndexes();
 
-    std::optional<IColumn::Filter> buildUsedRowsFilter(size_t indexed_data_size) const;
+    std::optional<IColumn::Filter> buildUsedRowsFilter(size_t indexed_data_size, double max_unused_ratio) const;
     size_t compactIndexes(const IColumn::Filter & filter, size_t indexed_data_size);
 
     IColumn::WrappedPtr indexes;
