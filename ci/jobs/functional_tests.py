@@ -127,6 +127,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
+    "targeted": "--flaky-check",
 }
 
 
@@ -179,7 +180,9 @@ def main():
                     f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
                 )
 
-        if "flaky" in to:
+        if "targeted" in to:
+            is_targeted_check = True
+        elif "flaky" in to:
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
@@ -263,6 +266,9 @@ def main():
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
         # random settings per TestCase; --max-failures 5 stops early on broken PRs.
         rerun_count = 50
+    elif is_targeted_check:
+        print("Rerun count set to 5 for targeted check")
+        rerun_count = 5
 
     if is_flaky_check:
         # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
@@ -343,6 +349,7 @@ def main():
         is_flaky_check
         or is_per_test_coverage
         or is_bugfix_validation
+        or is_targeted_check
         or info.is_local_run
     ):
         stages.remove(JobStages.RETRIES)
@@ -425,6 +432,17 @@ def main():
             # early exit
             Result.create_from(
                 status=Result.Status.SKIPPED, info="No tests to run"
+            ).complete_job()
+
+    if is_targeted_check:
+        assert not args.test, "--test not supposed to be used for targeted check"
+        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
+        results.append(results_with_info)
+        if not tests:
+            # early exit
+            Result.create_from(
+                status=Result.Status.SKIPPED,
+                info="No failed tests found from previous runs",
             ).complete_job()
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
@@ -548,6 +566,12 @@ def main():
 
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
+        # For targeted checks with multiple iterations, use N separate clickhouse-test
+        # invocations so that every invocation creates fresh TestCase objects with
+        # independently randomized settings.
+        run_sets_cnt = rerun_count if is_targeted_check else 1
+        rerun_count = 1 if is_targeted_check else rerun_count
+
         global_time_limit = 0
         if is_flaky_check:
             # Hard 45-minute wall-clock limit for the test runner.
@@ -560,16 +584,43 @@ def main():
                 f" (elapsed so far: {int(stop_watch.duration)}s,"
                 f" remaining: {global_time_limit}s)"
             )
+        elif is_targeted_check:
+            job_timeout = int(3600 * 2.5)
+            soft_limit_margin = 3600
+            global_time_limit = max(
+                job_timeout - soft_limit_margin - int(stop_watch.duration), 0
+            )
+            print(
+                f"Soft time limit for test runner: {global_time_limit}s"
+                f" (elapsed so far: {int(stop_watch.duration)}s)"
+            )
 
-        run_tests(
-            batch_num=batch_num if not tests else 0,
-            batch_total=total_batches if not tests else 0,
-            tests=tests,
-            extra_args=runner_options,
-            random_order=is_flaky_check or is_bugfix_validation,
-            rerun_count=rerun_count,
-            global_time_limit=global_time_limit,
-        )
+        tests_to_run = list(tests) if tests else tests
+
+        for cnt in range(run_sets_cnt):
+            if run_sets_cnt > 1 and cnt > 0:
+                if is_targeted_check:
+                    job_timeout = int(3600 * 2.5)
+                    soft_limit_margin = 3600
+                    global_time_limit = max(
+                        job_timeout - soft_limit_margin - int(stop_watch.duration), 0
+                    )
+                if global_time_limit <= 0:
+                    print(
+                        "NOTE: Time limit exhausted; stopping before next iteration"
+                    )
+                    break
+
+            run_tests(
+                batch_num=batch_num if not tests_to_run else 0,
+                batch_total=total_batches if not tests_to_run else 0,
+                tests=tests_to_run,
+                extra_args=runner_options,
+                random_order=is_flaky_check or is_targeted_check or is_bugfix_validation,
+                rerun_count=rerun_count,
+                global_time_limit=global_time_limit,
+            )
+
         test_result = ft_res_processor.run()
 
         if not info.is_local_run:
