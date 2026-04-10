@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -16,7 +18,8 @@ class MergeTreeRestColumnsTransform : public ISimpleTransform
 public:
     MergeTreeRestColumnsTransform(
         Block input_header_,
-        Block output_header_);
+        Block output_header_,
+        std::shared_ptr<std::atomic<size_t>> rest_bytes_counter_);
 
     String getName() const override { return "MergeTreeRestColumnsTransform"; }
 
@@ -31,6 +34,11 @@ private:
     std::optional<MergeTreeRangeReader> rest_range_reader;
 
     ReadStepsPerformanceCounters read_steps_performance_counters;
+
+    /// Shared counter: bytes read by this transform are accumulated here
+    /// and drained by the upstream `MergeTreePrewhereSource` via `getReadProgress`.
+    std::shared_ptr<std::atomic<size_t>> rest_bytes_counter;
+
     LoggerPtr log = getLogger("MergeTreeRestColumnsTransform");
 };
 

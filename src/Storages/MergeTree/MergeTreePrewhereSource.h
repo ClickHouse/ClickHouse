@@ -6,6 +6,8 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -35,6 +37,13 @@ public:
         const Block & pool_header,
         const PrewhereExprInfo & prewhere_actions);
 
+    /// Shared counter for bytes read by the downstream `MergeTreeRestColumnsTransform`.
+    /// The transform writes rest-column bytes here; this source drains them in
+    /// `getReadProgress` so they are attributed to the read progress callback.
+    std::shared_ptr<std::atomic<size_t>> getRestBytesCounter() { return rest_bytes_counter; }
+
+    std::optional<ReadProgress> getReadProgress() override;
+
 protected:
     std::optional<Chunk> tryGenerate() override;
 
@@ -59,6 +68,10 @@ private:
     std::vector<ReadResultPtr> skipped_read_results;
 
     ReadStepsPerformanceCounters read_steps_performance_counters;
+
+    /// Bytes read by the downstream RestColumnsTransform, accumulated atomically.
+    std::shared_ptr<std::atomic<size_t>> rest_bytes_counter = std::make_shared<std::atomic<size_t>>(0);
+
     LoggerPtr log = getLogger("MergeTreePrewhereSource");
 
     bool getNewTask();

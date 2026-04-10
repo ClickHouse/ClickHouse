@@ -14,8 +14,10 @@ namespace ErrorCodes
 
 MergeTreeRestColumnsTransform::MergeTreeRestColumnsTransform(
     Block input_header_,
-    Block output_header_)
+    Block output_header_,
+    std::shared_ptr<std::atomic<size_t>> rest_bytes_counter_)
     : ISimpleTransform(std::move(input_header_), std::move(output_header_), /*skip_empty_chunks_=*/ false)
+    , rest_bytes_counter(std::move(rest_bytes_counter_))
 {
 }
 
@@ -65,14 +67,19 @@ void MergeTreeRestColumnsTransform::transform(Chunk & chunk)
         /// by PREWHERE. These ReadResults had num_rows==0 so the source skipped
         /// emitting them, but we must call `continueReadingChain` for each to keep
         /// the rest reader's stream in sync with the prewhere reader's stream.
+        size_t bytes_before = 0;
         for (auto & skipped_result : read_chunk_info->skipped_read_results)
         {
+            bytes_before = skipped_result->numBytesRead();
             size_t skipped_rows = 0;
             rest_range_reader->continueReadingChain(*skipped_result, skipped_rows);
+            rest_bytes_counter->fetch_add(skipped_result->numBytesRead() - bytes_before);
         }
 
+        bytes_before = read_result.numBytesRead();
         size_t num_read_rows = 0;
         rest_columns = rest_range_reader->continueReadingChain(read_result, num_read_rows);
+        rest_bytes_counter->fetch_add(read_result.numBytesRead() - bytes_before);
 
         if (num_read_rows == 0)
             num_read_rows = read_result.num_rows;

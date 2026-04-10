@@ -4,6 +4,9 @@
 SET max_threads = 8;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
+-- Disable pipelined reader so EXPLAIN PIPELINE output stays stable
+-- (this test is about predicate push-down, not the MergeTree read pipeline).
+SET use_pipelined_mergetree_reader = 0;
 
 DROP TABLE IF EXISTS test_grouping_sets_predicate;
 

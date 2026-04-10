@@ -90,6 +90,19 @@ bool MergeTreePrewhereSource::getNewTask()
     return true;
 }
 
+std::optional<IProcessor::ReadProgress> MergeTreePrewhereSource::getReadProgress()
+{
+    /// Drain any bytes reported by the downstream RestColumnsTransform
+    /// and fold them into our progress counters before the base class
+    /// swaps them out. This ensures rest-column bytes appear in the
+    /// query statistics reported to the client.
+    size_t extra_bytes = rest_bytes_counter->exchange(0);
+    if (extra_bytes > 0)
+        progress(0, extra_bytes);
+
+    return ISource::getReadProgress();
+}
+
 std::optional<Chunk> MergeTreePrewhereSource::tryGenerate()
 {
     while (true)

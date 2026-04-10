@@ -722,7 +722,7 @@ Pipe ReadFromMergeTree::readFromPoolPipelined(
             source->addTotalRowsApprox(total_rows);
 
         auto transform = std::make_shared<MergeTreeRestColumnsTransform>(
-            result_header, result_header);
+            result_header, result_header, source->getRestBytesCounter());
 
         auto pipe = Pipe(std::move(source));
         pipe.addTransform(std::move(transform));
@@ -1006,7 +1006,7 @@ Pipe ReadFromMergeTree::readInOrderPipelined(
             source->addTotalRowsApprox(total_rows);
 
         auto transform = std::make_shared<MergeTreeRestColumnsTransform>(
-            result_header, result_header);
+            result_header, result_header, source->getRestBytesCounter());
 
         Pipe pipe(std::move(source));
         pipe.addTransform(std::move(transform));
