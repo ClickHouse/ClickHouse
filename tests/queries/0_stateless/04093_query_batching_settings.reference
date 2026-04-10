@@ -1,0 +1,7 @@
+Test 1: query_batching_max_wait_ms setting is accepted
+100
+Test 2: query_batching_max_batch_size setting is accepted
+100
+Test 3: Batching with query cache coexistence
+100
+1

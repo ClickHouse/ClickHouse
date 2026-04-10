@@ -5426,6 +5426,34 @@ Possible values:
 
 - Any string
 )", 0) \
+    DECLARE(Bool, use_query_batching, false, R"(
+If turned on, identical concurrent `SELECT` queries from the same user will be batched together.
+The first query in the batch executes and writes its result into the query result cache.
+Subsequent queries in the batch read from the cache, avoiding redundant computation.
+
+Requires the query result cache to be enabled at the server level.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Milliseconds, query_batching_max_wait_ms, 100, R"(
+Maximum time in milliseconds to wait for additional queries to join a batch before executing it.
+Only relevant when `use_query_batching` is enabled.
+
+Possible values:
+
+- Positive integer >= 0.
+)", 0) \
+    DECLARE(UInt64, query_batching_max_batch_size, 100, R"(
+Maximum number of queries to collect in a single batch before executing it.
+Only relevant when `use_query_batching` is enabled.
+
+Possible values:
+
+- Positive integer >= 1.
+)", 0) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \

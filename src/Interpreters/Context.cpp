@@ -72,6 +72,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/QueryBatchingQueue.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
@@ -555,6 +556,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
+    mutable QueryBatchingQueuePtr query_batching_queue TSA_GUARDED_BY(mutex);        /// Queue for batching identical concurrent queries.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
@@ -871,6 +873,17 @@ struct ContextSharedPart : boost::noncopyable
         bool is_shutdown_called = shutdown_called.exchange(true);
         if (is_shutdown_called)
             return;
+
+        /// Shut down the query batching queue before the database catalog goes away.
+        {
+            QueryBatchingQueuePtr queue;
+            {
+                std::lock_guard lock(mutex);
+                queue = std::move(query_batching_queue);
+            }
+            if (queue)
+                queue->shutdown();
+        }
 
         /// Need to flush the async insert queue before shutting down the database catalog
         std::shared_ptr<AsynchronousInsertQueue> delete_async_insert_queue;
@@ -4522,6 +4535,22 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear(tag);
+}
+
+void Context::setQueryBatchingQueue()
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_batching_queue)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query batching queue has been already created.");
+
+    shared->query_batching_queue = std::make_shared<QueryBatchingQueue>(shared_from_this());
+}
+
+QueryBatchingQueuePtr Context::getQueryBatchingQueue() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->query_batching_queue;
 }
 
 void Context::clearCaches() const

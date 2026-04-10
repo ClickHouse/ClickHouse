@@ -14,6 +14,7 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/QueryBatchingQueue.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -160,6 +161,8 @@ namespace Setting
     extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool query_cache_compress_entries;
+    extern const SettingsBool use_query_batching;
+    extern const SettingsMilliseconds query_batching_max_wait_ms;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
     extern const SettingsMilliseconds query_cache_min_query_duration;
@@ -1655,6 +1658,54 @@ static BlockIO executeQueryImpl(
                 http_continue_callback();
         }
 
+        /// Query batching: if enabled, try to batch this query with other identical concurrent queries.
+        /// The leader executes with query cache enabled; followers wait and read from cache.
+        std::optional<QueryBatchingQueue::BatchResult> batch_result;
+        UInt128 batch_key_hash = 0;
+        bool batching_leader = false;
+
+        if (settings[Setting::use_query_batching] && !internal
+            && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+            && out_ast
+            && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>()))
+        {
+            if (auto batching_queue = context->getQueryBatchingQueue())
+            {
+                batch_result = batching_queue->tryBatchQuery(out_ast, context);
+                if (batch_result)
+                {
+                    if (batch_result->role == QueryBatchingQueue::BatchResult::Role::Leader)
+                    {
+                        /// Leader: enable query cache so the result is cached for followers.
+                        batching_leader = true;
+                        batch_key_hash = batch_result->batch_key_hash;
+
+                        context->setSetting("use_query_cache", Field(true));
+                        context->setSetting("query_cache_ttl", Field(UInt64(2)));
+                    }
+                    else
+                    {
+                        /// Follower: wait for the leader to finish, then read from cache.
+                        if (batch_result->leader_done.valid())
+                        {
+                            auto wait_ms = settings[Setting::query_batching_max_wait_ms].totalMilliseconds();
+                            auto status = batch_result->leader_done.wait_for(std::chrono::milliseconds(wait_ms));
+                            if (status == std::future_status::timeout)
+                            {
+                                LOG_TRACE(getLogger("executeQuery"), "Query batching: follower timed out waiting for leader, executing independently");
+                                batch_result.reset();
+                            }
+                            else
+                            {
+                                /// Leader is done — enable query cache reads so we can fetch from cache.
+                                context->setSetting("use_query_cache", Field(true));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         QueryResultCachePtr query_result_cache = context->getQueryResultCache();
         const bool can_use_query_result_cache = query_result_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
@@ -1965,7 +2016,9 @@ static BlockIO executeQueryImpl(
                                     implicit_tcl_executor,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
-                                    query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
+                                    query_span,
+                                    batching_leader,
+                                    batch_key_hash](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
                 logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
@@ -1973,10 +2026,17 @@ static BlockIO executeQueryImpl(
                 {
                     implicit_tcl_executor->commit(context);
                 }
+
+                /// Notify batched followers that the leader query has completed.
+                if (batching_leader)
+                {
+                    if (auto batching_queue = context->getQueryBatchingQueue())
+                        batching_queue->notifyBatchComplete(batch_key_hash);
+                }
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span, batching_leader, batch_key_hash](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -1995,6 +2055,13 @@ static BlockIO executeQueryImpl(
                 }
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
+
+                /// Notify batched followers even on exception so they don't wait forever.
+                if (batching_leader)
+                {
+                    if (auto batching_queue = context->getQueryBatchingQueue())
+                        batching_queue->notifyBatchComplete(batch_key_hash);
+                }
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);

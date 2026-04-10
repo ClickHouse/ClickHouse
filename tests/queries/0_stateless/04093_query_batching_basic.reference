@@ -1,0 +1,17 @@
+Test 1: Basic query batching enabled - query executes correctly
+1	hello
+2	world
+3	foo
+Test 2: Query batching writes to query result cache
+3
+3
+1
+Test 3: Query batching is disabled by default
+3
+0
+Test 4: Different queries are not batched together
+1
+1
+1
+Test 5: Non-SELECT queries are not affected
+4
