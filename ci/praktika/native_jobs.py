@@ -26,13 +26,15 @@ assert Settings.CI_CONFIG_RUNS_ON
 
 
 # TODO: find the right place to not dublicate
-def _GH_Auth(force=False):
+def _GH_Auth(workflow, force=False):
     if not Settings.USE_CUSTOM_GH_AUTH:
         return
     from .gh_auth import GHAuth
 
     if force or not Shell.check(f"gh auth status", verbose=True):
-        GHAuth.auth_from_settings()
+        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+        GHAuth.auth(app_id=app_id, app_key=pem)
 
 
 _workflow_config_job = Job.Config(
@@ -228,8 +230,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     def _check_yaml_up_to_date():
         print("Check workflows are up to date")
         commands = [
+            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
             f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f'sh -c \'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n "$changed" ]; then echo "ERROR: workflows are outdated. Changed files:"; printf "%s\\n" "$changed"; exit 1; fi\'',
+            f'test -z "$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX})"',
         ]
 
         return Result.from_commands_run(
@@ -302,7 +305,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         env.dump()
 
     try:
-        _GH_Auth(force=True)
+        _GH_Auth(workflow, force=True)
     except Exception as e:
         print(f"WARNING: Failed to auth with GH: [{e}]")
 
@@ -332,12 +335,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         report_url_current_sha = info.get_report_url(latest=False)
         body = f"Workflow [[{workflow.name}]({report_url_latest_sha})], commit [{env.SHA[:8]}]"
         res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
-            comment_tags_and_bodies={
-                "report": body,
-                "param_1": "",
-                "summary": "",
-                "review": "",
-            },
+            comment_tags_and_bodies={"report": body, "summary": ""},
         )
         res1 = GH.post_commit_status(
             name=workflow.name,
@@ -470,9 +468,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             unaffected_jobs_with_artifacts = {}
             all_required_artifacts = set()
 
-            # Build set of all job names for quick lookup
-            job_names = {j.name for j in workflow.jobs}
-
             for job in workflow.jobs:
                 # Skip native Praktika jobs
                 if _is_praktika_job(job.name):
@@ -497,23 +492,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                     if job.provides:
                         # for cases when artifact report is used instead of real artifacts
                         affected_artifacts.append(job.name)
-                    # Only add artifact names to all_required_artifacts.
-                    # Job names in requirements are ordering-only dependencies unless
-                    # needs_jobs_from_requires is set, in which case the required job
-                    # must run (cannot be skipped as unaffected).
-                    for req in job.requires:
-                        if req not in job_names:
-                            # Not a job name, must be an artifact name
-                            all_required_artifacts.add(req)
-                        elif job.needs_jobs_from_requires:
-                            print(
-                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as hard dependency"
-                            )
-                            all_required_artifacts.add(req)
-                        else:
-                            print(
-                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as ordering-only dependency"
-                            )
+                    all_required_artifacts.update(job.requires)
                 else:
                     print(f"Job [{job.name}] is not affected by the change")
                     if not job.provides:
@@ -526,15 +505,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                         )
                         unaffected_jobs_with_artifacts[job.name] = job.provides
 
-            print(f"All required artifacts [{all_required_artifacts}]")
-            print(f"Affected artifacts [{affected_artifacts}]")
             for job_name, artifacts in unaffected_jobs_with_artifacts.items():
                 if (
                     any(a in all_required_artifacts for a in artifacts)
                     or job_name in all_required_artifacts
                 ):
                     print(
-                        f"NOTE: Job [{job_name}] provides required artifacts - cannot be skipped"
+                        f"NOTE: Job [{job_name}] provides required artifacts — cannot be skipped"
                     )
                 else:
                     workflow_config.set_job_as_filtered(
@@ -731,7 +708,7 @@ def _finish_workflow(workflow, job_name):
         or workflow.enable_open_issues_check
         or workflow.post_hooks
     ):
-        _GH_Auth()
+        _GH_Auth(workflow)
 
     update_final_report = False
     results = []
@@ -800,16 +777,6 @@ def _finish_workflow(workflow, job_name):
                 workflow_result.dump()
                 workflow_result.ext["is_cancelled"] = True
                 update_final_report = True
-                dropped_results.append(result.name)
-                continue
-            elif gh_job_result == "success":
-                print(
-                    f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to success"
-                )
-                result.status = Result.Status.SUCCESS
-                workflow_result.dump()
-                update_final_report = True
-                continue
             else:
                 print(
                     f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
@@ -839,18 +806,6 @@ def _finish_workflow(workflow, job_name):
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
 
-    # Revert PRs should be easy to merge - only Fast test is required
-    if "Reverts ClickHouse/" in env.PR_BODY:
-        fast_test_failed = any(
-            "Fast test" in name for name in failed_results
-        )
-        if not fast_test_failed and ready_for_merge_status != Result.Status.SUCCESS:
-            print(
-                f"NOTE: Revert PR detected - setting merge status to success despite failures"
-            )
-            ready_for_merge_status = Result.Status.SUCCESS
-            ready_for_merge_description = "Revert PR"
-
     if workflow.enable_merge_ready_status:
         if not GH.post_commit_status(
             name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
@@ -866,13 +821,9 @@ def _finish_workflow(workflow, job_name):
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
     if results:
-        return Result.create_from(
-            name=job_name, results=results, stopwatch=stop_watch
-        )
+        return Result.create_from(results=results, stopwatch=stop_watch)
     else:
-        return Result.create_from(
-            name=job_name, status=Result.Status.SUCCESS, stopwatch=stop_watch
-        )
+        return Result.create_from(status=Result.Status.SUCCESS, stopwatch=stop_watch)
 
 
 if __name__ == "__main__":

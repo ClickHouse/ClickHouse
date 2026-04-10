@@ -13,9 +13,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/ErrnoException.h>
-#include <base/getFQDNOrHostName.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -55,7 +52,6 @@ ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
         {"ManifestFileEntry", static_cast<Int8>(IcebergMetadataLogLevel::ManifestFileEntry)}});
 
     return ColumnsDescription{
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Event time."},
         {"query_id", std::make_shared<DataTypeString>(), "Query id."},
@@ -70,7 +66,6 @@ ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
 void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_index = 0;
-    columns[column_index++]->insert(getFQDNOrHostName());
     columns[column_index++]->insert(DateLUT::instance().toDayNum(current_time).toUnderType());
     columns[column_index++]->insert(current_time);
     columns[column_index++]->insert(query_id);
@@ -87,7 +82,7 @@ void insertRowToLogTable(
     String row,
     IcebergMetadataLogLevel row_log_level,
     const String & table_path,
-    const Iceberg::IcebergPathFromMetadata & file_path,
+    const String & file_path,
     std::optional<UInt64> row_in_file,
     std::optional<Iceberg::PruningReturnStatus> pruning_status)
 {
@@ -111,7 +106,7 @@ void insertRowToLogTable(
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
             .table_path = table_path,
-            .file_path = file_path.serialize(),
+            .file_path = file_path,
             .metadata_content = row,
             .row_in_file = row_in_file,
             .pruning_status = pruning_status});

@@ -62,7 +62,6 @@ namespace ProfileEvents
     extern const Event MergeTreeDataProjectionWriterCompressedBytes;
     extern const Event MergeTreeDataProjectionWriterSortingBlocksMicroseconds;
     extern const Event MergeTreeDataProjectionWriterMergingBlocksMicroseconds;
-    extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
     extern const Event RejectedInserts;
 }
 
@@ -70,7 +69,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool finalize_projection_parts_synchronously;
     extern const SettingsBool materialize_skip_indexes_on_insert;
     extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
@@ -92,9 +90,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
-    extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
-    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
-    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
 }
 
 namespace ErrorCodes
@@ -390,30 +385,21 @@ void MergeTreeTemporaryPart::finalize()
 /// because a correct path is required for the keys of caches.
 void MergeTreeTemporaryPart::prewarmCaches()
 {
-    auto prewarm_caches = part->storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
+    size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
 
-    if (prewarm_caches.mark_cache)
+    if (auto mark_cache = part->storage.getMarkCacheToPrewarm(bytes_uncompressed))
     {
         for (const auto & stream : streams)
         {
             auto marks = stream.stream->releaseCachedMarks();
-            addMarksToCache(*part, marks, prewarm_caches.mark_cache.get());
+            addMarksToCache(*part, marks, mark_cache.get());
         }
     }
 
-    if (prewarm_caches.index_mark_cache)
-    {
-        for (const auto & stream : streams)
-        {
-            auto index_marks = stream.stream->releaseCachedIndexMarks();
-            addMarksToCache(*part, index_marks, prewarm_caches.index_mark_cache.get());
-        }
-    }
-
-    if (prewarm_caches.primary_index_cache)
+    if (auto index_cache = part->storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
     {
         /// Index was already set during writing. Now move it to cache.
-        part->moveIndexToCache(*prewarm_caches.primary_index_cache);
+        part->moveIndexToCache(*index_cache);
     }
 }
 
@@ -481,7 +467,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (size_t col = 0; col < block.columns(); ++col)
     {
-        auto scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+        MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
         for (size_t i = 0; i < partitions_count; ++i)
             result[i].block->getByPosition(col).column = std::move(scattered[i]);
     }
@@ -675,12 +661,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
     }
 
+
+    ColumnsStatistics statistics;
+    if (global_settings[Setting::materialize_statistics_on_insert])
+        statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
+
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices);
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
-        expr->execute(block);
+        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices)->execute(block);
     }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
@@ -727,14 +718,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
-    }
-
-    ColumnsStatistics statistics;
-    if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        statistics = ColumnsStatistics(metadata_snapshot->getColumns());
-        statistics.build(block);
     }
 
     /// Size of part would not be greater than block.bytes() + epsilon
@@ -814,8 +797,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
-        (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
-        (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
@@ -887,33 +868,25 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
-    IMergedBlockOutputStream::GatheredData gathered_data;
-    gathered_data.statistics = std::move(statistics);
-
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
         metadata_snapshot,
         columns,
         indices,
+        statistics,
         compression_codec,
         std::move(index_granularity_ptr),
-        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
+        context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        context->getWriteSettings(),
-        static_cast<WrittenOffsetSubstreams *>(nullptr));
+        context->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
-        /// Commit-order projections use `_block_number` which is only finalized at commit time.
-        /// Skip during insert; they will be built correctly during the first merge.
-        if (projection.with_block_number)
-            continue;
-
         Block projection_block;
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
@@ -927,31 +900,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             auto proj_temp_part
                 = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
-
-            if (global_settings[Setting::finalize_projection_parts_synchronously])
-            {
-                /// Finish each projection stream's finalizer immediately to release
-                /// output stream memory (writer buffers, S3 write buffers, etc.).
-                /// We cannot call proj_temp_part->finalize() here because the part
-                /// has already been moved to new_data_part above. The projection
-                /// part's precommitTransaction() will be handled later by the main
-                /// temp_part->finalize() which iterates part->getProjectionParts().
-                for (auto & stream : proj_temp_part->streams)
-                    stream.finalizer.finish();
-            }
-            else
-            {
-                for (auto & stream : proj_temp_part->streams)
-                    temp_part->streams.emplace_back(std::move(stream));
-            }
+            for (auto & stream : proj_temp_part->streams)
+                temp_part->streams.emplace_back(std::move(stream));
         }
     }
 
-    out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(
         new_data_part,
-        gathered_data,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert]);
+        (*data_settings)[MergeTreeSetting::fsync_after_insert],
+        nullptr, nullptr);
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -1000,8 +957,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
-        (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
-        (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
@@ -1019,11 +974,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
-    {
-        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {});
-        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
-        expr->execute(block);
-    }
+        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {})->execute(block);
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
     std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
@@ -1091,18 +1042,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
+        /// TODO(hanfei): It should be helpful to write statistics for projection result.
+        ColumnsStatistics{},
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings(),
-        static_cast<WrittenOffsetSubstreams *>(nullptr));
+        data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
-    out->finalizeIndexGranularity();
-    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
+    auto finalizer = out->finalizePartAsync(new_data_part, false);
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 

@@ -2,7 +2,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTWindowDefinition.h>
-#include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 
@@ -91,10 +90,8 @@ void WindowNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) cons
     hash_state.update(window_frame.is_default);
     hash_state.update(window_frame.type);
     hash_state.update(window_frame.begin_type);
-    applyVisitor(FieldVisitorHash(hash_state), window_frame.begin_offset);
     hash_state.update(window_frame.begin_preceding);
     hash_state.update(window_frame.end_type);
-    applyVisitor(FieldVisitorHash(hash_state), window_frame.end_offset);
     hash_state.update(window_frame.end_preceding);
 
     hash_state.update(parent_window_name);
