@@ -3,8 +3,8 @@
 
 SET optimize_use_implicit_projections = 0;
 
-EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID = 29103473;
-EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID != 29103473;
-EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID > 29103473;
-EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID < 29103473;
-EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID = 29103473 UNION ALL SELECT count() FROM test.hits WHERE CounterID = 1704509;
+SELECT database, table, parts, rows, marks FROM (EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID = 29103473);
+SELECT database, table, parts, rows, marks FROM (EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID != 29103473);
+SELECT database, table, parts, rows, marks FROM (EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID > 29103473);
+SELECT database, table, parts, rows, marks FROM (EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID < 29103473);
+SELECT database, table, parts, rows, marks FROM (EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID = 29103473) UNION ALL SELECT database, table, parts, rows, marks FROM (EXPLAIN ESTIMATE SELECT count() FROM test.hits WHERE CounterID = 1704509);

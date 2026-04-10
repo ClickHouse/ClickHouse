@@ -3702,6 +3702,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
             format_settings.out << prefix << "Need filter: " << query_info.prewhere_info->need_filter << '\n';
 
         prefix.push_back(format_settings.indent_char);
+        prefix.push_back(format_settings.indent_char);
     }
 
     if (query_info.prewhere_info)
