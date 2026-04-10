@@ -32,8 +32,7 @@ public:
     /// Initialize with settings from `KeeperContext`. Must be called before `registerSession`.
     /// @param requests_queue  Shared request queue -- sessions obtain subqueue handles from it.
     void initialize(KeeperContextPtr keeper_context, KeeperRequestsQueue & requests_queue,
-                    KeeperSession::LocalReadCallback local_read_dispatch,
-                    KeeperSession::QuorumPushCallback quorum_push);
+                    KeeperSession::LocalReadCallback local_read_dispatch);
 
     /// Whether reads go through Raft (`quorum_reads` setting).
     bool quorumReads() const { return quorum_reads_; }
@@ -119,9 +118,6 @@ private:
 
     /// Local read dispatch callback, passed to every session at construction.
     KeeperSession::LocalReadCallback local_read_dispatch_;
-
-    /// Quorum push callback, passed to every session at construction.
-    KeeperSession::QuorumPushCallback quorum_push_;
 
     /// Non-owning pointer to the shared request queue. Sessions obtain subqueue handles from it.
     KeeperRequestsQueue * requests_queue_ = nullptr;

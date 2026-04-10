@@ -1,4 +1,5 @@
 #include <Coordination/KeeperSession.h>
+#include <Coordination/KeeperRequestsQueue.h>
 #include <Coordination/KeeperSessionRegistry.h>
 #include <Coordination/SessionRequest.h>
 
@@ -31,14 +32,12 @@ KeeperSession::KeeperSession(
     ResponseCallback callback_,
     KeeperSessionRegistry & registry_,
     KeeperSubqueuePtr subqueue_,
-    LocalReadCallback local_read_dispatch_,
-    QuorumPushCallback quorum_push_)
+    LocalReadCallback local_read_dispatch_)
     : session_id(session_id_)
     , callback(std::make_shared<const ResponseCallback>(std::move(callback_)))
     , registry(&registry_)
     , subqueue(std::move(subqueue_))
     , local_read_dispatch(std::move(local_read_dispatch_))
-    , quorum_push(std::move(quorum_push_))
 {
 }
 
@@ -311,13 +310,14 @@ KeeperSession::AddResult KeeperSession::addRequest(SessionRequestPtr keeper_req)
         else
         {
             /// Quorum (write, quorum read, Close, Auth, Heartbeat, Reconfig).
-            /// Push to `active_requests` first, then the global queue via callback.
-            /// This makes the FIFO-before-queue ordering obvious: `onRaftResponse`
-            /// acquires session mutex, so it can't see the request until we release.
+            /// Push to active_requests first, then subqueue. This makes the
+            /// FIFO-before-subqueue ordering obvious: onRaftResponse acquires
+            /// session mutex, so it can't see the request until we release.
+            /// Lock nesting (session mutex -> subqueue mutex) is safe -- no reverse path.
             keeper_req->executor = KeeperRequestExecutor::QuorumThread;
             keeper_req->setState(RequestState::PendingRaft);
             active_requests.push_back(keeper_req);
-            if (!quorum_push(keeper_req))
+            if (!subqueue->push(keeper_req))
             {
                 active_requests.pop_back();
                 /// Roll back to Initial so the destructor's metric safety-net

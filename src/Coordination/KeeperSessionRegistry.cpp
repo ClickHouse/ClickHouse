@@ -26,14 +26,12 @@ namespace ErrorCodes
 }
 
 void KeeperSessionRegistry::initialize(KeeperContextPtr keeper_context, KeeperRequestsQueue & requests_queue,
-                                       KeeperSession::LocalReadCallback local_read_dispatch,
-                                       KeeperSession::QuorumPushCallback quorum_push)
+                                       KeeperSession::LocalReadCallback local_read_dispatch)
 {
     const auto & settings = keeper_context->getCoordinationSettings();
     quorum_reads_ = settings[CoordinationSetting::quorum_reads];
     max_session_active_requests_ = settings[CoordinationSetting::max_session_active_requests];
     local_read_dispatch_ = std::move(local_read_dispatch);
-    quorum_push_ = std::move(quorum_push);
     requests_queue_ = &requests_queue;
 }
 
@@ -50,7 +48,7 @@ KeeperSessionPtr KeeperSessionRegistry::registerSession(
     chassert(requests_queue_ != nullptr);
     auto handle = requests_queue_->getSubqueue(session_id);
 
-    auto session = std::make_shared<KeeperSession>(session_id, std::move(callback), *this, handle, local_read_dispatch_, quorum_push_);
+    auto session = std::make_shared<KeeperSession>(session_id, std::move(callback), *this, handle, local_read_dispatch_);
 
     try
     {

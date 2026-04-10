@@ -18,6 +18,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Coordination/KeeperCommon.h>
@@ -36,6 +37,7 @@
 #include <limits>
 #include <span>
 #include <string>
+#include <unordered_set>
 
 #include <fmt/ranges.h>
 
@@ -56,6 +58,8 @@ namespace ProfileEvents
     extern const Event KeeperBatchMaxTotalSize;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
     extern const Event KeeperStaleRequestsSkipped;
+    extern const Event KeeperRaftPrecommitMicroseconds;
+    extern const Event KeeperDispatcherInflightWaitMicroseconds;
 }
 
 namespace HistogramMetrics
@@ -75,6 +79,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
+    extern const CoordinationSettingsUInt64 max_batch_time_microseconds;
     extern const CoordinationSettingsUInt64 max_session_active_requests;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
@@ -160,212 +165,86 @@ void KeeperDispatcher::requestThread()
 {
     DB::setThreadName(ThreadName::KEEPER_REQUEST);
 
-    /// Result of requests batch from previous iteration
-    RaftAppendResult prev_result = nullptr;
-    /// Requests from previous iteration. We store them to be able
-    /// to send errors to the client.
-    KeeperRequestsForSessions prev_batch;
+    /// In-flight Raft append result and its corresponding batch.
+    /// Kept alive so we can send errors to clients if the append fails.
+    RaftAppendResult inflight_result = nullptr;
+    KeeperRequestsForSessions inflight_batch;
 
     const auto & shutdown_called = keeper_context->isShutdownCalled();
 
     while (!shutdown_called)
     {
-        const auto handle_opentelemetery_spans = [this](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
-        {
-            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                request->spans.dispatcher_requests_queue,
-                [&]
-                {
-                    return std::vector<OpenTelemetry::SpanAttribute>{
-                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                        {"keeper.session_id", session_id},
-                        {"keeper.xid", request->xid},
-                        {"keeper.dispatcher.requests_queue.size", requests_queue->size()},
-                    };
-                });
-        };
-
-        KeeperRequestForSession request;
-
         const auto & coordination_settings = configuration_and_settings->coordination_settings;
-        uint64_t max_wait = coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
         uint64_t max_batch_bytes_size = coordination_settings[CoordinationSetting::max_requests_batch_bytes_size];
         size_t max_batch_size = coordination_settings[CoordinationSetting::max_requests_batch_size];
+        uint64_t max_batch_time_us = coordination_settings[CoordinationSetting::max_batch_time_microseconds];
 
-        /// Batch all quorum requests into a vector until the previous write batch finishes
-        /// or `max_batch_size` is reached.  Non-quorum reads are classified at `putRequest`
-        /// time and never enter this queue, so the only "separator" left is Reconfig.
         try
         {
-            if (requests_queue->tryPop(request, max_wait))
+            /// Poll requests from the queue, transition PendingRaft -> InRaft,
+            /// and extract lightweight KeeperRequestForSession structs.
+            /// Accumulates entries within a bounded time window (max_batch_time_us)
+            /// to build bigger batches -- more entries per Raft append -> more per fsync.
+            /// Will not return until the previous in-flight batch is finalized.
+            auto batch = requests_queue->waitAndPullRaftBatch(
+                max_batch_size,
+                max_batch_bytes_size,
+                max_batch_time_us,
+                [&]
+                {
+                    if (inflight_result && inflight_result->has_result())
+                    {
+                        Stopwatch w;
+                        forceWaitAndProcessResult(inflight_result, inflight_batch, /*clear_requests_on_success=*/true);
+                        ProfileEvents::increment(ProfileEvents::KeeperDispatcherInflightWaitMicroseconds, w.elapsedMicroseconds());
+                        return false; /// nothing in flight anymore
+                    }
+                    return inflight_result != nullptr; /// still in flight
+                });
+
+            if (shutdown_called)
+                break;
+
+            /// waitAndPullRaftBatch guarantees non-empty batch (unless shutdown).
+            nuraft::ptr<nuraft::buffer> result_buf = nullptr;
+
+            if (!batch.entries.empty())
             {
-                CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
-                if (shutdown_called)
-                    break;
+                if (batch.entries.size() == max_batch_size)
+                    ProfileEvents::increment(ProfileEvents::KeeperBatchMaxCount, 1);
 
-                /// Skip stale requests for sessions that are no longer live.
-                /// Close must pass through RAFT (ephemeral cleanup, watch cleanup, etc.).
-                /// SessionID uses internal IDs (session_id = -1), ignore it just to be safe.
-                auto is_stale_session_request = [&](const KeeperRequestForSession & req) -> bool
+                if (batch.bytes >= max_batch_bytes_size)
+                    ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
+
+                LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", batch.entries.size(), batch.bytes);
+
+                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, batch.entries.size());
+                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, batch.bytes);
+
+                Stopwatch raft_precommit_watch;
+                auto result = server->putRequestBatch(batch.entries);
+                ProfileEvents::increment(ProfileEvents::KeeperRaftPrecommitMicroseconds, raft_precommit_watch.elapsedMicroseconds());
+
+                if (!result)
                 {
-                    if (req.request->getOpNum() != Coordination::OpNum::Close
-                        && req.request->getOpNum() != Coordination::OpNum::SessionID)
-                    {
-                        auto session = session_registry_.findSession(req.session_id);
-                        if (!session || !session->canAcceptRequests())
-                        {
-                            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-
-                            /// Finalize the dispatcher_requests_queue span that was initialized
-                            /// when the request was enqueued. Without this the span leaks because
-                            /// handle_opentelemetery_spans (which normally finalizes it) is skipped.
-                            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                                req.request->spans.dispatcher_requests_queue,
-                                [&]
-                                {
-                                    return std::vector<OpenTelemetry::SpanAttribute>{
-                                        {"keeper.operation", Coordination::opNumToString(req.request->getOpNum())},
-                                        {"keeper.session_id", req.session_id},
-                                        {"keeper.xid", req.request->xid},
-                                        {"keeper.stale", true},
-                                    };
-                                },
-                                OpenTelemetry::SpanStatus::ERROR,
-                                "Session is no longer live");
-
-                            return true;
-                        }
-                    }
-                    return false;
-                };
-
-                if (is_stale_session_request(request))
-                    continue;
-
-                handle_opentelemetery_spans(request.request, request.session_id);
-
-                Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
-                if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
-                {
-                    ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
-                    LOG_WARNING(
-                        log,
-                        "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
-                        "is {}",
-                        ReadableSize(mem_soft_limit),
-                        ReadableSize(total_memory_tracker.get()),
-                        ReadableSize(total_memory_tracker.getRSS()),
-                        request.request->getOpNum());
-                    addErrorResponses({request}, Coordination::Error::ZOUTOFMEMORY);
-                    continue;
+                    failBatchSessions(batch.entries, Coordination::Error::ZCONNECTIONLOSS);
+                    batch.entries.clear();
                 }
 
-                KeeperRequestsForSessions current_batch;
-                size_t current_batch_bytes_size = 0;
+                inflight_batch = std::move(batch.entries);
+                inflight_result = result;
+            }
 
-                bool has_reconfig_request = false;
-
-                /// Reconfig is a special separator — it must be processed after
-                /// the current batch commits.
-                if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
-                {
-                    has_reconfig_request = true;
-                }
-                else
-                {
-                    current_batch_bytes_size += request.request->bytesSize();
-                    current_batch.emplace_back(request);
-
-                    const auto try_get_request = [&]
-                    {
-                        /// Trying to get batch requests as fast as possible
-                        if (requests_queue->tryPop(request))
-                        {
-                            CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
-
-                            /// Skip stale requests for sessions that are no longer live during batch assembly.
-                            if (is_stale_session_request(request))
-                                return true; // consumed, keep draining
-
-                            handle_opentelemetery_spans(request.request, request.session_id);
-
-                            if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
-                            {
-                                has_reconfig_request = true;
-                                return false;
-                            }
-
-                            current_batch_bytes_size += request.request->bytesSize();
-                            current_batch.emplace_back(request);
-
-                            return true;
-                        }
-
-                        return false;
-                    };
-
-                    while (!shutdown_called && current_batch.size() < max_batch_size && !has_reconfig_request
-                           && current_batch_bytes_size < max_batch_bytes_size && try_get_request())
-                        ;
-
-                    const auto prev_result_done = [&]
-                    {
-                        return !prev_result || prev_result->has_result();
-                    };
-
-                    /// Waiting until previous append will be successful, or batch is big enough
-                    while (!shutdown_called && !has_reconfig_request &&
-                           !prev_result_done() && current_batch.size() <= max_batch_size
-                           && current_batch_bytes_size < max_batch_bytes_size)
-                    {
-                        try_get_request();
-                    }
-                }
-
-                if (shutdown_called)
-                    break;
-
-                nuraft::ptr<nuraft::buffer> result_buf = nullptr;
-                /// Forcefully process all previous pending requests
-                if (prev_result)
-                    result_buf
-                        = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/!has_reconfig_request);
-
-                /// Process collected write requests batch
-                if (!current_batch.empty())
-                {
-                    if (current_batch.size() == max_batch_size)
-                        ProfileEvents::increment(ProfileEvents::KeeperBatchMaxCount, 1);
-
-                    if (current_batch_bytes_size == max_batch_bytes_size)
-                        ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
-
-                    LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
-
-                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, current_batch.size());
-                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, current_batch_bytes_size);
-
-                    auto result = server->putRequestBatch(current_batch);
-
-                    if (!result)
-                    {
-                        addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
-                        current_batch.clear();
-                        current_batch_bytes_size = 0;
-                    }
-
-                    prev_batch = std::move(current_batch);
-                    prev_result = result;
-                }
-
-                /// Reconfig must wait for the preceding batch to commit before executing.
-                if (has_reconfig_request)
+            /// If Reconfig follows, we have to wait for the preceding batch
+            /// to commit, then execute the reconfig synchronously.
+            if (batch.has_reconfig)
+            {
                 {
                     Stopwatch watch;
                     SCOPE_EXIT(ProfileEvents::increment(ProfileEvents::KeeperCommitWaitElapsedMicroseconds, watch.elapsedMicroseconds()));
-                    if (prev_result)
+                    if (inflight_result)
                         result_buf = forceWaitAndProcessResult(
-                            prev_result, prev_batch, /*clear_requests_on_success=*/false);
+                            inflight_result, inflight_batch, /*clear_requests_on_success=*/false);
 
                     if (result_buf)
                     {
@@ -373,16 +252,40 @@ void KeeperDispatcher::requestThread()
                         auto log_idx = bs.get_u64();
 
                         if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
-                            addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
+                            failBatchSessions(inflight_batch, Coordination::Error::ZOPERATIONTIMEOUT);
 
                         if (shutdown_called)
                             return;
                     }
 
-                    prev_batch.clear();
-
-                    server->getKeeperStateMachine()->reconfigure(request);
+                    inflight_batch.clear();
                 }
+
+                /// reconfig_session may be null if session expired during batch processing.
+                /// Reconfig still executes (cluster-level op) but deferred read release is skipped.
+                auto reconfig_session = session_registry_.findSession(batch.reconfig.session_id);
+
+                try
+                {
+                    server->getKeeperStateMachine()->reconfigure(batch.reconfig);
+                }
+                catch (...)
+                {
+                    /// Reconfig is a cluster-level operation -- its failure should
+                    /// not terminate an otherwise healthy client session. Deliver
+                    /// an error response for just this request and let the outer
+                    /// catch log the exception.
+                    addErrorResponses(
+                        {batch.reconfig},
+                        Coordination::Error::ZSYSTEMERROR);
+                    throw;
+                }
+
+                /// Pop the completed reconfig, deliver, and advance the queue.
+                /// Must happen AFTER `reconfigure` returns because it holds the
+                /// exclusive storage lock.
+                if (reconfig_session)
+                    reconfig_session->onRaftCommitted();
             }
         }
         catch (...)
@@ -558,14 +461,14 @@ Coordination::Error KeeperDispatcher::putRequest(SessionRequestPtr keeper_req, c
     /// and must not be delayed until session timeout under queue pressure.
     bool is_close = keeper_req->request->getOpNum() == Coordination::OpNum::Close;
     const auto max_queue_size = configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size];
-    if (!is_close && max_queue_size > 0 && requests_queue->size() >= max_queue_size)
+    if (!is_close && max_queue_size > 0 && requests_queue->totalSize() >= max_queue_size)
     {
         LOG_WARNING(log,
             "Request rejected for session {} xid {} op {}: pending count {} >= limit {}",
             keeper_req->session_id,
             keeper_req->request->xid,
             Coordination::opNumToString(keeper_req->request->getOpNum()),
-            requests_queue->size(),
+            requests_queue->totalSize(),
             static_cast<uint64_t>(max_queue_size));
         return Coordination::Error::ZCONNECTIONLOSS;
     }
@@ -635,52 +538,22 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     keeper_context->initialize(config, this);
 
-    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size]);
-
     /// Build the sharded request queue. One subqueue per hardware thread is a
     /// reasonable default; the session-to-subqueue mapping is deterministic so
     /// the number of subqueues does not need to match the number of sessions.
     {
         const auto max_queue_size = configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size];
         const auto num_shards = configuration_and_settings->coordination_settings[CoordinationSetting::request_queue_num_shards];
-        requests_queue_new = std::make_unique<KeeperRequestsQueue>(
+        requests_queue = std::make_unique<KeeperRequestsQueue>(
             /*num_subqueues=*/num_shards,
             /*max_queue_size=*/max_queue_size);
-        system_subqueue = requests_queue_new->getSubqueue(0);
+        system_subqueue = requests_queue->getSubqueue(0);
     }
 
     session_registry_.initialize(
         keeper_context,
-        *requests_queue_new,
-        [this](std::span<SessionRequestPtr> batch) { dispatchLocalReads(batch); },
-        [this](const SessionRequestPtr & keeper_req) -> bool
-        {
-            /// Build a KeeperRequestForSession for the existing global queue.
-            /// This bridge will be removed when the queue is migrated to SessionRequestPtr.
-            KeeperRequestForSession request_info;
-            request_info.session_id = keeper_req->session_id;
-            request_info.request = keeper_req->request;
-            request_info.time = keeper_req->time;
-            request_info.use_xid_64 = keeper_req->use_xid_64;
-
-            ZooKeeperOpentelemetrySpans::maybeInitialize(
-                keeper_req->request->spans.dispatcher_requests_queue,
-                keeper_req->request->tracing_context);
-
-            if (keeper_req->request->getOpNum() == Coordination::OpNum::Close)
-            {
-                if (!requests_queue->push(std::move(request_info)))
-                    return false;
-            }
-            else
-            {
-                if (!requests_queue->tryPush(std::move(request_info),
-                    configuration_and_settings->coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
-                    return false;
-            }
-            CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
-            return true;
-        });
+        *requests_queue,
+        [this](std::span<SessionRequestPtr> batch) { dispatchLocalReads(batch); });
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
@@ -747,16 +620,11 @@ void KeeperDispatcher::shutdown()
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
 
-            if (requests_queue_new)
-                requests_queue_new->signalShutdown();
-
             if (requests_queue)
-            {
-                requests_queue->finish();
+                requests_queue->signalShutdown();
 
-                if (request_thread.joinable())
-                    request_thread.join();
-            }
+            if (request_thread.joinable())
+                request_thread.join();
 
             snapshots_queue.finish();
             if (snapshot_thread.joinable())
@@ -765,17 +633,6 @@ void KeeperDispatcher::shutdown()
             cluster_update_queue.finish();
             if (update_configuration_thread.joinable())
                 update_configuration_thread.join();
-        }
-
-        KeeperRequestForSession request_for_session;
-
-        /// Set session expired for all pending requests
-        while (requests_queue && requests_queue->tryPop(request_for_session))
-        {
-            CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
-            auto response = request_for_session.request->makeResponse();
-            response->error = Coordination::Error::ZSESSIONEXPIRED;
-            routeResponse(request_for_session.session_id, response);
         }
 
         KeeperRequestsForSessions close_requests;
@@ -888,25 +745,24 @@ void KeeperDispatcher::sessionCleanerTask()
                     ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
 
                     using namespace std::chrono;
-                    KeeperRequestForSession request_info
-                    {
-                        .session_id = dead_session,
-                        .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
-                        .request = std::move(request),
-                        .digest = std::nullopt
-                    };
-                    /// Remove session from live_sessions before pushing Close to the queue.
-                    /// This gives the leader early filtering — stale requests for
-                    /// this session are skipped as soon as the session expiry is detected,
-                    /// before the Close even enters the queue.
+                    auto request_info = std::make_shared<SessionRequest>();
+                    request_info->session_id = dead_session;
+                    request_info->time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+                    request_info->request = std::move(request);
+                    request_info->setState(RequestState::PendingRaft);
+                    /// Detach session from registry before pushing Close to the queue.
                     /// Close requests are exempt from stale filtering, so the
                     /// Close will still pass through RAFT for ephemeral cleanup.
                     terminateSession(dead_session);
 
-                    if (!requests_queue->push(std::move(request_info)))
-                        LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
-                    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
-                    LOG_INFO(log, "Dead session close request pushed");
+                    if (!system_subqueue->push(std::move(request_info)))
+                    {
+                        LOG_WARNING(log, "Dead session close request for session {} dropped -- queue full", dead_session);
+                    }
+                    else
+                    {
+                        LOG_INFO(log, "Dead session close request pushed for session {}", dead_session);
+                    }
                 }
             }
         }
@@ -958,7 +814,36 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
         response->zxid = 0;
         response->error = error;
         response->enqueue_ts = std::chrono::steady_clock::now();
-        routeResponse(request_for_session.session_id, response);
+        if (!routeResponse(request_for_session.session_id, response))
+            LOG_WARNING(log,
+                "Could not deliver error response xid {} error {} -- session not found",
+                response->xid,
+                error);
+    }
+}
+
+void KeeperDispatcher::failBatchSessions(const KeeperRequestsForSessions & batch, Coordination::Error error)
+{
+    LOG_WARNING(log,
+        "Failing batch of {} requests with error {}",
+        batch.size(), Coordination::errorMessage(error));
+
+    std::unordered_set<int64_t> finished_sessions;
+    for (const auto & req : batch)
+    {
+        if (req.request->getOpNum() == Coordination::OpNum::SessionID)
+        {
+            addErrorResponses({req}, error);
+            continue;
+        }
+
+        /// Deduplicate -- one batch may contain many requests from the same session.
+        /// `terminateSession` is idempotent (second call returns early), but dedup
+        /// avoids repeated lookups and log noise.
+        if (!finished_sessions.emplace(req.session_id).second)
+            continue;
+
+        terminateSession(req.session_id);
     }
 }
 
@@ -966,13 +851,20 @@ nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(
     RaftAppendResult & result, KeeperRequestsForSessions & requests_for_sessions, bool clear_requests_on_success)
 {
     if (!result->has_result())
+    {
+        auto start = std::chrono::steady_clock::now();
         result->get();
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start).count();
+        if (elapsed_ms >= 5000)
+            LOG_WARNING(log, "Raft append result took {}ms", elapsed_ms);
+    }
 
-    /// If we get some errors, than send them to clients
+    /// If we get some errors, then send them to clients
     if (!result->get_accepted() || result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
-        addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
+        failBatchSessions(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
     else if (result->get_result_code() != nuraft::cmd_result_code::OK)
-        addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+        failBatchSessions(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
 
     auto result_buf = result->get();
 
@@ -1055,7 +947,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 {
     /// New session id allocation is a special request, because we cannot process it in normal
     /// way: get request -> put to raft -> set response for registered callback.
-    KeeperRequestForSession request_info;
+    auto request_info = std::make_shared<SessionRequest>();
     std::shared_ptr<Coordination::ZooKeeperSessionIDRequest> request = std::make_shared<Coordination::ZooKeeperSessionIDRequest>();
     /// Internal session id. It's a temporary number which is unique for each client on this server
     /// but can be same on different servers.
@@ -1063,10 +955,11 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     request->session_timeout_ms = session_timeout_ms;
     request->server_id = server->getServerID();
 
-    request_info.request = request;
+    request_info->request = request;
+    request_info->setState(RequestState::PendingRaft);
     using namespace std::chrono;
-    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    request_info.session_id = -1;
+    request_info->time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    request_info->session_id = -1;
 
     auto promise = std::make_shared<std::promise<int64_t>>();
     auto future = promise->get_future();
@@ -1106,10 +999,30 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 
     ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
 
-    /// Push new session request to queue
-    if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push session id request to queue within session timeout");
-    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+    /// Push new session request to the system queue. Bounded by max_request_queue_size
+    /// to prevent unbounded growth under connection storms.
+    const auto max_queue_size = configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size];
+    bool pushed = true;
+    if (max_queue_size > 0 && requests_queue->totalSize() >= max_queue_size)
+    {
+        LOG_WARNING(log,
+            "Session allocation rejected: pending count {} >= limit {}",
+            requests_queue->totalSize(), static_cast<uint64_t>(max_queue_size));
+        pushed = false;
+    }
+
+    if (pushed)
+    {
+        pushed = system_subqueue->push(std::move(request_info));
+    }
+
+    if (!pushed)
+    {
+        /// Clean up the registered callback -- the request was never enqueued,
+        /// so no response will arrive to extract it.
+        session_registry_.extractNewSessionCallback(request->internal_id);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot allocate session: system queue is full");
+    }
 
     if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot receive session id within session timeout");

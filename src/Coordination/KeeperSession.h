@@ -73,19 +73,13 @@ public:
     /// construction. The batch may contain a single element.
     using LocalReadCallback = std::function<void(std::span<SessionRequestPtr>)>;
 
-    /// Callback to push a quorum (Raft) request to the global queue.
-    /// Returns true if the push succeeded, false if the queue is full.
-    /// The session calls this from `addRequest` for quorum requests.
-    using QuorumPushCallback = std::function<bool(const SessionRequestPtr &)>;
-
     /// @param registry  Non-owning pointer to the session registry (outlives all sessions).
     ///                  Sessions access admission control and settings.
     /// @param subqueue  The assigned subqueue in `KeeperRequestsQueue` for this session.
-    ///                  Stored for future use; quorum requests still go through `quorum_push`.
+    ///                  Used to push quorum requests without holding `mutex`.
     /// @param local_read_dispatch  Callback for local read execution. Owned by the session.
-    /// @param quorum_push  Callback to push quorum requests to the global queue.
     KeeperSession(int64_t session_id, ResponseCallback callback, KeeperSessionRegistry & registry,
-                  KeeperSubqueuePtr subqueue, LocalReadCallback local_read_dispatch, QuorumPushCallback quorum_push);
+                  KeeperSubqueuePtr subqueue, LocalReadCallback local_read_dispatch);
 
     int64_t getSessionID() const { return session_id; }
 
@@ -213,14 +207,12 @@ private:
     KeeperSessionRegistry * registry;
 
     /// Handle to the assigned subqueue in `KeeperRequestsQueue`.
-    /// Stored for future use; quorum requests still go through `quorum_push` for now.
+    /// Quorum requests are pushed here outside `mutex` after `addRequest` enqueues
+    /// them in `active_requests`. The queue notifies `requestThread` via its CV.
     KeeperSubqueuePtr subqueue;
 
     /// Local read dispatch callback. Set once at construction.
     LocalReadCallback local_read_dispatch;
-
-    /// Quorum push callback. Set once at construction.
-    QuorumPushCallback quorum_push;
 };
 
 }

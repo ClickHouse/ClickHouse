@@ -960,6 +960,8 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
     M(KeeperBatchMaxCount, "Number of times the size of batch was limited by the amount", ValueType::Number) \
     M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size", ValueType::Number) \
+    M(KeeperRaftPrecommitMicroseconds, "Time spent in putRequestBatch in Keeper (NuRaft lock + pre_commit for all entries)", ValueType::Microseconds) \
+    M(KeeperDispatcherInflightWaitMicroseconds, "Time waiting for previous in-flight Raft batch result in Keeper requestThread", ValueType::Microseconds) \
     M(KeeperCommits, "Number of successful commits", ValueType::Number) \
     M(KeeperCommitsFailed, "Number of failed commits", ValueType::Number) \
     M(KeeperSnapshotCreations, "Number of snapshots creations", ValueType::Number) \

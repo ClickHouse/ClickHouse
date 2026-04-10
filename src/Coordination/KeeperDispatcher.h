@@ -29,15 +29,9 @@ namespace DB
 class KeeperDispatcher
 {
 private:
-    using RequestsQueue = ConcurrentBoundedQueue<KeeperRequestForSession>;
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
-    /// Size depends on coordination settings
-    std::unique_ptr<RequestsQueue> requests_queue;
-
-    /// Sharded request queue (new). Sessions obtain subqueue handles from it.
-    /// Data flow unchanged for now -- `requestThread` still reads from `requests_queue`.
-    std::unique_ptr<KeeperRequestsQueue> requests_queue_new;
+    std::unique_ptr<KeeperRequestsQueue> requests_queue;
     KeeperSubqueuePtr system_subqueue;  /// For session-less requests (SessionID, dead-session Close).
 
     SnapshotsQueue snapshots_queue{1};
@@ -88,7 +82,12 @@ private:
     /// Returns true if response was successfully sent to client, false if session doesn't exist on this node.
     bool routeResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
 
+    /// Deliver error responses to sessions.
     void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error);
+
+    /// Send error responses AND notify sessions about failed writes
+    /// so they can release stuck deferred reads.
+    void failBatchSessions(const KeeperRequestsForSessions & batch, Coordination::Error error);
 
     /// Dispatch a batch of local reads against the state machine.
     /// Called by sessions' `local_read_dispatch` callback.
