@@ -1,5 +1,7 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -73,6 +75,26 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 
     stream << ')';
     return stream.str();
+}
+
+static bool fieldNameHasSameStateRepresentation(const String & field_name, const AggregateFunctionPtr & column_func, std::optional<size_t> column_version)
+{
+    auto field_type = DataTypeFactory::instance().tryGet(field_name);
+    const auto * field_aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(field_type.get());
+    if (!field_aggregate_type)
+        return false;
+
+    const auto effective_column_version = column_version.value_or(column_func->getDefaultVersion());
+    if (field_aggregate_type->getVersion() != effective_column_version)
+        return false;
+
+    /// The serialized aggregate state can be inserted even if the field type name differs
+    /// from the column type string, as long as it resolves to the same aggregate state
+    /// representation and version. This covers wrappers such as LowCardinality that are
+    /// stripped when the runtime aggregate function is instantiated.
+    return DataTypeAggregateFunction::strictEquals(
+        field_aggregate_type->getFunction()->getNormalizedStateType(),
+        column_func->getNormalizedStateType());
 }
 
 
@@ -616,7 +638,7 @@ void ColumnAggregateFunction::insert(const Field & x)
             x.getTypeName(), Field::Types::AggregateFunctionState);
 
     const auto & field_name = x.safeGet<AggregateFunctionStateData>().name;
-    if (type_string != field_name)
+    if (type_string != field_name && !fieldNameHasSameStateRepresentation(field_name, func, version))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert filed with type {} into column with type {}",
                 field_name, type_string);
 
@@ -633,7 +655,7 @@ bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
         return false;
 
     const auto & field_name = x.safeGet<AggregateFunctionStateData>().name;
-    if (type_string != field_name)
+    if (type_string != field_name && !fieldNameHasSameStateRepresentation(field_name, func, version))
         return false;
 
     ensureOwnership();
