@@ -269,8 +269,12 @@ KeeperSession::AddResult KeeperSession::addRequest(SessionRequestPtr keeper_req)
             return AddResult::SessionClosed;
         }
 
+        bool is_close = (keeper_req->request->getOpNum() == Coordination::OpNum::Close);
+
+        /// Close bypasses per-session limit — critical for ephemeral cleanup,
+        /// matching the global queue exemption in KeeperDispatcher::putRequest.
         size_t limit = registry->maxSessionActiveRequests();
-        if (limit > 0 && active_requests.size() >= limit)
+        if (!is_close && limit > 0 && active_requests.size() >= limit)
         {
             LOG_WARNING(LogFrequencyLimiter(log, 5),
                 "Per-session request limit ({}) reached for session {}, rejecting xid {} op {}",
@@ -282,8 +286,6 @@ KeeperSession::AddResult KeeperSession::addRequest(SessionRequestPtr keeper_req)
         auto mode = (registry->quorumReads() || !keeper_req->request->isReadRequest())
             ? KeeperRequestMode::Quorum : KeeperRequestMode::NonQuorum;
         keeper_req->mode = mode;
-
-        bool is_close = (keeper_req->request->getOpNum() == Coordination::OpNum::Close);
 
         if (mode == KeeperRequestMode::NonQuorum)
         {
