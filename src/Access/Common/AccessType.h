@@ -44,6 +44,7 @@ enum class Source : uint8_t
     M(RABBITMQ, "RabbitMQ") \
     M(YTSAURUS, "YTsaurus") \
     M(ARROW_FLIGHT, "ArrowFlight") \
+    M(KINESIS, "") \
 
 #define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
 
@@ -420,6 +421,7 @@ enum class AccessType : uint8_t
     M(KAFKA, "", GLOBAL, ALL) \
     M(NATS, "", GLOBAL, ALL) \
     M(RABBITMQ, "", GLOBAL, ALL) \
+    M(KINESIS, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
     \
     /* Consts */ \

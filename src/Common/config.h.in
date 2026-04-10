@@ -47,6 +47,7 @@
 #cmakedefine01 USE_RDKAFKA
 #cmakedefine01 USE_AMQPCPP
 #cmakedefine01 USE_NATSIO
+#cmakedefine01 USE_AWS_KINESIS
 #cmakedefine01 USE_EMBEDDED_COMPILER
 #cmakedefine01 USE_DWARF_PARSER
 #cmakedefine01 USE_LDAP
