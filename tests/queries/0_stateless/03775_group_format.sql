@@ -36,5 +36,26 @@ set optimize_rewrite_aggregate_function_with_if = 0;
 -- Multi-arg nullable: both nullable and non-nullable columns mixed.
 select groupFormat('JSONEachRow')(if(number = 0, NULL, number), toString(number)) from numbers(3);
 
+-- State round-trip: serialize then deserialize via finalizeAggregation.
+select finalizeAggregation(groupFormatState('JSONEachRow')(number, toString(number))) from numbers(3);
+
+-- State merge: two partial states merged via groupFormatMerge.
+select groupFormatMerge('JSONEachRow')(state) from
+(
+    select groupFormatState('JSONEachRow')(number) as state from numbers(2)
+    union all
+    select groupFormatState('JSONEachRow')(number + 2) as state from numbers(2)
+);
+
+-- Nullable state round-trip.
+select finalizeAggregation(groupFormatState('JSONEachRow')(if(number = 0, NULL, number))) from numbers(3);
+
+-- Equivalence: direct aggregation vs state round-trip must produce the same result.
+select
+    groupFormat('JSONEachRow')(number) as direct,
+    finalizeAggregation(groupFormatState('JSONEachRow')(number)) as via_state,
+    direct = via_state as equal
+from numbers(3);
+
 select groupFormat(123)(number) from numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select groupFormat() from numbers(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
