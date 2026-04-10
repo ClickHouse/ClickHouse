@@ -7,6 +7,7 @@
 #include <Core/Field.h>
 
 #include <Common/CacheBase.h>
+#include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
 
 #include <IO/ReadHelpers.h>
@@ -296,6 +297,8 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)
 {
+    checkStackSize();
+
     if (target_type->lowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(target_type.get());
@@ -772,6 +775,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
 
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & root_node)
 {
+    checkStackSize();
+
     switch (root_node->type())
     {
         case avro::AVRO_STRING:
@@ -914,6 +919,8 @@ static inline std::string concatPath(const std::string & a, const std::string & 
 
 AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, const avro::NodePtr & node, const std::string & current_path)
 {
+    checkStackSize();
+
     if (node->type() == avro::AVRO_SYMBOLIC)
     {
         /// continue traversal only if some column name starts with current_path
@@ -1338,6 +1345,8 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
 {
+    checkStackSize();
+
     switch (node->type())
     {
         case avro::Type::AVRO_INT:
