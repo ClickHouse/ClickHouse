@@ -147,7 +147,6 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     assert minio_secret_key not in show_result
     assert "HIDDEN" in show_result
 
-
 def create_clickhouse_iceberg_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
 ):
