@@ -674,6 +674,10 @@ std::optional<String> optimizeUseAggregateProjections(
             LOG_DEBUG(logger, "{}", stat.description);
 
             inexact_ranges_select_result->selected_parts = parent_parts_with_ranges.size();
+            /// The original result may have exceeded_row_limits set because the full table scan
+            /// was over the limit.  After subtracting exact ranges the remaining rows are fewer,
+            /// so clear the flag — the reduced result will be re-checked during execution.
+            inexact_ranges_select_result->exceeded_row_limits = false;
             if (parent_parts_with_ranges.empty())
             {
                 chassert(inexact_ranges_select_result->selected_marks == 0);

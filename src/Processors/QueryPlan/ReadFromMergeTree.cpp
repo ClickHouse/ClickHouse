@@ -2463,10 +2463,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     parts_before_pk = res_parts.size();
 
 
-    /// Check if we have projections, as that can determine whether we fail during reading parts
-    /// or analyze projection candidates to see if we can serve the query more efficiently
+    /// Check if we have projections or exact-range analysis, as that can determine whether we fail
+    /// during reading parts or analyze projection / exact-count candidates to serve the query more
+    /// efficiently.  When find_exact_ranges is true the caller (optimizeUseAggregateProjection) can
+    /// compute exact counts from the primary key without reading data, so the max_rows_to_read limit
+    /// on the full table scan should not cause an immediate failure.
     bool projection_parts_exist = std::any_of(res_parts.begin(), res_parts.end(), [](const auto & part) { return part.data_part->isProjectionPart(); });
-    bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist;
+    bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist || find_exact_ranges;
     bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (has_projections || find_exact_ranges);
 
     auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);

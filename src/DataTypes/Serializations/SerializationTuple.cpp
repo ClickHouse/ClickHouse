@@ -260,7 +260,14 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
         if (whole && !istr.eof())
         {
             if constexpr (throw_exception)
+            {
+                /// Commit the row before throwUnexpectedDataAfterParsedValue, which expects
+                /// the parsed value to be in the column (it serializes it for the error message
+                /// and then pops it back). Without this, for Tuple() with no sub-columns,
+                /// the column size is still 0 and popBack would fail.
+                assert_cast<ColumnTuple &>(column).addSize(1);
                 throwUnexpectedDataAfterParsedValue(column, istr, settings, "Tuple");
+            }
             return false;
         }
 
