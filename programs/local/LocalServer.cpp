@@ -67,6 +67,7 @@
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/createServer.h>
 #include <Server/socketBindListen.h>
 #include <Server/stopServers.h>
 #include <Server/waitServersToFinish.h>
@@ -531,39 +532,6 @@ void LocalServer::startServers(const ServerType & server_type)
     http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings()[ServerSetting::max_keep_alive_requests]));
     http_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
 
-    auto create_server = [&](const std::string & listen_host, const char * port_name, auto && func)
-    {
-        if (config.getString(port_name, "").empty())
-            return;
-
-        /// If we already have an active server for this listen_host/port_name, don't create it again
-        for (const auto & server : servers)
-        {
-            if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
-                return;
-        }
-
-        auto port = config.getInt(port_name);
-        try
-        {
-            servers.push_back(func(static_cast<UInt16>(port)));
-            servers.back().start();
-            LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
-            global_context->registerServerPort(port_name, static_cast<UInt16>(port));
-        }
-        catch (const Poco::Exception &)
-        {
-            if (listen_try)
-            {
-                LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}...", listen_host, port, getCurrentExceptionMessage(false));
-            }
-            else
-            {
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Listen [{}]:{} failed: {}", listen_host, port, getCurrentExceptionMessage(false));
-            }
-        }
-    };
-
     size_t servers_before = servers.size();
 
     for (const auto & listen_host : listen_hosts)
@@ -571,7 +539,7 @@ void LocalServer::startServers(const ServerType & server_type)
         if (server_type.shouldStart(ServerType::Type::TCP))
         {
             const char * port_name = "tcp_port";
-            create_server(listen_host, port_name, [&](UInt16 port) -> ProtocolServerAdapter
+            if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ true, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
@@ -591,13 +559,14 @@ void LocalServer::startServers(const ServerType & server_type)
                         *server_pool,
                         socket,
                         params));
-            });
+            }, &logger()))
+                global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
         }
 
         if (server_type.shouldStart(ServerType::Type::HTTP))
         {
             const char * port_name = "http_port";
-            create_server(listen_host, port_name, [&](UInt16 port) -> ProtocolServerAdapter
+            if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ true, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
@@ -617,7 +586,8 @@ void LocalServer::startServers(const ServerType & server_type)
                         /* connection_filter= */ nullptr,
                         ProfileEvents::InterfaceHTTPReceiveBytes,
                         ProfileEvents::InterfaceHTTPSendBytes));
-            });
+            }, &logger()))
+                global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
         }
     }
 
@@ -1479,6 +1449,10 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
         ("path", po::value<std::string>(), "Storage path. If it was not specified, we will use a temporary directory, that is cleaned up on exit.")
         ("only-system-tables", "Attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
+
+        ("listen_host", po::value<std::string>(), "Host to listen on for SYSTEM START LISTEN (default: ::1 and 127.0.0.1)")
+        ("tcp_port", po::value<int>(), "Port for native TCP protocol (default: 9000)")
+        ("http_port", po::value<int>(), "Port for HTTP protocol (default: 8123)")
         ;
 }
 
@@ -1515,6 +1489,13 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setString("table-data-format", options["input-format"].as<std::string>());
     if (options.contains("output-format"))
         getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
+
+    if (options.contains("listen_host"))
+        getClientConfiguration().setString("listen_host", options["listen_host"].as<std::string>());
+    if (options.contains("tcp_port"))
+        getClientConfiguration().setInt("tcp_port", options["tcp_port"].as<int>());
+    if (options.contains("http_port"))
+        getClientConfiguration().setInt("http_port", options["http_port"].as<int>());
 
     if (options.contains("logger.console"))
         getClientConfiguration().setBool("logger.console", options["logger.console"].as<bool>());

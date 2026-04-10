@@ -23,26 +23,29 @@ $CLICKHOUSE_LOCAL --tcp_port 0 --query "SYSTEM START LISTEN TCP;"
 
 # Test that a started TCP listener is actually reachable:
 # start clickhouse-local with a blocking query to keep it alive, then connect from outside.
-$CLICKHOUSE_LOCAL --tcp_port 0 --query "
+LOCAL_TCP_PORT=$((RANDOM % 10000 + 40000))
+
+$CLICKHOUSE_LOCAL --listen_host 127.0.0.1 --tcp_port "$LOCAL_TCP_PORT" --query "
     SYSTEM START LISTEN TCP;
-    SELECT sleepEachRow(3) FROM numbers(100) FORMAT Null;
+    SELECT sleepEachRow(1) FROM numbers(30) SETTINGS max_block_size = 1 FORMAT Null;
 " &
 LOCAL_PID=$!
 
-# Discover the actual listening port via lsof (wait up to 5 seconds)
-PORT=''
+# Wait for the TCP listener to become reachable (up to 5 seconds)
+CONNECTED=0
 for _ in $(seq 1 50); do
-    PORT="$(lsof -n -a -P -i tcp -s tcp:LISTEN -p "$LOCAL_PID" 2>/dev/null | awk -F'[ :]' '/LISTEN/ { print $(NF-1) }' | head -1)"
-    if [[ -n "$PORT" ]]; then
+    if $CLICKHOUSE_CLIENT_BINARY --host 127.0.0.1 --port "$LOCAL_TCP_PORT" --query "SELECT 1" >/dev/null 2>&1; then
+        CONNECTED=1
         break
     fi
     sleep 0.1
 done
 
-if [[ -n "$PORT" ]]; then
-    $CLICKHOUSE_CLIENT_BINARY --host 127.0.0.1 --port "$PORT" --query "SELECT 'connected_ok'"
+if [[ "$CONNECTED" -eq 1 ]]; then
+    $CLICKHOUSE_CLIENT_BINARY --host 127.0.0.1 --port "$LOCAL_TCP_PORT" --query "SELECT 'connected_ok'"
 else
-    echo "Failed to discover listening port" >&2
+    echo "Failed to connect to TCP listener on port $LOCAL_TCP_PORT" >&2
+    exit 1
 fi
 
 kill "$LOCAL_PID" 2>/dev/null
