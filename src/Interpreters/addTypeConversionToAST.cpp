@@ -5,8 +5,10 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Storages/ColumnsDescription.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Planner/AnalyzeExpression.h>
 
 namespace DB
 {
@@ -32,7 +34,15 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
 
 ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, ContextPtr context)
 {
-    const auto actions = analyzeExpressionToActions(ast, all_columns, context, true);
+    /// Keep the old TreeRewriter + ExpressionAnalyzer path here.
+    /// This function is called from ColumnAliasesVisitor (old analyzer ALIAS
+    /// resolution) and must work with enable_analyzer = 0 where the new
+    /// Analyzer may fail for expressions like dictGet that reference external
+    /// objects not available in a standalone analysis context.
+    auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, all_columns);
+    const auto actions = ExpressionAnalyzer(ast,
+        syntax_analyzer_result,
+        const_pointer_cast<Context>(context)).getActions(true);
 
     for (const auto & action : actions->getActions())
         if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
