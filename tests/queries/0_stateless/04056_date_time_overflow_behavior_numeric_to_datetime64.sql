@@ -25,6 +25,8 @@ SELECT CAST(3600000::UInt64, 'Time64') SETTINGS date_time_overflow_behavior = 't
 
 SELECT '--- throw: constant float -> Time64 ---';
 SELECT CAST(99999999999.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(5000000.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(-5000000.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 SELECT '--- throw: non-constant paths via table ---';
 DROP TABLE IF EXISTS overflow_test;

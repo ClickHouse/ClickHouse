@@ -693,12 +693,13 @@ struct ToTime64TransformFloat
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < static_cast<FromType>(MIN_DATETIME64_TIMESTAMP) || from > static_cast<FromType>(MAX_DATETIME64_TIMESTAMP)) [[unlikely]]
+            if (from > static_cast<FromType>(MAX_TIME_TIMESTAMP)
+                || from < static_cast<FromType>(-1 * MAX_TIME_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
-        } // need to reconsider this
+        }
 
-        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
+        from = std::max(from, static_cast<FromType>(-1 * MAX_TIME_TIMESTAMP));
+        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
