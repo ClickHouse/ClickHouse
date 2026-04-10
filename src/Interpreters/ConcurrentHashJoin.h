@@ -1,16 +1,17 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/CacheLine.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Interpreters/TableJoin.h>
-#include <atomic>
 
 namespace DB
 {
@@ -90,7 +91,7 @@ public:
 
     void onBuildPhaseFinish() override;
 
-    struct InternalHashJoin
+    struct alignas(CH_CACHE_LINE_SIZE) InternalHashJoin
     {
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
