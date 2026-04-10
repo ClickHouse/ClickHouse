@@ -1,0 +1,85 @@
+Negative tests
+\N
+Constants: hasPhrase should be constant
+Default tokenizer (splitByNonAlpha)
+1
+1
+1
+1
+0
+0
+0
+1
+0
+1
+1
+1
+1
+0
+-- correct failure handling
+1
+1
+1
+1
+1
+1
+1
+1
+0
+0
+0
+0
+-- tokenizer separators in phrase are removed before matching
+1
+1
+1
+1
+-- FixedString input
+1
+-- non-const input
+1
+-- Nullable(String) input
+1
+\N
+-- Nullable(FixedString) input
+1
+\N
+-- Nullable(String) column values
+1
+\N
+1
+\N
+0
+-- Nullable(FixedString) column values
+1
+\N
+1
+\N
+0
+splitByString tokenizer
+1
+0
+1
+0
+-- tokenizer separators in phrase are removed before matching
+1
+1
+ngrams tokenizer
+1
+1
+1
+Column values: hasPhrase should be non-constant
+Default tokenizer (splitByNonAlpha)
+1
+5
+3
+4
+1
+splitByString tokenizer
+1
+1
+3
+ngrams tokenizer
+1
+3
+1
