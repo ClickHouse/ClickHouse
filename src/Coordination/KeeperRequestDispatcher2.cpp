@@ -164,7 +164,7 @@ KeeperRequestDispatcher2::KeeperRequestDispatcher2(KeeperServer * server_)
     dispatch_thread = ThreadFromGlobalPool([this] { dispatchThread(); });
     response_thread = ThreadFromGlobalPool([this] { responseThread(); });
 
-    in_flight_batches = std::vector<InFlightBatch>(coordination_settings[CoordinationSetting::max_in_flight_request_batches]);
+    in_flight_batches = std::vector<InFlightBatch>(std::max(size_t(coordination_settings[CoordinationSetting::max_in_flight_request_batches]), size_t(1)));
 }
 
 void KeeperRequestDispatcher2::shutdown(bool closed_all_connections)
