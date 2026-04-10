@@ -19,31 +19,43 @@ FROM numbers(1000000);
 
 SELECT '-- Standard reader pipeline';
 SET use_pipelined_mergetree_reader = 0;
-EXPLAIN PIPELINE
+EXPLAIN PIPELINE graph = 1, compact = 0
 SELECT sum(rest_col2) FROM t_pipe_explain PREWHERE prewhere_col = '42'
 SETTINGS max_threads = 2;
 
 SELECT '-- Pipelined reader pipeline';
 SET use_pipelined_mergetree_reader = 1;
-EXPLAIN PIPELINE
+EXPLAIN PIPELINE graph = 1, compact = 0
 SELECT sum(rest_col2) FROM t_pipe_explain PREWHERE prewhere_col = '42'
 SETTINGS max_threads = 2;
 
 SELECT '-- Standard reader: multiple prewhere conditions';
 SET use_pipelined_mergetree_reader = 0;
-EXPLAIN PIPELINE
+EXPLAIN PIPELINE graph = 1, compact = 0
 SELECT count() FROM t_pipe_explain PREWHERE key > 500000 AND prewhere_col = '50'
 SETTINGS max_threads = 2;
 
 SELECT '-- Pipelined reader: multiple prewhere conditions';
 SET use_pipelined_mergetree_reader = 1;
-EXPLAIN PIPELINE
+EXPLAIN PIPELINE graph = 1, compact = 0
 SELECT count() FROM t_pipe_explain PREWHERE key > 500000 AND prewhere_col = '50'
 SETTINGS max_threads = 2;
 
+SELECT '-- Standard reader: InOrder';
+SET use_pipelined_mergetree_reader = 0;
+EXPLAIN PIPELINE graph = 1, compact = 0
+SELECT sum(rest_col2) FROM t_pipe_explain PREWHERE prewhere_col = '42'
+SETTINGS max_threads = 1;
+
+SELECT '-- Pipelined reader: InOrder';
+SET use_pipelined_mergetree_reader = 1;
+EXPLAIN PIPELINE graph = 1, compact = 0
+SELECT sum(rest_col2) FROM t_pipe_explain PREWHERE prewhere_col = '42'
+SETTINGS max_threads = 1;
+
 SELECT '-- Pipelined reader: no prewhere (falls back to standard)';
 SET use_pipelined_mergetree_reader = 1;
-EXPLAIN PIPELINE
+EXPLAIN PIPELINE graph = 1, compact = 0
 SELECT count() FROM t_pipe_explain WHERE rest_col2 > 5000000
 SETTINGS max_threads = 2;
 
