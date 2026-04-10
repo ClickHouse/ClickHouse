@@ -1,6 +1,9 @@
 -- Verify that system.delta_lake_metadata_log and system.iceberg_metadata_log
 -- have the hostname column as the first column with type LowCardinality(String).
 
+-- System log tables are created lazily; force their preparation.
+SYSTEM FLUSH LOGS;
+
 SELECT name, type FROM system.columns
 WHERE table = 'delta_lake_metadata_log' AND database = 'system' AND name = 'hostname';
 
