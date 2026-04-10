@@ -44,6 +44,9 @@ if [ -f /tmp/clickhouse-ci-macos-runner.success ]; then
 else
   echo "No success marker found - proceeding with installation"
 
+  # Disable greedy system service
+  launchctl disable system/com.apple.bluetoothd
+
   # Install Homebrew if not already installed
   if ! sudo -u "$USER" -i command -v brew &> /dev/null; then
     echo "Installing Homebrew..."
@@ -136,5 +139,6 @@ fi
 # Download and execute cloud-init script
 INIT_ENVIRONMENT=${INIT_ENVIRONMENT:-macos}
 aws s3 cp "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
+sudo rm -rf /Users/ec2-user/actions-runner/_work
 sudo -u ec2-user -i bash -c "/Users/ec2-user/venv/bin/python /tmp/runner-init.py --environment \"$INIT_ENVIRONMENT\""
 reboot
