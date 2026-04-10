@@ -197,7 +197,7 @@ private:
     mutable long _pid = -1;
     std::string _file;
     int _line;
-    std::string_view _fmt_str;
+    std::string_view _fmt_str{};
     std::vector<std::string> _fmt_str_args;
 };
 
