@@ -1565,6 +1565,7 @@ class MergeTreeSettingsRandomizer:
         "max_buckets_in_map": lambda: random.randint(1, 100),
         "map_buckets_strategy": lambda: random.choice(["constant", "sqrt", "linear"]),
         "map_buckets_min_avg_size": lambda: random.randint(1, 1000),
+        "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
     }
 
     @staticmethod
