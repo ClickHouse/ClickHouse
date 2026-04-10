@@ -135,7 +135,7 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
 
     std::string output;
     char buf[4096];
-    ssize_t n;
+    ssize_t n = 0;
     while ((n = read(pipefd[0], buf, sizeof(buf))) > 0)
         output.append(buf, static_cast<size_t>(n));
     (void)close(pipefd[0]);
@@ -444,7 +444,7 @@ bool manageClickHouseUser(
             const std::string_view needle = "]]>";
             const std::string_view replacement = "]]]]><![CDATA[>";
             size_t pos = 0;
-            size_t found;
+            size_t found = 0;
             while ((found = src.find(needle, pos)) != std::string_view::npos)
             {
                 escaped_password.append(src, pos, found - pos);
@@ -878,8 +878,8 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
 
     /// --- Resolve identity ---
     uid_t current_uid = getuid();
-    uid_t run_uid;
-    gid_t run_gid;
+    uid_t run_uid = 0;
+    gid_t run_gid = 0;
     bool do_chown = true;
 
     if (getEnv("CLICKHOUSE_RUN_AS_ROOT") == "1" || getEnv("CLICKHOUSE_DO_NOT_CHOWN") == "1")

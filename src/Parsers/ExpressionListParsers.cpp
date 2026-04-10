@@ -2338,7 +2338,7 @@ static std::optional<ParsedCompoundInterval> parseCompoundIntervalString(
         {
             /// Non-leading fields: constrained per SQL standard.
             /// MONTH 0-11, HOUR 0-23, MINUTE 0-59, SECOND 0-59.
-            UInt64 max_value;
+            UInt64 max_value = 0;
             switch (range[i].kind)
             {
                 case Kind::Month: max_value = 11; break;

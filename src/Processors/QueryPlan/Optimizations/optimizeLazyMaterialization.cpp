@@ -71,7 +71,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(c
 /// Step is always Filter or Expression
 struct PlanStepWithRequiredDAGPositions
 {
-    IQueryPlanStep * step;
+    IQueryPlanStep * step = nullptr;
     /// Positions correspond to the outputs of the internal DAG.
     /// For the FilterStep, it is before the removal of filter columns.
     std::vector<bool> required_positions;
