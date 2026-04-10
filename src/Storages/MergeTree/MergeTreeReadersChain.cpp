@@ -257,7 +257,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     apply_patches(ColumnForPatch::Order::AfterEvaluatingDefaults);
 }
 
-void MergeTreeReadersChain::executePrewhereActions(MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader)
+void MergeTreeReadersChain::executePrewhereActions(MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader) const
 {
     /// When preserve_last_reader_additional_columns is set, tell the inner method
     /// this is not the last reader so it preserves additional_columns in the result.

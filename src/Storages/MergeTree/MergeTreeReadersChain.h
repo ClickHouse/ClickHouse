@@ -46,7 +46,7 @@ private:
         MergeTreeRangeReader & reader,
         ReadResult & result,
         const Block & previous_header,
-        bool is_last_reader);
+        bool is_last_reader) const;
 
     void readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result);
     void addPatchVirtuals(ReadResult & result, const Block & header) const;
