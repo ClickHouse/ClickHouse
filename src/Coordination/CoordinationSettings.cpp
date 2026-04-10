@@ -62,8 +62,6 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_reconnect_limit, 50, "If connection to a peer is silent longer than this limit * (multiplied by heartbeat interval), we re-establish the connection.", 0) \
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
-    DECLARE(Bool, asio_streaming_mode, false, "Enable NuRaft streaming mode, which allows sending subsequent requests without waiting for the response to previous requests", 0) \
-    DECLARE(UInt64, max_log_gap_in_stream, 0, "If non-zero, nuraft may send multiple append_entries requests without waiting for responses, with up to this many total entries in flight.", 0) \
     DECLARE(Bool, experimental_use_rocksdb, false, "Use rocksdb as backend storage", 0) \
     DECLARE(UInt64, rocksdb_load_batch_size, 1000, "Size of write batch used during snapshot loading", 0) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
@@ -88,6 +86,9 @@ namespace ErrorCodes
     DECLARE(UInt64, dispatch_busy_wait_sleep_us, 100, "Sleep duration in microseconds for busy-wait loops in the dispatch and response threads", 0) \
     DECLARE(Milliseconds, stream_suspect_retry_delay_ms, 1000, "Delay before reconnecting to the leader after a stream breaks while the new stream is suspected to be unhealthy", 0) \
     DECLARE(Milliseconds, stream_in_flight_drain_timeout_ms, 5000, "Maximum time to wait for in-flight requests to drain after a stream break (e.g. leader change) before dropping them", 0) \
+    DECLARE(Bool, nuraft_streaming_mode, false, "Enable NuRaft streaming mode, which allows multiple in-flight AppendEntries requests to followers instead of strict one-by-one pipeline. Reduces RTT bottleneck under heavy write loads. Beneficial in high-latency environments (e.g. cross-zone Kubernetes).", 0) \
+    DECLARE(UInt64, nuraft_max_log_gap_in_stream, 64, "Maximum number of in-flight log entries per follower when streaming mode is enabled. Acts as a throttling cap. Only effective when nuraft_streaming_mode is true.", 0) \
+    DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
@@ -334,6 +335,13 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     writeText("snapshot_transfer_chunk_size=", buf);
     write_int(coordination_settings[CoordinationSetting::snapshot_transfer_chunk_size]);
+
+    writeText("nuraft_streaming_mode=", buf);
+    write_bool(coordination_settings[CoordinationSetting::nuraft_streaming_mode]);
+    writeText("nuraft_max_log_gap_in_stream=", buf);
+    write_int(coordination_settings[CoordinationSetting::nuraft_max_log_gap_in_stream]);
+    writeText("nuraft_max_bytes_in_flight_in_stream=", buf);
+    write_int(coordination_settings[CoordinationSetting::nuraft_max_bytes_in_flight_in_stream]);
 }
 
 KeeperConfigurationAndSettingsPtr
