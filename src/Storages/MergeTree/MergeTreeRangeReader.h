@@ -293,6 +293,7 @@ public:
         /// Public accessors for pipelined MergeTree reader support.
         const FilterWithCachedCount & getFinalFilter() const { return final_filter; }
         size_t getTotalRowsPerGranule() const { return total_rows_per_granule; }
+        const Block & getAdditionalColumns() const { return additional_columns; }
 
     private:
         friend class MergeTreeRangeReader;

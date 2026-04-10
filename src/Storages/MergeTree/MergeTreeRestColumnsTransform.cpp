@@ -87,6 +87,7 @@ void MergeTreeRestColumnsTransform::transform(Chunk & chunk)
         /// Apply the PREWHERE filter to newly read rest columns.
         /// `continueReadingChain` reads `total_rows_per_granule` rows,
         /// but we need `num_rows` (the filtered count).
+        /// Note: read_result.additional_columns are already filtered by the prewhere chain.
         const auto & final_filter = read_result.getFinalFilter();
         if (read_result.num_rows != num_read_rows && final_filter.present())
         {
@@ -114,6 +115,16 @@ void MergeTreeRestColumnsTransform::transform(Chunk & chunk)
                 const auto & col = input_header.getByPosition(i);
                 if (!rest_column_names.contains(col.name))
                     additional_columns.insert({chunk_columns[i], col.type, col.name});
+            }
+
+            /// Include columns that were projected out by prewhere execution.
+            /// These are needed when a DEFAULT expression references a column
+            /// that was consumed by PREWHERE but isn't in the output header
+            /// (e.g., `ALTER ADD COLUMN x DEFAULT y+1` where `y` is used in PREWHERE).
+            for (const auto & col : read_result.getAdditionalColumns())
+            {
+                if (!additional_columns.has(col.name))
+                    additional_columns.insert(col);
             }
 
             addDummyColumnWithRowCount(additional_columns, read_result.num_rows);

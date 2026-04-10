@@ -11,11 +11,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_)
+MergeTreeReadersChain::MergeTreeReadersChain(
+    RangeReaders range_readers_, MergeTreePatchReaders patch_readers_,
+    bool preserve_last_reader_additional_columns_)
     : range_readers(std::move(range_readers_))
     , patch_readers(std::move(patch_readers_))
     , patches_results(patch_readers.size())
     , is_initialized(true)
+    , preserve_last_reader_additional_columns(preserve_last_reader_additional_columns_)
 {
 }
 
@@ -255,7 +258,11 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
 void MergeTreeReadersChain::executePrewhereActions(MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader)
 {
-    reader.executePrewhereActionsAndFilterColumns(result, previous_header, is_last_reader);
+    /// When preserve_last_reader_additional_columns is set, tell the inner method
+    /// this is not the last reader so it preserves additional_columns in the result.
+    /// The filtering logic below still uses the real is_last_reader.
+    bool is_last_for_additional_columns = is_last_reader && !preserve_last_reader_additional_columns;
+    reader.executePrewhereActionsAndFilterColumns(result, previous_header, is_last_for_additional_columns);
     result.checkInternalConsistency();
 
     if (!result.can_return_prewhere_column_without_filtering && is_last_reader)

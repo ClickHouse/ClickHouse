@@ -336,7 +336,9 @@ MergeTreeReadersChain MergeTreeReadTask::createPrewhereReadersChain(
 
     /// No main reader — this is a prewhere-only chain.
     /// Patches are not supported in the prewhere-only chain.
-    return MergeTreeReadersChain{std::move(range_readers), {}};
+    /// preserve_last_reader_additional_columns=true because the downstream
+    /// RestColumnsTransform needs projected-out columns for DEFAULT evaluation.
+    return MergeTreeReadersChain{std::move(range_readers), {}, /*preserve_last_reader_additional_columns_=*/ true};
 }
 
 void MergeTreeReadTask::initializeReadersChain(

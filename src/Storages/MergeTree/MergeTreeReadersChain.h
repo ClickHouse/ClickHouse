@@ -37,7 +37,8 @@ class MergeTreeReadersChain
 
 public:
     MergeTreeReadersChain() = default;
-    MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_);
+    MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_,
+                          bool preserve_last_reader_additional_columns_ = false);
     bool isInitialized() const { return is_initialized; }
 
     using ReadResult = MergeTreeRangeReader::ReadResult;
@@ -89,6 +90,12 @@ private:
     std::vector<std::deque<PatchReadResultPtr>> patches_results;
 
     bool is_initialized = false;
+
+    /// When true, the last reader in the chain still saves projected-out columns
+    /// in ReadResult::additional_columns. Needed by the pipelined reader where the
+    /// downstream RestColumnsTransform requires them for DEFAULT expression evaluation.
+    bool preserve_last_reader_additional_columns = false;
+
     LoggerPtr log = getLogger("MergeTreeReadersChain");
 };
 
