@@ -80,7 +80,9 @@ public:
 
     size_t sizeOfData() const override
     {
-        return size_of_data + sizeof(char);
+        /// Pad to alignment so that arrays of states (e.g. in -ForEach) keep each element aligned.
+        size_t alignment = alignOfData();
+        return (size_of_data + sizeof(char) + alignment - 1) / alignment * alignment;
     }
 
     size_t alignOfData() const override

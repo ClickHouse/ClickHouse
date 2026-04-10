@@ -121,7 +121,8 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_, createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
-        nested_size_of_data = nested_func->sizeOfData();
+        size_t alignment = nested_func->alignOfData();
+        nested_size_of_data = (nested_func->sizeOfData() + alignment - 1) / alignment * alignment;
 
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require at least one argument", getName());
