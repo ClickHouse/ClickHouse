@@ -20,6 +20,7 @@ public:
     MergeTreeReadChunkInfo(const MergeTreeReadChunkInfo & other)
         : ChunkInfoCloneable<MergeTreeReadChunkInfo>(other)
         , read_result(other.read_result)
+        , skipped_read_results(other.skipped_read_results)
         , task_info(other.task_info)
         , rest_reader(nullptr)
         , remaining_mark_ranges(other.remaining_mark_ranges)
@@ -29,9 +30,15 @@ public:
     using ReadResult = MergeTreeRangeReader::ReadResult;
 
     /// ReadResult from the prewhere step — carries rows_per_granule, filter,
-    /// started_ranges, and other metadata needed by continueReadingChain.
+    /// started_ranges, and other metadata needed by `continueReadingChain`.
     /// Stored as shared_ptr because ReadResult has private constructor.
     std::shared_ptr<ReadResult> read_result;
+
+    /// ReadResults from prewhere-filtered chunks (num_rows==0) that were skipped
+    /// between the previous emitted chunk and this one. `RestColumnsTransform`
+    /// must call `continueReadingChain` for each to advance its stream past
+    /// the filtered granules, keeping it in sync with the prewhere reader.
+    std::vector<std::shared_ptr<ReadResult>> skipped_read_results;
 
     /// Task info (part, columns, alter conversions). Shared across chunks from same task.
     MergeTreeReadTaskInfoPtr task_info;

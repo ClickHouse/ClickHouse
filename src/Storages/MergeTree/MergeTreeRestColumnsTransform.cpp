@@ -61,6 +61,16 @@ void MergeTreeRestColumnsTransform::transform(Chunk & chunk)
                 rest_reader->canReadIncompleteGranules());
         }
 
+        /// Advance the rest reader's stream past granules that were filtered out
+        /// by PREWHERE. These ReadResults had num_rows==0 so the source skipped
+        /// emitting them, but we must call `continueReadingChain` for each to keep
+        /// the rest reader's stream in sync with the prewhere reader's stream.
+        for (auto & skipped_result : read_chunk_info->skipped_read_results)
+        {
+            size_t skipped_rows = 0;
+            rest_range_reader->continueReadingChain(*skipped_result, skipped_rows);
+        }
+
         size_t num_read_rows = 0;
         rest_columns = rest_range_reader->continueReadingChain(read_result, num_read_rows);
 

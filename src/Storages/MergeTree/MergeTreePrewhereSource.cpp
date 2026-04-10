@@ -63,6 +63,10 @@ Block MergeTreePrewhereSource::computePrewhereHeader(
 
 bool MergeTreePrewhereSource::getNewTask()
 {
+    /// Discard accumulated skipped results from the previous task — they belong
+    /// to the old rest reader which will be replaced by the new task's reader.
+    skipped_read_results.clear();
+
     auto task = pool->getTask(task_idx, nullptr);
     if (!task)
         return false;
@@ -109,8 +113,12 @@ std::optional<Chunk> MergeTreePrewhereSource::tryGenerate()
 
         if (read_result.num_rows == 0)
         {
-            /// All rows were filtered by PREWHERE. Report progress and continue.
+            /// All rows were filtered by PREWHERE. Report progress, accumulate the
+            /// ReadResult for the rest transform (so it can advance its stream past
+            /// these filtered granules), and continue reading.
             progress(read_result.numReadRows(), read_result.numBytesRead());
+            skipped_read_results.push_back(
+                std::make_shared<MergeTreeRangeReader::ReadResult>(std::move(read_result)));
             continue;
         }
 
@@ -156,6 +164,7 @@ std::optional<Chunk> MergeTreePrewhereSource::tryGenerate()
         if (current_readers.main)
             chunk_info->rest_reader = std::move(current_readers.main);
 
+        chunk_info->skipped_read_results = std::move(skipped_read_results);
         chunk_info->remaining_mark_ranges = mark_ranges;
         chunk.getChunkInfos().add(std::move(chunk_info));
 

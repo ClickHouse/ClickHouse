@@ -52,6 +52,12 @@ private:
     std::vector<MarkRanges> patches_mark_ranges;
     bool need_new_task = true;
 
+    /// Accumulated ReadResults from prewhere-filtered chunks (num_rows==0).
+    /// Attached to the next non-empty chunk so `RestColumnsTransform` can
+    /// advance its rest reader stream past the filtered granules.
+    using ReadResultPtr = std::shared_ptr<MergeTreeRangeReader::ReadResult>;
+    std::vector<ReadResultPtr> skipped_read_results;
+
     ReadStepsPerformanceCounters read_steps_performance_counters;
     LoggerPtr log = getLogger("MergeTreePrewhereSource");
 
