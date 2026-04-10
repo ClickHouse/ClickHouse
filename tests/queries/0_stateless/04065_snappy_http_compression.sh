@@ -21,5 +21,6 @@ ACTUAL="${RESPONSE:0:20}"
 if [ "$ACTUAL" = "$EXPECTED" ]; then
     echo "OK: snappy framing stream identifier found"
 else
-    echo "FAIL: expected stream identifier starting with $EXPECTED, got $ACTUAL"
+    echo "FAIL: expected stream identifier starting with $EXPECTED, got $ACTUAL" >&2
+    exit 1
 fi

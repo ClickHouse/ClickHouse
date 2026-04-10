@@ -17,7 +17,9 @@
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <IO/SnappyReadBuffer.h>
+#if USE_SNAPPY
 #include <snappy.h>
+#endif
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>

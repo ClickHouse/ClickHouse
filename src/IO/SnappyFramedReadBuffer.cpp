@@ -110,13 +110,18 @@ bool SnappyFramedReadBuffer::nextImpl()
 
         if (chunk_type == CHUNK_TYPE_STREAM_IDENTIFIER)
         {
-            /// Stream identifier can appear again mid-stream; skip its payload.
+            /// Stream identifier can appear again mid-stream; validate its payload.
             if (chunk_data_size != 6)
                 throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
                     "Invalid snappy stream identifier chunk size{}",
                     getExceptionEntryWithFileName(*in));
             uint8_t payload[6];
             readExact(reinterpret_cast<char *>(payload), 6, /*allow_partial_eof=*/false);
+            /// The payload must be exactly "sNaPpY" (bytes 4..9 of the stream identifier).
+            if (memcmp(payload, STREAM_IDENTIFIER + 4, 6) != 0)
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Invalid snappy stream identifier payload{}",
+                    getExceptionEntryWithFileName(*in));
             continue;
         }
 

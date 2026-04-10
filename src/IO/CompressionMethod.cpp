@@ -15,7 +15,6 @@
 #include <IO/Bzip2ReadBuffer.h>
 #include <IO/Bzip2WriteBuffer.h>
 #include <IO/HadoopSnappyReadBuffer.h>
-#include <IO/SnappyFramedReadBuffer.h>
 #include <IO/SnappyWriteBuffer.h>
 
 #include "config.h"
@@ -155,7 +154,7 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
 #endif
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
-        return std::make_unique<SnappyFramedReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
+        return std::make_unique<HadoopSnappyReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #endif
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
