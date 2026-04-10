@@ -15,12 +15,12 @@ namespace ErrorCodes
 MergeTreePrewhereSource::MergeTreePrewhereSource(
     Block prewhere_header,
     MergeTreeReadPoolPtr pool_,
-    size_t thread_idx_,
+    size_t task_idx_,
     PrewhereExprInfo prewhere_actions_,
     MergeTreeReadTask::BlockSizeParams block_size_params_)
     : ISource(std::make_shared<const Block>(std::move(prewhere_header)))
     , pool(std::move(pool_))
-    , thread_idx(thread_idx_)
+    , task_idx(task_idx_)
     , prewhere_actions(std::move(prewhere_actions_))
     , block_size_params(block_size_params_)
 {
@@ -63,7 +63,7 @@ Block MergeTreePrewhereSource::computePrewhereHeader(
 
 bool MergeTreePrewhereSource::getNewTask()
 {
-    auto task = pool->getTask(thread_idx, nullptr);
+    auto task = pool->getTask(task_idx, nullptr);
     if (!task)
         return false;
 

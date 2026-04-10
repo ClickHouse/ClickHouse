@@ -450,6 +450,13 @@ private:
         Names required_columns,
         PoolSettings pool_settings);
 
+    /// Build a standard MergeTreeSelectProcessor pipeline from a pre-built pool.
+    /// Used as a fallback when the pipelined reader cannot be applied.
+    Pipe buildStandardPipeline(
+        MergeTreeReadPoolPtr pool,
+        size_t num_streams,
+        UInt64 total_rows);
+
     Pipe readFromPoolPipelined(
         RangesInDataParts parts_with_range,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -463,6 +470,14 @@ private:
         PoolSettings pool_settings);
 
     Pipe readInOrder(
+        RangesInDataParts parts_with_ranges,
+        const MergeTreeIndexBuildContextPtr & index_build_context,
+        Names required_columns,
+        PoolSettings pool_settings,
+        ReadType read_type,
+        UInt64 limit);
+
+    Pipe readInOrderPipelined(
         RangesInDataParts parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,
         Names required_columns,

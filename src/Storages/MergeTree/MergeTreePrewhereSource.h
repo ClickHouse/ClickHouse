@@ -22,7 +22,7 @@ public:
     MergeTreePrewhereSource(
         Block prewhere_header,
         MergeTreeReadPoolPtr pool_,
-        size_t thread_idx_,
+        size_t task_idx_,
         PrewhereExprInfo prewhere_actions_,
         MergeTreeReadTask::BlockSizeParams block_size_params_);
 
@@ -40,7 +40,7 @@ protected:
 
 private:
     MergeTreeReadPoolPtr pool;
-    size_t thread_idx;
+    size_t task_idx;
     PrewhereExprInfo prewhere_actions;
     MergeTreeReadTask::BlockSizeParams block_size_params;
 
