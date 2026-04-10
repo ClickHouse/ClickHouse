@@ -30,11 +30,13 @@ KeeperSession::KeeperSession(
     int64_t session_id_,
     ResponseCallback callback_,
     KeeperSessionRegistry & registry_,
+    KeeperSubqueuePtr subqueue_,
     LocalReadCallback local_read_dispatch_,
     QuorumPushCallback quorum_push_)
     : session_id(session_id_)
     , callback(std::make_shared<const ResponseCallback>(std::move(callback_)))
     , registry(&registry_)
+    , subqueue(std::move(subqueue_))
     , local_read_dispatch(std::move(local_read_dispatch_))
     , quorum_push(std::move(quorum_push_))
 {

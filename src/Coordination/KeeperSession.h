@@ -15,6 +15,9 @@
 namespace DB
 {
 
+class KeeperSubqueue;
+using KeeperSubqueuePtr = std::shared_ptr<KeeperSubqueue>;
+
 class KeeperSessionRegistry;
 
 /// Server-side state for a single Keeper client connection.
@@ -77,10 +80,12 @@ public:
 
     /// @param registry  Non-owning pointer to the session registry (outlives all sessions).
     ///                  Sessions access admission control and settings.
+    /// @param subqueue  The assigned subqueue in `KeeperRequestsQueue` for this session.
+    ///                  Stored for future use; quorum requests still go through `quorum_push`.
     /// @param local_read_dispatch  Callback for local read execution. Owned by the session.
     /// @param quorum_push  Callback to push quorum requests to the global queue.
     KeeperSession(int64_t session_id, ResponseCallback callback, KeeperSessionRegistry & registry,
-                  LocalReadCallback local_read_dispatch, QuorumPushCallback quorum_push);
+                  KeeperSubqueuePtr subqueue, LocalReadCallback local_read_dispatch, QuorumPushCallback quorum_push);
 
     int64_t getSessionID() const { return session_id; }
 
@@ -206,6 +211,10 @@ private:
 
     /// Non-owning pointer to the session registry for admission control and settings.
     KeeperSessionRegistry * registry;
+
+    /// Handle to the assigned subqueue in `KeeperRequestsQueue`.
+    /// Stored for future use; quorum requests still go through `quorum_push` for now.
+    KeeperSubqueuePtr subqueue;
 
     /// Local read dispatch callback. Set once at construction.
     LocalReadCallback local_read_dispatch;

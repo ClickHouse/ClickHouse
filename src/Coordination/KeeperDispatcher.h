@@ -12,6 +12,7 @@
 #include <span>
 #include <unordered_set>
 #include <Coordination/KeeperServer.h>
+#include <Coordination/KeeperRequestsQueue.h>
 #include <Coordination/KeeperSessionRegistry.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
@@ -33,6 +34,12 @@ private:
 
     /// Size depends on coordination settings
     std::unique_ptr<RequestsQueue> requests_queue;
+
+    /// Sharded request queue (new). Sessions obtain subqueue handles from it.
+    /// Data flow unchanged for now -- `requestThread` still reads from `requests_queue`.
+    std::unique_ptr<KeeperRequestsQueue> requests_queue_new;
+    KeeperSubqueuePtr system_subqueue;  /// For session-less requests (SessionID, dead-session Close).
+
     SnapshotsQueue snapshots_queue{1};
 
     /// More than 1k updates is definitely misconfiguration.

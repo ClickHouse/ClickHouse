@@ -76,6 +76,8 @@ namespace ErrorCodes
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
     DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 6 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
     DECLARE(UInt64, max_session_active_requests, 0, "Maximum number of in-flight requests per session. 0 means unlimited.", 0) \
+    DECLARE(NonZeroUInt64, request_queue_num_shards, 10, "Number of shards in the request queue. Each session is assigned to one shard, reducing lock contention under concurrent load", 0) \
+    DECLARE(UInt64, max_batch_time_microseconds, 50, "Max time (microseconds) from oldest request to batch submission. Larger values build bigger batches at the cost of latency.", 0) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
     DECLARE(Bool, nuraft_streaming_mode, false, "Enable NuRaft streaming mode, which allows multiple in-flight AppendEntries requests to followers instead of strict one-by-one pipeline. Reduces RTT bottleneck under heavy write loads. Beneficial in high-latency environments (e.g. cross-zone Kubernetes).", 0) \
     DECLARE(UInt64, nuraft_max_log_gap_in_stream, 64, "Maximum number of in-flight log entries per follower when streaming mode is enabled. Acts as a throttling cap. Only effective when nuraft_streaming_mode is true.", 0) \

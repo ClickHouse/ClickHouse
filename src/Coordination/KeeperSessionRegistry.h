@@ -13,6 +13,8 @@
 namespace DB
 {
 
+class KeeperRequestsQueue;
+
 /// Callback invoked by `routeResponse` and `terminateSession` to deliver responses to clients.
 /// Must be safe for concurrent invocation: `routeResponse` (from the Raft commit thread or
 /// read path) and `terminateSession` (from dead session cleaner) may invoke copies of the
@@ -28,7 +30,9 @@ public:
     KeeperSessionRegistry() = default;
 
     /// Initialize with settings from `KeeperContext`. Must be called before `registerSession`.
-    void initialize(KeeperContextPtr keeper_context, KeeperSession::LocalReadCallback local_read_dispatch,
+    /// @param requests_queue  Shared request queue -- sessions obtain subqueue handles from it.
+    void initialize(KeeperContextPtr keeper_context, KeeperRequestsQueue & requests_queue,
+                    KeeperSession::LocalReadCallback local_read_dispatch,
                     KeeperSession::QuorumPushCallback quorum_push);
 
     /// Whether reads go through Raft (`quorum_reads` setting).
@@ -118,6 +122,9 @@ private:
 
     /// Quorum push callback, passed to every session at construction.
     KeeperSession::QuorumPushCallback quorum_push_;
+
+    /// Non-owning pointer to the shared request queue. Sessions obtain subqueue handles from it.
+    KeeperRequestsQueue * requests_queue_ = nullptr;
 };
 
 }

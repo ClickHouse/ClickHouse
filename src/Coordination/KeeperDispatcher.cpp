@@ -78,6 +78,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 max_session_active_requests;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
+    extern const CoordinationSettingsNonZeroUInt64 request_queue_num_shards;
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
     extern const CoordinationSettingsMilliseconds sleep_before_leader_change_ms;
 }
@@ -636,8 +637,21 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size]);
 
+    /// Build the sharded request queue. One subqueue per hardware thread is a
+    /// reasonable default; the session-to-subqueue mapping is deterministic so
+    /// the number of subqueues does not need to match the number of sessions.
+    {
+        const auto max_queue_size = configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size];
+        const auto num_shards = configuration_and_settings->coordination_settings[CoordinationSetting::request_queue_num_shards];
+        requests_queue_new = std::make_unique<KeeperRequestsQueue>(
+            /*num_subqueues=*/num_shards,
+            /*max_queue_size=*/max_queue_size);
+        system_subqueue = requests_queue_new->getSubqueue(0);
+    }
+
     session_registry_.initialize(
         keeper_context,
+        *requests_queue_new,
         [this](std::span<SessionRequestPtr> batch) { dispatchLocalReads(batch); },
         [this](const SessionRequestPtr & keeper_req) -> bool
         {
@@ -732,6 +746,9 @@ void KeeperDispatcher::shutdown()
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
+
+            if (requests_queue_new)
+                requests_queue_new->signalShutdown();
 
             if (requests_queue)
             {
