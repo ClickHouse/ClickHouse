@@ -655,7 +655,7 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
         }
         catch (...)
         {
-            LOG_DEBUG(log, "Iceberg truncate cleanup failed");
+            tryLogCurrentException(log, "Iceberg truncate cleanup failed"); // Ok to swallow — best-effort cleanup
         }
     };
 
