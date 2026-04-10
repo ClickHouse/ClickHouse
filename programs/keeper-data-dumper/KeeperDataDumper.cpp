@@ -68,7 +68,7 @@ int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv)
     Poco::Logger::root().setLevel("trace");
 
     auto logger = getLogger("keeper-dumper");
-    /// Discard responses -- no client to deliver to.
+    /// Discard responses — no client to deliver to.
     ResponseRouter noop_router = [](int64_t, Coordination::ZooKeeperResponsePtr, Coordination::ZooKeeperRequestPtr) { return true; };
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();

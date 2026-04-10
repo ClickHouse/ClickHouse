@@ -5,6 +5,7 @@
 
 #    include <limits>
 #    include <mutex>
+#    include <Coordination/SessionRequest.h>
 #    include <Coordination/CoordinationSettings.h>
 #    include <Coordination/FourLetterCommand.h>
 #    include <Core/Types.h>
@@ -29,7 +30,6 @@
 #    include <Common/HistogramMetrics.h>
 #    include <Common/OpenTelemetryTracingContext.h>
 #    include <Coordination/KeeperCommon.h>
-#    include <Coordination/SessionRequest.h>
 #    include <Common/ZooKeeper/KeeperSpans.h>
 
 #    include <Compression/CompressionFactory.h>
@@ -487,10 +487,10 @@ void KeeperTCPHandler::runImpl()
     /// TODO: bound the queue and use tryPush + finish() to disconnect slow clients
     /// instead of blocking Keeper threads. For now, unbounded to match old behavior.
     response_queue = std::make_shared<ConcurrentBoundedQueue<SessionRequestPtr>>(std::numeric_limits<size_t>::max());
-    /// Lifetime contract: the callback captures `response_queue` and `poll_wrapper` by
-    /// `shared_ptr`. The callback is stored in the session (via `shared_ptr<const>`).
-    /// `finalize(SessionExpired/Shutdown)` clears the callback, ensuring the captures
-    /// are released before `KeeperTCPHandler::runImpl` exits and destroys its locals.
+    /// Lifetime contract: the callback captures response_queue and poll_wrapper by
+    /// shared_ptr. The callback is stored in the session (via shared_ptr<const>).
+    /// finalize(SessionExpired/Shutdown) clears the callback, ensuring the captures
+    /// are released before KeeperTCPHandler::runImpl exits and destroys its locals.
     auto response_callback = [captured_response_queue = response_queue, my_poll_wrapper = this->poll_wrapper](std::vector<SessionRequestPtr> batch)
     {
         UInt32 count = static_cast<UInt32>(batch.size());
@@ -499,16 +499,16 @@ void KeeperTCPHandler::runImpl()
             if (!captured_response_queue->push(std::move(req)))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response into the queue");
         }
-        /// Write the exact count as UInt32 -- one syscall per batch.
+        /// Write the exact count as UInt32 — one syscall per batch.
         /// The drain side reads and sums these to know exactly how many to pop.
-        /// POSIX guarantees atomic writes up to PIPE_BUF (>=512 bytes). A 4-byte UInt32 write is always atomic.
+        /// POSIX guarantees atomic writes up to PIPE_BUF (≥512 bytes). A 4-byte UInt32 write is always atomic. The read side uses buffered reads which cannot produce short reads for complete pipe writes.
         ssize_t res = write(my_poll_wrapper->getResponseFD(), &count, sizeof(count));
         if (unlikely(res != sizeof(count)))
             LOG_WARNING(getLogger("KeeperTCPHandler"), "Pipe write failed: res={}, errno={}", res, errno);
     };
     /// Cache the session pointer for the lifetime of this connection.
-    /// Avoids a `findSession` lookup (shared_lock + map find + atomic refcount)
-    /// on every `putRequest` call.
+    /// Avoids a findSession lookup (shared_lock + map find + atomic refcount)
+    /// on every putRequest call.
     cached_session = keeper_dispatcher->registerSession(session_id, std::move(response_callback));
 
     Stopwatch logging_stopwatch;
@@ -556,7 +556,7 @@ void KeeperTCPHandler::runImpl()
                 packageReceived();
                 log_long_operation("Receiving request");
 
-                if (received.opnum == Coordination::OpNum::Close)
+                if (received.opnum == Coordination::OpNum::Close && received.accepted)
                 {
                     LOG_DEBUG(log, "Received close event with xid {} for session id #{}", received.xid, session_id);
                     close_xid = received.xid;
@@ -567,22 +567,26 @@ void KeeperTCPHandler::runImpl()
                     LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
                 }
                 else if (received.accepted)
+                {
+                    /// Only track accepted requests — inline rejections already
+                    /// sent an error response and won't produce a completion.
                     operations[received.xid] = Poco::Timestamp();
+                }
 
                 /// Each request restarts session stopwatch
                 session_stopwatch.restart();
             }
 
-            /// Pop exactly `responses_count` items -- the pipe carries exact counts.
+            /// Pop exactly `responses_count` items — the pipe carries exact counts.
             while (result.responses_count != 0)
             {
                 SessionRequestPtr completed_request;
                 if (!response_queue->tryPop(completed_request))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
 
-                /// nullptr sentinel from `finalizeWithErrors` -- server-side disconnect.
-                /// The session is already finalized and detached by the caller;
-                /// just exit.
+                /// nullptr sentinel from `finalizeWithErrors` — server-side disconnect.
+                /// The session is already finalized and detached by the caller
+                /// (e.g. `failBatchSessions` → `terminateSession`); just exit.
                 if (!completed_request)
                 {
                     LOG_DEBUG(log, "Session #{} received disconnect sentinel, closing connection", session_id);
@@ -605,7 +609,8 @@ void KeeperTCPHandler::runImpl()
                 packageSent();
 
                 /// Watch notifications and direct delivery wrappers have no
-                /// `request` -- skip lifecycle transitions.
+                /// `request` — skip lifecycle transitions to avoid unnecessary
+                /// CurrentMetrics bumps and clock reads on the hot watch path.
                 if (request)
                     completed_request->setState(RequestState::SendingResponse);
                 try
@@ -618,7 +623,8 @@ void KeeperTCPHandler::runImpl()
                 catch (...)
                 {
                     if (request)
-                        completed_request->setState(RequestState::Sent);
+                        completed_request->setState(RequestState::Sent, {},
+                            OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
                     throw;
                 }
 
@@ -737,6 +743,8 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
 
 KeeperTCPHandler::ReceivedRequest KeeperTCPHandler::receiveRequest()
 {
+    const UInt64 receive_start_time_us = ZooKeeperOpentelemetrySpans::now();
+
     std::optional<LimitReadBuffer> limited_buffer_holder;
     /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size
     /// (this should be done on per-request basis)
@@ -797,7 +805,7 @@ KeeperTCPHandler::ReceivedRequest KeeperTCPHandler::receiveRequest()
         }
     }
 
-    /// Create SessionRequest at the earliest point -- all lifecycle
+    /// Create SessionRequest at the earliest point — all OTel lifecycle
     /// goes through setState from here on.
     using namespace std::chrono;
     auto keeper_req = std::make_shared<SessionRequest>();
@@ -806,6 +814,7 @@ KeeperTCPHandler::ReceivedRequest KeeperTCPHandler::receiveRequest()
     keeper_req->cached_bytes_size = request->bytesSize();
     keeper_req->time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     keeper_req->use_xid_64 = use_xid_64;
+    keeper_req->receive_start_time_us = receive_start_time_us;
     keeper_req->setState(RequestState::Received);
 
     auto error = keeper_dispatcher->putRequest(std::move(keeper_req), cached_session);

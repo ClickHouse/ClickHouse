@@ -643,7 +643,7 @@ int dumpStateMachine(
     Poco::Logger::root().setLevel("trace");
 
     auto logger = getLogger("keeper-utils");
-    /// Discard responses -- no client to deliver to.
+    /// Discard responses — no client to deliver to.
     ResponseRouter noop_router = [](int64_t, Coordination::ZooKeeperResponsePtr, Coordination::ZooKeeperRequestPtr) { return true; };
     SnapshotsQueue snapshots_queue{1};
 
@@ -753,8 +753,8 @@ int deserializeChangelog(
                 desc->from_log_index + entry_storage.size());
         }
 
-        /// Discard responses -- no client to deliver to.
-        ResponseRouter noop_router = [](int64_t, Coordination::ZooKeeperResponsePtr, Coordination::ZooKeeperRequestPtr) { return true; };
+        /// Discard responses — no client to deliver to.
+    ResponseRouter noop_router = [](int64_t, Coordination::ZooKeeperResponsePtr, Coordination::ZooKeeperRequestPtr) { return true; };
         SnapshotsQueue snapshots_queue{1};
         KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", fs::temp_directory_path() / "keeper-utils-log"));

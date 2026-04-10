@@ -280,6 +280,13 @@
     M(KeeperRemoveWatchRequest) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
+    M(KeeperFlushTotalMicroseconds) \
+    M(KeeperRaftPrecommitMicroseconds) \
+    M(KeeperRaftConsensusWaitMicroseconds) \
+    M(KeeperDispatcherInflightWaitMicroseconds) \
+    M(KeeperStateInRaftMicroseconds) \
+    M(KeeperStatePendingLocalMicroseconds) \
+    M(KeeperStateCompletedMicroseconds) \
     M(KeeperSnapshotWrittenBytes) \
     M(KeeperSnapshotFileSyncMicroseconds) \
     M(KeeperSnapshotRemoteLoaderErrors) \

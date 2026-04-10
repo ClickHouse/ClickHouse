@@ -39,6 +39,7 @@ namespace ProfileEvents
     extern const Event KeeperLogsPrefetchedEntries;
     extern const Event KeeperChangelogWrittenBytes;
     extern const Event KeeperChangelogFileSyncMicroseconds;
+    extern const Event KeeperFlushTotalMicroseconds;
 }
 
 namespace DB
@@ -2268,6 +2269,9 @@ void Changelog::writeThread()
             last_durable_idx = flush.index;
         }
 
+        const UInt64 flush_total_us = clock_gettime_ns() / 1000 - flush.enqueue_time_us;
+        ProfileEvents::increment(ProfileEvents::KeeperFlushTotalMicroseconds, flush_total_us);
+
         pending_appends = 0;
     };
 
@@ -2601,7 +2605,7 @@ std::shared_ptr<bool> Changelog::flushAsync()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before flushing records");
 
     auto failed = std::make_shared<bool>(false);
-    bool pushed = write_operations.push(Flush{max_log_id, failed});
+    bool pushed = write_operations.push(Flush{max_log_id, failed, clock_gettime_ns() / 1000});
 
     if (!pushed)
     {

@@ -26,16 +26,16 @@ KeeperOverDispatcher::KeeperOverDispatcher(
     LOG_DEBUG(&Poco::Logger::get("KeeperOverDispatcher"), "Created KeeperOverDispatcher session {} with timeout {} ms", session_id, session_timeout_.totalMilliseconds());
 
     /// Register session with a callback that dispatches responses based on XID.
-    /// Capture `callback_state` by `shared_ptr` so the lambda remains valid even after
-    /// this `KeeperOverDispatcher` is destroyed (prevents use-after-free when
-    /// `routeResponse` invokes the callback outside its mutex).
+    /// Capture callback_state by shared_ptr so the lambda remains valid even after
+    /// this KeeperOverDispatcher is destroyed (prevents use-after-free when
+    /// routeResponse invokes the callback outside its mutex).
     auto state = callback_state;
     auto response_callback = [state](std::vector<DB::SessionRequestPtr> batch)
     {
         for (auto & req : batch)
         {
-            /// nullptr sentinel from `finalizeWithErrors` -- session terminated.
-            /// Mark expired so `KeeperHTTPClient` recreates the in-process client.
+            /// nullptr sentinel from finalizeWithErrors — session terminated.
+            /// Mark expired so KeeperHTTPClient recreates the in-process client.
             if (!req)
             {
                 state->expired = true;
@@ -87,7 +87,7 @@ void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCall
         callback_state->callbacks[request->xid] = std::move(callback);
     }
 
-    /// In-process path -- skip setState(Received) and receive_start_time_us
+    /// In-process path — skip setState(Received) and receive_start_time_us
     /// because there is no wire receive. use_xid_64 stays false (default).
     using namespace std::chrono;
     auto keeper_req = std::make_shared<DB::SessionRequest>();

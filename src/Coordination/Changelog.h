@@ -470,6 +470,7 @@ private:
     {
         uint64_t index;
         std::shared_ptr<bool> failed;
+        UInt64 enqueue_time_us;
     };
 
     using WriteOperation = std::variant<AppendLog, Flush>;
