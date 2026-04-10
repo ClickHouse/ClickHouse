@@ -3322,7 +3322,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("enable-progress-table-toggle", po::value<bool>()->default_value(true), "Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table enabled.")
 
         ("disable_suggestion,A", "Disable loading suggestions. Note that suggestions are loaded asynchronously through a second connection to ClickHouse server. Recommended when pasting queries with TAB characters.") /// Shorthand -A like in MySQL client
-        ("wait_for_suggestions_to_load", "Load suggestion data synchonously")
+        ("wait_for_suggestions_to_load", "Load suggestion data synchronously")
         ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch")
 
         ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -3548,7 +3548,10 @@ void ClientBase::runInteractive()
     initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    /// AI SQL generation is disabled for the embedded client (SSH and WebSocket protocols)
+    /// because it accesses the environment (API keys) which could be a security concern.
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -3805,7 +3808,8 @@ void ClientBase::runNonInteractive()
         initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     if (!buzz_house && !queries_files.empty())

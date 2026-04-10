@@ -61,6 +61,7 @@
 #include <algorithm>
 #include <iterator>
 #include <memory>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -959,14 +960,16 @@ Pipe ReadFromMergeTree::readByLayers(
                 sort_description.emplace_back(sorting_columns[i], input_order_info->direction);
         }
 
+        ReadType in_order_read_type = input_order_info->direction > 0 ? ReadType::InOrder : ReadType::InReverseOrder;
+
         reading_step_getter
-            = [this, &index_build_context, &in_order_column_names_to_read, &info, sorting_expr, &sort_description](auto parts)
+            = [this, &index_build_context, &in_order_column_names_to_read, &info, sorting_expr, &sort_description, in_order_read_type](auto parts)
         {
             auto pipe = this->read(
                 std::move(parts),
                 index_build_context,
                 in_order_column_names_to_read,
-                ReadType::InOrder,
+                in_order_read_type,
                 1 /* num_streams */,
                 0 /* min_marks_for_concurrent_read */,
                 info.use_uncompressed_cache);
@@ -1971,16 +1974,17 @@ void ReadFromMergeTree::buildIndexes(
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
 
-        /// pass empty filter when skipping partition pruning so the objects exist but useless
-        ActionsDAGWithInversionPushDown empty_filter(nullptr, query_context);
-        const auto & effective_filter = skip_partition_pruning_ ? empty_filter : filter_dag;
-        indexes->minmax_idx_condition.emplace(effective_filter, query_context, minmax_columns_names, minmax_expression_actions);
+        bool skip_partition_analysis = skip_partition_pruning_ || !settings[Setting::use_partition_pruning];
+        indexes->minmax_idx_condition.emplace(
+            filter_dag, query_context, minmax_columns_names, minmax_expression_actions,
+            /* single_point_ = */ false,
+            /* skip_analysis_ = */ skip_partition_analysis);
         indexes->partition_pruner.emplace(
             metadata_snapshot,
-            effective_filter,
+            filter_dag,
             query_context,
             false /* strict */,
-            !settings[Setting::use_partition_pruning] /* skip_analysis */);
+            skip_partition_analysis);
     }
 
     indexes->part_values
@@ -2438,6 +2442,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         log,
         result.index_stats);
 
+    res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
+        res_parts, metadata_snapshot, query_info_, mutations_snapshot, context_, log, result.index_stats);
+
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
         query_info_,
         metadata_snapshot->getColumns().getAllPhysical(),
@@ -2456,10 +2463,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     parts_before_pk = res_parts.size();
 
 
-    /// Check if we have projections, as that can determine whether we fail during reading parts
-    /// or analyze projection candidates to see if we can serve the query more efficiently
+    /// Check if we have projections or exact-range analysis, as that can determine whether we fail
+    /// during reading parts or analyze projection / exact-count candidates to serve the query more
+    /// efficiently.  When find_exact_ranges is true the caller (optimizeUseAggregateProjection) can
+    /// compute exact counts from the primary key without reading data, so the max_rows_to_read limit
+    /// on the full table scan should not cause an immediate failure.
     bool projection_parts_exist = std::any_of(res_parts.begin(), res_parts.end(), [](const auto & part) { return part.data_part->isProjectionPart(); });
-    bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist;
+    bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist || find_exact_ranges;
     bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (has_projections || find_exact_ranges);
 
     auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
@@ -3224,6 +3234,16 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
         return false;
 
+    /// Vector similarity indexes are "statically" analyzed; top-k filtering with a threshold tracker needs a reader.
+    const bool will_have_skip_index_reader =
+        indexes->skip_indexes.skip_index_for_top_k_filtering
+        || std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
+        {
+            return !idx.index->isVectorSimilarityIndex();
+        });
+    if (!will_have_skip_index_reader)
+        return false;
+
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_skip_indexes_on_data_read])
         return false;
@@ -3260,7 +3280,16 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         /// Do not keep data parts in snapshot.
         /// They are stored separately, and some could be released after PK analysis.
-        storage_snapshot->data = std::make_unique<MergeTreeData::SnapshotData>();
+        /// Keep the underlying storage alive because part teardown still reaches
+        /// `data_part->storage.getContext()`.
+        auto stripped_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
+        if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        {
+            stripped_snapshot_data->storage = snapshot_data->storage;
+            stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
+        }
+
+        storage_snapshot->data = std::move(stripped_snapshot_data);
     }
 
     /// Check if we should apply row policy and prewhere after FINAL instead of during reading
@@ -3317,6 +3346,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     }
 
     shared_virtual_fields.emplace("_sample_factor", result.sampling.used_sample_factor);
+    shared_virtual_fields.emplace("_table", data.getStorageID().getTableName());
 
     LOG_DEBUG(
         log,
@@ -3343,9 +3373,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedPartsTotal, result.total_parts);
-    ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
-    ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
     ProfileEvents::increment(ProfileEvents::SelectedMarksTotal, result.total_marks_pk);
+    if (!supportsSkipIndexesOnDataRead())
+    {
+        ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
+        ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
+    }
 
     auto query_id_holder = result.checkLimits(*context, data, *data_settings);
 
@@ -3603,6 +3636,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
+
+    /// If the actual number of streams is less than what was originally requested,
+    /// the read step deliberately reduced streams (e.g. because data is small).
+    /// Downstream steps like AggregatingStep use this to avoid expanding the pipeline
+    /// back to max_threads, which would create overhead from mostly-empty streams.
+    if (pipeline.getNumStreams() < requested_num_streams)
+        pipeline.setReadStreamCountWasReduced(true);
+
     pipeline.addContext(context);
     // Attach QueryIdHolder if needed
     if (query_id_holder)
@@ -3615,10 +3656,12 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
     {
         case ReadFromMergeTree::IndexType::None:
             return "None";
-        case ReadFromMergeTree::IndexType::MinMax:
-            return "MinMax";
+        case ReadFromMergeTree::IndexType::PartitionMinMax:
+            return "Partition Min-Max";
         case ReadFromMergeTree::IndexType::Partition:
             return "Partition";
+        case ReadFromMergeTree::IndexType::Statistics:
+            return "Statistics";
         case ReadFromMergeTree::IndexType::PrimaryKey:
             return "PrimaryKey";
         case ReadFromMergeTree::IndexType::Skip:
@@ -3647,13 +3690,18 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 {
     const auto & result = getAnalysisResult();
     std::string prefix = format_settings.detail_prefix;
-    format_settings.out << prefix << "ReadType: " << readTypeToString(result.read_type) << '\n';
+    std::string_view read_type_label = format_settings.pretty ? "Read type: " : "ReadType: ";
+    format_settings.out << prefix << read_type_label << readTypeToString(result.read_type) << '\n';
 
     if (!result.index_stats.empty())
     {
-        format_settings.out << prefix << "Parts: " << result.index_stats.back().num_parts_after << '\n';
-        format_settings.out << prefix << "Granules: " << result.index_stats.back().num_granules_after << '\n';
+        std::string_view delimiter = format_settings.pretty ? " | " : "\n";
+        format_settings.out << prefix << "Parts: " << result.index_stats.back().num_parts_after << delimiter;
+        format_settings.out << (format_settings.pretty ? "" : prefix) << "Granules: " << result.index_stats.back().num_granules_after << '\n';
     }
+
+    if (format_settings.pretty)
+        QueryPlanFormat::formatOutputColumns(format_settings.out, *this, prefix);
 
     if (query_info.prewhere_info || query_info.row_level_filter)
     {
