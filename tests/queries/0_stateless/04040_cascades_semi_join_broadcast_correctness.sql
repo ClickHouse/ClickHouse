@@ -69,6 +69,18 @@ SETTINGS distributed_plan_execute_locally = 1;
 SELECT count() FROM test_lineitem RIGHT SEMI JOIN test_orders ON l_orderkey = o_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
+-- Test with RIGHT ANY JOIN using old ANY semantics (RightAny strictness).
+-- RightAny is not commutable, so broadcast guard must block it.
+EXPLAIN PLAN keep_logical_steps = 1
+SELECT count() FROM test_orders RIGHT ANY JOIN test_lineitem ON o_orderkey = l_orderkey
+SETTINGS any_join_distinct_right_table_keys = 1;
+
+SELECT count() FROM test_orders RIGHT ANY JOIN test_lineitem ON o_orderkey = l_orderkey
+SETTINGS distributed_plan_execute_locally = 1, any_join_distinct_right_table_keys = 1;
+
+SELECT count() FROM test_orders RIGHT ANY JOIN test_lineitem ON o_orderkey = l_orderkey
+SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0, any_join_distinct_right_table_keys = 1;
+
 -- Test with explicit LEFT SEMI JOIN
 EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_orders LEFT SEMI JOIN test_lineitem ON l_orderkey = o_orderkey;

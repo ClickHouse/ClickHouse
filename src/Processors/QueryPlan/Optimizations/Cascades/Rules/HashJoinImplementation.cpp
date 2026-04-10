@@ -91,16 +91,20 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
         }
     }
 
-    /// Check if broadcast is unsafe for semi/anti joins.
+    /// Check if broadcast is unsafe when the RIGHT side produces output rows.
     /// In a broadcast join, the RIGHT side is replicated to all nodes and the LEFT side
-    /// is partitioned.  For semi/anti joins where the RIGHT side produces output rows
-    /// (JoinKind::Right with Semi/Anti strictness), replicating the right side causes
-    /// duplicate output: each node independently matches its local left slice against
-    /// the full right table, so the same right-side row can be emitted by multiple nodes.
+    /// is partitioned.  For joins where the RIGHT side produces output rows
+    /// (JoinKind::Right with Semi/Anti/Any/RightAny strictness), replicating the right
+    /// side causes duplicate output: each node independently matches its local left
+    /// slice against the full right table, so the same right-side row can be emitted
+    /// by multiple nodes.
     const auto join_kind = join_step->getJoinOperator().kind;
     const auto join_strictness = join_step->getJoinOperator().strictness;
-    const bool is_semi_or_anti = (join_strictness == JoinStrictness::Semi || join_strictness == JoinStrictness::Anti);
-    const bool right_output_unsafe = is_semi_or_anti && (join_kind == JoinKind::Right);
+    const bool right_output_unsafe = (join_kind == JoinKind::Right)
+        && (join_strictness == JoinStrictness::Semi
+            || join_strictness == JoinStrictness::Anti
+            || join_strictness == JoinStrictness::Any
+            || join_strictness == JoinStrictness::RightAny);
 
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)
