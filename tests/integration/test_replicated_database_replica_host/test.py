@@ -189,6 +189,64 @@ def test_replica_host_multiple_databases(started_cluster):
         node2.query(f"DROP DATABASE {db_name} SYNC")
 
 
+def test_host_id_migration_on_restart(started_cluster):
+    """Test that startup succeeds and ZooKeeper is updated when host_id changes but UUID matches.
+
+    Simulates the scenario where replica_host (or FQDN) changes between restarts:
+    the replica path in ZooKeeper holds a stale hostname, but the UUID is the same.
+    DatabaseReplicated should detect this, update ZooKeeper, and start normally.
+    """
+    db = "test_host_id_migration"
+    zk_replica_path = f"/clickhouse/databases/{db}/replicas/shard1|node2"
+
+    node2.query(
+        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'node2')"
+    )
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+    # Read the current host_id written by node2
+    current_host_id = node2.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/{db}/replicas' AND name = 'shard1|node2'"
+    ).strip()
+
+    assert current_host_id, "host_id not found in ZooKeeper"
+
+    # Extract UUID (last colon-separated field)
+    uuid = current_host_id.rsplit(":", 1)[-1]
+
+    # Construct a stale host_id: different hostname, same port and UUID
+    stale_host_id = f"stale-old-hostname%3A9000:{uuid}"
+
+    # Overwrite ZooKeeper with the stale host_id directly via kazoo
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.start()
+    zk.set(zk_replica_path, stale_host_id.encode())
+    zk.stop()
+
+    # Verify the stale value is in ZooKeeper
+    stale_in_zk = node2.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/{db}/replicas' AND name = 'shard1|node2'"
+    ).strip()
+    assert "stale-old-hostname" in stale_in_zk, f"Stale host_id not written: {stale_in_zk}"
+
+    # Restart node2 — startup must succeed (not throw REPLICA_ALREADY_EXISTS)
+    node2.restart_clickhouse()
+
+    # ZooKeeper should now have the updated (current) host_id
+    updated_host_id = node2.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/{db}/replicas' AND name = 'shard1|node2'"
+    ).strip()
+
+    assert "stale-old-hostname" not in updated_host_id, \
+        f"Stale host_id was not replaced after restart: {updated_host_id}"
+    assert uuid in updated_host_id, \
+        f"UUID missing from updated host_id: {updated_host_id}"
+
+    # Database should be fully functional after restart
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+    node2.query(f"DROP DATABASE {db} SYNC")
+
+
 def test_replica_host_cluster_view(started_cluster):
     """Test that cluster information shows correct host_id with replica_host."""
 
