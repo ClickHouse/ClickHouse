@@ -16,6 +16,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
@@ -40,7 +41,7 @@ struct CompactStringRef
     CompactStringRef(const char * data_, size_t size_)
     {
         data_mixed = data_;
-        size = static_cast<UInt16>(size_);
+        size = size_;
     }
 
     CompactStringRef(const unsigned char * data_, size_t size_) : CompactStringRef(reinterpret_cast<const char *>(data_), size_) {}
@@ -321,7 +322,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -350,7 +351,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap (CityHash64). Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -379,7 +380,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap (FastHash64). Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -409,7 +410,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap (CrapWow). Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -439,7 +440,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap (SimpleHash). Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -458,7 +459,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "std::unordered_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -475,7 +476,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "google::dense_hash_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -491,7 +492,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "google::sparse_hash_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 

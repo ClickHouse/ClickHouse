@@ -8,7 +8,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
 
 namespace DB::Iceberg
@@ -28,8 +27,8 @@ enum class PruningReturnStatus
 namespace DB::Iceberg
 {
 
-struct ProcessedManifestFileEntry;
-class ManifestFileIterator;
+struct ManifestFileEntry;
+class ManifestFileContent;
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
 
@@ -55,10 +54,10 @@ public:
         Int32 current_schema_id_,
         Int32 initial_schema_id_,
         const DB::ActionsDAG * filter_dag,
-        const ManifestFileIterator & manifest_file,
+        const ManifestFileContent & manifest_file,
         DB::ContextPtr context);
 
-    PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
+    PruningReturnStatus canBePruned(const ManifestFileEntry & entry) const;
 };
 
 }

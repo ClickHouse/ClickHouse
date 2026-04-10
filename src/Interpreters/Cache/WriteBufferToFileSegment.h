@@ -18,8 +18,8 @@ class FileSegment;
 class WriteBufferToFileSegment : public WriteBufferFromFileBase, public IReadableWriteBuffer, public IFilesystemCacheWriteBuffer
 {
 public:
-    explicit WriteBufferToFileSegment(FileSegment * file_segment_, size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
-    explicit WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder_, size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit WriteBufferToFileSegment(FileSegment * file_segment_);
+    explicit WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder);
 
     void nextImpl() override;
 
@@ -32,9 +32,6 @@ public:
     bool cachingStopped() const override { return false; }
     const FileSegmentsHolder * getFileSegments() const override { return segment_holder.get(); }
     void jumpToPosition(size_t) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method jumpToPosition is not implemented for WriteBufferToFileSegment"); }
-    /// Do nothing as file segments must be removed after query
-    /// and not used anymore in case of loss of connection.
-    void setFileFinishedForDistributedCache() override {}
 
 protected:
     void finalizeImpl() override;

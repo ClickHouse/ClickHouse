@@ -29,7 +29,7 @@ public:
     FileSegmentRangeWriter(
         FileCache * cache_,
         const FileSegment::Key & key_,
-        const FileCacheOriginInfo & origin_,
+        const FileCacheUserInfo & user_,
         size_t reserve_space_lock_wait_timeout_milliseconds_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
         const String & query_id_,
@@ -50,8 +50,6 @@ public:
 
     void jumpToPosition(size_t position);
 
-    void setFileFinishedForDistributedCache();
-
 private:
     FileSegment & allocateFileSegment(size_t offset, FileSegmentKind segment_kind);
 
@@ -61,7 +59,7 @@ private:
 
     FileCache * cache;
     const FileSegment::Key key;
-    const FileCacheOriginInfo origin;
+    const FileCacheUserInfo user;
     const size_t reserve_space_lock_wait_timeout_milliseconds;
 
     LoggerPtr log;
@@ -69,10 +67,8 @@ private:
     const String query_id;
     const String source_path;
     const bool is_distributed_cache;
-    bool is_file_finished_for_distributed_cache = false;
 
     FileSegmentsHolderPtr file_segments;
-    size_t ignore_bytes = 0;
 
     size_t expected_write_offset = 0;
 
@@ -85,7 +81,6 @@ public:
     virtual bool cachingStopped() const = 0;
     virtual const FileSegmentsHolder * getFileSegments() const  = 0;
     virtual void jumpToPosition(size_t position) = 0;
-    virtual void setFileFinishedForDistributedCache() = 0;
 
     virtual WriteBuffer & getImpl() = 0;
 
@@ -105,9 +100,8 @@ public:
         const FileCacheKey & key_,
         const String & query_id_,
         const WriteSettings & settings_,
-        const FileCacheOriginInfo & origin_,
+        const FileCacheUserInfo & user_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
-        bool is_distributed_cache_,
         FileSegmentKind file_segment_kind_ = FileSegmentKind::Regular);
 
     void nextImpl() override;
@@ -119,8 +113,6 @@ public:
     const FileSegmentsHolder * getFileSegments() const override { return cache_writer ? cache_writer->getFileSegments() : nullptr; }
 
     void jumpToPosition(size_t position) override;
-
-    void setFileFinishedForDistributedCache() override { if (cache_writer) cache_writer->setFileFinishedForDistributedCache(); }
 
     WriteBuffer & getImpl() override { return *this; }
 
@@ -134,7 +126,7 @@ private:
     FileCacheKey key;
 
     const String query_id;
-    const FileCacheOriginInfo origin;
+    const FileCacheUserInfo user;
     const size_t reserve_space_lock_wait_timeout_milliseconds;
     const bool throw_on_error_from_cache;
     const bool is_distributed_cache;
@@ -145,8 +137,6 @@ private:
     FileSegmentKind file_segment_kind;
 
     std::unique_ptr<FileSegmentRangeWriter> cache_writer;
-    size_t cache_writer_start_position = 0;
-
     std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 
