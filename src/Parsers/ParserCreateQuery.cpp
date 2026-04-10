@@ -728,7 +728,9 @@ static bool parseInsertPayload(
     IParser::Pos & pos,
     Expected & expected,
     ASTPtr & insert_select,
-    String & insert_format)
+    String & insert_format,
+    const char *& insert_data,
+    const char *& insert_data_end)
 {
     ParserSelectWithUnionQuery select_p;
 
@@ -738,6 +740,13 @@ static bool parseInsertPayload(
     if (ParserKeyword{Keyword::VALUES}.ignore(pos, expected))
     {
         insert_format = "Values";
+        if (pos->type != TokenType::Semicolon)
+        {
+            insert_data = pos->begin;
+            while (pos->type != TokenType::Semicolon && pos->type != TokenType::EndOfStream)
+                ++pos;
+            insert_data_end = pos->begin;
+        }
         return true;
     }
 
@@ -748,6 +757,13 @@ static bool parseInsertPayload(
         if (!format_name_p.parse(pos, format_name_ast, expected))
             return false;
         insert_format = getIdentifierName(format_name_ast);
+        if (pos->type != TokenType::Semicolon && pos->type != TokenType::EndOfStream)
+        {
+            insert_data = pos->begin;
+            while (pos->type != TokenType::Semicolon && pos->type != TokenType::EndOfStream)
+                ++pos;
+            insert_data_end = pos->begin;
+        }
         return true;
     }
 
@@ -794,6 +810,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr from_path;
     ASTPtr insert_select;
     String insert_format;
+    const char * insert_data = nullptr;
+    const char * insert_data_end = nullptr;
     bool is_and_insert = false;
     bool is_as_insert = false;
 
@@ -945,13 +963,13 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!is_create_empty && !is_clone_as && if_not_exists && ParserKeyword{Keyword::AND_INSERT}.ignore(pos, expected))
         {
             is_and_insert = true;
-            if (!parseInsertPayload(pos, expected, insert_select, insert_format))
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end))
                 return false;
         }
         else if (!is_create_empty && !is_clone_as && ParserKeyword{Keyword::AS_INSERT}.ignore(pos, expected))
         {
             is_as_insert = true;
-            if (!parseInsertPayload(pos, expected, insert_select, insert_format))
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end))
                 return false;
         }
         else
@@ -998,13 +1016,13 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!is_create_empty && !is_clone_as && if_not_exists && ParserKeyword{Keyword::AND_INSERT}.ignore(pos, expected))
         {
             is_and_insert = true;
-            if (!parseInsertPayload(pos, expected, insert_select, insert_format))
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end))
                 return false;
         }
         else if (!is_create_empty && !is_clone_as && ParserKeyword{Keyword::AS_INSERT}.ignore(pos, expected))
         {
             is_as_insert = true;
-            if (!parseInsertPayload(pos, expected, insert_select, insert_format))
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end))
                 return false;
         }
         else
@@ -1080,6 +1098,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->has_and_insert = is_and_insert;
     query->has_as_insert = is_as_insert;
     query->insert_format = insert_format;
+    query->insert_data = insert_data;
+    query->insert_data_end = insert_data_end;
     if (insert_select)
         query->set(query->insert_select, insert_select);
 

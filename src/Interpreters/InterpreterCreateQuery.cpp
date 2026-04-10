@@ -2370,6 +2370,8 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         else if (!create.insert_format.empty())
         {
             insert->format = create.insert_format;
+            insert->data = create.insert_data;
+            insert->end = create.insert_data_end;
         }
         else if (create.select)
         {

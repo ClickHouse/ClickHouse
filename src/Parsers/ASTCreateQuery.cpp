@@ -622,10 +622,14 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         else if (insert_format == "Values")
         {
             ostr << "VALUES";
+            if (insert_data && insert_data_end && insert_data < insert_data_end)
+                ostr << " " << std::string_view(insert_data, insert_data_end - insert_data);
         }
         else if (!insert_format.empty())
         {
             ostr << "FORMAT " << insert_format;
+            if (insert_data && insert_data_end && insert_data < insert_data_end)
+                ostr << " " << std::string_view(insert_data, insert_data_end - insert_data);
         }
     }
     else if (select)

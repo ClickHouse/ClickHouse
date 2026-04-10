@@ -119,7 +119,9 @@ public:
     String as_table;
     String attach_from_path;
     String insert_format;
-
+    const char * insert_data = nullptr;
+    const char * insert_data_end = nullptr;
+    
     /// Optional bool (3 states)
     std::optional<bool> attach_as_replicated = std::nullopt;
 

@@ -1,0 +1,54 @@
+DROP TABLE IF EXISTS t1;
+CREATE TABLE t1 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AS INSERT SELECT number AS a, toString(number) AS b FROM numbers(3);
+SELECT a, b FROM t1 ORDER BY a;
+DROP TABLE t1;
+
+DROP TABLE IF EXISTS t2;
+CREATE TABLE t2 ENGINE = MergeTree ORDER BY a
+    AS INSERT SELECT number AS a, toString(number) AS b FROM numbers(3);
+SELECT a, b FROM t2 ORDER BY a;
+DROP TABLE t2;
+
+DROP TABLE IF EXISTS t3;
+CREATE TABLE t3 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AS INSERT VALUES (1, 'hello'), (2, 'world');
+SELECT a, b FROM t3 ORDER BY a;
+DROP TABLE t3;
+
+DROP TABLE IF EXISTS t4;
+CREATE TABLE t4 (a UInt32) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t4 (a UInt32) ENGINE = MergeTree ORDER BY a
+    AS INSERT VALUES (1); -- { serverError TABLE_ALREADY_EXISTS }
+DROP TABLE t4;
+
+DROP TABLE IF EXISTS t5;
+CREATE TABLE IF NOT EXISTS t5 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AND INSERT SELECT number AS a, toString(number) AS b FROM numbers(3);
+SELECT a, b FROM t5 ORDER BY a;
+DROP TABLE t5;
+
+DROP TABLE IF EXISTS t6;
+CREATE TABLE t6 (a UInt32, b String) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t6 VALUES (10, 'existing');
+CREATE TABLE IF NOT EXISTS t6 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AND INSERT SELECT number AS a, toString(number) AS b FROM numbers(2);
+SELECT a, b FROM t6 ORDER BY a;
+DROP TABLE t6;
+
+DROP TABLE IF EXISTS t7;
+CREATE TABLE IF NOT EXISTS t7 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AND INSERT VALUES (1, 'a'), (2, 'b');
+SELECT a, b FROM t7 ORDER BY a;
+
+CREATE TABLE IF NOT EXISTS t7 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AND INSERT VALUES (3, 'c');
+SELECT a, b FROM t7 ORDER BY a;
+DROP TABLE t7;
+
+CREATE TABLE t9 ENGINE = MergeTree ORDER BY a
+    AS INSERT VALUES (1, 'x'); -- { serverError INCORRECT_QUERY }
+
+DROP TABLE IF EXISTS t10;
+CREATE TABLE t10 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AS INSERT FORMAT Values (100, 'fmt_test');
