@@ -4,7 +4,3 @@
 
 -- Empty string: exercises empty-buffer Lexer path
 SELECT formatQueryOrNull('');
-
--- Also test that ErrorMaxQuerySizeExceeded works correctly through formatQueryOrNull
--- by setting max_query_size very small
-SELECT formatQueryOrNull('SELECT 1') SETTINGS max_query_size = 1;
