@@ -460,6 +460,12 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
     return index;
 }
 
+IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
+{
+    std::scoped_lock lock(index_mutex);
+    return index;
+}
+
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
     auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
@@ -490,6 +496,9 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     index_cache->remove(key);
 }
 
+/// Remove all vector similarity index cache entries for this part.
+/// The cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
+/// the key used during insertion in `MergeTreeIndexReader::read`.
 void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const
 {
     if (!vector_similarity_index_cache)

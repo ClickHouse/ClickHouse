@@ -3,7 +3,7 @@
 #include <list>
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Cache/UserCacheUsage.h>
+#include <Interpreters/Cache/CacheUsage.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/Guards.h>
 
@@ -70,7 +70,7 @@ public:
         const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
         const OriginInfo & origin_info = {},
-        bool best_effort = false) const override;
+        bool is_initial_load = false) const override;
 
     /// Create a queue entry for given key and offset.
     /// Write priority lock is required.
@@ -84,7 +84,7 @@ public:
         size_t size,
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
-        bool best_effort = false) override;
+        bool is_initial_load = false) override;
 
     bool collectCandidatesForEviction(
         const EvictionInfo & eviction_info,
