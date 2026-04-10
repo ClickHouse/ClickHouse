@@ -1,0 +1,58 @@
+-- Standard reader pipeline
+(Expression)
+ExpressionTransform × 2
+  (Aggregating)
+  Resize 2 → 2
+    AggregatingTransform × 2
+      (Expression)
+      ExpressionTransform × 2
+        (ReadFromMergeTree)
+        MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+-- Pipelined reader pipeline
+(Expression)
+ExpressionTransform × 2
+  (Aggregating)
+  Resize 2 → 2
+    AggregatingTransform × 2
+      (Expression)
+      ExpressionTransform × 2
+        (ReadFromMergeTree)
+        MergeTreeRestColumnsTransform
+          MergeTreePrewhereSource 0 → 1
+            MergeTreeRestColumnsTransform
+              MergeTreePrewhereSource 0 → 1
+-- Standard reader: multiple prewhere conditions
+(Expression)
+ExpressionTransform × 2
+  (Aggregating)
+  Resize 2 → 2
+    AggregatingTransform × 2
+      (Expression)
+      ExpressionTransform × 2
+        (ReadFromMergeTree)
+        MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+-- Pipelined reader: multiple prewhere conditions
+(Expression)
+ExpressionTransform × 2
+  (Aggregating)
+  Resize 2 → 2
+    AggregatingTransform × 2
+      (Expression)
+      ExpressionTransform × 2
+        (ReadFromMergeTree)
+        MergeTreeRestColumnsTransform
+          MergeTreePrewhereSource 0 → 1
+            MergeTreeRestColumnsTransform
+              MergeTreePrewhereSource 0 → 1
+-- Pipelined reader: no prewhere (falls back to standard)
+(Expression)
+ExpressionTransform × 2
+  (Aggregating)
+  Resize 2 → 2
+    AggregatingTransform × 2
+      (Expression)
+      ExpressionTransform × 2
+        (Filter)
+        FilterTransform × 2
+          (ReadFromMergeTree)
+          MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
