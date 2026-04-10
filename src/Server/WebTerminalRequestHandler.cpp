@@ -17,6 +17,9 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/SHA1Engine.h>
 
+#include <base/scope_guard.h>
+#include <Common/Stopwatch.h>
+
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
@@ -126,11 +129,14 @@ void sendWebSocketClose(Poco::Net::StreamSocket & socket, uint16_t code, const S
 }
 
 /// Read exactly n bytes from the socket.
-bool readExact(Poco::Net::StreamSocket & socket, char * buf, size_t n)
+/// If deadline_ns is non-zero, abort when the monotonic clock exceeds it.
+bool readExact(Poco::Net::StreamSocket & socket, char * buf, size_t n, UInt64 deadline_ns = 0)
 {
     size_t total = 0;
     while (total < n)
     {
+        if (deadline_ns && clock_gettime_ns() > deadline_ns)
+            return false;
         int received = socket.receiveBytes(buf + total, static_cast<int>(n - total));
         if (received <= 0)
             return false;
@@ -149,12 +155,13 @@ struct WebSocketFrame
 };
 
 /// Read a single WebSocket frame from the socket.
-WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket)
+/// If deadline_ns is non-zero, abort when the monotonic clock exceeds it.
+WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket, UInt64 deadline_ns = 0)
 {
     WebSocketFrame frame;
     uint8_t header[2];
 
-    if (!readExact(socket, reinterpret_cast<char *>(header), 2))
+    if (!readExact(socket, reinterpret_cast<char *>(header), 2, deadline_ns))
         return frame;
 
     frame.fin = (header[0] & 0x80) != 0;
@@ -197,14 +204,14 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket)
     if (payload_len == 126)
     {
         uint8_t ext[2];
-        if (!readExact(socket, reinterpret_cast<char *>(ext), 2))
+        if (!readExact(socket, reinterpret_cast<char *>(ext), 2, deadline_ns))
             return frame;
         payload_len = (static_cast<uint64_t>(ext[0]) << 8) | ext[1];
     }
     else if (payload_len == 127)
     {
         uint8_t ext[8];
-        if (!readExact(socket, reinterpret_cast<char *>(ext), 8))
+        if (!readExact(socket, reinterpret_cast<char *>(ext), 8, deadline_ns))
             return frame;
         payload_len = 0;
         for (const auto & byte : ext)
@@ -217,13 +224,13 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket)
         return frame;
 
     uint8_t mask_key[4] = {};
-    if (!readExact(socket, reinterpret_cast<char *>(mask_key), 4))
+    if (!readExact(socket, reinterpret_cast<char *>(mask_key), 4, deadline_ns))
         return frame;
 
     frame.payload.resize(payload_len);
     if (payload_len > 0)
     {
-        if (!readExact(socket, frame.payload.data(), payload_len))
+        if (!readExact(socket, frame.payload.data(), payload_len, deadline_ns))
             return frame;
 
         for (uint64_t i = 0; i < payload_len; ++i)
@@ -296,7 +303,9 @@ int extractJSONIntValue(const String & json, const char * key, int max_value)
 /// This is a minimal parser sufficient for our control messages.
 bool parseResizeMessage(const String & json, int & cols, int & rows)
 {
-    if (json.find("\"resize\"") == String::npos)
+    /// Validate that the "type" field is exactly "resize"
+    String type = extractJSONStringValue(json, "\"type\"");
+    if (type != "resize")
         return false;
 
     static constexpr int MAX_TERMINAL_DIMENSION = 500;
@@ -309,7 +318,9 @@ bool parseResizeMessage(const String & json, int & cols, int & rows)
 /// Parse an auth message like {"type":"auth","user":"default","password":"..."}
 bool parseAuthMessage(const String & json, String & user, String & password)
 {
-    if (json.find("\"auth\"") == String::npos)
+    /// Validate that the "type" field is exactly "auth"
+    String type = extractJSONStringValue(json, "\"type\"");
+    if (type != "auth")
         return false;
 
     user = extractJSONStringValue(json, "\"user\"");
@@ -400,14 +411,29 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                            "\r\n";
     sendAllBytes(socket, handshake_str.data(), handshake_str.size());
 
+    /// Ensure the socket is always shut down after the 101 handshake,
+    /// regardless of which code path we take (early auth failure, timeout, etc.).
+    SCOPE_EXIT(
+        try
+        {
+            socket.shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to shutdown WebSocket");
+        }
+    );
+
     /// Wait for the first WebSocket text message containing auth credentials:
     /// {"type":"auth","user":"...","password":"..."}
-    /// Set a receive timeout to prevent indefinite blocking before authentication.
+    /// Set a per-read timeout and a total deadline to prevent slow-trickle attacks
+    /// where a malicious client sends one byte at a time to hold the connection.
     WebSocketFrame auth_frame;
-    socket.setReceiveTimeout(Poco::Timespan(5, 0)); /// 5 seconds for auth
+    socket.setReceiveTimeout(Poco::Timespan(5, 0)); /// 5 seconds per individual read
+    UInt64 auth_deadline = clock_gettime_ns() + 5'000'000'000ULL; /// 5 seconds total
     try
     {
-        auth_frame = readWebSocketFrame(socket);
+        auth_frame = readWebSocketFrame(socket, auth_deadline);
     }
     catch (...)
     {
@@ -718,15 +744,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         tryLogCurrentException(log, "Failed to send WebSocket close frame");
     }
 
-    /// Shutdown the socket so the HTTP connection loop exits cleanly
-    try
-    {
-        socket.shutdown();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to shutdown WebSocket");
-    }
+    /// socket.shutdown() is handled by SCOPE_EXIT above
 
     LOG_INFO(log, "WebSocket connection closed");
 }
