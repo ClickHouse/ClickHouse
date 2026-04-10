@@ -355,7 +355,7 @@ SettingFieldTimespan<SettingFieldTimespanUnit::Millisecond> & SettingFieldMillis
 template <>
 String SettingFieldSeconds::toString() const
 {
-    return ::DB::toString(static_cast<Float64>(value.totalMicroseconds()) / microseconds_per_unit);
+    return ::DB::toString(static_cast<Float64>(microseconds) / microseconds_per_unit);
 }
 
 template <>
@@ -367,7 +367,7 @@ String SettingFieldMilliseconds::toString() const
 template <>
 SettingFieldSeconds::operator Field() const
 {
-    return static_cast<Float64>(value.totalMicroseconds()) / microseconds_per_unit;
+    return static_cast<Float64>(microseconds) / microseconds_per_unit;
 }
 
 template <>
