@@ -200,6 +200,11 @@ std::optional<Chunk> MergeTreePrewhereSource::tryGenerate()
                 non_empty_patches.push_back(std::move(current_readers.patches[i]));
                 non_empty_ranges.push_back(std::move(rest_patches_mark_ranges[i]));
             }
+            /// Clear moved-from vectors so subsequent chunks of the same task
+            /// do not re-enter this block and dereference null shared_ptrs.
+            current_readers.patches.clear();
+            rest_patches_mark_ranges.clear();
+
             if (!non_empty_patches.empty())
             {
                 chunk_info->rest_patches = std::move(non_empty_patches);
