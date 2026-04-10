@@ -1,6 +1,7 @@
 ---
 description: 'Formats rows in each group using an output format and returns the formatted data as a string.'
 sidebar_label: 'groupFormat'
+sidebar_position: 150
 slug: /sql-reference/aggregate-functions/reference/groupformat
 title: 'groupFormat'
 doc_type: 'reference'
