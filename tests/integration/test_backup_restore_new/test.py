@@ -2305,3 +2305,49 @@ def test_async_backup_restore_with_max_execution_time_zero():
         inst.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
         inst.query("SYSTEM DISABLE FAILPOINT restore_pause_on_start")
         inst.query("DROP DATABASE IF EXISTS test")
+
+
+def test_structure_only_restores_access_entities_and_udfs():
+    """structure_only=true should restore access entities and UDFs (structural definitions)
+    but not table data."""
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY x"
+    )
+    instance.query(
+        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)"
+    )
+
+    instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_a = 1")
+    instance.query("CREATE ROLE r1")
+    instance.query("GRANT r1 TO u1")
+    instance.query("CREATE FUNCTION linear_equation AS (x, k, b) -> k * x + b")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP DATABASE test, TABLE system.users, TABLE system.roles, TABLE system.functions TO {backup_name}"
+    )
+
+    instance.query("DROP DATABASE test")
+    instance.query("DROP USER u1")
+    instance.query("DROP ROLE r1")
+    instance.query("DROP FUNCTION linear_equation")
+
+    instance.query(f"RESTORE ALL FROM {backup_name} SETTINGS structure_only=true")
+
+    # Table exists but has no data
+    assert instance.query("EXISTS test.table") == "1\n"
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+    # Access entities were restored
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
+    )
+    assert instance.query("SHOW GRANTS FOR u1") == "GRANT r1 TO u1\n"
+    assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
+
+    # UDF was restored
+    assert instance.query("SELECT linear_equation(2, 3, 1)") == "7\n"
+
+    instance.query("DROP FUNCTION linear_equation")
