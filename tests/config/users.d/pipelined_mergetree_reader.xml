@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <use_pipelined_mergetree_reader>1</use_pipelined_mergetree_reader>
+        </default>
+    </profiles>
+</clickhouse>
