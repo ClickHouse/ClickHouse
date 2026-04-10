@@ -85,25 +85,7 @@ namespace ErrorCodes
     PART_UPLOAD_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(S3RequestSettingsTraits, REQUEST_SETTINGS_LIST, S3REQUEST_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(S3RequestSettingsTraits, REQUEST_SETTINGS_LIST)
-
-struct S3RequestSettingsImpl : public BaseSettings<S3RequestSettingsTraits>
-{
-};
-
-static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<S3RequestSettingsImpl, S3RequestSettingsTraits::Data>();
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    S3RequestSettings##TYPE NAME{offsetof(S3RequestSettingsTraits::Data, TYPE##_) \
-        + S3RequestSettingsTraits::settings_layout_.local_index[static_cast<size_t>(S3RequestSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
-        + SETTINGS_DATA_BASE_OFFSET_};
-
-namespace S3RequestSetting
-{
-REQUEST_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+IMPLEMENT_SETTINGS_TRAITS(S3RequestSettingsTraits, REQUEST_SETTINGS_LIST, S3RequestSettings, S3RequestSetting)
 
 namespace S3
 {

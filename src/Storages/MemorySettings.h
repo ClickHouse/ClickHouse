@@ -16,7 +16,6 @@ class SettingsChanges;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, UInt64)
 
-struct MemorySettings;
 MEMORY_SETTINGS_SUPPORTED_TYPES(MemorySettings, DECLARE_SETTING_TRAIT)
 
 /** Settings for the Memory engine.

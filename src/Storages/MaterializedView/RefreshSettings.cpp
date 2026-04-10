@@ -14,25 +14,7 @@ namespace DB
     DECLARE(UInt64, prefer_dependency_replica_delay_ms, 2000, "How long non-preferred replicas wait before attempting to run a dependent refresh when prefer_dependency_replica is enabled. The preferred replica (the one that ran the parent) attempts immediately.", 0) \
 
 DECLARE_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS, REFRESH_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)
-
-struct RefreshSettingsImpl : public BaseSettings<RefreshSettingsTraits>
-{
-};
-
-static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<RefreshSettingsImpl, RefreshSettingsTraits::Data>();
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    RefreshSettings##TYPE NAME{offsetof(RefreshSettingsTraits::Data, TYPE##_) \
-        + RefreshSettingsTraits::settings_layout_.local_index[static_cast<size_t>(RefreshSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
-        + SETTINGS_DATA_BASE_OFFSET_};
-
-namespace RefreshSetting
-{
-LIST_OF_REFRESH_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+IMPLEMENT_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS, RefreshSettings, RefreshSetting)
 
 RefreshSettings::RefreshSettings() : impl(std::make_unique<RefreshSettingsImpl>())
 {

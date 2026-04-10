@@ -40,7 +40,6 @@ struct NATSSettingsImpl;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
-struct NATSSettings;
 NATS_SETTINGS_SUPPORTED_TYPES(NATSSettings, DECLARE_SETTING_TRAIT)
 
 struct NATSSettings

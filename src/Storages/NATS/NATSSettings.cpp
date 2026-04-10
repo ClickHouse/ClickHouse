@@ -51,25 +51,7 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATS_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS)
-
-struct NATSSettingsImpl : public BaseSettings<NATSSettingsTraits>
-{
-};
-
-static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<NATSSettingsImpl, NATSSettingsTraits::Data>();
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    NATSSettings##TYPE NAME{offsetof(NATSSettingsTraits::Data, TYPE##_) \
-        + NATSSettingsTraits::settings_layout_.local_index[static_cast<size_t>(NATSSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
-        + SETTINGS_DATA_BASE_OFFSET_};
-
-namespace NATSSetting
-{
-LIST_OF_NATS_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+IMPLEMENT_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATSSettings, NATSSetting)
 
 NATSSettings::NATSSettings() : impl(std::make_unique<NATSSettingsImpl>())
 {

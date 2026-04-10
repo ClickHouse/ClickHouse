@@ -49,7 +49,6 @@ const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
-struct KafkaSettings;
 KAFKA_SETTINGS_SUPPORTED_TYPES(KafkaSettings, DECLARE_SETTING_TRAIT)
 
 /** Settings for the Kafka engine.

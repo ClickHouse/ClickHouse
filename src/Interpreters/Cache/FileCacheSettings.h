@@ -22,7 +22,6 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, FileCachePolicy) \
     M(CLASS_NAME, UInt64)
 
-struct FileCacheSettings;
 FILE_CACHE_SETTINGS_SUPPORTED_TYPES(FileCacheSettings, DECLARE_SETTING_TRAIT)
 
 struct FileCacheSettings

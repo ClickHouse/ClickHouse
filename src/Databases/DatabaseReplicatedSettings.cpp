@@ -29,25 +29,7 @@ extern const int UNKNOWN_SETTING;
     DECLARE(Bool, internal_replication, false, "Whether a Distributed table created with the cluster of this Replicated database will send data to one of replicas (internal replication means that cluster's replicas do replication by themselves) or to all replicas (no internal replication means that the Distributed table will send the inserted data to all of the replicas)", 0) \
 
 DECLARE_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS, DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS)
-
-struct DatabaseReplicatedSettingsImpl : public BaseSettings<DatabaseReplicatedSettingsTraits>
-{
-};
-
-static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<DatabaseReplicatedSettingsImpl, DatabaseReplicatedSettingsTraits::Data>();
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    DatabaseReplicatedSettings##TYPE NAME{offsetof(DatabaseReplicatedSettingsTraits::Data, TYPE##_) \
-        + DatabaseReplicatedSettingsTraits::settings_layout_.local_index[static_cast<size_t>(DatabaseReplicatedSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
-        + SETTINGS_DATA_BASE_OFFSET_};
-
-namespace DatabaseReplicatedSetting
-{
-LIST_OF_DATABASE_REPLICATED_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+IMPLEMENT_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS, DatabaseReplicatedSettings, DatabaseReplicatedSetting)
 
 DatabaseReplicatedSettings::DatabaseReplicatedSettings() : impl(std::make_unique<DatabaseReplicatedSettingsImpl>())
 {

@@ -25,7 +25,6 @@ struct MySQLSettingsImpl;
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, MySQLDataTypesSupport)
 
-struct MySQLSettings;
 MYSQL_SETTINGS_SUPPORTED_TYPES(MySQLSettings, DECLARE_SETTING_TRAIT)
 
 

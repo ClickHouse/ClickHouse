@@ -32,25 +32,7 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FILELOG_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS)
-
-struct FileLogSettingsImpl : public BaseSettings<FileLogSettingsTraits>
-{
-};
-
-static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<FileLogSettingsImpl, FileLogSettingsTraits::Data>();
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    FileLogSettings##TYPE NAME{offsetof(FileLogSettingsTraits::Data, TYPE##_) \
-        + FileLogSettingsTraits::settings_layout_.local_index[static_cast<size_t>(FileLogSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
-        + SETTINGS_DATA_BASE_OFFSET_};
-
-namespace FileLogSetting
-{
-LIST_OF_FILELOG_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+IMPLEMENT_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FileLogSettings, FileLogSetting)
 
 FileLogSettings::FileLogSettings() : impl(std::make_unique<FileLogSettingsImpl>())
 {

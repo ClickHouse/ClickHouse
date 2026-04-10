@@ -14,7 +14,6 @@ struct TimeSeriesSettingsImpl;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Map)
 
-struct TimeSeriesSettings;
 TIMESERIES_SETTINGS_SUPPORTED_TYPES(TimeSeriesSettings, DECLARE_SETTING_TRAIT)
 
 /// Settings for the TimeSeries table engine.

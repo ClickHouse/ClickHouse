@@ -86,7 +86,6 @@ Metadata format version.
     MAKE_OBSOLETE(M, Bool, allow_dynamic_metadata_for_data_lakes, true)
 // clang-format on
 
-struct DataLakeStorageSettings;
 STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES(DataLakeStorageSettings, DECLARE_SETTING_TRAIT)
 
 struct DataLakeStorageSettings

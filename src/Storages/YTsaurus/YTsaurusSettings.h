@@ -22,7 +22,6 @@ struct YTsaurusSettingsImpl;
     M(CLASS_NAME, Milliseconds) \
     M(CLASS_NAME, UInt64) \
 
-struct YTsaurusSettings;
 YTSAURUS_SETTINGS_SUPPORTED_TYPES(YTsaurusSettings, DECLARE_SETTING_TRAIT)
 
 struct YTsaurusSettings

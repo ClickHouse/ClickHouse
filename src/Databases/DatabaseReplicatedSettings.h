@@ -24,7 +24,6 @@ struct DatabaseReplicatedSettingsImpl;
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, NonZeroUInt64)
 
-struct DatabaseReplicatedSettings;
 DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatedSettings, DECLARE_SETTING_TRAIT)
 
 struct DatabaseReplicatedSettings

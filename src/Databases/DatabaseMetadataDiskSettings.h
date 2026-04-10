@@ -16,7 +16,6 @@ struct DatabaseMetadataDiskSettingsImpl;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, String)
 
-struct DatabaseMetadataDiskSettings;
 DATABASE_METADATA_SETTINGS_SUPPORTED_TYPES(DatabaseMetadataDiskSettings, DECLARE_SETTING_TRAIT)
 
 struct DatabaseMetadataDiskSettings

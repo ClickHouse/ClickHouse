@@ -118,7 +118,6 @@ class WriteBuffer;
     M(CLASS_NAME, DeduplicateInsertMode) \
 
 
-struct Settings;
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
 
 struct Settings

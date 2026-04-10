@@ -19,25 +19,7 @@ namespace ErrorCodes
     DECLARE(UInt64, bulk_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, "Size of block for bulk insert, if it's smaller than query setting min_insert_block_size_rows then it will be overridden by min_insert_block_size_rows", 0) \
 
 DECLARE_SETTINGS_TRAITS(RocksDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS, ROCKSDB_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(RocksDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS)
-
-struct RocksDBSettingsImpl : public BaseSettings<RocksDBSettingsTraits>
-{
-};
-
-static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<RocksDBSettingsImpl, RocksDBSettingsTraits::Data>();
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    RocksDBSettings##TYPE NAME{offsetof(RocksDBSettingsTraits::Data, TYPE##_) \
-        + RocksDBSettingsTraits::settings_layout_.local_index[static_cast<size_t>(RocksDBSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
-        + SETTINGS_DATA_BASE_OFFSET_};
-
-namespace RocksDBSetting
-{
-LIST_OF_ROCKSDB_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+IMPLEMENT_SETTINGS_TRAITS(RocksDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS, RocksDBSettings, RocksDBSetting)
 
 
 RocksDBSettings::RocksDBSettings() : impl(std::make_unique<RocksDBSettingsImpl>())

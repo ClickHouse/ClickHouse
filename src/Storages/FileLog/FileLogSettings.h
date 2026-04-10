@@ -39,7 +39,6 @@ struct FileLogSettingsImpl;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
-struct FileLogSettings;
 FILELOG_SETTINGS_SUPPORTED_TYPES(FileLogSettings, DECLARE_SETTING_TRAIT)
 
 /** Settings for the FileLog engine.

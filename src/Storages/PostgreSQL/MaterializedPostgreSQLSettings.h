@@ -19,7 +19,6 @@ struct MaterializedPostgreSQLSettingsImpl;
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64)
 
-struct MaterializedPostgreSQLSettings;
 MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES(MaterializedPostgreSQLSettings, DECLARE_SETTING_TRAIT)
 
 
