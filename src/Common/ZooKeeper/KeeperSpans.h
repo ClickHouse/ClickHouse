@@ -32,6 +32,7 @@ namespace Coordination
 namespace DB
 {
 
+/// `MaybeSpan` tracks an interval for histogram metrics and, optionally, for an OpenTelemetry span.
 struct MaybeSpan
 {
     const std::string_view operation_name;
@@ -103,6 +104,7 @@ struct ZooKeeperOpentelemetrySpans
     MaybeSpan pre_commit{"keeper.write.pre_commit", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperWritePreCommitTime};
     MaybeSpan commit{"keeper.write.commit", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperWriteCommitTime};
 
+    /// Wall-clock microseconds since epoch (`std::chrono::system_clock`).
     static UInt64 now()
     {
         return std::chrono::duration_cast<std::chrono::microseconds>(

@@ -73,6 +73,7 @@ void ZooKeeperOpentelemetrySpans::maybeFinalizeImpl(
 
     maybe_span.histogram.observe((finish_time_us - maybe_span.start_time_us) / 1000);
 
+    /// Defensive branch: `maybeFinalize` handles the no-span case before calling `maybeFinalizeImpl`.
     if (!maybe_span.span)
         return;
 
