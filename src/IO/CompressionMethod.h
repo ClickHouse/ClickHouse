@@ -36,6 +36,13 @@ enum class CompressionMethod : uint8_t
     Snappy,
 };
 
+/// Controls which wire format is used for Snappy compression.
+enum class SnappyMode : uint8_t
+{
+    Basic,   /// Raw/Hadoop snappy block format (legacy ClickHouse behavior)
+    Framed,  /// Snappy framing format — the standard streaming format
+};
+
 /// How the compression method is named in HTTP.
 std::string toContentEncodingName(CompressionMethod method);
 
@@ -57,6 +64,7 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     std::unique_ptr<ReadBuffer> nested,
     CompressionMethod method,
     int zstd_window_log_max = 0,
+    SnappyMode snappy_mode = SnappyMode::Framed,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0);
@@ -66,6 +74,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     CompressionMethod method,
     int level,
     int zstd_window_log = 0,
+    SnappyMode snappy_mode = SnappyMode::Framed,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0,
@@ -76,6 +85,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     CompressionMethod method,
     int level,
     int zstd_window_log,
+    SnappyMode snappy_mode = SnappyMode::Framed,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0,

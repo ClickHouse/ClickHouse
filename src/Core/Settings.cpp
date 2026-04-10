@@ -2207,6 +2207,14 @@ Sets the level of data compression in the response to an HTTP request if [enable
 
 Possible values: Numbers from 1 to 9.
 )", 0) \
+    DECLARE(SnappyMode, snappy_mode, SnappyMode::Framed, R"(
+Controls the wire format used for snappy compression in HTTP Content-Encoding and file I/O.
+
+Possible values:
+
+- `basic` — Raw/Hadoop snappy block format. Compatible with files written by Hadoop. Read-only (writing is not supported in this mode).
+- `framed` — Snappy framing format, the standard streaming format defined by Google. Supports both reading and writing.
+)", 0) \
     \
     DECLARE(Bool, http_native_compression_disable_checksumming_on_decompress, false, R"(
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).

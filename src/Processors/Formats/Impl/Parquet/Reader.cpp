@@ -149,6 +149,7 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         std::move(mem_buf),
         method,
         /*zstd_window_log_max*/ 0,
+        SnappyMode::Framed,
         uncompressed_size,
         out);
     size_t pos = 0;

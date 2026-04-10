@@ -70,6 +70,7 @@ namespace Setting
     extern const SettingsInt64 http_zlib_compression_level;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool send_progress_in_http_headers;
+    extern const SettingsSnappyMode snappy_mode;
     extern const SettingsInt64 zstd_window_log_max;
 }
 
@@ -343,6 +344,7 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
+    auto snappy_mode = settings[Setting::snappy_mode];
 
     used_output.out_holder =
         std::make_shared<WriteBufferFromHTTPServerResponse>(
@@ -360,6 +362,7 @@ void HTTPHandler::processQuery(
             http_response_compression_method,
             static_cast<int>(http_zlib_compression_level),
             0,
+            snappy_mode,
             DBMS_DEFAULT_BUFFER_SIZE,
             nullptr,
             0,
@@ -424,7 +427,8 @@ void HTTPHandler::processQuery(
     auto in_post = wrapReadBufferWithCompressionMethod(
         wrapReadBufferPointer(request.getStream()),
         chooseCompressionMethod({}, http_request_compression_method_str),
-        zstd_window_log_max);
+        zstd_window_log_max,
+        snappy_mode);
     LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
 
 

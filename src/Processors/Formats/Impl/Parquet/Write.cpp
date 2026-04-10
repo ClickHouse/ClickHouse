@@ -684,6 +684,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 method,
                 level,
                 /*zstd_window_log*/ 0,
+                SnappyMode::Framed,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());

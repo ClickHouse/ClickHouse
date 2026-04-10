@@ -13,6 +13,7 @@
 #include <Core/ShortCircuitFunctionEvaluation.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Formats/FormatSettings.h>
+#include <IO/CompressionMethod.h>
 #include <IO/DistributedCacheLogMode.h>
 #include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/ReadMethod.h>
@@ -271,6 +272,8 @@ DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
+
+DECLARE_SETTING_ENUM(SnappyMode)
 
 enum class TransactionsWaitCSNMode : uint8_t
 {
