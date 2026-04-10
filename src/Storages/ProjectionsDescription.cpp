@@ -4,7 +4,10 @@
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -58,6 +61,31 @@ extern const SettingsBool enable_positional_arguments_for_projections;
 
 }
 
+namespace
+{
+
+VirtualsDescriptionPtr createProjectionVirtuals(const KeyDescription * partition_key)
+{
+    auto desc = std::make_shared<VirtualColumnsDescription>();
+
+    desc->addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part");
+    desc->addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result");
+    desc->addEphemeral("_part_starting_offset", std::make_shared<DataTypeUInt64>(), "Cumulative starting row of the part in the query result");
+    desc->addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)");
+    desc->addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
+    desc->addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
+    desc->addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
+
+    if (partition_key && partition_key->sample_block.columns() > 0)
+    {
+        auto partition_types = partition_key->sample_block.getDataTypes();
+        desc->addEphemeral("_partition_value", std::make_shared<DataTypeTuple>(std::move(partition_types)), "Value (a tuple) of a PARTITION BY expression");
+    }
+
+    return desc;
+}
+
+}
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
@@ -98,6 +126,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
+    other.virtuals = virtuals;
 
     return other;
 }
@@ -251,8 +280,11 @@ void ProjectionDescription::loadSettings(const SettingsChanges & changes)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes cannot be 0, which leads to fixed granularity");
 }
 
-ProjectionDescription
-ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
+ProjectionDescription ProjectionDescription::getProjectionFromAST(
+    const ASTPtr & definition_ast,
+    const ColumnsDescription & columns,
+    const KeyDescription * partition_key,
+    const ContextPtr & query_context)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -270,7 +302,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     {
         chassert(projection_definition->type);
         result.index = ProjectionIndexFactory::instance().get(*projection_definition);
-        result.index->fillProjectionDescription(result, projection_definition->index, columns, query_context);
+        result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context);
         if (projection_definition->with_settings)
             result.loadSettings(projection_definition->with_settings->changes);
         return result;
@@ -279,12 +311,16 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (projection_definition->with_settings)
         result.loadSettings(projection_definition->with_settings->changes);
 
-    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, query_context);
+    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context);
     return result;
 }
 
 void ProjectionDescription::fillProjectionDescriptionByQuery(
-    ProjectionDescription & result, const ASTProjectionSelectQuery & query, const ColumnsDescription & columns, ContextPtr query_context)
+    ProjectionDescription & result,
+    const ASTProjectionSelectQuery & query,
+    const ColumnsDescription & columns,
+    const KeyDescription * partition_key,
+    const ContextPtr & query_context)
 {
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
@@ -450,14 +486,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
     metadata.setColumns(ColumnsDescription(metadata_columns));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
+    result.virtuals = createProjectionVirtuals(partition_key);
 }
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const ColumnsDescription & columns,
-    ASTPtr partition_columns,
+    const ASTPtr & partition_columns,
     const Names & minmax_columns,
     const KeyDescription & primary_key,
-    ContextPtr query_context)
+    const KeyDescription * partition_key,
+    const ContextPtr & query_context)
 {
     ProjectionDescription result;
 
@@ -488,10 +526,10 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
     if (partition_columns && !partition_columns->children.empty())
     {
-        partition_columns = partition_columns->clone();
-        for (const auto & partition_column : partition_columns->children)
+        auto partition_columns_copy = partition_columns->clone();
+        for (const auto & partition_column : partition_columns_copy->children)
             KeyDescription::moduloToModuloLegacyRecursive(partition_column);
-        select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, partition_columns->clone());
+        select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, std::move(partition_columns_copy));
     }
 
     result.definition_ast = select_query;
@@ -552,12 +590,8 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     metadata.sorting_key = KeyDescription::buildEmptyKey();
     metadata.primary_key = KeyDescription::buildEmptyKey();
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
+    result.virtuals = createProjectionVirtuals(partition_key);
     return result;
-}
-
-void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context)
-{
-    *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
 
 Block ProjectionDescription::calculate(
@@ -691,7 +725,11 @@ String ProjectionsDescription::toString() const
     return list.formatWithSecretsOneLine();
 }
 
-ProjectionsDescription ProjectionsDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr query_context)
+ProjectionsDescription ProjectionsDescription::parse(
+    const String & str,
+    const ColumnsDescription & columns,
+    const KeyDescription * parent_partition_key,
+    const ContextPtr & query_context)
 {
     ProjectionsDescription result;
     if (str.empty())
@@ -702,7 +740,7 @@ ProjectionsDescription ProjectionsDescription::parse(const String & str, const C
 
     for (const auto & projection_ast : list->children)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, query_context);
+        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, parent_partition_key, query_context);
         result.add(std::move(projection));
     }
 

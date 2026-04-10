@@ -46,7 +46,7 @@ def clone_submodules():
         "contrib/croaring",
         "contrib/miniselect",
         "contrib/xz",
-        "contrib/dragonbox",
+        "contrib/zmij",
         "contrib/fast_float",
         "contrib/NuRaft",
         "contrib/jemalloc",

@@ -82,6 +82,9 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
     extern const CoordinationSettingsBool nuraft_test_mode;
+    extern const CoordinationSettingsBool nuraft_streaming_mode;
+    extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
+    extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
 }
 
 namespace ErrorCodes
@@ -344,11 +347,6 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         return std::unique_lock(lock_);
     }
 
-    std::unique_lock<std::mutex> lockCommit()
-    {
-        return std::unique_lock(commit_lock_);
-    }
-
     bool isCommitInProgress() const
     {
         return sm_commit_exec_in_progress_;
@@ -544,6 +542,14 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::max_requests_append_size], "max_requests_append_size", log);
     params.max_append_size_bytes_ = coordination_settings[CoordinationSetting::max_requests_append_bytes_size];
 
+    if (coordination_settings[CoordinationSetting::nuraft_streaming_mode])
+    {
+        params.max_log_gap_in_stream_
+            = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::nuraft_max_log_gap_in_stream], "nuraft_max_log_gap_in_stream", log);
+        params.max_bytes_in_flight_in_stream_
+            = static_cast<int64_t>(coordination_settings[CoordinationSetting::nuraft_max_bytes_in_flight_in_stream]);
+    }
+
     params.return_method_ = nuraft::raft_params::async_handler;
 
     nuraft::asio_service::options asio_opts{};
@@ -565,6 +571,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// asio is async framework, so even with 1 thread it should be ok, but
     /// still as safeguard it's better to have some redundant capacity here
     asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
+    asio_opts.streaming_mode_ = coordination_settings[CoordinationSetting::nuraft_streaming_mode];
 
     if (state_manager->isSecure())
     {
@@ -685,7 +692,11 @@ void KeeperServer::shutdownRaftServer()
     keeper_context->setServerState(KeeperContext::Phase::SHUTDOWN);
 
     if (create_snapshot_on_exit)
-        raft_instance->create_snapshot();
+    {
+        nuraft::raft_server::create_snapshot_options options;
+        options.serialize_commit_ = true;
+        raft_instance->create_snapshot(options);
+    }
 
     raft_instance.reset();
 
@@ -1349,8 +1360,12 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
 uint64_t KeeperServer::createSnapshot()
 {
-    auto commit_lock = raft_instance->lockCommit();
-    uint64_t log_idx = raft_instance->create_snapshot();
+    /// serialize_commit_ makes nuraft lock commit_lock_. This guarantees that we call
+    /// enableSnapshotMode() on storage in the state that corresponds to `log_idx`, rather than a
+    /// more recent state.
+    nuraft::raft_server::create_snapshot_options options;
+    options.serialize_commit_ = true;
+    uint64_t log_idx = raft_instance->create_snapshot(options);
     if (log_idx != 0)
         LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);
     else
