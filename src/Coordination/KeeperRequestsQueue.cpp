@@ -196,7 +196,7 @@ RaftBatch KeeperRequestsQueue::waitAndPullRaftBatch(
 
         if (shutdown_requested.load(std::memory_order_relaxed))
             return result;
-        
+
         /// Finalize the previous in-flight Raft result if ready.
         in_flight = try_finalize_inflight();
 

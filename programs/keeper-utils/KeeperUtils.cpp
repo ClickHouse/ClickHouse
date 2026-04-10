@@ -754,7 +754,7 @@ int deserializeChangelog(
         }
 
         /// Discard responses — no client to deliver to.
-    ResponseRouter noop_router = [](int64_t, Coordination::ZooKeeperResponsePtr, Coordination::ZooKeeperRequestPtr) { return true; };
+        ResponseRouter noop_router = [](int64_t, Coordination::ZooKeeperResponsePtr, Coordination::ZooKeeperRequestPtr) { return true; };
         SnapshotsQueue snapshots_queue{1};
         KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", fs::temp_directory_path() / "keeper-utils-log"));

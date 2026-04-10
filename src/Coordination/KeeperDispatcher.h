@@ -98,7 +98,7 @@ private:
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
 public:
-    /// Just allocate some objects, real initialization is done by `intialize method`
+    /// Just allocate some objects, real initialization is done by `initialize` method
     KeeperDispatcher();
 
     /// Call shutdown
