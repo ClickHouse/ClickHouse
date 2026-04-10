@@ -1,13 +1,11 @@
 #pragma once
 
-#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperSession.h>
 #include <Coordination/KeeperContext.h>
 
 #include <atomic>
-#include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -15,112 +13,70 @@ namespace DB
 
 class KeeperRequestsQueue;
 
-/// Callback invoked by `routeResponse` and `terminateSession` to deliver responses to clients.
-/// Must be safe for concurrent invocation: `routeResponse` (from the Raft commit thread or
-/// read path) and `terminateSession` (from dead session cleaner) may invoke copies of the
-/// same callback concurrently for the same session.
-using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
-
-/// Thin facade over session-related state that used to live directly in `KeeperDispatcher`.
-/// Owns the live-session set, response-callback maps, and the internal session-id counter.
-/// All methods use the same locking strategy that the dispatcher originally used.
 class KeeperSessionRegistry
 {
 public:
-    KeeperSessionRegistry() = default;
+    /// @param keeper_context  Extracts coordination settings (quorum_reads, max_session_active_requests).
+    /// @param requests_queue  Shared request queue — sessions obtain subqueue handles from it.
+    /// @param local_read_dispatch  Callback for local read execution, passed to every session.
+    KeeperSessionRegistry(
+        KeeperContextPtr keeper_context,
+        KeeperRequestsQueue & requests_queue,
+        KeeperSession::LocalReadCallback local_read_dispatch);
 
-    /// Initialize with settings from `KeeperContext`. Must be called before `registerSession`.
-    /// @param requests_queue  Shared request queue -- sessions obtain subqueue handles from it.
-    void initialize(KeeperContextPtr keeper_context, KeeperRequestsQueue & requests_queue,
-                    KeeperSession::LocalReadCallback local_read_dispatch);
+    /// Whether reads go through Raft (quorum_reads setting).
+    bool quorumReads() const { return quorum_reads; }
 
-    /// Whether reads go through Raft (`quorum_reads` setting).
-    bool quorumReads() const { return quorum_reads_; }
+    /// Per-session limit on active_requests (0 = unlimited).
+    size_t maxSessionActiveRequests() const { return max_session_active_requests; }
 
-    /// Per-session limit on `active_requests` (0 = unlimited).
-    size_t maxSessionActiveRequests() const { return max_session_active_requests_; }
+    /// Creates a KeeperSession, inserts into the active map, and returns it.
+    /// Throws LOGICAL_ERROR on duplicate session_id.
+    KeeperSessionPtr registerSession(int64_t session_id, KeeperSession::ResponseCallback callback);
 
-    /// Register a session: creates a `KeeperSession` object, adds to both
-    /// `session_to_response_callback` and `live_sessions`, increments `KeeperAliveConnections`.
-    /// Throws on duplicate `session_id`. Returns the new session object.
-    KeeperSessionPtr registerSession(
-        int64_t session_id,
-        KeeperSession::ResponseCallback callback);
-
-    /// Unregister a session's response callback and close its `KeeperSession`.
-    /// Returns the callback so the caller can deliver a final `ZSESSIONEXPIRED`
-    /// response outside the lock. Decrements `KeeperAliveConnections`.
-    /// Returns empty callback if not found.
-    ZooKeeperResponseCallback unregisterSession(int64_t session_id);
-
-    /// Look up a session by id. Returns nullptr if not found.
+    /// Returns the session or nullptr if not found.
+    /// Registry mutex is released before returning -- the caller uses
+    /// the session's own mutex for further operations.
     KeeperSessionPtr findSession(int64_t session_id) const;
 
-    /// Check whether a session is in the live set.
-    bool isSessionAlive(int64_t session_id) const;
+    /// Removes session from the active map and decrements KeeperAliveConnections.
+    /// Returns the detached session (still alive via shared_ptr) or nullptr.
+    KeeperSessionPtr detachSession(int64_t session_id);
 
-    /// Add a session to the live set.
-    void addLiveSession(int64_t session_id);
-
-    /// Remove a session from the live set.
-    void removeLiveSession(int64_t session_id);
-
-    /// Look up the response callback for a session.
-    /// Returns a copy (the entry stays in the map) or empty callback.
-    ZooKeeperResponseCallback getSessionCallback(int64_t session_id) const;
-
-    /// Check if a session has a registered response callback.
-    bool hasSessionCallback(int64_t session_id) const;
-
-    /// Move-extract the callback for a session and erase it from the map.
-    /// Also decrements `KeeperAliveConnections`. Returns empty callback if not found.
-    ZooKeeperResponseCallback extractAndEraseSessionCallback(int64_t session_id);
-
-    /// Register a temporary callback for new session ID allocation.
+    /// Registers a temporary callback for new session ID allocation.
     void registerNewSessionCallback(int64_t internal_id, ZooKeeperResponseCallback callback);
 
-    /// Extract (and remove) the new-session callback for the given `internal_id`.
-    /// Returns empty callback if not found.
-    ZooKeeperResponseCallback extractNewSessionCallback(int64_t internal_id);
-
-    /// Check if a new-session callback exists for the given `internal_id`.
-    bool hasNewSessionCallback(int64_t internal_id) const;
+    /// Extracts (and removes) the new-session callback for the given internal_id.
+    /// Returns empty callback if not found or if server_id != our_server_id.
+    ZooKeeperResponseCallback extractNewSessionCallback(int64_t internal_id, int32_t server_id, int32_t our_server_id);
 
     /// Returns the next internal session ID (atomic increment).
     int64_t nextInternalSessionId();
 
-    /// Build close requests for all sessions that have registered callbacks.
-    /// Returns the requests and clears `session_to_response_callback`.
-    /// Used during shutdown.
-    struct ShutdownResult
-    {
-        std::vector<std::pair<int64_t, ZooKeeperResponseCallback>> sessions;
-    };
-    ShutdownResult clearAllSessions();
+    /// Atomically removes all sessions and new-session callbacks.
+    /// Returns the detached sessions so the caller can send Close requests.
+    std::vector<KeeperSessionPtr> shutdown();
 
 private:
-    mutable std::mutex live_sessions_mutex;
-    std::unordered_set<int64_t> live_sessions;
+    mutable std::shared_mutex mutex;
 
-    mutable std::mutex session_to_response_callback_mutex;
-    /// Normal session response callbacks (keyed by `session_id`).
-    std::unordered_map<int64_t, ZooKeeperResponseCallback> session_to_response_callback;
-    /// Per-session objects (dual-tracked alongside callback map, temporary).
-    std::unordered_map<int64_t, KeeperSessionPtr> sessions_;
-    /// Temporary callbacks for new session ID requests (keyed by `internal_id`).
-    std::unordered_map<int64_t, ZooKeeperResponseCallback> new_session_id_response_callback;
+    /// `sessions` owns the sessions and defines the iteration set; order is stable between register/detach operations but not globally predictable due to swap-and-pop removal.
+    /// `session_index` is a derived O(1) lookup from session_id to position in `sessions`.
+    /// Both must be kept in sync under `mutex`.
+    std::vector<KeeperSessionPtr> sessions;
+    std::unordered_map<int64_t, size_t> session_index;
 
+    std::unordered_map<int64_t, ZooKeeperResponseCallback> new_session_callbacks;
     std::atomic<int64_t> internal_session_id_counter{0};
 
-    /// Settings read from `KeeperContext`.
-    bool quorum_reads_ = false;
-    size_t max_session_active_requests_ = 0;
+    bool quorum_reads = false;
+    size_t max_session_active_requests = 0;
 
     /// Local read dispatch callback, passed to every session at construction.
-    KeeperSession::LocalReadCallback local_read_dispatch_;
+    KeeperSession::LocalReadCallback local_read_dispatch;
 
-    /// Non-owning pointer to the shared request queue. Sessions obtain subqueue handles from it.
-    KeeperRequestsQueue * requests_queue_ = nullptr;
+    /// Non-owning pointer to the shared request queue. Set via constructor.
+    KeeperRequestsQueue * requests_queue = nullptr;
 };
 
 }

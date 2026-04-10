@@ -960,8 +960,6 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
     M(KeeperBatchMaxCount, "Number of times the size of batch was limited by the amount", ValueType::Number) \
     M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size", ValueType::Number) \
-    M(KeeperRaftPrecommitMicroseconds, "Time spent in putRequestBatch in Keeper (NuRaft lock + pre_commit for all entries)", ValueType::Microseconds) \
-    M(KeeperDispatcherInflightWaitMicroseconds, "Time waiting for previous in-flight Raft batch result in Keeper requestThread", ValueType::Microseconds) \
     M(KeeperCommits, "Number of successful commits", ValueType::Number) \
     M(KeeperCommitsFailed, "Number of failed commits", ValueType::Number) \
     M(KeeperSnapshotCreations, "Number of snapshots creations", ValueType::Number) \
@@ -1241,6 +1239,13 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file", ValueType::Number) \
     M(KeeperChangelogWrittenBytes, "Number of bytes written to the changelog in Keeper", ValueType::Bytes) \
     M(KeeperChangelogFileSyncMicroseconds, "Time spent in fsync for Keeper changelog (uncompressed logs only)", ValueType::Microseconds) \
+    M(KeeperFlushTotalMicroseconds, "Total time from Flush enqueue to durable index update in Keeper (includes fsync)", ValueType::Microseconds) \
+    M(KeeperRaftPrecommitMicroseconds, "Time spent in putRequestBatch in Keeper (NuRaft lock + pre_commit for all entries)", ValueType::Microseconds) \
+    M(KeeperRaftConsensusWaitMicroseconds, "Time from pre_commit end to commit start per log entry in Keeper (fsync + replication + commit thread)", ValueType::Microseconds) \
+    M(KeeperDispatcherInflightWaitMicroseconds, "Time waiting for previous in-flight Raft batch result in Keeper requestThread", ValueType::Microseconds) \
+    M(KeeperStateInRaftMicroseconds, "Time spent in InRaft state per request (Raft pre_commit + consensus + commit)", ValueType::Microseconds) \
+    M(KeeperStatePendingLocalMicroseconds, "Time spent in PendingLocal state per request (read waiting for preceding write)", ValueType::Microseconds) \
+    M(KeeperStateCompletedMicroseconds, "Time spent in Completed state per request (waiting for TCP handler to pick up)", ValueType::Microseconds) \
     M(KeeperSnapshotWrittenBytes, "Number of bytes written to snapshot files in Keeper", ValueType::Bytes) \
     M(KeeperSnapshotFileSyncMicroseconds, "Time spent in fsync for Keeper snapshot files", ValueType::Microseconds) \
     \

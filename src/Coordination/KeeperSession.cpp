@@ -19,7 +19,7 @@ namespace DB
 namespace
 {
 /// True when the response represents a completed Close operation.
-/// The `WATCH_XID` guard is defense-in-depth (watches never have Close opnum).
+/// The WATCH_XID guard is defense-in-depth (watches never have Close opnum).
 bool isCloseResponse(const Coordination::ZooKeeperResponsePtr & response)
 {
     return response->xid != Coordination::WATCH_XID
@@ -47,19 +47,6 @@ bool KeeperSession::canAcceptRequests() const
     return state == SessionState::Active;
 }
 
-KeeperSession::SessionState KeeperSession::getState() const
-{
-    std::lock_guard lock(mutex);
-    return state;
-}
-
-void KeeperSession::close()
-{
-    std::lock_guard lock(mutex);
-    state = SessionState::Closed;
-    callback.reset();
-    active_requests.clear();
-}
 
 bool KeeperSession::finalizeWithErrors(Coordination::Error error)
 {
@@ -74,7 +61,7 @@ bool KeeperSession::finalizeWithErrors(Coordination::Error error)
 
         if (!callback)
         {
-            /// No callback -- just clean up like Shutdown.
+            /// No callback — just clean up like Shutdown.
             orphanActiveRequests();
             state = SessionState::Closed;
             return false;
@@ -99,7 +86,7 @@ bool KeeperSession::finalizeWithErrors(Coordination::Error error)
         }
         active_requests.clear();
 
-        /// Copy callback, then clear it -- no further deliveries possible.
+        /// Copy callback, then clear it — no further deliveries possible.
         response_callback = callback;
         callback.reset();
         state = SessionState::Closed;
@@ -111,7 +98,7 @@ bool KeeperSession::finalizeWithErrors(Coordination::Error error)
     bool had_errors = !error_batch.empty();
     error_batch.push_back(nullptr);
 
-    /// Deliver outside mutex. `deliverResponses` has try-catch.
+    /// Deliver outside mutex. deliverResponses has try-catch.
     if (response_callback)
         deliverResponses(error_batch, *response_callback);
 
@@ -148,7 +135,7 @@ KeeperSession::DeliveryResult KeeperSession::deliverDirectResponse(
         }
     }
 
-    /// `request` is null -- TCP handler skips `SendingResponse`/`Sent` lifecycle
+    /// request is null — TCP handler skips SendingResponse/Sent lifecycle
     /// transitions for direct deliveries (watches, error responses).
     auto wrapper = std::make_shared<SessionRequest>();
     wrapper->session_id = session_id;
@@ -208,18 +195,22 @@ KeeperSession::DeliveryResult KeeperSession::onRaftResponse(
                 front && front->request ? front->request->xid : -1,
                 front && front->request ? Coordination::opNumToString(front->request->getOpNum()) : "none",
                 serializeActiveRequestsNoLock());
-            chassert(false && "FIFO head xid mismatch in onRaftResponse -- this is a bug");
+            chassert(false && "FIFO head xid mismatch in onRaftResponse — this is a bug");
             return DeliveryResult::FifoMismatch;
         }
 
-        /// Attach response to the FIFO head. Don't pop or deliver yet --
+        /// Attach response to the FIFO head. Don't pop or deliver yet —
         /// `onRaftCommitted` will call `advanceQueue` which handles that.
         front->response = response;
         front->setState(RequestState::RaftResponseReady);
 
-        /// Don't return `DeliveredAndDetach` here -- the session must remain in the
-        /// registry until `commit_callback` -> `onRaftCommitted` -> `advanceQueue`
-        /// delivers the Close response. The `commit_callback` detaches afterwards.
+        front->onCommitCompleted(
+            response->pre_commit_start_us, response->pre_commit_end_us,
+            response->commit_start_us, response->commit_end_us);
+
+        /// Don't return DeliveredAndDetach here — the session must remain in the
+        /// registry until `commit_callback` → `onRaftCommitted` → `advanceQueue`
+        /// delivers the Close response. The commit_callback detaches afterwards.
     }
 
     return DeliveryResult::Delivered;
@@ -234,6 +225,11 @@ void KeeperSession::orphanActiveRequests()
     LOG_WARNING(log, "Clearing {} active requests for session {} (orphaned)",
         active_requests.size(), session_id);
 
+    /// Orphaned entries in the shared subqueue or current_batch will flow
+    /// through Raft and be silently dropped by `setResponse` (session gone).
+    /// Note: orphaned entries still count in KeeperRequestsQueue::total_size
+    /// until `pullIntoRaftBatch` drains them. Under heavy churn this can make
+    /// `isOverLimit` temporarily over-reject, but requestThread drains fast enough.
     active_requests.clear();
 }
 
@@ -294,8 +290,13 @@ KeeperSession::AddResult KeeperSession::addRequest(SessionRequestPtr keeper_req)
             if (active_requests.empty())
             {
                 /// Empty queue: start a new session-thread local group.
+                /// `keeper_req` is safe to access outside `mutex` after the lock is released
+                /// because it is in `ExecutingLocal` state — only this thread (the session/TCP
+                /// handler thread) reads or writes it until `advanceQueue` pops it.
+                /// `advanceQueue(QuorumThread)` skips entries with `KeeperRequestExecutor::SessionThread`,
+                /// so there is no data race between the two executor paths.
                 keeper_req->executor = KeeperRequestExecutor::SessionThread;
-                keeper_req->setState(RequestState::ExecutingLocal);
+                keeper_req->setState(RequestState::ExecutingLocal, {{"keeper.fast_path", true}});
                 active_requests.push_back(keeper_req);
                 dispatch_read = true;
             }
@@ -313,16 +314,16 @@ KeeperSession::AddResult KeeperSession::addRequest(SessionRequestPtr keeper_req)
             /// Push to active_requests first, then subqueue. This makes the
             /// FIFO-before-subqueue ordering obvious: onRaftResponse acquires
             /// session mutex, so it can't see the request until we release.
-            /// Lock nesting (session mutex -> subqueue mutex) is safe -- no reverse path.
+            /// Lock nesting (session mutex → subqueue mutex) is safe — no reverse path.
             keeper_req->executor = KeeperRequestExecutor::QuorumThread;
             keeper_req->setState(RequestState::PendingRaft);
             active_requests.push_back(keeper_req);
             if (!subqueue->push(keeper_req))
             {
                 active_requests.pop_back();
-                /// Roll back to Initial so the destructor's metric safety-net
-                /// doesn't fire a spurious count for a request that was never
-                /// actually enqueued.
+                /// Roll back to Initial so the destructor's OTel safety-net
+                /// doesn't fire a spurious "leaked" span for a request that
+                /// was never actually enqueued.
                 keeper_req->setState(RequestState::Initial);
                 LOG_WARNING(LogFrequencyLimiter(log, 5),
                     "Request queue is full, rejecting request for session {}", session_id);
@@ -339,9 +340,10 @@ KeeperSession::AddResult KeeperSession::addRequest(SessionRequestPtr keeper_req)
 
     if (dispatch_read)
     {
+        /// OTel spans already handled by setState(ExecutingLocal).
         try
         {
-            /// Span over a local `shared_ptr` -- safe because `local_read_dispatch` is synchronous.
+            /// span over a local shared_ptr — safe because local_read_dispatch is synchronous.
             local_read_dispatch(std::span<SessionRequestPtr>(&keeper_req, 1));
         }
         catch (...)
@@ -352,7 +354,7 @@ KeeperSession::AddResult KeeperSession::addRequest(SessionRequestPtr keeper_req)
             err->error = Coordination::Error::ZSYSTEMERROR;
             keeper_req->response = err;
         }
-        /// Defensive: if `local_read_dispatch` returned without filling response
+        /// Defensive: if local_read_dispatch returned without filling response
         /// and without throwing, synthesize an error to avoid a stuck session.
         if (!keeper_req->response)
         {
@@ -381,13 +383,12 @@ void KeeperSession::advanceQueue(KeeperRequestExecutor current_executor)
     std::vector<SessionRequestPtr> read_batch;
     std::shared_ptr<const ResponseCallback> response_callback;
 
-    /// Bounded: each iteration either delivers responses (draining `active_requests`),
-    /// dispatches reads (finite), or returns. `active_requests` is finite and entries
-    /// are consumed monotonically -- no path re-enqueues entries.
+    /// Bounded: each iteration either delivers responses (draining active_requests),
+    /// dispatches reads (finite), or returns. active_requests is finite and entries
+    /// are consumed monotonically — no path re-enqueues entries.
     while (true)
     {
-        /// Re-loop after delivery: the concurrent `QuorumThread` may have completed
-        /// entries (via `onRaftResponse`) while we were delivering outside the lock.
+        /// Re-loop after delivery: the concurrent QuorumThread may have completed entries (via onRaftResponse) while we were delivering outside the lock.
         to_deliver.clear();
         read_batch.clear();
         bool had_close = false;
@@ -395,8 +396,10 @@ void KeeperSession::advanceQueue(KeeperRequestExecutor current_executor)
 
         {
             std::lock_guard lock(mutex);
-            /// Check session is still alive -- if callback was cleared by a
-            /// concurrent Close/`finalizeWithErrors`, stop.
+            /// Check session is still alive — if callback was cleared by a
+            /// concurrent Close/finalizeWithErrors, stop. The cached
+            /// response_callback (set on first iteration) is a shared_ptr copy —
+            /// the refcount keeps the callback alive even after clearing.
             if (!callback)
                 return;
             if (!response_callback)
@@ -455,12 +458,12 @@ void KeeperSession::collectPendingReadsNoLock(KeeperRequestExecutor executor, st
             break;
 
         entry->setState(RequestState::ExecutingLocal);
-        /// Copy, not move -- entry stays in `active_requests` until `popResponseReadyNoLock`.
+        /// Copy, not move — entry stays in active_requests until popResponseReadyNoLock.
         out.push_back(entry);
     }
 
-    /// Invariant: the next entry (if any) must NOT be another `PendingLocal` with
-    /// the same executor -- that would mean we stopped collecting too early.
+    /// Invariant: the next entry (if any) must NOT be another PendingLocal with
+    /// the same executor — that would mean we stopped collecting too early.
     chassert(it == active_requests.end()
         || (*it)->getState() != RequestState::PendingLocal
         || (*it)->executor != executor);
@@ -471,7 +474,7 @@ void KeeperSession::deliverResponses(std::vector<SessionRequestPtr> & responses,
     if (responses.empty())
         return;
 
-    /// Note: `cb()` takes ownership of the vector contents via move.
+    /// Note: cb() takes ownership of the vector contents via move.
     try
     {
         cb(std::move(responses));
@@ -505,7 +508,7 @@ void KeeperSession::dispatchReads(std::vector<SessionRequestPtr> & reads)
         }
     }
 
-    /// Defensive: if `local_read_dispatch` returned without filling some responses
+    /// Defensive: if local_read_dispatch returned without filling some responses
     /// and without throwing, synthesize errors to avoid stuck sessions.
     for (auto & req : reads)
     {

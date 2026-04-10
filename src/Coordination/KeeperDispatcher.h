@@ -10,12 +10,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <functional>
 #include <span>
-#include <unordered_set>
 #include <Coordination/KeeperServer.h>
-#include <Coordination/KeeperRequestsQueue.h>
-#include <Coordination/KeeperSessionRegistry.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
+#include <Coordination/KeeperRequestsQueue.h>
+#include <Coordination/KeeperSessionRegistry.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
@@ -23,7 +22,6 @@
 
 namespace DB
 {
-
 /// Highlevel wrapper for ClickHouse Keeper.
 /// Process user requests via consensus and return responses.
 class KeeperDispatcher
@@ -33,13 +31,12 @@ private:
 
     std::unique_ptr<KeeperRequestsQueue> requests_queue;
     KeeperSubqueuePtr system_subqueue;  /// For session-less requests (SessionID, dead-session Close).
-
     SnapshotsQueue snapshots_queue{1};
 
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
 
-    KeeperSessionRegistry session_registry_;
+    std::unique_ptr<KeeperSessionRegistry> session_registry;
 
     /// Reading and batching new requests from client handlers
     ThreadFromGlobalPool request_thread;
@@ -78,9 +75,8 @@ private:
     void clusterUpdateWithReconfigDisabledThread();
     void clusterUpdateThread();
 
-    /// Delivers a response directly to the session callback.
     /// Returns true if response was successfully sent to client, false if session doesn't exist on this node.
-    bool routeResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
+    bool routeResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr parsed_request = nullptr);
 
     /// Deliver error responses to sessions.
     void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error);
@@ -89,15 +85,7 @@ private:
     /// so they can release stuck deferred reads.
     void failBatchSessions(const KeeperRequestsForSessions & batch, Coordination::Error error);
 
-    /// Dispatch a batch of local reads against the state machine.
-    /// Called by sessions' `local_read_dispatch` callback.
-    void dispatchLocalReads(std::span<SessionRequestPtr> batch);
-
-    /// Called by the commit callback after a Raft entry commits.
-    /// Finds the session and calls `onRaftCommitted`.
-    void onRaftCommit(uint64_t log_idx, const KeeperRequestForSession & request_for_session);
-
-    /// Forcefully wait for result and sets errors if something when wrong.
+    /// Forcefully wait for result and sets errors if something went wrong.
     /// Clears both arguments
     nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
         RaftAppendResult & result, KeeperRequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
@@ -150,27 +138,33 @@ public:
 
     void forceRecovery();
 
-    /// Put request to ClickHouse Keeper (legacy overload used by KeeperOverDispatcher)
-    bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
+    /// Put request to ClickHouse Keeper. Returns ZOK on success or
+    /// a specific error code on rejection (queue full, memory limit, etc.).
+    /// The overload with `session` avoids a `findSession` lookup per request.
+    Coordination::Error putRequest(SessionRequestPtr keeper_req);
+    Coordination::Error putRequest(SessionRequestPtr keeper_req, const KeeperSessionPtr & session);
 
-    /// Put request to ClickHouse Keeper via SessionRequest.
-    /// If `session` is provided, uses it directly; otherwise looks up via session_registry_.
-    Coordination::Error putRequest(SessionRequestPtr keeper_req, const KeeperSessionPtr & session = nullptr);
-
-    /// Put local read request to ClickHouse Keeper
+    /// Put local read request to ClickHouse Keeper (bypasses session FIFO).
+    /// Used by KeeperOverDispatcher for in-process reads.
     bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
 
-    /// Register session and subscribe for responses with callback.
-    /// Returns the `KeeperSessionPtr` wrapping the session state.
-    /// The callback receives batches of `SessionRequestPtr`.
+    /// Register a session with a response callback.
+    /// All response delivery goes through the callback (both TCP handler and
+    /// KeeperOverDispatcher paths).
     KeeperSessionPtr registerSession(int64_t session_id, KeeperSession::ResponseCallback callback);
 
-    /// Terminate a session: unregister callback, close the `KeeperSession` object,
-    /// deliver ZSESSIONEXPIRED, and clean up read request queue.
-    void terminateSession(int64_t session_id);
+    /// Terminate a session: deliver one error response (if callback is alive),
+    /// then detach from registry. Idempotent — second call for same session is a no-op.
+    void terminateSession(int64_t session_id, Coordination::Error error = Coordination::Error::ZSESSIONEXPIRED);
+
+    /// Dispatch a batch of local reads to KeeperServer.
+    void dispatchLocalReads(std::span<SessionRequestPtr> batch);
+
+    /// Called by KeeperServer after each Raft commit.
+    void onRaftCommit(uint64_t log_idx, const KeeperRequestForSession & request);
 
     /// Invoked when a request completes.
     void updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests = 1);

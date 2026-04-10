@@ -1,14 +1,22 @@
 #include <Coordination/KeeperSessionRegistry.h>
 #include <Coordination/KeeperRequestsQueue.h>
-#include <Coordination/KeeperSession.h>
+#include <Coordination/SessionRequest.h>
 #include <Coordination/CoordinationSettings.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
+
 
 namespace CurrentMetrics
 {
     extern const Metric KeeperAliveConnections;
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB
@@ -20,164 +28,92 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 max_session_active_requests;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-void KeeperSessionRegistry::initialize(KeeperContextPtr keeper_context, KeeperRequestsQueue & requests_queue,
-                                       KeeperSession::LocalReadCallback local_read_dispatch)
+KeeperSessionRegistry::KeeperSessionRegistry(
+    KeeperContextPtr keeper_context,
+    KeeperRequestsQueue & requests_queue_,
+    KeeperSession::LocalReadCallback local_read_dispatch_)
+    : local_read_dispatch(std::move(local_read_dispatch_))
+    , requests_queue(&requests_queue_)
 {
     const auto & settings = keeper_context->getCoordinationSettings();
-    quorum_reads_ = settings[CoordinationSetting::quorum_reads];
-    max_session_active_requests_ = settings[CoordinationSetting::max_session_active_requests];
-    local_read_dispatch_ = std::move(local_read_dispatch);
-    requests_queue_ = &requests_queue;
+    quorum_reads = settings[CoordinationSetting::quorum_reads];
+    max_session_active_requests = settings[CoordinationSetting::max_session_active_requests];
 }
 
-KeeperSessionPtr KeeperSessionRegistry::registerSession(
-    int64_t session_id,
-    KeeperSession::ResponseCallback callback)
+KeeperSessionPtr KeeperSessionRegistry::registerSession(int64_t session_id, KeeperSession::ResponseCallback callback)
 {
-    bool inserted = false;
-    {
-        std::lock_guard lock(live_sessions_mutex);
-        inserted = live_sessions.insert(session_id).second;
-    }
+    std::unique_lock lock(mutex);
 
-    chassert(requests_queue_ != nullptr);
-    auto handle = requests_queue_->getSubqueue(session_id);
+    if (session_index.contains(session_id))
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in session registry", session_id);
 
-    auto session = std::make_shared<KeeperSession>(session_id, std::move(callback), *this, handle, local_read_dispatch_);
+    chassert(requests_queue != nullptr);
+    auto handle = requests_queue->getSubqueue(session_id);
 
-    try
-    {
-        std::lock_guard lock(session_to_response_callback_mutex);
-        if (!sessions_.try_emplace(session_id, session).second)
-            throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
-        CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
-    }
-    catch (...)
-    {
-        if (inserted)
-        {
-            std::lock_guard lock(live_sessions_mutex);
-            live_sessions.erase(session_id);
-        }
-        throw;
-    }
+    auto session = std::make_shared<KeeperSession>(session_id, std::move(callback), *this, handle, local_read_dispatch);
+    sessions.push_back(session);
+    session_index[session_id] = sessions.size() - 1;
 
+    CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
     return session;
-}
-
-ZooKeeperResponseCallback KeeperSessionRegistry::unregisterSession(int64_t session_id)
-{
-    ZooKeeperResponseCallback callback;
-    KeeperSessionPtr session;
-    {
-        std::lock_guard lock(session_to_response_callback_mutex);
-        auto it = session_to_response_callback.find(session_id);
-        if (it != session_to_response_callback.end())
-        {
-            callback = std::move(it->second);
-            session_to_response_callback.erase(it);
-            CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
-        }
-        auto sit = sessions_.find(session_id);
-        if (sit != sessions_.end())
-        {
-            session = std::move(sit->second);
-            sessions_.erase(sit);
-            /// If we didn't have a legacy callback but had a session, still decrement.
-            if (!callback)
-                CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
-        }
-    }
-    /// Close the session object outside the lock.
-    if (session)
-        session->close();
-    return callback;
 }
 
 KeeperSessionPtr KeeperSessionRegistry::findSession(int64_t session_id) const
 {
-    std::lock_guard lock(session_to_response_callback_mutex);
-    auto it = sessions_.find(session_id);
-    if (it != sessions_.end())
-        return it->second;
-    return nullptr;
+    std::shared_lock lock(mutex);
+
+    auto it = session_index.find(session_id);
+    if (it == session_index.end())
+        return {};
+
+    return sessions[it->second];
 }
 
-bool KeeperSessionRegistry::isSessionAlive(int64_t session_id) const
+KeeperSessionPtr KeeperSessionRegistry::detachSession(int64_t session_id)
 {
-    std::lock_guard lock(live_sessions_mutex);
-    return live_sessions.contains(session_id);
-}
+    std::lock_guard lock(mutex);
 
-void KeeperSessionRegistry::addLiveSession(int64_t session_id)
-{
-    std::lock_guard lock(live_sessions_mutex);
-    live_sessions.insert(session_id);
-}
+    auto it = session_index.find(session_id);
+    if (it == session_index.end())
+        return {};
 
-void KeeperSessionRegistry::removeLiveSession(int64_t session_id)
-{
-    std::lock_guard lock(live_sessions_mutex);
-    live_sessions.erase(session_id);
-}
+    size_t idx = it->second;
+    auto session = std::move(sessions[idx]);
 
-ZooKeeperResponseCallback KeeperSessionRegistry::getSessionCallback(int64_t session_id) const
-{
-    std::lock_guard lock(session_to_response_callback_mutex);
-    auto it = session_to_response_callback.find(session_id);
-    if (it != session_to_response_callback.end())
-        return it->second;
-    return {};
-}
-
-bool KeeperSessionRegistry::hasSessionCallback(int64_t session_id) const
-{
-    std::lock_guard lock(session_to_response_callback_mutex);
-    return session_to_response_callback.contains(session_id);
-}
-
-ZooKeeperResponseCallback KeeperSessionRegistry::extractAndEraseSessionCallback(int64_t session_id)
-{
-    ZooKeeperResponseCallback callback;
-    std::lock_guard lock(session_to_response_callback_mutex);
-    auto it = session_to_response_callback.find(session_id);
-    if (it != session_to_response_callback.end())
+    /// Swap-and-pop: move the last element into the vacated slot.
+    size_t last = sessions.size() - 1;
+    if (idx != last)
     {
-        callback = std::move(it->second);
-        session_to_response_callback.erase(it);
-        CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
+        sessions[idx] = std::move(sessions[last]);
+        session_index[sessions[idx]->getSessionID()] = idx;
     }
-    return callback;
+    sessions.pop_back();
+    session_index.erase(it);
+
+    CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
+    return session;
 }
 
 void KeeperSessionRegistry::registerNewSessionCallback(int64_t internal_id, ZooKeeperResponseCallback callback)
 {
-    std::lock_guard lock(session_to_response_callback_mutex);
-    new_session_id_response_callback[internal_id] = std::move(callback);
+    std::lock_guard lock(mutex);
+    new_session_callbacks[internal_id] = std::move(callback);
 }
 
-ZooKeeperResponseCallback KeeperSessionRegistry::extractNewSessionCallback(int64_t internal_id)
+ZooKeeperResponseCallback KeeperSessionRegistry::extractNewSessionCallback(int64_t internal_id, int32_t server_id, int32_t our_server_id)
 {
-    ZooKeeperResponseCallback callback;
-    std::lock_guard lock(session_to_response_callback_mutex);
-    auto it = new_session_id_response_callback.find(internal_id);
-    if (it != new_session_id_response_callback.end())
-    {
-        callback = std::move(it->second);
-        new_session_id_response_callback.erase(it);
-    }
+    std::lock_guard lock(mutex);
+
+    if (server_id != our_server_id)
+        return {};
+
+    auto it = new_session_callbacks.find(internal_id);
+    if (it == new_session_callbacks.end())
+        return {};
+
+    auto callback = std::move(it->second);
+    new_session_callbacks.erase(it);
     return callback;
-}
-
-bool KeeperSessionRegistry::hasNewSessionCallback(int64_t internal_id) const
-{
-    std::lock_guard lock(session_to_response_callback_mutex);
-    return new_session_id_response_callback.contains(internal_id);
 }
 
 int64_t KeeperSessionRegistry::nextInternalSessionId()
@@ -185,26 +121,42 @@ int64_t KeeperSessionRegistry::nextInternalSessionId()
     return internal_session_id_counter.fetch_add(1);
 }
 
-KeeperSessionRegistry::ShutdownResult KeeperSessionRegistry::clearAllSessions()
+std::vector<KeeperSessionPtr> KeeperSessionRegistry::shutdown()
 {
-    ShutdownResult result;
-    std::vector<KeeperSessionPtr> sessions_to_close;
-    {
-        std::lock_guard lock(session_to_response_callback_mutex);
-        result.sessions.reserve(session_to_response_callback.size());
-        for (auto & [session_id, callback] : session_to_response_callback)
-            result.sessions.emplace_back(session_id, std::move(callback));
-        session_to_response_callback.clear();
 
-        sessions_to_close.reserve(sessions_.size());
-        for (auto & [_, session] : sessions_)
-            sessions_to_close.push_back(std::move(session));
-        sessions_.clear();
+    /// Extract callbacks under lock, invoke outside to avoid deadlock
+    /// if a callback re-enters the registry.
+    decltype(new_session_callbacks) callbacks_to_fail;
+    std::vector<KeeperSessionPtr> detached_sessions;
+
+    {
+        std::lock_guard lock(mutex);
+
+        detached_sessions = std::move(sessions);
+        session_index.clear();
+
+        callbacks_to_fail = std::move(new_session_callbacks);
     }
-    /// Close session objects outside the lock.
-    for (auto & session : sessions_to_close)
-        session->close();
-    return result;
+
+    /// Fail pending SessionID waiters so they don't hang until timeout.
+    /// The callbacks hold promises that `getSessionID` is waiting on.
+    for (auto & [internal_id, callback] : callbacks_to_fail)
+    {
+        try
+        {
+            auto error_response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
+            error_response->error = Coordination::Error::ZSESSIONEXPIRED;
+            error_response->internal_id = internal_id;
+            error_response->server_id = 0;
+            callback(error_response, nullptr);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("KeeperSessionRegistry", "Failed to fail SessionID callback during shutdown");
+        }
+    }
+
+    return detached_sessions;
 }
 
 }

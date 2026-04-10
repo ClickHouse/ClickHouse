@@ -40,6 +40,15 @@ struct ZooKeeperResponse : virtual Response
 
     /// Timestamp of when the response was enqueued for sending by the keeper server
     std::chrono::steady_clock::time_point enqueue_ts = {};
+
+    /// Timestamps (wall-clock microseconds since epoch) recorded by the state
+    /// machine during pre_commit and commit. Carried on the response so that
+    /// `SessionRequest::onCommitCompleted` can create OTel spans on the original
+    /// session request without moving span objects across threads.
+    uint64_t pre_commit_start_us{0};
+    uint64_t pre_commit_end_us{0};
+    uint64_t commit_start_us{0};
+    uint64_t commit_end_us{0};
 };
 
 using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;

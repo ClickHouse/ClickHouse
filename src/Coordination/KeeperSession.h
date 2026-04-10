@@ -24,29 +24,29 @@ class KeeperSessionRegistry;
 ///
 /// Request paths:
 ///   Quorum (writes, quorum reads, Auth, Close, Reconfig)
-///     -> `active_requests` FIFO -> global queue -> `requestThread` -> Raft
+///     -> `active_requests` FIFO -> `queue_handle.push` -> `KeeperRequestsQueue` -> `requestThread` -> Raft
 ///   Local (non-quorum reads)
 ///     -> `active_requests` FIFO
 ///     -> dispatched immediately when queue is empty (ExecutingLocal)
 ///     -> otherwise waits as PendingLocal until preceding entries complete
 ///
 /// Response flow:
-///   Writes: Raft commit -> `routeResponse` ->
+///   Writes: Raft commit -> `response_router` -> `routeResponse` ->
 ///     `onRaftResponse` (attaches response to head, sets RaftResponseReady) ->
 ///     `onRaftCommitted` -> `advanceQueue` (pops, delivers, advances queue)
 ///   Reads: `local_read` fills `req->response` directly ->
 ///     `advanceQueue` (pops, delivers, advances queue)
 ///
 /// Lock ordering (see also `process_and_responses_lock` in KeeperStateMachine):
-///   storage_mutex (shared) -> process_and_responses_lock -> session->mutex
-///   No path holds session->mutex then process_and_responses_lock (no reverse nesting).
+///   storage_mutex (shared) -> process_and_responses_lock -> session->mutex -> subqueue->mutex
+///   No path holds subqueue->mutex then session->mutex (no reverse nesting).
 class KeeperSession
 {
 public:
     /// Session state machine:
-    ///   Active -> Finishing  (Close request admitted to FIFO via `addRequest`)
-    ///   Active -> Closed     (`finalizeWithErrors`, or Close response delivered)
-    ///   Finishing -> Closed  (Close response delivered via `popResponseReadyNoLock`)
+    ///   Active -> Finishing  (Close request admitted to FIFO via addRequest)
+    ///   Active -> Closed     (finalizeWithErrors, or Close response delivered)
+    ///   Finishing -> Closed  (Close response delivered via popResponseReadyNoLock)
     enum class SessionState : uint8_t
     {
         Active,     /// Normal operation, accepts new requests.
@@ -58,8 +58,8 @@ public:
     {
         NotDelivered,        /// Session Closed, empty FIFO, or no callback.
         Delivered,           /// Response attached / delivered.
-        DeliveredAndDetach,  /// Close response -- caller must detach from registry.
-        FifoMismatch,        /// XID mismatch at FIFO head -- bug.
+        DeliveredAndDetach,  /// Close response — caller must detach from registry.
+        FifoMismatch,        /// XID mismatch at FIFO head — bug.
     };
 
     /// Callback invoked by the session to deliver completed requests to the consumer.
@@ -67,7 +67,7 @@ public:
     /// a single pipe write (wakeup) instead of one per request.
     using ResponseCallback = std::function<void(std::vector<SessionRequestPtr>)>;
 
-    /// Callback to dispatch a batch of local reads. Must be synchronous --
+    /// Callback to dispatch a batch of local reads. Must be synchronous —
     /// callers may pass spans over stack locals. Must always fill
     /// `req->response` on each element (result or error). Set once at
     /// construction. The batch may contain a single element.
@@ -78,12 +78,11 @@ public:
     /// @param subqueue  The assigned subqueue in `KeeperRequestsQueue` for this session.
     ///                  Used to push quorum requests without holding `mutex`.
     /// @param local_read_dispatch  Callback for local read execution. Owned by the session.
-    KeeperSession(int64_t session_id, ResponseCallback callback, KeeperSessionRegistry & registry,
-                  KeeperSubqueuePtr subqueue, LocalReadCallback local_read_dispatch);
+    KeeperSession(int64_t session_id, ResponseCallback callback, KeeperSessionRegistry & registry, KeeperSubqueuePtr subqueue, LocalReadCallback local_read_dispatch);
 
     int64_t getSessionID() const { return session_id; }
 
-    /// Result of `addRequest` -- lets the caller distinguish rejection reasons
+    /// Result of addRequest — lets the caller distinguish rejection reasons
     /// without re-acquiring the session mutex.
     enum class AddResult : uint8_t
     {
@@ -101,7 +100,7 @@ public:
     bool canAcceptRequests() const;
 
     /// Finalize the session and deliver error responses for all in-flight requests.
-    /// Atomically (under mutex): collects `active_requests`, creates error responses
+    /// Atomically (under mutex): collects active_requests, creates error responses
     /// for entries without an existing response, copies callback, clears callback,
     /// sets state to Closed. Then delivers the batch outside the mutex.
     /// Returns true if any responses were delivered.
@@ -110,44 +109,56 @@ public:
     /// --- Response delivery ---
     ///
     /// Three paths (dispatched by `KeeperDispatcher::routeResponse`):
-    /// - `onRaftResponse`: for Raft-committed responses -- attaches to FIFO head,
-    ///   sets `RaftResponseReady`. Actual delivery deferred to `onRaftCommitted`.
+    /// - `onRaftResponse`: for Raft-committed responses — attaches to FIFO head,
+    ///   sets RaftResponseReady. Actual delivery deferred to `onRaftCommitted`.
     /// - `onWatchNotification`: watch notifications (synthetic entries, bypass FIFO)
     /// - `deliverDirect`: fallback for error responses, session expiry, follower path
 
     /// Deliver a response directly, bypassing the session FIFO. Used for error responses,
-    /// session expiry, follower path, and `KeeperOverDispatcher` local reads.
+    /// session expiry, follower path, and KeeperOverDispatcher local reads.
     /// Creates a wrapper `SessionRequestPtr` and invokes the callback directly.
-    /// Returns `NotDelivered` if session is Closed or has no callback.
-    /// Returns `DeliveredAndDetach` for Close responses (caller must detach from registry).
+    /// Returns `delivered=false` if session is Closed or has no callback.
+    /// Returns `detach_session=true` for Close responses (caller must detach from registry).
     DeliveryResult deliverDirect(
         const Coordination::ZooKeeperResponsePtr & response);
 
-    /// Attach a Raft commit response to the FIFO head. Does NOT pop or deliver --
-    /// that happens in `onRaftCommitted` -> `advanceQueue`.
-    /// Verifies head XID matches; returns `FifoMismatch` on mismatch (bug).
+    /// Attach a Raft commit response to the FIFO head. Does NOT pop or deliver —
+    /// that happens in `onRaftCommitted` → `advanceQueue`.
+    /// Verifies head XID matches; returns `delivered=false` on mismatch (bug).
     DeliveryResult onRaftResponse(
         Coordination::XID xid,
         const Coordination::ZooKeeperResponsePtr & response);
 
     /// Deliver a watch notification. Creates a synthetic `SessionRequestPtr` with
     /// `is_watch_notification=true` and invokes the callback (bypasses FIFO).
+    ///
+    /// Ordering: the watch is delivered immediately without checking whether the
+    /// request that SET the watch is still in `active_requests`. Correct ordering
+    /// (watch arrives after the setting request's response) is guaranteed by the
+    /// global `process_and_responses_lock` in the state machine — the setting
+    /// request's response is delivered under the lock before any concurrent commit
+    /// can trigger the watch.
     DeliveryResult onWatchNotification(const Coordination::ZooKeeperResponsePtr & watch_response);
 
     /// Called from the commit callback after a Raft response has been attached
     /// by `onRaftResponse`. Runs outside the state machine locks. Pops the
     /// completed write from the FIFO head, delivers it, then advances the queue:
-    /// dispatching `PendingLocal` reads.
+    /// dispatching PendingLocal reads.
+    ///
+    /// This blocks the Raft commit thread for the duration of all dispatched
+    /// local reads. This is intentional: NuRaft serializes commits, so no other
+    /// commit can interleave while local reads execute. Each local read acquires
+    /// `process_and_responses_lock` independently in `processReadRequest`.
+    ///
+    /// Keep the code in the `local_read` callback fast. Lock order during the call:
+    /// `storage_mutex` (shared) -> `process_and_responses_lock` -> `session->mutex`
+    /// (via response delivery). Never acquire `process_and_responses_lock` or
+    /// `storage_mutex` while holding `mutex`.
     void onRaftCommitted();
 
-    /// Set state to Closed, clear callback, clear active requests.
-    void close();
-
-    SessionState getState() const;
-
 private:
-    /// Shared implementation for `deliverDirect` and `onWatchNotification`.
-    /// Creates a wrapper `SessionRequestPtr`, copies callback under lock, invokes outside.
+    /// Shared implementation for deliverDirect and onWatchNotification.
+    /// Creates a wrapper SessionRequestPtr, copies callback under lock, invokes outside.
     DeliveryResult deliverDirectResponse(const Coordination::ZooKeeperResponsePtr & response, bool is_watch);
 
     /// Pop completed heads and dispatch consecutive `PendingLocal` reads
@@ -164,15 +175,15 @@ private:
     /// Must be called with `mutex` held.
     bool popResponseReadyNoLock(std::vector<SessionRequestPtr> & out);
 
-    /// Collect consecutive `PendingLocal` reads with matching executor from the
-    /// head of `active_requests`. Marks them `ExecutingLocal`, decrements pending count.
+    /// Collect consecutive PendingLocal reads with matching executor from the
+    /// head of `active_requests`. Marks them ExecutingLocal, decrements pending count.
     /// Must be called with `mutex` held.
     void collectPendingReadsNoLock(KeeperRequestExecutor executor, std::vector<SessionRequestPtr> & out);
 
     /// Deliver popped responses via `cb`. Outside `mutex`.
     void deliverResponses(std::vector<SessionRequestPtr> & responses, const ResponseCallback & cb);
 
-    /// Dispatch a batch of reads via `local_read_dispatch`. Fills `ZSYSTEMERROR`
+    /// Dispatch a batch of reads via `local_read_dispatch`. Fills ZSYSTEMERROR
     /// on exception. Outside `mutex`.
     void dispatchReads(std::vector<SessionRequestPtr> & reads);
 
@@ -188,12 +199,12 @@ private:
     SessionState state = SessionState::Active;
 
     /// Response delivery callback. Set once in the constructor, cleared on Close/shutdown.
-    /// Stored as `shared_ptr` so that copying under mutex (for use outside the lock)
-    /// is a cheap refcount bump instead of a `std::function` heap allocation.
+    /// Stored as shared_ptr so that copying under mutex (for use outside the lock)
+    /// is a cheap refcount bump instead of a std::function heap allocation.
     std::shared_ptr<const ResponseCallback> callback;
 
     /// Ordered FIFO of all in-flight requests for this session.
-    /// Entries progress through states (see `RequestState` in `SessionRequest.h`).
+    /// Entries progress through states (see RequestState in SessionRequest.h).
     /// Protected by `mutex`.
     std::deque<SessionRequestPtr> active_requests;
 

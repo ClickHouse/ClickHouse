@@ -1,6 +1,4 @@
 #include <Coordination/KeeperDispatcher.h>
-#include <Coordination/KeeperSession.h>
-#include <Coordination/SessionRequest.h>
 #include <libnuraft/async.hxx>
 
 #include <Poco/Path.h>
@@ -35,9 +33,9 @@
 #include <future>
 #include <chrono>
 #include <limits>
-#include <span>
 #include <string>
 #include <unordered_set>
+#include <thread>
 
 #include <fmt/ranges.h>
 
@@ -77,13 +75,12 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
+    extern const CoordinationSettingsNonZeroUInt64 request_queue_num_shards;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
     extern const CoordinationSettingsUInt64 max_batch_time_microseconds;
-    extern const CoordinationSettingsUInt64 max_session_active_requests;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
-    extern const CoordinationSettingsNonZeroUInt64 request_queue_num_shards;
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
     extern const CoordinationSettingsMilliseconds sleep_before_leader_change_ms;
 }
@@ -161,6 +158,7 @@ KeeperDispatcher::KeeperDispatcher()
     , log(getLogger("KeeperDispatcher"))
 {}
 
+
 void KeeperDispatcher::requestThread()
 {
     DB::setThreadName(ThreadName::KEEPER_REQUEST);
@@ -181,10 +179,10 @@ void KeeperDispatcher::requestThread()
 
         try
         {
-            /// Poll requests from the queue, transition PendingRaft -> InRaft,
+            /// Poll requests from the queue, transition PendingRaft → InRaft,
             /// and extract lightweight KeeperRequestForSession structs.
             /// Accumulates entries within a bounded time window (max_batch_time_us)
-            /// to build bigger batches -- more entries per Raft append -> more per fsync.
+            /// to build bigger batches — more entries per Raft append → more per fsync.
             /// Will not return until the previous in-flight batch is finalized.
             auto batch = requests_queue->waitAndPullRaftBatch(
                 max_batch_size,
@@ -263,7 +261,7 @@ void KeeperDispatcher::requestThread()
 
                 /// reconfig_session may be null if session expired during batch processing.
                 /// Reconfig still executes (cluster-level op) but deferred read release is skipped.
-                auto reconfig_session = session_registry_.findSession(batch.reconfig.session_id);
+                auto reconfig_session = session_registry->findSession(batch.reconfig.session_id);
 
                 try
                 {
@@ -271,7 +269,7 @@ void KeeperDispatcher::requestThread()
                 }
                 catch (...)
                 {
-                    /// Reconfig is a cluster-level operation -- its failure should
+                    /// Reconfig is a cluster-level operation — its failure should
                     /// not terminate an otherwise healthy client session. Deliver
                     /// an error response for just this request and let the outer
                     /// catch log the exception.
@@ -327,13 +325,8 @@ bool KeeperDispatcher::routeResponse(int64_t session_id, const Coordination::Zoo
     /// client does not have a real session yet.
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::SessionID)
     {
-        const Coordination::ZooKeeperSessionIDResponse & session_id_resp = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
-
-        /// Nobody waits for this session id
-        if (session_id_resp.server_id != server->getServerID() || !session_registry_.hasNewSessionCallback(session_id_resp.internal_id))
-            return false;
-
-        auto callback = session_registry_.extractNewSessionCallback(session_id_resp.internal_id);
+        const auto & session_id_resp = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
+        auto callback = session_registry->extractNewSessionCallback(session_id_resp.internal_id, session_id_resp.server_id, server->getServerID());
         if (!callback)
             return false;
 
@@ -349,7 +342,7 @@ bool KeeperDispatcher::routeResponse(int64_t session_id, const Coordination::Zoo
     }
 
     /// Normal response -- deliver directly to the session.
-    auto session = session_registry_.findSession(session_id);
+    auto session = session_registry->findSession(session_id);
     if (!session)
     {
         LOG_TRACE(log, "routeResponse: session {} not found for xid {}",
@@ -371,93 +364,60 @@ bool KeeperDispatcher::routeResponse(int64_t session_id, const Coordination::Zoo
         result = session->onRaftResponse(response->xid, response);
         if (result == DR::FifoMismatch)
         {
-            /// XID mismatch is a bug -- `deliverDirect` would leave the FIFO head
+            /// XID mismatch is a bug — deliverDirect would leave the FIFO head
             /// unresolved, permanently stalling the session. Kill it instead.
-            LOG_ERROR(log, "routeResponse: session {} FIFO head mismatch for xid {} -- terminating session",
+            LOG_ERROR(log, "routeResponse: session {} FIFO head mismatch for xid {} — terminating session",
                 session_id, response->xid);
-            chassert(false && "FIFO head xid mismatch in routeResponse -- this is a bug");
-            terminateSession(session_id);
+            chassert(false && "FIFO head xid mismatch in routeResponse — this is a bug");
+            terminateSession(session_id, Coordination::Error::ZSYSTEMERROR);
             return false;
         }
         if (result == DR::NotDelivered)
         {
-            /// Session Closed or empty FIFO -- `deliverDirect` is the correct fallback.
+            /// Session Closed or empty FIFO — deliverDirect is the correct fallback.
+            /// Note: if this is a Close response, the result may be DeliveredAndDetach.
+            /// The commit_callback may also call detachSession. This is safe —
+            /// detachSession is idempotent (second call returns nullptr).
             result = session->deliverDirect(response);
         }
     }
 
     if (result == DR::NotDelivered)
     {
-        LOG_WARNING(log, "Response delivery failed for session {} xid {} -- session found but delivery rejected (likely closed)",
+        /// Session was found but delivery failed (session Closed or no delivery mechanism).
+        /// This can happen if the session was closed between findSession and delivery.
+        LOG_WARNING(log, "Response delivery failed for session {} xid {} — session found but delivery rejected (likely closed)",
             session_id, response->xid);
         return false;
     }
 
-    /// DeliveredAndDetach means we should remove the session from the registry.
-    /// This is currently handled by `terminateSession` in the caller for Close commits.
-    /// For direct close responses, we can ignore it here since the session is already
-    /// in Closed state.
+    if (result == DR::DeliveredAndDetach)
+        session_registry->detachSession(session_id);
 
     return true;
 }
 
-bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
+Coordination::Error KeeperDispatcher::putRequest(SessionRequestPtr keeper_req)
 {
-    auto session = session_registry_.findSession(session_id);
+    auto session = session_registry->findSession(keeper_req->session_id);
     if (!session)
     {
-        /// If session was already disconnected than we will ignore requests
-        if (!session_registry_.hasSessionCallback(session_id))
-            return false;
+        LOG_WARNING(log,
+            "putRequest: session {} not found for xid {} op {}",
+            keeper_req->session_id, keeper_req->request->xid,
+            Coordination::opNumToString(keeper_req->request->getOpNum()));
+        return Coordination::Error::ZSESSIONEXPIRED;
     }
-
-    if (keeper_context->isShutdownCalled())
-        return false;
-
-    /// Build a `SessionRequestPtr` and route through the new `putRequest`.
-    using namespace std::chrono;
-    auto keeper_req = std::make_shared<SessionRequest>();
-    keeper_req->session_id = session_id;
-    keeper_req->request = request;
-    keeper_req->use_xid_64 = use_xid_64;
-    keeper_req->cached_bytes_size = request->bytesSize();
-    keeper_req->time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-
-    auto err = putRequest(std::move(keeper_req), session);
-    if (err == Coordination::Error::ZOK)
-        return true;
-    if (err == Coordination::Error::ZSESSIONEXPIRED)
-    {
-        LOG_WARNING(log, "Session {} is not active, rejecting request", session_id);
-        return false;
-    }
-    /// Other errors (ZCONNECTIONLOSS, ZOUTOFMEMORY) -- request was rejected.
-    /// The `putRequest(SessionRequestPtr)` overload does not deliver error responses
-    /// for these cases; the legacy caller expects the error to be thrown or handled.
-    return false;
+    return putRequest(std::move(keeper_req), session);
 }
 
 Coordination::Error KeeperDispatcher::putRequest(SessionRequestPtr keeper_req, const KeeperSessionPtr & session)
 {
-    auto resolved_session = session;
-    if (!resolved_session)
-    {
-        resolved_session = session_registry_.findSession(keeper_req->session_id);
-        if (!resolved_session)
-        {
-            LOG_WARNING(log,
-                "putRequest: session {} not found for xid {} op {}",
-                keeper_req->session_id, keeper_req->request->xid,
-                Coordination::opNumToString(keeper_req->request->getOpNum()));
-            return Coordination::Error::ZSESSIONEXPIRED;
-        }
-    }
-
     if (keeper_context->isShutdownCalled())
         return Coordination::Error::ZSESSIONEXPIRED;
 
     /// Backpressure: reject if the global pending request count exceeds the
-    /// configured limit. Close bypasses -- it is critical for ephemeral cleanup
+    /// configured limit. Close bypasses — it is critical for ephemeral cleanup
     /// and must not be delayed until session timeout under queue pressure.
     bool is_close = keeper_req->request->getOpNum() == Coordination::OpNum::Close;
     const auto max_queue_size = configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size];
@@ -492,7 +452,7 @@ Coordination::Error KeeperDispatcher::putRequest(SessionRequestPtr keeper_req, c
         return Coordination::Error::ZOUTOFMEMORY;
     }
 
-    auto add_result = resolved_session->addRequest(std::move(keeper_req));
+    auto add_result = session->addRequest(std::move(keeper_req));
     switch (add_result)
     {
         case KeeperSession::AddResult::Accepted:
@@ -505,9 +465,21 @@ Coordination::Error KeeperDispatcher::putRequest(SessionRequestPtr keeper_req, c
     UNREACHABLE();
 }
 
+/// NOTE: This method is called directly by `KeeperOverDispatcher` (in-process keeper
+/// access used by ClickHouse server for internal ZooKeeper operations such as metadata
+/// reads and DDL coordination). That code path bypasses `putRequest` and session-level
+/// classification entirely -- reads go directly to the state machine without per-session
+/// barrier checks.
+///
+/// This is safe because `KeeperOverDispatcher` is used for server-internal operations
+/// that don't require per-session ordering guarantees with client writes.
+///
+/// Eventually, `KeeperOverDispatcher` should be migrated to use `putRequest` so that
+/// all read paths go through session classification and get proper per-session barrier
+/// semantics. Until then, this method must remain as a public API.
 bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
-    auto session = session_registry_.findSession(session_id);
+    auto session = session_registry->findSession(session_id);
     if (!session || !session->canAcceptRequests())
     {
         ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
@@ -517,15 +489,28 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
     if (keeper_context->isShutdownCalled())
         return false;
 
-    KeeperRequestForSession request_info;
-    request_info.request = request;
     using namespace std::chrono;
-    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    request_info.session_id = session_id;
+    auto keeper_req = std::make_shared<SessionRequest>();
+    keeper_req->session_id = session_id;
+    keeper_req->request = request;
+    keeper_req->cached_bytes_size = request->bytesSize();
+    keeper_req->mode = KeeperRequestMode::NonQuorum;
+    keeper_req->setState(RequestState::ExecutingLocal);
+    keeper_req->time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 
-    auto response = server->putLocalReadRequest(request_info);
+    KeeperRequestForSession req_for_session;
+    req_for_session.session_id = session_id;
+    req_for_session.request = request;
+
+    auto response = server->putLocalReadRequest(req_for_session);
+
     if (response)
+    {
+        keeper_req->response = response;
+        keeper_req->setState(RequestState::Completed);
         session->deliverDirect(response);
+    }
+
     return true;
 }
 
@@ -541,21 +526,20 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     /// Build the sharded request queue. One subqueue per hardware thread is a
     /// reasonable default; the session-to-subqueue mapping is deterministic so
     /// the number of subqueues does not need to match the number of sessions.
-    {
-        const auto max_queue_size = configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size];
-        const auto num_shards = configuration_and_settings->coordination_settings[CoordinationSetting::request_queue_num_shards];
-        requests_queue = std::make_unique<KeeperRequestsQueue>(
-            /*num_subqueues=*/num_shards,
-            /*max_queue_size=*/max_queue_size);
-        system_subqueue = requests_queue->getSubqueue(0);
-    }
+    const auto max_queue_size = configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size];
+    const auto num_shards = configuration_and_settings->coordination_settings[CoordinationSetting::request_queue_num_shards];
+    requests_queue = std::make_unique<KeeperRequestsQueue>(
+        /*num_subqueues=*/num_shards,
+        /*max_queue_size=*/max_queue_size);
 
-    session_registry_.initialize(
+    session_registry = std::make_unique<KeeperSessionRegistry>(
         keeper_context,
         *requests_queue,
         [this](std::span<SessionRequestPtr> batch) { dispatchLocalReads(batch); });
 
-    request_thread = ThreadFromGlobalPool([this] { requestThread(); });
+    /// System handle for session-less requests (SessionID, dead-session Close).
+    system_subqueue = requests_queue->getSubqueue(0);
+
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
     snapshot_s3.startup(config, macros);
@@ -563,17 +547,14 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     server = std::make_unique<KeeperServer>(
         configuration_and_settings,
         config,
-        [this](int64_t session_id, Coordination::ZooKeeperResponsePtr response, Coordination::ZooKeeperRequestPtr parsed_request) -> bool
+        [this](int64_t id, Coordination::ZooKeeperResponsePtr resp, Coordination::ZooKeeperRequestPtr req) -> bool
         {
-            return routeResponse(session_id, response, std::move(parsed_request));
+            return routeResponse(id, std::move(resp), std::move(req));
         },
         snapshots_queue,
         keeper_context,
         snapshot_s3,
-        [this](uint64_t log_idx, const KeeperRequestForSession & request_for_session)
-        {
-            onRaftCommit(log_idx, request_for_session);
-        });
+        [this](uint64_t idx, const KeeperRequestForSession & req) { onRaftCommit(idx, req); });
 
     try
     {
@@ -597,7 +578,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         throw;
     }
 
-    /// Start it after keeper server start
+    /// Start threads after keeper server is constructed and initialized.
+    request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
 
     update_configuration_thread = reconfigEnabled()
@@ -636,31 +618,29 @@ void KeeperDispatcher::shutdown()
         }
 
         KeeperRequestsForSessions close_requests;
+        auto sessions = session_registry->shutdown();
+
+        if (server && hasLeader())
         {
-            /// Clear all registered sessions
-            auto shutdown_result = session_registry_.clearAllSessions();
-
-            if (server && hasLeader())
+            close_requests.reserve(sessions.size());
+            for (const auto & session : sessions)
             {
-                close_requests.reserve(shutdown_result.sessions.size());
-                // send to leader CLOSE requests for active sessions
-                for (const auto & [session, callback] : shutdown_result.sessions)
-                {
-                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
-                    request->xid = Coordination::CLOSE_XID;
-                    using namespace std::chrono;
-                    KeeperRequestForSession request_info
-                    {
-                        .session_id = session,
-                        .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
-                        .request = std::move(request),
-                        .digest = std::nullopt
-                    };
+                auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+                request->xid = Coordination::CLOSE_XID;
+                using namespace std::chrono;
+                KeeperRequestForSession request_info;
+                request_info.session_id = session->getSessionID();
+                request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+                request_info.request = std::move(request);
 
-                    close_requests.push_back(std::move(request_info));
-                }
+                close_requests.push_back(std::move(request_info));
             }
         }
+
+        /// Deliver ZSESSIONEXPIRED errors + nullptr sentinel so clients
+        /// disconnect promptly instead of waiting for socket read timeout.
+        for (const auto & session : sessions)
+            session->finalizeWithErrors(Coordination::Error::ZSESSIONEXPIRED);
 
         if (server && !close_requests.empty())
         {
@@ -716,7 +696,7 @@ KeeperDispatcher::~KeeperDispatcher()
 
 KeeperSessionPtr KeeperDispatcher::registerSession(int64_t session_id, KeeperSession::ResponseCallback callback)
 {
-    return session_registry_.registerSession(session_id, std::move(callback));
+    return session_registry->registerSession(session_id, std::move(callback));
 }
 
 void KeeperDispatcher::sessionCleanerTask()
@@ -757,7 +737,7 @@ void KeeperDispatcher::sessionCleanerTask()
 
                     if (!system_subqueue->push(std::move(request_info)))
                     {
-                        LOG_WARNING(log, "Dead session close request for session {} dropped -- queue full", dead_session);
+                        LOG_WARNING(log, "Dead session close request for session {} dropped — queue full", dead_session);
                     }
                     else
                     {
@@ -776,32 +756,104 @@ void KeeperDispatcher::sessionCleanerTask()
     }
 }
 
-void KeeperDispatcher::terminateSession(int64_t session_id)
+void KeeperDispatcher::terminateSession(int64_t session_id, Coordination::Error error)
 {
     /// shutdown() method will cleanup sessions if needed
     if (keeper_context->isShutdownCalled())
         return;
 
-    ZooKeeperResponseCallback callback = session_registry_.unregisterSession(session_id);
-    if (!callback)
-    {
-        /// Session was already finished by another path (e.g. `sessionCleanerTask`
-        /// raced with `KeeperTCPHandler`). That path already erased from
-        /// `live_sessions`.
+    /// Find the session; keep it alive via shared_ptr while we finalize and deliver.
+    /// Returns nullptr if session was already finished by another path.
+    ///
+    /// Note: between finalizeWithErrors (sets Closed) and detachSession below,
+    /// a concurrent onRaftCommit could find the session via findSession and see
+    /// state == Closed. All paths check state and return early, so this is safe.
+    auto session = session_registry->findSession(session_id);
+    if (!session)
         return;
-    }
 
-    /// Remove from live_sessions so `requestThread` can skip stale requests
-    /// still sitting in the queue for this session.
-    session_registry_.removeLiveSession(session_id);
+    LOG_INFO(log, "Terminating session {} ({})", session_id, Coordination::errorMessage(error));
+    /// Deliver error responses for all in-flight requests before closing.
+    /// Atomically collects active_requests, creates error responses, clears
+    /// callback, and sets state to Closed. Raft commit callbacks arriving
+    /// after this will see Closed state and return early.
+    session->finalizeWithErrors(error);
 
-    /// Notify the callback that session is being closed before removing it
-    /// This allows clients to mark themselves as expired
-    if (callback)
+    LOG_INFO(log, "Detaching session {} from registry", session_id);
+    /// Detach AFTER delivering the Close response so that in-flight Raft commit
+    /// callbacks can still find the session during the delivery window.
+    session_registry->detachSession(session_id);
+}
+
+void KeeperDispatcher::dispatchLocalReads(std::span<SessionRequestPtr> batch)
+{
+    if (server->isLeaderAlive())
     {
-        auto close_response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
-        close_response->error = Coordination::Error::ZSESSIONEXPIRED;
-        callback(close_response, nullptr);
+        /// Build lightweight request structs for the server layer.
+        std::vector<KeeperRequestForSession> read_requests(batch.size());
+        for (size_t i = 0; i < batch.size(); ++i)
+        {
+            read_requests[i].session_id = batch[i]->session_id;
+            read_requests[i].request = batch[i]->request;
+        }
+
+        if (batch.size() == 1)
+        {
+            batch[0]->response = server->putLocalReadRequest(read_requests[0]);
+        }
+        else
+        {
+            auto responses = server->putLocalReadRequests(read_requests);
+            for (size_t i = 0; i < batch.size(); ++i)
+                batch[i]->response = std::move(responses[i]);
+        }
+    }
+    else
+    {
+        for (auto & req : batch)
+        {
+            auto err = req->request->makeResponse();
+            err->xid = req->request->xid;
+            err->error = Coordination::Error::ZCONNECTIONLOSS;
+            err->enqueue_ts = std::chrono::steady_clock::now();
+            req->response = err;
+        }
+    }
+}
+
+void KeeperDispatcher::onRaftCommit(uint64_t log_idx, const KeeperRequestForSession & request_for_session)
+{
+    LOG_TRACE(log, "commit_callback: session {} xid {} op {} log_idx {}",
+        request_for_session.session_id,
+        request_for_session.request->xid,
+        Coordination::opNumToString(request_for_session.request->getOpNum()),
+        log_idx);
+
+    if (auto session = session_registry->findSession(request_for_session.session_id))
+    {
+        bool is_close = (request_for_session.request->getOpNum() == Coordination::OpNum::Close);
+
+        if (is_close)
+        {
+            /// Two steps, both needed:
+            /// 1. `onRaftCommitted` → `advanceQueue` → `popResponseReadyNoLock`
+            ///    delivers the Close response to the client (sets Closed).
+            /// 2. `terminateSession` → `finalizeWithErrors` (no-op if already
+            ///    Closed) → `detachSession` removes from registry.
+            /// For cross-node session expiry Close, the FIFO may contain
+            /// stale entries — `terminateSession` clears them via finalizeWithErrors.
+            session->onRaftCommitted();
+            terminateSession(request_for_session.session_id);
+        }
+        else
+        {
+            session->onRaftCommitted();
+        }
+    }
+    else
+    {
+        LOG_TRACE(log, "commit_callback: session {} not found locally (follower?)",
+            request_for_session.session_id);
     }
 }
 
@@ -824,6 +876,51 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
 
 void KeeperDispatcher::failBatchSessions(const KeeperRequestsForSessions & batch, Coordination::Error error)
 {
+    /// Context: this is called when a Raft batch append fails transiently (leader change,
+    /// slow fsync, network hiccup, quorum instability). The error is typically
+    /// `ZCONNECTIONLOSS` or `ZOPERATIONTIMEOUT` — NOT `ZSESSIONEXPIRED`.
+    ///
+    /// Error semantics (ZooKeeper protocol):
+    ///   `ZCONNECTIONLOSS` / `ZOPERATIONTIMEOUT` are retryable operation-level errors.
+    ///   They signal ambiguous outcome: the operation may or may not have committed.
+    ///   Upstream ZooKeeper docs, the Java/C client examples, and `KeeperException` all
+    ///   treat these as fundamentally different from `ZSESSIONEXPIRED`, which is a terminal
+    ///   session-level event that destroys ephemerals, drops watches, and invalidates
+    ///   the session.
+    ///
+    /// ClickHouse ZooKeeper client behavior:
+    ///   `ZooKeeperImpl` treats `ZCONNECTIONLOSS` and `ZOPERATIONTIMEOUT` as hardware
+    ///   errors (`Coordination::isHardwareError`). On such errors the client abandons
+    ///   the current connection object and reconnects with a new session. This is
+    ///   connection-level recovery, not server-side session expiration. The client
+    ///   does not expect these errors to imply that the server destroyed the logical
+    ///   session.
+    ///
+    /// Why we expire the session immediately anyway:
+    ///   ClickHouse Keeper does not support session restore (`KeeperTCPHandler.cpp` —
+    ///   `previous_session_id` is always zero). The client always reconnects with a
+    ///   new session_id. So keeping the local session attachment alive after a transient
+    ///   failure would serve no purpose: the client cannot reattach to it. The session
+    ///   is effectively dead locally the moment we clear the callback and active_requests.
+    ///
+    ///   Storage-side session expiry (ephemerals, watches) is independent from the
+    ///   local session registry. It is driven by `session_expiry_queue` /
+    ///   `getDeadSessions` in `sessionCleanerTask`. Even after `terminateSession` detaches
+    ///   the local session, the storage-side session stays alive until its timeout fires
+    ///   and a Close request is committed through Raft.
+    ///
+    /// What we do:
+    ///   - Deliver per-request `ZCONNECTIONLOSS` / `ZOPERATIONTIMEOUT` errors for all
+    ///     in-flight requests via `finalizeWithErrors`
+    ///   - `finalizeWithErrors` also pushes a nullptr sentinel that causes the TCP
+    ///     handler to close the socket immediately after sending the error responses
+    ///   - Detach the local session from the registry via `terminateSession`
+    ///   - Storage-side cleanup happens later through the normal timeout / Close path
+    ///
+    /// The per-request error code is the caller's `error` (typically `ZCONNECTIONLOSS`),
+    /// NOT `ZSESSIONEXPIRED`. This is important: it tells the client "the operation may
+    /// have committed, check and retry" — not "your session is gone, rebuild everything."
+
     LOG_WARNING(log,
         "Failing batch of {} requests with error {}",
         batch.size(), Coordination::errorMessage(error));
@@ -837,13 +934,13 @@ void KeeperDispatcher::failBatchSessions(const KeeperRequestsForSessions & batch
             continue;
         }
 
-        /// Deduplicate -- one batch may contain many requests from the same session.
+        /// Deduplicate — one batch may contain many requests from the same session.
         /// `terminateSession` is idempotent (second call returns early), but dedup
         /// avoids repeated lookups and log noise.
         if (!finished_sessions.emplace(req.session_id).second)
             continue;
 
-        terminateSession(req.session_id);
+        terminateSession(req.session_id, error);
     }
 }
 
@@ -870,77 +967,14 @@ nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(
 
     result = nullptr;
 
+    /// On error: `result_buf` is null (failBatchSessions already delivered errors), always clear.
+    /// On success: clear only if `clear_requests_on_success` is true.
+    /// When false (Reconfig follows), `requests_for_sessions` is kept so the
+    /// caller can wait for the log index from `result_buf` before processing Reconfig.
     if (!result_buf || clear_requests_on_success)
         requests_for_sessions.clear();
 
     return result_buf;
-}
-
-void KeeperDispatcher::dispatchLocalReads(std::span<SessionRequestPtr> batch)
-{
-    if (server->isLeaderAlive())
-    {
-        /// Build lightweight request structs for the server layer.
-        for (size_t i = 0; i < batch.size(); ++i)
-        {
-            KeeperRequestForSession req_for_session;
-            req_for_session.session_id = batch[i]->session_id;
-            req_for_session.request = batch[i]->request;
-            batch[i]->response = server->putLocalReadRequest(req_for_session);
-        }
-    }
-    else
-    {
-        for (auto & req : batch)
-        {
-            auto err = req->request->makeResponse();
-            err->xid = req->request->xid;
-            err->error = Coordination::Error::ZCONNECTIONLOSS;
-            err->enqueue_ts = std::chrono::steady_clock::now();
-            req->response = err;
-        }
-    }
-}
-
-void KeeperDispatcher::onRaftCommit(uint64_t log_idx, const KeeperRequestForSession & request_for_session)
-{
-    LOG_TRACE(log, "commit_callback: session {} xid {} op {} log_idx {}",
-        request_for_session.session_id,
-        request_for_session.request->xid,
-        Coordination::opNumToString(request_for_session.request->getOpNum()),
-        log_idx);
-
-    if (auto session = session_registry_.findSession(request_for_session.session_id))
-    {
-        bool is_close = (request_for_session.request->getOpNum() == Coordination::OpNum::Close);
-
-        if (is_close)
-        {
-            /// Two steps, both needed:
-            /// 1. `onRaftCommitted` -> `advanceQueue` -> `popResponseReadyNoLock`
-            ///    delivers the Close response to the client (sets Closed).
-            /// 2. `terminateSession` -> `finalizeWithErrors` (no-op if already
-            ///    Closed) -> removes from registry.
-            session->onRaftCommitted();
-            terminateSession(request_for_session.session_id);
-        }
-        else
-        {
-            session->onRaftCommitted();
-        }
-    }
-    else
-    {
-        LOG_TRACE(log, "commit_callback: session {} not found locally (follower?)",
-            request_for_session.session_id);
-    }
-
-    /// When Close commits, remove the session from `live_sessions` so that
-    /// stale requests still sitting in the backed-up queue will be filtered.
-    if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
-    {
-        session_registry_.removeLiveSession(request_for_session.session_id);
-    }
 }
 
 int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
@@ -951,7 +985,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     std::shared_ptr<Coordination::ZooKeeperSessionIDRequest> request = std::make_shared<Coordination::ZooKeeperSessionIDRequest>();
     /// Internal session id. It's a temporary number which is unique for each client on this server
     /// but can be same on different servers.
-    request->internal_id = session_registry_.nextInternalSessionId();
+    request->internal_id = session_registry->nextInternalSessionId();
     request->session_timeout_ms = session_timeout_ms;
     request->server_id = server->getServerID();
 
@@ -964,7 +998,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     auto promise = std::make_shared<std::promise<int64_t>>();
     auto future = promise->get_future();
 
-    session_registry_.registerNewSessionCallback(
+    session_registry->registerNewSessionCallback(
         request->internal_id,
         [promise, internal_id = request->internal_id](
               const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr /*request*/)
@@ -1013,14 +1047,18 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 
     if (pushed)
     {
+        /// Count system requests in the registry pending count so that
+        /// `requestThread` can decrement it uniformly for all `PendingRaft` requests.
         pushed = system_subqueue->push(std::move(request_info));
     }
 
     if (!pushed)
     {
-        /// Clean up the registered callback -- the request was never enqueued,
+        /// Clean up the registered callback — the request was never enqueued,
         /// so no response will arrive to extract it.
-        session_registry_.extractNewSessionCallback(request->internal_id);
+        /// Pass server_id as both arguments so the equality check passes —
+        /// we want to unconditionally extract our own callback on cleanup.
+        session_registry->extractNewSessionCallback(request->internal_id, request->server_id, request->server_id);
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot allocate session: system queue is full");
     }
 
@@ -1117,9 +1155,9 @@ void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions && actions)
     if (keeper_context->isShutdownCalled()) return;
     for (auto && action : actions)
     {
+        LOG_DEBUG(log, "Processing config update {}: pushing", action);
         if (!cluster_update_queue.push(std::move(action)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push configuration update");
-        LOG_DEBUG(log, "Processing config update {}: pushed", action);
     }
 }
 
@@ -1237,7 +1275,7 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
         }
         LOG_INFO(log, "Timeout exceeded waiting for configuration update {} to be applied, attempt {}/{}", action, attempt + 1, retry_count + 1);
     }
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded (with retries count {}) waiting for configuration update {} to happen", action, retry_count);
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded (with retries count {}) waiting for configuration update {} to happen", retry_count, action);
 }
 
 void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command)
@@ -1264,7 +1302,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
             {
                 if (!nodes.contains(participant->get_id()))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Precondition failed: member with with id {} found in cluster, but precondition members are {}",
+                        "Precondition failed: member with id {} not found in precondition set {}",
                         participant->get_id(), fmt::join(nodes, ", "));
             }
         }
@@ -1442,7 +1480,9 @@ try
 
         int64_t retry_count = 1;
         if (action_obj->has("retry"))
-            retry_count = std::min(retry_count, action_obj->getValue<int64_t>("retry"));
+            retry_count = action_obj->getValue<int64_t>("retry");
+        /// Ensure at least one attempt even if an invalid (negative) value is configured.
+        retry_count = std::max(int64_t(0), retry_count);
 
         if (action_obj->has("remove_members"))
         {
@@ -1506,9 +1546,9 @@ try
         }
         else if (action_obj->has("transfer_leadership"))
         {
-            auto potential_laders = action_obj->getArray("transfer_leadership");
+            auto potential_leaders = action_obj->getArray("transfer_leadership");
             std::vector<int32_t> leader_ids;
-            for (const auto & leader_id_json : *potential_laders)
+            for (const auto & leader_id_json : *potential_leaders)
                 leader_ids.push_back(leader_id_json.convert<int32_t>());
             std::shuffle(leader_ids.begin(), leader_ids.end(), thread_local_rng);
 

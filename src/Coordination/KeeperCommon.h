@@ -2,7 +2,9 @@
 
 #include <Common/Logger.h>
 
+#include <base/types.h>
 #include <functional>
+#include <optional>
 
 
 namespace Coordination
@@ -27,12 +29,16 @@ class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 class KeeperSession;
 using KeeperSessionPtr = std::shared_ptr<KeeperSession>;
-class KeeperSessionRegistry;
 class SessionRequest;
 using SessionRequestPtr = std::shared_ptr<SessionRequest>;
 using SessionRequests = std::vector<SessionRequestPtr>;
 
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
+
+/// Callback used during new-session ID allocation (`registerNewSessionCallback` /
+/// `extractNewSessionCallback`). Not used for normal session response delivery --
+/// sessions use `KeeperSession::ResponseCallback` instead.
+using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
 enum class KeeperDigestVersion : uint8_t
 {
@@ -51,6 +57,10 @@ struct KeeperDigest
 
 static constexpr auto KEEPER_CURRENT_DIGEST_VERSION = KeeperDigestVersion::V4;
 
+/// Storage-layer response type: maps a response to its target session.
+/// Used only at the `KeeperStorage::processRequest` boundary (a single request
+/// can produce responses for multiple sessions — direct response + watch
+/// notifications). Downstream routing to sessions is handled by `ResponseRouter`.
 struct KeeperResponseForSession
 {
     int64_t session_id;
@@ -59,6 +69,10 @@ struct KeeperResponseForSession
 
 using KeeperResponsesForSessions = std::vector<KeeperResponseForSession>;
 
+/// Lightweight struct for the Raft/state-machine path.
+/// Contains only the fields needed for Raft log serialization, pre_commit,
+/// commit, and rollback. Does NOT carry session lifecycle state (RequestState,
+/// executor, mode) — those belong to `SessionRequest` in the session layer.
 struct KeeperRequestForSession
 {
     int64_t session_id{0};
@@ -68,9 +82,14 @@ struct KeeperRequestForSession
     std::optional<KeeperDigest> digest;
     int64_t log_idx{0};
     bool use_xid_64{false};
+
+    /// Timestamps set by the state machine in `pre_commit`, read in `commit`.
+    uint64_t pre_commit_start_us{0};
+    uint64_t pre_commit_end_us{0};
 };
-using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
+
 using KeeperRequestForSessionPtr = std::shared_ptr<KeeperRequestForSession>;
+using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 

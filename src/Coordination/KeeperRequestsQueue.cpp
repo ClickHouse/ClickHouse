@@ -68,7 +68,8 @@ KeeperSubqueue::PullResult KeeperSubqueue::pullIntoRaftBatch(
         /// CAS PendingRaft → InRaft. Uses tryTransitionState to avoid
         /// TOCTOU with finalizeWithErrors (which runs under session mutex,
         /// not subqueue mutex). If CAS fails, the entry was raced — treat as orphan.
-        req->tryTransitionState(RequestState::PendingRaft, RequestState::InRaft);
+        req->tryTransitionState(RequestState::PendingRaft, RequestState::InRaft,
+            {{"keeper.outstanding_requests", static_cast<Int64>(parent.totalSize())}});
 
         /// Entries not in InRaft (e.g. Initial after session cleanup, or
         /// Completed after concurrent finalizeWithErrors) are orphaned.
