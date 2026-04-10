@@ -180,7 +180,7 @@ void MergingAggregatedStep::updateOutputHeader()
 
 QueryPlanStepPtr MergingAggregatedStep::clone() const
 {
-    return std::make_unique<MergingAggregatedStep>(
+    auto cloned = std::make_unique<MergingAggregatedStep>(
         input_headers.front(),
         params,
         grouping_sets_params,
@@ -191,6 +191,8 @@ QueryPlanStepPtr MergingAggregatedStep::clone() const
         max_block_size,
         memory_bound_merging_max_block_bytes,
         memory_bound_merging_of_aggregation_results_enabled);
+    cloned->group_by_sort_description = group_by_sort_description;
+    return cloned;
 }
 
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const

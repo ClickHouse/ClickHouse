@@ -1747,6 +1747,9 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_rows_estimation = right_rows_estimation;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->optimized = optimized;
+    result_step->result_column_stats = result_column_stats;
+    result_step->right_hash_table_cache_key = right_hash_table_cache_key;
+    result_step->dummy_stats = dummy_stats;
     return result_step;
 }
 
