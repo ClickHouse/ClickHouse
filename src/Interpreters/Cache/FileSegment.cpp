@@ -638,6 +638,14 @@ void FileSegment::setDownloadFailed()
     setDownloadFailedUnlocked(lk);
 }
 
+void FileSegment::setDownloadFinishedWithoutContinuation()
+{
+    auto lk = lock();
+    assertIsDownloaderUnlocked("setDownloadFinishedWithoutContinuation", lk);
+    setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, lk);
+    cv.notify_all();
+}
+
 void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
 {
     LOG_INFO(log, "Setting download as failed: {}", getInfoForLogUnlocked(lock));

@@ -1,4 +1,5 @@
 <!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
+<!-- Scale factor: 10 -->
 <test>
 
 <settings file="../benchmarks/tpc-h/settings.json"/>
