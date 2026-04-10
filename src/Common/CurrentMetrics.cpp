@@ -364,11 +364,6 @@
     M(MMapCacheCells, "The number of files opened with `mmap` (mapped in memory). This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`. The files opened with `mmap` are kept in the cache to avoid costly TLB flushes.") \
     M(QueryCacheBytes, "Total size of the query cache in bytes") \
     M(QueryCacheEntries, "Total number of entries in the query cache") \
-    M(AICacheSizeInBytes, "Total size of the AI result cache in bytes") \
-    M(AICacheEntries, "Total number of entries in the AI result cache") \
-    M(AIThreads, "Number of threads in the AI function thread pool") \
-    M(AIThreadsActive, "Number of threads in the AI function thread pool running a task") \
-    M(AIThreadsScheduled, "Number of queued or active jobs in the AI function thread pool") \
     M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
     M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \

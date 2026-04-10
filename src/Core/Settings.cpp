@@ -7889,20 +7889,11 @@ Default named collection for AI functions. When set, functions can be called wit
     DECLARE(UInt64, ai_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_max_retries`.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_max_concurrent_requests, 16, R"(
-Maximum number of concurrent HTTP requests dispatched in parallel by AI functions when processing a block of rows. Higher values improve throughput but increase load on the provider.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_max_rps, 50, R"(
-Maximum requests per second sent to the AI provider. Enforced via a token-bucket rate limiter to stay within provider rate limits.
-)", EXPERIMENTAL) \
     DECLARE(UInt64, ai_max_retries, 3, R"(
 Maximum number of retry attempts for transient errors (HTTP 5xx, 429, network timeouts) per individual API request. Each retry uses exponential backoff starting from `ai_retry_initial_delay_ms`.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_retry_initial_delay_ms, 1000, R"(
 Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_cache_ttl_sec, 86400, R"(
-Time-to-live in seconds for cached AI function results. Identical inputs (same text, model, parameters) within this window are served from cache without making an API call. Default is 86400 (24 hours). Set to 0 to disable caching entirely.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_on_error, "throw", R"(
 Behavior when an AI function call fails permanently after exhausting all retries. Possible values: 'throw' (default) aborts the query with an exception; 'default' returns the default value for the column type (empty string for String) and continues processing.
