@@ -1,3 +1,4 @@
+--- geoIntersectsBoxSpherical ---
 point inside box
 1
 point outside box
@@ -14,3 +15,13 @@ multipolygon intersecting box
 1
 inverted xmin/xmax
 inverted ymin/ymax
+--- geoIntersectsBoxCartesian ---
+point inside box
+1
+point outside box
+0
+polygon overlapping box
+1
+--- ST_IntersectsBox with st_function_use_spherical ---
+1
+1

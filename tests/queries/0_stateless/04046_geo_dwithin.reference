@@ -1,3 +1,4 @@
+--- geoDWithinSpherical ---
 close points ~111m threshold 200m
 1
 far points ~111km threshold 1000m
@@ -9,4 +10,14 @@ point inside polygon threshold 0
 point far from polygon threshold 1km
 0
 point far from polygon huge threshold
+1
+--- geoDWithinCartesian ---
+close points distance < 2
+1
+far points distance > 2
+0
+point inside polygon distance 0
+1
+--- ST_DWithin with st_function_use_spherical ---
+1
 1
