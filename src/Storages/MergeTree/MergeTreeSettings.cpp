@@ -2271,7 +2271,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                     if (!is_attach)
                     {
                         auto policy_name = value.safeGet<String>();
-                        context->getStoragePolicy(policy_name); 
+                        context->getStoragePolicy(policy_name);
                     }
                 }
                 else if (name == "table_disk")
