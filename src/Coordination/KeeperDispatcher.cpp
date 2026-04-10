@@ -419,11 +419,13 @@ Coordination::Error KeeperDispatcher::putRequest(SessionRequestPtr keeper_req, c
         return Coordination::Error::ZSESSIONEXPIRED;
 
     /// Backpressure: reject if the global pending request count exceeds the
-    /// configured limit. Close bypasses — it is critical for ephemeral cleanup
-    /// and must not be delayed until session timeout under queue pressure.
+    /// configured limit. Close bypasses (ephemeral cleanup must not be delayed).
+    /// Local reads bypass (they never enter the Raft queue — rejecting them
+    /// on Raft backlog is a false positive that blocks unrelated read traffic).
     bool is_close = keeper_req->request->getOpNum() == Coordination::OpNum::Close;
+    bool is_local_read = !session_registry->quorumReads() && keeper_req->request->isReadRequest();
     const auto max_queue_size = configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size];
-    if (!is_close && max_queue_size > 0 && requests_queue->totalSize() >= max_queue_size)
+    if (!is_close && !is_local_read && max_queue_size > 0 && requests_queue->totalSize() >= max_queue_size)
     {
         LOG_WARNING(log,
             "Request rejected for session {} xid {} op {}: pending count {} >= limit {}",

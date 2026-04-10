@@ -118,6 +118,11 @@ void KeeperOverDispatcher::failCallback(XID xid, ZooKeeperResponsePtr response, 
         response->error = error;
         cb(response);
     }
+
+    /// Mark expired so KeeperHTTPClient recreates the in-process client
+    /// instead of reusing a dead session.
+    if (error == Coordination::Error::ZSESSIONEXPIRED)
+        callback_state->expired = true;
 }
 
 void KeeperOverDispatcher::create(
