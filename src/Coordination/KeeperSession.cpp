@@ -320,7 +320,7 @@ KeeperSession::AddResult KeeperSession::addRequest(SessionRequestPtr keeper_req)
             keeper_req->executor = KeeperRequestExecutor::QuorumThread;
             keeper_req->setState(RequestState::PendingRaft);
             active_requests.push_back(keeper_req);
-            if (!subqueue->push(keeper_req))
+            if (!subqueue->push(keeper_req, /*bypass_limit=*/is_close))
             {
                 active_requests.pop_back();
                 /// Roll back to Initial so the destructor's OTel safety-net

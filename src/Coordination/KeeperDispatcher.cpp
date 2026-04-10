@@ -271,11 +271,13 @@ void KeeperDispatcher::requestThread()
                 {
                     /// Reconfig is a cluster-level operation — its failure should
                     /// not terminate an otherwise healthy client session. Deliver
-                    /// an error response for just this request and let the outer
-                    /// catch log the exception.
+                    /// an error response for just this request, then drain the
+                    /// FIFO head so later requests on this session are not stuck.
                     addErrorResponses(
                         {batch.reconfig},
                         Coordination::Error::ZSYSTEMERROR);
+                    if (reconfig_session)
+                        reconfig_session->onRaftCommitted();
                     throw;
                 }
 
@@ -735,7 +737,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     /// Close will still pass through RAFT for ephemeral cleanup.
                     terminateSession(dead_session);
 
-                    if (!system_subqueue->push(std::move(request_info)))
+                    if (!system_subqueue->push(std::move(request_info), /*bypass_limit=*/true))
                     {
                         LOG_WARNING(log, "Dead session close request for session {} dropped — queue full", dead_session);
                     }

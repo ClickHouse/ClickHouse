@@ -34,8 +34,8 @@ public:
     explicit KeeperSubqueue(KeeperRequestsQueue & parent_);
 
     /// Push a request. Returns false if the parent's global limit is reached.
-    /// If the subqueue was empty before push, notifies the parent's CV.
-    bool push(SessionRequestPtr request);
+    /// If `bypass_limit` is true, skips the global limit check (used for Close).
+    bool push(SessionRequestPtr request, bool bypass_limit = false);
 
     struct PullResult
     {

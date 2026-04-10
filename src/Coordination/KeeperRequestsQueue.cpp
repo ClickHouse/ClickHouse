@@ -30,11 +30,12 @@ KeeperSubqueue::KeeperSubqueue(KeeperRequestsQueue & parent_)
 {
 }
 
-bool KeeperSubqueue::push(SessionRequestPtr request)
+bool KeeperSubqueue::push(SessionRequestPtr request, bool bypass_limit)
 {
     /// Soft limit — concurrent pushes can overshoot slightly because the
     /// check and increment are not atomic. This is standard backpressure.
-    if (parent.isOverLimit())
+    /// Close bypasses the limit to ensure ephemeral cleanup is not delayed.
+    if (!bypass_limit && parent.isOverLimit())
         return false;
 
     {
