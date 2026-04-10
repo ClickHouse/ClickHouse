@@ -65,6 +65,7 @@ struct KeeperRequestForSession
     bool use_xid_64{false};
 };
 using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
+using KeeperRequestForSessionPtr = std::shared_ptr<KeeperRequestForSession>;
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 

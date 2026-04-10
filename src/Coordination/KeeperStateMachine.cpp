@@ -349,7 +349,7 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     return write_buf.getBuffer();
 }
 
-std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
+KeeperRequestForSessionPtr IKeeperStateMachine::parseRequest(
     nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
 {
     ReadBufferFromNuraftBuffer buffer(data);

@@ -54,7 +54,7 @@ public:
     ///
     /// final - whether it's the final time we will fetch the request so we can safely remove it from cache
     /// serialization_version - information about which fields were parsed from the buffer so we can modify the buffer accordingly
-    std::shared_ptr<KeeperRequestForSession> parseRequest(
+    KeeperRequestForSessionPtr parseRequest(
         nuraft::buffer & data,
         bool final,
         ZooKeeperLogSerializationVersion * serialization_version = nullptr,
@@ -167,7 +167,7 @@ protected:
     /// for request.
     mutable std::mutex process_and_responses_lock;
 
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperRequestForSession>>> parsed_request_cache;
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestForSessionPtr>> parsed_request_cache;
     uint64_t min_request_size_to_cache{0};
     /// we only need to protect the access to the map itself
     /// requests can be modified from anywhere without lock because a single request
