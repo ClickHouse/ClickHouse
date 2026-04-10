@@ -62,7 +62,7 @@ workflow = Workflow.Config(
         #     job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
         #     for job in JobConfigs.special_build_jobs
         # ],
-        *JobConfigs.build_llvm_coverage_job,
+        # *JobConfigs.build_llvm_coverage_job, # NOTE (strtgbb): Not configured yet. Determine if useful first.
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
         JobConfigs.lightweight_functional_tests_job,
         JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
@@ -85,7 +85,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.functional_tests_jobs_azure
         ],
-        *JobConfigs.functional_test_llvm_coverage_jobs,
+        # *JobConfigs.functional_test_llvm_coverage_jobs, # NOTE (strtgbb): Not configured yet. Determine if useful first.
         *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_required[:]
@@ -94,9 +94,9 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
-        *JobConfigs.integration_test_llvm_coverage_jobs,
+        # *JobConfigs.integration_test_llvm_coverage_jobs, # NOTE (strtgbb): Not configured yet. Determine if useful first.
         *JobConfigs.unittest_jobs,
-        *JobConfigs.unittest_llvm_coverage_job,
+        # *JobConfigs.unittest_llvm_coverage_job, # NOTE (strtgbb): Not configured yet. Determine if useful first.
         JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *[
@@ -127,7 +127,7 @@ workflow = Workflow.Config(
         #    job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
         #    for job in JobConfigs.performance_comparison_with_master_head_jobs
         # ], # NOTE (strtgbb): failed previously due to GH secrets not being handled properly, try again later
-        JobConfigs.llvm_coverage_job,
+        # JobConfigs.llvm_coverage_job, # NOTE (strtgbb): Not configured yet. Determine if useful first.
         JobConfigs.sqllogic_test_master_job.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
@@ -150,8 +150,8 @@ workflow = Workflow.Config(
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.parser_memory_profiler,
-        *ArtifactConfigs.llvm_profdata_file,
-        ArtifactConfigs.llvm_coverage_info_file,
+        # *ArtifactConfigs.llvm_profdata_file,
+        # ArtifactConfigs.llvm_coverage_info_file,
         ArtifactConfigs.toolchain_pgo_bolt_amd,
         ArtifactConfigs.toolchain_pgo_bolt_arm,
     ],
