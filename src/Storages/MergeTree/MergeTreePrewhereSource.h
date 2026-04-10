@@ -11,6 +11,9 @@
 namespace DB
 {
 
+struct MergeTreeIndexBuildContext;
+using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
 struct PrewhereExprInfo;
 
 /// Source processor for the pipelined MergeTree reader.
@@ -26,7 +29,8 @@ public:
         MergeTreeReadPoolPtr pool_,
         size_t task_idx_,
         PrewhereExprInfo prewhere_actions_,
-        MergeTreeReadTask::BlockSizeParams block_size_params_);
+        MergeTreeReadTask::BlockSizeParams block_size_params_,
+        MergeTreeIndexBuildContextPtr index_build_context_ = {});
 
     String getName() const override { return "MergeTreePrewhereSource"; }
 
@@ -52,6 +56,7 @@ private:
     size_t task_idx;
     PrewhereExprInfo prewhere_actions;
     MergeTreeReadTask::BlockSizeParams block_size_params;
+    MergeTreeIndexBuildContextPtr index_build_context;
 
     /// Per-task state. Rebuilt when switching to a new task.
     MergeTreeReadTaskInfoPtr current_task_info;

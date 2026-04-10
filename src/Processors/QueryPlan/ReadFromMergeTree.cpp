@@ -668,7 +668,7 @@ Pipe ReadFromMergeTree::buildStandardPipeline(
 
 Pipe ReadFromMergeTree::readFromPoolPipelined(
     RangesInDataParts parts_with_range,
-    const MergeTreeIndexBuildContextPtr & /*index_build_context*/,
+    const MergeTreeIndexBuildContextPtr & index_build_context,
     Names required_columns,
     PoolSettings pool_settings)
 {
@@ -716,7 +716,8 @@ Pipe ReadFromMergeTree::readFromPoolPipelined(
             pool,
             i,
             prewhere_actions,
-            block_size);
+            block_size,
+            index_build_context);
 
         if (i == 0)
             source->addTotalRowsApprox(total_rows);
@@ -899,7 +900,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
 Pipe ReadFromMergeTree::readInOrderPipelined(
     RangesInDataParts parts_with_ranges,
-    const MergeTreeIndexBuildContextPtr & /*index_build_context*/,
+    const MergeTreeIndexBuildContextPtr & index_build_context,
     Names required_columns,
     PoolSettings pool_settings,
     ReadType read_type,
@@ -1000,7 +1001,8 @@ Pipe ReadFromMergeTree::readInOrderPipelined(
             pool,
             i, /// task_idx = part index for InOrder pools
             prewhere_actions,
-            block_size);
+            block_size,
+            index_build_context);
 
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);

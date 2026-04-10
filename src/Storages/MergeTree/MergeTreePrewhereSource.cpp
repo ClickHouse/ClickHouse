@@ -17,12 +17,14 @@ MergeTreePrewhereSource::MergeTreePrewhereSource(
     MergeTreeReadPoolPtr pool_,
     size_t task_idx_,
     PrewhereExprInfo prewhere_actions_,
-    MergeTreeReadTask::BlockSizeParams block_size_params_)
+    MergeTreeReadTask::BlockSizeParams block_size_params_,
+    MergeTreeIndexBuildContextPtr index_build_context_)
     : ISource(std::make_shared<const Block>(std::move(prewhere_header)))
     , pool(std::move(pool_))
     , task_idx(task_idx_)
     , prewhere_actions(std::move(prewhere_actions_))
     , block_size_params(block_size_params_)
+    , index_build_context(std::move(index_build_context_))
 {
 }
 
@@ -70,6 +72,11 @@ bool MergeTreePrewhereSource::getNewTask()
     auto task = pool->getTask(task_idx, nullptr);
     if (!task)
         return false;
+
+    /// Initialize prepared skip/projection index before releasing readers,
+    /// while the task still owns its readers and mark ranges.
+    if (index_build_context)
+        task->initializeIndexReader(index_build_context, nullptr);
 
     current_task_info = task->getInfoPtr();
     current_readers = task->releaseReaders();
