@@ -166,7 +166,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        if (text_col->isNullAt(i) || !quota->checkBeforeDispatch())
+        if (text_col->isNullAt(i) || quota->isQuotaExceeded())
         {
             result_col->insertDefault();
             ++rows_skipped;
@@ -174,6 +174,14 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         }
 
         String user_message = buildUserMessage(arguments, i);
+
+        if (!quota->checkBeforeDispatch(user_message.size() + system_prompt.size()))
+        {
+            result_col->insertDefault();
+            ++rows_skipped;
+            continue;
+        }
+
         String result;
         bool success = false;
 

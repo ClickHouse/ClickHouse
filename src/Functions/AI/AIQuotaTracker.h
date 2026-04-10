@@ -23,7 +23,12 @@ public:
         , on_error(on_error_)
     {}
 
-    bool checkBeforeDispatch();
+    /// Check if we have already exceeded a quota, or if we are about to exceed the API calls, estimated input tokens quota.
+    /// Also checks if we exceeded the max_output_tokens quota on the previous call
+    /// estimated_text_bytes is the total size of the prompt text in bytes
+    bool checkBeforeDispatch(size_t estimated_text_bytes = 0);
+
+    /// Record counts of input and output tokens. To be called after the API call.
     void recordResponse(UInt64 in_tokens, UInt64 out_tokens);
     bool handleRowError();
     bool isQuotaExceeded() const { return quota_exceeded.load(MEMORY_ORDER); }

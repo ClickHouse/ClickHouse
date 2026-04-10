@@ -14,10 +14,44 @@ static bool isGracefulQuotaMode(const String & mode)
     return mode == "default";
 }
 
-bool AIQuotaTracker::checkBeforeDispatch()
+bool AIQuotaTracker::checkBeforeDispatch(size_t estimated_text_bytes)
 {
     if (quota_exceeded.load(MEMORY_ORDER))
         return false;
+
+    /// Attempt to estimate the tokens we will use for the next API call
+    if (max_input_tokens > 0 && estimated_text_bytes > 0)
+    {
+        /// 1 token is approx 4 characters aka 4 bytes. https://help.openai.com/en/articles/4936856-what-are-tokens-and-how-to-count-them
+        UInt64 estimated_tokens = estimated_text_bytes / 4;
+        UInt64 current = input_tokens.load(MEMORY_ORDER);
+        if (current + estimated_tokens > max_input_tokens)
+        {
+            if (!isGracefulQuotaMode(on_quota_exceeded))
+                throw Exception(
+                    ErrorCodes::LIMIT_EXCEEDED,
+                    "Estimated input tokens for next API call ({}) would exceed limit: {} tokens used, maximum: {}. "
+                    "This is controlled by the 'ai_max_input_tokens_per_query' setting",
+                    estimated_tokens,
+                    current,
+                    max_input_tokens);
+
+            quota_exceeded.store(true, MEMORY_ORDER);
+            return false;
+        }
+    }
+
+    /// We cannot know output tokens in advance, so this quota is only enforced retroactively
+    if (max_output_tokens > 0 && output_tokens.load(MEMORY_ORDER) > max_output_tokens)
+    {
+        if (!isGracefulQuotaMode(on_quota_exceeded))
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+                "Limit for AI output tokens exceeded: {} tokens generated, maximum: {}. "
+                "This is controlled by the 'ai_max_output_tokens_per_query' setting",
+                output_tokens.load(MEMORY_ORDER), max_output_tokens);
+        quota_exceeded.store(true, MEMORY_ORDER);
+        return false;
+    }
 
     if (max_api_calls > 0)
     {
@@ -45,26 +79,6 @@ void AIQuotaTracker::recordResponse(UInt64 in_tokens, UInt64 out_tokens)
 {
     input_tokens.fetch_add(in_tokens, MEMORY_ORDER);
     output_tokens.fetch_add(out_tokens, MEMORY_ORDER);
-
-    if (max_input_tokens > 0 && input_tokens.load(MEMORY_ORDER) > max_input_tokens)
-    {
-        if (!isGracefulQuotaMode(on_quota_exceeded))
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                "Limit for AI input tokens exceeded: {} tokens consumed, maximum: {}. "
-                "This is controlled by the 'ai_max_input_tokens_per_query' setting",
-                input_tokens.load(MEMORY_ORDER), max_input_tokens);
-        quota_exceeded.store(true, MEMORY_ORDER);
-    }
-
-    if (max_output_tokens > 0 && output_tokens.load(MEMORY_ORDER) > max_output_tokens)
-    {
-        if (!isGracefulQuotaMode(on_quota_exceeded))
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                "Limit for AI output tokens exceeded: {} tokens generated, maximum: {}. "
-                "This is controlled by the 'ai_max_output_tokens_per_query' setting",
-                output_tokens.load(MEMORY_ORDER), max_output_tokens);
-        quota_exceeded.store(true, MEMORY_ORDER);
-    }
 }
 
 bool AIQuotaTracker::handleRowError()
