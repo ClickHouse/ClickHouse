@@ -241,8 +241,21 @@ SetAndKeyPtr FutureSetFromSubquery::createTemporarySetAndKeyForInplaceBuild(bool
     return result;
 }
 
-void FutureSetFromSubquery::restoreQueryPlanForRetry(const ContextPtr & context)
+std::unique_ptr<QueryPlan> FutureSetFromSubquery::createQueryPlanForRetry(const ContextPtr & context) const
 {
+    if (source)
+    {
+        try
+        {
+            return std::make_unique<QueryPlan>(source->clone());
+        }
+        catch (...)
+        {
+            if (!query_plan_builder)
+                throw;
+        }
+    }
+
     if (!query_plan_builder)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -256,7 +269,18 @@ void FutureSetFromSubquery::restoreQueryPlanForRetry(const ContextPtr & context)
             "Query plan builder returned empty source query plan for set {}",
             set_and_key->key);
 
-    setQueryPlan(std::move(restored_source));
+    return restored_source;
+}
+
+void FutureSetFromSubquery::restoreQueryPlanForRetry(std::unique_ptr<QueryPlan> source_for_retry)
+{
+    if (!source_for_retry)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot restore empty source query plan for set {} after failed in-place build",
+            set_and_key->key);
+
+    setQueryPlan(std::move(source_for_retry));
 }
 
 void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_)
@@ -359,6 +383,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (!source)
         return;
 
+    auto source_for_retry = createQueryPlanForRetry(context);
     auto inplace_set_and_key = createTemporarySetAndKeyForInplaceBuild(false);
     auto plan = std::move(source);
     auto creating_set = std::make_unique<CreatingSetStep>(
@@ -381,7 +406,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 
     if (!inplace_set_and_key->set->isCreated())
     {
-        restoreQueryPlanForRetry(context);
+        restoreQueryPlanForRetry(std::move(source_for_retry));
         return;
     }
 
@@ -420,6 +445,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     if (!source)
         return nullptr;
 
+    auto source_for_retry = createQueryPlanForRetry(context);
     auto inplace_set_and_key = createTemporarySetAndKeyForInplaceBuild(true);
     auto plan = std::move(source);
     auto creating_set = std::make_unique<CreatingSetStep>(
@@ -445,7 +471,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// the pipeline without setting `set_and_key->set->is_created` to true.
     if (!inplace_set_and_key->set->isCreated())
     {
-        restoreQueryPlanForRetry(context);
+        restoreQueryPlanForRetry(std::move(source_for_retry));
         return nullptr;
     }
 

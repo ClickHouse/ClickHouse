@@ -909,6 +909,9 @@ void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
 QueryPlan QueryPlan::clone() const
 {
     QueryPlan result;
+    result.resources.append(resources);
+    result.max_threads = max_threads;
+    result.concurrency_control = concurrency_control;
     result.nodes.emplace_back(Node{ .step = {}, .children = {} });
     auto * current_subplan_copy_root = &result.nodes.back();
 

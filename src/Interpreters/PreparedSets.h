@@ -182,7 +182,8 @@ public:
 
 private:
     SetAndKeyPtr createTemporarySetAndKeyForInplaceBuild(bool keep_explicit_set_elements) const;
-    void restoreQueryPlanForRetry(const ContextPtr & context);
+    std::unique_ptr<QueryPlan> createQueryPlanForRetry(const ContextPtr & context) const;
+    void restoreQueryPlanForRetry(std::unique_ptr<QueryPlan> source_for_retry);
 
     Hash hash;
     ASTPtr ast;
