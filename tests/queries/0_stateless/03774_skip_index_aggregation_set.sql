@@ -22,6 +22,7 @@ INSERT INTO test_skip_index_set_agg VALUES
 SET optimize_use_skip_index_aggregation = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
+SET count_distinct_optimization = false;
 
 -- ==================================================
 -- Basic set index tests for uniq functions

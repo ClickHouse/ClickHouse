@@ -15,7 +15,7 @@ CREATE TABLE test_skip_index_minmax_agg (
 ) ENGINE = MergeTree
 PARTITION BY p
 ORDER BY id
-SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = '';
+SETTINGS auto_statistics_types = '';
 
 INSERT INTO test_skip_index_minmax_agg VALUES
     (1, 10, 5, 100.0, 100.0, 10, 1),
@@ -152,7 +152,7 @@ CREATE TABLE test_col_stats_agg (
 ) ENGINE = MergeTree
 PARTITION BY p
 ORDER BY id
-SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = 'minmax';
+SETTINGS auto_statistics_types = 'minmax';
 
 INSERT INTO test_col_stats_agg VALUES
     (1, 10, 5, 100.0, 100.0, NULL, 1),
@@ -162,9 +162,6 @@ INSERT INTO test_col_stats_agg VALUES
     (5, 15, 4, 150.0, 150.0, NULL, 2),
     (6, 2, 3, 25.0, NULL, NULL, 3),
     (7, 40, 10, 400.0, 400.0, NULL, 3);
-
--- Force statistics to be recomputed for existing parts
-ALTER TABLE test_col_stats_agg MATERIALIZE STATISTICS ALL;
 
 SET optimize_use_skip_index_aggregation = 1;
 SET parallel_replicas_local_plan = 1;
@@ -243,15 +240,13 @@ CREATE TABLE test_col_stats_and_skip_index (
 ) ENGINE = MergeTree
 PARTITION BY p
 ORDER BY id
-SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = 'minmax';
+SETTINGS auto_statistics_types = 'minmax';
 
 INSERT INTO test_col_stats_and_skip_index VALUES
     (1, 100.0, 1),
     (2, 200.0, 1),
     (3, 300.0, 2),
     (4, 400.0, 2);
-
-ALTER TABLE test_col_stats_and_skip_index MATERIALIZE STATISTICS ALL;
 
 -- Should use column statistics (shown as _column_statistics_aggregation), not skip index
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value), max(value) FROM test_col_stats_and_skip_index) WHERE explain LIKE '%ReadFromPreparedSource%';
