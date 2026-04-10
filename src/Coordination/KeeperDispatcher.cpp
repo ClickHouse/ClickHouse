@@ -148,8 +148,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
 }
 
 KeeperDispatcher::KeeperDispatcher()
-    : responses_queue(std::numeric_limits<size_t>::max())
-    , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
+    : configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(getLogger("KeeperDispatcher"))
 {}
 
@@ -389,55 +388,6 @@ void KeeperDispatcher::requestThread()
     }
 }
 
-void KeeperDispatcher::responseThread()
-{
-    DB::setThreadName(ThreadName::KEEPER_RESPONSE);
-
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
-    while (!shutdown_called)
-    {
-        KeeperResponseForSession response_for_session;
-
-        uint64_t max_wait = configuration_and_settings->coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
-
-        if (responses_queue.tryPop(response_for_session, max_wait))
-        {
-            if (shutdown_called)
-                break;
-
-            const UInt64 dequeue_time_us = ZooKeeperOpentelemetrySpans::now();
-
-            bool response_was_sent = false;
-            try
-            {
-                response_was_sent = setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-
-            if (response_was_sent && response_for_session.request)
-            {
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    response_for_session.request->spans.dispatcher_responses_queue,
-                    [&]
-                    {
-                        return std::vector<OpenTelemetry::SpanAttribute>{
-                            {"keeper.operation", Coordination::opNumToString(response_for_session.request->getOpNum())},
-                            {"keeper.session_id", response_for_session.session_id},
-                            {"keeper.xid", response_for_session.request->xid},
-                            {"keeper.dispatcher.responses_queue.size", responses_queue.size()},
-                        };
-                    },
-                    OpenTelemetry::SpanStatus::OK,
-                    "",
-                    dequeue_time_us);
-            }
-        }
-    }
-}
-
 void KeeperDispatcher::snapshotThread()
 {
     DB::setThreadName(ThreadName::KEEPER_SNAPSHOT);
@@ -464,14 +414,14 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
-bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
+bool KeeperDispatcher::routeResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
 {
     /// Extract callback via the session registry, invoke outside to avoid serializing
     /// callback latency under the registry's internal mutex. This is safe because:
     /// - KeeperTCPHandler callbacks capture shared_ptrs by value (always alive)
     /// - KeeperOverDispatcher callbacks capture shared_ptr<CallbackState> (always alive)
-    /// Note: setResponse is called from responseThread which is single-threaded,
-    /// so concurrent setResponse calls for the same session do not happen.
+    /// Note: routeResponse is called from the Raft commit thread or from
+    /// putLocalReadRequest, so concurrent calls for the same session are possible.
     /// However, for non-Close responses, terminateSession on another thread may
     /// concurrently invoke a copy of the same callback (for ZSESSIONEXPIRED).
     /// Both current callback implementations handle this safely:
@@ -578,7 +528,9 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
     if (keeper_context->isShutdownCalled())
         return false;
 
-    server->putLocalReadRequest(request_info);
+    auto response = server->putLocalReadRequest(request_info);
+    if (response)
+        routeResponse(session_id, response, request);
     return true;
 }
 
@@ -593,7 +545,6 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size]);
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
-    responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
     snapshot_s3.startup(config, macros);
@@ -601,7 +552,10 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     server = std::make_unique<KeeperServer>(
         configuration_and_settings,
         config,
-        responses_queue,
+        [this](int64_t session_id, Coordination::ZooKeeperResponsePtr response, Coordination::ZooKeeperRequestPtr parsed_request) -> bool
+        {
+            return routeResponse(session_id, response, std::move(parsed_request));
+        },
         snapshots_queue,
         keeper_context,
         snapshot_s3,
@@ -654,7 +608,9 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                         };
                     });
 
-                server->putLocalReadRequest(read_request);
+                auto read_response = server->putLocalReadRequest(read_request);
+                if (read_response)
+                    routeResponse(read_request.session_id, read_response, read_request.request);
             }
 
             /// When Close commits, remove the session from `live_sessions` so that
@@ -722,10 +678,6 @@ void KeeperDispatcher::shutdown()
                     request_thread.join();
             }
 
-            responses_queue.finish();
-            if (responses_thread.joinable())
-                responses_thread.join();
-
             snapshots_queue.finish();
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
@@ -743,7 +695,7 @@ void KeeperDispatcher::shutdown()
             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
             auto response = request_for_session.request->makeResponse();
             response->error = Coordination::Error::ZSESSIONEXPIRED;
-            setResponse(request_for_session.session_id, response);
+            routeResponse(request_for_session.session_id, response);
         }
 
         KeeperRequestsForSessions close_requests;
@@ -941,27 +893,12 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
 
     for (const auto & request_for_session : requests_for_sessions)
     {
-        KeeperResponsesForSessions responses;
         auto response = request_for_session.request->makeResponse();
         response->xid = request_for_session.request->xid;
         response->zxid = 0;
         response->error = error;
         response->enqueue_ts = std::chrono::steady_clock::now();
-        if (!responses_queue.push(DB::KeeperResponseForSession{request_for_session.session_id, response}))
-            throw Exception(ErrorCodes::SYSTEM_ERROR,
-                "Could not push error response xid {} zxid {} error message {} to responses queue",
-                response->xid,
-                response->zxid,
-                error);
-
-        if (may_have_dependent_reads)
-        {
-            if (auto session = session_registry_.findSession(request_for_session.session_id))
-            {
-                auto reads = session->releaseDeferredReads(request_for_session.request->xid);
-                dependent_reads.insert(dependent_reads.end(), std::move_iterator(reads.begin()), std::move_iterator(reads.end()));
-            }
-        }
+        routeResponse(request_for_session.session_id, response);
     }
 
     /// Cancel reads that we piggy-backed to the request that failed. They're innocent bystanders

@@ -117,7 +117,7 @@ private:
     /// The response callback registered with KeeperDispatcher captures this by
     /// shared_ptr, so the state remains valid even after ~KeeperOverDispatcher
     /// has run and terminateSession has been called. This prevents a use-after-free
-    /// race between setResponse (which invokes callbacks outside its mutex) and
+    /// race between routeResponse (which invokes callbacks outside its mutex) and
     /// terminateSession (which may destroy this object).
     struct CallbackState
     {

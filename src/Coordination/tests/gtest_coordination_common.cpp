@@ -5,6 +5,7 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperCommon.h>
 
 LogEntryPtr getLogEntry(const std::string & s, size_t term)
 {

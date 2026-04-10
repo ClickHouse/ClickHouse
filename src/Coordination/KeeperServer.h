@@ -82,7 +82,7 @@ public:
     KeeperServer(
         const KeeperConfigurationAndSettingsPtr & settings_,
         const Poco::Util::AbstractConfiguration & config_,
-        ResponsesQueue & responses_queue_,
+        ResponseRouter response_router_,
         SnapshotsQueue & snapshots_queue_,
         KeeperContextPtr keeper_context_,
         KeeperSnapshotManagerS3 & snapshot_manager_s3,
@@ -91,15 +91,19 @@ public:
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
 
-    /// Put local read request and execute in state machine directly and response into
-    /// responses queue
-    void putLocalReadRequest(const KeeperRequestForSession & request);
+    /// Put local read request and execute in state machine directly.
+    /// Returns the direct read response; watch notifications are routed internally.
+    Coordination::ZooKeeperResponsePtr putLocalReadRequest(const KeeperRequestForSession & request);
+
+    /// Batch variant: process multiple local reads under a single lock acquisition.
+    /// Returns a vector of responses parallel to the input.
+    std::vector<Coordination::ZooKeeperResponsePtr> putLocalReadRequests(std::span<const KeeperRequestForSession> requests);
 
     bool isRecovering() const { return is_recovering; }
     bool reconfigEnabled() const { return enable_reconfiguration; }
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
-    /// responses_queue.
+    /// response router.
     RaftAppendResult putRequestBatch(const KeeperRequestsForSessions & requests);
 
     /// Return set of the non-active sessions

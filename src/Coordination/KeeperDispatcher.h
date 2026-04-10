@@ -32,7 +32,6 @@ private:
 
     /// Size depends on coordination settings
     std::unique_ptr<RequestsQueue> requests_queue;
-    ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
 
     /// More than 1k updates is definitely misconfiguration.
@@ -42,9 +41,6 @@ private:
 
     /// Reading and batching new requests from client handlers
     ThreadFromGlobalPool request_thread;
-    /// Pushing responses to clients client handlers
-    /// using session_id.
-    ThreadFromGlobalPool responses_thread;
     /// Cleaning old dead sessions
     ThreadFromGlobalPool session_cleaner_thread;
     /// Dumping new snapshots to disk
@@ -71,8 +67,6 @@ private:
 
     /// Thread put requests to raft
     void requestThread();
-    /// Thread put responses for subscribed sessions
-    void responseThread();
     /// Thread clean disconnected sessions from memory
     void sessionCleanerTask();
     /// Thread create snapshots in the background
@@ -82,8 +76,9 @@ private:
     void clusterUpdateWithReconfigDisabledThread();
     void clusterUpdateThread();
 
+    /// Delivers a response directly to the session callback.
     /// Returns true if response was successfully sent to client, false if session doesn't exist on this node.
-    bool setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
+    bool routeResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
 
     /// Add error responses for requests to responses queue.
     /// Clears requests.

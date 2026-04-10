@@ -52,7 +52,6 @@ struct KeeperResponseForSession
 {
     int64_t session_id;
     Coordination::ZooKeeperResponsePtr response;
-    Coordination::ZooKeeperRequestPtr request = nullptr;
 };
 
 using KeeperResponsesForSessions = std::vector<KeeperResponseForSession>;

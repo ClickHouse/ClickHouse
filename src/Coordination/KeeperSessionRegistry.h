@@ -12,10 +12,10 @@
 namespace DB
 {
 
-/// Callback invoked by `setResponse` and `terminateSession` to deliver responses to clients.
-/// Must be safe for concurrent invocation: `setResponse` (from `responseThread`) and
-/// `terminateSession` (from dead session cleaner) may invoke copies of the same callback
-/// concurrently for the same session.
+/// Callback invoked by `routeResponse` and `terminateSession` to deliver responses to clients.
+/// Must be safe for concurrent invocation: `routeResponse` (from the Raft commit thread or
+/// read path) and `terminateSession` (from dead session cleaner) may invoke copies of the
+/// same callback concurrently for the same session.
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
 /// Thin facade over session-related state that used to live directly in `KeeperDispatcher`.

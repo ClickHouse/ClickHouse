@@ -71,7 +71,6 @@ namespace DB
     M(IO_URING_MONITOR, "IoUringMonitr") \
     M(KEEPER_HANDLER, "KeeperHandler") \
     M(KEEPER_REQUEST, "KeeperRequest") \
-    M(KEEPER_RESPONSE, "KeeperResponse") \
     M(KEEPER_SNAPSHOT, "KeeperSnapshot") \
     M(KEEPER_SNAPSHOT_S3, "KeeperSnapS3") \
     M(KAFKA_BACKGROUND, "KafkaBackgrd") \

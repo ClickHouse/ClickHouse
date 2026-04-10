@@ -10,11 +10,16 @@
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
 
+#include <span>
+
 namespace DB
 {
 class ResponseForSession;
 
-using ResponsesQueue = ConcurrentBoundedQueue<KeeperResponseForSession>;
+/// Callback for delivering responses directly to sessions, bypassing any
+/// intermediate queue.  Returns true if the response was delivered.
+using ResponseRouter = std::function<bool(int64_t session_id, Coordination::ZooKeeperResponsePtr response, Coordination::ZooKeeperRequestPtr parsed_request)>;
+
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 struct KeeperStorageStats;
@@ -24,10 +29,14 @@ struct ISnapshotLoader;
 class IKeeperStateMachine : public nuraft::state_machine
 {
 public:
+    /// Called on the Raft commit thread AFTER responses are delivered and digest
+    /// is verified. Runs OUTSIDE `process_and_responses_lock` and `storage_mutex`.
+    /// Used by `KeeperDispatcher` to release deferred reads that were waiting
+    /// behind the committed write in the session FIFO.
     using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &)>;
 
     IKeeperStateMachine(
-        ResponsesQueue & responses_queue_,
+        ResponseRouter response_router_,
         SnapshotsQueue & snapshots_queue_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -91,7 +100,16 @@ public:
 
     ClusterConfigPtr getClusterConfig() const;
 
-    virtual void processReadRequest(const KeeperRequestForSession & request_for_session) = 0;
+    /// Process a local read request against the storage.
+    /// Returns the direct read response. Watch responses triggered by the read
+    /// are routed via `response_router` internally.
+    virtual Coordination::ZooKeeperResponsePtr processReadRequest(const KeeperRequestForSession & request_for_session) = 0;
+
+    /// Batch variant: process multiple local reads under a single
+    /// `process_and_responses_lock` + `storage_mutex` acquisition.
+    /// Per-read failures produce `ZSYSTEMERROR` without aborting the batch.
+    /// Returns a vector of responses parallel to the input.
+    virtual std::vector<Coordination::ZooKeeperResponsePtr> processReadRequests(std::span<const KeeperRequestForSession> requests) = 0;
 
     virtual std::vector<int64_t> getDeadSessions() = 0;
 
@@ -146,9 +164,8 @@ protected:
     /// and a warning is logged; the value self-corrects on the next successful snapshot.
     std::atomic<uint64_t> latest_snapshot_size{0};
 
-    /// Save/Load and Serialize/Deserialize logic for snapshots.
-    /// Put processed responses into this queue
-    ResponsesQueue & responses_queue;
+    /// Delivers responses directly to sessions (set once during construction).
+    ResponseRouter response_router;
 
     /// Snapshots to create by snapshot thread
     SnapshotsQueue & snapshots_queue;
@@ -160,8 +177,8 @@ protected:
     /// Storage works in thread-safe way ONLY for preprocessing/processing
     /// In any other case, unique storage lock needs to be taken
     mutable SharedMutex storage_mutex;
-    /// Lock for processing and responses_queue. It's important to process requests
-    /// and push them to the responses queue while holding this lock. Otherwise
+    /// Lock for processing and response delivery. It's important to process requests
+    /// and deliver responses while holding this lock. Otherwise
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response
     /// for request.
@@ -200,7 +217,7 @@ class KeeperStateMachine : public IKeeperStateMachine
 {
 public:
     KeeperStateMachine(
-        ResponsesQueue & responses_queue_,
+        ResponseRouter response_router_,
         SnapshotsQueue & snapshots_queue_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -239,8 +256,10 @@ public:
 
     void shutdownStorage() override;
 
-    /// Process local read request
-    void processReadRequest(const KeeperRequestForSession & request_for_session) override;
+    /// Process local read request. Returns the direct read response;
+    /// watch responses still go through `response_router`.
+    Coordination::ZooKeeperResponsePtr processReadRequest(const KeeperRequestForSession & request_for_session) override;
+    std::vector<Coordination::ZooKeeperResponsePtr> processReadRequests(std::span<const KeeperRequestForSession> requests) override;
 
     std::vector<int64_t> getDeadSessions() override;
 

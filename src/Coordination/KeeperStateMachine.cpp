@@ -91,14 +91,14 @@ static nuraft::ptr<nuraft::snapshot> cloneSnapshotMeta(nuraft::snapshot & s)
 }
 
 IKeeperStateMachine::IKeeperStateMachine(
-    ResponsesQueue & responses_queue_,
+    ResponseRouter response_router_,
     SnapshotsQueue & snapshots_queue_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     CommitCallback commit_callback_,
     const std::string & superdigest_)
     : commit_callback(commit_callback_)
-    , responses_queue(responses_queue_)
+    , response_router(std::move(response_router_))
     , snapshots_queue(snapshots_queue_)
     , min_request_size_to_cache(keeper_context_->getCoordinationSettings()[CoordinationSetting::min_request_size_for_cache])
     , log(getLogger("KeeperStateMachine"))
@@ -110,14 +110,14 @@ IKeeperStateMachine::IKeeperStateMachine(
 
 template<typename Storage>
 KeeperStateMachine<Storage>::KeeperStateMachine(
-    ResponsesQueue & responses_queue_,
+    ResponseRouter response_router_,
     SnapshotsQueue & snapshots_queue_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     IKeeperStateMachine::CommitCallback commit_callback_,
     const std::string & superdigest_)
     : IKeeperStateMachine(
-        responses_queue_,
+        std::move(response_router_),
         snapshots_queue_,
         keeper_context_,
         snapshot_manager_s3_,
@@ -532,12 +532,13 @@ void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & re
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     KeeperResponseForSession response = processReconfiguration(request_for_session);
     response.response->enqueue_ts = std::chrono::steady_clock::now();
-    if (!responses_queue.push(response))
+    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds, ProfileEvents::KeeperProcessAndResponsesLockHoldMicroseconds);
+    if (!response_router(response.session_id, response.response, nullptr))
     {
         ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
         LOG_WARNING(log,
-            "Failed to push response with session id {} to the queue, probably because of shutdown",
-            response.session_id);
+            "Failed to deliver reconfigure response with session id {} -- session not found, probably because of shutdown",
+            request_for_session.session_id);
     }
 }
 
@@ -612,8 +613,6 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
-
     auto request_for_session = parseRequest(data, true);
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
@@ -623,40 +622,15 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
     if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
         return nullptr;
 
-    auto try_push = [&](KeeperResponseForSession & response)
+    /// Helper to stamp commit timestamps on each response and deliver.
+    auto try_deliver = [&](KeeperResponseForSession & resp, Coordination::ZooKeeperRequestPtr parsed_request)
     {
-        response.response->enqueue_ts = std::chrono::steady_clock::now();
-        if (response.request)
-            ZooKeeperOpentelemetrySpans::maybeInitialize(response.request->spans.dispatcher_responses_queue, response.request->tracing_context);
-        if (!responses_queue.push(response))
+        resp.response->enqueue_ts = std::chrono::steady_clock::now();
+        if (!response_router(resp.session_id, resp.response, std::move(parsed_request)))
         {
-            ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-            LOG_WARNING(log,
-                "Failed to push response with session id {} to the queue, probably because of shutdown",
-                response.session_id);
+            LOG_TEST(log, "Response not delivered for session {} xid {} -- session not found locally",
+                resp.session_id, resp.response->xid);
         }
-    };
-
-    const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
-    {
-        ZooKeeperOpentelemetrySpans::maybeInitialize(
-            request_for_session->request->spans.commit,
-            request_for_session->request->tracing_context,
-            start_time_us);
-
-        ZooKeeperOpentelemetrySpans::maybeFinalize(
-            request_for_session->request->spans.commit,
-            [&]
-            {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                    {"keeper.session_id", request_for_session->session_id},
-                    {"keeper.xid", request_for_session->request->xid},
-                    {"raft.log_idx", log_idx},
-                };
-            },
-            status,
-            error_message);
     };
 
     try
@@ -671,13 +645,12 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             KeeperResponseForSession response_for_session;
             response_for_session.session_id = -1;
             response_for_session.response = response;
-            response_for_session.request = request_for_session->request;
 
             KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             session_id = storage->getSessionID(session_id_request.session_timeout_ms);
             LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
             response->session_id = session_id;
-            try_push(response_for_session);
+            try_deliver(response_for_session, request_for_session->request);
         }
         else
         {
@@ -694,10 +667,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
                     = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
                 for (auto & response_for_session : responses_for_sessions)
                 {
-                    if (response_for_session.response->xid != Coordination::WATCH_XID)
-                        response_for_session.request = request_for_session->request;
-
-                    try_push(response_for_session);
+                    auto parsed_request = (response_for_session.response->xid != Coordination::WATCH_XID)
+                        ? request_for_session->request : nullptr;
+                    try_deliver(response_for_session, std::move(parsed_request));
                 }
             }
 
@@ -720,12 +692,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
     }
     catch (...)
     {
-        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
         tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
         throw;
     }
-
-    maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
 
     return nullptr;
 }
@@ -1465,9 +1434,13 @@ void IKeeperStateMachine::free_user_snp_ctx(void *& user_snp_ctx)
 }
 
 template<typename Storage>
-void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSession & request_for_session)
+Coordination::ZooKeeperResponsePtr KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSession & request_for_session)
 {
-    /// Pure local request, just process it with storage
+    /// Pure local request, just process it with storage.
+    /// Watch responses (triggered by the read, destined for other sessions)
+    /// still go through `response_router`.
+    Coordination::ZooKeeperResponsePtr result;
+    try
     {
         KEEPER_STORAGE_LOCK_SHARED(storage_lock);
         ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
@@ -1475,15 +1448,81 @@ void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSessi
             request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
         for (auto & response_for_session : responses)
         {
-            if (response_for_session.response->xid != Coordination::WATCH_XID)
-                response_for_session.request = request_for_session.request;
             response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
-            if (response_for_session.request)
-                ZooKeeperOpentelemetrySpans::maybeInitialize(response_for_session.request->spans.dispatcher_responses_queue, response_for_session.request->tracing_context);
-            if (!responses_queue.push(response_for_session))
-                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
+            if (response_for_session.response->xid == Coordination::WATCH_XID)
+            {
+                /// Watch notification -> route to other sessions.
+                if (!response_router(response_for_session.session_id, response_for_session.response, nullptr))
+                    LOG_WARNING(log, "Failed to deliver watch response with session id {} -- session not found, probably because of shutdown", response_for_session.session_id);
+            }
+            else
+            {
+                /// Direct read response.
+                result = response_for_session.response;
+            }
         }
     }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        result = request_for_session.request->makeResponse();
+        result->xid = request_for_session.request->xid;
+        result->error = Coordination::Error::ZSYSTEMERROR;
+        result->enqueue_ts = std::chrono::steady_clock::now();
+    }
+    return result;
+}
+
+template<typename Storage>
+std::vector<Coordination::ZooKeeperResponsePtr> KeeperStateMachine<Storage>::processReadRequests(std::span<const KeeperRequestForSession> requests)
+{
+    std::vector<Coordination::ZooKeeperResponsePtr> results(requests.size());
+
+    if (requests.empty())
+        return results;
+
+    if (requests.size() == 1)
+    {
+        results[0] = processReadRequest(requests[0]);
+        return results;
+    }
+
+    /// Batch path: acquire both locks once for all reads.
+    KEEPER_STORAGE_LOCK_SHARED(storage_lock);
+    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds, ProfileEvents::KeeperProcessAndResponsesLockHoldMicroseconds);
+
+    for (size_t i = 0; i < requests.size(); ++i)
+    {
+        const auto & req = requests[i];
+        try
+        {
+            auto responses = storage->processRequest(
+                req.request, req.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
+            for (auto & response_for_session : responses)
+            {
+                response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
+                if (response_for_session.response->xid == Coordination::WATCH_XID)
+                {
+                    if (!response_router(response_for_session.session_id, response_for_session.response, nullptr))
+                        LOG_WARNING(log, "Failed to deliver watch response with session id {} -- session not found, probably because of shutdown", response_for_session.session_id);
+                }
+                else
+                {
+                    results[i] = response_for_session.response;
+                }
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            auto err = req.request->makeResponse();
+            err->xid = req.request->xid;
+            err->error = Coordination::Error::ZSYSTEMERROR;
+            err->enqueue_ts = std::chrono::steady_clock::now();
+            results[i] = err;
+        }
+    }
+    return results;
 }
 
 template<typename Storage>

@@ -643,7 +643,8 @@ int dumpStateMachine(
     Poco::Logger::root().setLevel("trace");
 
     auto logger = getLogger("keeper-utils");
-    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    /// Discard responses -- no client to deliver to.
+    ResponseRouter noop_router = [](int64_t, Coordination::ZooKeeperResponsePtr, Coordination::ZooKeeperRequestPtr) { return true; };
     SnapshotsQueue snapshots_queue{1};
 
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
@@ -651,7 +652,7 @@ int dumpStateMachine(
     keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", log_path));
     keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", snapshot_path));
 
-    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(noop_router, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
     size_t last_committed_index = state_machine->last_commit_index();
 
@@ -752,12 +753,13 @@ int deserializeChangelog(
                 desc->from_log_index + entry_storage.size());
         }
 
-        ResponsesQueue queue(std::numeric_limits<size_t>::max());
+        /// Discard responses -- no client to deliver to.
+        ResponseRouter noop_router = [](int64_t, Coordination::ZooKeeperResponsePtr, Coordination::ZooKeeperRequestPtr) { return true; };
         SnapshotsQueue snapshots_queue{1};
         KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", fs::temp_directory_path() / "keeper-utils-log"));
         keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", fs::temp_directory_path() / "keeper-utils-snapshot"));
-        auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, keeper_context, nullptr);
+        auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(noop_router, snapshots_queue, keeper_context, nullptr);
 
         if (!output_file.empty())
         {

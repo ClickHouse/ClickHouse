@@ -245,7 +245,7 @@ int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name
 KeeperServer::KeeperServer(
     const KeeperConfigurationAndSettingsPtr & configuration_and_settings_,
     const Poco::Util::AbstractConfiguration & config,
-    ResponsesQueue & responses_queue_,
+    ResponseRouter response_router_,
     SnapshotsQueue & snapshots_queue_,
     KeeperContextPtr keeper_context_,
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
@@ -265,7 +265,7 @@ KeeperServer::KeeperServer(
     if (coordination_settings[CoordinationSetting::experimental_use_rocksdb])
     {
         state_machine = nuraft::cs_new<KeeperStateMachine<KeeperRocksStorage>>(
-            responses_queue_,
+            std::move(response_router_),
             snapshots_queue_,
             keeper_context,
             config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
@@ -276,7 +276,7 @@ KeeperServer::KeeperServer(
     else
 #endif
         state_machine = nuraft::cs_new<KeeperStateMachine<KeeperMemoryStorage>>(
-            responses_queue_,
+            std::move(response_router_),
             snapshots_queue_,
             keeper_context,
             config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
@@ -733,12 +733,22 @@ void KeeperServer::shutdown()
 }
 
 
-void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
+Coordination::ZooKeeperResponsePtr KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
 {
     if (!request_for_session.request->isReadRequest())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
 
-    state_machine->processReadRequest(request_for_session);
+    return state_machine->processReadRequest(request_for_session);
+}
+
+std::vector<Coordination::ZooKeeperResponsePtr> KeeperServer::putLocalReadRequests(std::span<const KeeperRequestForSession> requests)
+{
+    for (const auto & req : requests)
+    {
+        if (!req.request->isReadRequest())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
+    }
+    return state_machine->processReadRequests(requests);
 }
 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)

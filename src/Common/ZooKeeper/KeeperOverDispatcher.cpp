@@ -27,7 +27,7 @@ KeeperOverDispatcher::KeeperOverDispatcher(
     /// Register session with a callback that dispatches responses based on XID.
     /// Capture callback_state by shared_ptr so the lambda remains valid even after
     /// this KeeperOverDispatcher is destroyed (prevents use-after-free when
-    /// setResponse invokes the callback outside its mutex).
+    /// routeResponse invokes the callback outside its mutex).
     auto state = callback_state;
     auto response_callback = [state](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
     {
