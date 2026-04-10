@@ -84,7 +84,9 @@ class _Settings:
     ######################################
     #        Report settings             #
     ######################################
-    HTML_S3_PATH: str = ""
+    S3_REPORT_BUCKET: str = ""
+    # Optional: upstream report bucket to merge issue catalogs from (e.g. "clickhouse-test-reports")
+    S3_UPSTREAM_REPORT_BUCKET: str = ""
     HTML_PAGE_FILE: str = "./ci/praktika/json.html"
     S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
     TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
@@ -129,7 +131,8 @@ class _Settings:
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
     "CACHE_S3_PATH",
-    "HTML_S3_PATH",
+    "S3_REPORT_BUCKET",
+    "S3_UPSTREAM_REPORT_BUCKET",
     "CLOUD_INFRASTRUCTURE_CONFIG_PATH",
     "EVENT_FEED_S3_PATH",
     "AWS_REGION",
