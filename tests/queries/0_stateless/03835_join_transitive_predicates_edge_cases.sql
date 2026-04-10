@@ -1,3 +1,7 @@
+-- Tags: no-random-detach
+-- The test checks query plans, which can change if tables are randomly reattached
+-- (column statistics caches get invalidated, altering join optimizer decisions).
+
 -- Edge case tests for transitive predicate inference.
 
 SET allow_experimental_analyzer = 1;
