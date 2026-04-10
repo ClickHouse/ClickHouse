@@ -85,12 +85,14 @@ std::vector<String> MergeTreeIndexTextPostprocessor::applyBatch(std::vector<Stri
         return tokens;
 
     auto tokens_col = ColumnString::create();
+    tokens_col->reserve(tokens.size());
     for (const auto & token : tokens)
         tokens_col->insertData(token.data(), token.size());
 
     ColumnPtr result = processTokensBatch(std::move(tokens_col));
 
     tokens.clear();
+    tokens.reserve(result->size());
     for (size_t i = 0; i < result->size(); ++i)
     {
         auto ref = result->getDataAt(i);
@@ -137,6 +139,7 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnA
     /// Rebuild the ColumnArray with updated offsets.
     /// Tokens transformed to empty string are filtered out (e.g. stop words).
     auto result_data = ColumnString::create();
+    result_data->reserve(flat_transformed->size());
     auto result_offsets_col = ColumnArray::ColumnOffsets::create();
     result_offsets_col->reserve(num_rows);
     auto & result_offsets = result_offsets_col->getData();

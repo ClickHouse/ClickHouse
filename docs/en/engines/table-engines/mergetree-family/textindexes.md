@@ -290,7 +290,7 @@ Unlike the preprocessor, which transforms the entire input string before the tok
 This is the natural place for transformations that are inherently token-level.
 
 Typical use cases for the postprocessor argument include:
-1. **Filtering stop words (frequent tokens)**. Very common tokens such as "the", "a", and "is" carry little search relevancy and inflate the index.
+1. **Filtering stop words (extremely frequent tokens)**. Very common tokens such as "the", "a", and "is" carry little search relevancy and inflate the index.
    You can use the postprocessor to discard them by converting them to empty tokens — empty tokens are ignored, i.e., not added to the index.
    Example: `if(col IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', col)`
 2. **Stemming or lemmatization**. Mapping each token to its stem improves search recall by matching morphological variants of the token with the same meaning.
