@@ -630,6 +630,7 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
     filename_generator.setVersion(new_metadata_version);
 
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+    auto storage_metadata_name = persistent_components.path_resolver.resolve(metadata_info.path);
 
     auto result = MetadataGenerator(metadata_object).generateNextMetadata(
         filename_generator, metadata_info.path, parent_snapshot_id,
@@ -639,39 +640,66 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
 
     auto storage_manifest_list_name = persistent_components.path_resolver.resolve(result.manifest_list_path);
 
-    auto write_settings = context->getWriteSettings();
-    auto buf = object_storage->writeObject(
-        StoredObject(storage_manifest_list_name),
-        WriteMode::Rewrite, std::nullopt,
-        DBMS_DEFAULT_BUFFER_SIZE, write_settings);
-
-    generateManifestList(
-        persistent_components.path_resolver, metadata_object, object_storage, context,
-        {}, result.snapshot, {}, *buf, Iceberg::FileContentType::DATA, /*use_previous_snapshots=*/false);
-    buf->finalize();
-
-    String metadata_content = dumpMetadataObjectToString(metadata_object);
-    auto hint_path = filename_generator.generateVersionHint();
-    if (!writeMetadataFileAndVersionHint(
-            persistent_components.path_resolver,
-            metadata_info,
-            metadata_content,
-            hint_path,
-            object_storage,
-            context,
-            data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Failed to commit Iceberg truncate metadata: version conflict");
-
-    if (catalog)
+    auto cleanup = [&]()
     {
-        // Transactional catalogs require a fully-qualified blob URI so the catalog
-        // can resolve the metadata location independently of local path configuration.
-        auto catalog_filename = persistent_components.path_resolver.resolveForCatalog(metadata_info.path);
-        const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, result.snapshot))
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+            object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+            if (persistent_components.metadata_cache)
+            {
+                persistent_components.metadata_cache->remove(persistent_components.table_path);
+                if (persistent_components.table_uuid)
+                    persistent_components.metadata_cache->remove(*persistent_components.table_uuid);
+            }
+        }
+        catch (...)
+        {
+            LOG_DEBUG(log, "Iceberg truncate cleanup failed");
+        }
+    };
+
+    try
+    {
+        auto write_settings = context->getWriteSettings();
+        auto buf = object_storage->writeObject(
+            StoredObject(storage_manifest_list_name),
+            WriteMode::Rewrite, std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+
+        generateManifestList(
+            persistent_components.path_resolver, metadata_object, object_storage, context,
+            {}, result.snapshot, {}, *buf, Iceberg::FileContentType::DATA, /*use_previous_snapshots=*/false);
+        buf->finalize();
+
+        String metadata_content = dumpMetadataObjectToString(metadata_object);
+        auto hint_path = filename_generator.generateVersionHint();
+        if (!writeMetadataFileAndVersionHint(
+                persistent_components.path_resolver,
+                metadata_info,
+                metadata_content,
+                hint_path,
+                object_storage,
+                context,
+                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Failed to commit Iceberg truncate update to catalog.");
+                "Failed to commit Iceberg truncate metadata: version conflict");
+
+        if (catalog)
+        {
+            // Transactional catalogs require a fully-qualified blob URI so the catalog
+            // can resolve the metadata location independently of local path configuration.
+            auto catalog_filename = persistent_components.path_resolver.resolveForCatalog(metadata_info.path);
+            const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, result.snapshot))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Failed to commit Iceberg truncate update to catalog.");
+        }
+    }
+    catch (...)
+    {
+        cleanup();
+        throw;
     }
 }
 
