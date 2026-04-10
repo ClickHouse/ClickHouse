@@ -1513,6 +1513,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     for (auto & subquery : subqueries)
     {
         auto query_tree = subquery->detachQueryTree();
+        auto query_tree_for_rebuild = query_tree->clone();
         auto subquery_options = select_query_options.subquery();
         /// Sets may use Materialized CTEs, so we need to materialize them in order to correctly build set from subquery.
         /// Normally CTEs are materialized before building sets and running the main query, but in case when
@@ -1546,6 +1547,20 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         for (const auto & context : subquery_plan.getInterpretersContexts())
             query_plan.addInterpreterContext(context);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+        subquery->setQueryPlanBuilder(
+            [query_tree_for_builder = std::move(query_tree_for_rebuild), planner_subquery_options = subquery_options](const ContextPtr &) mutable
+            {
+                auto rebuilt_query_tree = query_tree_for_builder->clone();
+                auto filters = collectFiltersForAnalysis(rebuilt_query_tree, planner_subquery_options, nullptr);
+                Planner rebuilt_subquery_planner(
+                    rebuilt_query_tree,
+                    planner_subquery_options,
+                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, std::move(filters)));
+                rebuilt_subquery_planner.buildQueryPlanIfNeeded();
+
+                auto rebuilt_subquery_plan = std::move(rebuilt_subquery_planner).extractQueryPlan();
+                return std::make_unique<QueryPlan>(std::move(rebuilt_subquery_plan));
+            });
     }
 
     if (!subqueries.empty())
@@ -2418,4 +2433,3 @@ void Planner::addStorageLimits(const StorageLimitsList & limits)
 }
 
 }
-

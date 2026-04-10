@@ -22,6 +22,7 @@
 #include <Processors/Sinks/NullSink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
@@ -43,6 +44,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char future_set_from_subquery_skip_inplace_build[];
 }
 
 SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
@@ -147,12 +153,17 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     Hash hash_,
     ASTPtr ast_,
     std::unique_ptr<QueryPlan> source_,
+    QueryPlanBuilder query_plan_builder_,
     StoragePtr external_table,
     std::shared_ptr<FutureSetFromSubquery> external_table_set_,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
+    : hash(hash_)
+    , ast(std::move(ast_))
+    , external_table_set(std::move(external_table_set_))
+    , source(std::move(source_))
+    , query_plan_builder(std::move(query_plan_builder_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
@@ -205,6 +216,47 @@ void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 {
     source = std::move(source_);
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
+}
+
+void FutureSetFromSubquery::setQueryPlanBuilder(QueryPlanBuilder query_plan_builder_)
+{
+    query_plan_builder = std::move(query_plan_builder_);
+}
+
+SetAndKeyPtr FutureSetFromSubquery::createTemporarySetAndKeyForInplaceBuild(bool keep_explicit_set_elements) const
+{
+    auto result = std::make_shared<SetAndKey>();
+    result->key = set_and_key->key;
+
+    size_t max_elements_to_fill = set_and_key->set->max_elements_to_fill;
+    if (set_and_key->external_table)
+        max_elements_to_fill = 0;
+
+    result->set = std::make_shared<Set>(set_and_key->set->limits, max_elements_to_fill, set_and_key->set->transform_null_in);
+    result->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
+
+    if (keep_explicit_set_elements || set_and_key->external_table)
+        result->set->fillSetElements();
+
+    return result;
+}
+
+void FutureSetFromSubquery::restoreQueryPlanForRetry(const ContextPtr & context)
+{
+    if (!query_plan_builder)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot restore source query plan for set {} after failed in-place build",
+            set_and_key->key);
+
+    auto restored_source = query_plan_builder(context);
+    if (!restored_source)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Query plan builder returned empty source query plan for set {}",
+            set_and_key->key);
+
+    setQueryPlan(std::move(restored_source));
 }
 
 void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_)
@@ -301,17 +353,41 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
 
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
-
-    if (!plan)
+    if (set_and_key->set->isCreated())
         return;
+
+    if (!source)
+        return;
+
+    auto inplace_set_and_key = createTemporarySetAndKeyForInplaceBuild(false);
+    auto plan = std::move(source);
+    auto creating_set = std::make_unique<CreatingSetStep>(
+        plan->getCurrentHeader(),
+        inplace_set_and_key,
+        network_transfer_limits,
+        prepared_sets_cache);
+    creating_set->setStepDescription("Create set for subquery");
+    plan->addStep(std::move(creating_set));
 
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
-    executor.execute();
+    bool skip_inplace_build = false;
+    fiu_do_on(FailPoints::future_set_from_subquery_skip_inplace_build, skip_inplace_build = true;);
+    if (!skip_inplace_build)
+        executor.execute();
+
+    if (!inplace_set_and_key->set->isCreated())
+    {
+        restoreQueryPlanForRetry(context);
+        return;
+    }
+
+    set_and_key->set = std::move(inplace_set_and_key->set);
+    if (set_and_key->external_table)
+        buildExternalTableFromInplaceSet(set_and_key->external_table);
 }
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
@@ -341,24 +417,41 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
 
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
-    if (!plan)
+    if (!source)
         return nullptr;
 
-    set_and_key->set->fillSetElements();
+    auto inplace_set_and_key = createTemporarySetAndKeyForInplaceBuild(true);
+    auto plan = std::move(source);
+    auto creating_set = std::make_unique<CreatingSetStep>(
+        plan->getCurrentHeader(),
+        inplace_set_and_key,
+        network_transfer_limits,
+        prepared_sets_cache);
+    creating_set->setStepDescription("Create set for subquery");
+    plan->addStep(std::move(creating_set));
+
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
-    executor.execute();
+    bool skip_inplace_build = false;
+    fiu_do_on(FailPoints::future_set_from_subquery_skip_inplace_build, skip_inplace_build = true;);
+    if (!skip_inplace_build)
+        executor.execute();
 
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
     /// timeout_overflow_mode set to `break`, no exception is thrown, and the executor just stops executing
     /// the pipeline without setting `set_and_key->set->is_created` to true.
-    if (!set_and_key->set->isCreated())
+    if (!inplace_set_and_key->set->isCreated())
+    {
+        restoreQueryPlanForRetry(context);
         return nullptr;
+    }
 
+    set_and_key->set = std::move(inplace_set_and_key->set);
+    if (set_and_key->external_table)
+        buildExternalTableFromInplaceSet(set_and_key->external_table);
     logProcessorProfile(context, pipeline.getProcessors());
 
     return set_and_key->set;
@@ -418,13 +511,14 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     const Hash & key,
     ASTPtr ast,
     std::unique_ptr<QueryPlan> source,
+    FutureSetFromSubquery::QueryPlanBuilder query_plan_builder,
     StoragePtr external_table,
     FutureSetFromSubqueryPtr external_table_set,
     const Settings & settings)
 {
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
-        key, std::move(ast), std::move(source), std::move(external_table), std::move(external_table_set),
+        key, std::move(ast), std::move(source), std::move(query_plan_builder), std::move(external_table), std::move(external_table_set),
         settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);

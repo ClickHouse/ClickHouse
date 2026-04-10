@@ -100,6 +100,7 @@ static struct InitFiu
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
+    ONCE(future_set_from_subquery_skip_inplace_build) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \

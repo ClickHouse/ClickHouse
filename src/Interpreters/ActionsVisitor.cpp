@@ -1285,6 +1285,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             }
         }
 
+        auto right_in_operand_for_rebuild = right_in_operand->clone();
         std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
 
         /** The following happens for GLOBAL INs or INs:
@@ -1301,7 +1302,19 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         }
 
         return data.prepared_sets->addFromSubquery(
-            set_key, right_in_operand, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
+            set_key,
+            right_in_operand,
+            std::move(source),
+            [ast = std::move(right_in_operand_for_rebuild), subquery_depth = data.subquery_depth](const ContextPtr & context)
+            {
+                auto rebuilt_source = std::make_unique<QueryPlan>();
+                auto rebuilt_interpreter = interpretSubquery(ast->clone(), context, subquery_depth, {});
+                rebuilt_interpreter->buildQueryPlan(*rebuilt_source);
+                return rebuilt_source;
+            },
+            nullptr,
+            std::move(external_table_set),
+            data.getContext()->getSettingsRef());
     }
 
     const auto & last_actions = data.actions_stack.getLastActions();

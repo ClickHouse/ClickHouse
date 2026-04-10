@@ -144,10 +144,24 @@ void GlobalSubqueriesMatcher::Data::addExternalStorage(ASTPtr & ast, const Names
 
     if (!prepared_sets->findSubquery(set_key))
     {
+        auto subquery_or_table_name_for_rebuild = subquery_or_table_name->clone();
         std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
         interpreter->buildQueryPlan(*source);
 
-        auto future_set = prepared_sets->addFromSubquery(set_key, ast, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
+        auto future_set = prepared_sets->addFromSubquery(
+            set_key,
+            ast,
+            std::move(source),
+            [ast_for_rebuild = std::move(subquery_or_table_name_for_rebuild), captured_subquery_depth = subquery_depth, required_columns](const ContextPtr & context)
+            {
+                auto rebuilt_source = std::make_unique<QueryPlan>();
+                auto rebuilt_interpreter = interpretSubquery(ast_for_rebuild->clone(), context, captured_subquery_depth, required_columns);
+                rebuilt_interpreter->buildQueryPlan(*rebuilt_source);
+                return rebuilt_source;
+            },
+            std::move(external_storage),
+            nullptr,
+            getContext()->getSettingsRef());
         external_storage_holder->future_set = std::move(future_set);
     }
     else

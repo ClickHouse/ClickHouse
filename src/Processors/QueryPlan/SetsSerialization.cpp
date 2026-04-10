@@ -254,7 +254,7 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
 
         auto future_set = std::make_shared<FutureSetFromSubquery>(
             set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)),
-            nullptr, nullptr,
+            nullptr, nullptr, nullptr,
             transform_null_in, size_limits, max_size_for_index);
 
         for (auto * column : set.columns)
