@@ -72,6 +72,7 @@ namespace FailPoints
 {
     extern const char object_storage_queue_fail_commit[];
     extern const char object_storage_queue_fail_commit_once[];
+    extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
 }
@@ -1066,6 +1067,13 @@ void StorageObjectStorageQueue::commit(
 
         auto zk_client = getZooKeeper();
         code = zk_client->tryMulti(requests, responses);
+
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+            if (code == Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS,
+                    "Simulated connection loss after successful commit");
+        });
     });
 
     if (!code.has_value())
@@ -1081,6 +1089,15 @@ void StorageObjectStorageQueue::commit(
     if (code.value() != Coordination::Error::ZOK)
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+        if (try_num > 1)
+        {
+            /// We had at least one hardware error retry, so the first attempt may have succeeded
+            /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
+            /// before we received the response. Mark all metadata objects so their destructors
+            /// check ownership before removing the processing node instead of asserting.
+            for (auto & source : sources)
+                source->setUncertainCommit();
+        }
         throw zkutil::KeeperMultiException(code.value(), requests, responses);
     }
 

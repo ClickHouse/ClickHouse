@@ -65,7 +65,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
@@ -131,6 +131,8 @@ public:
     const MaterializedCTEPtr & getMaterializedCTE() const { return materialized_cte; }
 
 private:
+    static VirtualColumnsDescription createVirtuals();
+
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 

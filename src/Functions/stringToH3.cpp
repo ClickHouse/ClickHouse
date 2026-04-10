@@ -89,9 +89,11 @@ private:
 
             // convert to std::string and get the c_str to have the delimiting \0 at the end.
             auto h3index_str = std::string(reinterpret_cast<const char *>(h3index.data), h3index.size);
-            res_data[row_num] = stringToH3(h3index_str.data());
+            H3Index h3_index = 0;
+            H3Error err = stringToH3(h3index_str.data(), &h3_index);
+            res_data[row_num] = h3_index;
 
-            if (res_data[row_num] == 0)
+            if (err || res_data[row_num] == 0)
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid H3 index: {} in function {}", h3index_str, name);
             }

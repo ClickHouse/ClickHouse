@@ -1,5 +1,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -266,7 +267,7 @@ VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMo
     desc.addEphemeral("_redelivered", std::make_shared<DataTypeUInt8>(), "");
     desc.addEphemeral("_message_id", std::make_shared<DataTypeString>(), "");
     desc.addEphemeral("_timestamp", std::make_shared<DataTypeUInt64>(), "");
-
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
@@ -898,19 +899,26 @@ void StorageRabbitMQ::startup()
 
 void StorageRabbitMQ::shutdown(bool)
 {
-    shutdown_called = true;
+    /// Needed to make this method idempotent
+    if (shutdown_called.exchange(true))
+        return;
 
-    for (auto & consumer : consumers_ref)
-        consumer.lock()->stop();
-
-    LOG_TRACE(log, "Deactivating background tasks");
-
-    /// In case it has not yet been able to setup connection;
+    LOG_TRACE(log, "Deactivating init task");
     deactivateTask(init_task, true, false);
+
+    for (auto & consumer_weak : consumers_ref)
+    {
+        auto consumer = consumer_weak.lock();
+        if (!consumer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RabbitMQ consumer has been unexpectedly destroyed");
+        consumer->stop();
+    }
 
     /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
     /// then wait for background event loop to finish.
+    LOG_TRACE(log, "Deactivating streaming task");
     deactivateTask(streaming_task, true, false);
+    LOG_TRACE(log, "Deactivating looping task");
     deactivateTask(looping_task, true, true);
 
     LOG_TRACE(log, "Cleaning up RabbitMQ after table usage");
@@ -918,8 +926,13 @@ void StorageRabbitMQ::shutdown(bool)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        for (auto & consumer : consumers_ref)
-            consumer.lock()->closeConnections();
+        for (auto & consumer_weak : consumers_ref)
+        {
+            auto consumer = consumer_weak.lock();
+            if (!consumer)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "RabbitMQ consumer has been unexpectedly destroyed");
+            consumer->closeConnections();
+        }
 
         if (drop_table)
             cleanupRabbitMQ();
@@ -930,6 +943,8 @@ void StorageRabbitMQ::shutdown(bool)
 
         for (size_t i = 0; i < num_created_consumers; ++i)
             popConsumer();
+
+        consumers_ref.clear();
     }
     catch (...)
     {

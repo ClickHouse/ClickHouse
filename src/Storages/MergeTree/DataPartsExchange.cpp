@@ -497,6 +497,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     auto in = BuilderRWBufferFromHTTP(uri)
                   .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+                  .withBypassProxy(true)
                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                   .withTimeouts(timeouts)
                   .withSettings(read_settings)

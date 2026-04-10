@@ -55,11 +55,13 @@ class ClickHouseProc:
         self,
         is_db_replicated=False,
         is_shared_catalog=False,
+        is_per_test_coverage=False,
         ch_config_dir="/etc/clickhouse-server",
         ch_var_lib_dir="/var/lib/clickhouse",
     ):
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
+        self.is_per_test_coverage = is_per_test_coverage
         self.ch_config_dir = ch_config_dir
         self.ch_var_lib_dir = ch_var_lib_dir
         self.run_path0 = f"{temp_dir}/run_r0"
@@ -204,38 +206,24 @@ class ClickHouseProc:
     @staticmethod
     def enable_thread_fuzzer_config():
         # For flaky check we also enable thread fuzzer
-        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
-        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
-        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
+        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "10000"
+        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.05"
+        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "10000"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = (
-            "1"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "0.5"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "0.5"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "0.5"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "0.5"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.0005"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.0005"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.0005"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.0005"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = (
-            "10000"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = (
-            "10000"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = (
-            "10000"
-        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "1000"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "1000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "1000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "1000"
 
     @staticmethod
     def set_memory_ratio(ratio):
@@ -466,8 +454,10 @@ profiles:
             Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
         )
 
-        # set profile file for the server
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
+        # set profile file for the server (not needed for per-test coverage,
+        # which uses system.coverage_log instead of .profraw files)
+        if not self.is_per_test_coverage:
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
 
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
@@ -709,7 +699,10 @@ clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < ./tests/docker_scripts/create.sql
 bash ./tests/docker_scripts/create_tpcds.sh
+bash ./tests/docker_scripts/create_tpch.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM tpcds"
+clickhouse-client --query "SHOW TABLES FROM tpch"
 
 clickhouse-client --query "CREATE DATABASE test"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -725,6 +718,7 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
     clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
     clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
     clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
+    # Note: `tpcds` and `tpch` databases are NOT dropped here as they are used by stateful tests.
 else
     clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
     clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"

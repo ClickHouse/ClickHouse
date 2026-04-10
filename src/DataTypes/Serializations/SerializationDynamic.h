@@ -12,7 +12,7 @@ class SerializationDynamicElement;
 
 class SerializationDynamic : public ISerialization
 {
-public:
+private:
     explicit SerializationDynamic(
         size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
         const SerializationInfoSettings & serialization_info_settings_ = {})
@@ -20,6 +20,10 @@ public:
         , serialization_info_settings(serialization_info_settings_)
     {
     }
+
+public:
+    static UInt128 getHash(size_t max_dynamic_types_, const SerializationInfoSettings & serialization_info_settings_ = {});
+    static SerializationPtr create(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES, const SerializationInfoSettings & serialization_info_settings_ = {});
 
     struct SerializationVersion
     {

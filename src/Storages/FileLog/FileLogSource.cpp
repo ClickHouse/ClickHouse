@@ -135,21 +135,23 @@ Chunk FileLogSource::generate()
             {
                 virtual_columns[0]->insert(file_name);
                 virtual_columns[1]->insert(offset);
+                virtual_columns[2]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
                         const auto & current_record = consumer->getCurrentRecord();
-                        virtual_columns[2]->insertData(current_record.data(), current_record.size());
-                        virtual_columns[3]->insertData(exception_message->data(), exception_message->size());
+                        virtual_columns[3]->insertData(current_record.data(), current_record.size());
+                        virtual_columns[4]->insertData(exception_message->data(), exception_message->size());
                     }
                     else
                     {
-                        virtual_columns[2]->insertDefault();
                         virtual_columns[3]->insertDefault();
+                        virtual_columns[4]->insertDefault();
                     }
                 }
             }
+
             total_rows = total_rows + new_rows;
         }
         else /// poll succeed, but parse failed

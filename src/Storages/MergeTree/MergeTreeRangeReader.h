@@ -387,6 +387,17 @@ public:
         size_t total_rows_per_granule = 0;
         /// The number of rows was read at first step. May be zero if no read columns present in part.
         size_t num_read_rows = 0;
+
+        /// Diagnostic counters for debugging adjustLastGranule assertions.
+        /// These track where addRows() increments came from in startReadingChain().
+        size_t debug_rows_from_read_in_loop = 0;       /// rows from stream.read() inside the loop
+        size_t debug_rows_from_finalize_in_loop = 0;    /// rows from stream.finalize() at range boundaries
+        size_t debug_rows_from_finalize_post_loop = 0;  /// rows from stream.finalize() after the loop
+        size_t debug_max_rows = 0;                      /// max_rows parameter passed to startReadingChain
+        size_t debug_num_ranges_processed = 0;          /// number of ranges processed
+        size_t debug_skipped_marks = 0;                 /// marks skipped via canSkipMark
+        bool debug_use_query_condition_cache = false;
+        bool debug_can_read_incomplete_granules = false;
         /// The number of rows was removed from last granule after clear or optimize.
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.

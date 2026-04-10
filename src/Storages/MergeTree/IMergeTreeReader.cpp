@@ -83,15 +83,6 @@ const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 
 bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
 {
-    /// Projection parts use a fake data_version of 0 (FAKE_RESULT_PART_FOR_PROJECTION),
-    /// which causes all mutations to appear as "pending" even if the parent part
-    /// has already had them applied. Skip the dropped-column check for projection parts
-    /// to avoid incorrectly discarding valid column data during projection merges.
-    /// This is consistent with `injectRequiredColumns` in MergeTreeBlockReadUtils.cpp
-    /// which also skips alter_conversions for projection parts.
-    if (data_part_info_for_read->isProjectionPart())
-        return false;
-
     return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage());
 }
 
@@ -190,6 +181,28 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     }
 }
 
+ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
+{
+    auto context_copy = Context::createCopy(data_part_info_for_read->getContext());
+    /// Default/materialized expressions may contain experimental or suspicious types that can be
+    /// disabled in the current context. We must not perform any checks during reads from existing tables.
+    enableAllExperimentalSettings(context_copy);
+    context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
+    return context_copy;
+}
+
+ColumnsDescription IMergeTreeReader::buildCombinedColumnsForDefaultExpressions() const
+{
+    auto combined_columns = storage_snapshot->metadata->getColumns();
+    if (storage_snapshot->virtual_columns)
+    {
+        for (const auto & virtual_column : *storage_snapshot->virtual_columns)
+            if (virtual_column.default_desc.expression)
+                combined_columns.add(virtual_column);
+    }
+    return combined_columns;
+}
+
 void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const
 {
     try
@@ -227,24 +240,8 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             }
         }
 
-        auto context_copy = Context::createCopy(data_part_info_for_read->getContext());
-        /// Default/materialized expression can contain experimental/suspicious types that can be disabled in current context.
-        /// We should not perform any checks during reading from an existing table.
-        enableAllExperimentalSettings(context_copy);
-        context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
-
-        /// Create a combined columns description that includes both metadata columns and virtual columns.
-        /// This is needed to evaluate default expressions for virtual columns.
-        auto combined_columns = storage_snapshot->metadata->getColumns();
-
-        if (storage_snapshot->virtual_columns)
-        {
-            for (const auto & virtual_column : *storage_snapshot->virtual_columns)
-            {
-                if (virtual_column.default_desc.expression)
-                    combined_columns.add(virtual_column);
-            }
-        }
+        auto context_copy = createContextForDefaultExpressions();
+        auto combined_columns = buildCombinedColumnsForDefaultExpressions();
 
         auto dag = DB::evaluateMissingDefaults(
             additional_columns,

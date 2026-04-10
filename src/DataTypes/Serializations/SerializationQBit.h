@@ -5,7 +5,6 @@
 
 #include <Core/Field.h>
 
-
 namespace DB
 {
 
@@ -45,14 +44,16 @@ private:
     template <typename Func>
     void dispatchByElementSize(Func && func) const;
 
-
-public:
     SerializationQBit(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
         : nested(nested_)
         , element_size(element_size_)
         , dimension(dimension_)
     {
     }
+
+public:
+    static UInt128 getHash(const SerializationPtr & nested_, size_t element_size_, size_t dimension_);
+    static SerializationPtr create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
 

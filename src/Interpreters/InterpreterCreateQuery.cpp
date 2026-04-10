@@ -777,7 +777,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext());
                 properties.projections.add(std::move(projection));
             }
 
@@ -1226,12 +1226,12 @@ namespace
         return &engine_def.arguments->children;
     }
 
-    bool hasDynamicSubcolumns(const ColumnsDescription & columns)
+    bool hasColumnsWithDynamicStructure(const ColumnsDescription & columns)
     {
         return std::any_of(columns.begin(), columns.end(),
             [](const auto & column)
             {
-               return column.type->hasDynamicSubcolumns();
+               return column.type->hasDynamicStructure();
             });
     }
 
@@ -1782,11 +1782,11 @@ namespace
 
 void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumns())
+    if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Dynamic or JSON, "
-            "because storage {} doesn't support dynamic subcolumns",
+            "because storage {} doesn't support columns with dynamic structure",
             storage.getName());
     }
 }

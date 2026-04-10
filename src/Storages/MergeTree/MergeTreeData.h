@@ -536,7 +536,7 @@ public:
 
     bool supportsTTL() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
 
     bool supportsLightweightDelete() const override;
@@ -1374,10 +1374,6 @@ public:
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
-    static VirtualColumnsDescription createProjectionVirtuals(const StorageInMemoryMetadata & metadata);
-
-    /// Similar to IStorage::getVirtuals but returns only virtual columns valid in projection.
-    VirtualsDescriptionPtr getProjectionVirtualsPtr() const { return projection_virtuals.get(); }
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;
@@ -1706,7 +1702,8 @@ protected:
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-        const Strings & mutation_ids = {});
+        const Strings & mutation_ids,
+        const std::map<String, UInt64> & projections_duration_ms);
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
@@ -1983,8 +1980,6 @@ private:
     void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
 
     mutable TemporaryParts temporary_parts;
-
-    MultiVersionVirtualsDescriptionPtr projection_virtuals;
 
     /// A regexp for files that should be prewarmed in the cache if cache_populated_by_fetch is enabled.
     MultiVersion<re2::RE2> filename_regexp_for_cache_prewarming;
