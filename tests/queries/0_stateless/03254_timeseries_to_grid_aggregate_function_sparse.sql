@@ -7,6 +7,8 @@ WITH [102, 104, 112, 113, 120] as timestamps
 INSERT INTO ts_data SELECT ts::DateTime64 as timestamp, ts + 10000 as value FROM (SELECT arrayJoin(timestamps) as ts);
 
 SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET enable_parallel_replicas = 0; -- Prevent randomized parallel replicas from interfering with aggregate function type comparison; the explicit clusterAllReplicas section uses query-level SETTINGS to enable it.
+SET prefer_localhost_replica = 1;
 
 SELECT 'Original data (ts, val):';
 SELECT groupArraySorted(30)((toUnixTimestamp(timestamp), value)) FROM ts_data;
