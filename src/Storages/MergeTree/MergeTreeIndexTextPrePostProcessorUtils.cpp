@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeIndexTextUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>

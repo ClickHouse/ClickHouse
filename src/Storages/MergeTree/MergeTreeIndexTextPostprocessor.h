@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Columns/ColumnArray.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -12,9 +13,9 @@ namespace DB
 struct IndexDescription;
 
 /// Postprocessor for text index tokens.
-/// Applies a user-defined expression to each individual token after tokenization.
+/// Applies a user-defined expression to each output token after tokenization.
 /// Unlike the preprocessor which operates on entire column values before tokenization,
-/// the postprocessor is always applied to individual String tokens.
+/// the postprocessor is always applied to output String tokens.
 class MergeTreeIndexTextPostprocessor
 {
 public:
@@ -29,13 +30,13 @@ public:
     /// Returns a new column of transformed tokens. Preferred over processToken for
     /// indexing because it amortizes expression execution overhead over all tokens
     /// in a document rather than paying it once per token.
-    ColumnPtr processTokensBatch(ColumnPtr tokens_column) const;
+    ColumnPtr processTokensBatch(ColumnPtr tokens) const;
 
     /// Processes a ColumnArray(String) where each row is an array of tokens for one document.
     /// The postprocessor expression is applied to all elements across the whole column in a
     /// single execution. Tokens mapped to an empty string by the postprocessor are dropped from
     /// their respective arrays. Returns a new ColumnArray(String) with updated offsets.
-    ColumnPtr processTokensArrayBatch(ColumnPtr tokens_array_column) const;
+    ColumnPtr processTokensArrayBatch(const ColumnArray & tokens) const;
 
     /// Returns an ActionsDAG applying the postprocessor to `haystack_column_name` as a whole.
     /// Symmetric to how the preprocessor transforms the haystack; used when direct index read is off.

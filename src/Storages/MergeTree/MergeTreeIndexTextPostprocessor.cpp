@@ -7,7 +7,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/MergeTree/MergeTreeIndexTextUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
 
 namespace DB
 {
@@ -100,13 +100,13 @@ std::vector<String> MergeTreeIndexTextPostprocessor::applyBatch(std::vector<Stri
     return tokens;
 }
 
-ColumnPtr MergeTreeIndexTextPostprocessor::processTokensBatch(ColumnPtr tokens_column) const
+ColumnPtr MergeTreeIndexTextPostprocessor::processTokensBatch(ColumnPtr tokens) const
 {
     if (!actions)
-        return tokens_column;
+        return tokens;
 
-    size_t n_rows = tokens_column->size();
-    Block block{{ColumnWithTypeAndName(tokens_column, string_type, postprocessor_token_name)}};
+    size_t n_rows = tokens->size();
+    Block block{{ColumnWithTypeAndName(tokens, string_type, postprocessor_token_name)}};
     actions->execute(block, n_rows);
     return block.safeGetByPosition(0).column;
 }
@@ -124,17 +124,15 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getActionsDAGForHaystackColumn(const
     return buildActionsDAGFromAST(haystack_ast, source_columns);
 }
 
-ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(ColumnPtr tokens_array_column) const
+ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnArray & tokens) const
 {
-    if (!actions)
-        return tokens_array_column;
+    chassert(actions); /// Always called when hasActions() is true.
 
-    const auto & col_array = assert_cast<const ColumnArray &>(*tokens_array_column);
-    const IColumn::Offsets & src_offsets = col_array.getOffsets();
+    const IColumn::Offsets & src_offsets = tokens.getOffsets();
     const size_t num_rows = src_offsets.size();
 
     /// Apply the postprocessor on all token strings across all rows in one execution.
-    ColumnPtr flat_transformed = processTokensBatch(col_array.getDataPtr());
+    ColumnPtr flat_transformed = processTokensBatch(tokens.getDataPtr());
 
     /// Rebuild the ColumnArray with updated offsets.
     /// Tokens transformed to empty string are filtered out (e.g. stop words).

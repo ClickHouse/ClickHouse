@@ -284,7 +284,7 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
-**Postprocessor argument (optional)**. The postprocessor refers to an expression which is applied to each token produced by tokenization.
+**Postprocessor argument (optional)**. The postprocessor refers to an expression which is applied to each output token after tokenization.
 
 Unlike the preprocessor, which transforms the entire input string before the tokenizer splits it into tokens, the postprocessor operates on the tokens themselves, one at a time.
 This is the natural place for transformations that are inherently token-level.

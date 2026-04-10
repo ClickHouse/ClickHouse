@@ -421,10 +421,10 @@ private:
             return replacement;
 
         auto function_name = function_node.function_base->getName();
-        bool need_preprocess_function = needApplyTokenizer(function_name) || needApplyPreprocessor(function_name) || needApplyPostprocessor(function_name);
+        bool need_transform_function = needApplyTokenizer(function_name) || needApplyPreprocessor(function_name) || needApplyPostprocessor(function_name);
 
         /// Early exit if there is nothig to process.
-        if (!need_preprocess_function && !direct_read_from_text_index)
+        if (!need_transform_function && !direct_read_from_text_index)
             return replacement;
 
         auto selected_conditions = selectConditions(function_node);
@@ -437,7 +437,7 @@ private:
             return lhs.virtual_column_name < rhs.virtual_column_name;
         });
 
-        if (need_preprocess_function)
+        if (need_transform_function)
             processTextIndexFunction(replacement, selected_conditions, context);
 
         if (direct_read_from_text_index)

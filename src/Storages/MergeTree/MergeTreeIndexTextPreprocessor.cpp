@@ -17,7 +17,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexTextUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
 
 namespace DB
 {
