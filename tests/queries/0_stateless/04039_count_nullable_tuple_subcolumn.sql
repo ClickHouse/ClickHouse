@@ -32,6 +32,5 @@ INSERT INTO t_nullable_tuple SELECT if((number % 5) = 0, (number, toString(numbe
 
 SELECT count(tup.u) FROM t_nullable_tuple SETTINGS optimize_functions_to_subcolumns = 1;
 
--- TODO: These output 1000 but should be 200. This is wrong but is a different bug.
 SELECT count(tup.s) FROM t_nullable_tuple SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT DISTINCT count(tup.s) FROM t_nullable_tuple SETTINGS optimize_functions_to_subcolumns = 1;
