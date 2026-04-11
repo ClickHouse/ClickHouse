@@ -29,6 +29,11 @@ bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Expres
 
     const auto & join = join_step->getJoinOperator();
 
+    /// ANY INNER is not commutative: "take at most one match" depends on
+    /// which side is probed, so swapping sides changes result cardinality.
+    if (join.kind == JoinKind::Inner && join.strictness == JoinStrictness::Any)
+        return false;
+
     return
         join.kind == JoinKind::Inner ||
         join.kind == JoinKind::Cross ||
