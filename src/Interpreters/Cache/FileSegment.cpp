@@ -638,10 +638,7 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
 
     if (auto index = cache->getRocksDBIndex())
-    {
-        auto segment_key_metadata = getKeyMetadata();
-        index->put(file_key, offset(), static_cast<Int64>(downloaded_size), segment_key_metadata->origin.segment_type);
-    }
+        index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin);
 #endif
 }
 
@@ -743,10 +740,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
 
         if (auto index = cache->getRocksDBIndex())
-        {
-            auto segment_key_metadata = getKeyMetadata();
-            index->put(file_key, offset(), static_cast<Int64>(downloaded_size), segment_key_metadata->origin.segment_type);
-        }
+            index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin);
 #endif
     }
     else

@@ -1064,10 +1064,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
 
 #if USE_ROCKSDB
     if (rocksdb_index)
-    {
-        auto key_type = locked_key.getKeyMetadata()->origin.segment_type;
-        rocksdb_index->put(key, offset, /* size */ -1, key_type);
-    }
+        rocksdb_index->put(key, offset, /* size */ -1, locked_key.getKeyMetadata()->origin);
 #endif
 
     return file_segment_metadata_it;
@@ -1626,6 +1623,7 @@ void FileCache::loadMetadata()
         }
         else
         {
+            /// TODO: It is possible to populate RocksDB index in batch and only then perform fsync without sync for each entry put
             LOG_INFO(log, "RocksDB index is empty, loading from filesystem directories and populating index");
             Stopwatch load_watch;
             loadMetadataImpl();
@@ -1656,8 +1654,7 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
         if (stop_loading_metadata)
             break;
 
-        OriginInfo origin = getCommonOrigin();
-        origin.segment_type = entry.key_type;
+        OriginInfo origin = entry.origin;
 
         auto key_metadata = metadata.getKeyMetadata(
             entry.key,
@@ -2134,9 +2131,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
                     LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, segment.offset, segment.size, segment.path.string());
 #if USE_ROCKSDB
                     if (rocksdb_index)
-                    {
-                        rocksdb_index->put(key, segment.offset, static_cast<Int64>(segment.size), origin_info.segment_type);
-                    }
+                        rocksdb_index->put(key, segment.offset, static_cast<Int64>(segment.size), origin_info);
 #endif
                 }
                 else

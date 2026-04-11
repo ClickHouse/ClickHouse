@@ -4,6 +4,10 @@
 
 #include <Interpreters/Cache/FileCacheRocksDBIndex.h>
 
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -76,33 +80,47 @@ void FileCacheRocksDBIndex::deserializeKey(std::string_view slice, FileCacheKey 
     offset = static_cast<size_t>(offset_val);
 }
 
-static std::string serializeValue(Int64 size, FileSegmentKeyType key_type)
+static std::string serializeValue(Int64 size, const FileCacheOriginInfo & origin)
 {
-    /// Value format: Int64 size (8 bytes) + UInt8 key_type (1 byte).
-    std::string result;
-    result.resize(sizeof(Int64) + sizeof(UInt8));
-    memcpy(result.data(), &size, sizeof(Int64));
-    result.back() = static_cast<UInt8>(key_type);
-    return result;
+    WriteBufferFromOwnString out;
+    writeBinaryLittleEndian(size, out);
+    writeBinaryLittleEndian(static_cast<UInt8>(origin.segment_type), out);
+    writeBinaryLittleEndian(origin.weight.has_value(), out);
+    writeBinaryLittleEndian(origin.weight.value_or(0), out);
+    writeBinary(origin.user_id, out);
+    return out.str();
 }
 
-static void deserializeValue(const rocksdb::Slice & slice, Int64 & size, FileSegmentKeyType & key_type)
+static void deserializeValue(const rocksdb::Slice & slice, Int64 & size, FileCacheOriginInfo & origin)
 {
-    memcpy(&size, slice.data(), sizeof(Int64));
-    key_type = static_cast<FileSegmentKeyType>(static_cast<UInt8>(slice.data()[sizeof(Int64)]));
+    ReadBufferFromMemory in(slice.data(), slice.size());
+    readBinaryLittleEndian(size, in);
+
+    UInt8 key_type = 0;
+    readBinaryLittleEndian(key_type, in);
+    origin.segment_type = static_cast<FileSegmentKeyType>(key_type);
+
+    bool has_weight = false;
+    readBinaryLittleEndian(has_weight, in);
+
+    UInt64 weight = 0;
+    readBinaryLittleEndian(weight, in);
+    origin.weight = has_weight ? std::optional<UInt64>(weight) : std::nullopt;
+
+    readBinary(origin.user_id, in);
 }
 
-void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 size, FileSegmentKeyType key_type)
+void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 size, const FileCacheOriginInfo & origin)
 {
     auto serialized_key = serializeKey(key, offset);
-    auto serialized_value = serializeValue(size, key_type);
+    auto serialized_value = serializeValue(size, origin);
 
     rocksdb::WriteOptions write_options;
     write_options.sync = true;
 
     auto status = db->Put(write_options, serialized_key, serialized_value);
     if (!status.ok())
-        LOG_WARNING(log, "Failed to write to RocksDB index: {}", status.ToString());
+        throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to write to RocksDB index: {}", status.ToString());
 }
 
 void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset)
@@ -110,11 +128,11 @@ void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset)
     auto serialized_key = serializeKey(key, offset);
 
     rocksdb::WriteOptions write_options;
-    write_options.sync = false;
+    write_options.sync = true;
 
     auto status = db->Delete(write_options, serialized_key);
     if (!status.ok())
-        LOG_WARNING(log, "Failed to delete from RocksDB index: {}", status.ToString());
+        throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to delete from RocksDB index: {}", status.ToString());
 }
 
 std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::loadAll() const
@@ -131,18 +149,24 @@ std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::loadAll() const
         auto value_slice = it->value();
 
         static constexpr size_t expected_key_size = 24;
-        static constexpr size_t expected_value_size = sizeof(Int64) + sizeof(UInt8);
 
-        if (key_slice.size() != expected_key_size || value_slice.size() != expected_value_size)
+        if (key_slice.size() != expected_key_size)
         {
-            LOG_WARNING(log, "Skipping malformed RocksDB entry: key_size={}, value_size={}", key_slice.size(), value_slice.size());
+            LOG_WARNING(log, "Skipping malformed RocksDB entry: key_size={}", key_slice.size());
             continue;
         }
 
-        Entry entry;
-        deserializeKey(std::string_view(key_slice.data(), key_slice.size()), entry.key, entry.offset);
-        deserializeValue(value_slice, entry.size, entry.key_type);
-        entries.push_back(std::move(entry));
+        try
+        {
+            Entry entry;
+            deserializeKey(std::string_view(key_slice.data(), key_slice.size()), entry.key, entry.offset);
+            deserializeValue(value_slice, entry.size, entry.origin);
+            entries.push_back(std::move(entry));
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Skipping malformed RocksDB value: {}", getCurrentExceptionMessage(false));
+        }
     }
 
     if (!it->status().ok())

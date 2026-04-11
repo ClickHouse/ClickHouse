@@ -1164,14 +1164,6 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     {
         const auto path = key_metadata->getFileSegmentPath(*file_segment);
 
-#if USE_ROCKSDB
-        if (!file_segment->getCache())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
-
-        if (auto index = file_segment->getCache()->getRocksDBIndex())
-            index->remove(getKey(), file_segment->offset());
-#endif
-
         if (file_segment->downloaded_size == 0)
         {
             chassert(!fs::exists(path));
@@ -1198,6 +1190,17 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
                         path, getKey(), file_segment->offset());
 #endif
         }
+
+        /// Remove from RocksDB index AFTER the file is deleted from disk.
+        /// This ordering ensures that if a crash happens between these two operations,
+        /// the index entry survives and the missing file will be detected on startup.
+#if USE_ROCKSDB
+        if (!file_segment->getCache())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
+
+        if (auto index = file_segment->getCache()->getRocksDBIndex())
+            index->remove(getKey(), file_segment->offset());
+#endif
     }
     catch (...)
     {

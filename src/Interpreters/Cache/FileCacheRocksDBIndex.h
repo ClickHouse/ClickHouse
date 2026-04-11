@@ -5,7 +5,7 @@
 #if USE_ROCKSDB
 
 #include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Cache/FileSegmentKeyType.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <base/types.h>
 #include <Common/Logger.h>
 
@@ -22,13 +22,13 @@ namespace DB
 
 /// RocksDB-based index that stores file segment metadata for fast cache loading on startup.
 ///
-/// Each entry is (FileCacheKey, offset) -> size, where size = -1 means the segment
+/// Each entry is (FileCacheKey, offset) -> (size, origin), where size = -1 means the segment
 /// was not fully downloaded (requires stat on startup).
 ///
 /// Operation ordering:
-/// - Segment created: put(key, offset, -1) BEFORE writing file data.
-/// - Segment fully downloaded: put(key, offset, actual_size) AFTER file is fsynced.
-/// - Segment removed: remove(key, offset) BEFORE file is deleted from disk.
+/// - Segment created: put(key, offset, -1, origin) BEFORE writing file data.
+/// - Segment fully downloaded: put(key, offset, actual_size, origin) AFTER file is fsynced.
+/// - Segment removed: remove(key, offset) AFTER file is deleted from disk.
 /// - Startup: iterate all entries. size >= 0 -> use as-is. size == -1 -> stat the file.
 class FileCacheRocksDBIndex
 {
@@ -37,9 +37,9 @@ public:
     ~FileCacheRocksDBIndex();
 
     /// Store a segment entry. Use size = -1 for not-yet-downloaded segments.
-    void put(const FileCacheKey & key, size_t offset, Int64 size, FileSegmentKeyType key_type);
+    void put(const FileCacheKey & key, size_t offset, Int64 size, const FileCacheOriginInfo & origin);
 
-    /// Remove a segment's entry. Called BEFORE the file is deleted from disk.
+    /// Remove a segment's entry. Called AFTER the file is deleted from disk.
     void remove(const FileCacheKey & key, size_t offset);
 
     struct Entry
@@ -47,7 +47,7 @@ public:
         FileCacheKey key;
         size_t offset;
         Int64 size; /// -1 means unknown (need stat)
-        FileSegmentKeyType key_type;
+        FileCacheOriginInfo origin;
     };
 
     /// Iterate the entire index and return all entries.
