@@ -91,9 +91,8 @@ public:
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
 
-    /// Put local read request and execute in state machine directly and response into
-    /// responses queue
-    void putLocalReadRequest(const KeeperRequestForSession & request);
+    /// Execute read requests directly in the local state machine. Put response into responses queue.
+    void putLocalReadRequests(const KeeperRequestsForSessions & requests);
 
     bool isRecovering() const { return is_recovering; }
     bool reconfigEnabled() const { return enable_reconfiguration; }
