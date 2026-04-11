@@ -80,9 +80,17 @@ void FileCacheRocksDBIndex::deserializeKey(std::string_view slice, FileCacheKey 
     offset = static_cast<size_t>(offset_val);
 }
 
+enum class IndexValueVersion : UInt8
+{
+    V0 = 0, /// Initial binary format: size, segment_type, has_weight, weight, user_id.
+};
+
+static constexpr auto INDEX_VALUE_CURRENT_VERSION = IndexValueVersion::V0;
+
 static std::string serializeValue(Int64 size, const FileCacheOriginInfo & origin)
 {
     WriteBufferFromOwnString out;
+    writeBinaryLittleEndian(static_cast<UInt8>(INDEX_VALUE_CURRENT_VERSION), out);
     writeBinaryLittleEndian(size, out);
     writeBinaryLittleEndian(static_cast<UInt8>(origin.segment_type), out);
     writeBinaryLittleEndian(origin.weight.has_value(), out);
@@ -94,20 +102,32 @@ static std::string serializeValue(Int64 size, const FileCacheOriginInfo & origin
 static void deserializeValue(const rocksdb::Slice & slice, Int64 & size, FileCacheOriginInfo & origin)
 {
     ReadBufferFromMemory in(slice.data(), slice.size());
-    readBinaryLittleEndian(size, in);
 
-    UInt8 key_type = 0;
-    readBinaryLittleEndian(key_type, in);
-    origin.segment_type = static_cast<FileSegmentKeyType>(key_type);
+    UInt8 version_byte = 0;
+    readBinaryLittleEndian(version_byte, in);
+    auto version = static_cast<IndexValueVersion>(version_byte);
 
-    bool has_weight = false;
-    readBinaryLittleEndian(has_weight, in);
+    if (version == IndexValueVersion::V0)
+    {
+        readBinaryLittleEndian(size, in);
 
-    UInt64 weight = 0;
-    readBinaryLittleEndian(weight, in);
-    origin.weight = has_weight ? std::optional<UInt64>(weight) : std::nullopt;
+        UInt8 key_type = 0;
+        readBinaryLittleEndian(key_type, in);
+        origin.segment_type = static_cast<FileSegmentKeyType>(key_type);
 
-    readBinary(origin.user_id, in);
+        bool has_weight = false;
+        readBinaryLittleEndian(has_weight, in);
+
+        UInt64 weight = 0;
+        readBinaryLittleEndian(weight, in);
+        origin.weight = has_weight ? std::optional<UInt64>(weight) : std::nullopt;
+
+        readBinary(origin.user_id, in);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::ROCKSDB_ERROR, "Unsupported RocksDB index value version: {}", version_byte);
+    }
 }
 
 void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 size, const FileCacheOriginInfo & origin)
