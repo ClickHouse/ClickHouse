@@ -248,6 +248,7 @@ namespace FailPoints
     extern const char rmt_merge_selecting_task_no_free_threads[];
     extern const char rmt_merge_selecting_task_max_part_size[];
     extern const char rmt_delay_execute_drop_range[];
+    extern const char rmt_pause_before_apply_metadata_alter[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
 }
@@ -6505,6 +6506,10 @@ bool StorageReplicatedMergeTree::optimize(
 
 bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMergeTree::LogEntry & entry)
 {
+    /// Allow tests to pause schema-change application on this replica so they can deterministically
+    /// reproduce the state where part.metadata_version > table.metadata_version.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_pause_before_apply_metadata_alter);
+
     auto current_metadata = getInMemoryMetadataPtr();
     if (entry.alter_version < current_metadata->getMetadataVersion())
     {

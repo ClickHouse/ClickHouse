@@ -1901,6 +1901,49 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
+    /// Postpone MUTATE_PART when the source part has a higher metadata_version than the current
+    /// table schema. This happens when a part is fetched from a more advanced replica whose schema
+    /// has not yet been applied locally (part.metadata_version > table.metadata_version). Running
+    /// the mutation now would reach a LOGICAL_ERROR in splitAndModifyMutationCommands because the
+    /// column is present in the part but absent from the table schema. The correct action is to
+    /// wait for the pending ALTER_METADATA queue entry to apply the schema change first.
+    ///
+    /// We only postpone when an ALTER_METADATA entry still exists in the queue (pending or
+    /// currently executing). If no such entry is present the mismatch cannot self-heal, so we
+    /// fall through and let the LOGICAL_ERROR guard in splitAndModifyMutationCommands fire
+    /// instead of looping forever.
+    if (entry.type == LogEntry::MUTATE_PART && !entry.source_parts.empty())
+    {
+        const auto & source_part_name = entry.source_parts[0];
+        auto part = data.getPartIfExists(source_part_name, {MergeTreeDataPartState::Active});
+        if (part)
+        {
+            auto table_meta = storage.getInMemoryMetadataPtr()->getMetadataVersion();
+            auto part_meta = part->getMetadataVersion();
+            if (part_meta > table_meta)
+            {
+                bool has_alter_metadata = false;
+                for (const auto & q_entry : queue)
+                {
+                    if (q_entry->type == LogEntry::ALTER_METADATA)
+                    {
+                        has_alter_metadata = true;
+                        break;
+                    }
+                }
+                if (has_alter_metadata)
+                {
+                    constexpr auto fmt_string = "Not executing log entry {} for part {} because source part {} "
+                        "has metadata_version {} which is ahead of table metadata_version {}; "
+                        "waiting for local ALTER_METADATA to catch up.";
+                    LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string,
+                        entry.znode_name, entry.new_part_name, source_part_name, part_meta, table_meta);
+                    return false;
+                }
+            }
+        }
+    }
+
     /// DROP_RANGE, DROP_PART and REPLACE_RANGE entries remove other entries, which produce parts in the range.
     /// If such part producing operations are currently executing, then DROP/REPLACE RANGE wait them to finish.
     /// Deadlock is possible if multiple DROP/REPLACE RANGE entries are executing in parallel and wait each other.
