@@ -12,8 +12,6 @@ String GroupExpression::getName() const
 {
     if (plan_step)
         return plan_step->getSerializationName();
-//    if (original_node && original_node->step)
-//        return original_node->step->getSerializationName();
     return {};
 }
 
@@ -22,8 +20,6 @@ String GroupExpression::getDescription() const
     String description;
     if (plan_step)
         description = plan_step->getStepDescription();
-//    if (original_node && original_node->step)
-//        description = original_node->step->getStepDescription();
     if (description.empty())
         return getName();
     return getName() + " " + description;

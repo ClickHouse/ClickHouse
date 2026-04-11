@@ -8,7 +8,7 @@ namespace DB
 
 bool ExpressionProperties::isSortingSatisfiedBy(const SortDescription & required, const SortDescription & existing)
 {
-    /// Required sorting is satifsied by existing sorting if required is the prefix of existing
+    /// Required sorting is satisfied by existing sorting if required is the prefix of existing
     if (required.size() > existing.size())
         return false;
     for (size_t i = 0; i < required.size(); ++i)

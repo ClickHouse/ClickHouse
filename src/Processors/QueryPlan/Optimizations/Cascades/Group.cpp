@@ -5,8 +5,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-//#include <iostream>
-
 namespace DB
 {
 
