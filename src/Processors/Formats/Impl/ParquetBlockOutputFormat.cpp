@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
-#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 
 #if USE_PARQUET

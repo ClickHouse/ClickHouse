@@ -50,8 +50,6 @@ public:
 
     void jumpToPosition(size_t position);
 
-    void setFileFinishedForDistributedCache();
-
 private:
     FileSegment & allocateFileSegment(size_t offset, FileSegmentKind segment_kind);
 
@@ -69,7 +67,6 @@ private:
     const String query_id;
     const String source_path;
     const bool is_distributed_cache;
-    bool is_file_finished_for_distributed_cache = false;
 
     FileSegmentsHolderPtr file_segments;
     size_t ignore_bytes = 0;
@@ -85,7 +82,6 @@ public:
     virtual bool cachingStopped() const = 0;
     virtual const FileSegmentsHolder * getFileSegments() const  = 0;
     virtual void jumpToPosition(size_t position) = 0;
-    virtual void setFileFinishedForDistributedCache() = 0;
 
     virtual WriteBuffer & getImpl() = 0;
 
@@ -119,8 +115,6 @@ public:
     const FileSegmentsHolder * getFileSegments() const override { return cache_writer ? cache_writer->getFileSegments() : nullptr; }
 
     void jumpToPosition(size_t position) override;
-
-    void setFileFinishedForDistributedCache() override { if (cache_writer) cache_writer->setFileFinishedForDistributedCache(); }
 
     WriteBuffer & getImpl() override { return *this; }
 

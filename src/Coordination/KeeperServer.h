@@ -15,20 +15,11 @@ namespace DB
 
 using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
-struct KeeperConfiguration;
-using KeeperConfigurationPtr = std::shared_ptr<KeeperConfiguration>;
+struct KeeperConfigurationAndSettings;
+using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;
 
 class KeeperServer
 {
-public:
-    struct RespondingCounts
-    {
-        uint64_t learners = 0;
-        uint64_t followers = 0;
-        uint64_t synced_followers = 0;
-        uint64_t synced_non_voting_followers = 0;
-    };
-
 private:
     const int server_id;
 
@@ -80,7 +71,7 @@ private:
     const bool enable_reconfiguration;
 public:
     KeeperServer(
-        const KeeperConfigurationPtr & server_config,
+        const KeeperConfigurationAndSettingsPtr & settings_,
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
@@ -123,8 +114,11 @@ public:
 
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
-    /// @return responding learners/followers/synced followers; all zero when node is not leader
-    RespondingCounts getRespondingCounts() const;
+    /// @return follower count if node is not leader return 0
+    uint64_t getFollowerCount() const;
+
+    /// @return synced follower count if node is not leader return 0
+    uint64_t getSyncedFollowerCount() const;
 
     /// Wait server initialization (see callbackFunc)
     void waitInit();

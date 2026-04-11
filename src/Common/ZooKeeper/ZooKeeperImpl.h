@@ -297,7 +297,6 @@ private:
     std::mutex operations_mutex;
 
     Watches watches TSA_GUARDED_BY(watches_mutex);
-    Watches list_watches TSA_GUARDED_BY(watches_mutex);
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference
@@ -359,7 +358,7 @@ private:
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
     /// Observes the operation in Aggregated ZooKeeper Log.
-    void observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component, bool is_subrequest = false);
+    void observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component);
 
     std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 

@@ -98,7 +98,6 @@ public:
     std::string getEngineName() const override { return engine_name; }
 
     Path getRawPath() const override { return blob_path; }
-    void setRawPath(const Path & path) override { blob_path = path; }
     const String & getRawURI() const override { return blob_path.path; }
 
     const Paths & getPaths() const override { return blobs_paths; }

@@ -1,5 +1,4 @@
 #include <Coordination/KeeperDispatcher.h>
-#include <Common/ProfiledLocks.h>
 #include <libnuraft/async.hxx>
 
 #include <Poco/Path.h>
@@ -53,10 +52,6 @@ namespace ProfileEvents
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
-    extern const Event KeeperStaleRequestsSkipped;
-    extern const Event KeeperLiveSessionsLockWaitMicroseconds;
-    extern const Event KeeperSessionCallbackLockWaitMicroseconds;
-    extern const Event KeeperReadRequestQueueLockWaitMicroseconds;
 }
 
 namespace HistogramMetrics
@@ -152,7 +147,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
 
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
-    , server_config(std::make_shared<KeeperConfiguration>())
+    , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(getLogger("KeeperDispatcher"))
 {}
 
@@ -187,11 +182,10 @@ void KeeperDispatcher::requestThread()
 
         KeeperRequestForSession request;
 
-        const auto & dynamic_settings = keeper_context->getCoordinationSettings();
-        uint64_t operation_timeout_ms = dynamic_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
-        uint64_t max_batch_bytes_size = dynamic_settings[CoordinationSetting::max_requests_batch_bytes_size];
-        size_t max_batch_size = dynamic_settings[CoordinationSetting::max_requests_batch_size];
-        bool quorum_reads = dynamic_settings[CoordinationSetting::quorum_reads];
+        const auto & coordination_settings = configuration_and_settings->coordination_settings;
+        uint64_t max_wait = coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+        uint64_t max_batch_bytes_size = coordination_settings[CoordinationSetting::max_requests_batch_bytes_size];
+        size_t max_batch_size = coordination_settings[CoordinationSetting::max_requests_batch_size];
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
         /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
@@ -202,55 +196,16 @@ void KeeperDispatcher::requestThread()
         /// Also there is a special reconfig request also being a separator.
         try
         {
-            if (requests_queue->tryPop(request, operation_timeout_ms))
+            if (requests_queue->tryPop(request, max_wait))
             {
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
                 if (shutdown_called)
                     break;
 
-                /// Skip stale requests for sessions that are no longer live.
-                /// Close must pass through RAFT (ephemeral cleanup, watch cleanup, etc.).
-                /// SessionID uses internal IDs (session_id = -1), ignore it just to be safe.
-                auto is_stale_session_request = [&](const KeeperRequestForSession & req) -> bool
-                {
-                    if (req.request->getOpNum() != Coordination::OpNum::Close
-                        && req.request->getOpNum() != Coordination::OpNum::SessionID)
-                    {
-                        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-                        if (!live_sessions.contains(req.session_id))
-                        {
-                            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-
-                            /// Finalize the dispatcher_requests_queue span that was initialized
-                            /// when the request was enqueued. Without this the span leaks because
-                            /// handle_opentelemetery_spans (which normally finalizes it) is skipped.
-                            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                                req.request->spans.dispatcher_requests_queue,
-                                [&]
-                                {
-                                    return std::vector<OpenTelemetry::SpanAttribute>{
-                                        {"keeper.operation", Coordination::opNumToString(req.request->getOpNum())},
-                                        {"keeper.session_id", req.session_id},
-                                        {"keeper.xid", req.request->xid},
-                                        {"keeper.stale", true},
-                                    };
-                                },
-                                OpenTelemetry::SpanStatus::ERROR,
-                                "Session is no longer live");
-
-                            return true;
-                        }
-                    }
-                    return false;
-                };
-
-                if (is_stale_session_request(request))
-                    continue;
-
                 handle_opentelemetery_spans(request.request, request.session_id);
 
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
-                if (server_config->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
+                if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
                 {
                     ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
                     LOG_WARNING(
@@ -275,7 +230,7 @@ void KeeperDispatcher::requestThread()
                 /// Otherwise we will process it locally.
                 if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
                     has_reconfig_request = true;
-                else if (quorum_reads || !request.request->isReadRequest())
+                else if (coordination_settings[CoordinationSetting::quorum_reads] || !request.request->isReadRequest())
                 {
                     current_batch_bytes_size += request.request->bytesSize();
                     current_batch.emplace_back(request);
@@ -287,18 +242,14 @@ void KeeperDispatcher::requestThread()
                         {
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
 
-                            /// Skip stale requests for sessions that are no longer live during batch assembly.
-                            if (is_stale_session_request(request))
-                                return true; // consumed, keep draining
-
                             handle_opentelemetery_spans(request.request, request.session_id);
 
                             /// Don't append read request into batch, we have to process them separately
-                            if (!quorum_reads && request.request->isReadRequest())
+                            if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
                             {
                                 const auto & last_request = current_batch.back();
                                 ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
-                                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
+                                std::lock_guard lock(read_request_queue_mutex);
                                 read_request_queue[{last_request.session_id, last_request.request->xid}].push_back(request);
                             }
                             else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
@@ -324,7 +275,9 @@ void KeeperDispatcher::requestThread()
 
                     const auto prev_result_done = [&]
                     {
-                        return !prev_result || prev_result->has_result();
+                        /// has_result == false && get_result_code == OK means that our request still not processed.
+                        /// Sometimes NuRaft set errorcode without setting result, so we check both here.
+                        return !prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK;
                     };
 
                     /// Waiting until previous append will be successful, or batch is big enough
@@ -413,7 +366,7 @@ void KeeperDispatcher::requestThread()
                         auto log_idx = bs.get_u64();
 
                         /// if timeout happened set error responses for the requests
-                        if (!keeper_context->waitCommittedUpto(log_idx, operation_timeout_ms))
+                        if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
                             addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
 
                         if (shutdown_called)
@@ -429,27 +382,10 @@ void KeeperDispatcher::requestThread()
                 /// Read request always goes after write batch (last request)
                 if (has_read_request)
                 {
-                    bool is_live;
-                    {
-                        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-                        is_live = live_sessions.contains(request.session_id);
-                    }
-                    if (is_live)
-                    {
-                        if (server->isLeaderAlive())
-                            server->putLocalReadRequest({request});
-                        else
-                            addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
-                    }
+                    if (server->isLeaderAlive())
+                        server->putLocalReadRequest({request});
                     else
-                    {
-                        /// The session is no longer live (e.g. a Close was committed
-                        /// in the preceding write batch or the session was cleaned up).
-                        /// The dispatcher_requests_queue span was already finalized
-                        /// at handle_opentelemetery_spans above.
-                        ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-                        LOG_TRACE(log, "Dropping stale read request for non-live session {}, xid {}", request.session_id, request.request->xid);
-                    }
+                        addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
                 }
             }
         }
@@ -469,7 +405,7 @@ void KeeperDispatcher::responseThread()
     {
         KeeperResponseForSession response_for_session;
 
-        uint64_t max_wait = keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+        uint64_t max_wait = configuration_and_settings->coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
 
         if (responses_queue.tryPop(response_for_session, max_wait))
         {
@@ -537,66 +473,48 @@ void KeeperDispatcher::snapshotThread()
 
 bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
 {
-    /// Extract callback under lock, invoke outside to avoid serializing callback
-    /// latency under session_to_response_callback_mutex. This is safe because:
-    /// - KeeperTCPHandler callbacks capture shared_ptrs by value (always alive)
-    /// - KeeperOverDispatcher callbacks capture shared_ptr<CallbackState> (always alive)
-    /// Note: setResponse is called from responseThread which is single-threaded,
-    /// so concurrent setResponse calls for the same session do not happen.
-    /// However, for non-Close responses, finishSession on another thread may
-    /// concurrently invoke a copy of the same callback (for ZSESSIONEXPIRED).
-    /// Both current callback implementations handle this safely:
-    /// KeeperTCPHandler pushes to a ConcurrentBoundedQueue, and
-    /// KeeperOverDispatcher's CallbackState is protected by its own mutex.
-    ZooKeeperResponseCallback callback;
+    std::lock_guard lock(session_to_response_callback_mutex);
+
+    /// Special new session response.
+    if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::SessionID)
     {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        const Coordination::ZooKeeperSessionIDResponse & session_id_resp = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
 
-        /// Special new session response.
-        if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::SessionID)
-        {
-            const Coordination::ZooKeeperSessionIDResponse & session_id_resp = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
+        /// Nobody waits for this session id
+        if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.contains(session_id_resp.internal_id))
+            return false;
 
-            /// Nobody waits for this session id
-            if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.contains(session_id_resp.internal_id))
-                return false;
-
-            callback = std::move(new_session_id_response_callback[session_id_resp.internal_id]);
-            new_session_id_response_callback.erase(session_id_resp.internal_id);
-        }
-        else /// Normal response, just write to client
-        {
-            auto session_response_callback = session_to_response_callback.find(session_id);
-
-            /// Session was disconnected, just skip this response
-            if (session_response_callback == session_to_response_callback.end())
-                return false;
-
-            /// Session closed, no more writes — use move to avoid std::function copy overhead
-            if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::Close)
-            {
-                callback = std::move(session_response_callback->second);
-                session_to_response_callback.erase(session_response_callback);
-                CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
-            }
-            else
-            {
-                /// Copy, not move — the entry must stay in the map for future
-                /// responses on this session (watches, subsequent requests).
-                callback = session_response_callback->second;
-            }
-        }
+        auto callback = new_session_id_response_callback[session_id_resp.internal_id];
+        callback(response, request);
+        new_session_id_response_callback.erase(session_id_resp.internal_id);
+        return true;
     }
+    else /// Normal response, just write to client
+    {
+        auto session_response_callback = session_to_response_callback.find(session_id);
 
-    callback(response, request);
-    return true;
+        /// Session was disconnected, just skip this response
+        if (session_response_callback == session_to_response_callback.end())
+            return false;
+
+        session_response_callback->second(response, request);
+
+        /// Session closed, no more writes
+        if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::Close)
+        {
+            session_to_response_callback.erase(session_response_callback);
+            CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
+        }
+
+        return true;
+    }
 }
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
 {
     {
         /// If session was already disconnected than we will ignore requests
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        std::lock_guard lock(session_to_response_callback_mutex);
         if (!session_to_response_callback.contains(session_id))
             return false;
     }
@@ -619,7 +537,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         if (!requests_queue->push(std::move(request_info)))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push request to queue");
     }
-    else if (!requests_queue->tryPush(std::move(request_info), keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+    else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
     {
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
     }
@@ -630,17 +548,8 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
     {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-        if (!live_sessions.contains(session_id))
-        {
-            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-            return false;
-        }
-    }
-
-    {
         /// If session was already disconnected than we will ignore requests
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        std::lock_guard lock(session_to_response_callback_mutex);
         if (!session_to_response_callback.contains(session_id))
             return false;
     }
@@ -655,6 +564,7 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
         return false;
 
     server->putLocalReadRequest(request_info);
+    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
     return true;
 }
 
@@ -662,14 +572,12 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
-    server_config = KeeperConfiguration::loadFromConfig(config, standalone_keeper);
-    auto coordination_settings = std::make_shared<CoordinationSettings>();
-    coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper, std::move(coordination_settings));
+    configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper, std::make_shared<CoordinationSettings>(configuration_and_settings->coordination_settings));
 
     keeper_context->initialize(config, this);
 
-    requests_queue = std::make_unique<RequestsQueue>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_size]);
+    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size]);
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
@@ -677,7 +585,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     snapshot_s3.startup(config, macros);
 
     server = std::make_unique<KeeperServer>(
-        server_config,
+        configuration_and_settings,
         config,
         responses_queue,
         snapshots_queue,
@@ -685,28 +593,19 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshot_s3,
         [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session)
         {
-            KeeperRequestsForSessions pending_reads;
             {
                 /// check if we have queue of read requests depending on this request to be committed
                 SessionAndXID key(request_for_session.session_id, request_for_session.request->xid);
-                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
+                std::lock_guard lock(read_request_queue_mutex);
                 if (auto it = read_request_queue.find(key); it != read_request_queue.end())
                 {
-                    pending_reads = std::move(it->second);
-                    read_request_queue.erase(it);
-                }
-            }
-
-            /// Dispatch reads outside the lock — putLocalReadRequest and addErrorResponses
-            /// push to thread-safe queues, so no lock is needed here.
-            for (const auto & read_request : pending_reads)
-            {
-                /// Skip reads whose session is no longer live
-                {
-                    ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-                    if (!live_sessions.contains(read_request.session_id))
+                    for (const auto & read_request : it->second)
                     {
-                        ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
+                        if (!server->isLeaderAlive())
+                        {
+                            addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
+                            continue;
+                        }
 
                         ZooKeeperOpentelemetrySpans::maybeFinalize(
                             read_request.request->spans.read_wait_for_write,
@@ -716,53 +615,21 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                                     {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
                                     {"keeper.session_id", read_request.session_id},
                                     {"keeper.xid", read_request.request->xid},
-                                    {"keeper.stale", true},
                                 };
-                            },
-                            OpenTelemetry::SpanStatus::ERROR,
-                            "Session is no longer live");
+                            });
 
-                        continue;
+                        server->putLocalReadRequest(read_request);
                     }
+
+                    read_request_queue.erase(it);
                 }
-
-                if (!server->isLeaderAlive())
-                {
-                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
-                    continue;
-                }
-
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    read_request.request->spans.read_wait_for_write,
-                    [&]
-                    {
-                        return std::vector<OpenTelemetry::SpanAttribute>{
-                            {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                            {"keeper.session_id", read_request.session_id},
-                            {"keeper.xid", read_request.request->xid},
-                        };
-                    });
-
-                server->putLocalReadRequest(read_request);
-            }
-
-            /// When Close commits, remove the session from `live_sessions` so that
-            /// stale requests still sitting in the backed-up queue will be filtered.
-            /// This covers the window between Close commit and `finishSession`
-            /// (e.g. `sessionCleanerTask` expired the session but the TCP handler
-            /// hasn't disconnected yet). Fires on ALL nodes via RAFT, which is
-            /// how followers learn about closed sessions.
-            if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
-            {
-                ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-                live_sessions.erase(request_for_session.session_id);
             }
         });
 
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
-        server->startup(config, server_config->enable_ipv6);
+        server->startup(config, configuration_and_settings->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
         if (!start_async)
@@ -839,7 +706,7 @@ void KeeperDispatcher::shutdown()
         KeeperRequestsForSessions close_requests;
         {
             /// Clear all registered sessions
-            ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+            std::lock_guard lock(session_to_response_callback_mutex);
 
             if (server && hasLeader())
             {
@@ -878,7 +745,7 @@ void KeeperDispatcher::shutdown()
                                             nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/,
                                             nuraft::ptr<std::exception> & /*exception*/) { my_sessions_closing_done_promise->set_value(); });
 
-                auto session_shutdown_timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::session_shutdown_timeout].totalMilliseconds();
+                auto session_shutdown_timeout = configuration_and_settings->coordination_settings[CoordinationSetting::session_shutdown_timeout].totalMilliseconds();
                 if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)
                     LOG_WARNING(
                         log,
@@ -919,28 +786,10 @@ KeeperDispatcher::~KeeperDispatcher()
 
 void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
-    bool inserted = false;
-    {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-        inserted = live_sessions.insert(session_id).second;
-    }
-
-    try
-    {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
-        if (!session_to_response_callback.try_emplace(session_id, callback).second)
-            throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
-        CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
-    }
-    catch (...)
-    {
-        if (inserted)
-        {
-            ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-            live_sessions.erase(session_id);
-        }
-        throw;
-    }
+    std::lock_guard lock(session_to_response_callback_mutex);
+    if (!session_to_response_callback.try_emplace(session_id, callback).second)
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
+    CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
 }
 
 void KeeperDispatcher::sessionCleanerTask()
@@ -976,17 +825,12 @@ void KeeperDispatcher::sessionCleanerTask()
                         .request = std::move(request),
                         .digest = std::nullopt
                     };
-                    /// Remove session from live_sessions before pushing Close to the queue.
-                    /// This gives the leader early filtering — stale requests for
-                    /// this session are skipped as soon as the session expiry is detected,
-                    /// before the Close even enters the queue.
-                    /// Close requests are exempt from stale filtering, so the
-                    /// Close will still pass through RAFT for ephemeral cleanup.
-                    finishSession(dead_session);
-
                     if (!requests_queue->push(std::move(request_info)))
                         LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
                     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+
+                    /// Remove session from registered sessions
+                    finishSession(dead_session);
                     LOG_INFO(log, "Dead session close request pushed");
                 }
             }
@@ -996,7 +840,7 @@ void KeeperDispatcher::sessionCleanerTask()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        auto time_to_sleep = keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds();
+        auto time_to_sleep = configuration_and_settings->coordination_settings[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds();
         std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep));
     }
 }
@@ -1009,7 +853,7 @@ void KeeperDispatcher::finishSession(int64_t session_id)
 
     ZooKeeperResponseCallback callback;
     {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        std::lock_guard lock(session_to_response_callback_mutex);
         auto session_it = session_to_response_callback.find(session_id);
         if (session_it != session_to_response_callback.end())
         {
@@ -1017,20 +861,6 @@ void KeeperDispatcher::finishSession(int64_t session_id)
             session_to_response_callback.erase(session_it);
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
-        else
-        {
-            /// Session was already finished by another path (e.g. `sessionCleanerTask`
-            /// raced with `KeeperTCPHandler`). That path already erased from
-            /// `live_sessions`.
-            return;
-        }
-    }
-
-    /// Remove from live_sessions so `requestThread` can skip stale requests
-    /// still sitting in the queue for this session.
-    {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-        live_sessions.erase(session_id);
     }
 
     /// Notify the callback that session is being closed before removing it
@@ -1065,7 +895,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
         if (may_have_dependent_reads)
         {
             SessionAndXID key(request_for_session.session_id, request_for_session.request->xid);
-            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
+            std::lock_guard lock(read_request_queue_mutex);
             if (auto it = read_request_queue.find(key); it != read_request_queue.end())
             {
                 dependent_reads.insert(dependent_reads.end(), std::move_iterator(it->second.begin()), std::move_iterator(it->second.end()));
@@ -1125,7 +955,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     auto future = promise->get_future();
 
     {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        std::lock_guard lock(session_to_response_callback_mutex);
         new_session_id_response_callback[request->internal_id]
             = [promise, internal_id = request->internal_id](
                   const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr /*request*/)
@@ -1248,7 +1078,7 @@ void KeeperDispatcher::clusterUpdateThread()
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
 
             std::this_thread::sleep_for(last_command_was_leader_change
-                ? std::chrono::milliseconds(keeper_context->getCoordinationSettings()[CoordinationSetting::sleep_before_leader_change_ms].totalMilliseconds())
+                ? std::chrono::milliseconds(configuration_and_settings->coordination_settings[CoordinationSetting::sleep_before_leader_change_ms].totalMilliseconds())
                 : 50ms);
         }
     }
@@ -1300,10 +1130,6 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     snapshot_s3.updateS3Configuration(config, macros);
 
     keeper_context->updateKeeperMemorySoftLimit(config);
-
-    auto new_settings = std::make_shared<CoordinationSettings>();
-    new_settings->loadFromConfig("keeper_server.coordination_settings", config);
-    keeper_context->updateSettings(new_settings);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests)
@@ -1347,10 +1173,11 @@ uint64_t KeeperDispatcher::getSnapDirSize() const
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 {
     Keeper4LWInfo result = server->getPartiallyFilled4LWInfo();
-    result.outstanding_requests_count
-        = CurrentMetrics::values[CurrentMetrics::KeeperOutstandingRequests].load(std::memory_order_relaxed);
-    result.alive_connections_count
-        = CurrentMetrics::values[CurrentMetrics::KeeperAliveConnections].load(std::memory_order_relaxed);
+    result.outstanding_requests_count = requests_queue->size();
+    {
+        std::lock_guard lock(session_to_response_callback_mutex);
+        result.alive_connections_count = session_to_response_callback.size();
+    }
     return result;
 }
 

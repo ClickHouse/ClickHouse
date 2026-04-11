@@ -29,7 +29,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryDescription.h>
-#include <Storages/VirtualColumnUtils.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
@@ -364,17 +363,8 @@ void StorageMaterializedView::read(
         std::tie(storage, lock) = refresher->getAndLockTargetTable(getTargetTableId(), context);
     }
 
-    /// For datalake target tables (e.g. IcebergLocal), we must refresh external metadata
-    /// before reading. Without this call the storage snapshot will lack the
-    /// datalake_table_state, causing a LOGICAL_ERROR in iterate().
-    /// Normally updateExternalDynamicMetadataIfExists is called by the analyzer/interpreter
-    /// on the outermost storage, but for materialized views that is the view itself
-    /// (which is a no-op), not the target table.
-    storage->updateExternalDynamicMetadataIfExists(context);
-
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
-    auto target_column_names = VirtualColumnUtils::filterVirtualColumns(column_names, {"_table", "_database"}, target_metadata_snapshot, target_storage_snapshot->virtual_columns);
 
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
@@ -391,25 +381,10 @@ void StorageMaterializedView::read(
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;
-    storage->read(query_plan, target_column_names, target_storage_snapshot, src_table_query_info, context, processed_stage, max_block_size, num_streams);
+    storage->read(query_plan, column_names, target_storage_snapshot, src_table_query_info, context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())
     {
-        /// MaterializedView must use it's StorageId table and database names when reading
-        if (std::ranges::contains(column_names, "_table") && !query_plan.getCurrentHeader()->has("_table"))
-        {
-            auto step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), ActionsDAG::makeAddingConstantColumnActions("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), getStorageID().getTableName()));
-            step->setStepDescription("Add _table virtual column for MaterializedView");
-            query_plan.addStep(std::move(step));
-        }
-
-        if (std::ranges::contains(column_names, "_database") && !query_plan.getCurrentHeader()->has("_database"))
-        {
-            auto step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), ActionsDAG::makeAddingConstantColumnActions("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), getStorageID().getDatabaseName()));
-            step->setStepDescription("Add _database virtual column for MaterializedView");
-            query_plan.addStep(std::move(step));
-        }
-
         auto mv_header = *getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
         auto target_header = *query_plan.getCurrentHeader();
 
@@ -569,7 +544,7 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     return refresh_context;
 }
 
-std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
+std::tuple<boost::intrusive_ptr<ASTInsertQuery>, CurrentThread::QueryScope>
 StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
 {
     auto inner_table_id = getTargetTableId();
@@ -580,7 +555,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
 
     if (!append)
     {
-       auto query_scope = QueryScope::create(refresh_context);
+       auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
         auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
         String db_name = db->getDatabaseName();
@@ -598,8 +573,6 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         /// Use UUID to ensure that the INSERT below inserts into the exact table we created, even if another replica replaced it.
         create_query->uuid = UUIDHelpers::generateV4();
         create_query->has_uuid = true;
-        if (create_query->targets)
-            create_query->targets->resetInnerUUIDs();
 
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
@@ -612,7 +585,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     }
 
     // Create a thread group for the query.
-    auto query_scope = QueryScope::create(refresh_context);
+    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
     auto insert_query = make_intrusive<ASTInsertQuery>();
     insert_query->select = select_query;
@@ -646,7 +619,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
     auto target_db = DatabaseCatalog::instance().getDatabase(fresh_table.database_name);
     bool exchange = DatabaseCatalog::instance().isTableExist(stale_table_id, refresh_context);
 
-    auto query_scope = QueryScope::create(refresh_context);
+    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
     auto rename_query = make_intrusive<ASTRenameQuery>();
     rename_query->exchange = exchange;
@@ -659,7 +632,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
 {
-    auto query_scope = QueryScope::create(refresh_context);
+    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
     auto drop_query = make_intrusive<ASTDropQuery>();
     drop_query->setDatabase(table_id.database_name);
@@ -873,12 +846,12 @@ Strings StorageMaterializedView::getDataPaths() const
     return {};
 }
 
-bool StorageMaterializedView::supportsColumnsWithDynamicStructure() const
+bool StorageMaterializedView::supportsDynamicSubcolumns() const
 {
     /// If target table was not created yet, we don't know if it supports dynamic subcolumns or not,
     /// but it will be checked during its future creation anyway, so we can return true here.
     auto target_table = tryGetTargetTable();
-    return target_table ? target_table->supportsColumnsWithDynamicStructure() : true;
+    return target_table ? target_table->supportsDynamicSubcolumns() : true;
 }
 
 void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)

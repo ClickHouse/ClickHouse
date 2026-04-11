@@ -15,8 +15,6 @@ struct StorageID;
 
 class StorageArrowFlight : public IStorage, protected WithContext
 {
-    static VirtualColumnsDescription createVirtuals();
-
 public:
     struct Configuration
     {

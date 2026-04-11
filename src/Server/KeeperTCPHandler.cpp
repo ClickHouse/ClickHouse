@@ -475,6 +475,8 @@ void KeeperTCPHandler::runImpl()
         compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
+    max_request_size = static_cast<UInt64>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
+
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
@@ -510,17 +512,6 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
-
-            if (keeper_dispatcher->isShuttingDown())
-            {
-                LOG_DEBUG(log, "Server shutting down, closing session #{}", session_id);
-                break;
-            }
-
-            /// Restart the stopwatch after poll() returns so that the time spent
-            /// waiting inside poll() (which can be up to session_timeout, e.g. 10s
-            /// between heartbeats) is not attributed to the next operation.
-            logging_stopwatch.restart();
             if (result.has_requests && !close_received)
             {
                 if (in->eof())
@@ -723,8 +714,6 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
     const UInt64 receive_start_time = ZooKeeperOpentelemetrySpans::now();
-
-    const size_t max_request_size = static_cast<size_t>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
 
     std::optional<LimitReadBuffer> limited_buffer_holder;
     /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size

@@ -1,6 +1,4 @@
 #include <Server.h>
-#include <Common/CurrentThread.h>
-#include <Common/QueryScope.h>
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
@@ -84,8 +82,8 @@
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Storages/MaterializedView/RefreshSet.h>
-#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
@@ -100,7 +98,6 @@
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
-#include <Coordination/KeeperContext.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Common/ReplicasReconnector.h>
@@ -130,7 +127,6 @@
 #include <unordered_set>
 
 #include <Common/Jemalloc.h>
-#include <Common/JemallocCacheArena.h>
 
 #include "config.h"
 #include <Common/config_version.h>
@@ -247,10 +243,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
     extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
-    extern const ServerSettingsString text_index_tokens_cache_policy;
-    extern const ServerSettingsUInt64 text_index_tokens_cache_size;
-    extern const ServerSettingsUInt64 text_index_tokens_cache_max_entries;
-    extern const ServerSettingsDouble text_index_tokens_cache_size_ratio;
+    extern const ServerSettingsString text_index_dictionary_block_cache_policy;
+    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_size;
+    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_max_entries;
+    extern const ServerSettingsDouble text_index_dictionary_block_cache_size_ratio;
     extern const ServerSettingsString text_index_header_cache_policy;
     extern const ServerSettingsUInt64 text_index_header_cache_size;
     extern const ServerSettingsUInt64 text_index_header_cache_max_entries;
@@ -266,10 +262,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
-    extern const ServerSettingsString parquet_metadata_cache_policy;
-    extern const ServerSettingsUInt64 parquet_metadata_cache_size;
-    extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
-    extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
@@ -354,7 +346,6 @@ namespace ServerSetting
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
-    extern const ServerSettingsBool use_separate_cache_arena;
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
@@ -380,7 +371,6 @@ namespace ServerSetting
     extern const ServerSettingsBool abort_on_logical_error;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
-    extern const ServerSettingsUInt64 jemalloc_flush_profile_on_memory_exceeded_interval;
     extern const ServerSettingsString allowed_disks_for_table_engines;
     extern const ServerSettingsUInt64 s3_credentials_provider_max_cache_size;
     extern const ServerSettingsUInt64 max_open_files;
@@ -537,13 +527,11 @@ enum StartupScriptsExecutionState : CurrentMetrics::Value
 };
 
 
-static std::string getCanonicalPath(std::string && path, const std::string & base = {})
+static std::string getCanonicalPath(std::string && path)
 {
     Poco::trimInPlace(path);
     if (path.empty())
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "path configuration parameter is empty");
-    if (!base.empty() && fs::path(path).is_relative())
-        path = fs::weakly_canonical(fs::path(base) / path);
     if (path.back() != '/')
         path += '/';
     return std::move(path);
@@ -732,7 +720,7 @@ void Server::initialize(Poco::Util::Application & self)
 
 std::string Server::getDefaultCorePath() const
 {
-    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH), original_working_directory) + "cores";
+    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
 void Server::defineOptions(Poco::Util::OptionSet & options)
@@ -797,7 +785,7 @@ int readNumber(const String & path)
 
 void sanityChecks(Server & server, const ServerSettings & server_settings)
 {
-    std::string data_path = getCanonicalPath(String(server_settings[ServerSetting::path]), server.getOriginalWorkingDirectory());
+    std::string data_path = getCanonicalPath(String(server_settings[ServerSetting::path]));
     std::string logs_path = server_settings[ServerSetting::logger_log];
 
     if (server.logger().is(Poco::Message::PRIO_TEST))
@@ -822,7 +810,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_FAST_CLOCK_SOURCE_NOT_USED,
                 PreformattedMessage::create("Linux is not using a fast clock source. Performance can be degraded. Check {}", filename));
     }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -834,7 +822,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MEMORY_OVERCOMMIT_DISABLED,
                 PreformattedMessage::create("Linux memory overcommit is disabled. Check {}", String(filename)));
     }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -846,7 +834,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
     }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -858,7 +846,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MAX_PID_TOO_LOW,
                PreformattedMessage::create("Linux max PID is too low. Check {}", String(filename)));
     }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -870,7 +858,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MAX_THREADS_COUNT_TOO_LOW,
                 PreformattedMessage::create("Linux threads max count is too low. Check {}", String(filename)));
     }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -885,7 +873,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                     "using `sudo sh -c 'echo 1 > {}'` or by using sysctl.",
                     String(filename)));
     }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -904,7 +892,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::AVAILABLE_MEMORY_TOO_LOW,
                 PreformattedMessage::create("Available memory at server startup is too low (2GiB)."));
     }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -915,7 +903,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
                 PreformattedMessage::create("Available disk space for data at server startup is too low (1GiB): {}", String(data_path)));
     }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -930,7 +918,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                     PreformattedMessage::create("Available disk space for logs at server startup is too low (1GiB): {}", String(logs_parent)));
         }
     }
-    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -986,7 +974,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 startup_context->setCurrentQueryId("");
 
                 {
-                    auto query_scope = QueryScope::create(startup_context);
+                    auto query_scope = CurrentThread::QueryScope::create(startup_context);
                     executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
                 }
 
@@ -1019,7 +1007,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
-            auto query_scope = QueryScope::create(startup_context);
+            auto query_scope = CurrentThread::QueryScope::create(startup_context);
 
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
@@ -1334,7 +1322,7 @@ try
         PreformattedMessage::create("Server was built with {}. It will work slowly.", log_message));
 #endif
 
-#if WITH_COVERAGE
+#if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
     global_context->addOrUpdateWarningMessage(
         Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
@@ -1401,7 +1389,6 @@ try
 
     total_memory_tracker.setJemallocFlushProfileInterval(server_settings[ServerSetting::jemalloc_flush_profile_interval_bytes]);
     total_memory_tracker.setJemallocFlushProfileOnMemoryExceeded(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded]);
-    total_memory_tracker.setJemallocFlushProfileOnMemoryExceededSeconds(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded_interval]);
 
     Poco::ThreadPool server_pool(
         /* minCapacity */3,
@@ -1509,10 +1496,6 @@ try
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shut down storages.");
-
-        /// Signal Keeper TCP handlers to close before waiting for connections,
-        /// otherwise they keep running indefinitely and block shutdown.
-        global_context->signalKeeperDispatcherShutdown();
 
         if (!servers_to_start_before_tables.empty())
         {
@@ -1637,7 +1620,7 @@ try
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
-    std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
+    std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]));
     fs::path path = path_str;
 
     /// Check that the process user id matches the owner of the data.
@@ -1659,11 +1642,6 @@ try
 
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
-
-    if (has_zookeeper && config().getBool("keeper_server.standalone_keeper", false))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Cannot use standalone_keeper=true with a configured zookeeper client connection. "
-            "A standalone keeper should not have a <zookeeper> section in its config.");
 
     auto main_config_zk_node_cache = std::make_unique<zkutil::ZooKeeperNodeCache>([&] { return global_context->getZooKeeper(); });
     Coordination::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
@@ -1870,31 +1848,27 @@ try
       */
     {
         const auto & user_files_path_setting = server_settings[ServerSetting::user_files_path];
-        std::string user_files_path = user_files_path_setting.changed
-            ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
+        std::string user_files_path = user_files_path_setting.changed ? user_files_path_setting.value : String(path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
     }
 
     {
         const auto & dictionaries_lib_path_setting = server_settings[ServerSetting::dictionaries_lib_path];
-        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed
-            ? getCanonicalPath(String(dictionaries_lib_path_setting.value), path_str) : String(path / "dictionaries_lib/");
+        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed ? dictionaries_lib_path_setting.value : String(path / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
     }
 
     {
         const auto & user_scripts_path_setting = server_settings[ServerSetting::user_scripts_path];
-        std::string user_scripts_path = user_scripts_path_setting.changed
-            ? getCanonicalPath(String(user_scripts_path_setting.value), path_str) : String(path / "user_scripts/");
+        std::string user_scripts_path = user_scripts_path_setting.changed ? user_scripts_path_setting.value : String(path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
     }
 
     /// top_level_domains_lists
     {
         const auto & top_level_domains_path_setting = server_settings[ServerSetting::top_level_domains_path];
-        std::string top_level_domains_path = top_level_domains_path_setting.changed
-            ? getCanonicalPath(String(top_level_domains_path_setting.value), path_str) : String(path / "top_level_domains/");
+        const std::string & top_level_domains_path = top_level_domains_path_setting.changed ? top_level_domains_path_setting.value : String(path / "top_level_domains/");
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
@@ -1942,8 +1916,6 @@ try
     global_context->updateInterserverCredentials(config());
 
     /// Set up caches.
-
-    JemallocCacheArena::setEnabled(server_settings[ServerSetting::use_separate_cache_arena]);
 
     const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 
@@ -2008,16 +1980,16 @@ try
     }
     global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_entries, vector_similarity_index_cache_size_ratio);
 
-    String text_index_tokens_cache_policy = server_settings[ServerSetting::text_index_tokens_cache_policy];
-    size_t text_index_tokens_cache_size = server_settings[ServerSetting::text_index_tokens_cache_size];
-    size_t text_index_tokens_cache_max_count = server_settings[ServerSetting::text_index_tokens_cache_max_entries];
-    double text_index_tokens_cache_size_ratio = server_settings[ServerSetting::text_index_tokens_cache_size_ratio];
-    if (text_index_tokens_cache_size > max_cache_size)
+    String text_index_dictionary_block_cache_policy = server_settings[ServerSetting::text_index_dictionary_block_cache_policy];
+    size_t text_index_dictionary_block_cache_size = server_settings[ServerSetting::text_index_dictionary_block_cache_size];
+    size_t text_index_dictionary_block_cache_max_count = server_settings[ServerSetting::text_index_dictionary_block_cache_max_entries];
+    double text_index_dictionary_block_cache_size_ratio = server_settings[ServerSetting::text_index_dictionary_block_cache_size_ratio];
+    if (text_index_dictionary_block_cache_size > max_cache_size)
     {
-        text_index_tokens_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index tokens cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_tokens_cache_size));
+        text_index_dictionary_block_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered text index dictionary block cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_dictionary_block_cache_size));
     }
-    global_context->setTextIndexTokensCache(text_index_tokens_cache_policy, text_index_tokens_cache_size, text_index_tokens_cache_max_count, text_index_tokens_cache_size_ratio);
+    global_context->setTextIndexDictionaryBlockCache(text_index_dictionary_block_cache_policy, text_index_dictionary_block_cache_size, text_index_dictionary_block_cache_max_count, text_index_dictionary_block_cache_size_ratio);
 
     String text_index_header_cache_policy = server_settings[ServerSetting::text_index_header_cache_policy];
     size_t text_index_header_cache_size = server_settings[ServerSetting::text_index_header_cache_size];
@@ -2060,18 +2032,6 @@ try
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
-#endif
-#if USE_PARQUET
-    String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
-    size_t parquet_metadata_cache_size = server_settings[ServerSetting::parquet_metadata_cache_size];
-    size_t parquet_metadata_cache_max_entries = server_settings[ServerSetting::parquet_metadata_cache_max_entries];
-    double parquet_metadata_cache_size_ratio = server_settings[ServerSetting::parquet_metadata_cache_size_ratio];
-    if (parquet_metadata_cache_size > max_cache_size)
-    {
-        parquet_metadata_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_cache_size));
-    }
-    global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
 #endif
 
     Names allowed_disks_table_engines;
@@ -2302,11 +2262,6 @@ try
             LOG_INFO(log, "Setting max_local_read_bandwidth_for_server was set to {}", local_read_bandwidth);
             LOG_INFO(log, "Setting max_local_write_bandwidth_for_server was set to {}", local_write_bandwidth);
 
-#if ENABLE_DISTRIBUTED_CACHE
-            for (const auto & distr_cache_instance : distr_cache_instances)
-                distr_cache_instance->updateConfig(config());
-#endif
-
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
@@ -2324,13 +2279,7 @@ try
             global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings[ServerSetting::max_waiting_queries]);
 
             if (config().has("keeper_server"))
-            {
-#if USE_NURAFT
-                if (config().getBool("keeper_server.standalone_keeper", false))
-                    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
-#endif
                 global_context->updateKeeperConfiguration(config());
-            }
 
             /// Reload the number of threads for global pools.
             /// Note: If you specified it in the top level config (not it config of default profile)
@@ -2452,29 +2401,15 @@ try
             global_context->updateStorageConfiguration(config());
             global_context->updateInterserverCredentials(config());
 
-            {
-                const size_t max_cache_size_in_bytes = static_cast<size_t>(
-                    static_cast<double>(current_physical_server_memory) * new_server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
-
-                global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateVectorSimilarityIndexCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateTextIndexTokensCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateTextIndexHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateTextIndexPostingsCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
-#if USE_AVRO
-                global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
-#endif
-#if USE_PARQUET
-                global_context->updateParquetMetadataCacheConfiguration(config(), max_cache_size_in_bytes);
-#endif
-            }
+            global_context->updateUncompressedCacheConfiguration(config());
+            global_context->updateMarkCacheConfiguration(config());
+            global_context->updatePrimaryIndexCacheConfiguration(config());
+            global_context->updateIndexUncompressedCacheConfiguration(config());
+            global_context->updateIndexMarkCacheConfiguration(config());
+            global_context->updateVectorSimilarityIndexCacheConfiguration(config());
+            global_context->updateMMappedFileCacheConfiguration(config());
+            global_context->updateQueryResultCacheConfiguration(config());
+            global_context->updateQueryConditionCacheConfiguration(config());
 
 #if USE_SSL
             CertificateReloader::instance().tryReloadAll(config());
@@ -2723,8 +2658,7 @@ try
     else
     {
         const auto & tmp_path_setting = server_settings[ServerSetting::tmp_path];
-        std::string temporary_path = tmp_path_setting.changed
-            ? getCanonicalPath(String(tmp_path_setting.value), path_str) : String(path / "tmp/");
+        std::string temporary_path = tmp_path_setting.changed ? tmp_path_setting.value : String(path / "tmp/");
         global_context->setTemporaryStoragePath(temporary_path, server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
 
@@ -2794,8 +2728,7 @@ try
 
     /// Set path for format schema files
     const auto & format_schema_path_setting = server_settings[ServerSetting::format_schema_path];
-    fs::path format_schema_path(format_schema_path_setting.changed
-        ? fs::path(getCanonicalPath(String(format_schema_path_setting.value), path_str)) : path / "format_schemas/");
+    fs::path format_schema_path(format_schema_path_setting.changed ? fs::path(format_schema_path_setting.value) : path / "format_schemas/");
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
@@ -2804,11 +2737,9 @@ try
         global_context->setGoogleProtosPath(fs::weakly_canonical(server_settings[ServerSetting::google_protos_path].value));
 
     /// Set path for filesystem caches
-    {
-        String filesystem_caches_path = server_settings[ServerSetting::filesystem_caches_path].value;
-        if (!filesystem_caches_path.empty())
-            global_context->setFilesystemCachesPath(getCanonicalPath(std::move(filesystem_caches_path), path_str));
-    }
+    fs::path filesystem_caches_path = server_settings[ServerSetting::filesystem_caches_path].value;
+    if (!filesystem_caches_path.empty())
+        global_context->setFilesystemCachesPath(filesystem_caches_path);
 
     /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
     /// Additionally, making the check after the default profile is initialized.
@@ -2916,9 +2847,14 @@ try
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
     if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)
     {
-        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location."
+        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
+            " neither clickhouse-server process has CAP_NET_ADMIN capability."
             " 'taskstats' performance statistics will be disabled."
-            " It could happen due to incorrect ClickHouse package installation.");
+            " It could happen due to incorrect ClickHouse package installation."
+            " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep {}'."
+            " Note that it will not work on 'nosuid' mounted filesystems."
+            " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.",
+            executable_path);
     }
     else
     {
@@ -3019,7 +2955,6 @@ try
                     global_context,
                     &config(),
                     "distributed_ddl",
-                    "default",
                     "DDLWorker",
                     &CurrentMetrics::MaxDDLEntryID,
                     &CurrentMetrics::MaxPushedDDLEntryID),
@@ -3243,16 +3178,9 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
 #endif
         if (type == "http")
-        {
-            /// Allow custom http_handlers configuration for this protocol endpoint.
-            /// E.g. <protocols><my_http><type>http</type><handlers>http_handlers_alt</handlers></my_http></protocols>
-            String handlers_config_key;
-            if (config.has(conf_name + ".handlers"))
-                handlers_config_key = config.getString(conf_name + ".handlers");
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
-        }
         if (type == "prometheus")
         {
             const std::string handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
@@ -3819,7 +3747,6 @@ void Server::updateServers(
             std::string port_name = server->getPortName();
             bool has_host = false;
             bool is_http = false;
-            String handlers_key = "http_handlers";
             if (port_name.starts_with("protocols."))
             {
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
@@ -3836,8 +3763,6 @@ void Server::updateServers(
                         if (type == "http")
                         {
                             is_http = true;
-                            if (config.has(conf_name + ".handlers"))
-                                handlers_key = config.getString(conf_name + ".handlers");
                             break;
                         }
                     }
@@ -3863,9 +3788,9 @@ void Server::updateServers(
             if (!has_host)
                 has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
             bool has_port = !config.getString(port_name, "").empty();
-            bool force_restart = is_http && !isSameConfiguration(previous_config, config, handlers_key);
+            bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
             if (force_restart)
-                LOG_TRACE(log, "<{}> had been changed, will reload {}", handlers_key, server->getDescription());
+                LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server->getDescription());
 
             if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
             {

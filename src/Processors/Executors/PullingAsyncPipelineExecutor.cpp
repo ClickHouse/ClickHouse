@@ -5,7 +5,6 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
-#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 
 namespace DB

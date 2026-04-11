@@ -16,7 +16,7 @@ public:
 
     virtual StoragePtr getNested() const = 0;
 
-    String getName() const override { return "Proxy"; }
+    String getName() const override { return "StorageProxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
     bool isView() const override { return getNested()->isView(); }
@@ -29,7 +29,7 @@ public:
     bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
     bool supportsSubcolumns() const override { return getNested()->supportsSubcolumns(); }
-    bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
+    bool supportsDynamicSubcolumns() const override { return getNested()->supportsDynamicSubcolumns(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
 
