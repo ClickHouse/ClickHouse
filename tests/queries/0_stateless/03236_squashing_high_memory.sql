@@ -23,7 +23,7 @@ FROM id_values
                     'qwe'                AS string_val1,
                     'asd'                AS string_val2) AS string_values
             ON id_values.id1 = string_values.id1
-    SETTINGS join_algorithm = 'hash';
+    SETTINGS join_algorithm = 'hash',atomic_create_as_select = 0;
 
 DROP TABLE IF EXISTS id_values;
 DROP TABLE IF EXISTS test_table;
