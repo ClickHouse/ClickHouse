@@ -50,3 +50,36 @@ Expression ((Project names + Projection))
 2	Customer#2	4997000
 3	Customer#3	4998000
 4	Customer#4	4999000
+-- 7. Non-equi predicate (eager must not fire)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_sessions)
+-- 8. Correctness: non-equi predicate
+0	247500
+1	247548
+2	247392
+3	247032
+4	246468
+0	247500
+1	247548
+2	247392
+3	247032
+4	246468
+-- 9. Multi-join with non-equi predicate
+0	Customer#0	4500000
+1	Customer#1	4500900
+2	Customer#2	4501800
+3	Customer#3	4502700
+4	Customer#4	4503600
+0	Customer#0	4500000
+1	Customer#1	4500900
+2	Customer#2	4501800
+3	Customer#3	4502700
+4	Customer#4	4503600

@@ -26,6 +26,26 @@ struct ChainElement
 
 struct JoinKeyPair { String left; String right; };
 
+/// True if the join has only equi-join predicates and no residual filter,
+/// i.e. `reconstructJoin` can fully rebuild it without losing conditions.
+static bool hasOnlyEquiPredicates(const JoinStepLogical & join_step)
+{
+    if (!join_step.getJoinOperator().residual_filter.empty())
+        return false;
+    bool has_equi = false;
+    for (const auto & predicate : join_step.getJoinOperator().expression)
+    {
+        auto [op, left_node, right_node] = predicate.asBinaryPredicate();
+        if (op == JoinConditionOperator::Equals
+            && ((left_node.fromLeft() && right_node.fromRight())
+                || (left_node.fromRight() && right_node.fromLeft())))
+            has_equi = true;
+        else
+            return false;
+    }
+    return has_equi;
+}
+
 /// Reconstruct a `JoinStepLogical` with updated input headers, re-creating
 /// equi-join predicates in fresh `JoinExpressionActions`.  Returns nullptr
 /// if any predicate column is missing from the new headers.
@@ -345,17 +365,12 @@ bool EagerAggregation::checkPattern(GroupExpressionPtr expression, const Express
         {
             if (const auto * join_step = typeid_cast<const JoinStepLogical *>(child_expr->getQueryPlanStep()))
             {
-                for (const auto & predicate : join_step->getJoinOperator().expression)
-                {
-                    auto [op, left_node, right_node] = predicate.asBinaryPredicate();
-                    if (op == JoinConditionOperator::Equals
-                        && ((left_node.fromLeft() && right_node.fromRight())
-                            || (left_node.fromRight() && right_node.fromLeft())))
-                        return true;
-                }
-                for (const auto & input : child_expr->inputs)
-                    if (self(input.group_id, self, depth + 1))
-                        return true;
+                /// Non-equi joins are barriers: reconstructJoin cannot rebuild
+                /// them without losing predicates, so we cannot push aggregation
+                /// through them or use them as candidates.
+                if (!hasOnlyEquiPredicates(*join_step))
+                    continue;
+                return true;
             }
             else if (child_expr->inputs.size() == 1
                 && typeid_cast<const ExpressionStep *>(child_expr->getQueryPlanStep()))
@@ -393,9 +408,14 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
         auto group = memo.getGroup(group_id);
         for (const auto & child_expr : group->logical_expressions)
         {
-            if (typeid_cast<const JoinStepLogical *>(child_expr->getQueryPlanStep())
-                && child_expr->inputs.size() == 2)
+            if (const auto * join_step = typeid_cast<const JoinStepLogical *>(child_expr->getQueryPlanStep());
+                join_step && child_expr->inputs.size() == 2)
             {
+                /// Non-equi joins are barriers: reconstructJoin cannot rebuild
+                /// them, so skip as candidate and do not recurse through.
+                if (!hasOnlyEquiPredicates(*join_step))
+                    continue;
+
                 join_candidates.push_back({child_expr, chain});
                 for (size_t i = 0; i < child_expr->inputs.size(); ++i)
                 {

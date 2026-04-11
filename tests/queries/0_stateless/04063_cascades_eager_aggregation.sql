@@ -10,6 +10,8 @@
 -- 3. Multi-join: eager pushes through intermediate joins (chain reconstruction).
 -- 4. Non-candidate: GROUP BY key not in any join side.
 -- 5-6. Correctness checks.
+-- 7-8. Non-equi predicate: eager must not fire (single join).
+-- 9. Non-equi predicate: multi-join correctness.
 
 SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
@@ -74,6 +76,55 @@ SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT '-- 6. Correctness (multi-join)';
 SELECT c_custkey, c_name, sum(l_quantity) FROM t_customer
 JOIN t_orders ON c_custkey = o_custkey
+JOIN t_lineitem ON o_orderkey = l_orderkey
+GROUP BY c_custkey, c_name ORDER BY c_custkey LIMIT 5
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+
+-- 7. Non-equi predicate: eager aggregation must NOT fire.
+--    reconstructJoin only rebuilds equality predicates, so non-equi conditions
+--    would be silently dropped, producing wrong results.
+DROP TABLE IF EXISTS t_events;
+DROP TABLE IF EXISTS t_sessions;
+CREATE TABLE t_events (id UInt64, ts UInt64, value UInt64) ENGINE = MergeTree() ORDER BY id
+    SETTINGS index_granularity = 8192, auto_statistics_types = '';
+CREATE TABLE t_sessions (id UInt64, start_ts UInt64) ENGINE = MergeTree() ORDER BY id
+    SETTINGS index_granularity = 8192, auto_statistics_types = '';
+-- Enough data so the optimizer considers eager aggregation worthwhile.
+-- Without the fix, EagerAggregation fires and reconstructJoin drops the
+-- non-equi predicate, producing a malformed plan that crashes the server.
+INSERT INTO t_events SELECT number % 50, number, number FROM numbers(5000);
+INSERT INTO t_sessions SELECT number, number * 100 FROM numbers(50);
+
+SELECT '-- 7. Non-equi predicate (eager must not fire)';
+EXPLAIN PLAN keep_logical_steps = 1
+SELECT t_sessions.id, sum(value)
+FROM t_sessions JOIN t_events ON t_sessions.id = t_events.id AND t_events.ts > t_sessions.start_ts
+GROUP BY t_sessions.id;
+
+SELECT '-- 8. Correctness: non-equi predicate';
+SELECT t_sessions.id, sum(value) as s
+FROM t_sessions JOIN t_events ON t_sessions.id = t_events.id AND t_events.ts > t_sessions.start_ts
+GROUP BY t_sessions.id ORDER BY t_sessions.id LIMIT 5;
+
+SELECT t_sessions.id, sum(value) as s
+FROM t_sessions JOIN t_events ON t_sessions.id = t_events.id AND t_events.ts > t_sessions.start_ts
+GROUP BY t_sessions.id ORDER BY t_sessions.id LIMIT 5
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+
+DROP TABLE t_events;
+DROP TABLE t_sessions;
+
+-- 9. Multi-join with non-equi predicate on one join.
+--    The non-equi join is a barrier: eager aggregation must not push through it.
+--    Correctness check: compare cascades vs baseline.
+SELECT '-- 9. Multi-join with non-equi predicate';
+SELECT c_custkey, c_name, sum(l_quantity) as s FROM t_customer
+JOIN t_orders ON c_custkey = o_custkey AND o_orderkey > c_custkey
+JOIN t_lineitem ON o_orderkey = l_orderkey
+GROUP BY c_custkey, c_name ORDER BY c_custkey LIMIT 5;
+
+SELECT c_custkey, c_name, sum(l_quantity) as s FROM t_customer
+JOIN t_orders ON c_custkey = o_custkey AND o_orderkey > c_custkey
 JOIN t_lineitem ON o_orderkey = l_orderkey
 GROUP BY c_custkey, c_name ORDER BY c_custkey LIMIT 5
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
