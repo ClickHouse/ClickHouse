@@ -31,79 +31,124 @@ struct ShuffleSamplingInfo final : public ChunkInfoCloneable<ShuffleSamplingInfo
 namespace
 {
 
-Chunk copySingleRowChunk(const Chunk & source, size_t row)
+void appendRowToReservoir(MutableColumns & reservoir_columns, std::vector<UInt64> & reservoir_priorities, const Chunk & source, size_t row, UInt64 priority)
 {
-    Columns row_columns;
-    row_columns.reserve(source.getNumColumns());
+    const auto & source_columns = source.getColumns();
+    size_t num_columns = source_columns.size();
 
-    for (const auto & column : source.getColumns())
-    {
-        auto row_column = column->cloneEmpty();
-        row_column->insertFrom(*column, row);
-        row_columns.push_back(std::move(row_column));
-    }
+    for (size_t col = 0; col < num_columns; ++col)
+        reservoir_columns[col]->insertFrom(*source_columns[col], row);
 
-    return Chunk(std::move(row_columns), 1);
+    reservoir_priorities.push_back(priority);
 }
 
-template <typename Reservoir>
-Chunk materializeSampledRows(Reservoir & reservoir, const Block & header)
+UInt64 getReservoirThreshold(const std::vector<UInt64> & reservoir_priorities)
 {
-    if (reservoir.empty())
-        return {};
+    if (reservoir_priorities.empty())
+        return std::numeric_limits<UInt64>::max();
 
-    std::vector<typename Reservoir::value_type> sampled_rows;
-    sampled_rows.reserve(reservoir.size());
+    return *std::max_element(reservoir_priorities.begin(), reservoir_priorities.end());
+}
 
-    for (auto & row : reservoir)
-        sampled_rows.push_back(std::move(row));
-    reservoir.clear();
+size_t getMaxReservoirSize(size_t limit)
+{
+    if (limit > std::numeric_limits<size_t>::max() / 2)
+        return std::numeric_limits<size_t>::max();
 
-    std::sort(sampled_rows.begin(), sampled_rows.end(), [](const auto & lhs, const auto & rhs)
+    return limit * 2;
+}
+
+void pruneReservoir(MutableColumns & reservoir_columns, std::vector<UInt64> & reservoir_priorities, size_t limit)
+{
+    if (reservoir_priorities.size() <= limit)
+        return;
+
+    std::vector<size_t> selected_indexes(reservoir_priorities.size());
+    std::iota(selected_indexes.begin(), selected_indexes.end(), 0);
+
+    std::nth_element(selected_indexes.begin(), selected_indexes.begin() + limit, selected_indexes.end(), [&](size_t lhs, size_t rhs)
     {
-        return lhs.priority < rhs.priority;
+        return reservoir_priorities[lhs] < reservoir_priorities[rhs];
     });
 
-    MutableColumns result = header.cloneEmptyColumns();
-    size_t num_columns = result.size();
+    selected_indexes.resize(limit);
+    std::sort(selected_indexes.begin(), selected_indexes.end());
 
-    for (const auto & sampled_row : sampled_rows)
+    IColumn::Filter filter(reservoir_priorities.size(), 0);
+    std::vector<UInt64> kept_priorities;
+    kept_priorities.reserve(limit);
+    for (size_t index : selected_indexes)
     {
-        for (size_t col = 0; col < num_columns; ++col)
-            result[col]->insertFrom(*sampled_row.row.getColumns()[col], 0);
+        filter[index] = 1;
+        kept_priorities.push_back(reservoir_priorities[index]);
     }
 
-    Columns final_columns;
-    final_columns.reserve(num_columns);
-    for (auto & col : result)
-        final_columns.push_back(std::move(col));
+    for (auto & column : reservoir_columns)
+        column = IColumn::mutate(column->filter(filter, static_cast<ssize_t>(limit)));
 
-    std::vector<UInt64> priorities;
-    priorities.reserve(sampled_rows.size());
-    for (const auto & sampled_row : sampled_rows)
-        priorities.push_back(sampled_row.priority);
-
-    Chunk result_chunk(std::move(final_columns), sampled_rows.size());
-    result_chunk.getChunkInfos().add(std::make_shared<ShuffleSamplingInfo>(std::move(priorities)));
-    return result_chunk;
+    reservoir_priorities.swap(kept_priorities);
 }
 
-template <typename Reservoir, typename Comparator>
-void addSampledRow(Reservoir & reservoir, size_t limit, UInt64 priority, Chunk row, Comparator comparator)
+void maybePruneReservoir(MutableColumns & reservoir_columns, std::vector<UInt64> & reservoir_priorities, UInt64 & reservoir_threshold, size_t limit)
 {
-    if (reservoir.size() < limit)
-    {
-        reservoir.push_back({priority, std::move(row)});
-        std::push_heap(reservoir.begin(), reservoir.end(), comparator);
+    if (reservoir_priorities.size() < getMaxReservoirSize(limit))
         return;
-    }
 
-    if (priority < reservoir.front().priority)
+    pruneReservoir(reservoir_columns, reservoir_priorities, limit);
+    reservoir_threshold = getReservoirThreshold(reservoir_priorities);
+}
+
+void addSampledRow(
+    MutableColumns & reservoir_columns,
+    std::vector<UInt64> & reservoir_priorities,
+    UInt64 & reservoir_threshold,
+    size_t limit,
+    const Chunk & chunk,
+    size_t row,
+    UInt64 priority)
+{
+    if (reservoir_priorities.size() >= limit && priority >= reservoir_threshold)
+        return;
+
+    appendRowToReservoir(reservoir_columns, reservoir_priorities, chunk, row, priority);
+
+    if (reservoir_priorities.size() == limit)
+        reservoir_threshold = getReservoirThreshold(reservoir_priorities);
+
+    maybePruneReservoir(reservoir_columns, reservoir_priorities, reservoir_threshold, limit);
+}
+
+Chunk materializeSampledRows(MutableColumns & reservoir_columns, std::vector<UInt64> & reservoir_priorities, bool add_chunk_info)
+{
+    if (reservoir_priorities.empty())
+        return {};
+
+    IColumn::Permutation permutation(reservoir_priorities.size());
+    std::iota(permutation.begin(), permutation.end(), 0);
+    std::sort(permutation.begin(), permutation.end(), [&](size_t lhs, size_t rhs)
     {
-        std::pop_heap(reservoir.begin(), reservoir.end(), comparator);
-        reservoir.back() = {priority, std::move(row)};
-        std::push_heap(reservoir.begin(), reservoir.end(), comparator);
+        return reservoir_priorities[lhs] < reservoir_priorities[rhs];
+    });
+
+    Columns final_columns;
+    final_columns.reserve(reservoir_columns.size());
+    for (auto & column : reservoir_columns)
+    {
+        auto immutable = std::move(column);
+        final_columns.push_back(immutable->permute(permutation, 0));
     }
+    reservoir_columns.clear();
+
+    std::vector<UInt64> priorities;
+    priorities.reserve(reservoir_priorities.size());
+    for (size_t index : permutation)
+        priorities.push_back(reservoir_priorities[index]);
+    reservoir_priorities.clear();
+
+    Chunk result_chunk(std::move(final_columns), priorities.size());
+    if (add_chunk_info)
+        result_chunk.getChunkInfos().add(std::make_shared<ShuffleSamplingInfo>(std::move(priorities)));
+    return result_chunk;
 }
 
 }
@@ -113,7 +158,10 @@ ShuffleTransform::ShuffleTransform(SharedHeader header_, size_t limit_)
     , limit(limit_)
 {
     if (limit > 0)
-        reservoir.reserve(limit);
+    {
+        reservoir_columns = header_->cloneEmptyColumns();
+        reservoir_priorities.reserve(limit);
+    }
 }
 
 void ShuffleTransform::consume(Chunk chunk)
@@ -124,24 +172,8 @@ void ShuffleTransform::consume(Chunk chunk)
 
     if (limit > 0)
     {
-        /// Reservoir sampling — Algorithm R (Vitter, 1985).
-        /// Maintains a uniform random sample of k rows from the stream.
-        /// Each row seen so far has equal probability min(k, rows_seen) / rows_seen
-        /// of being in the reservoir.
         for (size_t row = 0; row < num_rows; ++row)
-        {
-            if (total_rows < limit)
-            {
-                reservoir.push_back(copySingleRowChunk(chunk, row));
-            }
-            else
-            {
-                size_t j = rng() % (total_rows + 1);
-                if (j < limit)
-                    reservoir[j] = copySingleRowChunk(chunk, row);
-            }
-            ++total_rows;
-        }
+            addSampledRow(reservoir_columns, reservoir_priorities, reservoir_threshold, limit, chunk, row, rng());
 
         return;
     }
@@ -154,38 +186,11 @@ Chunk ShuffleTransform::generate()
 {
     if (limit > 0)
     {
-        if (reservoir.empty())
+        pruneReservoir(reservoir_columns, reservoir_priorities, limit);
+        if (reservoir_priorities.empty())
             return {};
 
-        /// SHUFFLE LIMIT k — materialize the k sampled rows.
-        size_t k = reservoir.size(); /// may be < limit if total_rows < limit
-
-        /// Shuffle the reservoir for random output order
-        /// (reservoir sampling gives a uniform *set*, but the order within
-        /// the reservoir reflects replacement order — shuffle to randomize it)
-        for (size_t i = k - 1; i > 0; --i)
-        {
-            size_t j = rng() % (i + 1);
-            std::swap(reservoir[i], reservoir[j]);
-        }
-
-        MutableColumns result = getOutputPort().getHeader().cloneEmptyColumns();
-        size_t num_columns = result.size();
-
-        for (const auto & sampled_row : reservoir)
-        {
-            for (size_t col = 0; col < num_columns; ++col)
-                result[col]->insertFrom(*sampled_row.getColumns()[col], 0);
-        }
-
-        reservoir.clear();
-
-        Columns final_columns;
-        final_columns.reserve(num_columns);
-        for (auto & col : result)
-            final_columns.push_back(std::move(col));
-
-        return Chunk(std::move(final_columns), k);
+        return materializeSampledRows(reservoir_columns, reservoir_priorities, false);
     }
 
     if (accumulated.empty())
@@ -229,7 +234,10 @@ PartialShuffleTransform::PartialShuffleTransform(SharedHeader header_, size_t li
     , limit(limit_)
 {
     if (limit > 0)
-        reservoir.reserve(limit);
+    {
+        reservoir_columns = header_->cloneEmptyColumns();
+        reservoir_priorities.reserve(limit);
+    }
 }
 
 void PartialShuffleTransform::consume(Chunk chunk)
@@ -238,9 +246,8 @@ void PartialShuffleTransform::consume(Chunk chunk)
     if (num_rows == 0)
         return;
 
-    SampledRowComparator comparator;
     for (size_t row = 0; row < num_rows; ++row)
-        addSampledRow(reservoir, limit, rng(), copySingleRowChunk(chunk, row), comparator);
+        addSampledRow(reservoir_columns, reservoir_priorities, reservoir_threshold, limit, chunk, row, rng());
 }
 
 Chunk PartialShuffleTransform::generate()
@@ -249,7 +256,8 @@ Chunk PartialShuffleTransform::generate()
         return {};
 
     generated = true;
-    return materializeSampledRows(reservoir, getOutputPort().getHeader());
+    pruneReservoir(reservoir_columns, reservoir_priorities, limit);
+    return materializeSampledRows(reservoir_columns, reservoir_priorities, true);
 }
 
 MergingShuffleTransform::MergingShuffleTransform(SharedHeader header_, size_t limit_)
@@ -257,7 +265,10 @@ MergingShuffleTransform::MergingShuffleTransform(SharedHeader header_, size_t li
     , limit(limit_)
 {
     if (limit > 0)
-        reservoir.reserve(limit);
+    {
+        reservoir_columns = header_->cloneEmptyColumns();
+        reservoir_priorities.reserve(limit);
+    }
 }
 
 void MergingShuffleTransform::consume(Chunk chunk)
@@ -273,9 +284,8 @@ void MergingShuffleTransform::consume(Chunk chunk)
     if (sampling_info->priorities.size() != num_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`ShuffleSamplingInfo` size does not match number of rows in chunk");
 
-    SampledRowComparator comparator;
     for (size_t row = 0; row < num_rows; ++row)
-        addSampledRow(reservoir, limit, sampling_info->priorities[row], copySingleRowChunk(chunk, row), comparator);
+        addSampledRow(reservoir_columns, reservoir_priorities, reservoir_threshold, limit, chunk, row, sampling_info->priorities[row]);
 }
 
 Chunk MergingShuffleTransform::generate()
@@ -284,7 +294,8 @@ Chunk MergingShuffleTransform::generate()
         return {};
 
     generated = true;
-    Chunk result = materializeSampledRows(reservoir, getOutputPort().getHeader());
+    pruneReservoir(reservoir_columns, reservoir_priorities, limit);
+    Chunk result = materializeSampledRows(reservoir_columns, reservoir_priorities, false);
     result.setChunkInfos({});
     return result;
 }

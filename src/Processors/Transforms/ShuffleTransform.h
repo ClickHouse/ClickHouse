@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Port.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 #include <Core/Types.h>
+#include <limits>
 
 namespace DB
 {
@@ -26,9 +28,9 @@ namespace DB
         size_t total_rows = 0;
         Chunks accumulated;
         pcg64 rng{randomSeed()};
-
-        Chunks reservoir;
-
+        MutableColumns reservoir_columns;
+        std::vector<UInt64> reservoir_priorities;
+        UInt64 reservoir_threshold = std::numeric_limits<UInt64>::max();
     };
 
     class PartialShuffleTransform final : public IAccumulatingTransform
@@ -42,24 +44,12 @@ namespace DB
         Chunk generate() override;
 
     private:
-        struct SampledRow
-        {
-            UInt64 priority;
-            Chunk row;
-        };
-
-        struct SampledRowComparator
-        {
-            bool operator()(const SampledRow & lhs, const SampledRow & rhs) const
-            {
-                return lhs.priority < rhs.priority;
-            }
-        };
-
         size_t limit;
         bool generated = false;
         pcg64 rng{randomSeed()};
-        std::vector<SampledRow> reservoir;
+        MutableColumns reservoir_columns;
+        std::vector<UInt64> reservoir_priorities;
+        UInt64 reservoir_threshold = std::numeric_limits<UInt64>::max();
     };
 
     class MergingShuffleTransform final : public IAccumulatingTransform
@@ -73,22 +63,10 @@ namespace DB
         Chunk generate() override;
 
     private:
-        struct SampledRow
-        {
-            UInt64 priority;
-            Chunk row;
-        };
-
-        struct SampledRowComparator
-        {
-            bool operator()(const SampledRow & lhs, const SampledRow & rhs) const
-            {
-                return lhs.priority < rhs.priority;
-            }
-        };
-
         size_t limit;
         bool generated = false;
-        std::vector<SampledRow> reservoir;
+        MutableColumns reservoir_columns;
+        std::vector<UInt64> reservoir_priorities;
+        UInt64 reservoir_threshold = std::numeric_limits<UInt64>::max();
     };
 }
