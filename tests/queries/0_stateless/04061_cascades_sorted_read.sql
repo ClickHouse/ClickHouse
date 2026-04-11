@@ -18,8 +18,10 @@ SET param__internal_cascades_cluster_node_count = 4;
 DROP TABLE IF EXISTS t_sorted;
 DROP TABLE IF EXISTS t_no_key;
 
-CREATE TABLE t_sorted (a UInt64, b String, c Float64) ENGINE = MergeTree() ORDER BY a;
-CREATE TABLE t_no_key (x UInt64, y String) ENGINE = MergeTree() ORDER BY tuple();
+CREATE TABLE t_sorted (a UInt64, b String, c Float64) ENGINE = MergeTree() ORDER BY a
+    SETTINGS index_granularity = 8192, auto_statistics_types = '';
+CREATE TABLE t_no_key (x UInt64, y String) ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS index_granularity = 8192, auto_statistics_types = '';
 
 INSERT INTO t_sorted SELECT number, toString(number), number * 0.5 FROM numbers(100);
 INSERT INTO t_no_key SELECT number, toString(number) FROM numbers(100);

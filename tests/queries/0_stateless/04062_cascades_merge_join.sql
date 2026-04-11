@@ -19,9 +19,12 @@ DROP TABLE IF EXISTS t_left;
 DROP TABLE IF EXISTS t_right;
 DROP TABLE IF EXISTS t_right_no_pk;
 
-CREATE TABLE t_left (a UInt64, b String) ENGINE = MergeTree() ORDER BY a;
-CREATE TABLE t_right (a UInt64, c String) ENGINE = MergeTree() ORDER BY a;
-CREATE TABLE t_right_no_pk (a UInt64, c String) ENGINE = MergeTree() ORDER BY tuple();
+CREATE TABLE t_left (a UInt64, b String) ENGINE = MergeTree() ORDER BY a
+    SETTINGS index_granularity = 8192, auto_statistics_types = '';
+CREATE TABLE t_right (a UInt64, c String) ENGINE = MergeTree() ORDER BY a
+    SETTINGS index_granularity = 8192, auto_statistics_types = '';
+CREATE TABLE t_right_no_pk (a UInt64, c String) ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS index_granularity = 8192, auto_statistics_types = '';
 
 INSERT INTO t_left SELECT number, toString(number) FROM numbers(100);
 INSERT INTO t_right SELECT number, toString(number) FROM numbers(100);
