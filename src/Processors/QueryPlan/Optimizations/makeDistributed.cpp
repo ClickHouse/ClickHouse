@@ -594,7 +594,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                 const auto * exchange_step = dynamic_cast<const LogicalExchangeStep *>(frame.node->step.get());
 
-                if (exchange_step && !optimization_settings.distributed_plan_singe_stage)
+                if (exchange_step && !optimization_settings.distributed_plan_single_stage)
                 {
                     /// Make unique name for the exchange
                     const String stage_name = "stage_" + std::to_string(exchange_id);

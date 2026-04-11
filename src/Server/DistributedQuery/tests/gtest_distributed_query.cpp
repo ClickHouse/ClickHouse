@@ -499,7 +499,7 @@ try
     DistributedQueryPlan distributed_query_plan;
 
     const char * env_val = std::getenv("DISTRIBUTED_PLAN_SINGLE_STAGE"); // NOLINT(concurrency-mt-unsafe)
-    bool distributed_plan_singe_stage = env_val && std::string(env_val) != "0";
+    bool distributed_plan_single_stage = env_val && std::string(env_val) != "0";
 
     ThreadStatus thread_status;
     auto session = std::make_unique<Session>(getContext().context, ClientInfo::Interface::TCP_INTERSERVER);
@@ -517,7 +517,7 @@ try
         QueryPlanOptimizationSettings optimization_settings(query_context);
         optimization_settings.make_distributed_plan = true;
         optimization_settings.distributed_plan_default_shuffle_join_bucket_count = 4;
-        optimization_settings.distributed_plan_singe_stage = distributed_plan_singe_stage;  /// For debugging
+        optimization_settings.distributed_plan_single_stage = distributed_plan_single_stage;  /// For debugging
         query_plan.optimize(optimization_settings);
 
         auto * root = query_plan.getRootNode();
