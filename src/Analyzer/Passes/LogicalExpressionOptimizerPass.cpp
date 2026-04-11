@@ -382,7 +382,10 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
         if (from_type->equals(*expr_type))
             return constant_node->getValue();
 
-        return convertFieldToTypeStrict(constant_node->getValue(), *from_type, *expr_type);
+        auto converted = convertFieldToType(constant_node->getValue(), *expr_type, from_type.get(), {}, /*strict=*/true);
+        if (converted.isNull())
+            return std::nullopt;
+        return converted;
     }
     catch (...) /// Ok: conversion failure means we can't optimize, not an error
     {
@@ -1571,7 +1574,7 @@ private:
       *     against constants (e.g. `a = 3 AND a < 5 AND a > 1`), we collect all conditions
       *     on the same non-constant expression into a per-expression `ComparisonFilterMap`.
       *     For each new condition added via `addComparisonFilter`, we:
-      *       1. Convert the constant to the column's type via `convertFieldToTypeStrict`.
+      *       1. Convert the constant to the column's type via `tryConvertToColumnType`.
       *       2. For native integer columns, apply boundary folding and float-literal rewriting
       *          (`tryFoldBoundaryOrRewriteFloatForIntColumn`).
       *       3. Compare the new condition pairwise against every existing condition for the
