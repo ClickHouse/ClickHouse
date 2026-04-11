@@ -487,8 +487,17 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexForRows(const ICo
     const auto & vec = assert_cast<const ColVecType &>(column);
     const auto * data = vec.getData().data();
 
+    /// For floats, skip NaN during initialisation so the accumulator starts with a non-NaN value.
+    /// std::min/max never replace a NaN accumulator (NaN < x is always false), so a NaN start would stick through the loop.
+    /// If all values are NaN, best will hold the last NaN seen, which is correct.
     size_t best_j = 0;
-    for (size_t j = 1; j < num_rows; ++j)
+    if constexpr (is_floating_point<T>)
+    {
+        while (isNaN(data[row_indices[best_j]]) && best_j + 1 < num_rows)
+            ++best_j;
+    }
+
+    for (size_t j = best_j + 1; j < num_rows; ++j)
         if (data[row_indices[j]] < data[row_indices[best_j]])
             best_j = j;
     return row_indices[best_j];
@@ -503,8 +512,17 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexForRows(const ICo
     const auto & vec = assert_cast<const ColVecType &>(column);
     const auto * data = vec.getData().data();
 
+    /// For floats, skip NaN during initialisation so the accumulator starts with a non-NaN value.
+    /// std::min/max never replace a NaN accumulator (NaN < x is always false), so a NaN start would stick through the loop.
+    /// If all values are NaN, best will hold the last NaN seen, which is correct.
     size_t best_j = 0;
-    for (size_t j = 1; j < num_rows; ++j)
+    if constexpr (is_floating_point<T>)
+    {
+        while (isNaN(data[row_indices[best_j]]) && best_j + 1 < num_rows)
+            ++best_j;
+    }
+
+    for (size_t j = best_j + 1; j < num_rows; ++j)
         if (data[row_indices[j]] > data[row_indices[best_j]])
             best_j = j;
     return row_indices[best_j];

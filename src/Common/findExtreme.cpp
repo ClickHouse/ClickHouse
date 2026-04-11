@@ -284,8 +284,19 @@ std::optional<T> findExtremeForRows(const T * __restrict ptr, const UInt64 * row
     if (num_rows == 0)
         return std::nullopt;
 
-    T best = ptr[row_indices[0]];
-    for (size_t j = 1; j < num_rows; ++j)
+    size_t j = 0;
+    T best = ptr[row_indices[j]];
+
+    /// For floats, skip NaN during initialisation so the accumulator starts with a non-NaN value.
+    /// std::min/max never replace a NaN accumulator (NaN < x is always false), so a NaN start would stick through the loop.
+    /// If all values are NaN, best will hold the last NaN seen, which is correct.
+    if constexpr (is_floating_point<T>)
+    {
+        while (isNaN(best) && ++j < num_rows)
+            best = ptr[row_indices[j]];
+    }
+
+    for (++j; j < num_rows; ++j)
         best = Comparator::cmp(best, ptr[row_indices[j]]);
     return best;
 }
