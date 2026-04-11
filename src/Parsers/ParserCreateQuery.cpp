@@ -227,9 +227,14 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 {
     ParserKeyword s_check(Keyword::CHECK);
     ParserKeyword s_assume(Keyword::ASSUME);
+    ParserKeyword s_unique(Keyword::UNIQUE);
+    ParserKeyword s_type(Keyword::TYPE);
 
     ParserIdentifier name_p;
     ParserExpression expression_p;
+    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserToken s_rparen(TokenType::ClosingRoundBracket);
 
     ASTPtr name;
     ASTPtr expr;
@@ -237,6 +242,40 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     if (!name_p.parse(pos, name, expected))
         return false;
+
+    if (s_unique.ignore(pos, expected))
+    {
+        /// UNIQUE (col1, col2, ...) TYPE engine_name
+        type = ASTConstraintDeclaration::Type::UNIQUE;
+
+        if (!s_lparen.ignore(pos, expected))
+            return false;
+
+        ASTPtr unique_columns;
+        if (!columns_p.parse(pos, unique_columns, expected))
+            return false;
+
+        if (!s_rparen.ignore(pos, expected))
+            return false;
+
+        String engine_type;
+        if (s_type.ignore(pos, expected))
+        {
+            ASTPtr engine_name_ast;
+            if (!name_p.parse(pos, engine_name_ast, expected))
+                return false;
+            engine_type = engine_name_ast->as<ASTIdentifier &>().name();
+        }
+
+        auto constraint = make_intrusive<ASTConstraintDeclaration>();
+        constraint->name = name->as<ASTIdentifier &>().name();
+        constraint->type = type;
+        constraint->unique_columns = std::move(unique_columns);
+        constraint->unique_engine_type = engine_type;
+        node = constraint;
+
+        return true;
+    }
 
     if (!s_check.ignore(pos, expected))
     {

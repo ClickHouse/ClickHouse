@@ -1,0 +1,42 @@
+Test 1: Create table with UNIQUE
+OK: Table created
+Test 2: Insert unique rows
+1	alice	10
+2	bob	20
+3	charlie	30
+Test 3: Duplicate key rejected
+1	alice
+Test 4: INSERT IGNORE
+1	alice
+2	bob
+3	charlie
+4	new_row
+Test 5: Intra-block duplicates
+6	first_six
+Test 6: Multi-column UNIQUE
+1	x	10
+1	y	20
+2	x	30
+3
+Test 7: ALTER ADD/DROP CONSTRAINT
+3
+Test 8: String keys
+Alpha	4
+alpha	1
+beta	2
+gamma	3
+Test 9: Multiple constraints
+1	alice@test.com
+2	bob@test.com
+3	charlie@test.com
+Test 10: Large batch INSERT IGNORE
+20
+Test 11: Survives OPTIMIZE
+3
+Test 12: Empty table
+1
+2
+Test 13: Error cases
+Test 14: INSERT IGNORE first wins
+1	FIRST
+All UNIQUE constraint tests passed

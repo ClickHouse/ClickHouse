@@ -34,6 +34,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -717,9 +718,40 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
     if (constraints)
         for (const auto & constraint : constraints->children)
         {
-            auto clone = constraint->clone();
-            TreeRewriter(local_context).analyze(clone, column_names_and_types);
-            constraints_data.push_back(constraint->clone());
+            const auto * constraint_decl = constraint->as<ASTConstraintDeclaration>();
+
+            /// UNIQUE constraints have column lists, not boolean expressions.
+            /// Skip TreeRewriter analysis for them; validate columns exist instead.
+            if (constraint_decl && constraint_decl->type == ASTConstraintDeclaration::Type::UNIQUE)
+            {
+                if (constraint_decl->unique_columns)
+                {
+                    for (const auto & col_ast : constraint_decl->unique_columns->children)
+                    {
+                        const auto * identifier = col_ast->as<ASTIdentifier>();
+                        if (!identifier)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "UNIQUE constraint '{}': expected column identifier",
+                                constraint_decl->name);
+
+                        if (!columns.has(identifier->name()))
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "UNIQUE constraint '{}': column '{}' does not exist in table",
+                                constraint_decl->name,
+                                identifier->name());
+                    }
+                }
+                constraints_data.push_back(constraint->clone());
+            }
+            else
+            {
+                /// CHECK / ASSUME constraints: validate expression via TreeRewriter
+                auto clone = constraint->clone();
+                TreeRewriter(local_context).analyze(clone, column_names_and_types);
+                constraints_data.push_back(constraint->clone());
+            }
         }
     return ConstraintsDescription{constraints_data};
 }

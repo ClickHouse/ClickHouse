@@ -39,6 +39,9 @@ public:
 
     bool async_insert_flush = false;
 
+    /// INSERT IGNORE mode: skip rows with duplicate unique constraint keys
+    bool ignore_duplicates = false;
+
     String getDatabase() const;
     String getTable() const;
 

@@ -6,6 +6,8 @@ namespace DB
 {
 
 /** name CHECK logical_expr
+ *  name ASSUME logical_expr
+ *  name UNIQUE (col1, col2, ...) TYPE engine_name
  */
 class ASTConstraintDeclaration : public IAST
 {
@@ -14,11 +16,20 @@ public:
     {
         CHECK,
         ASSUME,
+        UNIQUE,
     };
 
     String name;
     Type type;
-    IAST * expr;
+
+    /// Expression for CHECK / ASSUME constraints
+    IAST * expr = nullptr;
+
+    /// Column list for UNIQUE constraints (children of ASTExpressionList)
+    ASTPtr unique_columns;
+
+    /// Engine type for UNIQUE constraints: "hash128", "rocksdb"
+    String unique_engine_type;
 
     String getID(char) const override { return "Constraint"; }
 

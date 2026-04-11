@@ -28,6 +28,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Create parsers
     ParserKeyword s_insert_into(Keyword::INSERT_INTO);
+    ParserKeyword s_ignore(Keyword::IGNORE);
     ParserKeyword s_from_infile(Keyword::FROM_INFILE);
     ParserKeyword s_compression(Keyword::COMPRESSION);
     ParserKeyword s_table(Keyword::TABLE);
@@ -61,6 +62,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr compression;
     ASTPtr with_expression_list;
 
+    /// INSERT IGNORE mode: skip duplicate rows on UNIQUE constraint violation
+    bool ignore_duplicates = false;
+
     /// Insertion data
     const char * data = nullptr;
 
@@ -76,6 +80,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Check for key words `INSERT INTO`. If it isn't found, the query can't be parsed as insert query.
     if (!s_insert_into.ignore(pos, expected))
         return false;
+
+    /// Check for optional IGNORE keyword: INSERT IGNORE INTO is not standard SQL,
+    /// but follows MySQL convention. We parse it as INSERT INTO ... with ignore flag.
+    /// Note: since INSERT_INTO is a compound keyword, IGNORE must come after it.
+    /// Actual syntax accepted: INSERT INTO IGNORE ... (IGNORE after INTO, before table).
+    if (s_ignore.ignore(pos, expected))
+        ignore_duplicates = true;
 
     /// try to find 'TABLE'
     s_table.ignore(pos, expected);
@@ -287,6 +298,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// Create query and fill its fields.
     auto query = make_intrusive<ASTInsertQuery>();
+    query->ignore_duplicates = ignore_duplicates;
     node = query;
 
     if (infile)

@@ -12,6 +12,8 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/Settings.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Storages/MergeTree/UniqueKeySet.h>
 
 
 namespace ProfileEvents
@@ -93,6 +95,30 @@ void MergeTreeSink::consume(Chunk & chunk)
         storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
 
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
+
+    /// ===== UNIQUE constraint enforcement (RFC #70589) =====
+    /// Check all UNIQUE constraints BEFORE splitting into parts.
+    /// For non-replicated MergeTree: serialize INSERTs per-constraint.
+    auto & unique_constraints = storage.getUniqueConstraints();
+    if (!unique_constraints.empty())
+    {
+        /// Acquire the per-constraint mutex for serialized INSERT (non-replicated)
+        for (auto & uc : unique_constraints)
+        {
+            if (uc.unique_set)
+            {
+                std::lock_guard insert_lock(uc.unique_set->insert_mutex);
+                block = storage.checkUniqueConstraints(std::move(block), ignore_unique_duplicates);
+            }
+        }
+
+        /// If all rows were filtered (INSERT IGNORE with all duplicates), return early
+        if (block.rows() == 0)
+        {
+            ++num_blocks_processed;
+            return;
+        }
+    }
 
     auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
     auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
@@ -250,6 +276,14 @@ void MergeTreeSink::finishDelayedChunk()
                     PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot),
                     getDeduplicationBlockIds(deduplication_hashes));
                 StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
+
+                /// Update UNIQUE constraint sets with the committed rows
+                auto & ucs = storage.getUniqueConstraints();
+                for (auto & uc : ucs)
+                {
+                    if (uc.unique_set && uc.unique_set->isReady() && partition.block_with_partition.block)
+                        uc.unique_set->addFromBlock(*partition.block_with_partition.block, uc.key_columns);
+                }
 
                 /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
                 storage.background_operations_assignee.trigger();

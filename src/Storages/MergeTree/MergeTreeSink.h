@@ -54,6 +54,9 @@ public:
     void onStart() override;
     void onFinish() override;
 
+    /// Set INSERT IGNORE mode: skip rows with duplicate unique constraint keys
+    void setIgnoreDuplicates(bool value) { ignore_unique_duplicates = value; }
+
 protected:
     StorageMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -62,6 +65,7 @@ protected:
     StorageSnapshotPtr storage_snapshot;
     UInt64 num_blocks_processed = 0;
     bool deduplicate = true;
+    bool ignore_unique_duplicates = false; /// INSERT IGNORE mode for UNIQUE constraints
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
 

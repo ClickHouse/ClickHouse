@@ -38,6 +38,7 @@
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/UniqueKeySet.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -1235,6 +1236,37 @@ public:
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;
+
+    /// UNIQUE key constraint runtime state (RFC #70589).
+    /// Each entry corresponds to a CONSTRAINT ... UNIQUE (...) TYPE ... declaration.
+    /// The UniqueKeySet is ephemeral and rebuilt from table data on server restart.
+    struct UniqueConstraintDescription
+    {
+        String name;                                    /// Constraint name
+        Names key_columns;                              /// Columns forming the unique key
+        String engine_type;                             /// "hash128" or "rocksdb"
+        std::shared_ptr<UniqueKeySet> unique_set;       /// The ephemeral hash set
+    };
+
+    /// Returns the list of active UNIQUE constraints for this table.
+    std::vector<UniqueConstraintDescription> & getUniqueConstraints() { return unique_constraints; }
+    const std::vector<UniqueConstraintDescription> & getUniqueConstraints() const { return unique_constraints; }
+
+    /// Initialize unique constraint sets from table metadata.
+    /// Called during table startup / loadDataParts.
+    void initUniqueConstraints();
+
+    /// Check a block against all UNIQUE constraints.
+    /// If ignore_duplicates is true, filters out duplicate rows and returns the filtered block.
+    /// If ignore_duplicates is false, throws DUPLICATE_KEY on first violation.
+    Block checkUniqueConstraints(Block block, bool ignore_duplicates);
+
+protected:
+    std::vector<UniqueConstraintDescription> unique_constraints;
+
+    /// Rebuild all UNIQUE constraint hash sets from active data parts.
+    /// Called during initUniqueConstraints() to populate sets after server restart.
+    void rebuildUniqueConstraintSets();
 
     bool is_custom_partitioned = false;
 

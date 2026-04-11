@@ -41,8 +41,9 @@ public:
     {
         CHECK = 1,
         ASSUME = 2,
+        UNIQUE = 4,
         ALWAYS_TRUE = CHECK | ASSUME,
-        ALL = CHECK | ASSUME,
+        ALL = CHECK | ASSUME | UNIQUE,
     };
 
     ASTs filterConstraints(ConstraintType selection) const;

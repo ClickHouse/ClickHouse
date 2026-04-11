@@ -54,6 +54,8 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     frame.need_parens = false;
 
     ostr << "INSERT INTO" << " ";
+    if (ignore_duplicates)
+        ostr << "IGNORE" << " ";
     if (table_function)
     {
         ostr << "FUNCTION" << " ";
@@ -154,6 +156,7 @@ void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(table_id.table_name);
     hash_state.update(table_id.uuid);
     hash_state.update(format);
+    hash_state.update(ignore_duplicates);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

@@ -22,6 +22,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTPartition.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -210,6 +211,7 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
     loadDeduplicationLog();
+    initUniqueConstraints();
     prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
 }
 
@@ -393,12 +395,22 @@ std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &)
 }
 
 SinkToStoragePtr
-StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+StorageMergeTree::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     assertNotReadonly();
 
+    /// Check if INSERT IGNORE mode is active (RFC #70589 UNIQUE constraints)
+    bool ignore_duplicates = false;
+    if (query)
+    {
+        if (const auto * insert = query->as<ASTInsertQuery>())
+            ignore_duplicates = insert->ignore_duplicates;
+    }
+
     const auto & settings = local_context->getSettingsRef();
-    return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
+    auto sink = std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
+    sink->setIgnoreDuplicates(ignore_duplicates);
+    return sink;
 }
 
 void StorageMergeTree::drop()
@@ -491,6 +503,9 @@ void StorageMergeTree::alter(
 
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata, false, local_context);
+
+            /// Re-initialize UNIQUE constraint sets from updated metadata
+            initUniqueConstraints();
 
             try
             {
