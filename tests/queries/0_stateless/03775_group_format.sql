@@ -39,12 +39,20 @@ select groupFormat('JSONEachRow')(if(number = 0, NULL, number), toString(number)
 -- State round-trip: serialize then deserialize via finalizeAggregation.
 select finalizeAggregation(groupFormatState('JSONEachRow')(number, toString(number))) from numbers(3);
 
--- State merge: two partial states merged via groupFormatMerge.
-select groupFormatMerge('JSONEachRow')(state) from
+-- State merge: two partial states merged via groupFormatMerge (order-independent check).
+select
+    position(result, '{"c1":0}') > 0 and
+    position(result, '{"c1":1}') > 0 and
+    position(result, '{"c1":2}') > 0 and
+    position(result, '{"c1":3}') > 0
+from
 (
-    select groupFormatState('JSONEachRow')(number) as state from numbers(2)
-    union all
-    select groupFormatState('JSONEachRow')(number + 2) as state from numbers(2)
+    select groupFormatMerge('JSONEachRow')(state) as result from
+    (
+        select groupFormatState('JSONEachRow')(number) as state from numbers(2)
+        union all
+        select groupFormatState('JSONEachRow')(number + 2) as state from numbers(2)
+    )
 );
 
 -- Nullable state round-trip.
