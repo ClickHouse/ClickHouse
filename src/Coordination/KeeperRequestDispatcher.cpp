@@ -282,10 +282,11 @@ void KeeperRequestDispatcher::requestThread()
 
         KeeperRequestForSession request;
 
-        const auto & coordination_settings = keeper_context->getCoordinationSettings();
-        uint64_t max_wait = coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
-        uint64_t max_batch_bytes_size = coordination_settings[CoordinationSetting::max_requests_batch_bytes_size];
-        size_t max_batch_size = coordination_settings[CoordinationSetting::max_requests_batch_size];
+        const auto & dynamic_settings = keeper_context->getCoordinationSettings();
+        uint64_t operation_timeout_ms = dynamic_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+        uint64_t max_batch_bytes_size = dynamic_settings[CoordinationSetting::max_requests_batch_bytes_size];
+        size_t max_batch_size = dynamic_settings[CoordinationSetting::max_requests_batch_size];
+        bool quorum_reads = dynamic_settings[CoordinationSetting::quorum_reads];
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
         /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
@@ -296,7 +297,7 @@ void KeeperRequestDispatcher::requestThread()
         /// Also there is a special reconfig request also being a separator.
         try
         {
-            if (requests_queue->tryPop(request, max_wait))
+            if (requests_queue->tryPop(request, operation_timeout_ms))
             {
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
                 if (shutdown_called)
@@ -369,7 +370,7 @@ void KeeperRequestDispatcher::requestThread()
                 /// Otherwise we will process it locally.
                 if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
                     has_reconfig_request = true;
-                else if (coordination_settings[CoordinationSetting::quorum_reads] || !request.request->isReadRequest())
+                else if (quorum_reads || !request.request->isReadRequest())
                 {
                     current_batch_bytes_size += request.request->bytesSize();
                     current_batch.emplace_back(request);
@@ -388,7 +389,7 @@ void KeeperRequestDispatcher::requestThread()
                             handle_opentelemetery_spans(request.request, request.session_id);
 
                             /// Don't append read request into batch, we have to process them separately
-                            if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
+                            if (!quorum_reads && request.request->isReadRequest())
                             {
                                 const auto & last_request = current_batch.back();
                                 ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
@@ -507,7 +508,7 @@ void KeeperRequestDispatcher::requestThread()
                         auto log_idx = bs.get_u64();
 
                         /// if timeout happened set error responses for the requests
-                        if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+                        if (!keeper_context->waitCommittedUpto(log_idx, operation_timeout_ms))
                             addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
 
                         if (shutdown_called)
