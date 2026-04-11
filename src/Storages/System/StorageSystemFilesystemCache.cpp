@@ -232,7 +232,7 @@ StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & tab
     storage_metadata.setColumns(ColumnsDescription(
     {
         {"cache_name", std::make_shared<DataTypeString>(), "Name of the cache object. Can be used in `SYSTEM DESCRIBE FILESYSTEM CACHE <name>`, `SYSTEM DROP FILESYSTEM CACHE <name>` commands"},
-        {"cache_base_path", std::make_shared<DataTypeString>(), "Path to the base directory where all caches files (of a cache identidied by `cache_name`) are stored."},
+        {"cache_base_path", std::make_shared<DataTypeString>(), "Path to the base directory where all cache files (of a cache identified by `cache_name`) are stored."},
         {"cache_path", std::make_shared<DataTypeString>(), "Path to a particular cache file, corresponding to a file segment in a source file"},
         {"key", std::make_shared<DataTypeString>(), "Cache key of the file segment"},
         {"file_segment_range_begin", std::make_shared<DataTypeUInt64>(), "Offset corresponding to the beginning of the file segment range"},
@@ -243,7 +243,7 @@ StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & tab
         {"cache_hits", std::make_shared<DataTypeUInt64>(), "Number of cache hits of corresponding file segment"},
         {"references", std::make_shared<DataTypeUInt64>(), "Number of references to corresponding file segment. Value 1 means that nobody uses it at the moment (the only existing reference is in cache storage itself)"},
         {"downloaded_size", std::make_shared<DataTypeUInt64>(), "Downloaded size of the file segment"},
-        {"kind", std::make_shared<DataTypeString>(), "File segment kind (used to distringuish between file segments added as a part of 'Temporary data in cache')"},
+        {"kind", std::make_shared<DataTypeString>(), "File segment kind (used to distinguish between file segments added as a part of 'Temporary data in cache')"},
         {"unbound", std::make_shared<DataTypeNumber<UInt8>>(), "Internal implementation flag"},
         {"user_id", std::make_shared<DataTypeString>(), "User id of the user which created the file segment"},
         {"segment_type", std::make_shared<DataTypeString>(), "Type of the segment. Used to separate data files(`.json`, `.txt` and etc) from data file(`.bin`, mark files)."},

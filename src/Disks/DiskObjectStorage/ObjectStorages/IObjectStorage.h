@@ -335,6 +335,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The method 'tagObjects' is only implemented for S3 and Azure storages");
     }
 #endif
+
+    /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
+    /// Returns nullptr for non-decorator types, meaning this storage is already the base.
+    virtual ObjectStoragePtr getUnderlying() { return nullptr; }
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
