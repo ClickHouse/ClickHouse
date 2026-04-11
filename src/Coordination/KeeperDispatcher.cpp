@@ -1035,8 +1035,6 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
             promise->set_value(session_id_response.session_id);
         });
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
-
     /// Push new session request to the system queue. Bounded by max_request_queue_size
     /// to prevent unbounded growth under connection storms.
     const auto max_queue_size = configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size];
