@@ -1,3 +1,4 @@
+-- EXISTS (rewritten to LEFT SEMI)
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
@@ -11,6 +12,7 @@ Expression ((Project names + Projection))
                 ReadFromMergeTree (ReplicatedRead default.test_lineitem)
 20
 20
+-- RIGHT SEMI JOIN (commuted to LEFT SEMI: orders=ParallelRead, lineitem=Broadcast)
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
@@ -23,6 +25,7 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ReplicatedRead default.test_lineitem)
 20
 20
+-- RIGHT ANY JOIN (RightAny strictness, not commutable)
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
@@ -37,6 +40,7 @@ Expression ((Project names + Projection))
                 ReadFromMergeTree (ParallelRead default.test_lineitem)
 20
 20
+-- LEFT SEMI JOIN (lineitem broadcast, no swap needed)
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
@@ -49,3 +53,16 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ReplicatedRead default.test_lineitem)
 20
 20
+-- RIGHT ANTI JOIN (commuted to LEFT ANTI: orders=ParallelRead, lineitem=Broadcast)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.test_lineitem)
+980
+980

@@ -1,11 +1,8 @@
 -- Correctness test: broadcast join must not be used when the replicated side
--- produces output rows in a semi/anti join.  Broadcasting the output side causes
--- duplicate rows across nodes — each node independently matches its local probe
--- slice against the full replicated build side, emitting the same output row from
--- multiple nodes.  Two-phase aggregation then sums the duplicates.
+-- produces output rows (RIGHT Semi/Anti/Any/RightAny).  Broadcasting the output
+-- side causes duplicate rows across nodes.
 --
--- To exercise the broadcast path, the filter table (test_lineitem) is made very
--- small so the optimizer prefers to broadcast it rather than shuffle both sides.
+-- The filter table (test_lineitem) is small so the optimizer prefers broadcast.
 
 SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
@@ -23,13 +20,15 @@ DROP TABLE IF EXISTS test_lineitem;
 CREATE TABLE test_orders (
     o_orderkey UInt64,
     o_priority String
-) ENGINE = MergeTree ORDER BY o_orderkey;
+) ENGINE = MergeTree ORDER BY o_orderkey
+  SETTINGS index_granularity = 8192, auto_statistics_types = '';
 
 -- Small filter table: only 20 rows, so broadcast is clearly preferred.
 CREATE TABLE test_lineitem (
     l_orderkey UInt64,
     l_linenumber UInt32
-) ENGINE = MergeTree ORDER BY l_orderkey;
+) ENGINE = MergeTree ORDER BY l_orderkey
+  SETTINGS index_granularity = 8192, auto_statistics_types = '';
 
 SYSTEM STOP MERGES test_orders;
 INSERT INTO test_orders SELECT number, 'P' || toString(number % 5) FROM numbers(250);
@@ -41,16 +40,11 @@ INSERT INTO test_orders SELECT number, 'P' || toString(number % 5) FROM numbers(
 SYSTEM STOP MERGES test_lineitem;
 INSERT INTO test_lineitem SELECT number, 1 FROM numbers(20);
 
--- 1. Verify plan uses Broadcast with the correct side (lineitem is broadcast,
---    orders is the probe/output side via ParallelRead).
+SELECT '-- EXISTS (rewritten to LEFT SEMI)';
 EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_orders
 WHERE EXISTS (SELECT 1 FROM test_lineitem WHERE l_orderkey = o_orderkey);
 
--- 2. Execute with distributed_plan_execute_locally to simulate multi-node execution.
---    Correct result = 20 (only 20 orders have matching lineitem keys).
---    If the wrong side were broadcast, each matching order would be counted once
---    per node → inflated result.
 SELECT count() FROM test_orders
 WHERE EXISTS (SELECT 1 FROM test_lineitem WHERE l_orderkey = o_orderkey)
 SETTINGS distributed_plan_execute_locally = 1;
@@ -59,7 +53,7 @@ SELECT count() FROM test_orders
 WHERE EXISTS (SELECT 1 FROM test_lineitem WHERE l_orderkey = o_orderkey)
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
--- Test with explicit RIGHT SEMI JOIN
+SELECT '-- RIGHT SEMI JOIN (commuted to LEFT SEMI: orders=ParallelRead, lineitem=Broadcast)';
 EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_lineitem RIGHT SEMI JOIN test_orders ON l_orderkey = o_orderkey;
 
@@ -69,8 +63,8 @@ SETTINGS distributed_plan_execute_locally = 1;
 SELECT count() FROM test_lineitem RIGHT SEMI JOIN test_orders ON l_orderkey = o_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
--- Test with RIGHT ANY JOIN using old ANY semantics (RightAny strictness).
 -- RightAny is not commutable, so broadcast guard must block it.
+SELECT '-- RIGHT ANY JOIN (RightAny strictness, not commutable)';
 EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_orders RIGHT ANY JOIN test_lineitem ON o_orderkey = l_orderkey
 SETTINGS any_join_distinct_right_table_keys = 1;
@@ -81,7 +75,7 @@ SETTINGS distributed_plan_execute_locally = 1, any_join_distinct_right_table_key
 SELECT count() FROM test_orders RIGHT ANY JOIN test_lineitem ON o_orderkey = l_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0, any_join_distinct_right_table_keys = 1;
 
--- Test with explicit LEFT SEMI JOIN
+SELECT '-- LEFT SEMI JOIN (lineitem broadcast, no swap needed)';
 EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_orders LEFT SEMI JOIN test_lineitem ON l_orderkey = o_orderkey;
 
@@ -89,6 +83,16 @@ SELECT count() FROM test_orders LEFT SEMI JOIN test_lineitem ON l_orderkey = o_o
 SETTINGS distributed_plan_execute_locally = 1;
 
 SELECT count() FROM test_orders LEFT SEMI JOIN test_lineitem ON l_orderkey = o_orderkey
+SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
+SELECT '-- RIGHT ANTI JOIN (commuted to LEFT ANTI: orders=ParallelRead, lineitem=Broadcast)';
+EXPLAIN PLAN keep_logical_steps = 1
+SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_orderkey;
+
+SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_orderkey
+SETTINGS distributed_plan_execute_locally = 1;
+
+SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 DROP TABLE test_orders;
