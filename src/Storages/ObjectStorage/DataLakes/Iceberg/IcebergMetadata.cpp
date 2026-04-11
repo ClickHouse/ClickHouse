@@ -640,12 +640,18 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
 
     auto storage_manifest_list_name = persistent_components.path_resolver.resolve(result.manifest_list_path);
 
-    auto cleanup = [&]()
+    bool metadata_written = false;
+
+    auto cleanup = [&](bool metadata_was_written)
     {
         try
         {
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-            object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+            // Only remove metadata file if this session actually wrote it.
+            // On version conflict, writeMetadataFileAndVersionHint returns false
+            // without writing — storage_metadata_name belongs to another concurrent writer.
+            if (metadata_was_written)
+                object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
             if (persistent_components.metadata_cache)
             {
                 persistent_components.metadata_cache->remove(persistent_components.table_path);
@@ -685,6 +691,8 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Failed to commit Iceberg truncate metadata: version conflict");
 
+        metadata_written = true;
+
         if (catalog)
         {
             // Transactional catalogs require a fully-qualified blob URI so the catalog
@@ -698,7 +706,7 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
     }
     catch (...)
     {
-        cleanup();
+        cleanup(metadata_written);
         throw;
     }
 }
