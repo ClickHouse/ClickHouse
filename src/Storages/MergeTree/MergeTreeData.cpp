@@ -8969,7 +8969,7 @@ static Block buildAggResultBlock(
         if (agg_it != agg_col_map.end())
         {
             auto & agg_col = *agg_it->second;
-            auto agg_type = std::make_shared<DataTypeAggregateFunction>(agg_col.func, DataTypes{agg_col.data_type}, Array{});
+            auto agg_type = std::make_shared<DataTypeAggregateFunction>(agg_col.func, DataTypes{agg_col.data_type}, agg_col.func->getParameters());
             result.insert({std::move(agg_col.column), agg_type, col_name});
             continue;
         }
@@ -9008,6 +9008,10 @@ static void insertAggValue(ColumnAggregateFunction & column, const Field & value
     const auto * value_column_ptr = value_column.get();
     func->add(place, &value_column_ptr, 0, &arena);
     column.insertFrom(place);
+    /// Destroy the temporary state: insertFrom merges into a new state owned by the column,
+    /// but does not take ownership of `place`.
+    if (!func->hasTrivialDestructor())
+        func->destroy(place);
 }
 
 /// Insert a column of values (from a set index block) into an aggregate function column.
@@ -9171,10 +9175,17 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
         {
             auto minmax_it = col_minmax.find(agg_col.col_name);
             if (minmax_it == col_minmax.end())
-                continue;
+            {
+                LOG_TRACE(log, "Column statistics aggregation: no min/max for column '{}' in partition, falling back", agg_col.col_name);
+                return {};
+            }
             const Field & value = agg_col.is_min ? minmax_it->second.first : minmax_it->second.second;
-            if (!value.isNull())
-                insertAggValue(assert_cast<ColumnAggregateFunction &>(*agg_col.column), value);
+            if (value.isNull() || value.isPositiveInfinity())
+            {
+                LOG_TRACE(log, "Column statistics aggregation: NULL/infinity bound for column '{}', falling back", agg_col.col_name);
+                return {};
+            }
+            insertAggValue(assert_cast<ColumnAggregateFunction &>(*agg_col.column), value);
         }
     }
 
@@ -9370,9 +9381,9 @@ Block MergeTreeData::getSkipIndexAggregationBlock(
                 const Field & value = agg_col.is_min ? range.left : range.right;
                 /// A NULL bound means this granule contains NULL values. We cannot determine
                 /// the true min/max without reading the actual data, so bail out.
-                if (value.isNull())
+                if (value.isNull() || value.isPositiveInfinity())
                 {
-                    LOG_TRACE(log, "Skip index `{}` has NULL bound in hyperrectangle for partition `{}`, skipping optimization", index_name, agg_key);
+                    LOG_TRACE(log, "Skip index `{}` has NULL/infinity bound in hyperrectangle for partition `{}`, skipping optimization", index_name, agg_key);
                     has_null_bound = true;
                     break;
                 }
