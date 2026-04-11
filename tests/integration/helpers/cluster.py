@@ -640,6 +640,8 @@ class ClickHouseCluster:
         self.instances: dict[str, ClickHouseInstance] = {}
         self.with_arrowflight = False
         self.arrowflight_host = "arrowflight1"
+        self._arrowflight_port = 0
+        self._arrowflight_auth_port = 0
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -1058,6 +1060,20 @@ class ClickHouseCluster:
             return self._nats_port
         self._nats_port = self.port_pool.get_port()
         return self._nats_port
+
+    @property
+    def arrowflight_port(self):
+        if self._arrowflight_port:
+            return self._arrowflight_port
+        self._arrowflight_port = self.port_pool.get_port()
+        return self._arrowflight_port
+
+    @property
+    def arrowflight_auth_port(self):
+        if self._arrowflight_auth_port:
+            return self._arrowflight_auth_port
+        self._arrowflight_auth_port = self.port_pool.get_port()
+        return self._arrowflight_auth_port
 
     @property
     def ytsaurus_port(self):
@@ -1698,6 +1714,10 @@ class ClickHouseCluster:
 
     def setup_arrowflight_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_arrowflight = True
+        env_variables["ARROWFLIGHT_EXTERNAL_PORT"] = str(self.arrowflight_port)
+        env_variables["ARROWFLIGHT_AUTH_EXTERNAL_PORT"] = str(
+            self.arrowflight_auth_port
+        )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml")]
         )
@@ -3547,6 +3567,11 @@ class ClickHouseCluster:
                     os.makedirs(dir)
 
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
+                    nuraft_streaming_mode = (
+                        random.randint(0, 1)
+                        if self.keeper_randomize_feature_flags
+                        else 0
+                    )
                     for i in range(1, 4):
                         current_keeper_config_dir = os.path.join(
                             f"{self.keeper_instance_dir_prefix}{i}", "config"
@@ -3596,6 +3621,16 @@ class ClickHouseCluster:
                                 ]:
                                     ff_config.write(
                                         f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                    )
+
+                                if self.keeper_randomize_feature_flags:
+                                    indentation = 4 * " "
+                                    ff_config.write(
+                                        f"{indentation}coordination_settings:\n"
+                                    )
+                                    indentation *= 2
+                                    ff_config.write(
+                                        f"{indentation}nuraft_streaming_mode: {nuraft_streaming_mode}\n"
                                     )
                         else:
                             basename = os.path.basename(
@@ -5670,7 +5705,7 @@ class ClickHouseInstance:
                         f.write(key + "=" + value + "\n")
 
     @contextmanager
-    def with_replace_config(self, path, replacement):
+    def with_replace_config(self, path, replacement, reload_before=False, reload_after=False):
         """Create a copy of existing config (if exists) and revert on leaving the context"""
         _directory, filename = os.path.split(path)
         basename, extension = os.path.splitext(filename)
@@ -5682,12 +5717,16 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
         )
+        if reload_before:
+            self.query("SYSTEM RELOAD CONFIG")
         try:
             yield
         finally:
             self.exec_in_container(
                 ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
             )
+            if reload_after:
+                self.query("SYSTEM RELOAD CONFIG")
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(

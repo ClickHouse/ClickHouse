@@ -32,7 +32,6 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
-from helpers.config_cluster import minio_secret_key
 from helpers.network import PartitionManager
 from helpers.client import QueryRuntimeException
 
@@ -137,11 +136,13 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+    """,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
     show_result = node.query(f"SHOW DATABASE {name}")
     assert minio_secret_key not in show_result
@@ -150,23 +151,16 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
 def create_clickhouse_iceberg_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
 ):
-    settings = {
-        "storage_catalog_type": "rest",
-        "storage_warehouse": "demo",
-        "object_storage_endpoint": "http://minio:9000/warehouse-rest",
-        "storage_region": "us-east-1",
-        "storage_catalog_url" : BASE_URL,
-    }
-
-    settings.update(additional_settings)
-
+    settings_suffix = "" if len(additional_settings) == 0 else f"SETTINGS {",".join((k+"="+repr(v) for k, v in additional_settings.items()))}"
     node.query(
         f"""
-SET allow_experimental_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
 CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
-SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+{settings_suffix}
+    """,
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
 
 def drop_clickhouse_iceberg_table(
@@ -192,7 +186,11 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/backups.xml","configs/cluster.xml"],
+            main_configs=[
+                "configs/backups.xml",
+                "configs/cluster.xml",
+                "configs/text_log.xml",
+            ],
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
@@ -200,7 +198,11 @@ def started_cluster():
 
         cluster.add_instance(
             "node2",
-            main_configs=["configs/backups.xml","configs/cluster.xml"],
+            main_configs=[
+                "configs/backups.xml",
+                "configs/cluster.xml",
+                "configs/text_log.xml",
+            ],
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
@@ -451,6 +453,91 @@ def test_hide_sensitive_info(started_cluster):
         additional_settings={"auth_header": "SECRET_2"},
     )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
+
+def test_no_secrets_in_logs(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"iceberg_query_log_{uuid.uuid4().hex}"
+    root_namespace = f"log_check_ns_{uuid.uuid4().hex}"
+    table_name = f"log_check_tbl_{uuid.uuid4().hex}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    db_settings = {
+        "catalog_type": "rest",
+        "warehouse": "demo",
+        "storage_endpoint": "http://minio:9000/warehouse-rest",
+    }
+    qid_db = uuid.uuid4().hex
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
+        query_id=qid_db,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    qid_table = uuid.uuid4().hex
+    node.query(
+        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
+        query_id=qid_table,
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    qid_show_db = uuid.uuid4().hex
+    show_db_result = node.query(
+        f"SHOW CREATE DATABASE {db_name}", query_id=qid_show_db
+    )
+    assert minio_secret_key not in show_db_result
+    assert "[HIDDEN]" in show_db_result
+
+    qid_show_table = uuid.uuid4().hex
+    show_table_result = node.query(
+        f"SHOW CREATE TABLE {db_name}.`{root_namespace}.{table_name}`",
+        query_id=qid_show_table,
+    )
+    assert minio_secret_key not in show_table_result
+    assert "[HIDDEN]" in show_table_result
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    node.query("SYSTEM FLUSH LOGS system.text_log")
+
+    for qid in (qid_db, qid_table, qid_show_db, qid_show_table):
+        assert (
+            int(
+                node.query(
+                    f"SELECT count() FROM system.query_log WHERE query_id = '{qid}' AND type = 'QueryFinish'"
+                ).strip()
+            )
+            >= 1
+        )
+        query_text = node.query(
+            f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log WHERE query_id = '{qid}' AND type = 'QueryFinish'"
+        ).strip()
+        assert minio_secret_key not in query_text
+
+    text_log_rows = node.query(
+        f"""
+SELECT message, value1, value2, value3, value4, value5, value6, value7, value8, value9, value10
+FROM system.text_log
+WHERE query_id IN ('{qid_db}', '{qid_table}', '{qid_show_db}', '{qid_show_table}')
+FORMAT JSONEachRow
+"""
+    ).strip()
+    assert text_log_rows
+    for line in text_log_rows.split("\n"):
+        row = json.loads(line)
+        for val in row.values():
+            if isinstance(val, str):
+                assert minio_secret_key not in val
 
 
 def test_tables_with_same_location(started_cluster):
@@ -736,11 +823,13 @@ def test_not_specified_catalog_type(started_cluster):
     node.query(
         f"""
     DROP DATABASE IF EXISTS {CATALOG_NAME};
-    SET allow_database_iceberg=true;
-    SET write_full_path_in_iceberg_metadata=1;
     CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
     SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+    """,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
     assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
@@ -833,12 +922,7 @@ def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 
     node.query("SYSTEM ENABLE FAILPOINT database_iceberg_gcs")
-    node.query(
-        f"""
-        DROP DATABASE IF EXISTS {CATALOG_NAME};
-        SET allow_database_iceberg = 1;
-        """
-    )
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
 
     with pytest.raises(Exception) as err:
         node.query(
@@ -848,6 +932,7 @@ def test_gcs(started_cluster):
             SETTINGS
                 catalog_type = 'rest',
                 warehouse = 'demo',
-            """
+            """,
+            settings={"allow_database_iceberg": 1},
         )
         assert "Google cloud storage converts to S3" in str(err.value)
