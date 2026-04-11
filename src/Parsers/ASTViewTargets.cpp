@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace
 {
     Keyword getKeyword(ViewTarget::Kind kind)
@@ -127,12 +122,8 @@ bool ASTViewTargets::hasInnerUUIDs() const
     return false;
 }
 
-void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def)
+void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr new_inner_engine)
 {
-    auto new_inner_engine = boost::static_pointer_cast<ASTStorage>(storage_def);
-    if (!new_inner_engine && storage_def)
-        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to ASTStorage", storage_def->getID());
-
     for (auto & target : targets)
     {
         if (target.kind == kind)
@@ -173,6 +164,36 @@ std::vector<ASTStorage *> ASTViewTargets::getInnerEngines() const
     return res;
 }
 
+void ASTViewTargets::setInnerColumns(ViewTarget::Kind kind, ASTPtr new_inner_columns)
+{
+    for (auto & target : targets)
+    {
+        if (target.kind == kind)
+        {
+            if (target.inner_columns == new_inner_columns)
+                return;
+            if (new_inner_columns)
+                setOrReplace(target.inner_columns, std::move(new_inner_columns));
+            else
+                reset(target.inner_columns);
+            return;
+        }
+    }
+
+    if (new_inner_columns)
+    {
+        auto & new_target = targets.emplace_back(kind);
+        set(new_target.inner_columns, std::move(new_inner_columns));
+    }
+}
+
+ASTColumns * ASTViewTargets::getInnerColumns(ViewTarget::Kind kind) const
+{
+    if (const auto * target = tryGetTarget(kind); target && target->inner_columns)
+        return target->inner_columns->as<ASTColumns>();
+    return nullptr;
+}
+
 const ViewTarget * ASTViewTargets::tryGetTarget(ViewTarget::Kind kind) const
 {
     for (const auto & target : targets)
@@ -191,6 +212,8 @@ ASTPtr ASTViewTargets::clone() const
     {
         if (target.inner_engine)
             res->set(target.inner_engine, target.inner_engine->clone());
+        if (target.inner_columns)
+            res->set(target.inner_columns, target.inner_columns->clone());
     }
     return res;
 }
@@ -221,12 +244,38 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
 
     if (target.inner_uuid != UUIDHelpers::Nil)
     {
-        ostr << s.nl_or_ws << toStringView(getKeyword(target.kind)) << " INNER UUID " << quoteString(toString(target.inner_uuid));
+        ostr << s.nl_or_ws;
+        /// Skip the "kind" prefix for ViewTarget::Inner to avoid producing "INNER INNER UUID".
+        if (target.kind != ViewTarget::Inner)
+            ostr << toStringView(getKeyword(target.kind)) << " ";
+        ostr << "INNER UUID " << quoteString(toString(target.inner_uuid));
+    }
+
+    if (target.inner_columns)
+    {
+        ostr << s.nl_or_ws;
+        if (target.kind != ViewTarget::Inner)
+            ostr << toStringView(getKeyword(target.kind)) << " ";
+        ostr << "INNER COLUMNS" << s.nl_or_ws << "(";
+        auto inner_frame = frame;
+        inner_frame.expression_list_always_start_on_new_line = true;
+        target.inner_columns->format(ostr, s, state, inner_frame);
+        if (!s.one_line)
+            ostr << "\n";
+        ostr << ")";
     }
 
     if (target.inner_engine)
     {
-        ostr << s.nl_or_ws << toStringView(getKeyword(target.kind));
+        /// Skip both the "kind" and "INNER" prefixes for ViewTarget::To to produce just "ENGINE" (and not "TO INNER ENGINE").
+        if (target.kind != ViewTarget::To)
+        {
+            ostr << s.nl_or_ws;
+            /// Skip the "kind" prefix for ViewTarget::Inner to avoid producing "INNER INNER ENGINE".
+            if (target.kind != ViewTarget::Inner)
+                ostr << toStringView(getKeyword(target.kind)) << " ";
+            ostr << "INNER";
+        }
         target.inner_engine->format(ostr, s, state, frame);
     }
 }
@@ -237,6 +286,7 @@ void ASTViewTargets::forEachPointerToChild(std::function<void(IAST **, boost::in
     {
         f(nullptr, &target.table_ast);
         f(nullptr, &target.inner_engine);
+        f(nullptr, &target.inner_columns);
     }
 }
 

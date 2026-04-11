@@ -702,6 +702,20 @@ void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr s
     targets->setInnerEngine(target_kind, storage_def);
 }
 
+ASTColumns * ASTCreateQuery::getTargetInnerColumns(ViewTarget::Kind target_kind) const
+{
+    if (targets)
+        return targets->getInnerColumns(target_kind);
+    return nullptr;
+}
+
+void ASTCreateQuery::setTargetInnerColumns(ViewTarget::Kind target_kind, ASTPtr columns_ast)
+{
+    if (!targets)
+        set(targets, make_intrusive<ASTViewTargets>());
+    targets->setInnerColumns(target_kind, columns_ast);
+}
+
 bool ASTCreateQuery::isCreateQueryWithImmediateInsertSelect() const
 {
     return select && !attach && !is_create_empty && !is_ordinary_view && (!(is_materialized_view || is_window_view) || is_populate);
