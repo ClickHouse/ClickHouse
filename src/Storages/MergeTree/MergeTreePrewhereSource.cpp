@@ -81,12 +81,6 @@ bool MergeTreePrewhereSource::getNewTask()
     current_task_info = task->getInfoPtr();
     current_readers = task->releaseReaders();
     mark_ranges = std::move(task->getMarkRanges());
-    /// The full mark ranges go to the rest transform (aligned with patches vector
-    /// which has entries for ALL patch parts). The prewhere chain uses
-    /// patches_prewhere_ranges which is aligned with the patches_prewhere vector
-    /// (may skip patch parts with no prewhere columns). These must be separate
-    /// copies because readPatches consumes mark range entries in-place.
-    rest_patches_mark_ranges = std::move(task->getPatchesMarkRanges());
     patches_mark_ranges = current_readers.patches_prewhere_ranges;
 
     /// Combine mutation steps (per-part on-fly mutations) with query prewhere steps.
@@ -98,6 +92,29 @@ bool MergeTreePrewhereSource::getNewTask()
 
     prewhere_chain = MergeTreeReadTask::createPrewhereReadersChain(
         current_readers, all_prewhere_actions, read_steps_performance_counters);
+
+    /// Build the shared task context for the downstream RestColumnsTransform.
+    /// The prewhere chain consumes `patches_mark_ranges` during read(), so the
+    /// rest transform needs its own copy via the task context.
+    current_task_context = std::make_shared<MergeTreeReadTaskContext>();
+    current_task_context->task_info = current_task_info;
+    current_task_context->prewhere_sample_block = prewhere_chain.getSampleBlock();
+
+    if (current_readers.main)
+        current_task_context->rest_reader = std::move(current_readers.main);
+
+    /// Filter out patch readers with empty column lists -- these arise when
+    /// `splitPatchColumnsForPrewhere` moved all columns to prewhere, leaving
+    /// the rest reader with nothing to read.
+    auto rest_patches_mark_ranges = std::move(task->getPatchesMarkRanges());
+    for (size_t i = 0; i < current_readers.patches.size(); ++i)
+    {
+        if (current_readers.patches[i]->getReader()->getColumns().empty())
+            continue;
+        current_task_context->rest_patches.push_back(std::move(current_readers.patches[i]));
+        current_task_context->patches_mark_ranges.push_back(std::move(rest_patches_mark_ranges[i]));
+    }
+    current_readers.patches.clear();
 
     need_new_task = false;
     return true;
@@ -157,69 +174,25 @@ std::optional<Chunk> MergeTreePrewhereSource::tryGenerate()
 
         progress(read_result.numReadRows(), read_result.numBytesRead());
 
-        /// Build chunk from prewhere columns.
-        Columns ordered_columns;
-        ordered_columns.reserve(getPort().getHeader().columns());
-
+        /// Build chunk from prewhere columns only. The output header is narrow
+        /// (prewhere columns only); RestColumnsTransform adds rest columns downstream.
         const auto & output_header = getPort().getHeader();
+        Columns ordered_columns;
+        ordered_columns.reserve(output_header.columns());
+
         for (size_t i = 0; i < output_header.columns(); ++i)
         {
             const auto & col_name = output_header.getByPosition(i).name;
-            if (sample_block.has(col_name))
-            {
-                size_t prewhere_idx = sample_block.getPositionByName(col_name);
-                ordered_columns.push_back(read_result.columns[prewhere_idx]);
-            }
-            else
-            {
-                /// Rest column — fill with defaults. RestColumnsTransform will replace these.
-                ordered_columns.push_back(
-                    output_header.getByPosition(i).type->createColumnConstWithDefaultValue(read_result.num_rows));
-            }
+            size_t prewhere_idx = sample_block.getPositionByName(col_name);
+            ordered_columns.push_back(read_result.columns[prewhere_idx]);
         }
 
         auto chunk = Chunk(std::move(ordered_columns), read_result.num_rows);
 
         /// Attach chunk info for RestColumnsTransform.
         auto chunk_info = std::make_shared<MergeTreeReadChunkInfo>();
+        chunk_info->task_context = current_task_context;
         chunk_info->read_result = std::make_shared<MergeTreeRangeReader::ReadResult>(std::move(read_result));
-        chunk_info->task_info = current_task_info;
-        chunk_info->prewhere_sample_block = sample_block;
-
-        /// Pass the main reader on the first chunk of each task.
-        /// RestColumnsTransform takes ownership and uses it for all subsequent chunks.
-        if (current_readers.main)
-            chunk_info->rest_reader = std::move(current_readers.main);
-
-        /// Pass rest patch readers and their mark ranges on the first chunk of each task.
-        /// Use rest_patches_mark_ranges (the unconsumed copy) because the prewhere chain
-        /// has already consumed entries from patches_mark_ranges via readPatches.
-        /// Filter out patch readers with empty column lists — these arise when
-        /// `splitPatchColumnsForPrewhere` moved all columns to prewhere, leaving
-        /// the rest reader with nothing to read.
-        if (!current_readers.patches.empty())
-        {
-            MergeTreePatchReaders non_empty_patches;
-            std::vector<MarkRanges> non_empty_ranges;
-            for (size_t i = 0; i < current_readers.patches.size(); ++i)
-            {
-                if (current_readers.patches[i]->getReader()->getColumns().empty())
-                    continue;
-                non_empty_patches.push_back(std::move(current_readers.patches[i]));
-                non_empty_ranges.push_back(std::move(rest_patches_mark_ranges[i]));
-            }
-            /// Clear moved-from vectors so subsequent chunks of the same task
-            /// do not re-enter this block and dereference null shared_ptrs.
-            current_readers.patches.clear();
-            rest_patches_mark_ranges.clear();
-
-            if (!non_empty_patches.empty())
-            {
-                chunk_info->rest_patches = std::move(non_empty_patches);
-                chunk_info->patches_mark_ranges = std::move(non_empty_ranges);
-            }
-        }
-
         chunk_info->skipped_read_results = std::move(skipped_read_results);
         chunk_info->remaining_mark_ranges = mark_ranges;
         chunk.getChunkInfos().add(std::move(chunk_info));

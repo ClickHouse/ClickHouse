@@ -64,11 +64,11 @@ private:
     MergeTreeReadersChain prewhere_chain;
     MarkRanges mark_ranges;
     std::vector<MarkRanges> patches_mark_ranges;
-    /// Separate copy of patch mark ranges for the downstream RestColumnsTransform.
-    /// The prewhere chain consumes `patches_mark_ranges` during read(), so the rest
-    /// transform needs its own unconsumed copy to read rest-column patches independently.
-    std::vector<MarkRanges> rest_patches_mark_ranges;
     bool need_new_task = true;
+
+    /// Shared task context passed to all chunks from the same task.
+    /// Holds rest reader, patches, and sample block for the downstream transform.
+    std::shared_ptr<struct MergeTreeReadTaskContext> current_task_context;
 
     /// Accumulated ReadResults from prewhere-filtered chunks (num_rows==0).
     /// Attached to the next non-empty chunk so `RestColumnsTransform` can

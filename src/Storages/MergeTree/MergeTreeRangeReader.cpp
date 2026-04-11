@@ -1569,7 +1569,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const
+void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header) const
 {
     result.checkInternalConsistency();
 
@@ -1622,17 +1622,17 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         result.additional_columns.clear();
 
-        /// Additional columns might only be needed if there are more steps in the chain.
-        if (!is_last_reader)
+        /// Preserve columns that were projected out by prewhere actions.
+        /// Intermediate readers need them for DEFAULT expression evaluation;
+        /// the pipelined reader's downstream RestColumnsTransform also needs them.
+        /// Always preserving them is a no-op when nobody reads them.
+        for (auto & col : additional_columns)
         {
-            for (auto & col : additional_columns)
-            {
-                /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
-                /// TODO: also need to exclude the columns that are not needed for the next steps.
-                if (block.has(col.name))
-                    continue;
-                result.additional_columns.insert(col);
-            }
+            /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
+            /// TODO: also need to exclude the columns that are not needed for the next steps.
+            if (block.has(col.name))
+                continue;
+            result.additional_columns.insert(col);
         }
     }
 

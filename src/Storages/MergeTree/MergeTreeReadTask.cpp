@@ -365,9 +365,7 @@ MergeTreeReadersChain MergeTreeReadTask::createPrewhereReadersChain(
 
     /// No main reader — this is a prewhere-only chain.
     /// Prewhere patch readers are passed so that patch columns consumed in prewhere steps are applied.
-    /// preserve_last_reader_additional_columns=true because the downstream
-    /// RestColumnsTransform needs projected-out columns for DEFAULT evaluation.
-    return MergeTreeReadersChain{std::move(range_readers), task_readers.patches_prewhere, /*preserve_last_reader_additional_columns_=*/ true};
+    return MergeTreeReadersChain{std::move(range_readers), task_readers.patches_prewhere};
 }
 
 void MergeTreeReadTask::initializeReadersChain(
