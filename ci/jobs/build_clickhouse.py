@@ -177,10 +177,20 @@ def main():
                 f"mkdir -p {build_dir} && git submodule sync && git submodule init"
             )
 
-            res = res and Shell.check(
-                "contrib/update-submodules.sh --max-procs 10",
-                retries=3,
-            )
+            if os.path.isdir(".git/modules/contrib") and os.listdir(
+                ".git/modules/contrib"
+            ):
+                # Submodule cache was restored by runner.py — just populate working trees
+                print("Submodule cache detected, populating working trees from cache")
+                res = res and Shell.check(
+                    "git submodule update --depth 1 --single-branch",
+                    retries=3,
+                )
+            else:
+                res = res and Shell.check(
+                    "contrib/update-submodules.sh --max-procs 10",
+                    retries=3,
+                )
             return res
 
         results.append(

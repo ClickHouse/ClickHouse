@@ -243,25 +243,25 @@ int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name
 }
 
 KeeperServer::KeeperServer(
-    const KeeperConfigurationAndSettingsPtr & configuration_and_settings_,
+    const KeeperConfigurationPtr & server_config,
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
     KeeperContextPtr keeper_context_,
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
     IKeeperStateMachine::CommitCallback commit_callback)
-    : server_id(configuration_and_settings_->server_id)
+    : server_id(server_config->server_id)
     , log(getLogger("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
     , keeper_context{std::move(keeper_context_)}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
     , enable_reconfiguration(config.getBool("keeper_server.enable_reconfiguration", false))
 {
-    if (keeper_context->getCoordinationSettings()[CoordinationSetting::quorum_reads])
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+    if (coordination_settings[CoordinationSetting::quorum_reads])
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
 #if USE_ROCKSDB
-    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     if (coordination_settings[CoordinationSetting::experimental_use_rocksdb])
     {
         state_machine = nuraft::cs_new<KeeperStateMachine<KeeperRocksStorage>>(
@@ -270,7 +270,7 @@ KeeperServer::KeeperServer(
             keeper_context,
             config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
             commit_callback,
-            checkAndGetSuperdigest(configuration_and_settings_->super_digest));
+            checkAndGetSuperdigest(server_config->super_digest));
         LOG_WARNING(log, "Use RocksDB as Keeper backend storage.");
     }
     else
@@ -281,7 +281,7 @@ KeeperServer::KeeperServer(
             keeper_context,
             config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
             commit_callback,
-            checkAndGetSuperdigest(configuration_and_settings_->super_digest));
+            checkAndGetSuperdigest(server_config->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,
@@ -486,7 +486,7 @@ void KeeperServer::forceRecovery()
 
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
-    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
 
     nuraft::raft_params params;
     params.parallel_log_appending_ = true;
@@ -658,7 +658,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     keeper_context->setLastCommitIndex(state_machine->last_commit_index());
 
-    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
 
     state_manager->loadLogStore(state_machine->last_commit_index(), coordination_settings[CoordinationSetting::reserved_log_items]);
 
@@ -1215,7 +1215,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
 
 ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
 {
-    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
     auto diff = state_manager->getRaftConfigurationDiff(config, coordination_settings);
 
     if (!diff.empty())
@@ -1245,7 +1245,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
         server_write_lock.lock();
     };
 
-    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
         for (size_t i = 0; i < coordination_settings[CoordinationSetting::configuration_change_tries_count] && !is_recovering; ++i)
@@ -1302,7 +1302,7 @@ bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAc
     auto became_leader = [&] { LOG_INFO(log, "Became leader, aborting"); return false; };
     auto backoff = [&](size_t i) { std::this_thread::sleep_for(sleep_time * (i + 1)); };
 
-    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
     if (const auto* add = std::get_if<AddRaftServer>(&action))
     {
         for (size_t i = 0; i < coordination_settings[CoordinationSetting::configuration_change_tries_count] && !is_recovering; ++i)
