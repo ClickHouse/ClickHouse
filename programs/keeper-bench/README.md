@@ -146,7 +146,7 @@ key:
 
 ### `PathGetter`
 
-One or more ZooKeeper paths. Paths can be explicit or expanded from children of a parent.
+One or more ZooKeeper paths. Paths can be explicit, expanded from children of a parent, or drawn from a tagged set of paths created during setup.
 
 ```yaml
 # explicit paths
@@ -157,14 +157,19 @@ path:
 # children of a parent node
 path:
     children_of: "/path3"
+
+# paths collected by tag during setup (see Setup section)
+path:
+    tagged: "my_tag"
 ```
 
-Both forms can be used together and merged into one candidate set.
+All forms can be used together and merged into one candidate set.
 
 Notes:
 
 - Paths must start with `/`.
 - `children_of` is resolved at startup; if it has no children and no explicit paths are provided, an exception is raised.
+- `tagged` references a tag name assigned to setup nodes via the `tag` field. All paths created with that tag are included. If the tag is not found, an exception is raised.
 - Duplicate `path` keys in one section are supported when parsed by ClickHouse config loader (Poco-style key indexing).
 
 ---
@@ -257,28 +262,40 @@ node:
     name: StringGetter
     data: StringGetter           # optional
     repeat: integer              # optional, requires random name
+    tag: string                  # optional, collects created paths under this tag
     node: ...                    # nested children
 ```
+
+The `tag` field labels a node so that all paths created from it (including repeated copies) are collected into a named set. Generators can reference this set with `tagged` in their `PathGetter` config, allowing requests to target specific nodes from the setup tree.
 
 Example:
 
 ```yaml
 setup:
     node:
-        name: "node1"
+        name: "tree"
         node:
-            repeat: 4
+            repeat: 10
             name:
                 random_string:
                     size: 20
-            data: "payload"
+            tag: "inner"
+            node:
+                repeat: 3
+                name:
+                    random_string:
+                        size: 10
+                tag: "leaves"
 
-    node:
-        name:
-            random_string:
-                size: 10
-        repeat: 2
+generator:
+    requests:
+        set:
+            path:
+                tagged: "leaves"
+            data: "updated"
 ```
+
+In this example, `set` requests target the 30 leaf nodes (3 per each of 10 inner nodes), selected randomly from all paths tagged `"leaves"` during setup.
 
 ---
 
@@ -324,14 +341,22 @@ set:
 ```yaml
 get:
     path: PathGetter
+    watch_probability: 0.5           # in [0.0, 1.0], default: 0 (no watches)
 ```
+
+When `watch_probability` is set, each request has that probability of setting a watch on the node.
+Watch fire events are counted and reported in stats.
 
 ### `list`
 
 ```yaml
 list:
     path: PathGetter
+    watch_probability: 0.5           # in [0.0, 1.0], default: 0 (no watches)
 ```
+
+When `watch_probability` is set, each request has that probability of setting a watch on the node.
+Watch fire events are counted and reported in stats.
 
 ### `multi`
 
@@ -416,10 +441,10 @@ If `--setup-nodes-snapshot-path` is provided during replay, the tool can infer r
 
 Periodic stderr reports (controlled by `report_delay`) include:
 
-- Total read/write request counts.
-- Read/write RPS and throughput.
+- Total read/write request counts (cumulative).
+- Read/write RPS and throughput (for the last reporting period).
 - Read/write latency percentiles (`0, 10, ..., 90, 95, 99, 99.9, 99.99`).
-- Per-operation breakdown (requests, RPS, p50, p99).
+- Watches fired (when `watch_probability` is configured).
 
 ### JSON output
 
@@ -440,7 +465,7 @@ JSON fields:
 - `timestamp` (epoch milliseconds).
 - `read_results` (present only if read requests exist).
 - `write_results` (present only if write requests exist).
-- `per_op_results` (present only if per-op stats exist).
+- `watches_fired` (present only when watches are used).
 
 Each result object contains:
 
@@ -461,5 +486,7 @@ Common configuration exceptions:
 - `PathGetter has no paths after initialization`: `children_of` parent has no children and no explicit `path` entries were supplied.
 - `Generator weight must be >= 1`: use positive weights only.
 - `remove_factor must be in [0.0, 1.0]`: keep probability in range.
+- `watch_probability must be in [0.0, 1.0]`: keep probability in range.
 - `Nested multi requests are not allowed`: only one `multi` level is supported.
+- `Tag '...' not found in setup`: a `tagged` path reference names a tag that no setup node defines. Check spelling and ensure the setup section includes nodes with matching `tag` values.
 - `Repeating node creation ..., but name is not randomly generated`: use random `name` when `repeat` is set.
