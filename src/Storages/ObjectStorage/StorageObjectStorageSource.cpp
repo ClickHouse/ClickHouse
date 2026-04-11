@@ -521,6 +521,9 @@ Chunk StorageObjectStorageSource::generate()
                         }
                     }
 
+                    if (unmatched_ranges.empty())
+                        break;
+
                     auto query_condition_cache = read_context->getQueryConditionCache();
                     query_condition_cache->write(
                         storage_id.uuid,
