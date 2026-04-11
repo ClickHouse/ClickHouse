@@ -257,7 +257,7 @@ KeeperServer::KeeperServer(
     , keeper_context{std::move(keeper_context_)}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
     , enable_reconfiguration(config.getBool("keeper_server.enable_reconfiguration", false))
-    , is_standalone_keeper(configuration_and_settings_->standalone_keeper)
+    , is_standalone_keeper(server_config->standalone_keeper)
 {
     const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
     if (coordination_settings[CoordinationSetting::quorum_reads])
