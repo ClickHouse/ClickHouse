@@ -15,8 +15,8 @@ namespace DB
 
 using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
-struct KeeperConfigurationAndSettings;
-using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;
+struct KeeperConfiguration;
+using KeeperConfigurationPtr = std::shared_ptr<KeeperConfiguration>;
 
 class KeeperServer
 {
@@ -80,7 +80,7 @@ private:
     const bool enable_reconfiguration;
 public:
     KeeperServer(
-        const KeeperConfigurationAndSettingsPtr & settings_,
+        const KeeperConfigurationPtr & server_config,
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,

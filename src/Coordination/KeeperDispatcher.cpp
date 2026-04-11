@@ -152,7 +152,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
 
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
-    , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
+    , server_config(std::make_shared<KeeperConfiguration>())
     , log(getLogger("KeeperDispatcher"))
 {}
 
@@ -187,10 +187,11 @@ void KeeperDispatcher::requestThread()
 
         KeeperRequestForSession request;
 
-        const auto & coordination_settings = configuration_and_settings->coordination_settings;
-        uint64_t max_wait = coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
-        uint64_t max_batch_bytes_size = coordination_settings[CoordinationSetting::max_requests_batch_bytes_size];
-        size_t max_batch_size = coordination_settings[CoordinationSetting::max_requests_batch_size];
+        const auto & dynamic_settings = keeper_context->getCoordinationSettings();
+        uint64_t operation_timeout_ms = dynamic_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+        uint64_t max_batch_bytes_size = dynamic_settings[CoordinationSetting::max_requests_batch_bytes_size];
+        size_t max_batch_size = dynamic_settings[CoordinationSetting::max_requests_batch_size];
+        bool quorum_reads = dynamic_settings[CoordinationSetting::quorum_reads];
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
         /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
@@ -201,7 +202,7 @@ void KeeperDispatcher::requestThread()
         /// Also there is a special reconfig request also being a separator.
         try
         {
-            if (requests_queue->tryPop(request, max_wait))
+            if (requests_queue->tryPop(request, operation_timeout_ms))
             {
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
                 if (shutdown_called)
@@ -249,7 +250,7 @@ void KeeperDispatcher::requestThread()
                 handle_opentelemetery_spans(request.request, request.session_id);
 
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
-                if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
+                if (server_config->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
                 {
                     ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
                     LOG_WARNING(
@@ -274,7 +275,7 @@ void KeeperDispatcher::requestThread()
                 /// Otherwise we will process it locally.
                 if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
                     has_reconfig_request = true;
-                else if (coordination_settings[CoordinationSetting::quorum_reads] || !request.request->isReadRequest())
+                else if (quorum_reads || !request.request->isReadRequest())
                 {
                     current_batch_bytes_size += request.request->bytesSize();
                     current_batch.emplace_back(request);
@@ -293,7 +294,7 @@ void KeeperDispatcher::requestThread()
                             handle_opentelemetery_spans(request.request, request.session_id);
 
                             /// Don't append read request into batch, we have to process them separately
-                            if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
+                            if (!quorum_reads && request.request->isReadRequest())
                             {
                                 const auto & last_request = current_batch.back();
                                 ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
@@ -412,7 +413,7 @@ void KeeperDispatcher::requestThread()
                         auto log_idx = bs.get_u64();
 
                         /// if timeout happened set error responses for the requests
-                        if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+                        if (!keeper_context->waitCommittedUpto(log_idx, operation_timeout_ms))
                             addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
 
                         if (shutdown_called)
@@ -468,7 +469,7 @@ void KeeperDispatcher::responseThread()
     {
         KeeperResponseForSession response_for_session;
 
-        uint64_t max_wait = configuration_and_settings->coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+        uint64_t max_wait = keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
 
         if (responses_queue.tryPop(response_for_session, max_wait))
         {
@@ -618,7 +619,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         if (!requests_queue->push(std::move(request_info)))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push request to queue");
     }
-    else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+    else if (!requests_queue->tryPush(std::move(request_info), keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
     {
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
     }
@@ -661,12 +662,14 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
-    configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper, std::make_shared<CoordinationSettings>(configuration_and_settings->coordination_settings));
+    server_config = KeeperConfiguration::loadFromConfig(config, standalone_keeper);
+    auto coordination_settings = std::make_shared<CoordinationSettings>();
+    coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper, std::move(coordination_settings));
 
     keeper_context->initialize(config, this);
 
-    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size]);
+    requests_queue = std::make_unique<RequestsQueue>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_size]);
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
@@ -674,7 +677,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     snapshot_s3.startup(config, macros);
 
     server = std::make_unique<KeeperServer>(
-        configuration_and_settings,
+        server_config,
         config,
         responses_queue,
         snapshots_queue,
@@ -759,7 +762,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
-        server->startup(config, configuration_and_settings->enable_ipv6);
+        server->startup(config, server_config->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
         if (!start_async)
@@ -875,7 +878,7 @@ void KeeperDispatcher::shutdown()
                                             nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/,
                                             nuraft::ptr<std::exception> & /*exception*/) { my_sessions_closing_done_promise->set_value(); });
 
-                auto session_shutdown_timeout = configuration_and_settings->coordination_settings[CoordinationSetting::session_shutdown_timeout].totalMilliseconds();
+                auto session_shutdown_timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::session_shutdown_timeout].totalMilliseconds();
                 if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)
                     LOG_WARNING(
                         log,
@@ -993,7 +996,7 @@ void KeeperDispatcher::sessionCleanerTask()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        auto time_to_sleep = configuration_and_settings->coordination_settings[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds();
+        auto time_to_sleep = keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds();
         std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep));
     }
 }
@@ -1245,7 +1248,7 @@ void KeeperDispatcher::clusterUpdateThread()
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
 
             std::this_thread::sleep_for(last_command_was_leader_change
-                ? std::chrono::milliseconds(configuration_and_settings->coordination_settings[CoordinationSetting::sleep_before_leader_change_ms].totalMilliseconds())
+                ? std::chrono::milliseconds(keeper_context->getCoordinationSettings()[CoordinationSetting::sleep_before_leader_change_ms].totalMilliseconds())
                 : 50ms);
         }
     }
@@ -1297,6 +1300,10 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     snapshot_s3.updateS3Configuration(config, macros);
 
     keeper_context->updateKeeperMemorySoftLimit(config);
+
+    auto new_settings = std::make_shared<CoordinationSettings>();
+    new_settings->loadFromConfig("keeper_server.coordination_settings", config);
+    keeper_context->updateSettings(new_settings);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests)
