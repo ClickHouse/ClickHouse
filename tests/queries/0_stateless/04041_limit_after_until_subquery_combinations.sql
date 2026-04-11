@@ -1,3 +1,4 @@
+SET allow_experimental_limit_after = 1;
 -- Both boundary conditions should prepare `IN (subquery)` sets in analyzer and old-interpreter paths.
 SELECT number
 FROM numbers(8)

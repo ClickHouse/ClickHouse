@@ -1,3 +1,4 @@
+SET allow_experimental_limit_after = 1;
 -- LIMIT n AFTER expr [UNTIL expr] (issue #15341)
 -- Output rows starting from the first row where AFTER condition is true,
 -- until UNTIL condition is true (exclusive) or limit is reached.

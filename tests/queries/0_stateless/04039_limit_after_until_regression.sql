@@ -1,3 +1,4 @@
+SET allow_experimental_limit_after = 1;
 -- Global `LIMIT` should be shared across streams.
 SELECT count() FROM (SELECT number FROM numbers_mt(2000) LIMIT 1 AFTER number >= 0) SETTINGS max_threads = 8, max_block_size = 1;
 

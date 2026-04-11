@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_experimental_limit_after;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
 }
@@ -110,6 +111,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int SYNTAX_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -5044,6 +5046,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         resolveExpressionNode(query_node_typed.getLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         convertLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
+    }
+
+    if (query_node_typed.hasLimitAfter() || query_node_typed.hasLimitUntil())
+    {
+        if (!scope.context->getSettingsRef()[Setting::allow_experimental_limit_after])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "LIMIT ... AFTER/UNTIL syntax is experimental. "
+                "Enable it with `SET allow_experimental_limit_after = 1`");
     }
 
     if (query_node_typed.hasLimitAfter())

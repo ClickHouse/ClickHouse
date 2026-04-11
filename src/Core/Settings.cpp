@@ -7483,6 +7483,9 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_limit_after, false, R"(
+Allow the experimental `LIMIT [n] AFTER expr [ALL] [UNTIL expr]` syntax that starts the output window at the first row matching the `AFTER` condition and stops it at the first row matching `UNTIL` (or after `n` rows).
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \

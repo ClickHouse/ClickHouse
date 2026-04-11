@@ -192,6 +192,7 @@ namespace Setting
     extern const SettingsTotalsMode totals_mode;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool use_with_fill_by_sorting_prefix;
+    extern const SettingsBool allow_experimental_limit_after;
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
@@ -3423,6 +3424,11 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
     /// If there is LIMIT with AFTER or UNTIL, use LimitRangeStep
     if (query.limitAfter() || query.limitUntil())
     {
+        if (!context->getSettingsRef()[Setting::allow_experimental_limit_after])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "LIMIT ... AFTER/UNTIL syntax is experimental. "
+                "Enable it with `SET allow_experimental_limit_after = 1`");
+
         if (query.limit_with_ties)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT WITH TIES is not supported with LIMIT AFTER/UNTIL");
         if (query.limitOffset())

@@ -6,8 +6,6 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
-#include <DataTypes/DataTypeNullable.h>
-
 #include <limits>
 
 namespace DB
@@ -16,11 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-}
-
-static bool canUseTypeForCondition(const DataTypePtr & type)
-{
-    return type->canBeUsedInBooleanContext();
 }
 
 static UInt64 saturatingAdd(UInt64 lhs, UInt64 rhs)
@@ -54,7 +47,7 @@ LimitRangeTransform::LimitRangeTransform(
         Block block = getInputPort().getHeader().cloneEmpty();
         start_expression->execute(block);
         const auto & col = block.getByName(start_column_name);
-        if (!canUseTypeForCondition(col.type))
+        if (!col.type->canBeUsedInBooleanContext())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
                 "LIMIT AFTER expression must be boolean, got {}", col.type->getName());
         start_column_position = block.getPositionByName(start_column_name);
@@ -64,7 +57,7 @@ LimitRangeTransform::LimitRangeTransform(
         Block block = getInputPort().getHeader().cloneEmpty();
         end_expression->execute(block);
         const auto & col = block.getByName(end_column_name);
-        if (!canUseTypeForCondition(col.type))
+        if (!col.type->canBeUsedInBooleanContext())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
                 "LIMIT UNTIL expression must be boolean, got {}", col.type->getName());
         end_column_position = block.getPositionByName(end_column_name);
@@ -88,7 +81,7 @@ bool LimitRangeTransform::isTrueAt(const ColumnPtr & column, size_t row_num)
     if (const auto * uint8 = typeid_cast<const ColumnUInt8 *>(col))
         return uint8->getData()[row_num] != 0;
 
-    return column->getBool(row_num);
+    return col->getBool(row_num);
 }
 
 size_t LimitRangeTransform::findFirstTrue(const ColumnPtr & column, size_t num_rows)
@@ -215,19 +208,30 @@ void LimitRangeTransform::transform(Chunk & chunk)
         return;
     }
 
+    /// end_in_chunk caches the result of findFirstTrue(end_col) when it is computed
+    /// inside the !started block, to avoid a redundant second scan below.
+    size_t end_in_chunk = num_rows;
+    bool end_searched = false;
+
     if (!started)
     {
         if (start_col)
         {
             const size_t first_start = findFirstTrue(start_col, num_rows);
-            const size_t first_end = end_col ? findFirstTrue(end_col, num_rows) : num_rows;
 
-            if (first_end <= first_start)
+            if (end_col)
             {
-                if (first_end < num_rows)
-                    stopReading();
-                chunk.clear();
-                return;
+                end_in_chunk = findFirstTrue(end_col, num_rows);
+                end_searched = true;
+                /// UNTIL fired at or before AFTER (covers: AFTER not found, UNTIL at same row,
+                /// UNTIL precedes AFTER).  The window is permanently closed.
+                if (end_in_chunk <= first_start)
+                {
+                    if (end_in_chunk < num_rows)
+                        stopReading();
+                    chunk.clear();
+                    return;
+                }
             }
 
             if (first_start >= num_rows)
@@ -245,16 +249,9 @@ void LimitRangeTransform::transform(Chunk & chunk)
         }
     }
 
-    size_t num_rows_cur = chunk.getNumRows();
-    if (output_start >= num_rows_cur)
-    {
-        chunk.clear();
-        return;
-    }
-
     if (end_col && output_end > output_start)
     {
-        size_t first_end = findFirstTrue(end_col, num_rows);
+        const size_t first_end = end_searched ? end_in_chunk : findFirstTrue(end_col, num_rows);
         if (first_end < num_rows)
             output_end = first_end;
     }
@@ -288,7 +285,7 @@ void LimitRangeTransform::transform(Chunk & chunk)
 
     if (limit && rows_output >= *limit)
         stopReading();
-    else if (end_col && output_end < num_rows_cur)
+    else if (end_col && output_end < num_rows)
         stopReading();
 }
 
