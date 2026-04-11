@@ -222,6 +222,16 @@ void MergeTreeRestColumnsTransform::assembleOutputBlock(Chunk & chunk, Columns &
         }
     }
 
+    /// Fill any remaining null positions with type defaults. This handles columns
+    /// that are in the output header but were not produced by either the prewhere
+    /// source or the rest reader (e.g., virtual columns when all regular columns
+    /// are in PREWHERE and the rest reader has no columns to read).
+    for (size_t i = 0; i < all_columns.size(); ++i)
+    {
+        if (!all_columns[i])
+            all_columns[i] = output_header.getByPosition(i).type->createColumnConstWithDefaultValue(num_rows);
+    }
+
     chunk.setColumns(std::move(all_columns), num_rows);
 }
 
