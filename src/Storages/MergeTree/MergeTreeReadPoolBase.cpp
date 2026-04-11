@@ -273,10 +273,18 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 
             /// On-fly mutation steps are prepended to the prewhere chain, so their
             /// required columns must be patched in the prewhere phase as well.
+            /// Lightweight delete steps have `actions = nullptr` but still require
+            /// their `filter_column_name` (e.g., `_row_exists`) to be read in the
+            /// prewhere phase for the delete mask to be applied correctly.
             for (const auto & step : read_task_info.mutation_steps)
+            {
                 if (step->actions)
                     for (const auto & name : step->actions->getActionsDAG().getRequiredColumnsNames())
                         prewhere_column_names.insert(name);
+
+                if (!step->filter_column_name.empty())
+                    prewhere_column_names.insert(step->filter_column_name);
+            }
 
             splitPatchColumnsForPrewhere(
                 read_task_info.task_columns,
