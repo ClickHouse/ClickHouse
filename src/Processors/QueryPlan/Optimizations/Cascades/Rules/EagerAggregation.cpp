@@ -24,7 +24,19 @@ struct ChainElement
     size_t downward_input_idx = 0;
 };
 
-struct JoinKeyPair { String left; String right; };
+struct JoinKeyPair
+{
+    String left;
+    String right;
+};
+
+/// A join reachable from an aggregation, together with the intermediate
+/// steps (Expression steps and joins) between the aggregation and this join.
+struct JoinCandidate
+{
+    GroupExpressionPtr join_expr;
+    std::vector<ChainElement> chain;
+};
 
 /// True if the join has only equi-join predicates and no residual filter,
 /// i.e. `reconstructJoin` can fully rebuild it without losing conditions.
@@ -60,6 +72,7 @@ static std::unique_ptr<JoinStepLogical> reconstructJoin(
     auto join_operator = original.getJoinOperator();
     join_operator.expression.clear();
     join_operator.residual_filter.clear();
+    auto eq_resolver = FunctionFactory::instance().get("equals", nullptr);
     for (const auto & predicate : original.getJoinOperator().expression)
     {
         auto [op, left_node, right_node] = predicate.asBinaryPredicate();
@@ -71,7 +84,6 @@ static std::unique_ptr<JoinStepLogical> reconstructJoin(
         if (!lref || !rref)
             return nullptr;
 
-        auto eq_resolver = FunctionFactory::instance().get("equals", nullptr);
         const auto * eq_node = &expr_actions.getActionsDAG()->addFunction(
             eq_resolver,
             {lref.getNode(), rref.getNode()},
@@ -126,7 +138,7 @@ static std::pair<size_t, bool> determinePushSide(
             if (!arg_node)
                 continue;
 
-            /// BFS to find INPUT nodes reachable from this arg.
+            /// Trace to find INPUT nodes reachable from this arg.
             std::vector<const ActionsDAG::Node *> stack = {arg_node};
             while (!stack.empty())
             {
@@ -270,6 +282,146 @@ static bool validateHeader(
     return true;
 }
 
+/// Collect all equi-only join candidates reachable from a starting group,
+/// traversing through Expression steps and other equi-only joins.
+/// FilterSteps are NOT followed — pushing aggregation past a filter would
+/// aggregate rows that should have been discarded.
+static std::vector<JoinCandidate> collectJoinCandidates(GroupId start_group_id, const Memo & memo)
+{
+    std::vector<JoinCandidate> candidates;
+
+    auto collect = [&](GroupId group_id, std::vector<ChainElement> chain, auto & self, int depth) -> void
+    {
+        if (depth > 10)
+            return;
+        auto group = memo.getGroup(group_id);
+        for (const auto & child_expr : group->logical_expressions)
+        {
+            if (const auto * join_step = typeid_cast<const JoinStepLogical *>(child_expr->getQueryPlanStep());
+                join_step && child_expr->inputs.size() == 2)
+            {
+                /// Eager aggregation is only valid for INNER JOIN: for OUTER
+                /// joins, pre-aggregation changes which rows are preserved.
+                if (join_step->getJoinOperator().kind != JoinKind::Inner)
+                    continue;
+                if (!hasOnlyEquiPredicates(*join_step))
+                    continue;
+
+                candidates.push_back({child_expr, chain});
+                for (size_t i = 0; i < child_expr->inputs.size(); ++i)
+                {
+                    auto deeper_chain = chain;
+                    deeper_chain.push_back({child_expr, /*is_join=*/true, /*downward_input_idx=*/i});
+                    self(child_expr->inputs[i].group_id, deeper_chain, self, depth + 1);
+                }
+            }
+            else if (child_expr->inputs.size() == 1
+                && typeid_cast<const ExpressionStep *>(child_expr->getQueryPlanStep()))
+            {
+                auto new_chain = chain;
+                new_chain.push_back({child_expr, /*is_join=*/false});
+                self(child_expr->inputs[0].group_id, new_chain, self, depth + 1);
+            }
+        }
+    };
+    collect(start_group_id, {}, collect, 0);
+    return candidates;
+}
+
+/// Extract equi-join key pairs from a join step, normalized so that
+/// left is always fromLeft and right is always fromRight.
+static std::vector<JoinKeyPair> extractEquiJoinKeys(const JoinStepLogical & join_step)
+{
+    std::vector<JoinKeyPair> equi_keys;
+    for (const auto & predicate : join_step.getJoinOperator().expression)
+    {
+        auto [op, left_node, right_node] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+        if (left_node.fromRight() && right_node.fromLeft())
+            std::swap(left_node, right_node);
+        else if (!left_node.fromLeft() || !right_node.fromRight())
+            continue;
+        equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName()});
+    }
+    return equi_keys;
+}
+
+/// Create a partial (non-final) AggregatingStep with the given keys,
+/// copying aggregate function descriptors and settings from the original.
+static std::unique_ptr<AggregatingStep> makePartialAggStep(
+    const AggregatingStep & original,
+    const Names & keys,
+    SharedHeader input_header)
+{
+    const auto & orig_params = original.getParams();
+    Aggregator::Params partial_params(
+        keys,
+        orig_params.aggregates,
+        /*overflow_row=*/false,
+        orig_params.max_rows_to_group_by,
+        orig_params.group_by_overflow_mode,
+        orig_params.group_by_two_level_threshold,
+        orig_params.group_by_two_level_threshold_bytes,
+        orig_params.max_bytes_before_external_group_by,
+        orig_params.empty_result_for_aggregation_by_empty_set,
+        orig_params.tmp_data_scope,
+        orig_params.max_threads,
+        orig_params.min_free_disk_space,
+        orig_params.compile_aggregate_expressions,
+        orig_params.min_count_to_compile_aggregate_expression,
+        orig_params.max_block_size,
+        orig_params.enable_prefetch,
+        /*only_merge=*/false,
+        /*optimize_group_by_constant_keys=*/false,
+        orig_params.min_hit_rate_to_use_consecutive_keys_optimization,
+        orig_params.stats_collecting_params,
+        orig_params.enable_producing_buckets_out_of_order_in_aggregation,
+        orig_params.serialize_string_with_zero_byte);
+
+    auto step = std::make_unique<AggregatingStep>(
+        std::move(input_header),
+        std::move(partial_params),
+        /*grouping_sets_params=*/GroupingSetsParamsList{},
+        /*final=*/false,
+        original.getMaxBlockSize(),
+        original.getMaxBlockSizeForAggregationInOrder(),
+        /*merge_threads=*/0,
+        /*temporary_data_merge_threads=*/0,
+        /*storage_has_evenly_distributed_read=*/false,
+        /*group_by_use_nulls=*/false,
+        /*sort_description_for_merging=*/SortDescription{},
+        /*group_by_sort_description=*/SortDescription{},
+        /*should_produce_results_in_order_of_bucket_number=*/false,
+        /*memory_bound_merging=*/false,
+        /*explicit_sorting_required_for_aggregation_in_order=*/false);
+    step->setStepDescription(fmt::format("EagerPartial: {}", original.getStepDescription()), 200);
+    return step;
+}
+
+/// Create a MergingAggregatedStep that merges partial states from eager
+/// aggregation, using the original aggregation's full key set.
+static std::unique_ptr<MergingAggregatedStep> makeMergeStep(
+    const AggregatingStep & original,
+    SharedHeader input_header)
+{
+    auto merge_params = original.getParams();
+    merge_params.only_merge = true;
+    auto step = std::make_unique<MergingAggregatedStep>(
+        std::move(input_header),
+        std::move(merge_params),
+        original.getGroupingSetsParamsList(),
+        /*final_=*/true,
+        /*memory_efficient_aggregation_=*/false,
+        /*memory_efficient_merge_threads_=*/0,
+        original.shouldProduceResultsInBucketOrder(),
+        original.getMaxBlockSize(),
+        original.getMaxBlockSizeForAggregationInOrder(),
+        original.usingMemoryBoundMerging());
+    step->setStepDescription(fmt::format("EagerMerge: {}", original.getStepDescription()), 200);
+    return step;
+}
+
 /// Walk the chain bottom-up, reconstructing intermediate joins with updated
 /// headers.  Returns {final_group_id, final_header} or nullopt on failure.
 static std::optional<std::pair<GroupId, SharedHeader>> reconstructChain(
@@ -365,9 +517,8 @@ bool EagerAggregation::checkPattern(GroupExpressionPtr expression, const Express
         {
             if (const auto * join_step = typeid_cast<const JoinStepLogical *>(child_expr->getQueryPlanStep()))
             {
-                /// Non-equi joins are barriers: reconstructJoin cannot rebuild
-                /// them without losing predicates, so we cannot push aggregation
-                /// through them or use them as candidates.
+                if (join_step->getJoinOperator().kind != JoinKind::Inner)
+                    continue;
                 if (!hasOnlyEquiPredicates(*join_step))
                     continue;
                 return true;
@@ -390,50 +541,7 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     chassert(agg_step && expression->inputs.size() == 1);
 
-    /// Collect all join candidates reachable from the agg, tracking the chain
-    /// of intermediate steps (Expression steps and joins) between agg and each candidate.
-    /// FilterSteps are NOT followed — pushing aggregation past a filter would
-    /// aggregate rows that should have been discarded.
-    struct JoinCandidate
-    {
-        GroupExpressionPtr join_expr;
-        std::vector<ChainElement> chain;
-    };
-    std::vector<JoinCandidate> join_candidates;
-
-    auto collect_joins = [&](GroupId group_id, std::vector<ChainElement> chain, auto & self, int depth) -> void
-    {
-        if (depth > 10)
-            return;
-        auto group = memo.getGroup(group_id);
-        for (const auto & child_expr : group->logical_expressions)
-        {
-            if (const auto * join_step = typeid_cast<const JoinStepLogical *>(child_expr->getQueryPlanStep());
-                join_step && child_expr->inputs.size() == 2)
-            {
-                /// Non-equi joins are barriers: reconstructJoin cannot rebuild
-                /// them, so skip as candidate and do not recurse through.
-                if (!hasOnlyEquiPredicates(*join_step))
-                    continue;
-
-                join_candidates.push_back({child_expr, chain});
-                for (size_t i = 0; i < child_expr->inputs.size(); ++i)
-                {
-                    auto deeper_chain = chain;
-                    deeper_chain.push_back({child_expr, /*is_join=*/true, /*downward_input_idx=*/i});
-                    self(child_expr->inputs[i].group_id, deeper_chain, self, depth + 1);
-                }
-            }
-            else if (child_expr->inputs.size() == 1
-                && typeid_cast<const ExpressionStep *>(child_expr->getQueryPlanStep()))
-            {
-                auto new_chain = chain;
-                new_chain.push_back({child_expr, /*is_join=*/false});
-                self(child_expr->inputs[0].group_id, new_chain, self, depth + 1);
-            }
-        }
-    };
-    collect_joins(expression->inputs[0].group_id, {}, collect_joins, 0);
+    auto join_candidates = collectJoinCandidates(expression->inputs[0].group_id, memo);
 
     /// Build set of all columns referenced by aggregate functions.
     NameSet agg_argument_columns;
@@ -448,19 +556,7 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
         const auto * join_step = typeid_cast<const JoinStepLogical *>(join_expr_ptr->getQueryPlanStep());
         chassert(join_step);
 
-        /// Extract equi-join key pairs (left = fromLeft, right = fromRight).
-        std::vector<JoinKeyPair> equi_keys;
-        for (const auto & predicate : join_step->getJoinOperator().expression)
-        {
-            auto [op, left_node, right_node] = predicate.asBinaryPredicate();
-            if (op != JoinConditionOperator::Equals)
-                continue;
-            if (left_node.fromRight() && right_node.fromLeft())
-                std::swap(left_node, right_node);
-            else if (!left_node.fromLeft() || !right_node.fromRight())
-                continue;
-            equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName()});
-        }
+        auto equi_keys = extractEquiJoinKeys(*join_step);
         if (equi_keys.empty())
             continue;
 
@@ -504,18 +600,18 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
         /// If agg arguments are computed expressions (not raw push-side columns),
         /// extract the minimal Expression subgraph that computes them.
         const auto & push_side_input_header = *join_step->getInputHeaders()[push_side];
-        bool header_has_args = true;
+        bool need_extract_dag = false;
         for (const auto & arg_col : agg_argument_columns)
         {
             if (!push_side_input_header.has(arg_col))
             {
-                header_has_args = false;
+                need_extract_dag = true;
                 break;
             }
         }
 
         std::optional<ActionsDAG> extracted_dag;
-        if (!header_has_args)
+        if (need_extract_dag)
         {
             extracted_dag = extractAggArgumentDAG(agg_argument_columns, push_side_join_keys, push_side_input_header, passthrough_steps);
             if (!extracted_dag)
@@ -525,32 +621,7 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
             }
         }
 
-        /// Build partial aggregation: keys = push-side join keys.
-        const auto & orig_params = agg_step->getParams();
-        Aggregator::Params inner_params(
-            push_side_join_keys,
-            orig_params.aggregates,
-            /*overflow_row=*/false,
-            orig_params.max_rows_to_group_by,
-            orig_params.group_by_overflow_mode,
-            orig_params.group_by_two_level_threshold,
-            orig_params.group_by_two_level_threshold_bytes,
-            orig_params.max_bytes_before_external_group_by,
-            orig_params.empty_result_for_aggregation_by_empty_set,
-            orig_params.tmp_data_scope,
-            orig_params.max_threads,
-            orig_params.min_free_disk_space,
-            orig_params.compile_aggregate_expressions,
-            orig_params.min_count_to_compile_aggregate_expression,
-            orig_params.max_block_size,
-            orig_params.enable_prefetch,
-            /*only_merge=*/false,
-            /*optimize_group_by_constant_keys=*/false,
-            orig_params.min_hit_rate_to_use_consecutive_keys_optimization,
-            orig_params.stats_collecting_params,
-            orig_params.enable_producing_buckets_out_of_order_in_aggregation,
-            orig_params.serialize_string_with_zero_byte);
-
+        /// Build input header for the partial aggregation.
         SharedHeader partial_input_header;
         if (extracted_dag)
         {
@@ -564,34 +635,16 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
             partial_input_header = join_step->getInputHeaders()[push_side];
         }
 
-        if (!validateHeader(*partial_input_header, push_side_join_keys, orig_params.aggregates))
+        if (!validateHeader(*partial_input_header, push_side_join_keys, agg_step->getParams().aggregates))
         {
             LOG_TEST(getLogger("EagerAgg"), "skip: partial header missing columns");
             continue;
         }
 
-        auto partial_step_ptr = std::make_unique<AggregatingStep>(
-            partial_input_header,
-            std::move(inner_params),
-            /*grouping_sets_params=*/GroupingSetsParamsList{},
-            /*final=*/false,
-            agg_step->getMaxBlockSize(),
-            agg_step->getMaxBlockSizeForAggregationInOrder(),
-            /*merge_threads=*/0,
-            /*temporary_data_merge_threads=*/0,
-            /*storage_has_evenly_distributed_read=*/false,
-            /*group_by_use_nulls=*/false,
-            /*sort_description_for_merging=*/SortDescription{},
-            /*group_by_sort_description=*/SortDescription{},
-            /*should_produce_results_in_order_of_bucket_number=*/false,
-            /*memory_bound_merging=*/false,
-            /*explicit_sorting_required_for_aggregation_in_order=*/false);
-        partial_step_ptr->setStepDescription(fmt::format("EagerPartial: {}", agg_step->getStepDescription()), 200);
-
+        /// Build partial aggregation step and insert into memo.
+        auto partial_step_ptr = makePartialAggStep(*agg_step, push_side_join_keys, partial_input_header);
         const auto agg_output_header = partial_step_ptr->getOutputHeader();
 
-        /// If agg arguments are computed, place an ExpressionStep between
-        /// the raw table and the partial agg.
         GroupExpression::Input partial_input;
         if (extracted_dag)
         {
@@ -600,8 +653,7 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
             expr_step->setStepDescription("EagerExpr");
             GroupExpressionPtr expr_group_expr = std::make_shared<GroupExpression>(std::move(expr_step));
             expr_group_expr->inputs = {join_expr_ptr->inputs[push_side]};
-            GroupId expr_group_id = memo.addGroup(expr_group_expr);
-            partial_input = {expr_group_id, {}};
+            partial_input = {memo.addGroup(expr_group_expr), {}};
         }
         else
         {
@@ -612,13 +664,11 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
         partial_expr->inputs = {partial_input};
         GroupId partial_group_id = memo.addGroup(partial_expr);
 
-        /// Build the target join with the aggregated side's header replaced.
+        /// Reconstruct the target join with the aggregated side's header replaced.
         size_t other_side = 1 - push_side;
         auto agg_side_header = std::make_shared<Block>(*agg_output_header);
-        const auto & other_side_header = join_step->getInputHeaders()[other_side];
-
-        SharedHeader new_left_header = (push_side == 0) ? SharedHeader(agg_side_header) : other_side_header;
-        SharedHeader new_right_header = (push_side == 0) ? other_side_header : SharedHeader(agg_side_header);
+        SharedHeader new_left_header = (push_side == 0) ? SharedHeader(agg_side_header) : join_step->getInputHeaders()[other_side];
+        SharedHeader new_right_header = (push_side == 0) ? join_step->getInputHeaders()[other_side] : SharedHeader(agg_side_header);
 
         auto new_join_step_ptr = reconstructJoin(*join_step, new_left_header, new_right_header, "EagerJoin: ");
         if (!new_join_step_ptr)
@@ -628,7 +678,6 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
         }
 
         auto target_header = new_join_step_ptr->getOutputHeader();
-
         GroupExpressionPtr new_join_expr = std::make_shared<GroupExpression>(std::move(new_join_step_ptr));
         if (push_side == 0)
             new_join_expr->inputs = {{partial_group_id, {}}, join_expr_ptr->inputs[1]};
@@ -645,8 +694,7 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
         }
         auto [final_group_id, final_header] = *chain_result;
 
-        /// Validate that the final header has all GROUP BY keys and aggregate
-        /// state columns needed by the merge step.
+        /// Validate final header and build the merge step.
         bool merge_valid = true;
         for (const auto & key : agg_step->getParams().keys)
             if (!final_header->has(key))
@@ -660,22 +708,7 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
             continue;
         }
 
-        /// MergingAggregated on top merges partial states with the full key set.
-        auto merge_params = agg_step->getParams();
-        merge_params.only_merge = true;
-        auto merge_step_ptr = std::make_unique<MergingAggregatedStep>(
-            final_header,
-            std::move(merge_params),
-            agg_step->getGroupingSetsParamsList(),
-            /*final_=*/true,
-            /*memory_efficient_aggregation_=*/false,
-            /*memory_efficient_merge_threads_=*/0,
-            agg_step->shouldProduceResultsInBucketOrder(),
-            agg_step->getMaxBlockSize(),
-            agg_step->getMaxBlockSizeForAggregationInOrder(),
-            agg_step->usingMemoryBoundMerging());
-        merge_step_ptr->setStepDescription(fmt::format("EagerMerge: {}", agg_step->getStepDescription()), 200);
-
+        auto merge_step_ptr = makeMergeStep(*agg_step, final_header);
         GroupExpressionPtr merge_expr = std::make_shared<GroupExpression>(std::move(merge_step_ptr));
         merge_expr->inputs = {{final_group_id, {}}};
         merge_expr->setApplied(*this, {});
