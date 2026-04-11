@@ -817,21 +817,6 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
     }
 
-    if (distributed_plan.stages.size() == 1)
-    {
-        /// For now just replace the plan with the first and only fragment, but preserve
-        /// table locks and storage holders accumulated during planning.
-        QueryPlanResourceHolder preserved_resources = std::move(resources);
-        *this = std::move(distributed_plan.stages.begin()->second.query_plan_fragment);
-        /// QueryPlanResourceHolder's move-assignment appends rhs into lhs without dropping existing entries.
-        resources = std::move(preserved_resources);
-
-        QueryPlanOptimizationSettings local_settings = optimization_settings;
-        local_settings.make_distributed_plan = false;
-        local_settings.enable_cascades_optimizer = false;
-        QueryPlanOptimizations::optimizeTreeSecondPass(local_settings, *root, nodes, *this);
-    }
-    else
     {
         ExchangeDescription final_result_exchange
         {
