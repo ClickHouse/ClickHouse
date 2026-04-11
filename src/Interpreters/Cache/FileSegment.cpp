@@ -1194,6 +1194,18 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     if (download_state == State::DETACHED)
         return;
 
+#if USE_ROCKSDB
+    /// Remove from RocksDB index BEFORE the file is deleted from disk.
+    /// If a crash happens between index removal and file deletion,
+    /// the worst case is an orphaned file (leaked disk space),
+    /// which is safer than a stale index entry pointing to a missing file.
+    if (!cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
+
+    if (auto index = cache->getRocksDBIndex())
+        index->remove(file_key, offset());
+#endif
+
     if (!downloader_id.empty())
         resetDownloaderUnlocked(lock);
     setDetachedState(lock);
