@@ -74,7 +74,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "oldest_part_to_get",                   std::make_shared<DataTypeString>(),   "The name of the part to fetch from other replicas obtained from the oldest GET_PARTS entry in the replication queue."},
         { "oldest_part_to_merge_to",              std::make_shared<DataTypeString>(),   "The result part name to merge to obtained from the oldest MERGE_PARTS entry in the replication queue."},
         { "oldest_part_to_mutate_to",             std::make_shared<DataTypeString>(),   "The result part name to mutate to obtained from the oldest MUTATE_PARTS entry in the replication queue."},
-        { "log_max_index",                        std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity."},
+        { "log_max_index",                        std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity. This column and the next three (`log_pointer`, `total_replicas`, `active_replicas`) have a non-zero value only where there is an active session with ClickHouse Keeper."},
         { "log_pointer",                          std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one. "
                                                                                              "If log_pointer is much smaller than log_max_index, something is wrong."},
         { "last_queue_update",                    std::make_shared<DataTypeDateTime>(), "When the queue was updated last time."},
