@@ -29,7 +29,7 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
         {"type", std::make_shared<DataTypeString>(), "The disk type which tells where this disk stores the data - RAM, local drive or remote storage."},
         {"object_storage_type", std::make_shared<DataTypeString>(), "Type of object storage if disk type is object_storage"},
         {"metadata_type", std::make_shared<DataTypeString>(), "Type of metadata storage if disk type is object_storage"},
-        {"is_encrypted", std::make_shared<DataTypeUInt8>(), "Flag which shows whether this disk ecrypts the underlying data. "},
+        {"is_encrypted", std::make_shared<DataTypeUInt8>(), "Flag which shows whether this disk encrypts the underlying data."},
         {"is_read_only", std::make_shared<DataTypeUInt8>(), "Flag which indicates that you can only perform read operations with this disk."},
         {"is_write_once", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is write-once. Which means that it does support BACKUP to this disk, but does not support INSERT into MergeTree table on this disk."},
         {"is_remote", std::make_shared<DataTypeUInt8>(), "Flag which indicated what operations with this disk involve network interaction."},
