@@ -11,8 +11,23 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    Keyword getKeyword(ViewTarget::Kind kind)
+    {
+        switch (kind)
+        {
+            case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mydata
+            case ViewTarget::Inner:   return Keyword::INNER;   /// INNER ENGINE = MergeTree()
+            case ViewTarget::Data:    return Keyword::DATA;    /// DATA mydb.mydata
+            case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
+            case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
+        }
+        UNREACHABLE();
+    }
 }
 
 ViewTarget::~ViewTarget() = default;
@@ -21,33 +36,6 @@ ViewTarget::ViewTarget(const ViewTarget & other) = default;
 ViewTarget & ViewTarget::operator=(const ViewTarget & other) = default;
 
 ViewTarget::ViewTarget(Kind kind_) : kind(kind_) {}
-
-std::string_view toString(ViewTarget::Kind kind)
-{
-    switch (kind)
-    {
-        case ViewTarget::To:      return "to";
-        case ViewTarget::Inner:   return "inner";
-        case ViewTarget::Data:    return "data";
-        case ViewTarget::Tags:    return "tags";
-        case ViewTarget::Metrics: return "metrics";
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "{} doesn't support kind {}", __FUNCTION__, kind);
-}
-
-void parseFromString(ViewTarget::Kind & out, std::string_view str)
-{
-    for (auto kind : magic_enum::enum_values<ViewTarget::Kind>())
-    {
-        if (toString(kind) == str)
-        {
-            out = kind;
-            return;
-        }
-    }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: Unexpected string {}", __FUNCTION__, str);
-}
-
 
 std::vector<ViewTarget::Kind> ASTViewTargets::getKinds() const
 {
@@ -226,71 +214,21 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
 {
     if (target.table_id)
     {
-        auto keyword = getKeywordForTableID(target.kind);
-        if (!keyword)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No keyword for table name of kind {}", toString(target.kind));
-        ostr <<  " " << toStringView(*keyword)
-               << " "
-               << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
-               << backQuoteIfNeed(target.table_id.table_name);
+        ostr << s.nl_or_ws << toStringView(getKeyword(target.kind)) << " "
+             << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
+             << backQuoteIfNeed(target.table_id.table_name);
     }
 
     if (target.inner_uuid != UUIDHelpers::Nil)
     {
-        auto keyword = getKeywordForInnerUUID(target.kind);
-        if (!keyword)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for inner UUID of kind {}", toString(target.kind));
-        ostr << " " << toStringView(*keyword)
-               << " " << quoteString(toString(target.inner_uuid));
+        ostr << s.nl_or_ws << toStringView(getKeyword(target.kind)) << " INNER UUID " << quoteString(toString(target.inner_uuid));
     }
 
     if (target.inner_engine)
     {
-        auto keyword = getKeywordForInnerStorage(target.kind);
-        if (!keyword)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for table engine of kind {}", toString(target.kind));
-        ostr << " " << toStringView(*keyword);
+        ostr << s.nl_or_ws << toStringView(getKeyword(target.kind));
         target.inner_engine->format(ostr, s, state, frame);
     }
-}
-
-std::optional<Keyword> ASTViewTargets::getKeywordForTableID(ViewTarget::Kind kind)
-{
-    switch (kind)
-    {
-        case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mydata
-        case ViewTarget::Inner:   return std::nullopt;
-        case ViewTarget::Data:    return Keyword::DATA;    /// DATA mydb.mydata
-        case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
-        case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
-    }
-    UNREACHABLE();
-}
-
-std::optional<Keyword> ASTViewTargets::getKeywordForInnerStorage(ViewTarget::Kind kind)
-{
-    switch (kind)
-    {
-        case ViewTarget::To:      return std::nullopt;      /// ENGINE = MergeTree()
-        case ViewTarget::Inner:   return Keyword::INNER;    /// INNER ENGINE = MergeTree()
-        case ViewTarget::Data:    return Keyword::DATA;     /// DATA ENGINE = MergeTree()
-        case ViewTarget::Tags:    return Keyword::TAGS;     /// TAGS ENGINE = MergeTree()
-        case ViewTarget::Metrics: return Keyword::METRICS;  /// METRICS ENGINE = MergeTree()
-    }
-    UNREACHABLE();
-}
-
-std::optional<Keyword> ASTViewTargets::getKeywordForInnerUUID(ViewTarget::Kind kind)
-{
-    switch (kind)
-    {
-        case ViewTarget::To:      return Keyword::TO_INNER_UUID;       /// TO INNER UUID 'XXX'
-        case ViewTarget::Inner:   return std::nullopt;
-        case ViewTarget::Data:    return Keyword::DATA_INNER_UUID;     /// DATA INNER UUID 'XXX'
-        case ViewTarget::Tags:    return Keyword::TAGS_INNER_UUID;     /// TAGS INNER UUID 'XXX'
-        case ViewTarget::Metrics: return Keyword::METRICS_INNER_UUID;  /// METRICS INNER UUID 'XXX'
-    }
-    UNREACHABLE();
 }
 
 void ASTViewTargets::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)

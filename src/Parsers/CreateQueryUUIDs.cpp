@@ -11,9 +11,47 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace ServerSetting
 {
-extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
+    extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
+}
+
+namespace
+{
+    ViewTarget::Kind parseViewTargetKindFromString(std::string_view str)
+    {
+        if (auto kind = magic_enum::enum_cast<ViewTarget::Kind>(str))
+        {
+            return *kind;
+        }
+        else if (str == "to")
+        {
+            return ViewTarget::To;
+        }
+        else if (str == "inner")
+        {
+            return ViewTarget::Inner;
+        }
+        else if (str == "data")
+        {
+            return ViewTarget::Data;
+        }
+        else if (str == "tags")
+        {
+            return ViewTarget::Tags;
+        }
+        else if (str == "metrics")
+        {
+            return ViewTarget::Metrics;
+        }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
+    }
 }
 
 CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
@@ -102,7 +140,7 @@ String CreateQueryUUIDs::toString() const
     for (const auto & [kind, inner_uuid] : targets_inner_uuids)
     {
         if (inner_uuid != UUIDHelpers::Nil)
-            add_name_and_uuid_to_string(::DB::toString(kind), inner_uuid);
+            add_name_and_uuid_to_string(magic_enum::enum_name(kind), inner_uuid);
     }
     out << "}";
     return out.str();
@@ -132,8 +170,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
         }
         else
         {
-            ViewTarget::Kind kind;
-            parseFromString(kind, name);
+            ViewTarget::Kind kind = parseViewTargetKindFromString(name);
             res.setTargetInnerUUID(kind, parse<UUID>(value));
         }
         if (in.peek(c) && c == ',')
