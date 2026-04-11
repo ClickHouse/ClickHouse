@@ -796,12 +796,16 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 namespace QueryPlanOptimizations
 {
 
+bool canExecuteRemotely(const QueryPlan::Node & node);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 
 }
 
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
+    if (!QueryPlanOptimizations::canExecuteRemotely(*root))
+        return;
+
     SharedHeader result_header = root->step->getOutputHeader();
 
     QueryPlan::Nodes old_nodes = std::move(nodes);

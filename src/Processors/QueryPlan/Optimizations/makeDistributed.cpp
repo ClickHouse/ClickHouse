@@ -43,6 +43,21 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
+/// True if all steps can be sent to a remote stateless worker.
+bool canExecuteRemotely(const QueryPlan::Node & node)
+{
+    if (node.children.empty())
+    {
+        if (typeid_cast<const ReadFromMergeTree *>(node.step.get()))
+            return true;
+        return node.step->isSerializable();
+    }
+    for (const auto * child : node.children)
+        if (!canExecuteRemotely(*child))
+            return false;
+    return true;
+}
+
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
