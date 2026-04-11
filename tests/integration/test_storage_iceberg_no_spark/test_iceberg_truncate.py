@@ -8,14 +8,13 @@ from pyiceberg.schema import Schema, NestedField
 from pyiceberg.types import LongType, StringType
 from pyiceberg.partitioning import PartitionSpec
 
-BASE_URL_LOCAL_RAW = "http://localhost:8182"
 CATALOG_NAME = "demo"
 
 def load_catalog_impl(started_cluster):
     return load_catalog(
         CATALOG_NAME,
         **{
-            "uri": BASE_URL_LOCAL_RAW,
+            "uri": f"http://localhost:{started_cluster.iceberg_rest_catalog_port}",
             "type": "rest",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
