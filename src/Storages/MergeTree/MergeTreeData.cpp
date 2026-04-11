@@ -1196,7 +1196,25 @@ void MergeTreeData::setProperties(
     /// The minmax index files are stored per-column (order-independent), but the hyperrectangle
     /// is populated at load time based on the current metadata's column order.
     if (new_metadata.hasPartitionKey())
+    {
         checkPartitionKeyAndInitMinMax(new_metadata.partition_key);
+
+        /// Reload minmax hyperrectangles for all in-memory parts so they
+        /// reflect the new column order used by minmax_idx_time_column_pos
+        /// and minmax_idx_date_column_pos.  Without this, parts inserted
+        /// before an ALTER that reorders columns would have stale
+        /// hyperrectangle slot assignments, causing getMinMaxTime /
+        /// getMinMaxDate to read the wrong value.
+        for (const auto & part : getDataPartsForInternalUsage())
+        {
+            if (!part->info.isPatch() && part->minmax_idx && part->minmax_idx->initialized)
+            {
+                auto new_minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+                new_minmax_idx->load(*part);
+                const_cast<IMergeTreeDataPart &>(*part).minmax_idx = std::move(new_minmax_idx);
+            }
+        }
+    }
 
     std::lock_guard lock(patch_parts_metadata_mutex);
     patch_parts_metadata_cache.clear();

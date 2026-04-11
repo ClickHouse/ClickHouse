@@ -105,3 +105,55 @@ INSERT INTO test_nullable_datetime64_partition (id, event_time) VALUES (1, NULL)
 SELECT 1 FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_datetime64_partition' AND active;
 
 DROP TABLE IF EXISTS test_nullable_datetime64_partition;
+
+-- =====================================================
+-- Case 4: INSERT before ALTER reorders columns (from PR review #93111, Apr 3)
+-- When data is inserted before ALTER MODIFY COLUMN ... AFTER, the in-memory
+-- hyperrectangle has the old column order but minmax_idx_time_column_pos is
+-- updated to the new order, causing getMinMaxTime to read the wrong slot.
+-- =====================================================
+DROP TABLE IF EXISTS test_minmax_insert_before_alter;
+
+CREATE TABLE test_minmax_insert_before_alter (a Int32, b DateTime) ENGINE = MergeTree()
+    PARTITION BY (a, b) ORDER BY tuple();
+
+INSERT INTO test_minmax_insert_before_alter (a, b) VALUES (42, toDateTime('2024-06-15 12:00:00'));
+
+ALTER TABLE test_minmax_insert_before_alter MODIFY COLUMN a Int32 AFTER b;
+
+-- min_time should be 2024-06-15 12:00:00, not 1970-01-01 00:00:42
+SELECT
+    (SELECT min(toUInt32(b)) FROM test_minmax_insert_before_alter) = toUInt32(min_time) AS min_time_correct
+FROM system.parts
+WHERE database = currentDatabase() AND table = 'test_minmax_insert_before_alter' AND active;
+
+-- Filtering by min_time should find the part
+SELECT count() > 0 AS filter_works
+FROM system.parts
+WHERE database = currentDatabase() AND table = 'test_minmax_insert_before_alter' AND active
+  AND min_time >= toDateTime('2024-01-01 00:00:00');
+
+DROP TABLE IF EXISTS test_minmax_insert_before_alter;
+
+-- =====================================================
+-- Case 5: Nullable(Date) partition key with all NULLs
+-- Covers the all-NULL branch in getMinMaxDate
+-- =====================================================
+DROP TABLE IF EXISTS test_nullable_date_partition;
+
+CREATE TABLE test_nullable_date_partition
+(
+    id UInt64,
+    event_date Nullable(Date)
+)
+ENGINE = MergeTree()
+PARTITION BY event_date
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_nullable_date_partition (id, event_date) VALUES (1, NULL), (2, NULL);
+
+-- Should return 1 (has parts) without error
+SELECT 1 FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_date_partition' AND active;
+
+DROP TABLE IF EXISTS test_nullable_date_partition;
