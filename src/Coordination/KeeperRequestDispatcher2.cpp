@@ -161,10 +161,10 @@ KeeperRequestDispatcher2::KeeperRequestDispatcher2(KeeperServer * server_)
     ///        queue is big).
     responses_queue.init(static_cast<size_t>(static_cast<double>(max_request_queue_size) * 3.0));
 
+    in_flight_batches = std::vector<InFlightBatch>(std::max(size_t(coordination_settings[CoordinationSetting::max_in_flight_request_batches]), size_t(1)));
+
     dispatch_thread = ThreadFromGlobalPool([this] { dispatchThread(); });
     response_thread = ThreadFromGlobalPool([this] { responseThread(); });
-
-    in_flight_batches = std::vector<InFlightBatch>(std::max(size_t(coordination_settings[CoordinationSetting::max_in_flight_request_batches]), size_t(1)));
 }
 
 void KeeperRequestDispatcher2::shutdown(bool closed_all_connections)
@@ -447,12 +447,20 @@ void KeeperRequestDispatcher2::dispatchThread()
                     auto slept = std::chrono::steady_clock::now() - sleep_start;
                     if (slept >= std::chrono::milliseconds(operation_timeout_ms) || shutting_down.load())
                         break;
-                    if (server->isLeaderAlive() &&
-                        (!current_stream_is_suspect.load() || slept >= std::chrono::milliseconds(
-                            keeper_context->getCoordinationSettings()[CoordinationSetting::stream_suspect_retry_delay_ms].totalMilliseconds())) &&
-                        (head_idx.load() == tail_idx.load() || slept >= std::chrono::milliseconds(
-                            keeper_context->getCoordinationSettings()[CoordinationSetting::stream_in_flight_drain_timeout_ms].totalMilliseconds())))
+
+                    auto is_delaying_reconnect = [&]
+                    {
+                        return current_stream_is_suspect.load() && slept < std::chrono::milliseconds(
+                            keeper_context->getCoordinationSettings()[CoordinationSetting::stream_suspect_retry_delay_ms].totalMilliseconds());
+                    };
+                    auto is_waiting_for_in_flight_requests = [&]
+                    {
+                        return head_idx.load() < tail_idx.load() && slept < std::chrono::milliseconds(
+                            keeper_context->getCoordinationSettings()[CoordinationSetting::stream_in_flight_drain_timeout_ms].totalMilliseconds());
+                    };
+                    if (server->isLeaderAlive() && !is_delaying_reconnect() && !is_waiting_for_in_flight_requests())
                         break;
+
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
 
@@ -804,7 +812,11 @@ void KeeperRequestDispatcher2::onCommit(const KeeperRequestForSession & request_
     const auto & req = batch.requests.at(batch.committed_requests);
     if (req.session_id != request_for_session.session_id ||
         req.request->xid != request_for_session.request->xid)
+    {
+        chassert(false);
+        LOG_ERROR(log, "Requests that were passed to KeeperAppendStream as one batch ended up not all committed consecutively. This should be impossible!");
         return;
+    }
 
     if (current_stream_is_suspect.load())
         current_stream_is_suspect.store(false); // a request succeeded, the stream is working

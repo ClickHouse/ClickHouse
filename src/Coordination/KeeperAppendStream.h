@@ -8,9 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Coordination/KeeperCommon.h>
 
-#include <future>
 #include <functional>
-#include <mutex>
 
 namespace DB
 {

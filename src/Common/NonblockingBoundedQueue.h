@@ -56,6 +56,8 @@ template <typename T>
 class NonblockingBoundedQueue
 {
 public:
+    static_assert(std::is_nothrow_move_assignable_v<T>, "NonblockingBoundedQueue requires noexcept move assignment to avoid permanent deadlock");
+
     NonblockingBoundedQueue() = default; // must call init() before using
     explicit NonblockingBoundedQueue(size_t min_capacity)
     {

@@ -102,15 +102,13 @@ void KeeperAppendStream::putRequestBatch(const KeeperRequestsForSessions & reque
     else
     {
         /// Form the message the same way as nuraft's append_entries.
-        nuraft::ptr<nuraft::req_msg> req = nuraft::cs_new<nuraft::req_msg>
-            (0, nuraft::msg_type::client_request, 0, 0, 0, 0, 0);
+        auto req = nuraft::cs_new<nuraft::req_msg>(0, nuraft::msg_type::client_request, 0, 0, 0, 0, 0);
         req->set_extra_flags(nuraft::req_msg::STREAM_FORWARDING_REQUEST);
         req->log_entries().reserve(entries.size());
         for (auto & buf : entries)
         {
             buf->pos(0);
-            nuraft::ptr<nuraft::log_entry> log(nuraft::cs_new<nuraft::log_entry>
-                (0, buf, nuraft::log_val_type::app_log));
+            auto log = nuraft::cs_new<nuraft::log_entry>(0, buf, nuraft::log_val_type::app_log);
             req->log_entries().push_back(log);
         }
 
