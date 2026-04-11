@@ -283,7 +283,7 @@ void MergeTreeReadersChain::executePrewhereActions(MergeTreeRangeReader & reader
 
 void MergeTreeReadersChain::addPatchVirtuals(ReadResult & result, const Block & header) const
 {
-    if (result.num_rows == 0)
+    if (patch_readers.empty() || result.num_rows == 0)
         return;
 
     auto result_block = header.cloneWithColumns(result.columns);

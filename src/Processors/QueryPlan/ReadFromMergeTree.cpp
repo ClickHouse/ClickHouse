@@ -611,7 +611,7 @@ Pipe ReadFromMergeTree::readFromPool(
     /// Compute prewhere actions for the pipelined reader.
     PrewhereExprInfo prewhere_actions;
     Block result_header;
-    Block prewhere_header;
+
     if (use_pipelined)
     {
         prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
@@ -624,9 +624,6 @@ Pipe ReadFromMergeTree::readFromPool(
 
         result_header = MergeTreeSelectProcessor::transformHeader(
             pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info);
-
-        prewhere_header = MergeTreePrewhereSource::computePrewhereHeader(
-            result_header, pool->getHeader(), prewhere_actions);
     }
 
     Pipes pipes;
@@ -636,13 +633,13 @@ Pipe ReadFromMergeTree::readFromPool(
         if (use_pipelined)
         {
             auto source = std::make_shared<MergeTreePrewhereSource>(
-                prewhere_header, pool, i, prewhere_actions, block_size, index_build_context);
+                result_header, pool, i, prewhere_actions, block_size, index_build_context);
 
             if (i == 0)
                 source->addTotalRowsApprox(total_rows);
 
             auto transform = std::make_shared<MergeTreeRestColumnsTransform>(
-                prewhere_header, result_header, source->getRestBytesCounter());
+                result_header, result_header, source->getRestBytesCounter());
 
             pipe = Pipe(std::move(source));
             pipe.addTransform(std::move(transform));
@@ -753,7 +750,7 @@ Pipe ReadFromMergeTree::readInOrder(
     /// Compute prewhere actions for the pipelined reader.
     PrewhereExprInfo prewhere_actions;
     Block result_header;
-    Block prewhere_header;
+
     if (use_pipelined)
     {
         prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
@@ -766,9 +763,6 @@ Pipe ReadFromMergeTree::readInOrder(
 
         result_header = MergeTreeSelectProcessor::transformHeader(
             pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info);
-
-        prewhere_header = MergeTreePrewhereSource::computePrewhereHeader(
-            result_header, pool->getHeader(), prewhere_actions);
     }
 
     Pipes pipes;
@@ -792,13 +786,13 @@ Pipe ReadFromMergeTree::readInOrder(
         if (use_pipelined)
         {
             auto source = std::make_shared<MergeTreePrewhereSource>(
-                prewhere_header, pool, i, prewhere_actions, block_size, index_build_context);
+                result_header, pool, i, prewhere_actions, block_size, index_build_context);
 
             if (set_total_rows_approx)
                 source->addTotalRowsApprox(total_rows);
 
             auto transform = std::make_shared<MergeTreeRestColumnsTransform>(
-                prewhere_header, result_header, source->getRestBytesCounter());
+                result_header, result_header, source->getRestBytesCounter());
 
             pipe = Pipe(std::move(source));
             pipe.addTransform(std::move(transform));

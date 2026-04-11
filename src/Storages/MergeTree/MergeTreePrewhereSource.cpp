@@ -174,8 +174,8 @@ std::optional<Chunk> MergeTreePrewhereSource::tryGenerate()
 
         progress(read_result.numReadRows(), read_result.numBytesRead());
 
-        /// Build chunk from prewhere columns only. The output header is narrow
-        /// (prewhere columns only); RestColumnsTransform adds rest columns downstream.
+        /// Build chunk: prewhere columns come from the read result,
+        /// rest columns are filled with type defaults (replaced by RestColumnsTransform).
         const auto & output_header = getPort().getHeader();
         Columns ordered_columns;
         ordered_columns.reserve(output_header.columns());
@@ -183,8 +183,16 @@ std::optional<Chunk> MergeTreePrewhereSource::tryGenerate()
         for (size_t i = 0; i < output_header.columns(); ++i)
         {
             const auto & col_name = output_header.getByPosition(i).name;
-            size_t prewhere_idx = sample_block.getPositionByName(col_name);
-            ordered_columns.push_back(read_result.columns[prewhere_idx]);
+            if (sample_block.has(col_name))
+            {
+                size_t prewhere_idx = sample_block.getPositionByName(col_name);
+                ordered_columns.push_back(read_result.columns[prewhere_idx]);
+            }
+            else
+            {
+                ordered_columns.push_back(
+                    output_header.getByPosition(i).type->createColumnConstWithDefaultValue(read_result.num_rows));
+            }
         }
 
         auto chunk = Chunk(std::move(ordered_columns), read_result.num_rows);
