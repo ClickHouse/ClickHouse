@@ -11,12 +11,12 @@ SET max_block_size = 1;
 -- was absent from the chunk, so AFTER firing in a later chunk would produce
 -- rows instead of an empty result.
 SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 6 UNTIL number = 2);
-SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 6 UNTIL number = 2 SETTINGS enable_analyzer = 0);
+SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 6 UNTIL number = 2) SETTINGS enable_analyzer = 0;
 
 -- UNTIL fires in the chunk immediately before AFTER fires.
 -- `number = 5` fires at row 5, `number = 6` fires at row 6.  Window never opens.
 SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 6 UNTIL number = 5);
-SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 6 UNTIL number = 5 SETTINGS enable_analyzer = 0);
+SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 6 UNTIL number = 5) SETTINGS enable_analyzer = 0;
 
 -- Normal window that spans multiple chunks (AFTER at row 2, UNTIL at row 5).
 SELECT number FROM numbers(8) ORDER BY number LIMIT AFTER number >= 2 UNTIL number >= 5;
@@ -40,15 +40,15 @@ SELECT number FROM numbers(5) ORDER BY number LIMIT UNTIL number >= 3 SETTINGS e
 
 -- UNTIL fires at row 0: result is empty.
 SELECT count() FROM (SELECT number FROM numbers(5) ORDER BY number LIMIT UNTIL number >= 0);
-SELECT count() FROM (SELECT number FROM numbers(5) ORDER BY number LIMIT UNTIL number >= 0 SETTINGS enable_analyzer = 0);
+SELECT count() FROM (SELECT number FROM numbers(5) ORDER BY number LIMIT UNTIL number >= 0) SETTINGS enable_analyzer = 0;
 
 -- AFTER and UNTIL fire on the same row: window is empty (UNTIL is exclusive).
 SELECT count() FROM (SELECT number FROM numbers(5) ORDER BY number LIMIT AFTER number >= 3 UNTIL number >= 3);
-SELECT count() FROM (SELECT number FROM numbers(5) ORDER BY number LIMIT AFTER number >= 3 UNTIL number >= 3 SETTINGS enable_analyzer = 0);
+SELECT count() FROM (SELECT number FROM numbers(5) ORDER BY number LIMIT AFTER number >= 3 UNTIL number >= 3) SETTINGS enable_analyzer = 0;
 
 -- AFTER never fires: empty result.
 SELECT count() FROM (SELECT number FROM numbers(5) ORDER BY number LIMIT AFTER number >= 10);
-SELECT count() FROM (SELECT number FROM numbers(5) ORDER BY number LIMIT AFTER number >= 10 SETTINGS enable_analyzer = 0);
+SELECT count() FROM (SELECT number FROM numbers(5) ORDER BY number LIMIT AFTER number >= 10) SETTINGS enable_analyzer = 0;
 
 -- ALL mode: windows span multiple chunks; rows_read accumulates correctly.
 SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) ALL;
