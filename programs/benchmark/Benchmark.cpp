@@ -117,7 +117,7 @@ public:
         max_consecutive_errors(options["max-consecutive-errors"].as<size_t>()),
         reconnect(options["reconnect"].as<size_t>()),
         display_client_side_time(options.contains("client-side-time")),
-        multiline(options.contains("multiline")),
+        multiquery(options.contains("multiquery")),
         print_stacktrace(print_stacktrace_),
         settings(std::move(settings_)),
         shared_context(Context::createShared()),
@@ -267,7 +267,7 @@ private:
     size_t max_consecutive_errors;
     size_t reconnect;
     bool display_client_side_time;
-    bool multiline;
+    bool multiquery;
     bool print_stacktrace;
     const Settings & settings;
     SharedContextHolder shared_context;
@@ -452,7 +452,7 @@ private:
         {
             ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
-            if (multiline)
+            if (multiquery)
             {
                 String all_queries_text;
                 readStringUntilEOF(all_queries_text, in);
@@ -885,7 +885,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("help", "Print usage summary and exit; combine with --verbose to display all options")
             ("verbose", "Increase output verbosity")
             ("query,q",       value<std::string>()->default_value(""),          "query to execute")
-            ("multiline,m",                                                     "allow multi-line queries (split by ';' instead of newline)")
+            ("multiquery,m",                                                    "instead of reading the list of queries as a TSV-formatted data, parse them directly as a script with multiple queries, separated by semicolons.")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("max_concurrency,C", value<unsigned>()->default_value(0),          "gradually increase number of parallel queries up to specified value, making one report for every concurrency level")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")

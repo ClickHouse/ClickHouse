@@ -47,7 +47,7 @@ clickhouse-benchmark [keys] < queries_file;
 - `--query=QUERY` — Query to execute. If this parameter is not passed, `clickhouse-benchmark` will read queries from standard input.
 - `--query_id=ID` — Query Id.
 - `--query_id_prefix=ID_PREFIX` — Query Id Prefix.
-- `-m`, `--multiline` — Allow multi-line queries (split by ';' instead of newline).
+- `-m`, `--multiquery` — Instead of reading the list of queries as a TSV-formatted data, parse them directly as a script with multiple queries, separated by semicolons.
 - `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
 - `-C N`, `--max_concurrency=N` — Gradually increases number of parallel queries up to specified value, making one report for every concurrency level.
 - `--precise` — Enables precise per-interval reporting with weighted metrics.
