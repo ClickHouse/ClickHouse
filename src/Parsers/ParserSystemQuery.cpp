@@ -390,6 +390,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+                res->coverage_test_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            break;
+        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
@@ -439,6 +446,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
         case Type::RESTART_DISK:
+        case Type::CLEAR_DISK_METADATA_CACHE:
+        case Type::WAIT_BLOBS_CLEANUP:
         {
             if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
@@ -453,6 +462,19 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ false, /* allow_string_literal = */ false))
                 return false;
+            break;
+        }
+
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
+                return false;
+            if (!ParserKeyword{Keyword::PATH}.ignore(pos, expected))
+                return false;
+            ASTPtr path_ast;
+            if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
+                return false;
+            res->queue_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
             break;
         }
 
@@ -662,12 +684,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (path_parser.parse(pos, ast, expected))
                 res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
             if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
-            break;
-        }
-        case Type::CLEAR_DISK_METADATA_CACHE:
-        {
-            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
             break;
         }

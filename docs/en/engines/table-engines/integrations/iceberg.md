@@ -26,7 +26,7 @@ Note that the Iceberg table must already exist in the storage, this command does
 
 ```sql
 CREATE TABLE iceberg_table_s3
-    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])
+    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], [,extra_credentials])
 
 CREATE TABLE iceberg_table_azure
     ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
@@ -42,6 +42,8 @@ CREATE TABLE iceberg_table_local
 
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
+
+For `IcebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
 
@@ -73,6 +75,38 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 ## Aliases {#aliases}
 
 Table engine `Iceberg` is an alias to `IcebergS3` now.
+
+## Data types {#data-types}
+
+The following table shows how Iceberg data types are mapped to ClickHouse data types during schema inference (for reading purposes).
+
+### Primitive types {#primitive-types}
+
+| Iceberg type | ClickHouse type | Notes |
+|---|---|---|
+| `boolean` | `Bool` | |
+| `int` | `Int32` | |
+| `long`, `bigint` | `Int64` | |
+| `float` | `Float32` | |
+| `double` | `Float64` | |
+| `date` | `Date32` | |
+| `time` | `Int64` | Microseconds since midnight |
+| `timestamp` | `DateTime64(6)` | Microseconds, no timezone |
+| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, UTC timezone |
+| `timestamp_ns` | `DateTime64(9)` | Nanoseconds, no timezone (since Iceberg v3 only) |
+| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, UTC timezone (since Iceberg v3 only) |
+| `string`, `binary` | `String` | |
+| `uuid` | `UUID` | |
+| `fixed(N)` | `FixedString(N)` | |
+| `decimal(P, S)` | `Decimal(P, S)` | |
+
+### Complex types {#complex-types}
+
+| Iceberg type | ClickHouse type |
+|---|---|
+| `list` | `Array` |
+| `map` | `Map` |
+| `struct` | `Tuple` |
 
 ## Schema evolution {#schema-evolution}
 ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
@@ -278,7 +312,7 @@ After identifying candidate files using the above rules, the system determines w
   * The file with the highest version number is selected
   * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 
-**Note**: All mentioned settings are engine-level settings and must be specified during table creation as shown below:
+**Note**: All mentioned settings (unless explicitly specified otherwise) are engine-level settings and must be specified during table creation as shown below:
 
 ```sql 
 CREATE TABLE example_table ENGINE = Iceberg(
@@ -295,6 +329,34 @@ CREATE TABLE example_table ENGINE = Iceberg(
 ## Metadata cache {#metadata-cache}
 
 `Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. The cache is stored in memory. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
+
+## Asynchronous metadata prefetching {#async-metadata-prefetch}
+
+Asynchronous metadata prefetching can be enabled at `Iceberg` table creation by setting `iceberg_metadata_async_prefetch_period_ms`. If set to 0 (default) or if metadata caching is not enabled, the asynchronous prefetching is disabled.
+In order to enable this feature, a non-zero value of milliseconds should be given. It represents interval between prefetching cycles.
+
+If enabled, the server will run a recurring background operation to list the remote catalog and to detect new metadata version. It will then parse it and recursively walk the snapshot, fetching active manifest list files and manifest files.
+The files already available at the metadata cache, won't be downloaded again. At the end of each prefetching cycle, the latest metadata snapshot is available at the metadata cache.
+
+```sql
+CREATE TABLE example_table ENGINE = Iceberg(
+    's3://bucket/path/to/iceberg_table'
+) SETTINGS
+    iceberg_metadata_async_prefetch_period_ms = 60000;
+```
+
+In order to make the most of asynchronous metadata prefetching at read operations, `iceberg_metadata_staleness_ms` parameter should be specified as Query or Session parameter. By default (0 - not specified) in the context of each query, the server will fetch latest metadata from the remote catalog.
+By specifying tolerance to metadata staleness, the server is allowed to use the cached version of metadata snapshot without calling the remote catalog. If there's metadata version in cache, and it has been downloaded within the given window of staleness, it will be used to process the query.
+Otherwise the latest version will be fetched from the remote catalog.
+
+```sql
+SELECT count() FROM icebench_table WHERE ...
+SETTINGS iceberg_metadata_staleness_ms=120000
+```
+
+**Note**: Asynchronous metadata prefetching runs at `ICEBERG_SCEDULE_POOL`, which is server-side threadpool for background operations on active `Iceberg` tables. The size of this threadpool is controlled by `iceberg_background_schedule_pool_size` server configuration parameter (default is 10).
+
+**Note**: Current expectation is that metadata cache size is sufficient to hold the latest metadata snapshot in full for all active tables, if asynchronous prefetching is enabled.
 
 ## See also {#see-also}
 

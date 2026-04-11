@@ -34,3 +34,14 @@ SELECT tokens('\\\\%test'), tokensForLikePattern('\\\\%test');
 SELECT tokens('abc%d'), tokensForLikePattern('abc%d');
 SELECT tokens('%%%%'), tokensForLikePattern('%%%%');
 SELECT tokens('____'), tokensForLikePattern('____');
+
+-- asciiCJK tokenizer
+SELECT 'asciiCJK:';
+SELECT tokens('hello', 'asciiCJK'), tokensForLikePattern('hello', 'asciiCJK');
+SELECT tokens('你好世界', 'asciiCJK'), tokensForLikePattern('你好世界', 'asciiCJK');
+SELECT tokens('hello', 'asciiCJK'), tokensForLikePattern('%hello%', 'asciiCJK');
+SELECT tokens('hello_world', 'asciiCJK'), tokensForLikePattern('hello\_world%', 'asciiCJK');
+SELECT tokens('你好世界', 'asciiCJK'), tokensForLikePattern('%你好%世界%', 'asciiCJK');
+SELECT tokens('a:bc.d', 'asciiCJK'), tokensForLikePattern('a:b%c.d', 'asciiCJK');
+SELECT tokens('测试数据', 'asciiCJK'), tokensForLikePattern('%测试，数据%', 'asciiCJK');
+SELECT tokens('test_data', 'asciiCJK'), tokensForLikePattern('test\_%data', 'asciiCJK');

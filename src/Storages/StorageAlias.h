@@ -122,7 +122,7 @@ public:
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
-    bool supportsDynamicSubcolumns() const override { return getTargetTable()->supportsDynamicSubcolumns(); }
+    bool supportsColumnsWithDynamicStructure() const override { return getTargetTable()->supportsColumnsWithDynamicStructure(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
     bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
@@ -147,7 +147,7 @@ public:
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
 
-    NamesAndTypesList getVirtuals() const { return getTargetTable()->getVirtualsList(); }
+    VirtualsDescriptionPtr getVirtuals() const { return getTargetTable()->getVirtualsPtr(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,

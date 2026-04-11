@@ -25,7 +25,6 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
-#include <Coordination/CoordinationSettings.h>
 
 namespace DB
 {
@@ -34,11 +33,6 @@ namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-}
-
-namespace CoordinationSetting
-{
-    extern const CoordinationSettingsUInt64 max_request_size;
 }
 
 KeeperHTTPRequestHandlerFactory::KeeperHTTPRequestHandlerFactory(const std::string & name_) : log(getLogger(name_)), name(name_)
@@ -121,10 +115,8 @@ void addStorageHandlersToFactory(
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     std::shared_ptr<KeeperHTTPClient> keeper_client)
 {
-    auto max_request_size = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::max_request_size];
-
-    auto creator = [keeper_client, max_request_size]() -> std::unique_ptr<KeeperHTTPStorageHandler>
-    { return std::make_unique<KeeperHTTPStorageHandler>(keeper_client, max_request_size); };
+    auto creator = [keeper_client, keeper_context = keeper_dispatcher->getKeeperContext()]() -> std::unique_ptr<KeeperHTTPStorageHandler>
+    { return std::make_unique<KeeperHTTPStorageHandler>(keeper_client, keeper_context); };
 
     auto storage_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPStorageHandler>>(std::move(creator));
     storage_handler->attachNonStrictPath("/api/v1/storage");

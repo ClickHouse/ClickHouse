@@ -12,6 +12,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -24,9 +25,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ErrnoException.h>
 
-#ifdef OS_LINUX
 #include <Common/SymbolIndex.h>
-#endif
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -74,12 +73,6 @@ namespace
 
 // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
 std::atomic<pid_t> server_pid;
-
-#ifdef OS_LINUX
-const int STACK_TRACE_SERVICE_SIGNAL = SIGRTMIN;
-#else
-const int STACK_TRACE_SERVICE_SIGNAL = SIGUSR1;
-#endif
 
 std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
 std::atomic<int> data_ready_num = 0;
@@ -311,7 +304,7 @@ bool isSignalBlocked(UInt64 tid, int signal)
 
         UInt64 sig_blk;
         if (parseHexNumber(line, sig_blk))
-            return sig_blk & signal;
+            return sig_blk & (1ULL << (signal - 1));
     }
     catch (const Exception & e)
     {
@@ -532,7 +525,16 @@ protected:
                     }
 
                     /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
-                    if (wait(pipe_read_timeout_ms) && sequence_num.load(std::memory_order_acquire) == data_ready_num.load(std::memory_order_acquire))
+                    bool got_response = wait(pipe_read_timeout_ms)
+                        && sequence_num.load(std::memory_order_acquire) == data_ready_num.load(std::memory_order_acquire);
+
+                    /// Reset expected_responding_thread immediately after wait to close the race window:
+                    /// a delayed signal handler from this thread must not pass the pthread_self() check
+                    /// after the SCOPE_EXIT increments sequence_num (which would let it write the new
+                    /// sequence number to the pipe and have its response misattributed to the next thread).
+                    expected_responding_thread.store(0, std::memory_order_release);
+
+                    if (got_response)
 #endif
                     {
                         size_t stack_trace_size = stack_trace.getSize();
@@ -549,8 +551,8 @@ protected:
                             uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
                             uintptr_t physical_addr = uintptr_t(virtual_addr) - virtual_offset;
 #else
-                            /// On macOS, SymbolIndex is not available (uses dl_iterate_phdr).
-                            /// Store virtual addresses directly; they can be resolved with atos or lldb.
+                            /// On macOS, SymbolIndex uses absolute virtual addresses for symbols,
+                            /// so we store virtual addresses directly in the trace column.
                             uintptr_t physical_addr = uintptr_t(virtual_addr);
 #endif
                             arr.emplace_back(physical_addr);
@@ -707,7 +709,7 @@ private:
 
 
 StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , log(getLogger("StorageSystemStackTrace"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -718,6 +720,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
     }));
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 
     notification_pipe.open();
 
@@ -742,7 +745,15 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
 }
 
 
-void StorageSystemStackTrace::read(
+VirtualColumnsDescription StorageSystemStackTrace::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemStackTrace::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

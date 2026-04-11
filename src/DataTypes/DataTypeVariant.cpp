@@ -142,6 +142,11 @@ bool DataTypeVariant::textCanContainOnlyValidUTF8() const
     return std::all_of(variants.begin(), variants.end(), [](auto && elem) { return elem->textCanContainOnlyValidUTF8(); });
 }
 
+bool DataTypeVariant::hasDynamicStructure() const
+{
+    return std::ranges::any_of(variants, [](auto && elem) { return elem->hasDynamicStructure(); });
+}
+
 bool DataTypeVariant::haveMaximumSizeOfValue() const
 {
     return std::all_of(variants.begin(), variants.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
@@ -183,7 +188,7 @@ SerializationPtr DataTypeVariant::doGetSerialization(const SerializationInfoSett
         variant_names.push_back(variant->getName());
     }
 
-    return std::make_shared<SerializationVariant>(variants, serializations, variant_names, getName());
+    return SerializationVariant::create(variants, serializations, variant_names, getName());
 }
 
 void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback) const

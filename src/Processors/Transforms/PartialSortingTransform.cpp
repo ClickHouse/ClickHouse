@@ -171,7 +171,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
             if (threshold_tracker)
             {
                 Field value;
-                sort_description_threshold_columns[0]->get(0, value); /// only single number equivalent column
+                sort_description_threshold_columns[0]->get(0, value);
                 threshold_tracker->testAndSet(value);
             }
         }

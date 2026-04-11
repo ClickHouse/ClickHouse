@@ -28,6 +28,8 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 
+#include <filesystem>
+
 
 namespace ProfileEvents
 {
@@ -56,7 +58,10 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TO_NONENCRYPTED_DISK;
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
+    extern const int INSECURE_PATH;
 }
+
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -90,6 +95,43 @@ namespace
         if (path.starts_with('/'))
             return path.substr(1);
         return path;
+    }
+
+    /// Validate that a file name from a backup does not contain path traversal sequences.
+    /// This prevents a corrupted or tampered backup from accessing files outside the intended directories during restore.
+    void validateFileNameFromBackup(const String & file_name, const String & field_name, const String & backup_name_for_logging)
+    {
+        fs::path path(file_name);
+
+        /// Reject absolute or rooted paths.
+        if (path.is_absolute() || path.has_root_name() || path.has_root_directory())
+            throw Exception(
+                ErrorCodes::INSECURE_PATH,
+                "Backup {}: <{}> {} is an absolute path, which is not allowed",
+                backup_name_for_logging,
+                field_name,
+                quoteString(file_name));
+
+        /// Normalize the path and check that it does not escape the backup root.
+        auto normalized = path.lexically_normal();
+
+        /// Reject empty or degenerate paths.
+        if (normalized.empty() || normalized == fs::path("."))
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: <{}> {} is empty or invalid",
+                backup_name_for_logging,
+                field_name,
+                quoteString(file_name));
+
+        /// After normalization, a path that escapes the root starts with "..".
+        if (*normalized.begin() == "..")
+            throw Exception(
+                ErrorCodes::INSECURE_PATH,
+                "Backup {}: <{}> {} resolves to a path outside the backup, which is not allowed",
+                backup_name_for_logging,
+                field_name,
+                quoteString(file_name));
     }
 }
 
@@ -140,15 +182,13 @@ BackupImpl::BackupImpl(
 BackupImpl::BackupImpl(
     const BackupInfo & backup_info_,
     const ArchiveParams & archive_params_,
-    std::shared_ptr<IBackupReader> reader_,
-    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_)
+    std::shared_ptr<IBackupReader> reader_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::UNLOCK)
     , reader(reader_)
-    , lightweight_snapshot_writer(lightweight_snapshot_writer_)
     , log(getLogger("BackupImpl"))
 {
     open();
@@ -512,6 +552,7 @@ void BackupImpl::readBackupMetadata()
             const Poco::XML::Node * file_config = child;
             BackupFileInfo info;
             info.file_name = getString(file_config, "name");
+            validateFileNameFromBackup(info.file_name, "name", backup_name_for_logging);
             info.object_key = getString(file_config, "object_key", "");
             info.size = getUInt64(file_config, "size");
             if (info.size)
@@ -543,6 +584,8 @@ void BackupImpl::readBackupMetadata()
                 if (info.size > info.base_size)
                 {
                     info.data_file_name = getString(file_config, "data_file", info.file_name);
+                    if (info.data_file_name != info.file_name)
+                        validateFileNameFromBackup(info.data_file_name, "data_file", backup_name_for_logging);
                 }
                 info.encrypted_by_disk = getBool(file_config, "encrypted_by_disk", false);
             }
@@ -1191,20 +1234,5 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
     }
 }
 
-void BackupImpl::removeAllFilesUnderDirectory(const String & directory) const
-{
-    LOG_INFO(log, "Removing all files of under directory {}", directory);
-
-    Strings files_to_remove = listFiles(directory, true);
-    Strings objects_to_remove;
-    for (const String & file_name : files_to_remove)
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        String file_object_key = file_object_keys.at(fs::path(removeLeadingSlash(directory)) / file_name);
-        objects_to_remove.push_back(file_object_key);
-    }
-
-    lightweight_snapshot_writer->removeFiles(objects_to_remove);
 }
 
-}

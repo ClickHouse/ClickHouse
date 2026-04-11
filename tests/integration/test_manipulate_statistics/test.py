@@ -31,7 +31,7 @@ node_old = cluster.add_instance(
     tag="25.12",
     with_installed_binary=True,
     stay_alive=True,
-    user_configs=["config/config.xml"],
+    user_configs=["config/config_old.xml"],
 )
 
 

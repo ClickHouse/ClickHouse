@@ -231,6 +231,11 @@ public:
 
     void setDownloadFailed();
 
+    /// Mark that no more data will be written to this segment (e.g. the remote object turned out
+    /// to be smaller than expected), without treating it as a failure.
+    /// The segment will be shrunk to the actually downloaded size during completion.
+    void setDownloadFinishedWithoutContinuation();
+
     bool isBackgroundDownloadEnabled() const { return background_download_enabled; }
 
 private:
