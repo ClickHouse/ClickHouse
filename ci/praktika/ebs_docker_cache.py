@@ -367,12 +367,12 @@ def mount_cache_volume(snapshot_id: str) -> Optional[str]:
     mounted = False
 
     try:
-        # Stop Docker
-        print("EBS docker cache: stopping Docker")
+        # 1. Stop Docker
+        print("EBS docker cache [mount]: stopping Docker")
         Shell.check("sudo systemctl stop docker docker.socket containerd", verbose=True)
 
-        # Create volume from snapshot
-        print(f"EBS docker cache: creating volume from snapshot [{snapshot_id}] in [{az}]")
+        # 2. Create volume from snapshot
+        print(f"EBS docker cache [mount]: creating volume from snapshot [{snapshot_id}] in [{az}]")
         resp = ec2.create_volume(
             SnapshotId=snapshot_id,
             AvailabilityZone=az,
@@ -388,12 +388,13 @@ def mount_cache_volume(snapshot_id: str) -> Optional[str]:
             ],
         )
         volume_id = resp["VolumeId"]
+        print(f"EBS docker cache [mount]: volume [{volume_id}] created, waiting for available...")
         _wait_for_volume_status(ec2, volume_id, "available")
 
-        # Attach
+        # 3. Attach
         devs_before = _get_block_devices()
         device = _find_free_device(instance_id, region)
-        print(f"EBS docker cache: attaching [{volume_id}] as [{device}]")
+        print(f"EBS docker cache [mount]: attaching [{volume_id}] as [{device}]")
         ec2.attach_volume(
             Device=device,
             InstanceId=instance_id,
@@ -401,8 +402,9 @@ def mount_cache_volume(snapshot_id: str) -> Optional[str]:
         )
         _wait_for_volume_status(ec2, volume_id, "in-use")
         actual_device = _wait_for_new_device(devs_before, volume_id)
+        print(f"EBS docker cache [mount]: attached as [{actual_device}]")
 
-        # Mount EBS and bind-mount docker + containerd subdirs
+        # 4. Mount EBS and bind-mount docker + containerd subdirs
         Shell.check(f"sudo mkdir -p {_CACHE_MOUNT}", verbose=True, strict=True)
         Shell.check(
             f"sudo mount -o noatime {actual_device} {_CACHE_MOUNT}",
@@ -413,10 +415,12 @@ def mount_cache_volume(snapshot_id: str) -> Optional[str]:
         Shell.check(f"sudo mount --bind {_CACHE_MOUNT}/docker {_DOCKER_MOUNT}", verbose=True, strict=True)
         Shell.check(f"sudo mount --bind {_CACHE_MOUNT}/containerd /var/lib/containerd", verbose=True, strict=True)
 
-        # Start Docker
-        print("EBS docker cache: starting Docker with cached images")
+        # 5. Start Docker and verify images
+        print("EBS docker cache [mount]: starting Docker with cached images")
         Shell.check("sudo systemctl start docker", verbose=True, strict=True)
         Shell.check("docker images", verbose=True)
+        image_count = Shell.get_output("docker images -q | wc -l") or "0"
+        print(f"EBS docker cache [mount]: Docker ready, {image_count.strip()} images available")
 
         return volume_id
 

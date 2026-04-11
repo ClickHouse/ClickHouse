@@ -966,6 +966,7 @@ class Runner:
             and not no_docker
             and not local_run
         ):
+            print("=== EBS Docker Cache: looking up snapshot ===")
             try:
                 from .ebs_docker_cache import (
                     calc_combined_digest,
@@ -980,26 +981,37 @@ class Runner:
                         or calc_combined_digest(run_config.digest_dockers)
                     )
                     arch = "arm" if Utils.is_arm() else "amd"
+                    print(
+                        f"EBS docker cache: digest=[{combined}] arch=[{arch}] region=[{Settings.AWS_REGION}]"
+                    )
                     snapshot_id = find_snapshot(
                         combined, arch, Settings.AWS_REGION
                     )
                     if snapshot_id:
+                        print(
+                            f"EBS docker cache: found snapshot [{snapshot_id}], mounting..."
+                        )
                         ebs_cache_volume_id = mount_cache_volume(snapshot_id)
                         if ebs_cache_volume_id:
                             print(
-                                f"EBS docker cache: volume [{ebs_cache_volume_id}] mounted"
+                                f"EBS docker cache: SUCCESS — volume [{ebs_cache_volume_id}] mounted, images ready"
                             )
                         else:
                             print(
-                                "WARNING: EBS docker cache mount failed, falling back to pull"
+                                "EBS docker cache: FAILED — mount returned None, falling back to docker pull"
                             )
                     else:
                         print(
-                            f"EBS docker cache: no snapshot for digest=[{combined}] arch=[{arch}]"
+                            f"EBS docker cache: NOT FOUND — no completed snapshot for digest=[{combined}] arch=[{arch}], falling back to docker pull"
                         )
+                else:
+                    print(
+                        "EBS docker cache: SKIPPED — no digest_dockers in RunConfig"
+                    )
             except Exception as e:
-                print(f"WARNING: EBS docker cache: {e}")
+                print(f"EBS docker cache: ERROR — {e}, falling back to docker pull")
                 traceback.print_exc()
+            print("=== EBS Docker Cache: done ===")
 
         if res:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
