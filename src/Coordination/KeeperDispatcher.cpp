@@ -84,7 +84,7 @@ namespace ErrorCodes
 }
 
 KeeperDispatcher::KeeperDispatcher()
-    : configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
+    : server_config(std::make_shared<KeeperConfiguration>())
     , log(getLogger("KeeperDispatcher"))
 {}
 
@@ -92,8 +92,10 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
-    configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper, std::make_shared<CoordinationSettings>(configuration_and_settings->coordination_settings));
+    server_config = KeeperConfiguration::loadFromConfig(config, standalone_keeper);
+    auto coordination_settings = std::make_shared<CoordinationSettings>();
+    coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper, std::move(coordination_settings));
 
     keeper_context->initialize(config, this);
 
@@ -102,7 +104,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     snapshot_s3.startup(config, macros);
 
     server = std::make_unique<KeeperServer>(
-        configuration_and_settings,
+        server_config,
         config,
         [this](KeeperResponseForSession response)
         {
@@ -137,7 +139,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
-        server->startup(config, configuration_and_settings->enable_ipv6);
+        server->startup(config, server_config->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
         if (!start_async)
@@ -309,7 +311,7 @@ void KeeperDispatcher::sessionCleanerTask()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        auto time_to_sleep = configuration_and_settings->coordination_settings[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds();
+        auto time_to_sleep = keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds();
         std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep));
     }
 }
@@ -461,7 +463,7 @@ void KeeperDispatcher::clusterUpdateThread()
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
 
             std::this_thread::sleep_for(last_command_was_leader_change
-                ? std::chrono::milliseconds(configuration_and_settings->coordination_settings[CoordinationSetting::sleep_before_leader_change_ms].totalMilliseconds())
+                ? std::chrono::milliseconds(keeper_context->getCoordinationSettings()[CoordinationSetting::sleep_before_leader_change_ms].totalMilliseconds())
                 : 50ms);
         }
     }
@@ -513,6 +515,10 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     snapshot_s3.updateS3Configuration(config, macros);
 
     keeper_context->updateKeeperMemorySoftLimit(config);
+
+    auto new_settings = std::make_shared<CoordinationSettings>();
+    new_settings->loadFromConfig("keeper_server.coordination_settings", config);
+    keeper_context->updateSettings(new_settings);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests)
