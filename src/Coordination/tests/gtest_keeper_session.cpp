@@ -183,7 +183,7 @@ protected:
 }
 
 /// Test: write goes to per-session queue, read with no preceding writes goes to fast path.
-TEST_F(KeeperSessionTest, WriteGoesToLocalQueue_ReadGoesToFastPath)
+TEST_F(KeeperSessionTest, WriteGoesToLocalQueueReadGoesToFastPath)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     ASSERT_EQ(local_reads.size(), 0);
@@ -203,7 +203,7 @@ TEST_F(KeeperSessionTest, WriteGoesToLocalQueue_ReadGoesToFastPath)
 }
 
 /// Test: read deferred behind write, released on commit.
-TEST_F(KeeperSessionTest, ReadDeferredBehindWrite_ReleasedOnCommit)
+TEST_F(KeeperSessionTest, ReadDeferredBehindWriteReleasedOnCommit)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeReadRequest(2))));
@@ -277,7 +277,7 @@ TEST_F(KeeperSessionTest, ReadsDeferredBehindDifferentWrites)
 /// Test: writes always enter Raft immediately (no PendingRaft).
 /// The executor boundary prevents the session thread from executing
 /// reads behind a write, preserving head-only onRaftResponse.
-TEST_F(KeeperSessionTest, WriteAlwaysInRaft_ReadsDrainedByCommit)
+TEST_F(KeeperSessionTest, WriteAlwaysInRaftReadsDrainedByCommit)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeReadRequest(10))));
@@ -303,7 +303,7 @@ TEST_F(KeeperSessionTest, WriteAlwaysInRaft_ReadsDrainedByCommit)
 }
 
 /// Test: session failure terminates the session, orphans remaining requests.
-TEST_F(KeeperSessionTest, SessionFailure_TerminatesSession)
+TEST_F(KeeperSessionTest, SessionFailureTerminatesSession)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeReadRequest(2))));
@@ -316,7 +316,7 @@ TEST_F(KeeperSessionTest, SessionFailure_TerminatesSession)
 }
 
 /// Test: after session failure, no new requests accepted.
-TEST_F(KeeperSessionTest, SessionFailure_RejectsNewRequests)
+TEST_F(KeeperSessionTest, SessionFailureRejectsNewRequests)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     auto w1 = submitOne();
@@ -371,7 +371,7 @@ TEST_F(KeeperSessionTest, NonMonotonicXIDs)
 }
 
 /// Test: Close is terminal — no reads can be deferred behind it.
-TEST_F(KeeperSessionTest, CloseIsTerminal_RejectsSubsequentRequests)
+TEST_F(KeeperSessionTest, CloseIsTerminalRejectsSubsequentRequests)
 {
     /// Submit a write, then Close.
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
@@ -410,7 +410,7 @@ TEST_F(KeeperSessionTest, CloseCommitDoesNotReleaseReads)
 /// Test: Close response is delivered through drainCompleted (not onRaftResponse).
 /// Verifies the P1 fix: session must remain findable until onRaftCommitted delivers
 /// the Close response, because detachment happens AFTER onRaftCommitted returns.
-TEST_F(KeeperSessionTest, CloseDeliveredByDrainCompleted_NotByAttach)
+TEST_F(KeeperSessionTest, CloseDeliveredByDrainCompletedNotByAttach)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     auto close_req = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
@@ -445,7 +445,7 @@ TEST_F(KeeperSessionTest, CloseDeliveredByDrainCompleted_NotByAttach)
 }
 
 /// Test: Write behind reads gets New state, then promoted after reads complete.
-TEST_F(KeeperSessionTest, WriteBehindReads_PromotedAfterReadsDrain)
+TEST_F(KeeperSessionTest, WriteBehindReadsPromotedAfterReadsDrain)
 {
     /// R1 goes to Active (fast path, queue empty).
     /// After R1 completes, drainCompleted pops R1. Queue is now empty.
@@ -461,7 +461,7 @@ TEST_F(KeeperSessionTest, WriteBehindReads_PromotedAfterReadsDrain)
 }
 
 /// Test: Read-Write-Read-Write pattern with interleaved completion.
-TEST_F(KeeperSessionTest, ReadWriteReadWrite_InterleavedCompletion)
+TEST_F(KeeperSessionTest, ReadWriteReadWriteInterleavedCompletion)
 {
     /// Setup: make local_read NOT fill response so we can control timing.
     bool block_reads = true;
@@ -520,7 +520,7 @@ TEST_F(KeeperSessionTest, ReadWriteReadWrite_InterleavedCompletion)
 
 /// Test: batch read optimization — multiple PendingLocal reads dispatched
 /// in a single local_read_batch call after a write commits.
-TEST_F(KeeperSessionTest, BatchReadOptimization_SingleBatchCall)
+TEST_F(KeeperSessionTest, BatchReadOptimizationSingleBatchCall)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeReadRequest(2))));
@@ -549,7 +549,7 @@ TEST_F(KeeperSessionTest, BatchReadOptimization_SingleBatchCall)
 }
 
 /// Test: single read on empty queue dispatches inline and is delivered.
-TEST_F(KeeperSessionTest, SingleRead_InlineDispatch)
+TEST_F(KeeperSessionTest, SingleReadInlineDispatch)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeReadRequest(1))));
 
@@ -562,7 +562,7 @@ TEST_F(KeeperSessionTest, SingleRead_InlineDispatch)
 /// --- quorum_reads = true tests ---
 
 /// Test: with `quorum_reads` enabled, reads go through Raft like writes.
-TEST_F(KeeperSessionTest, QuorumReads_ReadsGoThroughRaft)
+TEST_F(KeeperSessionTest, QuorumReadsGoThroughRaft)
 {
     auto settings = std::make_shared<CoordinationSettings>();
     (*settings)[CoordinationSetting::quorum_reads] = true;
@@ -578,7 +578,7 @@ TEST_F(KeeperSessionTest, QuorumReads_ReadsGoThroughRaft)
 }
 
 /// Test: quorum read behind a write — both go through Raft.
-TEST_F(KeeperSessionTest, QuorumReads_ReadBehindWrite)
+TEST_F(KeeperSessionTest, QuorumReadsReadBehindWrite)
 {
     auto settings = std::make_shared<CoordinationSettings>();
     (*settings)[CoordinationSetting::quorum_reads] = true;
@@ -599,7 +599,7 @@ TEST_F(KeeperSessionTest, QuorumReads_ReadBehindWrite)
 /// --- onWatchNotification tests ---
 
 /// Test: watch notifications bypass the FIFO and are delivered immediately.
-TEST_F(KeeperSessionTest, DeliverWatch_BypassesFIFO)
+TEST_F(KeeperSessionTest, DeliverWatchBypassesFIFO)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
 
@@ -619,7 +619,7 @@ TEST_F(KeeperSessionTest, DeliverWatch_BypassesFIFO)
 /// --- deliverDirect tests ---
 
 /// Test: `deliverDirect` delivers directly, bypassing the FIFO.
-TEST_F(KeeperSessionTest, DeliverResponse_DirectDelivery)
+TEST_F(KeeperSessionTest, DeliverResponseDirectDelivery)
 {
     auto response = std::make_shared<Coordination::ZooKeeperGetResponse>();
     response->xid = 42;
@@ -633,7 +633,7 @@ TEST_F(KeeperSessionTest, DeliverResponse_DirectDelivery)
 }
 
 /// Test: `deliverDirect` returns NotDelivered on Closed session.
-TEST_F(KeeperSessionTest, DeliverResponse_ClosedSessionRejects)
+TEST_F(KeeperSessionTest, DeliverResponseClosedSessionRejects)
 {
     session->finalizeWithErrors(Coordination::Error::ZSESSIONEXPIRED);
 
@@ -648,7 +648,7 @@ TEST_F(KeeperSessionTest, DeliverResponse_ClosedSessionRejects)
 /// --- finalizeWithErrors tests ---
 
 /// Test: `finalizeWithErrors` delivers error responses for all active requests in FIFO order.
-TEST_F(KeeperSessionTest, FinalizeWithErrors_DeliversErrorsForAllActiveRequests)
+TEST_F(KeeperSessionTest, FinalizeWithErrorsDeliversErrorsForAllActiveRequests)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(2))));
@@ -659,10 +659,10 @@ TEST_F(KeeperSessionTest, FinalizeWithErrors_DeliversErrorsForAllActiveRequests)
 
     /// All three requests should be delivered with error responses.
     ASSERT_EQ(delivered_requests.size(), 3u);
-    for (size_t i = 0; i < delivered_requests.size(); ++i)
+    for (const auto & delivered_request : delivered_requests)
     {
-        ASSERT_TRUE(delivered_requests[i]->response);
-        ASSERT_EQ(delivered_requests[i]->response->error, Coordination::Error::ZCONNECTIONLOSS);
+        ASSERT_TRUE(delivered_request->response);
+        ASSERT_EQ(delivered_request->response->error, Coordination::Error::ZCONNECTIONLOSS);
     }
 
     /// Verify FIFO order by xid.
@@ -675,7 +675,7 @@ TEST_F(KeeperSessionTest, FinalizeWithErrors_DeliversErrorsForAllActiveRequests)
 }
 
 /// Test: `finalizeWithErrors` preserves already-attached Raft responses.
-TEST_F(KeeperSessionTest, FinalizeWithErrors_PreservesAlreadyAttachedResponses)
+TEST_F(KeeperSessionTest, FinalizeWithErrorsPreservesAlreadyAttachedResponses)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(2))));
@@ -704,7 +704,7 @@ TEST_F(KeeperSessionTest, FinalizeWithErrors_PreservesAlreadyAttachedResponses)
 }
 
 /// Test: `finalizeWithErrors` on empty queue returns false, no deliveries.
-TEST_F(KeeperSessionTest, FinalizeWithErrors_EmptyQueue_ReturnsFalse)
+TEST_F(KeeperSessionTest, FinalizeWithErrorsEmptyQueueReturnsFalse)
 {
     auto result = session->finalizeWithErrors(Coordination::Error::ZCONNECTIONLOSS);
     ASSERT_FALSE(result);
@@ -712,7 +712,7 @@ TEST_F(KeeperSessionTest, FinalizeWithErrors_EmptyQueue_ReturnsFalse)
 }
 
 /// Test: `finalizeWithErrors` is idempotent — second call returns false.
-TEST_F(KeeperSessionTest, FinalizeWithErrors_Idempotent)
+TEST_F(KeeperSessionTest, FinalizeWithErrorsIdempotent)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
 
@@ -727,7 +727,7 @@ TEST_F(KeeperSessionTest, FinalizeWithErrors_Idempotent)
 }
 
 /// Test: `finalizeWithErrors` on already-Closed session returns false.
-TEST_F(KeeperSessionTest, FinalizeWithErrors_ClosedSession_ReturnsFalse)
+TEST_F(KeeperSessionTest, FinalizeWithErrorsClosedSessionReturnsFalse)
 {
     session->finalizeWithErrors(Coordination::Error::ZSESSIONEXPIRED);
 
@@ -737,14 +737,14 @@ TEST_F(KeeperSessionTest, FinalizeWithErrors_ClosedSession_ReturnsFalse)
 }
 
 /// Test: `addRequest` returns false after `finalizeWithErrors`.
-TEST_F(KeeperSessionTest, FinalizeWithErrors_RejectsNewRequests)
+TEST_F(KeeperSessionTest, FinalizeWithErrorsRejectsNewRequests)
 {
     session->finalizeWithErrors(Coordination::Error::ZSESSIONEXPIRED);
     ASSERT_NE(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
 }
 
 /// Test: `addRequest` rejects when per-session active request limit is reached.
-TEST(KeeperSessionLimitTest, AddRequest_RejectsWhenActiveRequestLimitReached)
+TEST(KeeperSessionLimitTest, AddRequestRejectsWhenActiveRequestLimitReached)
 {
     auto settings = std::make_shared<DB::CoordinationSettings>();
     (*settings)[DB::CoordinationSetting::max_session_active_requests] = 2;
@@ -786,7 +786,7 @@ TEST(KeeperSessionLimitTest, AddRequest_RejectsWhenActiveRequestLimitReached)
 /// --- Close bypass tests ---
 
 /// Test: Close bypasses per-session active request limit.
-TEST(KeeperSessionLimitTest, CloseBypasses_PerSessionLimit)
+TEST(KeeperSessionLimitTest, CloseBypassesPerSessionLimit)
 {
     auto settings = std::make_shared<DB::CoordinationSettings>();
     (*settings)[DB::CoordinationSetting::max_session_active_requests] = 2;
@@ -836,7 +836,7 @@ TEST(KeeperSessionLimitTest, CloseBypasses_PerSessionLimit)
 /// --- onRaftResponse edge cases ---
 
 /// Test: onRaftResponse on Closed session returns NotDelivered.
-TEST_F(KeeperSessionTest, OnRaftResponse_ClosedSession_ReturnsNotDelivered)
+TEST_F(KeeperSessionTest, OnRaftResponseClosedSessionReturnsNotDelivered)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     auto submitted = submitOne();
@@ -851,7 +851,7 @@ TEST_F(KeeperSessionTest, OnRaftResponse_ClosedSession_ReturnsNotDelivered)
 }
 
 /// Test: onRaftResponse on empty FIFO returns NotDelivered.
-TEST_F(KeeperSessionTest, OnRaftResponse_EmptyFifo_ReturnsNotDelivered)
+TEST_F(KeeperSessionTest, OnRaftResponseEmptyFifoReturnsNotDelivered)
 {
     auto response = std::make_shared<Coordination::ZooKeeperGetResponse>();
     response->xid = 1;
@@ -861,7 +861,7 @@ TEST_F(KeeperSessionTest, OnRaftResponse_EmptyFifo_ReturnsNotDelivered)
 }
 
 /// Test: onRaftResponse with wrong XID returns FifoMismatch.
-TEST_F(KeeperSessionTest, OnRaftResponse_XidMismatch_ReturnsFifoMismatch)
+TEST_F(KeeperSessionTest, OnRaftResponseXidMismatchReturnsFifoMismatch)
 {
     ASSERT_EQ(KeeperSession::AddResult::Accepted, session->addRequest(makeKeeperReq(makeWriteRequest(1))));
     auto submitted = submitOne();

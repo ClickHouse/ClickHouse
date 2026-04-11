@@ -290,7 +290,7 @@ void SessionRequest::setState(
 
 void SessionRequest::onCommitCompleted(
     uint64_t pc_start, uint64_t pc_end,
-    uint64_t c_start, uint64_t c_end)
+    uint64_t c_start, uint64_t c_end) const
 {
     if (!request)
         return;

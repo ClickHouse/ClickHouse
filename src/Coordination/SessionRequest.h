@@ -122,8 +122,8 @@ public:
     /// This replaces `mergeCommitSpans` — instead of moving span objects
     /// across threads, we pass plain timestamps and create spans here on
     /// the session's original request.
-    void onCommitCompleted(uint64_t pre_commit_start_us, uint64_t pre_commit_end_us,
-                           uint64_t commit_start_us, uint64_t commit_end_us);
+    void onCommitCompleted(uint64_t pc_start, uint64_t pc_end,
+                           uint64_t c_start, uint64_t c_end) const;
 
     /// --- Session-level fields (set at creation / classification time) ---
 

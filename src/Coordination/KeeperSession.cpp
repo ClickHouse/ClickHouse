@@ -239,7 +239,7 @@ String KeeperSession::serializeActiveRequestsNoLock(size_t max_entries) const
     size_t limit = std::min(active_requests.size(), max_entries);
     for (size_t i = 0; i < limit; ++i)
     {
-        auto & entry = active_requests[i];
+        const auto & entry = active_requests[i];
         if (entry && entry->request)
             result += fmt::format(" [{}]xid={} op={} state={}",
                 i, entry->request->xid,
