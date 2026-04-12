@@ -147,7 +147,10 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
             const auto & table_join = join_ptr->getTableJoin();
             auto kind = table_join.kind();
             auto strictness = table_join.strictness();
-            if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind))
+            /// Grace hash join scatters rows into buckets by hash, destroying the input order.
+            /// We must not propagate read-in-order through joins that reorder rows.
+            if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind)
+                && !join_ptr->hasDelayedBlocks())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
                 if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)

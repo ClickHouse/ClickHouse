@@ -8,7 +8,6 @@
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
-#include <Storages/IStorage.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>

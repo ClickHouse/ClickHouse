@@ -3,7 +3,7 @@
 #include <list>
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Cache/UserCacheUsage.h>
+#include <Interpreters/Cache/CacheUsage.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/Guards.h>
 
