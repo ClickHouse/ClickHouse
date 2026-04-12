@@ -560,6 +560,8 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
     for (const auto & row_policy : row_policy_filter->policies)
     {
         auto name = row_policy->getFullName().toString();
+        if (query_context->hasQueryContext())
+            query_context->getQueryContext()->addUsedRowPolicy(name);
         used_row_policies.emplace(std::move(name));
     }
 
@@ -1354,6 +1356,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
                         auto expression_step = std::make_unique<ExpressionStep>(data_header, std::move(adding_column_dag));
+                        expression_step->setStepDescription("Materializing _table column");
                         query_plan.addStep(std::move(expression_step));
                     }
                 }

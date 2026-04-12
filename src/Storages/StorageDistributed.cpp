@@ -371,10 +371,7 @@ VirtualColumnsDescription StorageDistributed::createVirtuals()
     StorageInMemoryMetadata metadata;
     auto desc = MergeTreeData::createVirtuals(metadata);
 
-    desc.addEphemeral("_shard_num", std::make_shared<DataTypeUInt32>(), "Deprecated. Use function shardNum instead");
-
-    /// Add virtual columns from table with Merge engine.
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of database which the row comes from");
+    desc.addEphemeral("_shard_num", std::make_shared<DataTypeUInt32>(), "Deprecated. Use function shardNum instead", VirtualsMaterializationPlace::Reader);
 
     return desc;
 }
@@ -512,9 +509,13 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
         /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
         /// (since in this case queries processed separately and the initiator is just a proxy in this case).
-        if (to_stage != QueryProcessingStage::Complete)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Queries with distributed_group_by_no_merge=1 should be processed to Complete stage");
+        ///
+        /// We always return Complete here regardless of to_stage, because with
+        /// distributed_group_by_no_merge=1 each shard processes the full query
+        /// independently and the initiator just concatenates results.
+        /// The caller may request a lower stage (e.g. StorageMerge passes
+        /// WithMergeableState when it wraps multiple tables), but that's fine —
+        /// the caller handles storage_stage > processed_stage correctly.
         return QueryProcessingStage::Complete;
     }
 
@@ -890,7 +891,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         /// Subquery in table function `view` may reference tables that don't exist on the initiator.
         if (table_function_node->getTableFunctionName() == "view")
         {
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
             auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
 
             StorageID fake_storage_id = StorageID::createEmpty();
@@ -914,7 +915,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     }
     else
     {
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
 
         auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
 

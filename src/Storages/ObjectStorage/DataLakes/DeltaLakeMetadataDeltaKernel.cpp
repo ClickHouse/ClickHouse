@@ -372,7 +372,7 @@ static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
     NamesAndTypesList virtual_columns;
     for (const auto & column_name : columns)
     {
-        if (auto virtual_column = virtual_columns_description->tryGet(column_name))
+        if (auto virtual_column = virtual_columns_description->tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
             virtual_columns.emplace_back(std::move(*virtual_column));
         else
             non_virtual_columns.push_back(column_name);

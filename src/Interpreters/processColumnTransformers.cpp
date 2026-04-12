@@ -54,7 +54,7 @@ ASTPtr processColumnTransformers(
         const StorageMetadataPtr & metadata_snapshot,
         ASTPtr query_columns)
 {
-    return processColumnTransformersImpl(metadata_snapshot->columns, table->getVirtualsList(), query_columns, current_database, table->getStorageID());
+    return processColumnTransformersImpl(metadata_snapshot->columns, table->getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList(), query_columns, current_database, table->getStorageID());
 }
 
 ASTPtr processColumnTransformers(
