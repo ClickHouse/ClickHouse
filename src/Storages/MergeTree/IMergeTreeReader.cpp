@@ -104,7 +104,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         if (columns[pos] || storage_columns.has(it->name))
             continue;
 
-        auto virtual_column = virtual_columns->tryGet(it->name);
+        auto virtual_column = virtual_columns->tryGet(it->name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
         if (!virtual_column)
             continue;
 

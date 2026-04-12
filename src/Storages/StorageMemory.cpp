@@ -2,6 +2,7 @@
 #include <Core/Settings.h>
 
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -163,7 +164,7 @@ StorageMemory::StorageMemory(
     ConstraintsDescription constraints_,
     const String & comment,
     const MemorySettings & memory_settings_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , data(std::make_unique<const Blocks>())
     , memory_settings(std::make_unique<MemorySettings>(memory_settings_))
 {
@@ -179,7 +180,8 @@ StorageMemory::StorageMemory(
 VirtualColumnsDescription StorageMemory::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     return desc;
 }
 
@@ -195,7 +197,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
-void StorageMemory::read(
+void StorageMemory::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

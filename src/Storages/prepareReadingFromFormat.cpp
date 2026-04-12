@@ -39,7 +39,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     Strings columns_to_read;
     for (const auto & column_name : requested_columns)
     {
-        if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
+        if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
         {
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
         }
