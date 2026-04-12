@@ -1,6 +1,8 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
 #include <Common/quoteString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -138,7 +140,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
 StorageTimeSeriesSelector::StorageTimeSeriesSelector(
     const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_)
-    : IStorage{table_id_}
+    : StorageWithCommonVirtualColumns{table_id_}
     , config(config_)
 {
     const auto * node = config.selector.getRoot();
@@ -152,6 +154,15 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
+}
+
+VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
@@ -410,7 +421,7 @@ namespace
 }
 
 
-void StorageTimeSeriesSelector::read(
+void StorageTimeSeriesSelector::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,

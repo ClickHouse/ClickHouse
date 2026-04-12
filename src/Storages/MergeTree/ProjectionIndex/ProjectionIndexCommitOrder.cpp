@@ -13,7 +13,11 @@ namespace DB
 {
 
 void ProjectionIndexCommitOrder::fillProjectionDescription(
-    ProjectionDescription & result, const IAST * index_expr, const ColumnsDescription & columns, ContextPtr query_context) const
+    ProjectionDescription & result,
+    const IAST * index_expr,
+    const ColumnsDescription & columns,
+    const KeyDescription * partition_key,
+    const ContextPtr & query_context) const
 {
     auto select_query = make_intrusive<ASTProjectionSelectQuery>();
 
@@ -33,7 +37,7 @@ void ProjectionIndexCommitOrder::fillProjectionDescription(
     order_expr_list->children.push_back(order_expr_list->arguments);
     select_query->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, std::move(order_expr_list));
 
-    ProjectionDescription::fillProjectionDescriptionByQuery(result, *select_query, columns, query_context);
+    ProjectionDescription::fillProjectionDescriptionByQuery(result, *select_query, columns, partition_key, query_context);
 }
 
 Block ProjectionIndexCommitOrder::calculate(
