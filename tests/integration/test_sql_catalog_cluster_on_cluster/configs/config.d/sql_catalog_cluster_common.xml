@@ -1,0 +1,33 @@
+<clickhouse>
+    <!-- Shared across ClickHouse nodes (same Keeper ensemble as the server zookeeper configuration). -->
+    <named_collections_storage>
+        <type>zookeeper</type>
+        <path>/clickhouse/test_sql_catalog_cluster_on_cluster/named_collections</path>
+        <update_timeout_ms>5000</update_timeout_ms>
+    </named_collections_storage>
+
+    <distributed_ddl>
+        <path>/clickhouse/test_sql_catalog_cluster_on_cluster/ddl</path>
+    </distributed_ddl>
+
+    <!-- Bootstrap cluster for catalog DDL when shards/clusters metadata is local (not replicated between nodes). -->
+    <remote_servers>
+        <integration_ddl_all>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>ch1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>ch2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>ch3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </integration_ddl_all>
+    </remote_servers>
+</clickhouse>

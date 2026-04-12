@@ -1,0 +1,38 @@
+sqlcat_04071_syn2	['sqlcat_04071_rep1','sqlcat_04071_rep3']	1	0	['sqlcat_04071_syn_cluster']
+sqlcat_04071_syn3	['sqlcat_04071_rep2','sqlcat_04071_rep3']	2	1	[]
+CREATE SHARD sqlcat_04071_syn2 REPLICA (sqlcat_04071_rep1, sqlcat_04071_rep3) PROPERTIES (weight = 1, internal_replication = false)
+CREATE SHARD sqlcat_04071_syn3 REPLICA (sqlcat_04071_rep2, sqlcat_04071_rep3) PROPERTIES (weight = 2, internal_replication = true)
+CREATE CLUSTER sqlcat_04071_syn_cluster (sqlcat_04071_syn2) PROPERTIES (secret = \'sqlcat04071_test_secret\', allow_distributed_ddl_queries = false)
+sqlcat_04071_shard	['sqlcat_04071_rep1','sqlcat_04071_rep2']	2	1	['sqlcat_04071_cluster']
+sqlcat_04071_cluster	1	1	127.0.0.1	9000	default	1	2
+sqlcat_04071_cluster	1	2	127.0.0.1	9000	default	1	2
+CREATE SHARD sqlcat_04071_shard REPLICA (sqlcat_04071_rep1, sqlcat_04071_rep2) PROPERTIES (weight = 2, internal_replication = true)
+CREATE CLUSTER sqlcat_04071_cluster (sqlcat_04071_shard) PROPERTIES (allow_distributed_ddl_queries = true)
+sqlcat_04071_shard	['sqlcat_04071_rep1','sqlcat_04071_rep2']	3	0	['sqlcat_04071_cluster']
+sqlcat_04071_cluster	1	1	127.0.0.1	9000	default	0	3
+sqlcat_04071_cluster	1	2	127.0.0.1	9000	default	0	3
+CREATE SHARD sqlcat_04071_shard REPLICA (sqlcat_04071_rep1, sqlcat_04071_rep2) PROPERTIES (weight = 3, internal_replication = false)
+sqlcat_04071_shard	['sqlcat_04071_rep_alt','sqlcat_04071_rep2']	3	0
+sqlcat_04071_shard	['sqlcat_04071_rep2','sqlcat_04071_rep_alt']	3	0
+sqlcat_04071_shard	['sqlcat_04071_rep_alt','sqlcat_04071_rep2']	3	0
+sqlcat_04071_shard	['sqlcat_04071_rep1','sqlcat_04071_rep_alt']	7	0
+CREATE SHARD sqlcat_04071_shard REPLICA (sqlcat_04071_rep1, sqlcat_04071_rep_alt) PROPERTIES (weight = 7, internal_replication = false)
+sqlcat_04071_shard	['sqlcat_04071_rep1','sqlcat_04071_rep2']	3	1
+sqlcat_04071_shard	['sqlcat_04071_rep1','sqlcat_04071_rep2']	3	1	['sqlcat_04071_cluster']
+sqlcat_04071_cluster	1	1	127.0.0.1	9000	default	1	3
+sqlcat_04071_cluster	1	2	127.0.0.1	9000	default	1	3
+CREATE SHARD sqlcat_04071_shard REPLICA (sqlcat_04071_rep1, sqlcat_04071_rep2) PROPERTIES (weight = 3, internal_replication = true)
+sqlcat_04071_shard	['sqlcat_04071_rep1','sqlcat_04071_rep2','sqlcat_04071_rep_extra']	3	1	['sqlcat_04071_cluster']
+CREATE SHARD sqlcat_04071_shard REPLICA (sqlcat_04071_rep1, sqlcat_04071_rep2, sqlcat_04071_rep_extra) PROPERTIES (weight = 3, internal_replication = true)
+sqlcat_04071_shard	['sqlcat_04071_rep1','sqlcat_04071_rep2']	3	1	['sqlcat_04071_cluster']
+CREATE SHARD sqlcat_04071_shard REPLICA (sqlcat_04071_rep1, sqlcat_04071_rep2) PROPERTIES (weight = 3, internal_replication = true)
+sqlcat_04071_shard	['sqlcat_04071_rep1','sqlcat_04071_rep2']	3	1	['sqlcat_04071_cluster']
+sqlcat_04071_shard2	['sqlcat_04071_rep1']	1	0	['sqlcat_04071_cluster']
+sqlcat_04071_cluster	1	1	127.0.0.1	9000	default	0	1
+sqlcat_04071_cluster	2	1	127.0.0.1	9000	default	1	3
+sqlcat_04071_cluster	2	2	127.0.0.1	9000	default	1	3
+CREATE CLUSTER sqlcat_04071_cluster (sqlcat_04071_shard2, sqlcat_04071_shard) PROPERTIES (allow_distributed_ddl_queries = true)
+CREATE CLUSTER sqlcat_04071_cluster (sqlcat_04071_shard) PROPERTIES (allow_distributed_ddl_queries = true)
+CREATE CLUSTER sqlcat_04071_cluster (sqlcat_04071_shard, sqlcat_04071_shard2) PROPERTIES (allow_distributed_ddl_queries = false)
+CREATE CLUSTER sqlcat_04071_cluster (sqlcat_04071_shard, sqlcat_04071_shard2) PROPERTIES (allow_distributed_ddl_queries = true)
+0

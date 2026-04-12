@@ -1,0 +1,13 @@
+<clickhouse>
+    <clusters_catalog_storage>
+        <type>local_encrypted</type>
+        <update_timeout_ms>5000</update_timeout_ms>
+        <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    </clusters_catalog_storage>
+
+    <shards_catalog_storage>
+        <type>local_encrypted</type>
+        <update_timeout_ms>5000</update_timeout_ms>
+        <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    </shards_catalog_storage>
+</clickhouse>

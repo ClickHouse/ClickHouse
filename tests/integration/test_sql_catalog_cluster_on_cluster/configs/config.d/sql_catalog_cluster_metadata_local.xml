@@ -1,0 +1,11 @@
+<clickhouse>
+    <clusters_catalog_storage>
+        <type>local</type>
+        <update_timeout_ms>5000</update_timeout_ms>
+    </clusters_catalog_storage>
+
+    <shards_catalog_storage>
+        <type>local</type>
+        <update_timeout_ms>5000</update_timeout_ms>
+    </shards_catalog_storage>
+</clickhouse>

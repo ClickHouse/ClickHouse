@@ -1,0 +1,13 @@
+<clickhouse>
+    <clusters_catalog_storage>
+        <type>keeper</type>
+        <path>/clickhouse/test_sql_catalog_cluster_on_cluster/clusters</path>
+        <update_timeout_ms>5000</update_timeout_ms>
+    </clusters_catalog_storage>
+
+    <shards_catalog_storage>
+        <type>keeper</type>
+        <path>/clickhouse/test_sql_catalog_cluster_on_cluster/shards</path>
+        <update_timeout_ms>5000</update_timeout_ms>
+    </shards_catalog_storage>
+</clickhouse>
