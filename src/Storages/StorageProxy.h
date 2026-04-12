@@ -33,9 +33,10 @@ public:
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr query_context) const override
     {
-        return getNested()->getStorageSnapshot(metadata_snapshot, query_context);
+        auto nested = getNested();
+        return nested->getStorageSnapshot(nested->getInMemoryMetadataPtr(), query_context);
     }
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr & storage_snapshot, SelectQueryInfo & info) const override
