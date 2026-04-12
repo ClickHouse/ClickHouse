@@ -351,8 +351,8 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     {
         chassert(dir_name.size() >= 2);
         const auto first_char_pos_after_try_n = try_n_pos + TRY_N_SUFFIX.size();
-        // We expect at most two digits at the end
-        if (first_char_pos_after_try_n >= dir_name.size() - 2
+        /// Require at least one digit after "_try" and accept any number of trailing digits
+        if (first_char_pos_after_try_n < dir_name.size()
             && std::all_of(dir_name.begin() + first_char_pos_after_try_n, dir_name.end(), [](unsigned char c) { return std::isdigit(c); }))
                 dir_name.remove_suffix(dir_name.size() - try_n_pos);
     }
