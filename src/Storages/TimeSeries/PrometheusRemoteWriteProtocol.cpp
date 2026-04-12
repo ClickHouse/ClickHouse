@@ -48,41 +48,40 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Checks that a specified set of labels is sorted and has no duplications, and there is one label named "__name__".
-    void checkLabels(const google::protobuf::RepeatedPtrField<prometheus::Label> & labels)
+    /// Sorts labels by name, removes exact duplicates and labels with empty values.
+    /// Throws if any label name is empty, if two labels have the same name but different values,
+    /// or if there is no label with name "__name__".
+    /// Stores the result as string_view pairs pointing into the original protobuf data.
+    void sortTagsAndRemoveDuplicates(
+        const google::protobuf::RepeatedPtrField<prometheus::Label> & labels,
+        std::vector<std::pair<std::string_view, std::string_view>> & res)
     {
-        bool metric_name_found = false;
-        for (size_t i = 0; i != static_cast<size_t>(labels.size()); ++i)
+        res.clear();
+        res.reserve(labels.size());
+
+        for (const auto & label : labels)
         {
-            const auto & label = labels[static_cast<int>(i)];
-            const auto & label_name = label.name();
-            const auto & label_value = label.value();
-
-            if (label_name.empty())
+            if (label.name().empty())
                 throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS, "Label name should not be empty");
-            if (label_value.empty())
-                continue; /// Empty label value is treated like the label doesn't exist.
-
-            if (label_name == TimeSeriesTagNames::MetricName)
-                metric_name_found = true;
-
-            if (i)
-            {
-                /// Check that labels are sorted.
-                const auto & previous_label_name = labels[static_cast<int>(i - 1)].name();
-                if (label_name <= previous_label_name)
-                {
-                    if (label_name == previous_label_name)
-                        throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS, "Found duplicate label {}", label_name);
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
-                        "Label names are not sorted in lexicographical order ({} > {})",
-                        previous_label_name,
-                        label_name);
-                }
-            }
+            res.emplace_back(label.name(), label.value());
         }
 
+        std::sort(res.begin(), res.end(), [](const auto & left, const auto & right) { return left.first < right.first; });
+        res.erase(std::unique(res.begin(), res.end()), res.end());
+
+        auto adjacent = std::adjacent_find(res.begin(), res.end(), [](const auto & left, const auto & right) { return left.first == right.first; });
+        if (adjacent != res.end())
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
+                "Found two labels with the same name {} but different values {} and {}",
+                adjacent->first, adjacent->second, std::next(adjacent)->second);
+        }
+
+        std::erase_if(res, [](const auto & x) { return x.second.empty(); });
+
+        bool metric_name_found = std::any_of(res.begin(), res.end(),
+            [](const auto & x) { return x.first == TimeSeriesTagNames::MetricName; });
         if (!metric_name_found)
             throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS, "Metric name (label {}) not found", TimeSeriesTagNames::MetricName);
     }
@@ -163,16 +162,6 @@ namespace
         IColumn & id_column_ref = *id_column;
         tags_block.insert(0, ColumnWithTypeAndName{std::move(id_column), id_type, id_name});
         return id_column_ref;
-    }
-
-    /// Converts a timestamp in milliseconds to a DateTime64 with a specified scale.
-    DateTime64 scaleTimestamp(Int64 timestamp_ms, UInt32 scale)
-    {
-        if (scale == 3)
-            return timestamp_ms;
-        if (scale > 3)
-            return timestamp_ms * DecimalUtils::scaleMultiplier<DateTime64>(scale - 3);
-        return timestamp_ms / DecimalUtils::scaleMultiplier<DateTime64>(3 - scale);
     }
 
     /// Finds min time and max time in a time series.
@@ -269,7 +258,8 @@ namespace
         std::vector<IColumn *> columns_to_fill_in_tags_table;
 
         /// Columns corresponding to specific tags specified in the "tags_to_columns" setting.
-        std::unordered_map<String, IColumn *> columns_by_tag_name;
+        /// Keys are string_view into the settings data which lives for the duration of this function.
+        std::unordered_map<std::string_view, IColumn *> columns_by_tag_name;
         const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
@@ -279,7 +269,7 @@ namespace
             const auto & column_description = get_column_description(column_name);
             validator.validateColumnForTagValue(column_description);
             auto & column = make_column_for_tags_block(column_description);
-            columns_by_tag_name[tag_name] = &column;
+            columns_by_tag_name[std::string_view{tag_name}] = &column;
             columns_to_fill_in_tags_table.emplace_back(&column);
         }
 
@@ -323,6 +313,7 @@ namespace
         }
 
         /// Prepare a block for inserting into the "tags" table.
+        std::vector<std::pair<std::string_view, std::string_view>> sorted_tags;
         size_t current_row_in_tags = 0;
         for (size_t i = 0; i != static_cast<size_t>(time_series.size()); ++i)
         {
@@ -330,25 +321,20 @@ namespace
             if (!element.samples_size())
                 continue;
 
-            const auto & labels = element.labels();
-            checkLabels(labels);
+            sortTagsAndRemoveDuplicates(element.labels(), sorted_tags);
 
-            for (size_t j = 0; j != static_cast<size_t>(labels.size()); ++j)
+            for (const auto & [tag_name, tag_value] : sorted_tags)
             {
-                const auto & label = labels[static_cast<int>(j)];
-                const auto & tag_name = label.name();
-                const auto & tag_value = label.value();
-
                 if (tag_name == TimeSeriesTagNames::MetricName)
                 {
-                    metric_name_column.insertData(tag_value.data(), tag_value.length());
+                    metric_name_column.insertData(tag_value.data(), tag_value.size());
                 }
                 else
                 {
                     if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
                     {
-                        all_tags_names->insertData(tag_name.data(), tag_name.length());
-                        all_tags_values->insertData(tag_value.data(), tag_value.length());
+                        all_tags_names->insertData(tag_name.data(), tag_name.size());
+                        all_tags_values->insertData(tag_value.data(), tag_value.size());
                     }
 
                     auto it = columns_by_tag_name.find(tag_name);
@@ -356,12 +342,12 @@ namespace
                     if (has_column_for_tag_value)
                     {
                         auto * column = it->second;
-                        column->insertData(tag_value.data(), tag_value.length());
+                        column->insertData(tag_value.data(), tag_value.size());
                     }
                     else
                     {
-                        tags_names.insertData(tag_name.data(), tag_name.length());
-                        tags_values.insertData(tag_value.data(), tag_value.length());
+                        tags_names.insertData(tag_name.data(), tag_name.size());
+                        tags_values.insertData(tag_value.data(), tag_value.size());
                     }
                 }
             }
@@ -374,8 +360,8 @@ namespace
             if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
             {
                 auto [min_time, max_time] = findMinTimeAndMaxTime(element.samples());
-                min_time_column->insert(scaleTimestamp(min_time, min_time_scale));
-                max_time_column->insert(scaleTimestamp(max_time, max_time_scale));
+                min_time_column->insert(DecimalUtils::convertTo<DateTime64>(min_time_scale, DateTime64{min_time}, 3));
+                max_time_column->insert(DecimalUtils::convertTo<DateTime64>(max_time_scale, DateTime64{max_time}, 3));
             }
 
             for (auto * column : columns_to_fill_in_tags_table)
@@ -401,7 +387,7 @@ namespace
             id_column_in_data_table.insertManyFrom(id_column_in_tags_table, current_row_in_tags, element.samples_size());
             for (const auto & sample : element.samples())
             {
-                timestamp_column.insert(scaleTimestamp(sample.timestamp(), timestamp_scale));
+                timestamp_column.insert(DecimalUtils::convertTo<DateTime64>(timestamp_scale, DateTime64{sample.timestamp()}, 3));
                 value_column.insert(sample.value());
             }
 
@@ -499,14 +485,14 @@ namespace
         for (const auto & element : metrics_metadata)
         {
             const auto & metric_family_name = element.metric_family_name();
-            const auto & type_str = metricTypeToString(element.type());
-            const auto & help = element.help();
+            const auto type_str = metricTypeToString(element.type());
             const auto & unit = element.unit();
+            const auto & help = element.help();
 
-            metric_family_name_column.insertData(metric_family_name.data(), metric_family_name.length());
-            type_column.insertData(type_str.data(), type_str.length());
-            unit_column.insertData(unit.data(), unit.length());
-            help_column.insertData(help.data(), help.length());
+            metric_family_name_column.insertData(metric_family_name.data(), metric_family_name.size());
+            type_column.insertData(type_str.data(), type_str.size());
+            unit_column.insertData(unit.data(), unit.size());
+            help_column.insertData(help.data(), help.size());
         }
 
         /// Prepare a result.
