@@ -1,7 +1,7 @@
 -- Tags: no-random-settings
 
 -- Test that system.parts.default_compression_codec reports the actual codec
--- used for the part, not the server-wide default.
+-- used for the part, not the server-wide default, both after INSERT and MERGE.
 -- https://github.com/ClickHouse/ClickHouse/issues/84440
 
 DROP TABLE IF EXISTS t_default_codec;
@@ -15,6 +15,9 @@ ORDER BY x
 SETTINGS default_compression_codec = 'ZSTD(3)';
 
 INSERT INTO t_default_codec VALUES ('hello');
+INSERT INTO t_default_codec VALUES ('world');
+
+OPTIMIZE TABLE t_default_codec FINAL;
 
 SELECT default_compression_codec
 FROM system.parts

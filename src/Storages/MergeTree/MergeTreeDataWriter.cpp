@@ -876,9 +876,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     new_data_part->ttl_infos.update(move_ttl_infos);
 
-    /// This effectively chooses minimal compression method:
-    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
+    auto compression_codec = data.getCompressionCodecForPart(0, new_data_part->ttl_infos, time(nullptr));
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block.rows(),
@@ -1074,9 +1072,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, projection_merging_params);
     }
 
-    /// This effectively chooses minimal compression method:
-    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
+    auto compression_codec = data.getCompressionCodecForPart(0, {}, time(nullptr));
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block.rows(),
