@@ -542,6 +542,7 @@ def test_restricted_user_cannot_bypass_grants(started_cluster):
         port=server_port,
         user="pg_restricted",
         password="restricted123",
+        dbname="default",
     )
     cur = restricted.cursor()
 

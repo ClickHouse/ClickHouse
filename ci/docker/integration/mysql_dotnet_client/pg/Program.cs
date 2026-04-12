@@ -5,16 +5,16 @@ using CommandLine;
 class Program
 {
     [Option("host", HelpText = "Host of ClickHouse server")]
-    public string Host { get; set; }
+    public string Host { get; set; } = "";
 
     [Option("port", HelpText = "Port of ClickHouse server")]
-    public string Port { get; set; }
+    public string Port { get; set; } = "";
 
     [Option('u', "username", HelpText = "Username")]
-    public string Username { get; set; }
+    public string Username { get; set; } = "";
 
     [Option("password", HelpText = "Password")]
-    public string Password { get; set; }
+    public string Password { get; set; } = "";
 
     static void Main(string[] args)
     {

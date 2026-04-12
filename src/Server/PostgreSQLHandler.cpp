@@ -642,7 +642,7 @@ void PostgreSQLHandler::processQuery()
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 
-        for (auto & spl_query : queries)
+        for (auto & sql_query : queries)
         {
             secret_key = dis(gen);
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
@@ -650,9 +650,9 @@ void PostgreSQLHandler::processQuery()
             QueryScope query_scope = QueryScope::create(query_context);
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
-                PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);
+                PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
 
-            UInt64 affected_rows = executeQueryWithTracking(std::move(spl_query), query_context, command);
+            UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
             message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
         }
@@ -845,6 +845,12 @@ void PostgreSQLHandler::processExecuteQuery()
         secret_key = dis(gen);
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+
+        if (should_init_system_tables)
+        {
+            initializeSystemTables(query_context);
+            should_init_system_tables = false;
+        }
 
         QueryScope query_scope = QueryScope::create(query_context);
         auto sql_query = prepared_statements_manager.getStatmentFromBind();
