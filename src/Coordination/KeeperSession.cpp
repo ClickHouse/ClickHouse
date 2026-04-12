@@ -293,10 +293,9 @@ KeeperSession::AddResult KeeperSession::addRequest(SessionRequestPtr keeper_req)
             {
                 /// Empty queue: start a new session-thread local group.
                 /// `keeper_req` is safe to access outside `mutex` after the lock is released
-                /// because it is in `ExecutingLocal` state — only this thread (the session/TCP
-                /// handler thread) reads or writes it until `advanceQueue` pops it.
-                /// `advanceQueue(QuorumThread)` skips entries with `KeeperRequestExecutor::SessionThread`,
-                /// so there is no data race between the two executor paths.
+                /// because `popResponseReadyNoLock` skips entries whose executor differs
+                /// from the caller's — a concurrent `advanceQueue(QuorumThread)` will not
+                /// read the `response` field while we are writing it.
                 keeper_req->executor = KeeperRequestExecutor::SessionThread;
                 keeper_req->setState(RequestState::ExecutingLocal, {{"keeper.fast_path", true}});
                 active_requests.push_back(keeper_req);
@@ -406,7 +405,7 @@ void KeeperSession::advanceQueue(KeeperRequestExecutor current_executor)
                 return;
             if (!response_callback)
                 response_callback = callback;
-            had_close = popResponseReadyNoLock(to_deliver);
+            had_close = popResponseReadyNoLock(to_deliver, current_executor);
             if (!had_close)
                 collectPendingReadsNoLock(current_executor, read_batch);
         }
@@ -427,11 +426,21 @@ void KeeperSession::advanceQueue(KeeperRequestExecutor current_executor)
     }
 }
 
-bool KeeperSession::popResponseReadyNoLock(std::vector<SessionRequestPtr> & out)
+bool KeeperSession::popResponseReadyNoLock(std::vector<SessionRequestPtr> & out, KeeperRequestExecutor current_executor)
 {
-    while (!active_requests.empty() && active_requests.front()->response)
+    while (!active_requests.empty())
     {
         auto & head = active_requests.front();
+
+        /// Stop at entries owned by a different executor — their `response`
+        /// field may be written concurrently outside `mutex` by another thread
+        /// (e.g. SessionThread writing via `local_read_dispatch` while
+        /// QuorumThread runs `advanceQueue` from `onRaftCommitted`).
+        if (head->executor != current_executor)
+            break;
+
+        if (!head->response)
+            break;
 
         head->setState(RequestState::Completed);
         auto completed = std::move(head);

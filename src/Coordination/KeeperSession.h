@@ -170,10 +170,12 @@ private:
     /// - `onRaftCommitted` with `KeeperRequestExecutor::QuorumThread` (drain after commit)
     void advanceQueue(KeeperRequestExecutor current_executor);
 
-    /// Pop all completed heads from `active_requests` into `out`.
+    /// Pop completed heads from `active_requests` into `out`, stopping at the
+    /// first entry owned by a different executor (its `response` may be written
+    /// concurrently by another thread without holding `mutex`).
     /// Returns true if Close was encountered (callback moved, state set to Closed).
     /// Must be called with `mutex` held.
-    bool popResponseReadyNoLock(std::vector<SessionRequestPtr> & out);
+    bool popResponseReadyNoLock(std::vector<SessionRequestPtr> & out, KeeperRequestExecutor current_executor);
 
     /// Collect consecutive PendingLocal reads with matching executor from the
     /// head of `active_requests`. Marks them ExecutingLocal, decrements pending count.
