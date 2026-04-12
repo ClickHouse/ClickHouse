@@ -130,6 +130,8 @@ public:
     }
 #endif
 
+    ObjectStoragePtr getUnderlying() override { return object_storage; }
+
 private:
     FileCacheKey getCacheKey(const std::string & path) const;
 
