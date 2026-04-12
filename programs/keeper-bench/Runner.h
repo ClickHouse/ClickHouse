@@ -13,6 +13,7 @@
 #include <Generator.h>
 #include <Stats.h>
 
+#include <barrier>
 #include <filesystem>
 
 using Ports = std::vector<UInt16>;
@@ -26,17 +27,25 @@ public:
     void startup(Coordination::ZooKeeper & zookeeper);
     void cleanup(Coordination::ZooKeeper & zookeeper);
 
+    const TaggedPaths & getTaggedPaths() const { return tagged_paths; }
+
 private:
     struct Node
     {
         StringGetter name;
         std::optional<StringGetter> data;
+        std::optional<std::string> tag;
         std::vector<std::shared_ptr<Node>> children;
         size_t repeat_count = 0;
 
         std::shared_ptr<Node> clone() const;
 
-        void createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const;
+        void createNodes(
+            Coordination::ZooKeeper & zookeeper,
+            Coordination::Requests & batch,
+            const std::string & parent_path,
+            const Coordination::ACLs & acls,
+            TaggedPaths & tagged_paths) const;
         void dumpTree(int level = 0) const;
     };
 
@@ -44,6 +53,7 @@ private:
 
     std::vector<std::shared_ptr<Node>> root_nodes;
     Coordination::ACLs default_acls;
+    TaggedPaths tagged_paths;
 };
 
 class Runner
@@ -137,6 +147,12 @@ private:
     Stopwatch delay_watch;
 
     std::vector<ThreadState> threads;
+
+    /// Barrier so all threads finish generator initialization (which resolves
+    /// `children_of` paths via ZooKeeper listing) before any thread starts
+    /// executing requests. Without this, early threads mutate the tree while
+    /// late threads are still initializing, causing stale path caches.
+    std::unique_ptr<std::barrier<>> generator_init_barrier;
 
     std::mutex mutex; // for writing to stdout
 
