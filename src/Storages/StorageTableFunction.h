@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCOMPATIBLE_COLUMNS;
-}
-
 using GetNestedStorageFunc = std::function<StoragePtr()>;
 
 /// Lazily creates underlying storage.

@@ -113,8 +113,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
-        getNested()->read(query_plan, column_names, storage_snapshot, query_info, context,
-                      processed_stage, max_block_size, num_streams);
+        getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     SinkToStoragePtr write(
