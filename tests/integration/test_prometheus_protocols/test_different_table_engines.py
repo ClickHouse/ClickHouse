@@ -167,32 +167,90 @@ def test_tags_to_columns():
 
 # Checks that the `id` column type can be changed to `UInt64`.
 def test_64bit_id():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS id_type='UInt64'")
+    check()
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'id'") == TSV([["UInt64"]])
+    assert re.search(r"\bid\s+UInt64", node.query("DESCRIBE timeSeriesTags(prometheus)"))
+
+    drop_prometheus_table()
+
     node.query("CREATE TABLE prometheus (id UInt64) ENGINE=TimeSeries")
     check()
+    create_query = node.query("SHOW CREATE TABLE prometheus")
+    assert re.search(r"(?s)SETTINGS.*\bid_type\s*=\s*\\'UInt64\\'", create_query)
     assert re.search(r"\bid\s+UInt64", node.query("DESCRIBE timeSeriesTags(prometheus)"))
 
 
 # Checks that a custom hash function can be used to generate time series identifiers.
 def test_custom_id_algorithm():
     node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS id_type = 'FixedString(16)', id_generator = 'murmurHash3_128(metric_name, all_tags)'"
+    )
+    check()
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'id'") == TSV([["FixedString(16)"]])
+    assert re.search(r"\bid\s+FixedString\(16\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
+
+    drop_prometheus_table()
+
+    node.query(
         "CREATE TABLE prometheus (id FixedString(16) DEFAULT murmurHash3_128(metric_name, all_tags)) ENGINE=TimeSeries"
     )
     check()
+    create_query = node.query("SHOW CREATE TABLE prometheus")
+    assert re.search(r"(?s)SETTINGS.*\bid_type\s*=\s*\\'FixedString\(16\)\\'", create_query)
+    assert re.search(r"(?s)SETTINGS.*\bid_generator\s*=\s*\\'murmurHash3_128\(metric_name, all_tags\)\\'", create_query)
     assert re.search(r"\bid\s+FixedString\(16\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
 
 
 # Checks that timestamps can be stored with microsecond precision (`DateTime64(6)`).
 def test_microsecond_precision():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS timestamp_type='DateTime64(6)'")
+    check(eps=1e-9) # Here eps > 0 because otherwise the check will fail because of different precisions.
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'timestamp'") == TSV([["DateTime64(6)"]])
+    assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesData(prometheus)"))
+
+    drop_prometheus_table()
+
     node.query("CREATE TABLE prometheus (timestamp DateTime64(6)) ENGINE=TimeSeries")
-    check(eps=1e-9)  # Here eps > 0 because otherwise the check will fail because of different precisions.
+    check(eps=1e-9)
+    create_query = node.query("SHOW CREATE TABLE prometheus")
+    # TSV escaping: string settings appear as timestamp_type = \'DateTime64(6)\', so \\' matches \'.
+    assert re.search(r"(?s)SETTINGS.*\btimestamp_type\s*=\s*\\'DateTime64\(6\)\\'", create_query)
     assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesData(prometheus)"))
 
 
 # Checks that scalar values can be stored as `Float32` instead of the default `Float64`.
 def test_float32_scalar():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS scalar_type='Float32'")
+    check()
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'value'") == TSV([["Float32"]])
+    assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesData(prometheus)"))
+
+    drop_prometheus_table()
+
     node.query("CREATE TABLE prometheus (value Float32) ENGINE=TimeSeries")
     check()
+    create_query = node.query("SHOW CREATE TABLE prometheus")
+    # TSV escaping: string settings appear as scalar_type = \'Float32\', so \\' matches \'.
+    assert re.search(r"(?s)SETTINGS.*\bscalar_type\s*=\s*\\'Float32\\'", create_query)
     assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesData(prometheus)"))
+
+
+# Checks that custom compression codecs can be applied to the `id`, `timestamp`, and `value` columns.
+def test_custom_codecs():
+    node.query(
+        "CREATE TABLE prometheus ("
+        "id UUID CODEC(ZSTD), "
+        "timestamp DateTime64(3) CODEC(DoubleDelta), "
+        "value Float64 CODEC(Gorilla)) "
+        "ENGINE=TimeSeries"
+    )
+    check()
+
+    create_query = node.query("SHOW CREATE TABLE prometheus")
+    assert re.search(r"(?s)TAGS INNER COLUMNS.*`id` UUID DEFAULT reinterpretAsUUID\(sipHash128\(metric_name, all_tags\)\) CODEC\(ZSTD\)", create_query)
+    assert re.search(r"(?s)DATA INNER COLUMNS.*`timestamp` DateTime64\(3\) CODEC\(DoubleDelta\)", create_query)
+    assert re.search(r"(?s)DATA INNER COLUMNS.*`value` Float64 CODEC\(Gorilla\)", create_query)
 
 
 # Checks that a TimeSeries table can be created as a copy of another TimeSeries table,
