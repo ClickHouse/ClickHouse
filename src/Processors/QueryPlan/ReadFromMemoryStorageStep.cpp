@@ -1,9 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 
-#include <atomic>
-#include <functional>
-#include <memory>
-
 #include <Analyzer/TableNode.h>
 
 #include <Common/typeid_cast.h>
@@ -20,6 +16,12 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
+
+#include <atomic>
+#include <functional>
+#include <memory>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -49,7 +51,6 @@ public:
     MemorySource(
         NamesAndTypesList physical_columns_,
         NamesAndTypesList virtual_columns_,
-        StorageID storage_id_,
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {},
@@ -57,7 +58,6 @@ public:
         : ISource(std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
         , physical_columns(std::move(physical_columns_))
         , virtual_columns(std::move(virtual_columns_))
-        , storage_id(std::move(storage_id_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
@@ -125,20 +125,14 @@ private:
         assert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
     }
 
-    void fillVirtualColumns(Columns & result_columns, UInt64 num_rows) const
+    void fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
     {
-        for (const auto & col : virtual_columns)
-        {
-            if (col.name == "_table")
-                result_columns.emplace_back(col.type->createColumnConst(num_rows, storage_id.getTableName())->convertToFullColumnIfConst());
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual column: '{}'", col.name);
-        }
+        if (!virtual_columns.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
     }
 
     const NamesAndTypesList physical_columns;
     const NamesAndTypesList virtual_columns;
-    const StorageID storage_id;
     size_t execution_index = 0;
     std::shared_ptr<const Blocks> data;
     std::shared_ptr<std::atomic<size_t>> parallel_execution_index;
@@ -190,14 +184,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
 
     auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(columns_to_read, storage_snapshot);
     auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
-    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(), virtual_column_names);
-    auto storage_id = storage->getStorageID();
-
-    /// Use temporary table name if storage is temporary.
-    if (query_info.table_expression)
-        if (auto * table_node = query_info.table_expression->as<TableNode>())
-            if (table_node->isTemporaryTable())
-                storage_id.table_name = table_node->getTemporaryTableName();
+    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto current_data = snapshot_data.blocks;
@@ -215,7 +202,6 @@ Pipe ReadFromMemoryStorageStep::makePipe()
         return Pipe(std::make_shared<MemorySource>(
             physical_columns,
             virtual_columns,
-            storage_id,
             nullptr /* data */,
             nullptr /* parallel execution index */,
             [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
@@ -233,7 +219,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        auto source = std::make_shared<MemorySource>(physical_columns, virtual_columns, storage_id, current_data, parallel_execution_index);
+        auto source = std::make_shared<MemorySource>(physical_columns, virtual_columns, current_data, parallel_execution_index);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows_approx);
         pipes.emplace_back(std::move(source));
