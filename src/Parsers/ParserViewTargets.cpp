@@ -114,8 +114,9 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             switch (kind)
             {
-                case ViewTarget::Data:
+                case ViewTarget::Samples:
                 {
+                    parsed |= tryParseViewTarget(kind, Keyword::SAMPLES, pos, expected, res);
                     parsed |= tryParseViewTarget(kind, Keyword::DATA, pos, expected, res);
                     break;
                 }

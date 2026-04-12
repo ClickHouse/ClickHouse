@@ -23,7 +23,7 @@ TIMESERIES_SETTINGS_SUPPORTED_TYPES(TimeSeriesSettings, DECLARE_SETTING_TRAIT)
 
 /// Settings for the TimeSeries table engine.
 /// Could be loaded from a CREATE TABLE query (SETTINGS clause). For example:
-/// CREATE TABLE mytable ENGINE = TimeSeries() SETTINGS tags_to_columns = {'job':'job', 'instance':'instance'} DATA ENGINE = ReplicatedMergeTree('zkpath', 'replica'), ...
+/// CREATE TABLE mytable ENGINE = TimeSeries() SETTINGS tags_to_columns = {'job':'job', 'instance':'instance'} SAMPLES ENGINE = ReplicatedMergeTree('zkpath', 'replica'), ...
 struct TimeSeriesSettings
 {
     TimeSeriesSettings();

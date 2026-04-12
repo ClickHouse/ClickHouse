@@ -190,7 +190,7 @@ namespace
                             const ContextPtr & context,
                             const TimeSeriesSettings & time_series_settings,
                             const StorageInMemoryMetadata & tags_metadata,
-                            const StorageInMemoryMetadata & data_metadata)
+                            const StorageInMemoryMetadata & samples_metadata)
     {
         size_t num_time_series = time_series.size();
 
@@ -202,7 +202,7 @@ namespace
             return {}; /// Nothing to insert into target tables.
 
         /// Prepare a block for inserting to the "tags" table.
-        DataTypePtr timestamp_type = data_metadata.columns.get(TimeSeriesColumnNames::Timestamp).type;
+        DataTypePtr timestamp_type = samples_metadata.columns.get(TimeSeriesColumnNames::Timestamp).type;
         UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
 
         /// Column "metric_name".
@@ -388,8 +388,8 @@ namespace
         tags_block.erase(TimeSeriesColumnNames::AllTags);
 
         /// Column "id".
-        DataTypePtr data_id_type = data_metadata.columns.get(TimeSeriesColumnNames::ID).type;
-        auto id_column_in_data_table = data_id_type->createColumn();
+        DataTypePtr samples_id_type = samples_metadata.columns.get(TimeSeriesColumnNames::ID).type;
+        auto id_column_in_data_table = samples_id_type->createColumn();
         id_column_in_data_table->reserve(num_samples);
 
         /// Column "timestamp".
@@ -397,11 +397,11 @@ namespace
         timestamp_column->reserve(num_samples);
 
         /// Column "value".
-        DataTypePtr scalar_type = data_metadata.columns.get(TimeSeriesColumnNames::Value).type;
+        DataTypePtr scalar_type = samples_metadata.columns.get(TimeSeriesColumnNames::Value).type;
         auto value_column = scalar_type->createColumn();
         value_column->reserve(num_samples);
 
-        /// Prepare a block for inserting to the "data" table.
+        /// Prepare a block for inserting to the "samples" table.
         current_row_in_tags = 0;
         for (size_t i = 0; i != static_cast<size_t>(time_series.size()); ++i)
         {
@@ -420,17 +420,17 @@ namespace
         }
 
         /// Build data block.
-        Block data_block;
-        data_block.insert(ColumnWithTypeAndName{std::move(id_column_in_data_table), data_id_type, TimeSeriesColumnNames::ID});
-        data_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
-        data_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
+        Block samples_block;
+        samples_block.insert(ColumnWithTypeAndName{std::move(id_column_in_data_table), samples_id_type, TimeSeriesColumnNames::ID});
+        samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
+        samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
 
         BlocksToInsert res;
 
         /// A block to the "tags" table should be inserted first.
-        /// (Because any INSERT can fail and we don't want to have rows in the data table with no corresponding "id" written to the "tags" table.)
+        /// (Because any INSERT can fail and we don't want to have rows in the samples table with no corresponding "id" written to the "tags" table.)
         res.blocks.emplace_back(ViewTarget::Tags, std::move(tags_block));
-        res.blocks.emplace_back(ViewTarget::Data, std::move(data_block));
+        res.blocks.emplace_back(ViewTarget::Samples, std::move(samples_block));
 
         return res;
     }
@@ -581,8 +581,8 @@ void PrometheusRemoteWriteProtocol::writeTimeSeries(const google::protobuf::Repe
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & tags_metadata = *time_series_storage->getTargetTable(ViewTarget::Tags, getContext())->getInMemoryMetadataPtr(getContext(), false);
-    const auto & data_metadata = *time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr(getContext(), false);
-    auto blocks = toBlocks(time_series, getContext(), *time_series_settings, tags_metadata, data_metadata);
+    const auto & samples_metadata = *time_series_storage->getTargetTable(ViewTarget::Samples, getContext())->getInMemoryMetadataPtr(getContext(), false);
+    auto blocks = toBlocks(time_series, getContext(), *time_series_settings, tags_metadata, samples_metadata);
     insertToTargetTables(std::move(blocks), *time_series_storage, getContext(), log.get());
 
     LOG_TRACE(log, "{}: {} time series written",

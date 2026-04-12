@@ -30,8 +30,8 @@ struct ViewTarget
         ///     CREATE WINDOW VIEW db.wv_name {INNER ENGINE inner_engine} AS SELECT ...
         Inner,
 
-        /// The "data" table for a TimeSeries table, contains time series.
-        Data,
+        /// The "samples" table for a TimeSeries table, contains samples.
+        Samples,
 
         /// The "tags" table for a TimeSeries table, contains identifiers for each combination of a metric name and tags (labels).
         Tags,
@@ -63,7 +63,6 @@ struct ViewTarget
     /// Table's AST with query parameters
     ASTPtr table_ast;
 };
-
 
 /// Information about all target tables (external or inner) of a view.
 ///

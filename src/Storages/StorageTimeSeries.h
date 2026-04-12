@@ -17,9 +17,9 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///
 /// CREATE TABLE ts ENGINE = TimeSeries()
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() DATA [db].table1 TAGS [db].table2 METRICS [db].table3
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRICS [db].table3
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() DATA ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRICS ENGINE = ReplacingMergeTree
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRICS ENGINE = ReplacingMergeTree
 /// -OR-
 /// CREATE TABLE ts (
 ///    id UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)) CODEC(ZSTD(3)),
@@ -27,7 +27,7 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///    job String
 ///    ) ENGINE = TimeSeries()
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
-///    DATA ENGINE = ReplicatedMergeTree('zkpath', 'replica'), ...
+///    SAMPLES ENGINE = ReplicatedMergeTree('zkpath', 'replica'), ...
 ///
 class StorageTimeSeries final : public StorageWithCommonVirtualColumns, WithContext
 {
@@ -51,10 +51,10 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
-    /// Returns the three target kinds: Data, Tags, Metrics.
+    /// Returns the three target kinds: Samples, Tags, Metrics.
     static constexpr std::array<ViewTarget::Kind, 3> getTargetKinds()
     {
-        return {ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics};
     }
 
     void readImpl(
@@ -103,7 +103,7 @@ public:
 #endif
 
 private:
-    /// Represents one of the three target tables (Data, Tags, Metrics).
+    /// Represents one of the three target tables (Samples, Tags, Metrics).
     /// `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
     struct Target
     {
@@ -112,7 +112,7 @@ private:
         bool is_inner_table = false;
     };
 
-    /// Initializes information about three target tables (Data, Tags, Metrics).
+    /// Initializes information about three target tables (Samples, Tags, Metrics).
     /// The function also creates inner tables (unless this is an ATTACH query).
     static std::vector<Target> buildTargets(
         const ASTCreateQuery & create_query,

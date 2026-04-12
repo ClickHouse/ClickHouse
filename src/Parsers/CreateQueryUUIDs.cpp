@@ -39,7 +39,7 @@ namespace
         }
         else if (str == "data")
         {
-            return ViewTarget::Data;
+            return ViewTarget::Samples;
         }
         else if (str == "tags")
         {
@@ -53,6 +53,7 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
     }
 }
+
 
 CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
 {
@@ -104,7 +105,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
 
             if (query.is_time_series_table)
             {
-                generate_target_uuid(ViewTarget::Data);
+                generate_target_uuid(ViewTarget::Samples);
                 generate_target_uuid(ViewTarget::Tags);
                 generate_target_uuid(ViewTarget::Metrics);
             }

@@ -561,7 +561,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (targets)
     {
-        targets->formatTarget(ViewTarget::Data, ostr, settings, state, frame);
+        targets->formatTarget(ViewTarget::Samples, ostr, settings, state, frame);
         targets->formatTarget(ViewTarget::Tags, ostr, settings, state, frame);
         targets->formatTarget(ViewTarget::Metrics, ostr, settings, state, frame);
     }

@@ -10,14 +10,14 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -59,7 +59,7 @@ namespace
 {
     constexpr std::array<ViewTarget::Kind, 3> getTargetKinds()
     {
-        return {ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics};
     }
 
     /// Extracts the ID generator function from a column's default expression.
@@ -137,7 +137,7 @@ namespace
     /// Returns true if any setting was changed.
     bool extractMissingSettingsFromTarget(TimeSeriesSettings & settings, const ASTCreateQuery & create_query, ViewTarget::Kind kind, const ContextPtr & context)
     {
-        if ((kind == ViewTarget::Data) && settings[TimeSeriesSetting::timestamp_type] && settings[TimeSeriesSetting::scalar_type])
+        if ((kind == ViewTarget::Samples) && settings[TimeSeriesSetting::timestamp_type] && settings[TimeSeriesSetting::scalar_type])
             return false; /// Already got these settings
         if ((kind == ViewTarget::Tags) && settings[TimeSeriesSetting::id_type] && settings[TimeSeriesSetting::id_generator])
             return false; /// Already got these settings
@@ -198,12 +198,12 @@ namespace
         return changed;
     }
 
-    /// Extracts types and generators from external target tables (data and tags) if they are not specified in the settings.
+    /// Extracts types and generators from external target tables (samples and tags) if they are not specified in the settings.
     /// Returns true if any setting was changed.
     bool extractMissingSettingsFromTargets(TimeSeriesSettings & settings, const ASTCreateQuery & create_query, const ContextPtr & context)
     {
         bool changed = false;
-        changed |= extractMissingSettingsFromTarget(settings, create_query, ViewTarget::Data, context);
+        changed |= extractMissingSettingsFromTarget(settings, create_query, ViewTarget::Samples, context);
         changed |= extractMissingSettingsFromTarget(settings, create_query, ViewTarget::Tags, context);
         return changed;
     }
@@ -381,12 +381,12 @@ namespace
 
         switch (inner_table_kind)
         {
-            case ViewTarget::Data:
+            case ViewTarget::Samples:
             {
-                /// Column "id" - no default expression in the data table.
+                /// Column "id" - no default expression in the samples table.
                 /// Reset any default expression if the column was copied from the time series columns -
-                /// the identifier of the data table is computed in the "tags" inner table,
-                /// because it depends on columns like "metric_name" or "all_tags" which don't exist in the data table.
+                /// the identifier of the samples table is computed in the "tags" inner table,
+                /// because it depends on columns like "metric_name" or "all_tags" which don't exist in the samples table.
                 if (add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(time_series_settings[TimeSeriesSetting::id_type])))
                 {
                     auto & column = new_list->children.back();
@@ -539,12 +539,12 @@ namespace
 
         switch (inner_table_kind)
         {
-            case ViewTarget::Data:
+            case ViewTarget::Samples:
             {
-                /// Column "id" - no default expression in the data table.
+                /// Column "id" - no default expression in the samples table.
                 /// Reset any default expression if the column was copied from the time series columns -
-                /// the identifier of the data table is computed in the "tags" inner table,
-                /// because it depends on columns like "metric_name" or "all_tags" which don't exist in the data table.
+                /// the identifier of the samples table is computed in the "tags" inner table,
+                /// because it depends on columns like "metric_name" or "all_tags" which don't exist in the samples table.
                 add_column(TimeSeriesColumnNames::ID, dataTypeToAST(time_series_settings[TimeSeriesSetting::id_type]));
 
                 {
@@ -689,7 +689,7 @@ namespace
         /// Neither the query nor the AS-source specified an engine — build a sensible default.
         auto storage = make_intrusive<ASTStorage>();
 
-        if (target_kind == ViewTarget::Data)
+        if (target_kind == ViewTarget::Samples)
         {
             auto engine = makeASTFunction("MergeTree");
             engine->setNoEmptyArgs(false);
@@ -815,7 +815,7 @@ namespace
 
         switch (target_kind)
         {
-            case ViewTarget::Data:
+            case ViewTarget::Samples:
             {
                 check_column_type(TimeSeriesColumnNames::ID, time_series_settings[TimeSeriesSetting::id_type]);
                 check_column_type(TimeSeriesColumnNames::Timestamp, time_series_settings[TimeSeriesSetting::timestamp_type]);
@@ -933,7 +933,7 @@ ColumnsDescription generateTimeSeriesColumns(const TimeSeriesSettings & normaliz
     {
         /// We use Nullable(DateTime64(3)) as the default type of the `min_time` and `max_time` columns.
         /// It's nullable because it allows the aggregation (see aggregate_min_time_and_max_time) work correctly even
-        /// for rows in the "tags" table which doesn't have `min_time` and `max_time` (because they have no matching rows in the "data" table).
+        /// for rows in the "tags" table which doesn't have `min_time` and `max_time` (because they have no matching rows in the "samples" table).
         add_column(TimeSeriesColumnNames::MinTime, makeNullable(normalized_settings[TimeSeriesSetting::timestamp_type]));
         add_column(TimeSeriesColumnNames::MaxTime, makeNullable(normalized_settings[TimeSeriesSetting::timestamp_type]));
     }

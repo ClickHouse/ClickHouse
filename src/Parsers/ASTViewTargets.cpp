@@ -15,9 +15,9 @@ namespace
     {
         switch (kind)
         {
-            case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mydata
+            case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mysamples
             case ViewTarget::Inner:   return Keyword::INNER;   /// INNER ENGINE = MergeTree()
-            case ViewTarget::Data:    return Keyword::DATA;    /// DATA mydb.mydata
+            case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
             case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
         }
@@ -40,7 +40,6 @@ std::vector<ViewTarget::Kind> ASTViewTargets::getKinds() const
         kinds.push_back(target.kind);
     return kinds;
 }
-
 
 void ASTViewTargets::setTableID(ViewTarget::Kind kind, const StorageID & table_id_)
 {

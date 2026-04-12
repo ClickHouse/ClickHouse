@@ -249,8 +249,8 @@ def test_custom_codecs():
 
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)TAGS INNER COLUMNS.*`id` UUID DEFAULT reinterpretAsUUID\(sipHash128\(metric_name, all_tags\)\) CODEC\(ZSTD\)", create_query)
-    assert re.search(r"(?s)DATA INNER COLUMNS.*`timestamp` DateTime64\(3\) CODEC\(DoubleDelta\)", create_query)
-    assert re.search(r"(?s)DATA INNER COLUMNS.*`value` Float64 CODEC\(Gorilla\)", create_query)
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`timestamp` DateTime64\(3\) CODEC\(DoubleDelta\)", create_query)
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`value` Float64 CODEC\(Gorilla\)", create_query)
 
 
 # Checks that a TimeSeries table can be created as a copy of another TimeSeries table,
