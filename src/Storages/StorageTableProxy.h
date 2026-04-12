@@ -106,28 +106,24 @@ public:
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override
     {
-        auto storage = getNested();
-        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
-        storage->read(query_plan, column_names, nested_snapshot, query_info, context,
+        getNested()->read(query_plan, column_names, storage_snapshot, query_info, context,
                       processed_stage, max_block_size, num_streams);
     }
 
     SinkToStoragePtr write(
         const ASTPtr & query,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         bool async_insert) override
     {
-        auto storage = getNested();
-        auto nested_metadata = storage->getInMemoryMetadataPtr();
-        return storage->write(query, nested_metadata, context, async_insert);
+        return getNested()->write(query, metadata_snapshot, context, async_insert);
     }
 
     void renameInMemory(const StorageID & new_table_id) override

@@ -33,14 +33,14 @@ public:
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(
-        ContextPtr context,
-        QueryProcessingStage::Enum to_stage,
-        const StorageSnapshotPtr &,
-        SelectQueryInfo & info) const override
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override
     {
-        const auto & nested_metadata = getNested()->getInMemoryMetadataPtr();
-        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
+        return getNested()->getStorageSnapshot(metadata_snapshot, query_context);
+    }
+
+    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr & storage_snapshot, SelectQueryInfo & info) const override
+    {
+        return getNested()->getQueryProcessingStage(context, to_stage, storage_snapshot, info);
     }
 
     Pipe watch(

@@ -47,8 +47,6 @@ public:
     /// Returns true if we always know table structure when executing table function
     /// (e.g. structure is specified in table function arguments)
     virtual bool hasStaticStructure() const { return false; }
-    /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
-    virtual bool needStructureConversion() const { return true; }
 
     /** Return array of table function arguments indexes for which query tree analysis must be skipped.
       * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
