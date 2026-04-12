@@ -4,6 +4,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
@@ -274,7 +276,7 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     const ColumnsDescription & columns,
     bool with_marks_,
     bool with_minmax_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , source_table(source_table_)
     , with_marks(with_marks_)
     , with_minmax(with_minmax_)
@@ -304,6 +306,15 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
+}
+
+VirtualColumnsDescription StorageMergeTreeIndex::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 class ReadFromMergeTreeIndex : public SourceStepWithFilter
@@ -355,7 +366,7 @@ void ReadFromMergeTreeIndex::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
-void StorageMergeTreeIndex::read(
+void StorageMergeTreeIndex::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
