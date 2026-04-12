@@ -560,7 +560,7 @@ void LocalServer::startServers(const ServerType & server_type)
                         socket,
                         params));
             }, &logger()))
-                global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
+                global_context->registerServerPort(port_name, servers.back().portNumber());
         }
 
         if (server_type.shouldStart(ServerType::Type::HTTP))
@@ -587,7 +587,7 @@ void LocalServer::startServers(const ServerType & server_type)
                         ProfileEvents::InterfaceHTTPReceiveBytes,
                         ProfileEvents::InterfaceHTTPSendBytes));
             }, &logger()))
-                global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
+                global_context->registerServerPort(port_name, servers.back().portNumber());
         }
     }
 

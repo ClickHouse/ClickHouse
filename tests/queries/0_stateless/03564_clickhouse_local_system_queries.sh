@@ -51,6 +51,9 @@ fi
 kill "$LOCAL_PID" 2>/dev/null
 wait "$LOCAL_PID" 2>/dev/null || true
 
+# SYSTEM START LISTEN with an invalid listen_host must fail, not silently succeed
+$CLICKHOUSE_LOCAL --listen_host 192.0.2.1 --tcp_port 0 --query "SYSTEM START LISTEN TCP; -- { serverError NETWORK_ERROR }"
+
 # Various SYSTEM CLEAR CACHE queries should work in clickhouse-local
 $CLICKHOUSE_LOCAL --query "SYSTEM CLEAR DNS CACHE;"
 $CLICKHOUSE_LOCAL --query "SYSTEM CLEAR MARK CACHE;"

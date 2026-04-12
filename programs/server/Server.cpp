@@ -526,7 +526,6 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int INVALID_SETTING_VALUE;
-    extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int BAD_ARGUMENTS;
 }
@@ -618,7 +617,7 @@ void Server::createServer(
     CreateServerFunc && func) const
 {
     if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger()))
-        global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
+        global_context->registerServerPort(port_name, servers.back().portNumber());
 }
 
 
