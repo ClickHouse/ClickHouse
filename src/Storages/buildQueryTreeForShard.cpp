@@ -37,6 +37,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 min_external_table_block_size_rows;
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
@@ -470,6 +471,11 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     pipeline.complete(std::move(table_out));
     CompletedPipelineExecutor executor(pipeline);
+    if (mutable_context->hasQueryContext())
+    {
+        if (auto cancel_callback = mutable_context->getQueryContext()->getInteractiveCancelCallback())
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), mutable_context->getSettingsRef()[Setting::interactive_delay] / 1000));
+    }
     executor.execute();
     mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
 

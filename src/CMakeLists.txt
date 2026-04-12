@@ -454,7 +454,7 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
             common
             ch_contrib::double_conversion
-            ch_contrib::dragonbox_to_chars
+            ch_contrib::zmij
             ch_contrib::libdivide
 )
 
