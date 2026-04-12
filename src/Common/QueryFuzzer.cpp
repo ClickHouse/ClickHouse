@@ -3310,6 +3310,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     auto [_, inserted] = debug_visited_nodes.insert(ast.get());
     if (!inserted)
     {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(
             stderr,
             "The AST node '{}' was already visited before."
@@ -3318,6 +3320,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             current_ast_depth,
             debug_visited_nodes.size(),
             (*debug_top_ast)->dumpTree());
+#pragma clang diagnostic pop
         std::abort();
     }
 
