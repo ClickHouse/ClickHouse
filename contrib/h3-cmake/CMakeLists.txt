@@ -8,11 +8,12 @@ endif()
 # ENABLE_H3O is declared here (in addition to rust/workspace/CMakeLists.txt) because
 # contrib/ is processed before rust/, and CMake option() is idempotent — the first
 # call wins, so the later declaration becomes a no-op.
-# Default to OFF: h3o changes user-visible semantics for average area/edge-length
-# functions, so it must be explicitly opted into until full parity is confirmed.
+# Default to ON: when Rust is available, use the faster h3o backend.
 option(ENABLE_H3O "Enable h3o (Rust H3 implementation)" ON)
 
-if(ENABLE_H3O)
+# Skip the C H3 backend when h3o is enabled, but only if Rust can actually build
+# (FreeBSD lacks the required sysroot, so rust/workspace returns early there).
+if(ENABLE_H3O AND NOT OS_FREEBSD)
     message(STATUS "Not using C H3 library (Rust h3o is enabled instead)")
     return()
 endif()

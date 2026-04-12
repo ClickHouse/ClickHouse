@@ -35,8 +35,8 @@ typedef enum {
     E_MEMORY_BOUNDS = 14
 } H3ErrorCodes;
 
-#define H3_VERSION_MAJOR 3
-#define H3_VERSION_MINOR 7
+#define H3_VERSION_MAJOR 4
+#define H3_VERSION_MINOR 4
 #define H3_VERSION_PATCH 1
 
 #define H3_NULL 0
