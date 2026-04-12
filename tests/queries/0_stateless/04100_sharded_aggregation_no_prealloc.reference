@@ -1,0 +1,12 @@
+CUBE with materialize(NULL)
+	1000
+	1000
+0	10
+0	10
+1	10
+Multi-key with Array
+x	[1,2]	2
+y	[3]	1
+Single Array key
+[1,2]	2
+[3]	1
