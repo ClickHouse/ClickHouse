@@ -38,6 +38,19 @@ CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
 CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
+def collect_and_encrypt_cores(directory, key_path: str, aes_key_path: str = None) -> List[str]:
+    if aes_key_path is None:
+        aes_key_path = str(Path(directory) / "aes.key")
+    encrypted = []
+    for core in sorted(Path(directory).glob("core.*"))[:3]:
+        if not core.name.endswith(".zst") and not core.name.endswith(".enc"):
+            zst_path = Utils.compress_zst(core)
+            encrypted.append(Utils.encrypt(str(zst_path), key_path, aes_key_path))
+    if encrypted and Path(f"{aes_key_path}.rsa").exists():
+        encrypted.append(f"{aes_key_path}.rsa")
+    return encrypted
+
+
 class ClickHouseProc:
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
@@ -860,8 +873,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
-                if Path(f"{self.aes_key}.rsa").exists():
-                    res.append(f"{self.aes_key}.rsa")
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -886,11 +897,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
-        cores = list(p_temp_dir.glob("run_r*/core.*"))[:3]
-        return [
-            Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/ci/defs/public.pem", self.aes_key)
-            for f in cores
-        ]
+        result = []
+        for run_dir in sorted(p_temp_dir.glob("run_r*")):
+            result.extend(
+                collect_and_encrypt_cores(
+                    run_dir, f"{repo_dir}/ci/defs/public.pem", self.aes_key
+                )
+            )
+        return result
 
     @classmethod
     def _get_logs_archive_coordination(cls):
