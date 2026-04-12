@@ -74,6 +74,8 @@ public:
 
     void optimizeUnlocked();
 
+    using StorageWithCommonVirtualColumns::read;
+
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
