@@ -23,7 +23,7 @@ repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
 
 
-BUGFIX_BUILD_TYPES = ["amd_asan", "amd_tsan", "amd_msan", "amd_ubsan", "amd_debug"]
+BUGFIX_BUILD_TYPES = ["amd_asan_ubsan", "amd_tsan", "amd_msan", "amd_debug"]
 
 
 def find_master_builds():

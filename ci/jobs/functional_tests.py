@@ -16,7 +16,7 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
-BUGFIX_BUILD_TYPES = ["amd_asan", "amd_tsan", "amd_msan", "amd_ubsan", "amd_debug"]
+BUGFIX_BUILD_TYPES = ["amd_asan_ubsan", "amd_tsan", "amd_msan", "amd_debug"]
 
 
 def find_master_builds():
@@ -700,6 +700,7 @@ def main():
                     for r in bt_result.results:
                         r.set_label(bugfix_bt)
                     test_result.results = bt_result.results
+                    test_result.status = bt_result.status
                     debug_files += ft_res_processor_bt.debug_files
 
                     if not bt_result.is_ok():
