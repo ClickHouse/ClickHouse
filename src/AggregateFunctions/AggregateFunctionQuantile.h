@@ -241,6 +241,70 @@ public:
             this->data(place).add(value);
     }
 
+    void addBatchForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena *) const override
+    {
+        const auto & data_ptr = static_cast<const ColVecType &>(*columns[0]).getData();
+
+        for (size_t j = 0; j < num_rows; ++j)
+        {
+            auto value = data_ptr[row_indices[j]];
+
+            if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
+            {
+#   pragma clang diagnostic push
+#   pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
+                if (isNaN(value) || value > std::numeric_limits<Int64>::max() || value < 0)
+                    continue;
+#   pragma clang diagnostic pop
+            }
+
+            if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
+                this->data(places[j] + place_offset).add(value, columns[1]->getUInt(row_indices[j]));
+            else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
+                this->data(places[j] + place_offset).add(value, columns[1]->getFloat64(row_indices[j]));
+            else
+                this->data(places[j] + place_offset).add(value);
+        }
+    }
+
+    void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *) const override
+    {
+        const auto & data_ptr = static_cast<const ColVecType &>(*columns[0]).getData();
+        auto & data = this->data(place);
+
+        for (size_t j = 0; j < num_rows; ++j)
+        {
+            auto value = data_ptr[row_indices[j]];
+
+            if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
+            {
+#   pragma clang diagnostic push
+#   pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
+                if (isNaN(value) || value > std::numeric_limits<Int64>::max() || value < 0)
+                    continue;
+#   pragma clang diagnostic pop
+            }
+
+            if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
+                data.add(value, columns[1]->getUInt(row_indices[j]));
+            else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
+                data.add(value, columns[1]->getFloat64(row_indices[j]));
+            else
+                data.add(value);
+        }
+    }
+
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
