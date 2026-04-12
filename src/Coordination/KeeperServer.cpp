@@ -733,12 +733,14 @@ void KeeperServer::shutdown()
 }
 
 
-void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
+void KeeperServer::putLocalReadRequests(const KeeperRequestsForSessions & requests)
 {
-    if (!request_for_session.request->isReadRequest())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
-
-    state_machine->processReadRequest(request_for_session);
+    for (const auto & request_for_session : requests)
+    {
+        if (!request_for_session.request->isReadRequest())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
+    }
+    state_machine->processReadRequests(requests);
 }
 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)

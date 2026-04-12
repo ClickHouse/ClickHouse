@@ -1489,12 +1489,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
             checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
 
-            if (virtuals->tryGet(column_name, VirtualsKind::Persistent))
+            if (virtuals->tryGet(column_name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot add column {}: this column name is reserved for persistent virtual column", backQuote(column_name));
 
             if (command.default_kind == ColumnDefaultKind::Ephemeral
-                && virtuals->tryGet(column_name, VirtualsKind::Ephemeral))
+                && virtuals->tryGet(column_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot add ephemeral column {}: it conflicts with a virtual column of the same name",
                     backQuote(column_name));
@@ -1528,7 +1528,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                                              "in a single ALTER query", backQuote(column_name));
 
             if (command.default_kind == ColumnDefaultKind::Ephemeral
-                && virtuals->tryGet(column_name, VirtualsKind::Ephemeral))
+                && virtuals->tryGet(column_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot modify column {} to ephemeral: it conflicts with a virtual column of the same name",
                     backQuote(column_name));
@@ -1742,12 +1742,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN,
                     "Cannot rename to {}: column with this name already exists", backQuote(command.rename_to));
 
-            if (virtuals->tryGet(command.rename_to, VirtualsKind::Persistent))
+            if (virtuals->tryGet(command.rename_to, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot rename to {}: this column name is reserved for persistent virtual column", backQuote(command.rename_to));
 
             if (all_columns.get(command.column_name).default_desc.kind == ColumnDefaultKind::Ephemeral
-                && virtuals->tryGet(command.rename_to, VirtualsKind::Ephemeral))
+                && virtuals->tryGet(command.rename_to, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot rename ephemeral column to {}: it conflicts with a virtual column of the same name",
                     backQuote(command.rename_to));
