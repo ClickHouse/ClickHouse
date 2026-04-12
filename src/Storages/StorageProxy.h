@@ -16,7 +16,7 @@ public:
 
     virtual StoragePtr getNested() const = 0;
 
-    String getName() const override { return "StorageProxy"; }
+    String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
     bool isView() const override { return getNested()->isView(); }

@@ -88,6 +88,8 @@ extern std::unordered_map<String, CHSetting> backupSettings;
 
 extern std::unordered_map<String, CHSetting> restoreSettings;
 
+extern std::unordered_map<String, CHSetting> projectionSettings;
+
 extern std::unique_ptr<SQLType> size_tp;
 
 extern std::unique_ptr<SQLType> null_tp;
