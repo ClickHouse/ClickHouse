@@ -211,7 +211,8 @@ IStorageURLBase::IStorageURLBase(
             std::make_shared<DataTypeMap>(
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-            "");
+            "",
+            VirtualsMaterializationPlace::Reader);
     }
 
     setVirtuals(virtual_columns_desc);
@@ -1273,7 +1274,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     else if (is_url_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->getVirtualsList(), info.hive_partition_columns_to_read_from_file_path, context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)

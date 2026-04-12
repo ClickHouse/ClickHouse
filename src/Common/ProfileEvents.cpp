@@ -960,6 +960,8 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
     M(KeeperBatchMaxCount, "Number of times the size of batch was limited by the amount", ValueType::Number) \
     M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size", ValueType::Number) \
+    M(KeeperReadBatchCount, "Number of read request batches processed by Keeper", ValueType::Number) \
+    M(KeeperReadBatchTotalRequests, "Total number of read requests processed in batches by Keeper", ValueType::Number) \
     M(KeeperCommits, "Number of successful commits", ValueType::Number) \
     M(KeeperCommitsFailed, "Number of failed commits", ValueType::Number) \
     M(KeeperSnapshotCreations, "Number of snapshots creations", ValueType::Number) \

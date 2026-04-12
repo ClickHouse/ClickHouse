@@ -432,9 +432,9 @@ StorageHive::StorageHive(
     storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
 
     VirtualColumnsDescription virtuals_desc;
-    virtuals_desc.addEphemeral("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    virtuals_desc.addEphemeral("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    virtuals_desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    virtuals_desc.addEphemeral("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    virtuals_desc.addEphemeral("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    virtuals_desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
     setVirtuals(std::move(virtuals_desc));
     setInMemoryMetadata(storage_metadata);
 }
@@ -875,7 +875,7 @@ void StorageHive::read(
             continue;
         }
 
-        if (auto virt = virtuals_ptr->tryGet(column))
+        if (auto virt = virtuals_ptr->tryGet(column, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
             requested_virtuals_header.insert({virt->type->createColumn(), virt->type, virt->name});
     }
 

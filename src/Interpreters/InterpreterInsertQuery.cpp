@@ -204,7 +204,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
             return window_view->getInputHeader();
         if (no_destination)
-            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtualsList());
+            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
         return metadata_snapshot->getSampleBlockNonMaterialized();
     }
 
@@ -256,7 +256,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         Block table_sample_physical = metadata_snapshot->getSampleBlock();
         Block table_sample_virtuals;
         if (allow_virtuals)
-            table_sample_virtuals = table->getVirtualsHeader();
+            table_sample_virtuals = table->getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All);
 
         /// Columns are not ordinary or ephemeral
         for (auto pos : missing_positions)
@@ -908,7 +908,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
             {
                 const auto metadata = src_storage_cluster->getInMemoryMetadataPtr();
                 const auto snapshot = src_storage_cluster->getStorageSnapshot(metadata, local_context);
-                const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals());
+                const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
                 auto syntax = TreeRewriter(local_context).analyze(condition_ast, columns);
                 filter_dag = ExpressionAnalyzer(condition_ast, syntax, local_context).getActionsDAG(true, true);
                 predicate = filter_dag->getOutputs().at(0);

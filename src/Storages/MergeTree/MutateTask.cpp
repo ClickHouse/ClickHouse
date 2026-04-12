@@ -601,7 +601,7 @@ getColumnsForNewDataPart(
         }
     }
 
-    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
+    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
 
     for (const auto & [name, type] : persistent_virtuals)
     {
@@ -2733,7 +2733,7 @@ bool MutateTask::prepare()
     for (const auto & name : updated_columns_in_patches)
     {
         GetColumnsOptions options = GetColumnsOptions::AllPhysical;
-        auto column = ctx->storage_snapshot->tryGetColumn(options.withVirtuals(VirtualsKind::Persistent), name);
+        auto column = ctx->storage_snapshot->tryGetColumn(options.withVirtuals(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader), name);
 
         /// Skip updated column if it was dropped from the table.
         if (!column)

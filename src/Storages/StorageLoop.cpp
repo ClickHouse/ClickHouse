@@ -1,15 +1,12 @@
 #include <Storages/StorageLoop.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageSnapshot.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
 
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-
-    }
     StorageLoop::StorageLoop(
             const StorageID & table_id_,
             StoragePtr inner_storage_,
@@ -20,6 +17,11 @@ namespace DB
     {
         StorageInMemoryMetadata storage_metadata = inner_storage->getInMemoryMetadata();
         setInMemoryMetadata(storage_metadata);
+    }
+
+    StorageSnapshotPtr StorageLoop::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
+    {
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, inner_storage->getVirtualsPtr());
     }
 
     QueryProcessingStage::Enum StorageLoop::getQueryProcessingStage(

@@ -1,5 +1,7 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -128,7 +130,7 @@ StorageTimeSeries::StorageTimeSeries(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns,
     const String & comment)
-    : IStorage(table_id)
+    : StorageWithCommonVirtualColumns(table_id)
     , WithContext(local_context->getGlobalContext())
 {
     if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_time_series_table])
@@ -151,6 +153,7 @@ StorageTimeSeries::StorageTimeSeries(
     if (!comment.empty())
         storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 
     has_inner_tables = false;
 
@@ -410,8 +413,15 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
     }
 }
 
+VirtualColumnsDescription StorageTimeSeries::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
 
-void StorageTimeSeries::read(
+void StorageTimeSeries::readImpl(
     QueryPlan & /* query_plan */,
     const Names & /* column_names */,
     const StorageSnapshotPtr & /* storage_snapshot */,

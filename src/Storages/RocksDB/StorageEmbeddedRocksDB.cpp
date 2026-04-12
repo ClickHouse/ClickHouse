@@ -1,5 +1,6 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -55,6 +56,8 @@
 #include <filesystem>
 #include <memory>
 #include <utility>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -151,19 +154,11 @@ public:
         return Chunk(block.getColumns(), block.rows());
     }
 
-    void fillVirtualColumns(Block & block) const
+    void fillVirtualColumns([[maybe_unused]] Block & block) const
     {
-        auto num_rows = block.rows();
-        for (const auto & [name, type] : storage_snapshot->virtual_columns->getNamesAndTypesList())
-        {
-            if (block.has(name))
-                continue;
-
-            if (name == "_table")
-                block.insert({type->createColumnConst(num_rows, storage.getStorageID().getTableName())->convertToFullColumnIfConst(), type, name});
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported virtual column '{}'", name);
-        }
+        auto virtual_columns = storage_snapshot->virtual_columns->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+        if (!virtual_columns.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported virtual columns {}", virtual_columns.getNames());
     }
 
     Block generateWithKeys()
@@ -230,7 +225,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     Int32 ttl_,
     String rocksdb_dir_,
     bool read_only_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(fmt::format("StorageEmbeddedRocksDB ({})", getStorageID().getNameForLogs())))
     , primary_keys{std::move(primary_keys_)}
@@ -243,7 +238,8 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
 
     {
         VirtualColumnsDescription virtuals_desc;
-        virtuals_desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+        virtuals_desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+        virtuals_desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
         setVirtuals(std::move(virtuals_desc));
     }
 
@@ -324,6 +320,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     chassert(commands.size() == 1);
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto physical_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
 
@@ -333,7 +330,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
         mutation_settings.return_all_columns = true;
         mutation_settings.return_mutated_rows = true;
 
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, mutation_settings);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, physical_columns, context_, mutation_settings);
 
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
@@ -388,7 +385,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     mutation_settings.return_all_columns = true;
     mutation_settings.return_mutated_rows = true;
 
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, mutation_settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, physical_columns, context_, mutation_settings);
 
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
@@ -686,7 +683,7 @@ private:
     bool all_scan = true;
 };
 
-void StorageEmbeddedRocksDB::read(
+void StorageEmbeddedRocksDB::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -697,7 +694,7 @@ void StorageEmbeddedRocksDB::read(
     size_t num_streams)
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(storage_snapshot->virtual_columns->getNamesAndTypesList());
+    Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(storage_snapshot->virtual_columns->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList());
 
     auto reading = std::make_unique<ReadFromEmbeddedRocksDB>(
         column_names,
