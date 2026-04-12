@@ -10,6 +10,7 @@
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -186,6 +187,7 @@ void KeeperOverDispatcher::exists(
 
     const auto request = std::make_shared<ZooKeeperExistsRequest>();
     request->path = path;
+
     request->xid = next_xid++;
 
     {
@@ -210,6 +212,7 @@ void KeeperOverDispatcher::get(
 
     const auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = path;
+
     request->xid = next_xid++;
 
     {
@@ -257,6 +260,7 @@ void KeeperOverDispatcher::list(
     const auto request = std::make_shared<ZooKeeperFilteredListRequest>();
     request->path = path;
     request->list_request_type = list_request_type;
+
     request->xid = next_xid++;
 
     {
@@ -279,6 +283,7 @@ void KeeperOverDispatcher::check(
     const auto request = std::make_shared<ZooKeeperCheckRequest>();
     request->path = path;
     request->version = version;
+
     request->xid = next_xid++;
 
     {
@@ -348,6 +353,7 @@ void KeeperOverDispatcher::getACL(const String & path, GetACLCallback callback)
 {
     const auto request = std::make_shared<ZooKeeperGetACLRequest>();
     request->path = path;
+
     request->xid = next_xid++;
 
     {

@@ -216,13 +216,13 @@ void assertDigest(
     }
 }
 
-/// Macros to construct timed lock guards for storage_mutex with appropriate ProfileEvents.
+/// Macros to construct timed lock guards for state_machine_storage_mutex with appropriate ProfileEvents.
 /// We cannot use a factory function because TSA does not track lock ownership across function boundaries.
 #define KEEPER_STORAGE_LOCK_EXCLUSIVE(name) \
-    ProfiledExclusiveLock name(storage_mutex, ProfileEvents::KeeperStorageLockWaitMicroseconds)
+    ProfiledExclusiveLock name(state_machine_storage_mutex, ProfileEvents::KeeperStorageLockWaitMicroseconds)
 
 #define KEEPER_STORAGE_LOCK_SHARED(name) \
-    ProfiledSharedLock name(storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds)
+    ProfiledSharedLock name(state_machine_storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds)
 
 union XidHelper
 {
@@ -239,8 +239,6 @@ union XidHelper
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
-    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
-
     double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
     int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
     if (sleep_ms != 0 && sleep_probability != 0)
@@ -268,39 +266,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 
     request_for_session->log_idx = log_idx;
 
-    const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
-    {
-        ZooKeeperOpentelemetrySpans::maybeInitialize(
-            request_for_session->request->spans.pre_commit,
-            request_for_session->request->tracing_context,
-            start_time_us);
-
-        ZooKeeperOpentelemetrySpans::maybeFinalize(
-            request_for_session->request->spans.pre_commit,
-            [&]
-            {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                    {"keeper.session_id", request_for_session->session_id},
-                    {"keeper.xid", request_for_session->request->xid},
-                    {"raft.log_idx", log_idx},
-                };
-            },
-            status,
-            error_message);
-    };
-
-    try
-    {
-        preprocess(*request_for_session);
-    }
-    catch (...)
-    {
-        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
-        throw;
-    }
-
-    maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
+    preprocess(*request_for_session);
 
     return result;
 }
@@ -557,7 +523,7 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
         return { session_id, std::move(res) };
     };
 
-    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, true))
+    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, /*is_local=*/ true, /*is_reconfig=*/ true))
         return bad_request(ZNOAUTH);
 
     KeeperDispatcher & dispatcher = *keeper_context->getDispatcher();
@@ -1439,8 +1405,9 @@ Coordination::ZooKeeperResponsePtr KeeperStateMachine<Storage>::processReadReque
     {
         KEEPER_STORAGE_LOCK_SHARED(storage_lock);
         ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+
         auto responses = storage->processRequest(
-            request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
+            request_for_session.request, request_for_session.session_id, std::nullopt);
         for (auto & response_for_session : responses)
         {
             response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
@@ -1482,39 +1449,35 @@ std::vector<Coordination::ZooKeeperResponsePtr> KeeperStateMachine<Storage>::pro
         return results;
     }
 
-    /// Batch path: acquire both locks once for all reads.
+    /// Batch path: uses processLocalRequests which handles parallel thread
+    /// pool dispatch, multiread unbundling, and batch session expiry.
     KEEPER_STORAGE_LOCK_SHARED(storage_lock);
     ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
 
-    for (size_t i = 0; i < requests.size(); ++i)
+    KeeperRequestsForSessions requests_vec(requests.begin(), requests.end());
+    auto all_responses = storage->processLocalRequests(requests_vec, /*check_acl=*/true);
+
+    /// Map responses back: direct read responses go into results[],
+    /// watch notifications are routed to their sessions.
+    /// processLocalRequests returns responses in request order, but each
+    /// request may produce both a direct response AND watch notifications.
+    size_t req_idx = 0;
+    for (auto & response_for_session : all_responses)
     {
-        const auto & req = requests[i];
-        try
+        response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
+        if (response_for_session.response->xid == Coordination::WATCH_XID)
         {
-            auto responses = storage->processRequest(
-                req.request, req.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
-            for (auto & response_for_session : responses)
-            {
-                response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
-                if (response_for_session.response->xid == Coordination::WATCH_XID)
-                {
-                    if (!response_router(response_for_session.session_id, response_for_session.response, nullptr))
-                        LOG_WARNING(log, "Failed to deliver watch response with session id {} -- session not found, probably because of shutdown", response_for_session.session_id);
-                }
-                else
-                {
-                    results[i] = response_for_session.response;
-                }
-            }
+            if (!response_router(response_for_session.session_id, response_for_session.response, nullptr))
+                LOG_WARNING(log, "Failed to deliver watch response with session id {} -- session not found, probably because of shutdown", response_for_session.session_id);
         }
-        catch (...)
+        else
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            auto err = req.request->makeResponse();
-            err->xid = req.request->xid;
-            err->error = Coordination::Error::ZSYSTEMERROR;
-            err->enqueue_ts = std::chrono::steady_clock::now();
-            results[i] = err;
+            /// Find which request index this response belongs to.
+            /// processLocalRequests preserves request order, so advance sequentially.
+            while (req_idx < requests.size() && results[req_idx])
+                ++req_idx;
+            if (req_idx < requests.size())
+                results[req_idx] = response_for_session.response;
         }
     }
     return results;

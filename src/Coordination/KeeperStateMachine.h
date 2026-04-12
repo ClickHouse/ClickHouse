@@ -176,7 +176,7 @@ protected:
     /// Lock for the storage
     /// Storage works in thread-safe way ONLY for preprocessing/processing
     /// In any other case, unique storage lock needs to be taken
-    mutable SharedMutex storage_mutex;
+    mutable SharedMutex state_machine_storage_mutex;
     /// Lock for processing and response delivery. It's important to process requests
     /// and deliver responses while holding this lock. Otherwise
     /// we can get strange cases when, for example client send read request with

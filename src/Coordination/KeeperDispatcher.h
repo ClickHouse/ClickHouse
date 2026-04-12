@@ -52,7 +52,7 @@ private:
 
     KeeperConnectionStats keeper_stats;
 
-    KeeperConfigurationAndSettingsPtr configuration_and_settings;
+    KeeperConfigurationPtr server_config;
 
     LoggerPtr log;
 
@@ -148,6 +148,7 @@ public:
     /// Used by KeeperOverDispatcher for in-process reads.
     bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
+
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
 
@@ -223,9 +224,9 @@ public:
         return *server->getKeeperStateMachine();
     }
 
-    const KeeperConfigurationAndSettingsPtr & getKeeperConfigurationAndSettings() const
+    const KeeperConfigurationPtr & getKeeperConfiguration() const
     {
-        return configuration_and_settings;
+        return server_config;
     }
 
     const KeeperContextPtr & getKeeperContext() const

@@ -482,8 +482,6 @@ void KeeperTCPHandler::runImpl()
         compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
-    max_request_size = static_cast<UInt64>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
-
     /// TODO: bound the queue and use tryPush + finish() to disconnect slow clients
     /// instead of blocking Keeper threads. For now, unbounded to match old behavior.
     response_queue = std::make_shared<ConcurrentBoundedQueue<SessionRequestPtr>>(std::numeric_limits<size_t>::max());
@@ -628,6 +626,7 @@ void KeeperTCPHandler::runImpl()
                     throw;
                 }
 
+
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
@@ -744,6 +743,8 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
 KeeperTCPHandler::ReceivedRequest KeeperTCPHandler::receiveRequest()
 {
     const UInt64 receive_start_time_us = ZooKeeperOpentelemetrySpans::now();
+
+    const size_t max_request_size = static_cast<size_t>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
 
     std::optional<LimitReadBuffer> limited_buffer_holder;
     /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size

@@ -2419,6 +2419,17 @@ class TestCase:
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
+        # Filter out LLVM profiling runtime noise from stderr.
+        # In coverage builds, short-lived clickhouse-client processes contend over
+        # profraw merge pool files, producing "LLVM Profile Error:" messages that
+        # are not real test failures — the test output is correct. See #97020.
+        if stderr:
+            stderr = "\n".join(
+                line
+                for line in stderr.splitlines()
+                if not line.startswith("LLVM Profile Error:")
+            ).strip()
+
         if debug_log:
             debug_log = trim_for_log(debug_log, 100)
 
