@@ -412,9 +412,6 @@ private:
         if (kafka_storage.shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
-        if (kafka_storage.active_mv_streamers.load() > 0)
-            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
-
         ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
 
         /// Use the actual number of created consumers, not the configured num_consumers.
@@ -423,6 +420,26 @@ private:
         auto actual_consumers = kafka_storage.num_created_consumers;
         if (actual_consumers == 0)
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "No Kafka consumers available for direct read");
+
+        /// Atomically check that no MV streamer is active and register all direct readers.
+        /// This is done under consumers_mutex to prevent a TOCTOU race with threadFunc,
+        /// which performs the symmetric check (active_direct_readers == 0) before starting
+        /// MV streaming. Without the mutex, both sides could pass their checks simultaneously.
+        {
+            std::lock_guard lock(kafka_storage.consumers_mutex);
+            if (kafka_storage.active_mv_streamers.load() > 0)
+                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
+            kafka_storage.active_direct_readers.fetch_add(actual_consumers);
+        }
+
+        /// If source creation fails partway, undo the count for sources that were never created.
+        /// Each successfully created Kafka2Source will decrement active_direct_readers in its destructor.
+        size_t sources_created = 0;
+        SCOPE_EXIT(
+        {
+            if (sources_created < actual_consumers)
+                kafka_storage.active_direct_readers.fetch_sub(actual_consumers - sources_created);
+        });
 
         Pipes pipes;
         pipes.reserve(actual_consumers);
@@ -441,6 +458,7 @@ private:
                 1,
                 i,
                 (*kafka_storage.kafka_settings)[KafkaSetting::kafka_commit_on_select]);
+            ++sources_created;
             pipes.emplace_back(std::move(source));
         }
 
@@ -1104,20 +1122,26 @@ void StorageKafka2::threadFunc(size_t idx)
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         if (num_views)
         {
-            /// If direct readers are active, skip this round and reschedule.
-            /// This prevents MV streaming from starting while direct SELECTs are in progress,
-            /// which would lead to concurrent consumer access.
-            if (active_direct_readers.load() > 0)
+            /// Atomically check that no direct readers are active and register this MV streamer.
+            /// This is done under consumers_mutex to prevent a TOCTOU race with makePipe,
+            /// which performs the symmetric check (active_mv_streamers == 0) before starting
+            /// direct reads. Without the mutex, both sides could pass their checks simultaneously.
             {
-                LOG_DEBUG(log, "Direct readers are active, skipping MV streaming this round");
-                // Will reschedule below
+                std::lock_guard lock(consumers_mutex);
+                if (active_direct_readers.load() > 0)
+                {
+                    LOG_DEBUG(log, "Direct readers are active, skipping MV streaming this round");
+                }
+                else
+                {
+                    active_mv_streamers.fetch_add(1);
+                    incremented_mv_streamers = true;
+                }
             }
-            else
+
+            if (incremented_mv_streamers)
             {
                 auto start_time = std::chrono::steady_clock::now();
-
-                active_mv_streamers.fetch_add(1);
-                incremented_mv_streamers = true;
 
                 // Keep streaming as long as there are attached views and streaming is not cancelled
                 while (!task->stream_cancelled && num_created_consumers > 0)

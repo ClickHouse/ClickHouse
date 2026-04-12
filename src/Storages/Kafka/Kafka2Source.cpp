@@ -28,7 +28,6 @@ Kafka2Source::Kafka2Source(
     , consumer_index(consumer_index_)
     , commit_in_suffix(commit_in_suffix_)
 {
-    storage.active_direct_readers.fetch_add(1);
 }
 
 Kafka2Source::~Kafka2Source()
