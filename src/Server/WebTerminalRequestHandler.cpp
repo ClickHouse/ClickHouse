@@ -462,11 +462,11 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     }
 
     /// Authenticate the user
+    /// Note: do not call makeSessionContext() here - it will be called by ClientEmbedded's constructor.
     auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     try
     {
         session->authenticate(BasicCredentials(auth_user, auth_password), request.clientAddress());
-        session->makeSessionContext();
     }
     catch (...)
     {
