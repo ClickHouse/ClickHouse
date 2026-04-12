@@ -48,6 +48,7 @@ namespace ProfileEvents
     extern const Event TextIndexUsedEmbeddedPostings;
     extern const Event TextIndexTokensCacheHits;
     extern const Event TextIndexTokensCacheMisses;
+    extern const Event TextIndexDiscardPatternScan;
 }
 
 namespace DB
@@ -528,6 +529,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
         {
             /// Too many large-posting tokens matched.
             /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
+            pattern_tokens.clear();
+            ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
             return;
         }
     }

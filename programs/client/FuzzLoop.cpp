@@ -46,6 +46,7 @@ namespace ErrorCodes
 extern const int CANNOT_PARSE_TEXT;
 extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int TOO_DEEP_RECURSION;
 extern const int BUZZHOUSE;
 using ErrorCode = int;
@@ -112,7 +113,11 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
     const auto * exception = server_exception ? server_exception.get() : client_exception.get();
     // Sometimes you may get TOO_DEEP_RECURSION from the server,
     // and TOO_DEEP_RECURSION should not fail the fuzzer check.
-    if (have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
+    // Similarly, MEMORY_LIMIT_EXCEEDED means the server correctly
+    // rejected an expensive query, not that it died.
+    if (have_error
+        && (exception->code() == ErrorCodes::TOO_DEEP_RECURSION
+            || exception->code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED))
     {
         have_error = false;
         server_exception.reset();
