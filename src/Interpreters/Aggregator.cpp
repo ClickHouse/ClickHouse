@@ -755,6 +755,21 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
 
 #endif
 
+bool Aggregator::allKeysAreNumbersOrStrings(const Block & header, const Names & keys)
+{
+    for (const auto & key : keys)
+    {
+        auto type = header.getByName(key).type;
+        if (type->lowCardinality())
+            type = removeLowCardinality(type);
+        if (type->isNullable())
+            type = removeNullable(type);
+        if (!type->isValueRepresentedByNumber() && !isString(type) && !isFixedString(type))
+            return false;
+    }
+    return true;
+}
+
 AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & header)
 {
     /// If no keys. All aggregating to single row.
@@ -807,16 +822,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
         }
     }
 
-    bool all_keys_are_numbers_or_strings = true;
-    for (size_t j = 0; j < params.keys_size; ++j)
-    {
-        if (!types_removed_nullable[j]->isValueRepresentedByNumber() && !isString(types_removed_nullable[j])
-            && !isFixedString(types_removed_nullable[j]))
-        {
-            all_keys_are_numbers_or_strings = false;
-            break;
-        }
-    }
+    const bool all_keys_are_numbers_or_strings = allKeysAreNumbersOrStrings(header, params.keys);
 
     if (has_nullable_key)
     {
@@ -1922,6 +1928,14 @@ static void serializeAndHashForShardingImpl(
     }
     else
     {
+        /// Sharded aggregation requires prealloc serialized methods which compute `row_sizes`
+        /// upfront. Non-prealloc methods should be excluded by the `allKeysAreNumbersOrStrings`
+        /// check in `AggregatingStep`.
+        if (state.row_sizes.empty() && row_count > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Sharded aggregation requires prealloc serialized methods, but row_sizes is empty. "
+                "Non-prealloc methods should be excluded by the allKeysAreNumbersOrStrings check in AggregatingStep");
+
         /// Non-batch fallback: serialize into SerializedKeyBuffer once.
         size_t total_size = 0;
         for (auto sz : state.row_sizes)

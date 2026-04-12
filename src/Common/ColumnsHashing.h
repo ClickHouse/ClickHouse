@@ -374,9 +374,9 @@ struct HashMethodSerialized
     PaddedPODArray<char> serialized_buffer;
     std::vector<std::string_view> serialized_keys;
 
-    /// When set, `getKeyHolder` reads from this buffer instead of serializing from columns.
+    /// When set, the prealloc `getKeyHolder` reads from this buffer instead of serializing from columns.
     /// Used by sharded aggregation to avoid re-serialization when keys were already serialized
-    /// during the scatter phase. Default nullptr means normal serialization from columns.
+    /// during the scatter phase. Only supported with prealloc methods for now.
     const SerializedKeyBuffer * external_serialized_keys = nullptr;
 
     HashMethodSerialized(
@@ -398,8 +398,12 @@ struct HashMethodSerialized
 
         /// If pre-serialized keys are provided, skip all serialization work.
         /// `getKeyHolder` will read from the external buffer instead.
+        /// Only prealloc methods are supported for now.
         if (external_serialized_keys_)
         {
+            if constexpr (!prealloc)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "External serialized keys are not supported with non-prealloc serialized methods");
             external_serialized_keys = external_serialized_keys_;
             return;
         }
@@ -503,8 +507,7 @@ struct HashMethodSerialized
     ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
     requires(!prealloc)
     {
-        if (external_serialized_keys)
-            return SerializedKeyHolder{external_serialized_keys->getKey(row), pool};
+        chassert(!external_serialized_keys);
 
         if constexpr (nullable)
         {

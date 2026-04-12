@@ -353,6 +353,10 @@ public:
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }
 
+    /// Whether all GROUP BY keys are numbers, strings, or fixed strings (after removing
+    /// Nullable and LowCardinality).
+    static bool allKeysAreNumbersOrStrings(const Block & header, const Names & keys);
+
 private:
 
     friend struct AggregatedDataVariants;

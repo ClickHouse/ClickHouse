@@ -319,7 +319,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         && (params.keys_size > 1
             || (!WhichDataType(removeNullable(pipeline.getHeader().getByName(params.keys[0]).type)).isUInt8()
                 && !WhichDataType(removeNullable(pipeline.getHeader().getByName(params.keys[0]).type)).isInt8()
-                && !pipeline.getHeader().getByName(params.keys[0]).type->lowCardinality()));
+                && !pipeline.getHeader().getByName(params.keys[0]).type->lowCardinality()))
+        /// The scatter pre-serializes keys and reuses them during aggregation, which requires
+        /// prealloc serialized methods. Prealloc is chosen when all keys are numbers, strings,
+        /// or fixed strings. Other types (Array, Tuple, Map, etc.) fall back to non-prealloc
+        /// serialized methods which are not yet supported by sharded aggregation.
+        && Aggregator::allKeysAreNumbersOrStrings(pipeline.getHeader(), params.keys);
 
     if (use_sharded_aggregation)
     {
