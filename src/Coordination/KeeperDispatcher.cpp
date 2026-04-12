@@ -726,8 +726,6 @@ void KeeperDispatcher::sessionCleanerTask()
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
 
-                    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
-
                     using namespace std::chrono;
                     auto request_info = std::make_shared<SessionRequest>();
                     request_info->session_id = dead_session;
