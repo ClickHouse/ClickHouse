@@ -76,6 +76,7 @@ namespace DB
     M(KEEPER_SNAPSHOT_S3, "KeeperSnapS3") \
     M(KEEPER_COMMIT, "KeeperCommit") \
     M(KEEPER_APPEND, "KeeperAppend") \
+    M(KEEPER_READ, "KeeperRead") \
     M(KAFKA_BACKGROUND, "KafkaBackgrd") \
     M(KAFKA_BROKER, "KafkaBroker") \
     M(KAFKA_CLEANUP, "KafkaClnup") \

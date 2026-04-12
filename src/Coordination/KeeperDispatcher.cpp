@@ -67,6 +67,8 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
+    extern const CoordinationSettingsUInt64 max_read_batch_bytes_size;
+    extern const CoordinationSettingsUInt64 max_read_batch_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
@@ -243,14 +245,6 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         return dispatcher->putRequest(request, session_id, use_xid_64);
     else
         return dispatcher2->putRequest(request, session_id, use_xid_64);
-}
-
-bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
-{
-    if (dispatcher)
-        return dispatcher->putLocalReadRequest(request, session_id);
-    else
-        return dispatcher2->putLocalReadRequest(request, session_id);
 }
 
 void KeeperDispatcher::forceRecovery()
