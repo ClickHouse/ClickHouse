@@ -68,6 +68,14 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
 {
     StorageInMemoryMetadata part_metadata;
 
+    /// Ensure patch part system columns are present.
+    /// They may be missing when creating empty coverage parts
+    /// (e.g. DROP PART for a patch part), because createEmptyPart
+    /// only includes data columns from table metadata.
+    for (const auto & col : getPatchPartSystemColumns())
+        if (!patch_part_desc.has(col.name))
+            patch_part_desc.add(ColumnDescription(col.name, col.type));
+
     /// Use hash of column names to put patch parts with different structure to different partitions.
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");
     auto columns_hash = getColumnsHash(patch_part_desc.getNamesOfPhysical());

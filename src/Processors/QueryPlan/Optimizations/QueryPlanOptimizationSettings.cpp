@@ -1,8 +1,13 @@
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 
 namespace DB
 {
@@ -74,9 +79,11 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
+    extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
+    extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
@@ -89,6 +96,8 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
+    extern const SettingsUInt64 query_plan_optimize_join_order_randomize;
+    extern const SettingsBool enable_join_transitive_predicates;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
@@ -142,6 +151,16 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
             "maximum allowed value is 64", query_plan_optimize_join_order_limit);
+    query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
+    if (query_plan_optimize_join_order_randomize == 1)
+    {
+        query_plan_optimize_join_order_randomize = randomSeed();
+    }
+    if (query_plan_optimize_join_order_randomize)
+    {
+        LOG_DEBUG(getLogger("QueryPlanOptimizationSettings"), "Using random seed {} for randomizing join order optimizations", query_plan_optimize_join_order_randomize);
+    }
+    enable_join_transitive_predicates = from[Setting::enable_join_transitive_predicates];
 
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
@@ -181,6 +200,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_max_rows_to_broadcast = from[Setting::distributed_plan_max_rows_to_broadcast];
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
+    distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
@@ -224,9 +244,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     max_threads = from[Setting::max_threads];
 
-    parallel_replicas_enabled = from[Setting::allow_experimental_parallel_reading_from_replicas];
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
+
+    // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
+    min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
 
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 }

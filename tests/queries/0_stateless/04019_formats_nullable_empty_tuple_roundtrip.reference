@@ -1,0 +1,187 @@
+-- { echo }
+
+SET allow_experimental_nullable_tuple_type = 1;
+SET engine_file_truncate_on_insert = 1;
+DROP TABLE IF EXISTS test_nullable_empty_tuple;
+CREATE TABLE test_nullable_empty_tuple (c0 Nullable(Tuple())) ENGINE = Memory;
+INSERT INTO TABLE test_nullable_empty_tuple (c0) VALUES (()), (NULL), (());
+SELECT 'CSV';
+CSV
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.csv', 'CSV', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.csv', 'CSV', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'TabSeparated';
+TabSeparated
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.tsv', 'TabSeparated', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.tsv', 'TabSeparated', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'TabSeparatedRaw';
+TabSeparatedRaw
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.tsvraw', 'TabSeparatedRaw', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.tsvraw', 'TabSeparatedRaw', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'JSONEachRow';
+JSONEachRow
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.json', 'JSONEachRow', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.json', 'JSONEachRow', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'JSONCompactEachRow';
+JSONCompactEachRow
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.jsoncompact', 'JSONCompactEachRow', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.jsoncompact', 'JSONCompactEachRow', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'JSONStringsEachRow';
+JSONStringsEachRow
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.jsonstr', 'JSONStringsEachRow', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.jsonstr', 'JSONStringsEachRow', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'JSONCompactStringsEachRow';
+JSONCompactStringsEachRow
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.jsoncstr', 'JSONCompactStringsEachRow', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.jsoncstr', 'JSONCompactStringsEachRow', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'Values';
+Values
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.values', 'Values', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.values', 'Values', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'TSKV';
+TSKV
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.tskv', 'TSKV', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.tskv', 'TSKV', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'CustomSeparated';
+CustomSeparated
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.custom', 'CustomSeparated', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.custom', 'CustomSeparated', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'Native';
+Native
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.native', 'Native', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.native', 'Native', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'RowBinary';
+RowBinary
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.rowbin', 'RowBinary', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.rowbin', 'RowBinary', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'Avro';
+Avro
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.avro', 'Avro', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.avro', 'Avro', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'MsgPack';
+MsgPack
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.msgpack', 'MsgPack', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.msgpack', 'MsgPack', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'BSONEachRow';
+BSONEachRow
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.bson', 'BSONEachRow', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.bson', 'BSONEachRow', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'JSON';
+JSON
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.jsonall', 'JSON', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.jsonall', 'JSON', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'JSONCompact';
+JSONCompact
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.jsoncompactall', 'JSONCompact', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.jsoncompactall', 'JSONCompact', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'JSONColumns';
+JSONColumns
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.jsoncols', 'JSONColumns', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.jsoncols', 'JSONColumns', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'JSONCompactColumns';
+JSONCompactColumns
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.jsonccols', 'JSONCompactColumns', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.jsonccols', 'JSONCompactColumns', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'JSONColumnsWithMetadata';
+JSONColumnsWithMetadata
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.jsoncolsmeta', 'JSONColumnsWithMetadata', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.jsoncolsmeta', 'JSONColumnsWithMetadata', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'JSONObjectEachRow';
+JSONObjectEachRow
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.jsonobj', 'JSONObjectEachRow', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.jsonobj', 'JSONObjectEachRow', 'c0 Nullable(Tuple())');
+()
+\N
+()
+SELECT 'Buffers';
+Buffers
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.buf', 'Buffers', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.buf', 'Buffers', 'c0 Nullable(Tuple())');
+()
+\N
+()
+-- Parquet doesn't support empty tuples by design
+SELECT 'Parquet';
+Parquet
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.parquet', 'Parquet', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple; -- { serverError BAD_ARGUMENTS }
+-- TODO: Does not work for Arrow, ArrowStream, and ORC but should
+SELECT 'Arrow';
+Arrow
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.arrow', 'Arrow', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.arrow', 'Arrow', 'c0 Nullable(Tuple())');
+()
+()
+()
+SELECT 'ArrowStream';
+ArrowStream
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.arrowstream', 'ArrowStream', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.arrowstream', 'ArrowStream', 'c0 Nullable(Tuple())');
+()
+()
+()
+SELECT 'ORC';
+ORC
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.orc', 'ORC', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
+SELECT c0 FROM file(currentDatabase() || '_04019.orc', 'ORC', 'c0 Nullable(Tuple())');
+()
+()
+()

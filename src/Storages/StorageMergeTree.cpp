@@ -2559,24 +2559,23 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     String partition_id;
 
+    /// The merges_blocker must live until the end of the function to prevent background mutations
+    /// from starting on parts in the target partition between when we stop waiting and when we
+    /// actually remove old parts via removePartsInRangeFromWorkingSet. Without this, a mutation
+    /// could "resurrect" old data by completing on an already-removed part and adding a new version
+    /// of it back to the working set.
+    ActionLock merges_blocker;
     if (is_all)
     {
         if (replace)
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
+        merges_blocker = stopMergesAndWait();
     }
     else
     {
         partition_id = getPartitionIDFromQuery(partition, local_context);
+        merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
-
-    /// We use the global `stopMergesAndWait` (not the per-partition variant) because the
-    /// per-partition blocker check in `scheduleDataProcessingJob` happens outside
-    /// `currently_processing_in_background_mutex`, creating a race window where a mutation
-    /// can be selected inside the mutex, pass the per-partition check outside the mutex,
-    /// and get scheduled after the blocker was set but before we call
-    /// `removePartsInRangeFromWorkingSet`, "resurrecting" old data.
-    /// The global blocker is checked inside the mutex, eliminating this race.
-    ActionLock merges_blocker = stopMergesAndWait();
 
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
     auto my_metadata_snapshot = getInMemoryMetadataPtr();
@@ -2698,7 +2697,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
 }
 
-void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr local_context)
+/// `std::lock` + `std::adopt_lock` pattern for two mutexes is correct but opaque to
+/// Clang's thread-safety analyzer, which cannot track mutex ownership across `std::lock`.
+void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr local_context) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)

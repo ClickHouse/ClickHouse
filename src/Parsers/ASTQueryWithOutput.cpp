@@ -44,6 +44,11 @@ void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     /// act as a separator, so the parser stops before them — no parentheses needed.
     frame.parent_has_trailing_settings = frame.parent_has_trailing_settings || (settings_ast && !out_file && !format_ast);
 
+    /// Let inner nodes (e.g. ASTCreateQuery) know that trailing output options
+    /// will follow, so they can parenthesize AS-select if needed.
+    if (hasOutputOptions())
+        frame.has_trailing_output_options = true;
+
     formatQueryImpl(ostr, s, state, frame);
 
     std::string indent_str = s.one_line ? "" : std::string(4u * frame.indent, ' ');

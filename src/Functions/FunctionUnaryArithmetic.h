@@ -523,8 +523,12 @@ public:
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
+        if (!type.isValueRepresentedByNumber())
+            return {};
+        if (isNaNField(left) || isNaNField(right))
+            return {};
         return { .is_monotonic = true };
     }
 };

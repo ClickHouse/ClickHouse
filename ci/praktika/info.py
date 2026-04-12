@@ -190,7 +190,7 @@ class Info:
         else:
             assert branch
             ref_param = f"REF={branch}"
-        path = Settings.HTML_S3_PATH
+        path = Settings.S3_REPORT_BUCKET
         for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
@@ -210,7 +210,7 @@ class Info:
         else:
             assert branch
             ref_param = f"REF={branch}"
-        path = Settings.HTML_S3_PATH
+        path = Settings.S3_REPORT_BUCKET
         for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
@@ -231,6 +231,15 @@ class Info:
         except Exception as e:
             print(f"ERROR: Exception, while reading workflow input [{e}]")
         return None
+
+    def set_pr_labels(self, labels, reset=False):
+        self.env.set_pr_labels(labels, reset=reset)
+
+    def add_pr_label(self, label):
+        self.env.add_pr_label(label)
+
+    def remove_pr_label(self, label):
+        self.env.remove_pr_label(label)
 
     def store_kv_data(self, key, value):
         print(f"Store workflow kv data: key [{key}], value [{value}]")

@@ -113,7 +113,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
-    extern const SettingsBool allow_experimental_statistics;
+    extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -677,9 +677,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (auto statistics_desc = col_decl.getStatisticsDesc())
         {
-            if (!skip_checks && !context_->getSettingsRef()[Setting::allow_experimental_statistics])
+            if (!skip_checks && !context_->getSettingsRef()[Setting::allow_statistics])
                 throw Exception(
-                    ErrorCodes::INCORRECT_QUERY, "Create table with statistics is now disabled. Turn on allow_experimental_statistics");
+                    ErrorCodes::INCORRECT_QUERY, "Create table with statistics is disabled. Turn on allow_statistics");
 
             column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(statistics_desc, column.name, column.type);
         }
@@ -777,7 +777,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext());
                 properties.projections.add(std::move(projection));
             }
 
@@ -957,7 +957,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Table function without columns list.
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
-        properties.columns = table_function->getActualTableStructure(getContext(), /*is_insert_query*/ true);
+        properties.columns = table_function->getActualTableStructureWithAccess(getContext(), /*is_insert_query*/ true);
     }
     else if (create.is_dictionary)
     {
@@ -1226,12 +1226,12 @@ namespace
         return &engine_def.arguments->children;
     }
 
-    bool hasDynamicSubcolumns(const ColumnsDescription & columns)
+    bool hasColumnsWithDynamicStructure(const ColumnsDescription & columns)
     {
         return std::any_of(columns.begin(), columns.end(),
             [](const auto & column)
             {
-               return column.type->hasDynamicSubcolumns();
+               return column.type->hasDynamicStructure();
             });
     }
 
@@ -1782,11 +1782,11 @@ namespace
 
 void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumns())
+    if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Dynamic or JSON, "
-            "because storage {} doesn't support dynamic subcolumns",
+            "because storage {} doesn't support columns with dynamic structure",
             storage.getName());
     }
 }
@@ -1796,7 +1796,7 @@ void validateVirtualColumns(IStorage & storage)
     auto virtual_columns = storage.getVirtualsPtr();
     for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
     {
-        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
+        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
@@ -1808,7 +1808,7 @@ void validateVirtualColumns(IStorage & storage)
         /// This leads to a type mismatch: the Block header uses the user column's type
         /// while the data comes from the virtual column (which may have a different type).
         if (storage_column.default_desc.kind == ColumnDefaultKind::Ephemeral
-            && virtual_columns->tryGet(storage_column.name, VirtualsKind::Ephemeral))
+            && virtual_columns->tryGet(storage_column.name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot create table with ephemeral column '{}' for {} engines "

@@ -1,121 +1,125 @@
 ---
 name: clickhouse-pr-description
-description: Generate PR descriptions for ClickHouse/ClickHouse that match maintainer expectations. Strips AI slop automatically. Use when creating or updating PR descriptions.
+description: Generate PR descriptions for ClickHouse/ClickHouse that match maintainer expectations. Use when creating or updating PR descriptions.
 argument-hint: "[PR-number or branch-name]"
 disable-model-invocation: false
-allowed-tools: Task, Bash(gh:*), Bash(git:*), Read, Glob, Grep
+allowed-tools: Task, Bash(gh:*), Bash(git:*), Read, Glob, Grep, AskUserQuestion
 ---
 
 # ClickHouse PR Description Skill
 
-Generate PR descriptions that look like a human wrote them in 30 seconds. ClickHouse maintainers hate AI slop.
-
-## Arguments
-
-- `$0` (optional): PR number or branch name. If omitted, uses the current branch.
-
-## Obtaining the Diff
-
-**If a PR number is given:**
-- Fetch the PR info: `gh pr view $0 --json title,body,baseRefName,headRefName,files`
-- Get the diff: `gh pr diff $0`
-
-**If a branch name is given:**
-- Get the diff against master: `git diff master...$0`
-
-**If nothing is given:**
-- Use current branch: `git diff master...HEAD`
-- Get commit messages: `git log --oneline master..HEAD`
+Generate a good PR description and apply it, with optional confirmation based on user preference.
 
 ## Title
 
-Plain description. No prefix conventions.
+Plain description of what changed. No prefix conventions like `fix():` or `feat():`.
 
 - Good: `Change default stderr_reaction to log_last for executable UDFs`
-- Good: `Fix crash when inserting NULL into non-nullable column`
-- Good: `Fuzzer fixes`
-- Bad: `fix(udf): Change default stderr_reaction to log_last` -- conventional commits = instant AI tell
-- Bad: `Improve error handling and enrich exit code exceptions with stderr context` -- too polished
-
-Keep it under 80 chars. Lowercase after first word is fine.
+- Good: `Fix exception when inserting NULL into non-nullable column via CAST`
+- Bad: `fix(udf): Change default stderr_reaction` — conventional commits, ClickHouse doesn't use them
+- Bad: `Fuzzer fixes` — too vague, tells the reviewer nothing
+- Bad: `Improve error handling and enrich exit code exceptions with stderr context` — too vague, doesn't say what was actually changed
 
 ## Body
 
-**Only the official template from `.github/PULL_REQUEST_TEMPLATE.md`. Nothing else above or below unless you have a genuine reason.**
+Read `.github/PULL_REQUEST_TEMPLATE.md` for the exact template structure.
 
-Read `.github/PULL_REQUEST_TEMPLATE.md` for the exact template. Fill in the changelog category (delete the rest), write the changelog entry, and keep the documentation checkbox.
+A good PR description has two parts:
 
-**If context is needed** (complex bug fix, behavioral change), add 1-3 paragraphs of plain text ABOVE the template. Free-form, no headers, no formatting. Like explaining to a colleague:
+**1. Free-form context (above the template, optional but encouraged for non-trivial changes)**
+
+Explain to a future reader: what was the problem, why did it need fixing, what approach was taken, what were the results or trade-offs. This is the right place for:
+- Motivation and background
+- Description of the approach and why it was chosen over alternatives
+- Benchmark results or measurements
+- Links to related issues, discussions, or previous attempts
+- Any caveats or known limitations
+
+Use plain paragraphs. Headers like `## Motivation`, `## Changes`, `## Results` are fine and helpful — they make the PR easier to navigate for reviewers. Bullet lists are fine. Be as detailed as needed.
+
+**2. Template section (mandatory)**
+
+Fill in the changelog category (delete the rest of the list), write the changelog entry, and keep the documentation checkbox.
+
+### Example of a well-written body
+
+From [#96110](https://github.com/ClickHouse/ClickHouse/pull/96110):
 
 ```
-The previous default `throw` for stderr_reaction caused confusing errors when
-UDFs wrote warnings to stderr but exited 0. Changed to `log_last` which matches
-what most users expect. The `throw` behavior is still available via config.
-
 ### Changelog category (leave one):
-- Bug Fix (user-visible misbehavior in an official stable release)
+- Backward Incompatible Change
 
 ### Changelog entry:
-Change default `stderr_reaction` from `throw` to `log_last` for executable UDFs.
-Previously, UDFs that wrote warnings to stderr would fail even with exit code 0.
-Fixes #XXXXX.
+The semantics of the `do_not_merge_across_partitions_select_final` setting were
+made more obvious. Previously, the feature could be automatically enabled when
+the setting was not explicitly set in the configs. It caused confusion repeatedly
+and, unfortunately, led to some issues in production. Now, the rules are simpler:
+`do_not_merge_across_partitions_select_final=1` enables the functionality
+unconditionally. If `do_not_merge_across_partitions_select_final=0`, then automatic
+is used only if the new setting
+`enable_automatic_decision_for_merging_across_partitions_for_final=1` and not used
+otherwise. To preserve the old behaviour as much as possible, the defaults were set
+to `do_not_merge_across_partitions_select_final=0` and
+`enable_automatic_decision_for_merging_across_partitions_for_final=1`.
 
 ### Documentation entry for user-facing changes
 - [ ] Documentation is written (mandatory for new features)
+
+---
+
+The backward-incompatible part is that if someone has
+`do_not_merge_across_partitions_select_final=0` explicitly set in the configs,
+it no longer protects against the use of automatics. I'm open to discussion on
+whether we should conservatively default to disabled automatics.
 ```
+
+Note: extra context after `---` is fine — reviewers see it, but only the changelog entry above the blank line goes into the CHANGELOG.
 
 ## Changelog entry guidelines
 
-- Written for **users**, not developers
-- Present tense: "Fix" not "Fixed"
-- Say what changed AND why it matters to users
-- Code elements in backticks
-- Reference issue: `Fixes #XXXXX`
-- 1-3 sentences max
+The entry is what ends up in the published CHANGELOG. Write it for a user who is upgrading and scanning for what affects them. The PR link and author attribution are appended automatically by tooling — do not include them.
 
-## AI Slop Blacklist
+**Format:** the changelog script (`tests/ci/changelog.py`) collects all lines after the `### Changelog entry:` header up to the first blank line, then joins them with spaces into a single string. This means:
+- The entry can span multiple lines in the template — they become one paragraph
+- A blank line terminates collection — anything after it is ignored
+- Write it as a single paragraph (no bullet lists, no blank lines within)
 
-These patterns are **never allowed** in ClickHouse PRs:
+**Tense:** mixed is fine and natural. "Added X", "Fix a case where...", "The `X` setting is now Y" are all real examples from the CHANGELOG. Don't force everything into present tense.
 
-| Pattern | Why it's slop |
-|---------|---------------|
-| `fix(scope):` / `feat():` / `chore():` | Conventional commits -- ClickHouse doesn't use them |
-| `## Summary` | Not in template, screams AI |
-| `## Test plan` / `## Testing` | Tests speak for themselves |
-| `## Changes` / `## What changed` | Not in template |
-| `## Behavior after this change` | Not a ClickHouse convention |
-| Markdown tables comparing behavior | Over-engineered, nobody does this |
-| Checkbox lists `- [ ] tested X` | Not a ClickHouse convention |
-| `This PR ...` to start the description | AI opener. Just describe the change directly |
-| Bullet lists of file-by-file changes | Implementation details don't belong here |
-| `## Motivation` as a header | If needed, just write it as plain text |
-| Emojis in any form | No |
-| `Co-Authored-By: Claude/Cursor/...` in PR descriptions | AI attribution in PR body is noise; commit trailers are a separate policy |
-| Perfectly parallel sentence structures | Vary your phrasing |
-| Words: "enhance", "streamline", "leverage", "robust", "comprehensive" | Classic AI vocabulary |
+**Length:** match the impact. A small new function can be one sentence. A changed default or backward-incompatible behavior warrants as many sentences as needed, including what users must do to adapt.
 
-## For CI/not-for-changelog PRs
+**Specificity:** always name the exact thing that changed. Never write "Fix a bug" or "Improve performance" without saying what specifically.
 
-Minimal is best:
+**For backward-incompatible changes:** always explain the old behavior, the new behavior, and how to restore the old one if possible.
 
-```
-### Changelog category (leave one):
-- Not for changelog (changelog entry is not required)
+**Real examples from the ClickHouse CHANGELOG:**
 
-### Changelog entry (a user-readable short description of the changes that goes into CHANGELOG.md):
+One sentence, sufficient for a focused addition:
+> Add `xxh3_128` hashing function.
 
-...
+One sentence with enough context:
+> `DATE` columns from PostgreSQL are now inferred as `Date32` in ClickHouse (in previous versions they were inferred as `Date`, which led to overflow of values outside a narrow range). Allow inserting `Date32` values back to PostgreSQL.
 
-### Documentation entry for user-facing changes
+Full migration instructions for a default change:
+> Deduplication is turned ON for all inserts by default. It was OFF before for async inserts and for MV's, but it was ON for sync inserts. The goal is to have the same defaults for both ways of inserts. If you have deduplication explicitly disabled on your cluster, you have to explicitly set `deduplicate_insert='backward_compatible_choice'` to keep the old behavior.
 
-- [ ] Documentation is written (mandatory for new features)
-```
+Describes new capability with enough detail to understand when to use it:
+> Added `OPTIMIZE <table> DRY RUN PARTS <part names>` query to simulate merges without committing the result part. It may be useful for testing purposes: verifying merge correctness in the new version, deterministically reproducing merge-related bugs, and reliably benchmarking merge performance.
 
-## Process
+Reference the issue if one exists: `Closes #XXXXX` or `Fixes #XXXXX` at the end.
 
-1. Read the diff to understand the change
-2. Pick the right changelog category
-3. Write a changelog entry for users (not developers)
-4. Only add free-form context above template if the change is non-obvious
-5. Re-read the body -- delete anything that a ClickHouse maintainer would call slop
-6. Check title -- no conventional commit prefix, no AI-polished phrasing
+## What to avoid
+
+These patterns make PRs harder to read or signal low effort:
+
+- `fix(scope):` / `feat():` / `chore():` — ClickHouse doesn't use conventional commits
+- `This PR ...` to start any section — just describe the change
+- Vague titles like `Fuzzer fixes`, `Fix bug`, `Improvements` — always say what specifically
+- Markdown tables comparing "before/after behavior" unless genuinely useful
+- Perfectly parallel sentence structure throughout — vary phrasing naturally
+
+## AI co-authorship
+
+It's fine to mention AI assistance openly. `Co-Authored-By:` in commits or acknowledgements in the PR description are acceptable — ClickHouse is open about AI-assisted development.
+
+Before creating or updating the PR, check user memory for a confirmation preference. If no preference is stored and the session is interactive, ask once: "Should I always show you the description for approval before applying it, or just go ahead every time?" Save the answer to memory and apply it from then on. If the session is non-interactive, proceed directly without asking.

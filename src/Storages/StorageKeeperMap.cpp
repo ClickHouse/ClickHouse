@@ -12,6 +12,7 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/DatabaseCatalog.h>
@@ -352,7 +353,7 @@ StorageKeeperMap::StorageKeeperMap(
     const std::string & zk_root_path_,
     UInt64 keys_limit_,
     bool override_metadata)
-    : IStorage(table_id)
+    : StorageWithCommonVirtualColumns(table_id)
     , WithContext(context_->getGlobalContext())
     , zk_root_path(zkutil::extractZooKeeperPath(zk_root_path_, false))
     , primary_key(primary_key_)
@@ -369,9 +370,7 @@ StorageKeeperMap::StorageKeeperMap(
 
     setInMemoryMetadata(metadata);
 
-    VirtualColumnsDescription virtuals;
-    virtuals.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "");
-    setVirtuals(std::move(virtuals));
+    setVirtuals(createVirtuals());
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
@@ -525,6 +524,11 @@ StorageKeeperMap::StorageKeeperMap(
 
                     if (!drop_finished)
                     {
+                        /// Backward compatibility: tables created before 25.1 don't have
+                        /// the drop_lock_version node. Create it if missing so the set below
+                        /// doesn't fail with ZNONODE (same pattern as drop() uses).
+                        client->createIfNotExists(zk_dropped_lock_version_path, "");
+
                         Coordination::Requests drop_lock_requests{
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
                             zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1),
@@ -554,6 +558,13 @@ StorageKeeperMap::StorageKeeperMap(
                                 return;
                         }
                     }
+                }
+
+                /// Root path may have been removed by dropTableData above.
+                if (zk_root_path != "/" && !client->exists(zk_root_path))
+                {
+                    client->createAncestors(zk_root_path);
+                    client->createIfNotExists(zk_root_path, "");
                 }
 
                 Coordination::Requests create_requests{
@@ -635,6 +646,15 @@ private:
     Strings getAllKeys() const;
 };
 
+VirtualColumnsDescription StorageKeeperMap::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "", VirtualsMaterializationPlace::Reader);
+    return desc;
+}
+
 bool StorageKeeperMap::isMetadataStringEqual(
     const std::string & zk_metadata_string,
     const std::string & local_metadata_string,
@@ -695,7 +715,7 @@ bool StorageKeeperMap::isMetadataStringEqual(
 }
 
 
-void StorageKeeperMap::read(
+void StorageKeeperMap::readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -1565,6 +1585,9 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, local_context);
 
+    auto mutation_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
+    mutation_columns.push_back(String(version_column_name));
+
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
         MutationsInterpreter::Settings mutation_settings(true);
@@ -1575,6 +1598,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             storage_ptr,
             metadata_snapshot,
             commands,
+            mutation_columns,
             local_context,
             mutation_settings);
 
@@ -1666,6 +1690,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         storage_ptr,
         metadata_snapshot,
         commands,
+        mutation_columns,
         local_context,
         settings);
 

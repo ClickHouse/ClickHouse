@@ -1,6 +1,8 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
 #include <Common/quoteString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -138,7 +140,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
 StorageTimeSeriesSelector::StorageTimeSeriesSelector(
     const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_)
-    : IStorage{table_id_}
+    : StorageWithCommonVirtualColumns{table_id_}
     , config(config_)
 {
     const auto * node = config.selector.getRoot();
@@ -152,6 +154,15 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
+}
+
+VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
@@ -370,10 +381,16 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// WHERE id IN (SELECT id FROM (select_query_from_tags_table))
+        /// PREWHERE (id IN (SELECT id FROM (select_query_from_tags_table))) AND (timestamp >= min_time) AND (timestamp <= max_time)
+        ///
+        /// NOTE: We have to use PREWHERE and not WHERE here to make sure that tags are stored in ContextTimeSeriesTagsCollector before we use them.
+        /// Otherwise in case the result of timeSeriesSelector() is passed to timeSeriesIdToGroup() as following:
+        /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value FROM timeSeriesSelector(...)
+        /// ClickHouse may decide to parallelize and execute timeSeriesIdToGroup(id) before executing timeSeriesStoreTags()
+        /// which may cause exception "Unknown identifier".
         {
-            auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
-            select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
+            auto prewhere_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
+            select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_filter));
         }
 
         /// Wrap the select query into ASTSelectWithUnionQuery.
@@ -404,7 +421,7 @@ namespace
 }
 
 
-void StorageTimeSeriesSelector::read(
+void StorageTimeSeriesSelector::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,

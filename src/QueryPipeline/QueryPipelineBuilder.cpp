@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/DelayedPortsProcessor.h>
@@ -21,6 +22,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/MaterializingCTETransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
@@ -751,6 +753,23 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             std::move(set_and_key),
             limits,
             std::move(prepared_sets_cache));
+
+    pipe.addTransform(std::move(transform));
+}
+
+void QueryPipelineBuilder::addMaterializingCTETransform(
+    SharedHeader res_header,
+    MaterializedCTEPtr materialized_cte
+)
+{
+    checkInitializedAndNotCompleted();
+    dropTotalsAndExtremes();
+    resize(1);
+
+    auto transform = std::make_shared<MaterializingCTETransform>(
+            getSharedHeader(),
+            res_header,
+            std::move(materialized_cte));
 
     pipe.addTransform(std::move(transform));
 }

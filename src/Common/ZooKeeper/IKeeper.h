@@ -458,6 +458,7 @@ struct RemoveRecursiveResponse : virtual Response
 {
 };
 
+
 struct ExistsRequest : virtual Request
 {
     String path;

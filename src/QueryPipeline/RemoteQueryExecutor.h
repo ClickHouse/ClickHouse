@@ -215,6 +215,8 @@ public:
 
     void setUnavailableShardTracker(UnavailableShardTrackerPtr tracker) { unavailable_shard_tracker = std::move(tracker); }
 
+    void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
+
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
@@ -321,6 +323,9 @@ private:
 
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     bool shard_skip_reported = false;
+
+    /// Total number of remote connections across all shards, used to scale interactive_delay.
+    size_t distributed_fanout = 0;
 
     GetPriorityForLoadBalancing::Func priority_func;
 

@@ -3,20 +3,11 @@
 #include <new>
 #include <base/defines.h>
 
+#include <Common/AllocationInterceptors.h>
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/ProfileEvents.h>
-
-#include "config.h"
-
-#if USE_JEMALLOC
-#    include <jemalloc/jemalloc.h>
-#endif
-
-#if !USE_JEMALLOC
-#    include <cstdlib>
-#endif
 
 #if defined(OS_LINUX)
 #    include <malloc.h>
@@ -47,56 +38,19 @@ inline ALWAYS_INLINE size_t alignUp(size_t size, size_t align) noexcept
     return (size + align - 1) / align * align;
 }
 
-template <std::same_as<std::align_val_t>... TAlign>
-requires DB::OptionalArgument<TAlign...>
-inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
-{
-    void * ptr = nullptr;
-    if constexpr (sizeof...(TAlign) == 1)
-#if USE_JEMALLOC
-        ptr = je_aligned_alloc(alignToSizeT(align...), alignUp(size, alignToSizeT(align...)));
-#else
-        ptr = ::aligned_alloc(alignToSizeT(align...), alignUp(size, alignToSizeT(align...)));
-#endif
-    else
-#if USE_JEMALLOC
-        ptr = je_malloc(size);
-#else
-        ptr = ::malloc(size);
-#endif
-
-    if (likely(ptr != nullptr))
-        return ptr;
-
-    /// @note no std::get_new_handler logic implemented
-    throw std::bad_alloc{};
-}
-
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
 {
-#if USE_JEMALLOC
-    return je_malloc(size);
-#else
-    return ::malloc(size);
-#endif
+    return __real_malloc(size);
 }
 
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
 {
-#if USE_JEMALLOC
-    return je_aligned_alloc(static_cast<size_t>(align), alignUp(size, static_cast<size_t>(align)));
-#else
-    return ::aligned_alloc(static_cast<size_t>(align), alignUp(size, static_cast<size_t>(align)));
-#endif
+    return __real_aligned_alloc(static_cast<size_t>(align), alignUp(size, static_cast<size_t>(align)));
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
-#if USE_JEMALLOC
-    je_free(ptr);
-#else
-    ::free(ptr);
-#endif
+    __real_free(ptr);
 }
 
 #if USE_JEMALLOC
@@ -105,7 +59,7 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size, TAlign... align) noexcept
 {
-    if (unlikely(ptr == nullptr))
+    if (ptr == nullptr) [[unlikely]]
         return;
 
     if constexpr (sizeof...(TAlign) == 1)
@@ -120,7 +74,7 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unused]], TAlign... /* align */) noexcept
 {
-    ::free(ptr);
+    __real_free(ptr);
 }
 
 #endif
@@ -134,12 +88,17 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align
 #if USE_JEMALLOC
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
     /// @note je_mallocx() != je_malloc(). It's expected they don't differ much in allocation logic.
-    if (likely(size != 0))
+    size_t size_for_nallocx = size;
+    if (size_for_nallocx == 0) [[unlikely]]
+        size_for_nallocx = 1;
+
+    if constexpr (sizeof...(TAlign) == 1)
     {
-        if constexpr (sizeof...(TAlign) == 1)
-            actual_size = je_nallocx(size, MALLOCX_ALIGN(alignToSizeT(align...)));
-        else
-            actual_size = je_nallocx(size, 0);
+        actual_size = je_nallocx(size_for_nallocx, MALLOCX_ALIGN(alignToSizeT(align...)));
+    }
+    else
+    {
+        actual_size = je_nallocx(size_for_nallocx, 0);
     }
 #endif
 
@@ -177,7 +136,7 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
 #if USE_JEMALLOC
 
         /// @note It's also possible to use je_malloc_usable_size() here.
-        if (likely(ptr != nullptr))
+        if (ptr != nullptr) [[likely]]
         {
             if constexpr (sizeof...(TAlign) == 1)
                 actual_size = je_sallocx(ptr, MALLOCX_ALIGN(alignToSizeT(align...)));

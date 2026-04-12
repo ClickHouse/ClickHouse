@@ -1,4 +1,5 @@
 #include <Access/ViewDefinerDependencies.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -32,6 +33,7 @@
 
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
@@ -116,13 +118,21 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
 
 }
 
+VirtualColumnsDescription StorageView::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
 StorageView::StorageView(
     const StorageID & table_id_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
     bool is_parameterized_view_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     if (!is_parameterized_view_)
@@ -153,9 +163,10 @@ StorageView::StorageView(
     is_parameterized_view = is_parameterized_view_ || query.isParameterizedView();
     storage_metadata.setSelectQuery(description);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 }
 
-void StorageView::read(
+void StorageView::readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -353,6 +364,17 @@ void registerStorageView(StorageFactory & factory)
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     });
+}
+
+ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)
+{
+    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    Settings view_settings = view_context->getSettingsCopy();
+    view_settings[Setting::max_result_rows] = 0;
+    view_settings[Setting::max_result_bytes] = 0;
+    view_settings[Setting::extremes] = false;
+    view_context->setSettings(view_settings);
+    return view_context;
 }
 
 }
