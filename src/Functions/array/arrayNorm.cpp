@@ -1,7 +1,6 @@
 #include <cmath>
 #include <Columns/ColumnArray.h>
 #include <Columns/IColumn.h>
-#include <Common/TargetSpecific.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -135,11 +134,8 @@ struct LinfNorm
 };
 
 
-MULTITARGET_FUNCTION_X86_V4_V3(
-MULTITARGET_FUNCTION_HEADER(
-    template <typename Kernel, typename ResultType, typename ArgumentType>
-    void NO_INLINE
-), executeNormImpl, MULTITARGET_FUNCTION_BODY((
+template <typename Kernel, typename ResultType, typename ArgumentType>
+void NO_INLINE executeNorm(
     const ArgumentType * __restrict data,
     const ColumnArray::Offset * __restrict offsets,
     ResultType * __restrict result,
@@ -181,23 +177,6 @@ MULTITARGET_FUNCTION_HEADER(
         result[row] = Kernel::finalize(state, params);
         prev = off;
     }
-}))
-
-template <typename Kernel, typename ResultType, typename ArgumentType>
-void executeNorm(
-    const ArgumentType * __restrict data,
-    const ColumnArray::Offset * __restrict offsets,
-    ResultType * __restrict result,
-    size_t row_count,
-    const typename Kernel::ConstParams & params)
-{
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_v4))
-        return executeNormImpl_x86_64_v4<Kernel, ResultType, ArgumentType>(data, offsets, result, row_count, params);
-    if (isArchSupported(TargetArch::x86_64_v3))
-        return executeNormImpl_x86_64_v3<Kernel, ResultType, ArgumentType>(data, offsets, result, row_count, params);
-#endif
-    executeNormImpl<Kernel, ResultType, ArgumentType>(data, offsets, result, row_count, params);
 }
 
 
