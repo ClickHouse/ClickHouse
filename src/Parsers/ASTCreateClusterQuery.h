@@ -3,6 +3,8 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
+#include <Common/SettingsChanges.h>
+
 #include <vector>
 
 
@@ -15,7 +17,11 @@ class ASTCreateClusterQuery : public IAST, public ASTQueryWithOnCluster
 public:
     String cluster_name;
     std::vector<String> members;
+    /// Optional cluster-level `PROPERTIES` (syntax only in parser; semantics in interpreter / catalog reload).
+    SettingsChanges cluster_properties;
     bool if_not_exists = false;
+    /// After `ON CLUSTER ...`, optional `SYNC` (wait for distributed DDL when task timeout would otherwise skip it).
+    bool sync = false;
 
     String getID(char) const override { return "CreateClusterQuery"; }
 

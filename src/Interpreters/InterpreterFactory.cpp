@@ -37,9 +37,12 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTCreateReplicaQuery.h>
 #include <Parsers/ASTCreateShardQuery.h>
+#include <Parsers/ASTAlterShardQuery.h>
 #include <Parsers/ASTDropShardQuery.h>
 #include <Parsers/ASTCreateClusterQuery.h>
+#include <Parsers/ASTAlterClusterQuery.h>
 #include <Parsers/ASTDropClusterQuery.h>
 #include <Parsers/ASTShowCreateShardQuery.h>
 #include <Parsers/ASTShowCreateClusterQuery.h>
@@ -326,9 +329,17 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterDropShardQuery";
     }
+    else if (query->as<ASTAlterShardQuery>())
+    {
+        interpreter_name = "InterpreterAlterShardQuery";
+    }
     else if (query->as<ASTDropClusterQuery>())
     {
         interpreter_name = "InterpreterDropClusterQuery";
+    }
+    else if (query->as<ASTAlterClusterQuery>())
+    {
+        interpreter_name = "InterpreterAlterClusterQuery";
     }
     else if (query->as<ASTDropNamedCollectionQuery>())
     {
@@ -393,6 +404,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTCreateIndexQuery>())
     {
         interpreter_name = "InterpreterCreateIndexQuery";
+    }
+    else if (query->as<ASTCreateReplicaQuery>())
+    {
+        interpreter_name = "InterpreterCreateReplicaQuery";
     }
     else if (query->as<ASTCreateShardQuery>())
     {

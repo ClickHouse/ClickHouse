@@ -209,7 +209,12 @@ public:
     };
 
     /// Build from pre-resolved `ShardInitSpec` rows (no XML config). Used by `ClusterFactory`.
-    Cluster(const Settings & settings, const String & cluster_name_, const String & cluster_secret_, std::vector<ShardInitSpec> && shard_specs);
+    Cluster(
+        const Settings & settings,
+        const String & cluster_name_,
+        const String & cluster_secret_,
+        std::vector<ShardInitSpec> && shard_specs,
+        bool allow_distributed_ddl_queries_ = true);
 
     /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
     ///

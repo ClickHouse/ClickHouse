@@ -1,5 +1,6 @@
 #include <Common/Clusters/ClustersMetadataStorage.h>
 
+#include <Common/Clusters/SQLClusterCatalogPropertyValidation.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
@@ -47,6 +48,7 @@ ClusterCatalogDefinition parseClusterCreateStatement(const String & query_text, 
     const auto & q = ast->as<const ASTCreateClusterQuery &>();
     ClusterCatalogDefinition row;
     row.members = q.members;
+    validateAndExtractClusterLevelProperties(q.cluster_properties, row.secret, row.allow_distributed_ddl_queries);
     return row;
 }
 

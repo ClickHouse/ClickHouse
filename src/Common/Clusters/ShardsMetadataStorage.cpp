@@ -1,5 +1,6 @@
 #include <Common/Clusters/ShardsMetadataStorage.h>
 
+#include <Common/Clusters/SQLClusterCatalogPropertyValidation.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
@@ -47,8 +48,7 @@ ShardCatalogDefinition parseShardCreateStatement(const String & query_text, cons
     const auto & q = ast->as<const ASTCreateShardQuery &>();
     ShardCatalogDefinition row;
     row.replica_collections = q.replicas;
-    row.weight = q.weight;
-    row.internal_replication = q.internal_replication;
+    validateAndExtractShardLevelProperties(q.shard_properties, row.weight, row.internal_replication);
     return row;
 }
 

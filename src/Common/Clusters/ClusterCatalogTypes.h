@@ -19,6 +19,10 @@ struct ShardCatalogDefinition
 struct ClusterCatalogDefinition
 {
     std::vector<String> members;
+    /// From cluster-level `PROPERTIES secret = ...` (empty if unset / no verification).
+    String secret;
+    /// From `PROPERTIES allow_distributed_ddl_queries` (default true, matches `remote_servers`).
+    bool allow_distributed_ddl_queries = true;
 };
 
 }

@@ -1652,12 +1652,15 @@ try
 
     global_context->setPath(path_str);
 
-    /// SQL catalog clusters (`CREATE CLUSTER` / `CREATE SHARD`) — on-disk metadata under `<path>/cluster_metadata/`.
-    ClusterFactory::instance().initialize(path_str);
-
     StatusFile status{path / "status", StatusFile::write_full_info};
 
     ServerUUID::load(path / "uuid", log);
+
+    /// Must run before components that may open a ZooKeeper session during startup
+    /// (for example `clusters_catalog_storage` / `shards_catalog_storage` with type `keeper`),
+    /// because `Context::getZooKeeper` initializes the session with `ServerUUID::get`.
+    /// SQL catalog clusters (`CREATE CLUSTER` / `CREATE SHARD`) — on-disk metadata under `<path>/cluster_metadata/`.
+    ClusterFactory::instance().initialize(path_str);
 
     PlacementInfo::PlacementInfo::instance().initialize(config());
 

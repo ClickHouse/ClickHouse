@@ -4,10 +4,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateShardQuery.h>
-#include <Parsers/ParserSetQuery.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Core/Field.h>
-#include <Common/SettingsChanges.h>
+#include <Parsers/ParserSQLClusterCatalogProperties.h>
+#include <Parsers/ParserSQLClusterShardReplicaList.h>
 
 
 namespace DB
@@ -18,12 +16,8 @@ bool ParserCreateShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_create(Keyword::CREATE);
     ParserKeyword s_shard(Keyword::SHARD);
     ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
-    ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_on(Keyword::ON);
     ParserIdentifier name_p;
-    ParserToken s_comma(TokenType::Comma);
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
-    ParserToken s_rparen(TokenType::ClosingRoundBracket);
 
     if (!s_create.ignore(pos, expected))
         return false;
@@ -34,73 +28,40 @@ bool ParserCreateShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
+    String shard_name;
+    std::vector<String> replicas;
+
     ASTPtr shard_ast;
     if (!name_p.parse(pos, shard_ast, expected))
         return false;
+    tryGetIdentifierNameInto(shard_ast, shard_name);
 
-    if (!s_lparen.ignore(pos, expected))
+    if (!parseSQLClusterShardReplicaCollectionList(replicas, pos, expected))
         return false;
 
-    std::vector<String> replicas;
-    ASTPtr replica_id;
-    if (!name_p.parse(pos, replica_id, expected))
+    SettingsChanges shard_properties;
+    bool parsed_options [[maybe_unused]] = false;
+    if (!parseSQLClusterCatalogOptionalProperties(shard_properties, parsed_options, pos, expected))
         return false;
-    tryGetIdentifierNameInto(replica_id, replicas.emplace_back());
-
-    while (s_comma.ignore(pos, expected))
-    {
-        if (!name_p.parse(pos, replica_id, expected))
-            return false;
-        tryGetIdentifierNameInto(replica_id, replicas.emplace_back());
-    }
-
-    if (!s_rparen.ignore(pos, expected))
-        return false;
-
-    UInt32 weight = 1;
-    bool internal_replication = false;
-
-    if (s_settings.ignore(pos, expected))
-    {
-        SettingsChanges changes;
-        while (true)
-        {
-            if (!changes.empty() && !s_comma.ignore(pos, expected))
-                break;
-            changes.push_back(SettingChange{});
-            if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
-                return false;
-        }
-        for (const auto & ch : changes)
-        {
-            if (ch.name == "weight")
-                weight = static_cast<UInt32>(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), ch.value));
-            else if (ch.name == "internal_replication")
-            {
-                if (ch.value.getType() == Field::Types::Bool)
-                    internal_replication = ch.value.safeGet<bool>();
-                else
-                    internal_replication = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), ch.value) != 0;
-            }
-            else
-                return false;
-        }
-    }
 
     String cluster_str;
+    bool sync = false;
     if (s_on.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
+        ParserKeyword s_sync(Keyword::SYNC);
+        if (s_sync.ignore(pos, expected))
+            sync = true;
     }
 
     auto query = make_intrusive<ASTCreateShardQuery>();
-    tryGetIdentifierNameInto(shard_ast, query->shard_name);
+    query->shard_name = std::move(shard_name);
     query->replicas = std::move(replicas);
-    query->weight = weight;
-    query->internal_replication = internal_replication;
+    query->shard_properties = std::move(shard_properties);
     query->if_not_exists = if_not_exists;
     query->cluster = std::move(cluster_str);
+    query->sync = sync;
     node = query;
     return true;
 }

@@ -3,6 +3,8 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
+#include <Common/SettingsChanges.h>
+
 #include <vector>
 
 
@@ -14,9 +16,11 @@ class ASTCreateShardQuery : public IAST, public ASTQueryWithOnCluster
 public:
     String shard_name;
     std::vector<String> replicas;
-    UInt32 weight = 1;
-    bool internal_replication = false;
+    /// Parsed `PROPERTIES` list (syntax only at parse time). Semantics validated in interpreter.
+    SettingsChanges shard_properties;
     bool if_not_exists = false;
+    /// After `ON CLUSTER ...`, optional `SYNC` (wait for distributed DDL when task timeout would otherwise skip it).
+    bool sync = false;
 
     String getID(char) const override { return "CreateShardQuery"; }
 

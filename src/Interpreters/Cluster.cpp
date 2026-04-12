@@ -633,8 +633,11 @@ Cluster::Cluster(
     const Settings & settings,
     const String & cluster_name_,
     const String & cluster_secret_,
-    std::vector<ShardInitSpec> && shard_specs)
-    : secret(cluster_secret_)
+    std::vector<ShardInitSpec> && shard_specs,
+    bool allow_distributed_ddl_queries_)
+    : slot_to_shard()
+    , secret(cluster_secret_)
+    , allow_distributed_ddl_queries(allow_distributed_ddl_queries_)
     , name(cluster_name_)
 {
     UInt32 current_shard_num = 1;

@@ -1,4 +1,6 @@
 #include <Parsers/ASTCreateClusterQuery.h>
+#include <Parsers/formatSettingName.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -24,7 +26,25 @@ void ASTCreateClusterQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSet
         ostr << backQuoteIfNeed(members[i]);
     }
     ostr << ")";
+    if (!cluster_properties.empty())
+    {
+        ostr << " PROPERTIES (";
+        for (size_t i = 0; i < cluster_properties.size(); ++i)
+        {
+            if (i)
+                ostr << ", ";
+            const auto & ch = cluster_properties[i];
+            formatSettingName(ch.name, ostr);
+            if (s.show_secrets)
+                ostr << " = " << applyVisitor(FieldVisitorToString(), ch.value);
+            else
+                ostr << " = '[HIDDEN]'";
+        }
+        ostr << ")";
+    }
     formatOnCluster(ostr, s);
+    if (!cluster.empty() && sync)
+        ostr << " SYNC";
 }
 
 }

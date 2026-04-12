@@ -29,6 +29,9 @@ class AbstractConfiguration;
 namespace DB
 {
 
+class ASTAlterClusterQuery;
+class ASTAlterShardQuery;
+
 /// Row for `system.shards` (SQL `CREATE SHARD` catalog).
 struct SQLShardCatalogTableRow
 {
@@ -71,23 +74,49 @@ public:
 
     void reloadFromSQL();
 
-    void createShard(const String & shard_name, const std::vector<String> & replica_collections, UInt32 weight, bool internal_replication);
+    void createShard(
+        const String & shard_name,
+        const std::vector<String> & replica_collections,
+        UInt32 weight,
+        bool internal_replication);
     void dropShard(const String & shard_name, bool if_exists);
+    /// `ALTER SHARD name MODIFY PROPERTIES (...)` — merge into existing catalog row; returns false if `IF EXISTS` and shard missing.
+    bool updateShardPropertiesFromSQL(const ASTAlterShardQuery & query);
+    /// `ALTER SHARD name ADD REPLICA collection` — append named collection to replica list; returns false if `IF EXISTS` and shard missing.
+    bool addReplicaToShardFromSQL(const ASTAlterShardQuery & query);
+    /// `ALTER SHARD name DROP REPLICA collection` — remove from replica list (named collection is not dropped); returns false if `IF EXISTS` and shard missing.
+    bool dropReplicaFromShardFromSQL(const ASTAlterShardQuery & query);
+    /// `ALTER SHARD name REPLACE ... TO ...` — rename which named collections back replicas (pairwise, simultaneous); optional trailing shard `MODIFY PROPERTIES`; returns false if `IF EXISTS` and shard missing.
+    bool replaceShardReplicasFromSQL(const ASTAlterShardQuery & query);
 
-    void createCluster(const String & cluster_name, const std::vector<String> & members);
+    void createCluster(
+        const String & cluster_name,
+        const std::vector<String> & members,
+        const String & cluster_secret = {},
+        bool allow_distributed_ddl_queries = true);
     bool dropCluster(const String & cluster_name, bool if_exists);
+    /// `ALTER CLUSTER ... ADD SHARD s1, ...` — append members; returns false if `IF EXISTS` and cluster missing.
+    bool addClusterMembersFromSQL(const ASTAlterClusterQuery & query);
+    /// `ALTER CLUSTER ... DROP SHARD s1, ...` — remove members; returns false if `IF EXISTS` and cluster missing.
+    bool dropClusterMembersFromSQL(const ASTAlterClusterQuery & query);
+    /// `ALTER CLUSTER ... REPLACE ... TO ...` — remap members; optional cluster `MODIFY PROPERTIES`; returns false if `IF EXISTS` and cluster missing.
+    bool replaceClusterMembersFromSQL(const ASTAlterClusterQuery & query);
 
     bool hasShard(const String & name) const;
     bool hasCluster(const String & name) const;
 
     std::vector<String> listClusterNames() const;
 
+    /// SQL `CREATE CLUSTER` definitions whose `members` contain `member_name` (SQL shard name or whole-shard named collection).
+    std::vector<String> listSqlClustersContainingMember(const String & member_name) const;
+
     String getShowCreateShard(const String & name) const;
     String getShowCreateCluster(const String & name) const;
 
     ClusterPtr tryMaterializeCluster(const String & cluster_name, ContextPtr context) const;
 
-    std::optional<String> namedCollectionDropBlockReason(const String & collection_name) const;
+    /// If `DROP NAMED COLLECTION` must be rejected because the name is still referenced in the in-memory SQL shard / cluster catalogs (`loaded_sql_shards`, `loaded_sql_clusters`), returns a short explanation; otherwise `nullopt`.
+    std::optional<String> tryGetMessageIfNamedCollectionReferencedByClusterCatalog(const String & collection_name) const;
 
     std::vector<SQLShardCatalogTableRow> listShardsForSystemTable() const;
 
@@ -112,6 +141,9 @@ private:
 
     void reloadSqlDefinitionsLocked();
     void rebuildSqlClusterRegistrationsLocked();
+
+    /// Requires `mutex` locked. `m` must be an existing SQL shard name or a whole-shard named collection.
+    void checkSqlClusterMemberNameLocked(const String & m) const;
 
     BackgroundSchedulePoolTaskHolder sql_catalog_update_task;
     void updateFunc();
