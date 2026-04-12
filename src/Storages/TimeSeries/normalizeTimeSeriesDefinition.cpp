@@ -12,7 +12,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -98,20 +100,40 @@ namespace
         for (const auto & column : create_query.columns_list->columns->children)
         {
             auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
-            if (column_declaration->name == TimeSeriesColumnNames::Timestamp)
+            if ((column_declaration->name == TimeSeriesColumnNames::Timestamp) && column_declaration->getType())
             {
-                if (!settings[TimeSeriesSetting::timestamp_type] && column_declaration->getType())
+                if (!settings[TimeSeriesSetting::timestamp_type])
                 {
                     settings[TimeSeriesSetting::timestamp_type] = DataTypeFactory::instance().get(column_declaration->getType());
                     changed = true;
                 }
             }
-            else if (column_declaration->name == TimeSeriesColumnNames::Value)
+            else if ((column_declaration->name == TimeSeriesColumnNames::Value) && column_declaration->getType())
             {
-                if (!settings[TimeSeriesSetting::scalar_type] && column_declaration->getType())
+                if (!settings[TimeSeriesSetting::scalar_type])
                 {
                     settings[TimeSeriesSetting::scalar_type] = DataTypeFactory::instance().get(column_declaration->getType());
                     changed = true;
+                }
+            }
+            else if ((column_declaration->name == TimeSeriesColumnNames::TimeSeries) && column_declaration->getType())
+            {
+                auto column_type = DataTypeFactory::instance().get(column_declaration->getType());
+                const auto * array_type = typeid_cast<const DataTypeArray *>(column_type.get());
+                const auto * tuple_type = array_type ? typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()) : nullptr;
+                if (tuple_type && tuple_type->getElements().size() >= 2)
+                {
+                    const auto & tuple_elements = tuple_type->getElements();
+                    if (!settings[TimeSeriesSetting::timestamp_type])
+                    {
+                        settings[TimeSeriesSetting::timestamp_type] = tuple_elements[0];
+                        changed = true;
+                    }
+                    if (!settings[TimeSeriesSetting::scalar_type])
+                    {
+                        settings[TimeSeriesSetting::scalar_type] = tuple_elements[1];
+                        changed = true;
+                    }
                 }
             }
             else if (column_declaration->name == TimeSeriesColumnNames::ID)
@@ -906,8 +928,10 @@ ColumnsDescription generateTimeSeriesColumns(const TimeSeriesSettings & normaliz
     };
 
     add_column(TimeSeriesColumnNames::ID, normalized_settings[TimeSeriesSetting::id_type]);
-    add_column(TimeSeriesColumnNames::Timestamp, normalized_settings[TimeSeriesSetting::timestamp_type]);
-    add_column(TimeSeriesColumnNames::Value, normalized_settings[TimeSeriesSetting::scalar_type]);
+
+    add_column(TimeSeriesColumnNames::TimeSeries,
+        std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
+            DataTypes{normalized_settings[TimeSeriesSetting::timestamp_type], normalized_settings[TimeSeriesSetting::scalar_type]})));
 
     add_column(TimeSeriesColumnNames::MetricName, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
 

@@ -207,13 +207,14 @@ def test_custom_id_algorithm():
 def test_microsecond_precision():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS timestamp_type='DateTime64(6)'")
     check(eps=1e-9) # Here eps > 0 because otherwise the check will fail because of different precisions.
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'timestamp'") == TSV([["DateTime64(6)"]])
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
     assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
 
     drop_prometheus_table()
 
     node.query("CREATE TABLE prometheus (timestamp DateTime64(6)) ENGINE=TimeSeries")
     check(eps=1e-9)
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
     # TSV escaping: string settings appear as timestamp_type = \'DateTime64(6)\', so \\' matches \'.
     assert re.search(r"(?s)SETTINGS.*\btimestamp_type\s*=\s*\\'DateTime64\(6\)\\'", create_query)
@@ -224,13 +225,14 @@ def test_microsecond_precision():
 def test_float32_scalar():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS scalar_type='Float32'")
     check()
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'value'") == TSV([["Float32"]])
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
     assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
 
     drop_prometheus_table()
 
     node.query("CREATE TABLE prometheus (value Float32) ENGINE=TimeSeries")
     check()
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
     # TSV escaping: string settings appear as scalar_type = \'Float32\', so \\' matches \'.
     assert re.search(r"(?s)SETTINGS.*\bscalar_type\s*=\s*\\'Float32\\'", create_query)
