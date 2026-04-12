@@ -46,14 +46,14 @@ struct SQLShardCatalogTableRow
 enum class ClusterDefinitionSource : uint8_t
 {
     RemoteServersConfig,
-    SqlCatalog,
+    SQLCatalog,
 };
 
 struct ClusterDefinitionRegistration
 {
     ClusterDefinitionSource source = ClusterDefinitionSource::RemoteServersConfig;
     /// For `RemoteServersConfig`: typically `Context::getClustersVersion()` after reload.
-    /// For `SqlCatalog`: bumped when the SQL catalog row is created or reloaded from disk.
+    /// For `SQLCatalog`: bumped when the SQL catalog row is created or reloaded from disk.
     UInt64 definition_version = 0;
 };
 
@@ -108,7 +108,7 @@ public:
     std::vector<String> listClusterNames() const;
 
     /// SQL `CREATE CLUSTER` definitions whose `members` contain `member_name` (SQL shard name or whole-shard named collection).
-    std::vector<String> listSqlClustersContainingMember(const String & member_name) const;
+    std::vector<String> listSQLClustersContainingMember(const String & member_name) const;
 
     String getShowCreateShard(const String & name) const;
     String getShowCreateCluster(const String & name) const;
@@ -139,11 +139,11 @@ private:
     std::unordered_map<String, ClusterDefinitionRegistration> cluster_registrations;
     UInt64 sql_catalog_mutation_counter = 0;
 
-    void reloadSqlDefinitionsLocked();
-    void rebuildSqlClusterRegistrationsLocked();
+    void reloadSQLDefinitionsLocked();
+    void rebuildSQLClusterRegistrationsLocked();
 
     /// Requires `mutex` locked. `m` must be an existing SQL shard name or a whole-shard named collection.
-    void checkSqlClusterMemberNameLocked(const String & m) const;
+    void checkSQLClusterMemberNameLocked(const String & m) const;
 
     BackgroundSchedulePoolTaskHolder sql_catalog_update_task;
     void updateFunc();

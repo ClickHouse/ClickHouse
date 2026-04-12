@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -61,6 +62,7 @@ BlockIO InterpreterAlterShardQuery::execute()
                 return {};
             break;
         case AlterShardCommand::AddReplica:
+            current_context->checkAccess(AccessType::NAMED_COLLECTION, query.replica_name);
             if (!query.replica_properties.empty())
             {
                 current_context->checkAccess(AccessType::ALTER_NAMED_COLLECTION, query.replica_name);
@@ -85,7 +87,7 @@ BlockIO InterpreterAlterShardQuery::execute()
     }
 
     auto global_context = current_context->getGlobalContext();
-    for (const auto & cluster_name : ClusterFactory::instance().listSqlClustersContainingMember(query.shard_name))
+    for (const auto & cluster_name : ClusterFactory::instance().listSQLClustersContainingMember(query.shard_name))
     {
         if (auto cluster = ClusterFactory::instance().tryMaterializeCluster(cluster_name, global_context))
             global_context->setCluster(cluster_name, cluster);

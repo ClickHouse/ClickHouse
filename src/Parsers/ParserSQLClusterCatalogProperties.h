@@ -12,24 +12,24 @@ namespace DB
 
 /// Helpers for optional `PROPERTIES ...` in SQL **cluster catalog** DDL.
 ///
-/// **Responsibility (this header only)**  
-/// - Recognize the `PROPERTIES` keyword and parse a list of `name = value` pairs (optional surrounding `(...)`, commas between pairs).  
+/// **Responsibility (this header only)**
+/// - Recognize the `PROPERTIES` keyword and parse a list of `name = value` pairs (optional surrounding `(...)`, commas between pairs).
 /// - That is **syntax only**: valid assignments as for `ParserSetQuery::parseNameValuePair`, no notion of “allowed keys” per replica/shard/cluster.
 ///
-/// **Not done here** (see `Common/Clusters/SQLClusterCatalogPropertyValidation.h` + interpreters)  
-/// - Which names are legal for **replica** vs **shard** vs **cluster** context.  
+/// **Not done here** (see `Common/Clusters/SQLClusterCatalogPropertyValidation.h` + interpreters)
+/// - Which names are legal for **replica** vs **shard** vs **cluster** context.
 /// - Defaults, ranges, required fields (e.g. replica `host` / `port`), duplicates.
 ///
 /// **Conceptual map** (aligned with `remote_servers` / `<replica>` / `<shard>` / cluster block ideas; **enforced only in validators + interpreters**):
 ///
-/// *Replica* — endpoint / named-collection body (`CREATE REPLICA`, `ALTER SHARD ...` replica `PROPERTIES`):  
-/// `host` (required for a usable endpoint), `port` (TCP, required), `user` (default `default`), `password` (default empty),  
-/// `secure` (default false), `compression` (default true), `priority` (default 1), `bind_host` (optional), `default_database` (optional).
+/// *Replica* — endpoint / named-collection body (`CREATE REPLICA`, `ALTER SHARD ...` replica `PROPERTIES`):
+/// `host` (required for a usable endpoint), `port` (TCP, required), `user` (default `default`), `password` (default empty).
+/// Further options: `secure` (default false), `compression` (default true), `priority` (default 1), `bind_host` (optional), `default_database` (optional).
 ///
-/// *Shard* — replica lists use `REPLICA id1, id2` / `REPLICA (id1, id2)` / `shard_name(id1, id2)` after `CREATE SHARD`; per-shard options in `PROPERTIES`:  
+/// *Shard* — replica lists use `REPLICA id1, id2` / `REPLICA (id1, id2)` / `shard_name(id1, id2)` after `CREATE SHARD`; per-shard options in `PROPERTIES`:
 /// `weight` (default 1), `internal_replication` (default false).
 ///
-/// *Cluster* — `CREATE CLUSTER ... PROPERTIES` (see `SQLClusterCatalogPropertyValidation.h`):  
+/// *Cluster* — `CREATE CLUSTER ... PROPERTIES` (see `SQLClusterCatalogPropertyValidation.h`):
 /// `secret` (optional string), `allow_distributed_ddl_queries` (default true). Membership is the `(shard, ...)` list, not replica keys.
 
 /// Parse comma-separated `name = value` after `PROPERTIES`, with optional wrapping `(...)`. Syntax only.

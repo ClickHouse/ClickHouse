@@ -30,6 +30,9 @@ BlockIO InterpreterCreateShardQuery::execute()
     bool internal_replication = false;
     validateAndExtractShardLevelProperties(query.shard_properties, weight, internal_replication);
 
+    for (const auto & replica_name : query.replicas)
+        current_context->checkAccess(AccessType::NAMED_COLLECTION, replica_name);
+
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;

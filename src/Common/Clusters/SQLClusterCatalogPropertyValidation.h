@@ -209,7 +209,7 @@ inline void validateShardLevelPropertyPatchAssignments(const SettingsChanges & c
     }
 }
 
-/// **Replica**-level `PROPERTIES`: allowed keys only (values validated in `validateReplicaLevelPropertiesForSqlReplica`).
+/// **Replica**-level `PROPERTIES`: allowed keys only (values validated in `validateReplicaLevelPropertiesForSQLReplica`).
 inline void validateReplicaLevelPropertyKeys(const SettingsChanges & changes)
 {
     static const std::unordered_set<std::string_view> allowed{
@@ -240,7 +240,7 @@ inline void validateReplicaLevelPropertyKeys(const SettingsChanges & changes)
 }
 
 /// After `validateReplicaLevelPropertyKeys`, require `host` / `port` suitable for a replica endpoint named collection.
-inline void validateReplicaLevelPropertiesForSqlReplica(const SettingsChanges & changes)
+inline void validateReplicaLevelPropertiesForSQLReplica(const SettingsChanges & changes)
 {
     validateReplicaLevelPropertyKeys(changes);
 

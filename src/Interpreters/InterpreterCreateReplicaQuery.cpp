@@ -21,7 +21,7 @@ BlockIO InterpreterCreateReplicaQuery::execute()
 
     current_context->checkAccess(AccessType::CREATE_NAMED_COLLECTION, replica_query.replica_name);
 
-    validateReplicaLevelPropertiesForSqlReplica(replica_query.properties);
+    validateReplicaLevelPropertiesForSQLReplica(replica_query.properties);
 
     if (!replica_query.cluster.empty())
     {

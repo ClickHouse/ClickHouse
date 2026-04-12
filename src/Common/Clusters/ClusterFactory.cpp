@@ -138,7 +138,7 @@ UInt64 getUIntField(const NamedCollection & coll, const String & key, UInt64 def
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read unsigned integer from named collection for key `{}`", key);
 }
 
-struct SqlCatalogReplicaHostPort
+struct SQLCatalogReplicaHostPort
 {
     String host;
     UInt16 port = 0;
@@ -146,9 +146,9 @@ struct SqlCatalogReplicaHostPort
 };
 
 /// Host:port pair for SQL catalog duplicate-endpoint checks. Skips whole-shard collections (`replicas` key).
-SqlCatalogReplicaHostPort tryExtractSqlCatalogReplicaHostPort(const NamedCollection & coll)
+SQLCatalogReplicaHostPort tryExtractSQLCatalogReplicaHostPort(const NamedCollection & coll)
 {
-    SqlCatalogReplicaHostPort out;
+    SQLCatalogReplicaHostPort out;
     if (coll.has(NC_REPLICAS) || !coll.has(NC_HOST))
         return out;
     out.host = coll.get<String>(NC_HOST);
@@ -273,7 +273,7 @@ ClusterFactory::~ClusterFactory()
     shutdown();
 }
 
-void ClusterFactory::reloadSqlDefinitionsLocked()
+void ClusterFactory::reloadSQLDefinitionsLocked()
 {
     loaded_sql_shards = shards_metadata_storage->getAll();
     loaded_sql_clusters = clusters_metadata_storage->getAll();
@@ -314,14 +314,14 @@ void ClusterFactory::reloadSqlDefinitionsLocked()
         LOG_INFO(log, "SQL cluster `{}`: members=[{}]", cluster_name, members_str);
     }
 
-    rebuildSqlClusterRegistrationsLocked();
+    rebuildSQLClusterRegistrationsLocked();
 }
 
-void ClusterFactory::rebuildSqlClusterRegistrationsLocked()
+void ClusterFactory::rebuildSQLClusterRegistrationsLocked()
 {
     std::erase_if(cluster_registrations, [](const auto & entry)
     {
-        return entry.second.source == ClusterDefinitionSource::SqlCatalog;
+        return entry.second.source == ClusterDefinitionSource::SQLCatalog;
     });
 
     UInt64 version = ++sql_catalog_mutation_counter;
@@ -330,7 +330,7 @@ void ClusterFactory::rebuildSqlClusterRegistrationsLocked()
         auto reg_it = cluster_registrations.find(name);
         if (reg_it != cluster_registrations.end() && reg_it->second.source == ClusterDefinitionSource::RemoteServersConfig)
             continue;
-        cluster_registrations[name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SqlCatalog, version};
+        cluster_registrations[name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SQLCatalog, version};
     }
 }
 
@@ -375,7 +375,7 @@ void ClusterFactory::initialize(const String & data_path)
         global_context, (std::filesystem::path(metadata_root) / "shards").string());
     clusters_metadata_storage = ClustersMetadataStorage::create(
         global_context, (std::filesystem::path(metadata_root) / "clusters").string());
-    reloadSqlDefinitionsLocked();
+    reloadSQLDefinitionsLocked();
     initialized = true;
     LOG_INFO(log, "ClusterFactory initialized at {}", metadata_root);
 
@@ -418,7 +418,7 @@ void ClusterFactory::reloadFromSQL()
     std::lock_guard lock(mutex);
     if (!initialized || !shards_metadata_storage || !clusters_metadata_storage)
         return;
-    reloadSqlDefinitionsLocked();
+    reloadSQLDefinitionsLocked();
 }
 
 void ClusterFactory::updateFunc()
@@ -542,7 +542,7 @@ void ClusterFactory::dropShard(const String & shard_name, bool if_exists)
     loaded_sql_shards.erase(it);
 }
 
-void ClusterFactory::checkSqlClusterMemberNameLocked(const String & m) const
+void ClusterFactory::checkSQLClusterMemberNameLocked(const String & m) const
 {
     if (loaded_sql_shards.contains(m))
         return;
@@ -587,7 +587,7 @@ void ClusterFactory::createCluster(
             cluster_name);
 
     for (const auto & m : members)
-        checkSqlClusterMemberNameLocked(m);
+        checkSQLClusterMemberNameLocked(m);
 
     ClusterCatalogDefinition record;
     record.members = members;
@@ -599,7 +599,7 @@ void ClusterFactory::createCluster(
     UInt64 version = ++sql_catalog_mutation_counter;
     auto reg_it = cluster_registrations.find(cluster_name);
     if (reg_it == cluster_registrations.end() || reg_it->second.source != ClusterDefinitionSource::RemoteServersConfig)
-        cluster_registrations[cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SqlCatalog, version};
+        cluster_registrations[cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SQLCatalog, version};
 }
 
 bool ClusterFactory::dropCluster(const String & cluster_name, bool if_exists)
@@ -620,7 +620,7 @@ bool ClusterFactory::dropCluster(const String & cluster_name, bool if_exists)
     clusters_metadata_storage->remove(cluster_name);
     LOG_INFO(log, "Removed SQL CLUSTER catalog definition for `{}` from clusters catalog storage", cluster_name);
     loaded_sql_clusters.erase(it);
-    if (reg_it != cluster_registrations.end() && reg_it->second.source == ClusterDefinitionSource::SqlCatalog)
+    if (reg_it != cluster_registrations.end() && reg_it->second.source == ClusterDefinitionSource::SQLCatalog)
         cluster_registrations.erase(reg_it);
     return true;
 }
@@ -651,7 +651,7 @@ bool ClusterFactory::addClusterMembersFromSQL(const ASTAlterClusterQuery & query
 
     for (const auto & name : query.add_shard_members)
     {
-        checkSqlClusterMemberNameLocked(name);
+        checkSQLClusterMemberNameLocked(name);
         if (std::find(record.members.begin(), record.members.end(), name) != record.members.end())
         {
             throw Exception(
@@ -671,7 +671,7 @@ bool ClusterFactory::addClusterMembersFromSQL(const ASTAlterClusterQuery & query
     UInt64 version = ++sql_catalog_mutation_counter;
     auto reg_it = cluster_registrations.find(query.cluster_name);
     if (reg_it == cluster_registrations.end() || reg_it->second.source != ClusterDefinitionSource::RemoteServersConfig)
-        cluster_registrations[query.cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SqlCatalog, version};
+        cluster_registrations[query.cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SQLCatalog, version};
     return true;
 }
 
@@ -725,7 +725,7 @@ bool ClusterFactory::dropClusterMembersFromSQL(const ASTAlterClusterQuery & quer
     UInt64 version = ++sql_catalog_mutation_counter;
     auto reg_it = cluster_registrations.find(query.cluster_name);
     if (reg_it == cluster_registrations.end() || reg_it->second.source != ClusterDefinitionSource::RemoteServersConfig)
-        cluster_registrations[query.cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SqlCatalog, version};
+        cluster_registrations[query.cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SQLCatalog, version};
     return true;
 }
 
@@ -764,7 +764,7 @@ bool ClusterFactory::replaceClusterMembersFromSQL(const ASTAlterClusterQuery & q
             const String & from_name = cl.from_members[i];
             const String & to_name = cl.to_members[i];
 
-            checkSqlClusterMemberNameLocked(to_name);
+            checkSQLClusterMemberNameLocked(to_name);
 
             auto [it, inserted] = repl_map.emplace(from_name, to_name);
             if (!inserted && it->second != to_name)
@@ -847,7 +847,7 @@ bool ClusterFactory::replaceClusterMembersFromSQL(const ASTAlterClusterQuery & q
     UInt64 version = ++sql_catalog_mutation_counter;
     auto reg_it = cluster_registrations.find(query.cluster_name);
     if (reg_it == cluster_registrations.end() || reg_it->second.source != ClusterDefinitionSource::RemoteServersConfig)
-        cluster_registrations[query.cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SqlCatalog, version};
+        cluster_registrations[query.cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SQLCatalog, version};
     return true;
 }
 
@@ -941,13 +941,13 @@ bool ClusterFactory::addReplicaToShardFromSQL(const ASTAlterShardQuery & query)
     }
 
     const auto new_collection = getNamedCollection(query.replica_name);
-    const auto new_endpoint = tryExtractSqlCatalogReplicaHostPort(*new_collection);
+    const auto new_endpoint = tryExtractSQLCatalogReplicaHostPort(*new_collection);
     if (new_endpoint.valid)
     {
         for (const auto & existing_name : record.replica_collections)
         {
             const auto existing_collection = getNamedCollection(existing_name);
-            const auto existing_endpoint = tryExtractSqlCatalogReplicaHostPort(*existing_collection);
+            const auto existing_endpoint = tryExtractSQLCatalogReplicaHostPort(*existing_collection);
             if (existing_endpoint.valid && existing_endpoint.host == new_endpoint.host
                 && existing_endpoint.port == new_endpoint.port)
             {
@@ -1156,7 +1156,7 @@ std::vector<String> ClusterFactory::listClusterNames() const
     return out;
 }
 
-std::vector<String> ClusterFactory::listSqlClustersContainingMember(const String & member_name) const
+std::vector<String> ClusterFactory::listSQLClustersContainingMember(const String & member_name) const
 {
     std::lock_guard lock(mutex);
     std::vector<String> out;

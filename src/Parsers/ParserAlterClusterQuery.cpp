@@ -80,7 +80,7 @@ bool parseClusterReplaceMemberList(std::vector<String> & out, IParser::Pos & pos
     return true;
 }
 
-} // namespace
+}
 
 bool ParserAlterClusterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
