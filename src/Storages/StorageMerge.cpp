@@ -424,8 +424,8 @@ VirtualColumnsDescription StorageMerge::createVirtuals()
 {
     VirtualColumnsDescription desc;
 
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     return desc;
 }
@@ -998,7 +998,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(storage_snapshot_->storage.supportsSubcolumns()).withVirtuals();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(storage_snapshot_->storage.supportsSubcolumns()).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
 
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
         if (!storage_snapshot_->metadata->columns.hasColumnOrSubcolumn(GetColumnsOptions::All, "_table") && !storage_snapshot_->virtual_columns->has("_table"))
@@ -1025,6 +1025,35 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
 
             column_name_to_node.emplace("_database", function_node);
+        }
+
+        /// Replace references to columns that don't exist in this child table with default values.
+        /// This happens when merge() is used over tables with different schemas and the processing
+        /// stage is above FetchColumns (e.g., for distributed/remote tables where the full query
+        /// is sent to the child for processing).
+        for (const auto & column_name : required_column_names)
+        {
+            if (column_name_to_node.contains(column_name))
+                continue;
+
+            /// Virtual columns like `_table` are handled separately by the Merge engine
+            /// (added as plan steps after the child query executes), so they should not be
+            /// replaced with default values here.
+            if (column_name == "_table" || column_name == "_database")
+                continue;
+
+            if (storage_snapshot_->tryGetColumn(get_column_options, column_name))
+                continue;
+
+            auto merge_column = merge_storage_snapshot->tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All)
+                    .withSubcolumns(merge_storage_snapshot->storage.supportsSubcolumns()),
+                column_name);
+            if (!merge_column)
+                continue;
+
+            column_name_to_node.emplace(column_name,
+                std::make_shared<ConstantNode>(merge_column->type->getDefault(), merge_column->type));
         }
 
         auto storage_columns = storage_snapshot_->metadata->getColumns();
