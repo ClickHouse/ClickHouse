@@ -2801,6 +2801,12 @@ struct ConvertImplGenericFromString
 
 struct ConvertImplFromDynamicToColumn
 {
+    /// Variant and Dynamic hold NULLs natively via NULL_DISCRIMINATOR, so they
+    /// do not need Nullable wrapping. `canBeInsideNullable` returns false for them
+    /// (meaning they cannot be *wrapped* in Nullable), but that does not mean they
+    /// cannot represent NULL — so we must exclude them from the throw check.
+    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type);
+
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -3216,7 +3222,7 @@ private:
 
             return ConvertImplFromDynamicToColumn::execute(
                 arguments, result_type, input_rows_count, nested_convert,
-                settings.cast_keep_nullable && !result_type->isNullable() && !result_type->isLowCardinalityNullable() && !result_type->canBeInsideNullable());
+                ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
         }
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool

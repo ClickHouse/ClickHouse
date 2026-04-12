@@ -169,6 +169,10 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
+        if constexpr (result_is_nullable)
+            if (getFlag(rhs))
+                setFlag(place);
+
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, is_cancelled, arena);
     }
 

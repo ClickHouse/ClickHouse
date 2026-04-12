@@ -260,7 +260,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     StoredObject object(metadata_transaction->generateObjectKeyForPath(path).serialize(), path);
     std::vector<WriteBufferPtr> writers;
-    for (const auto & location : cluster->getEnabledLocations())
+    auto enabled_locations = cluster->getEnabledLocations();
+    for (const auto & location : enabled_locations)
     {
         size_t use_buffer_size = buf_size;
         std::unique_ptr<WriteBufferFromFileBase> writer;
@@ -319,11 +320,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     /// ...
     /// buf1->finalize() // shouldn't do anything with metadata operations, just memorize what to do
     /// tx->commit()
-    const auto create_metadata_callback = [disk_tx = shared_from_this(), mode, object, autocommit, create_blob_if_empty](size_t count) mutable
+    const auto create_metadata_callback = [disk_tx = shared_from_this(), replicated_locations = std::move(enabled_locations), mode, object, autocommit, create_blob_if_empty](size_t count) mutable
     {
         object.bytes_size = count;
 
-        auto missing_locations = disk_tx->cluster->findComplement(disk_tx->cluster->getEnabledLocations());
+        /// Locations to which blobs were not originally copied should be marked as missing.
+        auto missing_locations = disk_tx->cluster->findComplement(replicated_locations);
         disk_tx->operations_to_execute.push_back([object, mode, create_blob_if_empty, blob_replication = std::move(missing_locations)](MetadataTransactionPtr tx)
         {
             if (mode == WriteMode::Rewrite)
