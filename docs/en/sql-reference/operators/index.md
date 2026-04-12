@@ -102,7 +102,7 @@ SELECT * FROM a AS a1 JOIN a AS a2 ON a1.x <=> a2.x;
 :::
 
 The `<=>` operator is the `NULL`-safe equality operator, equivalent to `IS NOT DISTINCT FROM`.
-It works like the regular equality operator (`=`), but it treats `NULL` values as comparable. 
+It works like the regular equality operator (`=`), but it treats `NULL` values as comparable.
 Two `NULL` values are considered equal, and a `NULL` compared to any non-`NULL` value returns 0 (false) rather than `NULL`.
 
 ```sql
@@ -134,7 +134,7 @@ See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-r
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b)` function.
 
 ### in subquery function {#in-subquery-function}
-`a = ANY (subquery)` – The `in(a, subquery)` function.  
+`a = ANY (subquery)` – The `in(a, subquery)` function.
 
 ### notIn subquery function {#notin-subquery-function}
 `a != ANY (subquery)` – The same as `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
@@ -143,7 +143,7 @@ See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-r
 `a = ALL (subquery)` – The same as `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
 ### notIn subquery function {#notin-subquery-function-1}
-`a != ALL (subquery)` – The `notIn(a, subquery)` function. 
+`a != ALL (subquery)` – The `notIn(a, subquery)` function.
 
 **Examples**
 
@@ -278,7 +278,7 @@ Types of intervals:
 
 You can also use a string literal when setting the `INTERVAL` value. For example, `INTERVAL 1 HOUR` is identical to the `INTERVAL '1 hour'` or `INTERVAL '1' hour`.
 
-:::tip    
+:::tip
 Intervals with different types can't be combined. You can't use expressions like `INTERVAL 4 DAY 1 HOUR`. Specify intervals in units that are smaller or equal to the smallest unit of the interval, for example, `INTERVAL 25 HOUR`. You can use consecutive operations, like in the example below.
 :::
 
@@ -314,7 +314,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 └─────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-:::note    
+:::note
 The `INTERVAL` syntax or `addDays` function are always preferred. Simple addition or subtraction (syntax like `now() + ...`) doesn't consider time settings. For example, daylight saving time.
 :::
 
@@ -334,6 +334,56 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 
 - [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
 - [toInterval](/sql-reference/functions/type-conversion-functions#toIntervalYear) type conversion functions
+
+### Date and Time Addition {#date-time-addition}
+
+A [Date](../../sql-reference/data-types/date.md) or [Date32](../../sql-reference/data-types/date32.md) value can be added to a [Time](../../sql-reference/data-types/time.md) or [Time64](../../sql-reference/data-types/time64.md) value using the `+` operator. The result is a [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md) representing the date at the given time of day. The operation is commutative.
+
+The result type depends on the operand types:
+
+| Left operand | Right operand | Result type |
+|---|---|---|
+| `Date` | `Time` | `DateTime` |
+| `Date` | `Time64(s)` | `DateTime64(s)` |
+| `Date32` | `Time` | `DateTime64(0)` |
+| `Date32` | `Time64(s)` | `DateTime64(s)` |
+
+:::note
+The result uses the [session timezone](../../operations/settings/settings.md#session_timezone) (or server default timezone if no session timezone is set). The [`date_time_overflow_behavior`](../../operations/settings/settings-formats.md#date_time_overflow_behavior) setting controls what happens when the result is outside the representable range.
+:::
+
+Examples:
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25 │ DateTime       │
+└─────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+┌─────────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+└────────────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
+└─────────────────────────┴────────────────┘
+```
 
 ## Logical AND Operator {#logical-and-operator}
 

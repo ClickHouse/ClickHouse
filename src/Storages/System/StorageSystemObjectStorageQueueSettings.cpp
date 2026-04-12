@@ -18,10 +18,11 @@ namespace DB
 template <ObjectStorageType type>
 ColumnsDescription StorageSystemObjectStorageQueueSettings<type>::getColumnsDescription()
 {
+    constexpr auto engine_name = (type == ObjectStorageType::S3) ? "S3Queue" : "AzureQueue";
     return ColumnsDescription
     {
-        {"database", std::make_shared<DataTypeString>(), "Database of the table with S3Queue Engine."},
-        {"table", std::make_shared<DataTypeString>(), "Name of the table with S3Queue Engine."},
+        {"database", std::make_shared<DataTypeString>(), fmt::format("Database of the table with {} engine.", engine_name)},
+        {"table", std::make_shared<DataTypeString>(), fmt::format("Name of the table with {} engine.", engine_name)},
         {"name",        std::make_shared<DataTypeString>(), "Setting name."},
         {"value",       std::make_shared<DataTypeString>(), "Setting value."},
         {"type",        std::make_shared<DataTypeString>(), "Setting type (implementation specific string value)."},

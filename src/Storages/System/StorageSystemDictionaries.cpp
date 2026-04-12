@@ -56,7 +56,7 @@ StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_i
     : IStorageSystemOneBlock(storage_id_, std::move(columns_description_))
 {
     VirtualColumnsDescription virtuals;
-    virtuals.addEphemeral("key", std::make_shared<DataTypeString>(), "");
+    virtuals.addEphemeral("key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
     setVirtuals(std::move(virtuals));
 }
 

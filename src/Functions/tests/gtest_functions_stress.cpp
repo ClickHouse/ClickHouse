@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Poco/ConsoleChannel.h>
 #include <absl/log/globals.h>
 #include <boost/program_options.hpp>
 #include <fmt/ranges.h>
@@ -2103,6 +2104,13 @@ void __tsan_on_report(void * /*report*/) // NOLINT(bugprone-reserved-identifier,
 TEST(FunctionsStress, stress)
 {
     chassert(!logger);
+
+    /// Set up console logging so that LOG_ERROR output is visible in the test log.
+    /// Without this, the root logger has a nullptr channel and all messages are silently discarded.
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("information");
+
     logger = getLogger("stress");
 
     /// (This makes exception stack traces much faster, and this test spends a lot of time throwing and catching exceptions.)

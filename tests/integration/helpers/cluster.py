@@ -5705,7 +5705,7 @@ class ClickHouseInstance:
                         f.write(key + "=" + value + "\n")
 
     @contextmanager
-    def with_replace_config(self, path, replacement):
+    def with_replace_config(self, path, replacement, reload_before=False, reload_after=False):
         """Create a copy of existing config (if exists) and revert on leaving the context"""
         _directory, filename = os.path.split(path)
         basename, extension = os.path.splitext(filename)
@@ -5717,12 +5717,16 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
         )
+        if reload_before:
+            self.query("SYSTEM RELOAD CONFIG")
         try:
             yield
         finally:
             self.exec_in_container(
                 ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
             )
+            if reload_after:
+                self.query("SYSTEM RELOAD CONFIG")
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(
