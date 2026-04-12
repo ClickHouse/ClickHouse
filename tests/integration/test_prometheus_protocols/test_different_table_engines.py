@@ -170,7 +170,9 @@ def test_tags_to_columns():
 def test_64bit_id():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS id_type='UInt64'")
     check()
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'id'") == TSV([["UInt64"]])
+    create_query = node.query("SHOW CREATE TABLE prometheus")
+    assert re.search(r"(?s)TAGS INNER COLUMNS.*`id` UInt64", create_query)
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`id` UInt64", create_query)
     assert re.search(r"\bid\s+UInt64", node.query("DESCRIBE timeSeriesTags(prometheus)"))
 
     drop_prometheus_table()
@@ -178,7 +180,8 @@ def test_64bit_id():
     node.query("CREATE TABLE prometheus (id UInt64) ENGINE=TimeSeries")
     check()
     create_query = node.query("SHOW CREATE TABLE prometheus")
-    assert re.search(r"(?s)SETTINGS.*\bid_type\s*=\s*\\'UInt64\\'", create_query)
+    assert re.search(r"(?s)TAGS INNER COLUMNS.*`id` UInt64", create_query)
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`id` UInt64", create_query)
     assert re.search(r"\bid\s+UInt64", node.query("DESCRIBE timeSeriesTags(prometheus)"))
 
 
@@ -188,7 +191,9 @@ def test_custom_id_algorithm():
         "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS id_type = 'FixedString(16)', id_generator = 'murmurHash3_128(metric_name, all_tags)'"
     )
     check()
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'id'") == TSV([["FixedString(16)"]])
+    create_query = node.query("SHOW CREATE TABLE prometheus")
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`id` FixedString\(16\)", create_query)
+    assert re.search(r"(?s)TAGS INNER COLUMNS.*`id` FixedString\(16\) DEFAULT murmurHash3_128\(metric_name, all_tags\)", create_query)
     assert re.search(r"\bid\s+FixedString\(16\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
 
     drop_prometheus_table()
@@ -198,8 +203,8 @@ def test_custom_id_algorithm():
     )
     check()
     create_query = node.query("SHOW CREATE TABLE prometheus")
-    assert re.search(r"(?s)SETTINGS.*\bid_type\s*=\s*\\'FixedString\(16\)\\'", create_query)
-    assert re.search(r"(?s)SETTINGS.*\bid_generator\s*=\s*\\'murmurHash3_128\(metric_name, all_tags\)\\'", create_query)
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`id` FixedString\(16\)", create_query)
+    assert re.search(r"(?s)TAGS INNER COLUMNS.*`id` FixedString\(16\) DEFAULT murmurHash3_128\(metric_name, all_tags\)", create_query)
     assert re.search(r"\bid\s+FixedString\(16\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
 
 

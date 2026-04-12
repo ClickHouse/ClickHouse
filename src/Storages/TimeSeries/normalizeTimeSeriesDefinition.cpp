@@ -927,40 +927,16 @@ ColumnsDescription generateTimeSeriesColumns(const TimeSeriesSettings & normaliz
         result.add(ColumnDescription{name, std::move(type)});
     };
 
-    add_column(TimeSeriesColumnNames::ID, normalized_settings[TimeSeriesSetting::id_type]);
-
-    add_column(TimeSeriesColumnNames::TimeSeries,
-        std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
-            DataTypes{normalized_settings[TimeSeriesSetting::timestamp_type], normalized_settings[TimeSeriesSetting::scalar_type]})));
-
     add_column(TimeSeriesColumnNames::MetricName, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
-
-    const Map & tags_to_columns = normalized_settings[TimeSeriesSetting::tags_to_columns];
-    for (const auto & tag_name_and_column_name : tags_to_columns)
-    {
-        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-        const auto & column_name = tuple.at(1).safeGet<String>();
-        add_column(column_name, std::make_shared<DataTypeString>());
-    }
 
     /// We use 'Map(LowCardinality(String), String)' as the default type of the `tags` column:
     /// it looks like a correct optimization because there are shouldn't be too many different tag names.
     add_column(TimeSeriesColumnNames::Tags,
         std::make_shared<DataTypeMap>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), std::make_shared<DataTypeString>()));
 
-    /// The `all_tags` column is virtual (it's calculated on the fly and never stored anywhere)
-    /// so here we don't need to use the LowCardinality optimization as for the `tags` column.
-    add_column(TimeSeriesColumnNames::AllTags,
-        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()));
-
-    if (normalized_settings[TimeSeriesSetting::store_min_time_and_max_time])
-    {
-        /// We use Nullable(DateTime64(3)) as the default type of the `min_time` and `max_time` columns.
-        /// It's nullable because it allows the aggregation (see aggregate_min_time_and_max_time) work correctly even
-        /// for rows in the "tags" table which doesn't have `min_time` and `max_time` (because they have no matching rows in the "samples" table).
-        add_column(TimeSeriesColumnNames::MinTime, makeNullable(normalized_settings[TimeSeriesSetting::timestamp_type]));
-        add_column(TimeSeriesColumnNames::MaxTime, makeNullable(normalized_settings[TimeSeriesSetting::timestamp_type]));
-    }
+    add_column(TimeSeriesColumnNames::TimeSeries,
+        std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
+            DataTypes{normalized_settings[TimeSeriesSetting::timestamp_type], normalized_settings[TimeSeriesSetting::scalar_type]})));
 
     add_column(TimeSeriesColumnNames::MetricFamilyName, std::make_shared<DataTypeString>());
     add_column(TimeSeriesColumnNames::Type, std::make_shared<DataTypeString>());
