@@ -11,9 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
 extern const int BAD_ARGUMENTS;
-extern const int LOGICAL_ERROR;
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -391,38 +389,22 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
     /// First compute the default shortest round-trip representation.
     /// If it already has fewer or equal decimal places than requested, use it directly
     /// to avoid introducing floating-point artefacts from ToFixed.
-    ///
-    /// For example, toFloat32(0.1) has a default of "0.1" (1 decimal place).
-    /// With precision=10, using ToFixed on the exact double value would give
-    /// "0.1000000015", which is worse than the faithful "0.1".
-    ///
-    /// Similarly, toFloat32(1.23e20) has a default of "123000000000000000000" (0 decimal
-    /// places). With precision=1, ToFixed on the exact value gives "122999999650278146048",
-    /// whereas the default already satisfies the precision constraint.
     char default_buf[64];
     const size_t default_len = writeFloatTextFastPath(x, default_buf);
 
     /// Count decimal places in the default representation.
-    /// Values in scientific notation (containing 'e'/'E') are always used as-is.
-    int default_decimals = 0;
-    bool has_dot = false;
-    bool has_exp = false;
-    for (size_t i = 0; i < default_len; ++i)
+    /// Scientific notation (containing 'e'/'E') gets default_decimals = -1 so it is always used as-is.
+    int default_decimals;
+    if (memchr(default_buf, 'e', default_len) || memchr(default_buf, 'E', default_len))
+        default_decimals = -1;
+    else
     {
-        const char c = default_buf[i];
-        if (c == '.')
-            has_dot = true;
-        else if (c == 'e' || c == 'E')
-        {
-            has_exp = true;
-            break;
-        }
-        else if (has_dot)
-            ++default_decimals;
+        const char * dot = static_cast<const char *>(memchr(default_buf, '.', default_len));
+        default_decimals = dot ? static_cast<int>(default_buf + default_len - dot - 1) : 0;
     }
 
     /// For fixed-notation defaults with few enough decimal places, use them directly.
-    if (!has_exp && default_decimals <= static_cast<int>(settings.float_precision))
+    if (default_decimals >= 0 && default_decimals <= static_cast<int>(settings.float_precision))
     {
         buf.write(default_buf, default_len);
         return;
@@ -430,35 +412,20 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
 
     /// Otherwise use ToFixed to produce a fixed-notation form with the requested precision.
     /// ToFixed returns false for values with large magnitude; use the default in that case.
-    static const double max_fixed_magnitude = std::pow(10.0, Converter::kMaxFixedDigitsBeforePoint);
-    const double x_double = static_cast<double>(x);
-    if (std::abs(x_double) >= max_fixed_magnitude)
+    DoubleConverter<false>::BufferType buffer;
+    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
+    if (!DoubleConverter<false>::instance().ToFixed(static_cast<double>(x), static_cast<int>(settings.float_precision), &builder))
     {
         buf.write(default_buf, default_len);
         return;
     }
 
-    DoubleConverter<false>::BufferType buffer;
-    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
-    const auto result = DoubleConverter<false>::instance()
-        .ToFixed(x_double, static_cast<int>(settings.float_precision), &builder);
-    if (!result)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot print floating point number: ToFixed failed unexpectedly");
-
     /// Strip trailing zeros after the decimal point (and the point itself if unneeded).
     int len = builder.position();
-    int decimal_pos = -1;
-    for (int i = 0; i < len; ++i)
+    const char * dot = static_cast<const char *>(memchr(buffer, '.', len));
+    if (dot)
     {
-        if (buffer[i] == '.')
-        {
-            decimal_pos = i;
-            break;
-        }
-    }
-    if (decimal_pos >= 0)
-    {
+        int decimal_pos = static_cast<int>(dot - buffer);
         while (len > decimal_pos + 1 && buffer[len - 1] == '0')
             --len;
         if (len == decimal_pos + 1)
@@ -467,9 +434,8 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
 
     /// For values in scientific notation (e.g. 1.23e-20) that ToFixed rounds to ±0 at
     /// the requested precision, fall back to the default representation to avoid
-    /// silently discarding information. Values like 1e-10 that ToFixed converts to a
-    /// non-trivial fixed form (0.0000000001) are kept as-is.
-    if (has_exp)
+    /// silently discarding information.
+    if (default_decimals < 0)
     {
         int non_sign = (buffer[0] == '-') ? 1 : 0;
         if (len - non_sign == 1 && buffer[non_sign] == '0')
