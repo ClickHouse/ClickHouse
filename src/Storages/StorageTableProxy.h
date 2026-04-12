@@ -118,11 +118,13 @@ public:
 
     SinkToStoragePtr write(
         const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context,
         bool async_insert) override
     {
-        return getNested()->write(query, metadata_snapshot, context, async_insert);
+        auto storage = getNested();
+        auto nested_metadata = storage->getInMemoryMetadataPtr();
+        return storage->write(query, nested_metadata, context, async_insert);
     }
 
     void renameInMemory(const StorageID & new_table_id) override

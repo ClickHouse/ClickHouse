@@ -16,11 +16,13 @@ namespace DB
 using GetNestedStorageFunc = std::function<StoragePtr()>;
 
 /// Lazily creates underlying storage.
+/// Adds ConversionTransform in case of structure mismatch.
 class StorageTableFunctionProxy final : public StorageProxy
 {
 public:
     StorageTableFunctionProxy(const StorageID & table_id_, GetNestedStorageFunc get_nested_, ColumnsDescription cached_columns)
-    : StorageProxy(table_id_), get_nested(std::move(get_nested_))
+        : StorageProxy(table_id_)
+        , get_nested(std::move(get_nested_))
     {
         StorageInMemoryMetadata cached_metadata;
         cached_metadata.setColumns(std::move(cached_columns));
@@ -91,9 +93,15 @@ public:
         getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
+    SinkToStoragePtr write(
+            const ASTPtr & query,
+            const StorageMetadataPtr & /*metadata_snapshot*/,
+            ContextPtr context,
+            bool async_insert) override
     {
-        return getNested()->write(query, metadata_snapshot, context, async_insert);
+        auto storage = getNested();
+        auto nested_metadata = storage->getInMemoryMetadataPtr();
+        return storage->write(query, nested_metadata, context, async_insert);
     }
 
     void renameInMemory(const StorageID & new_table_id) override
