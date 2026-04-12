@@ -241,11 +241,17 @@ void StorageMergeTree::startup()
     if (isStaticStorage())
         return;
 
-    clearEmptyParts();
+    /// When leader_election is enabled, startup cleanup (clearEmptyParts, clearOldTemporaryDirectories)
+    /// must be deferred until after leadership is acquired, because a follower must not modify shared
+    /// storage before proving it is the leader. The cleanup will run when the leadership callback fires.
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+    {
+        clearEmptyParts();
 
-    /// Temporary directories contain incomplete results of merges (after forced restart)
-    ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+        /// Temporary directories contain incomplete results of merges (after forced restart)
+        ///  and don't allow to reinitialize them, so delete each of them immediately
+        clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    }
 
     /// NOTE background task will also do the above cleanups periodically.
 
@@ -272,6 +278,8 @@ void StorageMergeTree::startup()
             if (became_leader)
             {
                 LOG_INFO(log, "Became leader, starting background operations");
+                clearEmptyParts();
+                clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
                 cleanup_thread.start();
                 background_operations_assignee.start();
                 startBackgroundMovesIfNeeded();
