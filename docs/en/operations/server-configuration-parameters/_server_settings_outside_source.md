@@ -1708,9 +1708,9 @@ For example:
 
 ## replica_host {#replica_host}
 
-The hostname that [DatabaseReplicated](../../engines/database-engines/replicated.md) uses to identify this server when registering with ZooKeeper. Useful when the server is behind a load balancer or NAT and the hostname visible to other replicas differs from `interserver_io_host`.
+The hostname that [DatabaseReplicated](../../engines/database-engines/replicated.md) uses to identify this server when registering with ZooKeeper. Useful when the server is behind a load balancer or NAT and the hostname visible to other replicas differs from `interserver_http_host`.
 
-If not set, ClickHouse falls back to `interserver_io_host`.
+If not set, ClickHouse falls back to `interserver_http_host`.
 
 **Example**
 
