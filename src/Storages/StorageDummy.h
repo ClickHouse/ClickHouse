@@ -3,12 +3,12 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
 
-class StorageDummy final : public IStorage
+class StorageDummy final : public StorageWithCommonVirtualColumns
 {
 public:
     StorageDummy(
@@ -18,6 +18,8 @@ public:
         bool supports_replication_ = false);
 
     std::string getName() const override { return "StorageDummy"; }
+
+    static VirtualColumnsDescription createVirtuals();
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -51,7 +53,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const override;
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
