@@ -42,8 +42,6 @@ namespace ErrorCodes
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
-    DECLARE(UInt64, max_read_batch_size, 100000, "Max size of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
-    DECLARE(UInt64, max_read_batch_bytes_size, 10000000, "Max size in bytes of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
     DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", HOT_RELOAD) \
     DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", HOT_RELOAD) \
     DECLARE(UInt64, max_read_batch_size, 100000, "Max size of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \

@@ -1457,15 +1457,8 @@ void KeeperStateMachine<Storage>::processReadRequests(const KeeperRequestsForSes
 
     for (auto & response_for_session : responses)
     {
-        response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
-        if (response_for_session.response->xid != Coordination::WATCH_XID)
-        {
-            chassert(response_for_session.request);
-            if (response_callback)
-                response_callback(std::move(response_for_session));
-        }
-        if (!responses_queue.push(response_for_session))
-            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
+        if (response_callback)
+            response_callback(std::move(response_for_session));
     }
 }
 

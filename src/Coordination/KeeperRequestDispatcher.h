@@ -94,9 +94,6 @@ public:
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
 
-    /// Put local read request to ClickHouse Keeper
-    bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
-
     /// Register session and subscribe for responses with callback.
     /// The callback must be safe for concurrent invocation — see ZooKeeperResponseCallback.
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);

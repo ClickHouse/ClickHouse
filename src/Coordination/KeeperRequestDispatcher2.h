@@ -92,7 +92,6 @@ public:
 
     /// May block for up to operation_timeout_ms if queue is full.
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
-    bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
     void finishSession(int64_t session_id);

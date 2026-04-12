@@ -298,12 +298,6 @@ bool KeeperRequestDispatcher2::putRequest(const Coordination::ZooKeeperRequestPt
     return true;
 }
 
-bool KeeperRequestDispatcher2::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
-{
-    /// Just go through the queue for now.
-    return putRequest(request, session_id, /*use_xid_64=*/ true);
-}
-
 bool KeeperRequestDispatcher2::tryPopRequest(KeeperRequestForSession & request)
 {
     bool res = requests_queue.tryPop(request);
@@ -838,8 +832,7 @@ void KeeperRequestDispatcher2::onCommit(const KeeperRequestForSession & request_
         for (auto & r : reads)
             r.time = now_ms;
 
-        for (const auto & r : reads)
-            server->putLocalReadRequest(r);
+        server->putLocalReadRequests(reads);
     }
 
     batch.committed_requests += 1;
