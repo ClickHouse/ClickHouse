@@ -927,12 +927,10 @@ ColumnsDescription generateTimeSeriesColumns(const TimeSeriesSettings & normaliz
         result.add(ColumnDescription{name, std::move(type)});
     };
 
-    add_column(TimeSeriesColumnNames::MetricName, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    add_column(TimeSeriesColumnNames::MetricName, std::make_shared<DataTypeString>());
 
-    /// We use 'Map(LowCardinality(String), String)' as the default type of the `tags` column:
-    /// it looks like a correct optimization because there are shouldn't be too many different tag names.
     add_column(TimeSeriesColumnNames::Tags,
-        std::make_shared<DataTypeMap>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), std::make_shared<DataTypeString>()));
+               std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()));
 
     add_column(TimeSeriesColumnNames::TimeSeries,
         std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
