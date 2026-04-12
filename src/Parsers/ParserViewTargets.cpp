@@ -44,6 +44,10 @@ namespace
 
         if (!res || !res->getInnerEngine(kind))
         {
+            /// Skip optional INNER before ENGINE.
+            /// We support both syntaxes: `TAGS/DATA/METRICS ENGINE` and `TAGS/DATA/METRICS INNER ENGINE`.
+            ParserKeyword{Keyword::INNER}.ignore(pos, expected);
+
             if (ParserStorage{ParserStorage::TABLE_ENGINE}.parse(pos, ast, expected))
             {
                 if (!res)
