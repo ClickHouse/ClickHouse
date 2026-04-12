@@ -2,13 +2,17 @@
 
 -- Test that ALTER TABLE operations don't cause primary key type mismatches
 -- when settings-dependent functions are used in the ORDER BY expression.
--- The bug: toMonday() returns Date or Date32 depending on
--- enable_extended_results_for_datetime_functions. If the table is created
--- with the setting enabled, ALTER TABLE (e.g., COMMENT COLUMN) would
--- re-evaluate the primary key expression with the table's global context
--- (where the setting is OFF), changing the type. Subsequent INSERT would
--- crash with "Bad cast from ColumnVector<unsigned short> to ColumnVector<int>".
--- See: https://github.com/ClickHouse/ClickHouse/issues/98135
+-- The bug: functions like toMonday() and toStartOfMinute() return different
+-- types depending on enable_extended_results_for_datetime_functions.
+-- If the table is created with the setting enabled, ALTER TABLE (e.g.,
+-- COMMENT COLUMN) or DETACH/ATTACH would re-evaluate the primary key
+-- expression with the table's global context (where the setting is OFF),
+-- changing the type. Subsequent INSERT would crash with "Bad cast".
+-- Variants:
+--   Date32 key: "Bad cast from ColumnVector<unsigned short> to ColumnVector<int>"
+--     (STID: 1499-*, see https://github.com/ClickHouse/ClickHouse/issues/98135)
+--   DateTime64 key: "Bad cast from ColumnVector<unsigned int> to ColumnDecimal<DateTime64>"
+--     (STID: 1559-62fb)
 
 SET enable_extended_results_for_datetime_functions = 1;
 SET enable_parallel_replicas = 0;
@@ -104,3 +108,40 @@ ALTER TABLE t_pk_type_mismatch_8 COMMENT COLUMN c0 'date col';
 INSERT INTO t_pk_type_mismatch_8 VALUES ('2024-01-15', '2024-02-01'), ('2024-06-20', '2024-07-10');
 SELECT c0, c1 FROM t_pk_type_mismatch_8 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_8;
+
+-- Test 9: DateTime64 primary key type mismatch (STID: 1559-62fb)
+-- With enable_extended_results_for_datetime_functions=1:
+--   toStartOfMinute(DateTime64(3)) returns DateTime64(3)
+-- Without the setting (default=0):
+--   toStartOfMinute(DateTime64(3)) returns DateTime (UInt32)
+-- After ALTER, getCombinedIndicesExpression rebuilds with the table's global
+-- context (setting=0), producing DateTime instead of DateTime64.
+-- INSERT then crashes with:
+-- "Bad cast from ColumnVector<unsigned int> to ColumnDecimal<DateTime64>"
+DROP TABLE IF EXISTS t_pk_type_mismatch_9;
+CREATE TABLE t_pk_type_mismatch_9 (c0 DateTime64(3)) ENGINE = MergeTree() ORDER BY (toStartOfMinute(c0));
+ALTER TABLE t_pk_type_mismatch_9 COMMENT COLUMN c0 'timestamp col';
+INSERT INTO t_pk_type_mismatch_9 VALUES ('2024-01-01 12:30:00.000'), ('2024-06-15 08:15:30.500');
+SELECT c0, toStartOfMinute(c0) FROM t_pk_type_mismatch_9 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_9;
+
+-- Test 10: DateTime64 with DETACH/ATTACH (STID: 1559-62fb variant)
+DROP TABLE IF EXISTS t_pk_type_mismatch_10;
+CREATE TABLE t_pk_type_mismatch_10 (c0 DateTime64(3)) ENGINE = MergeTree() ORDER BY (toStartOfHour(c0));
+DETACH TABLE t_pk_type_mismatch_10;
+ATTACH TABLE t_pk_type_mismatch_10;
+INSERT INTO t_pk_type_mismatch_10 VALUES ('2024-01-01 12:30:00.000'), ('2024-06-15 08:15:30.500');
+SELECT c0, toStartOfHour(c0) FROM t_pk_type_mismatch_10 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_10;
+
+-- Test 11: DateTime64 with skip index (combined path)
+DROP TABLE IF EXISTS t_pk_type_mismatch_11;
+CREATE TABLE t_pk_type_mismatch_11 (
+    c0 DateTime64(3),
+    val UInt64,
+    INDEX idx_hour toStartOfHour(c0) TYPE minmax GRANULARITY 1
+) ENGINE = MergeTree() ORDER BY (toStartOfMinute(c0));
+ALTER TABLE t_pk_type_mismatch_11 COMMENT COLUMN c0 'with DateTime64 index';
+INSERT INTO t_pk_type_mismatch_11 VALUES ('2024-01-01 12:30:00.000', 100), ('2024-06-15 08:15:30.500', 200);
+SELECT c0, val FROM t_pk_type_mismatch_11 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_11;
