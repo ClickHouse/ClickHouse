@@ -376,9 +376,37 @@ void StorageTimeSeries::checkAlterIsPossible(const AlterCommands & commands, Con
     }
 }
 
-void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder)
+void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
 {
-    IStorage::alter(params, local_context, table_lock_holder);
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    params.apply(new_metadata, local_context);
+
+    std::unique_ptr<TimeSeriesSettings> new_settings;
+
+    bool has_settings_changes = std::any_of(
+        params.begin(), params.end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
+
+    if (has_settings_changes)
+    {
+        chassert(new_metadata.settings_changes);
+        new_settings = std::make_unique<TimeSeriesSettings>(getNormalizedTimeSeriesSettings(
+            *initial_create_query, local_context, new_metadata.settings_changes->as<const ASTSetQuery &>().changes));
+
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        settings_ast->changes = new_settings->changes();
+        new_metadata.settings_changes = settings_ast;
+
+        new_metadata.setColumns(generateTimeSeriesColumns(*new_settings));
+    }
+
+    auto time_series_table_id = getStorageID();
+    DatabaseCatalog::instance().getDatabase(time_series_table_id.database_name)->alterTable(
+        local_context, time_series_table_id, new_metadata, /*validate_new_create_query=*/true);
+    setInMemoryMetadata(new_metadata);
+
+    if (new_settings)
+        storage_settings.set(std::move(new_settings));
 }
 
 

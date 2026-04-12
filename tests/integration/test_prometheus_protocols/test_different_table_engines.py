@@ -299,3 +299,42 @@ def test_external_tables():
         "DATA mydata TAGS mytags METRICS mymetrics"
     )
     check()
+
+
+# Checks that ALTER TABLE MODIFY SETTING works and can change settings.
+def test_alter_modify_settings():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+
+    # Default timestamp_type is DateTime64(3).
+    assert node.query(
+        "SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'"
+    ) == TSV([["Array(Tuple(DateTime64(3), Float64))"]])
+
+    send_preset_to_clickhouse()
+
+    # Check the timestamp column type in prometheusQuery output before ALTER.
+    query = test_queries[0][0]
+    assert node.query(
+        f"SELECT * FROM prometheusQuery(prometheus, '{query}', {timestamp}) FORMAT TabSeparatedWithNamesAndTypes"
+    ) == (
+        "tags\ttimestamp\tvalue\n"
+        "Array(Tuple(String, String))\tDateTime64(3)\tFloat64\n"
+        "[('__name__','up'),('instance','demo-service-0:10000'),('job','demo')]\t2025-07-22 15:54:44.626\t1\n"
+    )
+
+    # Change timestamp_type to DateTime64(6) and scalar_type to Float32.
+    node.query("ALTER TABLE prometheus MODIFY SETTING timestamp_type='DateTime64(6)', scalar_type='Float32'")
+
+    # The time_series column type should reflect the new setting.
+    assert node.query(
+        "SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'"
+    ) == TSV([["Array(Tuple(DateTime64(6), Float32))"]])
+
+    # Both timestamp and value column types in prometheusQuery output should change.
+    assert node.query(
+        f"SELECT * FROM prometheusQuery(prometheus, '{query}', {timestamp}) FORMAT TabSeparatedWithNamesAndTypes"
+    ) == (
+        "tags\ttimestamp\tvalue\n"
+        "Array(Tuple(String, String))\tDateTime64(6)\tFloat32\n"
+        "[('__name__','up'),('instance','demo-service-0:10000'),('job','demo')]\t2025-07-22 15:54:44.626000\t1\n"
+    )
