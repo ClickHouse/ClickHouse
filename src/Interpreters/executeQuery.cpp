@@ -1204,7 +1204,7 @@ static BlockIO executeQueryImpl(
                 && (query_view[pos] == 'S' || query_view[pos] == 's')
                 && (query_view[pos + 1] == 'E' || query_view[pos + 1] == 'e')
                 && (query_view[pos + 2] == 'T' || query_view[pos + 2] == 't')
-                && (query_view.size() - pos == 3 || query_view[pos + 3] == ' ' || query_view[pos + 3] == '\t'))
+                && (query_view.size() - pos == 3 || query_view[pos + 3] == ' ' || query_view[pos + 3] == '\t' || query_view[pos + 3] == '\r' || query_view[pos + 3] == '\n'))
             {
                 ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
                 out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
