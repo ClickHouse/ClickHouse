@@ -1223,6 +1223,16 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     const auto & key_names = key.column_names;
     auto & dag_outputs = dag.getOutputs();
 
+    /// Track which output names were CAST for the key. When the same expression name appears
+    /// in both the sorting key and a skip index (e.g. both use toMonday(c0)), but with different
+    /// expected types (possible when ALTER TABLE ADD INDEX happens under different settings than
+    /// CREATE TABLE), the DAG has only one deduplicated output node for that name. Both the key
+    /// and index loops would try to CAST the same output, with the last CAST winning. This would
+    /// overwrite the key's type with the index's type, crashing the primary index serializer.
+    /// The key's type must always take priority because the primary index serialization format
+    /// is determined by key.data_types and cannot tolerate a type mismatch.
+    std::unordered_set<std::string> key_cast_outputs;
+
     for (size_t i = 0; i < key_names.size() && i < key_types.size(); ++i)
     {
         for (auto & output : dag_outputs)
@@ -1230,6 +1240,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
             if (output->result_name == key_names[i] && !output->result_type->equals(*key_types[i]))
             {
                 output = &dag.addCast(*output, key_types[i], key_names[i], context);
+                key_cast_outputs.insert(key_names[i]);
                 break;
             }
         }
@@ -1240,6 +1251,13 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     /// also drift in type after ALTER/ATTACH, causing the same class of crash during index
     /// serialization. Each index description stores the expected column_names/data_types
     /// from when the index was originally created.
+    ///
+    /// If a skip-index expression shares a name with a key expression that was already CAST
+    /// above, skip the index CAST to avoid overwriting the key's type. The key's type takes
+    /// priority — the Block can only hold one column per name, and the primary index
+    /// serializer's type expectations are non-negotiable. The skip index will receive the
+    /// key-typed column; for typical indices (minmax, bloom_filter) this produces correct
+    /// results since the underlying data is the same expression, just in a wider type.
     for (const auto & index_ptr : indices)
     {
         const auto & idx = index_ptr->index;
@@ -1248,6 +1266,9 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 
         for (size_t i = 0; i < idx_names.size() && i < idx_types.size(); ++i)
         {
+            if (key_cast_outputs.contains(idx_names[i]))
+                continue;
+
             for (auto & output : dag_outputs)
             {
                 if (output->result_name == idx_names[i] && !output->result_type->equals(*idx_types[i]))

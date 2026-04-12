@@ -145,3 +145,39 @@ ALTER TABLE t_pk_type_mismatch_11 COMMENT COLUMN c0 'with DateTime64 index';
 INSERT INTO t_pk_type_mismatch_11 VALUES ('2024-01-01 12:30:00.000', 100), ('2024-06-15 08:15:30.500', 200);
 SELECT c0, val FROM t_pk_type_mismatch_11 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_11;
+
+-- Test 12: Mixed-settings lifecycle — key and skip index share the same expression
+-- but with different expected types due to different settings at creation time.
+-- The sorting key was created with enable_extended_results=1 (toMonday → Date32),
+-- then the skip index is added with enable_extended_results=0 (toMonday → Date).
+-- In getCombinedIndicesExpression, the DAG has one deduplicated output for toMonday(c0).
+-- Without the collision fix, the index CAST overwrites the key CAST, and the primary
+-- index serializer crashes reading Date (UInt16) as Date32 (Int32).
+DROP TABLE IF EXISTS t_pk_type_mismatch_12;
+CREATE TABLE t_pk_type_mismatch_12 (c0 Date32) ENGINE = MergeTree() ORDER BY (toMonday(c0));
+
+SET enable_extended_results_for_datetime_functions = 0;
+ALTER TABLE t_pk_type_mismatch_12 ADD INDEX idx_monday toMonday(c0) TYPE minmax GRANULARITY 1;
+
+INSERT INTO t_pk_type_mismatch_12 (c0) VALUES ('2024-01-01'), ('2024-06-15');
+SELECT c0, toMonday(c0) FROM t_pk_type_mismatch_12 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_12;
+
+-- Restore setting for subsequent tests
+SET enable_extended_results_for_datetime_functions = 1;
+
+-- Test 13: Same as Test 12 but with DateTime64 (toStartOfMinute)
+-- Key created with setting=1: toStartOfMinute(DateTime64) → DateTime64
+-- Index added with setting=0: toStartOfMinute(DateTime64) → DateTime (UInt32)
+DROP TABLE IF EXISTS t_pk_type_mismatch_13;
+CREATE TABLE t_pk_type_mismatch_13 (c0 DateTime64(3)) ENGINE = MergeTree() ORDER BY (toStartOfMinute(c0));
+
+SET enable_extended_results_for_datetime_functions = 0;
+ALTER TABLE t_pk_type_mismatch_13 ADD INDEX idx_minute toStartOfMinute(c0) TYPE minmax GRANULARITY 1;
+
+INSERT INTO t_pk_type_mismatch_13 VALUES ('2024-01-01 12:30:00.000'), ('2024-06-15 08:15:30.500');
+SELECT c0, toStartOfMinute(c0) FROM t_pk_type_mismatch_13 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_13;
+
+-- Restore setting
+SET enable_extended_results_for_datetime_functions = 1;
