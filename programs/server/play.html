@@ -65,6 +65,7 @@
             --menu-toggle-color: #000;
 
             --progress-color: #0C4;
+            --table-size-bar-color: #FFF;
 
             --selection-color: #FFF;
             --selection-background-color: #456;
@@ -96,6 +97,7 @@
             --menu-toggle-color: #FF0;
 
             --progress-color: #FF0;
+            --table-size-bar-color: #104050;
 
             --selection-color: #000;
             --selection-background-color: #FF8;
@@ -182,6 +184,13 @@
         #databases
         {
             grid-area: contents;
+            max-width: 25em;
+            overflow: hidden;
+        }
+
+        .tables:not(:empty)
+        {
+            margin-bottom: 1em;
         }
 
         #github-icon
@@ -239,11 +248,6 @@
             color: var(--misc-text-color);
         }
 
-        .tables
-        {
-            padding-left: 1rem;
-        }
-
         .current
         {
             font-weight: bold;
@@ -251,40 +255,63 @@
 
         .table
         {
-            background-position: bottom;
-            background-size: 100% 2px;
             background-repeat: no-repeat;
+        }
+
+        .table button
+        {
+            display: inline-block;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+
+        .table-icon
+        {
+            width: 1em;
+            height: 1em;
+            vertical-align: -0.1em;
+            margin-right: 0.25em;
+            flex-shrink: 0;
+            opacity: 0.5;
         }
 
         .table-addendum
         {
             position: absolute;
             z-index: 999;
-            display: none;
             white-space: pre;
             transform: translate(0.25rem, calc(-50% + 0.5em));
             color: var(--element-background-color);
-            background: var(--text-color);
-            border: 1px solid var(--border-color);
+            background: color-mix(in srgb, var(--text-color) 50%, var(--background-color));
+            backdrop-filter: blur(4px);
             border-radius: 0.5rem;
             padding: 0.25rem;
             margin-left: 0.25rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0s 0.1s;
         }
 
         .table-addendum::before {
             content: " ";
             position: absolute;
             top: 50%;
-            transform: translate(-110%, -50%);
+            transform: translate(calc(-100% - 0.2rem), -50%);
             line-height: 0;
             border-width: 0.5rem;
             border-style: solid;
-            border-color: transparent var(--text-color) transparent transparent;
+            border-color: transparent color-mix(in srgb, var(--text-color) 50%, var(--background-color)) transparent transparent;
         }
 
-        .table:hover .table-addendum
+        .table button:hover + .table-addendum,
+        .table .table-addendum:hover
         {
-            display: inline-block;
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 0s 0.1s;
         }
 
         .table-addendum-elem
@@ -2269,6 +2296,124 @@ async function loadDatabases(server_address, user, password) {
     }
 }
 
+function makeSVG(viewBox, ...paths)
+{
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', viewBox);
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.classList.add('table-icon');
+    for (const d of paths)
+    {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        svg.appendChild(path);
+    }
+    return svg;
+}
+
+function getTableIcon(engine)
+{
+    const e = engine.replace(/^Replicated|^Shared/, '');
+
+    /// Aggregating/Summing - sigma
+    if (/^(Summing|Aggregating)MergeTree/.test(e))
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M18 4 H6',     // top bar
+            'M6 4 L16 12',  // upper diagonal
+            'M16 12 L6 20', // lower diagonal
+            'M6 20 H18'     // bottom bar
+        );
+        return svg;
+    }
+
+    /// Memory - microchip
+    if (e === 'Memory')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M6 6 h12 v12 h-12 z',  // chip body
+            'M9 6 v-2', 'M12 6 v-2', 'M15 6 v-2',    // top pins
+            'M9 18 v2', 'M12 18 v2', 'M15 18 v2',     // bottom pins
+            'M6 10 h-2', 'M6 14 h-2',                  // left pins
+            'M18 10 h2', 'M18 14 h2'                   // right pins
+        );
+        return svg;
+    }
+
+    /// View - eye
+    if (e === 'View')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 12 C5 5, 19 5, 23 12 C19 19, 5 19, 1 12 Z',  // eye outline
+            'M12 9 a3 3 0 1 0 0 6 a3 3 0 1 0 0 -6'             // pupil
+        );
+        return svg;
+    }
+
+    /// MaterializedView - eye over table
+    if (e === 'MaterializedView')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 8 C5 2, 19 2, 23 8 C19 14, 5 14, 1 8 Z',  // eye
+            'M12 5.5 a2.5 2.5 0 1 0 0 5 a2.5 2.5 0 1 0 0 -5', // pupil
+            'M4 17 h16', 'M4 21 h16'                        // table lines
+        );
+        return svg;
+    }
+
+    /// Merge - three overlaid tables
+    if (e === 'Merge')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M8 8 h14 v14 h-14 z', 'M8 12 h14',     // back table (bottom-right)
+            'M5 5 h14 v14 h-14 z', 'M5 9 h14',      // middle table
+            'M2 2 h14 v14 h-14 z', 'M2 6 h14'       // front table (top-left)
+        );
+        svg.setAttribute('fill', 'var(--element-background-color)');
+        return svg;
+    }
+
+    /// Distributed - fanout
+    if (e === 'Distributed')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M2 9.5 h6 v5 h-6 z',     // source box
+            'M16 1 h6 v5 h-6 z',      // target top
+            'M16 9.5 h6 v5 h-6 z',    // target middle
+            'M16 18 h6 v5 h-6 z',     // target bottom
+            'M8 12 L16 3.5',          // arrow top
+            'M8 12 L16 12',           // arrow middle
+            'M8 12 L16 20.5'          // arrow bottom
+        );
+        return svg;
+    }
+
+    /// StorageProxy - arrow between two boxes
+    if (e === 'Proxy')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 7 h6 v10 h-6 z',    // left box
+            'M17 7 h6 v10 h-6 z',   // right box
+            'M7 12 h10',            // arrow line
+            'M14 9 l3 3 l-3 3'     // arrowhead
+        );
+        return svg;
+    }
+
+    /// Default MergeTree family - table
+    const svg = makeSVG('0 0 24 24',
+        'M3 4 h18 v16 h-18 z',  // border
+        'M3 9 h18',             // header line
+        'M3 14 h18',            // middle line
+        'M10 9 v11'             // column divider
+    );
+    return svg;
+}
+
 let load_tables_request_num = 0;
 async function loadTables(server_address, user, password, database, container) {
     ++load_tables_request_num;
@@ -2289,20 +2434,21 @@ async function loadTables(server_address, user, password, database, container) {
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
 
-    // Use natural order for table names
-    json.data.sort((a, b) => a.table.localeCompare(b.table, undefined, { numeric: true }));
+    // Use natural order for table names; .inner tables go last
+    json.data.sort((a, b) => a.table.startsWith('.inner') - b.table.startsWith('.inner')
+        || a.table.localeCompare(b.table, undefined, { numeric: true }));
 
     for (let elem of json.data) {
         let table = document.createElement('div');
         table.className = 'table';
         let table_link = document.createElement('button');
-        table_link.append(elem.table);
+        table_link.append(getTableIcon(elem.engine), elem.table);
 
         if (max_total_bytes && +elem.total_bytes) {
             const percent = Number(100 * +elem.total_bytes / max_total_bytes).toFixed(2);
             table.style.backgroundImage = `linear-gradient(to right,
-                var(--progress-color) 0%,
-                var(--progress-color) ${percent}%,
+                var(--table-size-bar-color) 0%,
+                var(--table-size-bar-color) ${percent}%,
                 transparent ${percent}%)`;
         }
 
