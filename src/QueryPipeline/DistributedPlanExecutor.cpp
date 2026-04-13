@@ -911,7 +911,7 @@ size_t getCascadesClusterNodeCountParam(ContextPtr context)
     constexpr auto param_name = "_internal_cascades_cluster_node_count";
     if (context->getQueryParameters().contains(param_name))
     {
-        size_t value = std::stoull(context->getQueryParameters().at(param_name));
+        size_t value = parse<size_t>(context->getQueryParameters().at(param_name));
         if (value > 0)
             return value;
     }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Storages/SelectQueryInfo.h>
