@@ -303,23 +303,23 @@ private:
     struct FunnelResult
     {
         UInt8 max_level = 0;
-        std::vector<UInt64> conversion_times;
+        VectorWithMemoryTracking<UInt64> conversion_times;
     };
 
     /// The algorithm works in O(n) time, but the overall function works in O(n * log(n)) due to sorting.
     FunnelResult getEventLevelNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
     {
         /// candidate_events_timestamp stores {first_event_ts, last_event_ts} for the latest candidate sequence reaching level i+1.
-        std::vector<std::optional<std::pair<T, T>>> candidate_events_timestamp(events_size);
+        VectorWithMemoryTracking<std::optional<std::pair<T, T>>> candidate_events_timestamp(events_size);
 
         /// Stores the specific timestamps for each step of the sequence that achieved the current overall_max_level.
-        std::vector<std::optional<T>> winning_sequence_timestamps(events_size);
+        VectorWithMemoryTracking<std::optional<T>> winning_sequence_timestamps(events_size);
         UInt8 overall_max_level = 0;
 
         // Helper lambda calculates based on stored winning_sequence_timestamps for the best sequence found
-        auto calculate_conversion_times = [&](UInt8 current_max_level) -> std::vector<UInt64>
+        auto calculate_conversion_times = [&](UInt8 current_max_level) -> VectorWithMemoryTracking<UInt64>
         {
-            std::vector<UInt64> times;
+            VectorWithMemoryTracking<UInt64> times;
             if (need_conversion_time && current_max_level > 1)
             {
                 times.resize(events_size - 1, 0);
@@ -502,9 +502,9 @@ private:
         VectorWithMemoryTracking<ListWithMemoryTracking<EventMatchTimeWindow>> event_sequences(events_size);
 
         // Helper lambda to calculate conversion times from a winning sequence
-        auto calculate_conversion_times = [&](const EventMatchTimeWindow & winning_seq, UInt8 current_max_level) -> std::vector<UInt64>
+        auto calculate_conversion_times = [&](const EventMatchTimeWindow & winning_seq, UInt8 current_max_level) -> VectorWithMemoryTracking<UInt64>
         {
-            std::vector<UInt64> times;
+            VectorWithMemoryTracking<UInt64> times;
             if (need_conversion_time && current_max_level > 1)
             {
                 times.resize(events_size - 1, 0); // Initialize all times to 0
