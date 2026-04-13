@@ -88,6 +88,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.functional_tests_jobs_azure
         ],
         *JobConfigs.functional_test_llvm_coverage_jobs,
+        *JobConfigs.functional_test_excluded_from_llvm_job,
         *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_required[:]
@@ -97,6 +98,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.integration_test_jobs_non_required
         ],
         *JobConfigs.integration_test_llvm_coverage_jobs,
+        *JobConfigs.integration_test_excluded_from_llvm_job,
         *JobConfigs.unittest_jobs,
         *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server.set_dependency(
