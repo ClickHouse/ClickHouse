@@ -189,7 +189,8 @@ TYPED_TEST(CoordinationTest, TestReapplyingDeltas)
     {
         const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = "/test";
-        auto responses = storage.processRequest(list_request, 1, std::nullopt, /*check_acl=*/true, /*is_local=*/true);
+        KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 1, .request = list_request}};
+        auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);
         EXPECT_EQ(responses.size(), 1);
         const auto * list_response = dynamic_cast<const ListResponse *>(responses[0].response.get());
         EXPECT_TRUE(list_response);
@@ -1071,7 +1072,8 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
     {
         auto request = std::make_shared<ZooKeeperGetRequest>();
         request->path = path;
-        auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
+        KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 0, .request = request}};
+        auto responses = storage.processLocalRequests(requests, true);
         const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
 
         if (get_response.error != Error::ZOK)
