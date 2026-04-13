@@ -1754,7 +1754,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
     DECLARE(Bool, per_part_index_stats, false, R"(
         Logs index statistics per part
 )", 0) \
-    DECLARE(Bool, materialize_statistics_on_insert, true, R"(
+    DECLARE(Bool, materialize_statistics_on_insert, false, R"(
 If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
@@ -3884,6 +3884,11 @@ Possible values:
     DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
 )", 0) \
+    DECLARE(Bool, read_in_order_use_virtual_row_per_block, false, R"(
+When enabled together with `read_in_order_use_virtual_row`, emit a virtual row after each block read (not only at the beginning of each part).
+This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
+Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
+)", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -4083,6 +4088,15 @@ Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set to 'lat_lon'.
 )", BETA) \
     DECLARE(Bool, functions_h3_default_if_invalid, false, "If false, h3 functions, e.g. h3CellAreaM2, throw an exception if input is invalid. If true, they return 0 or default value.", 0) \
+    DECLARE(UInt64, max_wkb_geometry_elements, 1'000'000, R"(
+Maximum number of points, rings, or polygons allowed in a single WKB geometry element during parsing by `readWKB` and related functions. This protects against excessive memory allocations from malformed WKB data. Set to 0 to use the hard-coded limit (100 million).
+)", 0) \
+    DECLARE(UInt64, max_rand_distribution_trials, 1'000'000'000, R"(
+Maximum number of trials allowed for random distribution functions such as `randBinomial` and `randNegativeBinomial`. This prevents extremely long computation times with large trial counts.
+)", 0) \
+    DECLARE(Float, max_rand_distribution_parameter, 1e6, R"(
+Maximum value for distribution shape parameters in random distribution functions such as `randChiSquared`, `randStudentT`, and `randFisherF`. This prevents extremely long computation times with extreme parameter values.
+)", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limits the maximum number of partitions in a single inserted block
 and an exception is thrown if the block contains too many partitions.
@@ -7761,6 +7775,9 @@ Possible values:
 )", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
+Serialize the distributed query plan for execution at replicas.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.

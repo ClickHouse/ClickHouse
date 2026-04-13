@@ -8,7 +8,6 @@
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
-#include <Storages/IStorage.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -1133,7 +1132,7 @@ public:
     /// When `projection` is provided, apply projection-level overrides on top of the table settings.
     MergeTreeSettingsPtr getSettings(ProjectionDescriptionRawPtr projection = nullptr) const;
 
-    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override; /// NOLINT
+    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
     String getRelativeDataPath() const { return relative_data_path; }
 

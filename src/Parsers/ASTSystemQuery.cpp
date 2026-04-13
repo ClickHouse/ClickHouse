@@ -387,7 +387,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::UNLOCK_SNAPSHOT:
         {
-            ostr << quoteString(backup_name);
+            ostr << " " << quoteString(backup_name);
             if (backup_source)
             {
                 print_keyword(" FROM ");

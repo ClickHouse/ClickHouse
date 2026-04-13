@@ -664,7 +664,7 @@ void TCPHandler::runImpl()
                 if (context != query_state->query_context)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
-                auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
+                auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
 
                 std::lock_guard lock(*callback_mutex);
 
@@ -2557,7 +2557,7 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
             storage = temporary_table.getTable();
             state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
         }
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(state.query_context, false);
         /// The data will be written directly to the table.
         QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);
