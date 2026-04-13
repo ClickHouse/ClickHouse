@@ -241,8 +241,6 @@ public:
     ///
     /// By default return empty list of columns.
     VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
-    NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
-    Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
     VirtualsDescriptionPtr getCommonVirtuals(VirtualsDescriptionPtr cur_virtuals) const
     {
@@ -313,7 +311,7 @@ public:
     virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
 
 private:
-    StorageID storage_id;
+    StorageID storage_id TSA_GUARDED_BY(id_mutex);
 
     mutable std::mutex id_mutex;
 

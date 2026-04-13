@@ -1,4 +1,5 @@
 -- Tags: no-fasttest, long
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None); max_threads=(4, 32)
 
 SET enable_json_type = 1;
 set allow_experimental_variant_type = 1;
