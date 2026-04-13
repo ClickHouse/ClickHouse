@@ -1,3 +1,6 @@
 nc_replica_for_alter_drop	1	2
 nc_replica_for_type_mix	1	1	1	1	1
+nc_replica_for_hostname	host1	9002
+nc_replica_for_ipv6	2001:db8::123	9003
+nc_replica_for_hostname_fqdn	db.example.com	9004
 0

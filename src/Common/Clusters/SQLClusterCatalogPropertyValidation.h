@@ -37,6 +37,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
+#include <Common/formatIPv6.h>
 #include <Core/Field.h>
 
 #include <cctype>
@@ -83,6 +84,75 @@ inline UInt64 parseUnsignedIntegerPropertyValue(const Field & value, std::string
     }
 
     return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value);
+}
+
+inline bool isIPv4(const std::string & host)
+{
+    UInt32 parsed = 0;
+    return parseIPv4whole(host.data(), host.data() + host.size(), reinterpret_cast<unsigned char *>(&parsed));
+}
+
+inline bool isIPv6(const std::string & host)
+{
+    std::array<unsigned char, IPV6_BINARY_LENGTH> parsed{};
+    return parseIPv6Whole(host.data(), host.data() + host.size(), parsed.data());
+}
+
+/// Single label of an Internet host name: RFC 952 lexical `<name>` (letters, digits, hyphen; ends with a letter or digit),
+/// with RFC 1123 section 2.1 change that the first character may be a letter or a digit (RFC 952 required a letter).
+/// This is a subset of what DNS allows (RFC 1035); e.g. underscores are rejected. At most 63 octets per label (RFC 1035).
+/// ASCII only (no IDNA / punycode).
+inline bool isHostnameLabel(std::string_view label)
+{
+    if (label.empty() || label.size() > 63)
+        return false;
+
+    if (label.front() == '-' || label.back() == '-')
+        return false;
+
+    for (const auto ch : label)
+    {
+        if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '-'))
+            return false;
+    }
+
+    return true;
+}
+
+/// Dot-separated hostname for replica `host` when it is not an IPv4/IPv6 literal: labels must satisfy `isHostnameLabel`
+/// (RFC 952 + RFC 1123 section 2.1). Structure matches DNS presentation (RFC 1035): dot-separated labels, optional
+/// trailing root dot stripped here. Total length at most 253 characters without that dot (DNS presentation limit for
+/// names that fit the wire encoding; RFC 1123 section 2.1 additionally says host software SHOULD accept up to 255
+/// characters, which we do not use here).
+inline bool isValidHostname(std::string_view value)
+{
+    if (value.empty() || value.size() > 253)
+        return false;
+
+    if (value.back() == '.')
+        value.remove_suffix(1);
+
+    if (value.empty())
+        return false;
+
+    size_t start = 0;
+    while (start < value.size())
+    {
+        const size_t dot = value.find('.', start);
+        const size_t end = (dot == std::string_view::npos ? value.size() : dot);
+        if (!isHostnameLabel(value.substr(start, end - start)))
+            return false;
+        if (dot == std::string_view::npos)
+            break;
+        start = dot + 1;
+    }
+
+    return true;
+}
+
+inline bool isValidHost(const std::string & host)
+{
+    return isIPv4(host) || isIPv6(host) || isValidHostname(host);
 }
 }
 
@@ -282,6 +352,14 @@ inline void validateReplicaLevelPropertiesForSQLReplica(const SettingsChanges & 
 
     if (!host || host->empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica-level PROPERTIES require non-empty `host`");
+
+    if (!SQLClusterCatalogPropertyValidationDetail::isValidHost(*host))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Replica-level PROPERTIES require valid IPv4, IPv6, or hostname in `host`, got `{}`",
+            *host);
+    }
 
     if (!port_value)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica-level PROPERTIES require `port`");
