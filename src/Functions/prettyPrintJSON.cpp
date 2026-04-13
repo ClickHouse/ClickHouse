@@ -1,0 +1,149 @@
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include "config.h"
+
+#if USE_RAPIDJSON
+
+/// Prevent stack overflow:
+#define RAPIDJSON_PARSE_DEFAULT_FLAGS (kParseIterativeFlag)
+
+#include <rapidjson/document.h>
+#include <rapidjson/prettywriter.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/error/en.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
+}
+
+namespace
+{
+
+class FunctionPrettyPrintJSON : public IFunction
+{
+public:
+    static constexpr auto name = "prettyPrintJSON";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPrettyPrintJSON>(); }
+
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        FunctionArgumentDescriptors mandatory_args{
+            {"json", &isString, nullptr, "String"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"indent", &isNativeUInt, isColumnConst, "const UInt*"}
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto * col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+        if (!col)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a String column", getName());
+
+        unsigned indent_count = 4;
+        if (arguments.size() > 1)
+        {
+            const auto & indent_col = arguments[1].column;
+            UInt64 indent_value = (*indent_col)[0].safeGet<UInt64>();
+            if (indent_value > 32)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Indent parameter of function {} must be between 0 and 32, got {}",
+                    getName(),
+                    indent_value);
+            indent_count = static_cast<unsigned>(indent_value);
+        }
+
+        auto result = ColumnString::create();
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            auto str_ref = col->getDataAt(i);
+
+            rapidjson::Document document;
+            document.Parse(std::string{str_ref}.c_str());
+
+            if (document.HasParseError())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid JSON string in function {}: {}",
+                    getName(),
+                    rapidjson::GetParseError_En(document.GetParseError()));
+
+            rapidjson::StringBuffer buffer;
+            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
+            writer.SetIndent(' ', indent_count);
+            document.Accept(writer);
+
+            result->insertData(buffer.GetString(), buffer.GetSize());
+        }
+
+        return result;
+    }
+};
+
+}
+
+REGISTER_FUNCTION(PrettyPrintJSON)
+{
+    FunctionDocumentation::Description description = R"(
+Returns a pretty-printed version of a JSON string with newlines and indentation with spaces.
+    )";
+    FunctionDocumentation::Syntax syntax = "prettyPrintJSON(json [, indent])";
+    FunctionDocumentation::Arguments arguments = {
+        {"json", "A valid JSON string to format.", {"String"}},
+        {"indent", "Number of spaces per indentation level. Default: 4. Max: 32", {"UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"A pretty-printed JSON string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Simple object",
+            R"(SELECT prettyPrintJSON('{"a":1,"b":"hello"}');)",
+            R"(
+{
+    "a": 1,
+    "b": "hello"
+}
+            )"
+        },
+        {
+            "Custom indent",
+            R"(SELECT prettyPrintJSON('{"a":1}', 2);)",
+            R"(
+{
+  "a": 1
+}
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionPrettyPrintJSON>(documentation);
+}
+
+}
+
+#endif
