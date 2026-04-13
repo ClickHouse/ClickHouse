@@ -25,6 +25,11 @@ ClickHouseVersion::ClickHouseVersion(std::string_view version)
 
     for (const auto & split_element : split)
     {
+        if (split_element == "altinityantalya")
+        {
+            is_antalya = true;
+            continue;
+        }
         size_t component;
         ReadBufferFromString buf(split_element);
         if (!tryReadIntText(component, buf) || !buf.eof())
@@ -35,7 +40,10 @@ ClickHouseVersion::ClickHouseVersion(std::string_view version)
 
 String ClickHouseVersion::toString() const
 {
-    return fmt::format("{}", fmt::join(components, "."));
+    auto res = fmt::format("{}", fmt::join(components, "."));
+    if (is_antalya)
+        res += ".altinityantalya";
+    return res;
 }
 
 }

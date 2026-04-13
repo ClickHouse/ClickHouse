@@ -18,6 +18,7 @@ public:
 
 private:
     std::vector<size_t> components;
+    bool is_antalya = false;
 };
 
 }
