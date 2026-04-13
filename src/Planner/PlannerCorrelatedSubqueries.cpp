@@ -1,6 +1,5 @@
 #include <Planner/PlannerCorrelatedSubqueries.h>
 
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
@@ -8,7 +7,6 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
-#include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -548,51 +546,16 @@ QueryPlan buildLogicalJoin(
     return result_plan;
 }
 
-/// Build a map of correlated column identifier -> actual post-aggregation type from
-/// the outer query's plan header. When `group_by_use_nulls` wraps GROUP BY keys in
-/// Nullable, the QueryTree ColumnNode types are not updated, but the plan header has
-/// the correct types.
-std::unordered_map<String, DataTypePtr> buildCorrelatedColumnTypeOverrides(
-    const CorrelatedSubquery & correlated_subquery,
-    const Block & outer_header)
-{
-    std::unordered_map<String, DataTypePtr> type_overrides;
-
-    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
-    auto * union_node = correlated_subquery.query_tree->as<UnionNode>();
-    const auto & correlated_columns = query_node
-        ? query_node->getCorrelatedColumns().getNodes()
-        : union_node->getCorrelatedColumns().getNodes();
-
-    for (size_t i = 0; i < correlated_subquery.correlated_column_identifiers.size(); ++i)
-    {
-        const auto & identifier = correlated_subquery.correlated_column_identifiers[i];
-        if (outer_header.has(identifier))
-        {
-            auto actual_type = outer_header.getByName(identifier).type;
-            const auto & col = correlated_columns[i]->as<ColumnNode &>();
-            if (!actual_type->equals(*col.getColumnType()))
-                type_overrides[identifier] = actual_type;
-        }
-    }
-
-    return type_overrides;
-}
-
 Planner buildPlannerForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
     const CorrelatedSubquery & correlated_subquery,
     const SelectQueryOptions & select_query_options,
-    std::unordered_map<String, DataTypePtr> && correlated_column_type_overrides
-)
+    const SharedHeader & outer_query_header)
 {
     auto subquery_options = select_query_options.subquery();
     auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
-    /// Register table expression data for correlated columns sources in the global context.
-    /// Table expression data would be reused because it can't be initialized
-    /// during plan construction for correlated subquery.
     global_planner_context->collectTableExpressionDataForCorrelatedColumns(correlated_subquery.query_tree, planner_context);
-    global_planner_context->setCorrelatedColumnTypeOverrides(std::move(correlated_column_type_overrides));
+    global_planner_context->setOuterQueryHeader(outer_query_header);
 
     Planner subquery_planner(
         correlated_subquery.query_tree,
@@ -677,13 +640,13 @@ void buildQueryPlanForCorrelatedSubquery(
     auto * union_node = correlated_subquery.query_tree->as<UnionNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
 
-    auto type_overrides = buildCorrelatedColumnTypeOverrides(correlated_subquery, outer_header);
+    auto outer_header_ptr = std::make_shared<const Block>(outer_header);
 
     switch (correlated_subquery.kind)
     {
         case DB::CorrelatedSubqueryKind::SCALAR:
         {
-            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options, std::move(type_overrides));
+            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options, outer_header_ptr);
             /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
 
@@ -722,7 +685,7 @@ void buildQueryPlanForCorrelatedSubquery(
         }
         case CorrelatedSubqueryKind::EXISTS:
         {
-            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options, std::move(type_overrides));
+            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options, outer_header_ptr);
             /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
 

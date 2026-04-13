@@ -817,10 +817,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     /// When `group_by_use_nulls` wraps GROUP BY key columns in Nullable after aggregation,
     /// the QueryTree ColumnNode type is not updated — only the ActionsDAG is. Use the
-    /// actual post-aggregation type from the outer query if available.
+    /// actual post-aggregation type from the outer query's plan header if available.
     auto column_type = node->getColumnType();
-    if (auto override_type = planner_context->getGlobalPlannerContext()->getCorrelatedColumnTypeOverride(column_node_name))
-        column_type = override_type;
+    const auto & outer_header = planner_context->getGlobalPlannerContext()->getOuterQueryHeader();
+    if (outer_header && outer_header->has(column_node_name))
+    {
+        auto actual_type = outer_header->getByName(column_node_name).type;
+        if (!actual_type->equals(*column_type))
+            column_type = actual_type;
+    }
 
     /// Add PLACEHOLDER only to the outermost scope (will be decorrelated later).
     /// Inner scopes (e.g. lambda scopes) get INPUT so the lambda capture mechanism

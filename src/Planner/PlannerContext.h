@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
@@ -68,18 +69,8 @@ public:
     RawTableExpressionDataMap & getTableExpressionDataMap() noexcept { return shared_table_expression_data; }
     const RawTableExpressionDataMap & getTableExpressionDataMap() const noexcept { return shared_table_expression_data; }
 
-    void setCorrelatedColumnTypeOverrides(std::unordered_map<String, DataTypePtr> && overrides)
-    {
-        correlated_column_type_overrides = std::move(overrides);
-    }
-
-    DataTypePtr getCorrelatedColumnTypeOverride(const String & column_name) const
-    {
-        auto it = correlated_column_type_overrides.find(column_name);
-        if (it != correlated_column_type_overrides.end())
-            return it->second;
-        return nullptr;
-    }
+    void setOuterQueryHeader(SharedHeader header) { outer_query_header = std::move(header); }
+    const SharedHeader & getOuterQueryHeader() const { return outer_query_header; }
 
     /// The query which will be executed with parallel replicas.
     /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
@@ -96,9 +87,9 @@ private:
     /// Table expression node to data map for correlated columns sources
     RawTableExpressionDataMap shared_table_expression_data;
 
-    /// Actual post-aggregation types for correlated columns when `group_by_use_nulls`
-    /// wraps GROUP BY keys in Nullable. Keyed by column identifier.
-    std::unordered_map<String, DataTypePtr> correlated_column_type_overrides;
+    /// Outer query's plan header for correlated subqueries, used to get actual
+    /// post-aggregation column types (e.g. when `group_by_use_nulls` wraps keys in Nullable).
+    SharedHeader outer_query_header;
 };
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
