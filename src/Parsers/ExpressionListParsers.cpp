@@ -62,7 +62,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     };
 
-    if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty))
+    if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty, allow_trailing_separator))
         return false;
 
     node = make_intrusive<ASTExpressionList>(result_separator);
