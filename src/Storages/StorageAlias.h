@@ -147,7 +147,7 @@ public:
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
 
-    NamesAndTypesList getVirtuals() const { return getTargetTable()->getVirtualsList(); }
+    VirtualsDescriptionPtr getVirtuals() const { return getTargetTable()->getVirtualsPtr(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
