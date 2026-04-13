@@ -278,7 +278,7 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     /// don't need to replace subcolumns with their nested columns etc.
     new_info.source_header = new_info.format_header;
 
-    /// Hive partition columns are not present in the data file; they are injected from the file path
+    /// Hive partition columns might not present in the data file; they are injected from the file path
     /// in StorageObjectStorageSource::generate() via addPartitionColumnsToChunk().
     /// They must be carried over so that generate() still injects them, and so that source_header
     /// matches the actual chunk layout (file columns → hive columns → virtual columns).
