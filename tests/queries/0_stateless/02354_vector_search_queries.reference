@@ -318,6 +318,121 @@ Expression (Project names)
                   Granules: 3/4
                 Ranges: 1
       LazilyReadFromMergeTree
+6	[1,9.3]	18.600000381469727
+4	[2.4,5.2]	10.399999618530273
+7	[5.5,4.7]	9.399999618530273
+Expression (Project names)
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Expression
+              ReadFromMergeTree (default.tab_dot_f64)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 2
+                  Parts: 1/1
+                  Granules: 3/4
+                Ranges: 1
+      LazilyReadFromMergeTree
+6	[1,9.3]	18.600000381469727
+4	[2.4,5.2]	10.399999618530273
+7	[5.5,4.7]	9.399999618530273
+Expression (Project names)
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Expression
+              ReadFromMergeTree (default.tab_dot_f32)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 2
+                  Parts: 1/1
+                  Granules: 3/4
+                Ranges: 1
+      LazilyReadFromMergeTree
+6	[1,9.3]	18.600000381469727
+4	[2.4,5.2]	10.399999618530273
+7	[5.5,4.7]	9.399999618530273
+Expression (Project names)
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Expression
+              ReadFromMergeTree (default.tab_dot_f16)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 2
+                  Parts: 1/1
+                  Granules: 3/4
+                Ranges: 1
+      LazilyReadFromMergeTree
+6	[1,9.3]	18.600000381469727
+4	[2.4,5.2]	10.399999618530273
+7	[5.5,4.7]	9.399999618530273
+Expression (Project names)
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Expression
+              ReadFromMergeTree (default.tab_dot_bf16)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 2
+                  Parts: 1/1
+                  Granules: 3/4
+                Ranges: 1
+      LazilyReadFromMergeTree
+6	[1,9.3]	18.600000381469727
+4	[2.4,5.2]	10.399999618530273
+7	[5.5,4.7]	9.399999618530273
+Expression (Project names)
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Expression
+              ReadFromMergeTree (default.tab_dot_i8)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 2
+                  Parts: 1/1
+                  Granules: 3/4
+                Ranges: 1
+      LazilyReadFromMergeTree
 -- Index on Array(Float64) column
 6	[0,2]	0
 7	[0,2.1]	0.10000000000000009
@@ -326,3 +441,75 @@ Expression (Project names)
 6	[0,2]	0
 7	[0,2.09375]	0.09375
 8	[0,2.1875]	0.1875
+-- dotProduct distance function
+6	[1,9.3]	18.600000381469727
+4	[2.4,5.2]	10.399999618530273
+7	[5.5,4.7]	9.399999618530273
+Expression (Project names)
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Expression
+              ReadFromMergeTree (default.tab)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 2
+                  Parts: 1/1
+                  Granules: 3/4
+                Ranges: 1
+      LazilyReadFromMergeTree
+-- Wrong sort direction (DESC for L2Distance), doesnt use the index
+Expression (Project names)
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Expression
+              ReadFromMergeTree (default.tab)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Ranges: 1
+      LazilyReadFromMergeTree
+-- Wrong sort direction, (DESC for cosineDistance) doesnt use the index
+Expression (Project names)
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Expression
+              ReadFromMergeTree (default.tab)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Ranges: 1
+      LazilyReadFromMergeTree
+-- Wrong sort direction (ASC for dotProduct), doesnt use the index
+Expression (Project names)
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Expression
+              ReadFromMergeTree (default.tab)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Ranges: 1
+      LazilyReadFromMergeTree

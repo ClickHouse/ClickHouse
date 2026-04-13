@@ -71,7 +71,7 @@ std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 
 ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
 {
-    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
     auto column_names_and_types = getColumns(get_column_options);
 
     return ColumnsDescription{column_names_and_types};
@@ -89,7 +89,7 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
 
         if (!virtual_columns->empty())
         {
-            auto virtuals_list = virtual_columns->getNamesAndTypesList(options.virtuals_kind);
+            auto virtuals_list = virtual_columns->getSampleBlock(options.virtuals_kind, options.virtuals_place).getNamesAndTypesList();
             for (const auto & column : virtuals_list)
             {
                 if (column_names.contains(column.name))
@@ -100,7 +100,7 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
             }
         }
 
-        auto common_virtuals_list = storage.getCommonVirtuals(virtual_columns)->getNamesAndTypesList(options.virtuals_kind);
+        auto common_virtuals_list = storage.getCommonVirtuals(virtual_columns)->getSampleBlock(options.virtuals_kind, options.virtuals_place).getNamesAndTypesList();
         for (const auto & column : common_virtuals_list)
         {
             if (column_names.contains(column.name))
@@ -129,11 +129,11 @@ std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOpt
 
     if (options.virtuals_kind != VirtualsKind::None)
     {
-        auto virtual_column = virtual_columns->tryGet(column_name, options.virtuals_kind);
+        auto virtual_column = virtual_columns->tryGet(column_name, options.virtuals_kind, options.virtuals_place);
         if (virtual_column)
             return NameAndTypePair{virtual_column->name, virtual_column->type};
 
-        auto common_virtual_column = storage.getCommonVirtuals(virtual_columns)->tryGet(column_name, options.virtuals_kind);
+        auto common_virtual_column = storage.getCommonVirtuals(virtual_columns)->tryGet(column_name, options.virtuals_kind, options.virtuals_place);
         if (common_virtual_column)
             return NameAndTypePair{common_virtual_column->name, common_virtual_column->type};
     }
@@ -164,14 +164,14 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
         {
             res.insert({column->type->createColumn(), column->type, column_name});
         }
-        else if (auto virtual_column = virtual_columns->tryGet(column_name))
+        else if (auto virtual_column = virtual_columns->tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
             const auto & type = virtual_column->type;
             res.insert({type->createColumn(), type, column_name});
         }
-        else if (auto common_virtual_column = common_virtual_columns->tryGet(column_name))
+        else if (auto common_virtual_column = common_virtual_columns->tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
         {
             const auto & type = common_virtual_column->type;
             res.insert({type->createColumn(), type, column_name});
@@ -198,13 +198,13 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
         {
             res.add(*column, "", false, false);
         }
-        else if (auto virtual_column = virtual_columns->tryGet(name))
+        else if (auto virtual_column = virtual_columns->tryGet(name, VirtualsKind::All, VirtualsMaterializationPlace::All))
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
             res.add({name, virtual_column->type});
         }
-        else if (auto common_virtual_column = common_virtual_columns->tryGet(name))
+        else if (auto common_virtual_column = common_virtual_columns->tryGet(name, VirtualsKind::All, VirtualsMaterializationPlace::All))
         {
             res.add({name, common_virtual_column->type});
         }
