@@ -42,6 +42,13 @@ ReadFromMergeTree (default.test_skip_index_minmax_agg)
 1	50	200
 2	150	300
 3	25	inf
+ReadFromMergeTree (default.test_skip_index_minmax_agg)
+25	400
+25	400
+ReadFromMergeTree (default.test_skip_index_minmax_agg)
+1	50	200
+2	150	300
+3	25	400
 ReadFromPreparedSource (_column_statistics_aggregation)
 25	400
 ReadFromPreparedSource (_column_statistics_aggregation)
@@ -79,11 +86,11 @@ ReadFromMergeTree (default.test_col_stats_agg)
 1	50	200
 2	150	300
 3	25	inf
-ReadFromPreparedSource (_column_statistics_aggregation)
-100	400
 ReadFromMergeTree (default.test_col_stats_agg)
 25	400
 ReadFromPreparedSource (_column_statistics_aggregation)
 25	400
 ReadFromMergeTree (default.test_col_stats_agg)
 25	1225
+ReadFromPreparedSource (_column_statistics_aggregation)
+100	400
