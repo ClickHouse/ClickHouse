@@ -498,42 +498,42 @@ Chunk StorageObjectStorageSource::generate()
             try
             {
                 const auto * input_format = reader.getInputFormat();
-                if (!input_format)
-                    break;
-
-                auto buckets_opt = input_format->getMatchedBuckets();
-
-                if (buckets_opt.has_value())
+                if (input_format)
                 {
-                    const auto & matched_groups = buckets_opt->first;
-                    size_t total_groups = buckets_opt->second;
+                    auto buckets_opt = input_format->getMatchedBuckets();
 
-                    std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
-                    MarkRanges unmatched_ranges;
-                    for (size_t i = 0; i < total_groups; ++i)
+                    if (buckets_opt.has_value())
                     {
-                        if (!matched_set.contains(i))
+                        const auto & matched_groups = buckets_opt->first;
+                        size_t total_groups = buckets_opt->second;
+
+                        std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
+                        MarkRanges unmatched_ranges;
+                        for (size_t i = 0; i < total_groups; ++i)
                         {
-                            if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
-                                unmatched_ranges.back().end++;
-                            else
-                                unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
+                            if (!matched_set.contains(i))
+                            {
+                                if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
+                                    unmatched_ranges.back().end++;
+                                else
+                                    unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
+                            }
+                        }
+
+                        if (unmatched_ranges.empty())
+                        {
+                            auto query_condition_cache = read_context->getQueryConditionCache();
+                            query_condition_cache->write(
+                                storage_id.uuid,
+                                object_info->getFileName(),
+                                *format_filter_info->condition_hash,
+                                format_filter_info->filter_actions_dag->dumpNames(),
+                                unmatched_ranges,
+                                total_groups,
+                                false
+                            );
                         }
                     }
-
-                    if (unmatched_ranges.empty())
-                        break;
-
-                    auto query_condition_cache = read_context->getQueryConditionCache();
-                    query_condition_cache->write(
-                        storage_id.uuid,
-                        object_info->getFileName(),
-                        *format_filter_info->condition_hash,
-                        format_filter_info->filter_actions_dag->dumpNames(),
-                        unmatched_ranges,
-                        total_groups,
-                        false
-                    );
                 }
             }
             catch (...)

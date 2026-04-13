@@ -143,6 +143,8 @@ Chunk ParquetV3BlockInputFormat::read()
 
 std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
 {
+    if (!reader)
+        return std::nullopt;
     std::vector<size_t> matched;
     for (const auto & row_group : reader->reader.row_groups)
     {
