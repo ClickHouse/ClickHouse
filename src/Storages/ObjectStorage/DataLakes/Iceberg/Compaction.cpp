@@ -571,46 +571,8 @@ bool writeConsolidatedManifestFile(
     std::vector<IcebergPathFromMetadata> consolidated_manifest_paths;
     std::vector<Int64> manifest_entry_sizes;
 
-    for (auto & [partition_key, pd] : partitions_map)
-    {
-        auto manifest_path = generator.generateManifestEntryName();
-        auto storage_manifest_path = path_resolver.resolve(manifest_path);
-        LOG_INFO(log, "Creating manifest file for partition '{}': {} ({} data files)",
-                 partition_key, storage_manifest_path, pd.file_paths.size());
-
-        auto buffer_manifest = object_storage->writeObject(
-            StoredObject(storage_manifest_path),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-
-        generateManifestFile(
-            metadata_object,
-            partition_columns,
-            pd.partition_values,
-            partition_types,
-            pd.file_paths,
-            std::nullopt,
-            sample_block_,
-            new_snapshot.snapshot,
-            write_format,
-            partition_spec,
-            partition_spec_id,
-            *buffer_manifest,
-            Iceberg::FileContentType::DATA,
-            pd.file_metrics);
-
-        buffer_manifest->finalize();
-        Int64 manifest_size = buffer_manifest->count();
-        if (manifest_size == 0)
-            manifest_size = object_storage->getObjectMetadata(storage_manifest_path, /*with_tags=*/false).size_bytes;
-        manifest_entry_sizes.push_back(manifest_size);
-
-        consolidated_manifest_paths.push_back(manifest_path);
-    }
-
-    // Cleanup lambda removes the written manifest files and manifest list on commit conflict
+    // Defined before the write phase so it can be called on both commit conflict and exceptions.
+    // consolidated_manifest_paths is built incrementally, so only already-written files are removed.
     auto cleanup = [&]()
     {
         for (const auto & mp : consolidated_manifest_paths)
@@ -618,55 +580,102 @@ bool writeConsolidatedManifestFile(
         object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(new_snapshot.manifest_list_path)));
     };
 
-    // Create manifest list pointing to all per-partition manifest files
-    auto storage_manifest_list_path = path_resolver.resolve(new_snapshot.manifest_list_path);
-    LOG_INFO(log, "Creating manifest list with {} partition manifest(s): {}",
-             consolidated_manifest_paths.size(), storage_manifest_list_path);
-
-    auto buffer_manifest_list = object_storage->writeObject(
-        StoredObject(storage_manifest_list_path),
-        WriteMode::Rewrite,
-        std::nullopt,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        context->getWriteSettings());
-
-    generateManifestList(
-        path_resolver,
-        metadata_object,
-        object_storage,
-        context,
-        consolidated_manifest_paths,
-        new_snapshot.snapshot,
-        manifest_entry_sizes,
-        *buffer_manifest_list,
-        Iceberg::FileContentType::DATA,
-        false);
-    buffer_manifest_list->finalize();
-
-    // Commit: write metadata file with If-None-Match + update version hint with ETag-based CAS.
-    // Returns false if another writer already claimed this metadata version, so the caller retries.
+    try
     {
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
-        std::string json_representation = removeEscapedSlashes(oss.str());
-
-        auto hint_path = generator.generateVersionHint();
-        LOG_INFO(log, "Committing metadata file: {}",
-                 path_resolver.resolve(generated_metadata_info.path));
-
-        if (!writeMetadataFileAndVersionHint(
-                path_resolver,
-                generated_metadata_info,
-                json_representation,
-                hint_path,
-                object_storage,
-                context,
-                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        for (auto & [partition_key, pd] : partitions_map)
         {
-            LOG_INFO(log, "Metadata commit conflict detected, cleaning up temporary files");
-            cleanup();
-            return false;
+            auto manifest_path = generator.generateManifestEntryName();
+            auto storage_manifest_path = path_resolver.resolve(manifest_path);
+            LOG_INFO(log, "Creating manifest file for partition '{}': {} ({} data files)",
+                     partition_key, storage_manifest_path, pd.file_paths.size());
+
+            auto buffer_manifest = object_storage->writeObject(
+                StoredObject(storage_manifest_path),
+                WriteMode::Rewrite,
+                std::nullopt,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                context->getWriteSettings());
+
+            generateManifestFile(
+                metadata_object,
+                partition_columns,
+                pd.partition_values,
+                partition_types,
+                pd.file_paths,
+                std::nullopt,
+                sample_block_,
+                new_snapshot.snapshot,
+                write_format,
+                partition_spec,
+                partition_spec_id,
+                *buffer_manifest,
+                Iceberg::FileContentType::DATA,
+                pd.file_metrics);
+
+            buffer_manifest->finalize();
+            Int64 manifest_size = buffer_manifest->count();
+            if (manifest_size == 0)
+                manifest_size = object_storage->getObjectMetadata(storage_manifest_path, /*with_tags=*/false).size_bytes;
+            manifest_entry_sizes.push_back(manifest_size);
+
+            consolidated_manifest_paths.push_back(manifest_path);
         }
+
+        // Create manifest list pointing to all per-partition manifest files
+        auto storage_manifest_list_path = path_resolver.resolve(new_snapshot.manifest_list_path);
+        LOG_INFO(log, "Creating manifest list with {} partition manifest(s): {}",
+                 consolidated_manifest_paths.size(), storage_manifest_list_path);
+
+        auto buffer_manifest_list = object_storage->writeObject(
+            StoredObject(storage_manifest_list_path),
+            WriteMode::Rewrite,
+            std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getWriteSettings());
+
+        generateManifestList(
+            path_resolver,
+            metadata_object,
+            object_storage,
+            context,
+            consolidated_manifest_paths,
+            new_snapshot.snapshot,
+            manifest_entry_sizes,
+            *buffer_manifest_list,
+            Iceberg::FileContentType::DATA,
+            false);
+        buffer_manifest_list->finalize();
+
+        // Commit: write metadata file with If-None-Match + update version hint with ETag-based CAS.
+        // Returns false if another writer already claimed this metadata version, so the caller retries.
+        {
+            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
+            std::string json_representation = removeEscapedSlashes(oss.str());
+
+            auto hint_path = generator.generateVersionHint();
+            LOG_INFO(log, "Committing metadata file: {}",
+                     path_resolver.resolve(generated_metadata_info.path));
+
+            if (!writeMetadataFileAndVersionHint(
+                    path_resolver,
+                    generated_metadata_info,
+                    json_representation,
+                    hint_path,
+                    object_storage,
+                    context,
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+            {
+                LOG_INFO(log, "Metadata commit conflict detected, cleaning up temporary files");
+                cleanup();
+                return false;
+            }
+        }
+    }
+    catch (...)
+    {
+        cleanup();
+        throw;
     }
 
     LOG_INFO(log, "Successfully created {} partition manifest file(s) covering {} data files",
