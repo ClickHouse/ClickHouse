@@ -8990,8 +8990,7 @@ static Block buildAggResultBlock(
             continue;
         }
 
-        if (!has_group_by)
-            return {};
+        return {};
     }
 
     return result;

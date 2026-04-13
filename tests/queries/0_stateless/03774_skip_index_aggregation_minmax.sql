@@ -6,25 +6,27 @@ CREATE TABLE test_skip_index_minmax_agg (
     b Int32,
     value Float64,
     value_with_null Nullable(Float64),
+    value_with_inf Float64,
     value_int Int32,
     p Int32,
     INDEX skip_minmax_value (value) TYPE minmax GRANULARITY 1,
     INDEX skip_minmax_expr (a * b) TYPE minmax GRANULARITY 1,
     INDEX skip_minmax_multi (a, b) TYPE minmax GRANULARITY 1,
-    INDEX skip_minmax_nullable (value_with_null) TYPE minmax GRANULARITY 1
+    INDEX skip_minmax_nullable (value_with_null) TYPE minmax GRANULARITY 1,
+    INDEX skip_minmax_inf (value_with_inf) TYPE minmax GRANULARITY 1
 ) ENGINE = MergeTree
 PARTITION BY p
 ORDER BY id
 SETTINGS auto_statistics_types = '';
 
 INSERT INTO test_skip_index_minmax_agg VALUES
-    (1, 10, 5, 100.0, 100.0, 10, 1),
-    (2, 20, 3, 200.0, 200.0, 20, 1),
-    (3, 5, 2, 50.0, 50.0, 5, 1),
-    (4, 30, 10, 300.0, 300.0, 30, 2),
-    (5, 15, 4, 150.0, 150.0, 15, 2),
-    (6, 2, 3, 25.0, NULL, 2, 3),
-    (7, 40, 10, 400.0, 400.0, 40, 3);
+    (1, 10, 5, 100.0, 100.0, 100.0, 10, 1),
+    (2, 20, 3, 200.0, 200.0, 200.0, 20, 1),
+    (3, 5, 2, 50.0, 50.0, 50.0, 5, 1),
+    (4, 30, 10, 300.0, 300.0, 300.0, 30, 2),
+    (5, 15, 4, 150.0, 150.0, 150.0, 15, 2),
+    (6, 2, 3, 25.0, NULL, 25.0, 2, 3),
+    (7, 40, 10, 400.0, 400.0, inf, 40, 3);
 
 SET optimize_use_skip_index_aggregation = 1;
 SET optimize_use_projections = 1;
@@ -132,6 +134,12 @@ SELECT min(value), sum(value) FROM test_skip_index_minmax_agg;
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value_with_null), max(value_with_null) FROM test_skip_index_minmax_agg) WHERE explain LIKE '%ReadFromMergeTree%';
 SELECT min(value_with_null), max(value_with_null) FROM test_skip_index_minmax_agg;
 
+-- Infinity bounds are handled at runtime. Verify the final answers stay correct.
+SELECT min(value_with_inf), max(value_with_inf) FROM test_skip_index_minmax_agg;
+
+-- GROUP BY partition key with an infinity bound must also keep the final answers correct.
+SELECT p, min(value_with_inf), max(value_with_inf) FROM test_skip_index_minmax_agg GROUP BY p ORDER BY p;
+
 DROP TABLE test_skip_index_minmax_agg;
 
 -- ==================================================
@@ -150,6 +158,7 @@ CREATE TABLE test_col_stats_agg (
     value Float64,
     value_with_null Nullable(Float64),
     value_all_null Nullable(Float64),
+    value_with_inf Float64,
     p Int32
 ) ENGINE = MergeTree
 PARTITION BY p
@@ -157,13 +166,13 @@ ORDER BY id
 SETTINGS auto_statistics_types = 'minmax';
 
 INSERT INTO test_col_stats_agg VALUES
-    (1, 10, 5, 100.0, 100.0, NULL, 1),
-    (2, 20, 3, 200.0, 200.0, NULL, 1),
-    (3, 5, 2, 50.0, 50.0, NULL, 1),
-    (4, 30, 10, 300.0, 300.0, NULL, 2),
-    (5, 15, 4, 150.0, 150.0, NULL, 2),
-    (6, 2, 3, 25.0, NULL, NULL, 3),
-    (7, 40, 10, 400.0, 400.0, NULL, 3);
+    (1, 10, 5, 100.0, 100.0, NULL, 100.0, 1),
+    (2, 20, 3, 200.0, 200.0, NULL, 200.0, 1),
+    (3, 5, 2, 50.0, 50.0, NULL, 50.0, 1),
+    (4, 30, 10, 300.0, 300.0, NULL, 300.0, 2),
+    (5, 15, 4, 150.0, 150.0, NULL, 150.0, 2),
+    (6, 2, 3, 25.0, NULL, NULL, 25.0, 3),
+    (7, 40, 10, 400.0, 400.0, NULL, inf, 3);
 
 SET optimize_use_skip_index_aggregation = 1;
 SET optimize_use_projections = 1;
@@ -228,6 +237,12 @@ SELECT min(value_with_null), max(value_with_null) FROM test_col_stats_agg;
 -- so column statistics cannot satisfy the query and should fall back.
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value_all_null), max(value_all_null) FROM test_col_stats_agg) WHERE explain LIKE '%ReadFromMergeTree%';
 SELECT min(value_all_null), max(value_all_null) FROM test_col_stats_agg;
+
+-- Infinity bounds in column statistics are handled at runtime. Verify the final answers stay correct.
+SELECT min(value_with_inf), max(value_with_inf) FROM test_col_stats_agg;
+
+-- GROUP BY partition key with an infinity bound must also keep the final answers correct.
+SELECT p, min(value_with_inf), max(value_with_inf) FROM test_col_stats_agg GROUP BY p ORDER BY p;
 
 -- ==================================================
 -- Column statistics priority over skip index

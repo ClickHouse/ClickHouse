@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS test_skip_index_set_agg;
 CREATE TABLE test_skip_index_set_agg (
     id UInt64,
     value Int32,
+    extra_value Int32,
     p String,
     INDEX skip_set_value (value) TYPE set(100) GRANULARITY 1
 ) ENGINE = MergeTree
@@ -11,13 +12,13 @@ PARTITION BY p
 ORDER BY id;
 
 INSERT INTO test_skip_index_set_agg VALUES
-    (1, 10, 'p1'),
-    (2, 20, 'p1'),
-    (3, 5, 'p1'),
-    (4, 30, 'p2'),
-    (5, 15, 'p2'),
-    (6, 2, 'p3'),
-    (7, 40, 'p3');
+    (1, 10, 100, 'p1'),
+    (2, 20, 200, 'p1'),
+    (3, 5, 50, 'p1'),
+    (4, 30, 300, 'p2'),
+    (5, 15, 150, 'p2'),
+    (6, 2, 25, 'p3'),
+    (7, 40, 400, 'p3');
 
 SET optimize_use_skip_index_aggregation = 1;
 SET optimize_use_projections = 1;
@@ -77,6 +78,14 @@ SELECT uniqExact(value) FROM test_skip_index_set_agg;
 
 -- Re-enable
 SET optimize_use_skip_index_aggregation = 1;
+
+-- Add an unmaterialized set index on another column. Existing parts do not have index data,
+-- so the optimizer must fall back when this index would otherwise match the query.
+ALTER TABLE test_skip_index_set_agg ADD INDEX idx_set_extra (extra_value) TYPE set(100) GRANULARITY 1;
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqExact(extra_value) FROM test_skip_index_set_agg) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT uniqExact(extra_value) FROM test_skip_index_set_agg;
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT p, uniqExact(extra_value) FROM test_skip_index_set_agg GROUP BY p ORDER BY p) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT p, uniqExact(extra_value) FROM test_skip_index_set_agg GROUP BY p ORDER BY p;
 
 -- ==================================================
 -- Multi-argument uniq must NOT be optimized by single-column set index
