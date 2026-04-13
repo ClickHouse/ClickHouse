@@ -138,9 +138,8 @@ public:
     const std::string & getFailedNodePath() const { return failed_node_path; }
 
     /// Return the Keeper node path to watch for processing completion.
-    /// For unordered mode this is the per-file processed node.
-    /// For ordered mode this is the processed pointer node (bucket-aware), with the
-    /// partition key appended when HIVE/REGEX partitioning is in use.
+    /// Equals `processed_node_path`, which for ordered mode already includes the partition key
+    /// (bucket-aware, with HIVE/REGEX partition suffix when partitioning is enabled).
     virtual const std::string & getProcessedWatchPath() const { return processed_node_path; }
 
     virtual bool useBucketsForProcessing() const { return false; }
