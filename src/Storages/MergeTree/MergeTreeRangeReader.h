@@ -290,6 +290,12 @@ public:
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
 
+        /// Public accessors for pipelined MergeTree reader support.
+        const FilterWithCachedCount & getFinalFilter() const { return final_filter; }
+        size_t getTotalRowsPerGranule() const { return total_rows_per_granule; }
+        const Block & getAdditionalColumns() const { return additional_columns; }
+        const Block & getColumnsForPatches() const { return columns_for_patches; }
+
     private:
         friend class MergeTreeRangeReader;
         friend class MergeTreeReadersChain;
@@ -434,7 +440,7 @@ public:
     const Block & getSampleBlock() const { return result_sample_block; }
     const Block & getReadSampleBlock() const { return read_sample_block; }
 
-    void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const;
+    void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header) const;
 
     IMergeTreeReader * getReader() const { return merge_tree_reader; }
     const PrewhereExprStep * getPrewhereInfo() const { return prewhere_info; }

@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
@@ -258,6 +260,37 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
             read_task_info.patch_parts,
             all_read_columns,
             has_lightweight_delete);
+
+        if (reader_settings.use_pipelined_mergetree_reader && prewhere_info)
+        {
+            NameSet prewhere_column_names;
+            for (const auto & name : prewhere_info->prewhere_actions.getRequiredColumnsNames())
+                prewhere_column_names.insert(name);
+
+            if (row_level_filter)
+                for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
+                    prewhere_column_names.insert(name);
+
+            /// On-fly mutation steps are prepended to the prewhere chain, so their
+            /// required columns must be patched in the prewhere phase as well.
+            /// Lightweight delete steps have `actions = nullptr` but still require
+            /// their `filter_column_name` (e.g., `_row_exists`) to be read in the
+            /// prewhere phase for the delete mask to be applied correctly.
+            for (const auto & step : read_task_info.mutation_steps)
+            {
+                if (step->actions)
+                    for (const auto & name : step->actions->getActionsDAG().getRequiredColumnsNames())
+                        prewhere_column_names.insert(name);
+
+                if (!step->filter_column_name.empty())
+                    prewhere_column_names.insert(step->filter_column_name);
+            }
+
+            splitPatchColumnsForPrewhere(
+                read_task_info.task_columns,
+                read_task_info.patch_parts,
+                prewhere_column_names);
+        }
     }
 
     read_task_info.index_read_tasks = index_read_tasks;

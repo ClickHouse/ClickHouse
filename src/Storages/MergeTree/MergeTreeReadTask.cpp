@@ -222,6 +222,35 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.patch_join_cache));
     }
 
+    /// Create prewhere patch readers when patch_columns_prewhere is populated
+    /// (pipelined reader path).
+    for (size_t i = 0; i < read_info->patch_parts.size(); ++i)
+    {
+        if (read_info->task_columns.patch_columns_prewhere.empty()
+            || read_info->task_columns.patch_columns_prewhere[i].empty())
+            continue;
+
+        auto prewhere_patch_reader = createMergeTreeReader(
+            read_info->patch_parts[i].part,
+            read_info->task_columns.patch_columns_prewhere[i],
+            extras.storage_snapshot,
+            read_info->data_part->storage.getSettings(),
+            patches_ranges[i],
+            read_info->const_virtual_fields,
+            extras.uncompressed_cache,
+            extras.mark_cache,
+            /*deserialization_prefixes_cache=*/ nullptr,
+            extras.reader_settings,
+            extras.value_size_map,
+            extras.profile_callback);
+
+        new_readers.patches_prewhere.push_back(getPatchReader(
+            read_info->patch_parts[i],
+            std::move(prewhere_patch_reader),
+            extras.patch_join_cache));
+        new_readers.patches_prewhere_ranges.push_back(patches_ranges[i]);
+    }
+
     return new_readers;
 }
 
@@ -287,6 +316,56 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     }
 
     return MergeTreeReadersChain{std::move(range_readers), task_readers.patches};
+}
+
+MergeTreeReadersChain MergeTreeReadTask::createPrewhereReadersChain(
+    const Readers & task_readers,
+    const PrewhereExprInfo & prewhere_actions,
+    const ReadStepsPerformanceCounters & read_steps_performance_counters)
+{
+    if (prewhere_actions.steps.size() != task_readers.prewhere.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "PREWHERE steps count mismatch, actions: {}, readers: {}",
+            prewhere_actions.steps.size(), task_readers.prewhere.size());
+    }
+
+    std::vector<MergeTreeRangeReader> range_readers;
+    range_readers.reserve(prewhere_actions.steps.size() + 1);
+
+    bool can_read_incomplete_granules = task_readers.main->canReadIncompleteGranules()
+        && std::ranges::all_of(task_readers.prewhere, [](const auto & reader)
+        {
+            return reader->canReadIncompleteGranules();
+        });
+
+    if (task_readers.prepared_index)
+    {
+        range_readers.emplace_back(
+            task_readers.prepared_index.get(),
+            Block{},
+            /*prewhere_info_=*/ nullptr,
+            read_steps_performance_counters.getCounterForIndexStep(),
+            /*main_reader_=*/ false,
+            can_read_incomplete_granules);
+    }
+
+    size_t counter_idx = 0;
+    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
+    {
+        range_readers.emplace_back(
+            task_readers.prewhere[i].get(),
+            range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
+            prewhere_actions.steps[i].get(),
+            read_steps_performance_counters.getCountersForStep(counter_idx++),
+            /*main_reader_=*/ false,
+            can_read_incomplete_granules);
+    }
+
+    /// No main reader — this is a prewhere-only chain.
+    /// Prewhere patch readers are passed so that patch columns consumed in prewhere steps are applied.
+    return MergeTreeReadersChain{std::move(range_readers), task_readers.patches_prewhere};
 }
 
 void MergeTreeReadTask::initializeReadersChain(

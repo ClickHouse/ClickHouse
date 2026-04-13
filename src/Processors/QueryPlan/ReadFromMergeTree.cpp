@@ -50,6 +50,8 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/MergeTreePrewhereSource.h>
+#include <Storages/MergeTree/MergeTreeRestColumnsTransform.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -563,7 +565,9 @@ Pipe ReadFromMergeTree::readFromPool(
       * Because time spend during filling per thread tasks can be greater than whole query
       * execution for big tables with small limit.
       */
-    bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
+    /// Pipelined reader does not support prefetched pool yet.
+    bool use_pipelined = reader_settings.use_pipelined_mergetree_reader && query_info.prewhere_info;
+    bool use_prefetched_read_pool = !use_pipelined && query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
 
     if (use_prefetched_read_pool)
     {
@@ -604,27 +608,64 @@ Pipe ReadFromMergeTree::readFromPool(
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
 
-    Pipes pipes;
-    for (size_t i = 0; i < pool_settings.threads; ++i)
-    {
-        auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
+    /// Compute prewhere actions for the pipelined reader.
+    PrewhereExprInfo prewhere_actions;
+    Block result_header;
 
-        auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool,
-            std::move(algorithm),
+    if (use_pipelined)
+    {
+        prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
             query_info.row_level_filter,
             query_info.prewhere_info,
             index_read_tasks,
             actions_settings,
-            reader_settings,
-            index_build_context);
+            reader_settings.enable_multiple_prewhere_read_steps,
+            reader_settings.force_short_circuit_execution);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        result_header = MergeTreeSelectProcessor::transformHeader(
+            pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info);
+    }
 
-        if (i == 0)
-            source->addTotalRowsApprox(total_rows);
+    Pipes pipes;
+    for (size_t i = 0; i < pool_settings.threads; ++i)
+    {
+        Pipe pipe;
+        if (use_pipelined)
+        {
+            auto source = std::make_shared<MergeTreePrewhereSource>(
+                result_header, pool, i, prewhere_actions, block_size, index_build_context);
 
-        pipes.emplace_back(std::move(source));
+            if (i == 0)
+                source->addTotalRowsApprox(total_rows);
+
+            auto transform = std::make_shared<MergeTreeRestColumnsTransform>(
+                result_header, result_header, source->getRestBytesCounter());
+
+            pipe = Pipe(std::move(source));
+            pipe.addTransform(std::move(transform));
+        }
+        else
+        {
+            auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
+
+            auto processor = std::make_unique<MergeTreeSelectProcessor>(
+                pool,
+                std::move(algorithm),
+                query_info.row_level_filter,
+                query_info.prewhere_info,
+                index_read_tasks,
+                actions_settings,
+                reader_settings,
+                index_build_context);
+
+            auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+
+            if (i == 0)
+                source->addTotalRowsApprox(total_rows);
+
+            pipe = Pipe(std::move(source));
+        }
+        pipes.emplace_back(std::move(pipe));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -703,6 +744,27 @@ Pipe ReadFromMergeTree::readInOrder(
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
+    bool use_pipelined = reader_settings.use_pipelined_mergetree_reader
+        && query_info.prewhere_info;
+
+    /// Compute prewhere actions for the pipelined reader.
+    PrewhereExprInfo prewhere_actions;
+    Block result_header;
+
+    if (use_pipelined)
+    {
+        prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
+            query_info.row_level_filter,
+            query_info.prewhere_info,
+            index_read_tasks,
+            actions_settings,
+            reader_settings.enable_multiple_prewhere_read_steps,
+            reader_settings.force_short_circuit_execution);
+
+        result_header = MergeTreeSelectProcessor::transformHeader(
+            pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info);
+    }
+
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
     {
@@ -720,29 +782,47 @@ Pipe ReadFromMergeTree::readInOrder(
             part_with_ranges.data_part->name, total_rows,
             part_with_ranges.data_part->index_granularity->getMarkStartingRow(part_with_ranges.ranges.front().begin));
 
-        MergeTreeSelectAlgorithmPtr algorithm;
-        if (read_type == ReadType::InReverseOrder)
-            algorithm = std::make_unique<MergeTreeInReverseOrderSelectAlgorithm>(i);
+        Pipe pipe;
+        if (use_pipelined)
+        {
+            auto source = std::make_shared<MergeTreePrewhereSource>(
+                result_header, pool, i, prewhere_actions, block_size, index_build_context);
+
+            if (set_total_rows_approx)
+                source->addTotalRowsApprox(total_rows);
+
+            auto transform = std::make_shared<MergeTreeRestColumnsTransform>(
+                result_header, result_header, source->getRestBytesCounter());
+
+            pipe = Pipe(std::move(source));
+            pipe.addTransform(std::move(transform));
+        }
         else
-            algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
+        {
+            MergeTreeSelectAlgorithmPtr algorithm;
+            if (read_type == ReadType::InReverseOrder)
+                algorithm = std::make_unique<MergeTreeInReverseOrderSelectAlgorithm>(i);
+            else
+                algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
 
-        auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool,
-            std::move(algorithm),
-            query_info.row_level_filter,
-            query_info.prewhere_info,
-            index_read_tasks,
-            actions_settings,
-            reader_settings,
-            index_build_context);
+            auto processor = std::make_unique<MergeTreeSelectProcessor>(
+                pool,
+                std::move(algorithm),
+                query_info.row_level_filter,
+                query_info.prewhere_info,
+                index_read_tasks,
+                actions_settings,
+                reader_settings,
+                index_build_context);
 
-        processor->addPartLevelToChunk(isQueryWithFinal());
+            processor->addPartLevelToChunk(isQueryWithFinal());
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
-        if (set_total_rows_approx)
-            source->addTotalRowsApprox(total_rows);
+            auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+            if (set_total_rows_approx)
+                source->addTotalRowsApprox(total_rows);
 
-        Pipe pipe(source);
+            pipe = Pipe(source);
+        }
 
         if (virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder))
         {
@@ -828,10 +908,12 @@ Pipe ReadFromMergeTree::read(
             std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
 
     /// Reading from default thread pool is beneficial for remote storage because of new prefetches.
+    /// readFromPool handles pipelined reader internally when the setting is enabled.
     if (read_type == ReadType::Default && (max_streams > 1 || checkAllPartsOnRemoteFS(parts_with_range)))
         return readFromPool(
             std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
 
+    /// readInOrder handles pipelined reader internally when the setting is enabled.
     auto pipe = readInOrder(parts_with_range, index_build_context, required_columns, pool_settings, read_type, /*limit=*/0);
 
     /// Use ConcatProcessor to concat sources together.

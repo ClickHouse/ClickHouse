@@ -1,0 +1,162 @@
+-- Standard reader pipeline
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreeSelect(pool: ReadPool, algorithm: Thread)_1"];
+    n1[label="MergeTreeSelect(pool: ReadPool, algorithm: Thread)_2"];
+    n2[label="ExpressionTransform_3"];
+    n3[label="ExpressionTransform_4"];
+    n4[label="AggregatingTransform_5"];
+    n5[label="AggregatingTransform_6"];
+    n6[label="Resize_7"];
+    n7[label="ExpressionTransform_8"];
+    n8[label="ExpressionTransform_9"];
+  }
+  n0 -> n2;
+  n1 -> n3;
+  n2 -> n4;
+  n3 -> n5;
+  n4 -> n6;
+  n5 -> n6;
+  n6 -> n7;
+  n6 -> n8;
+}
+-- Pipelined reader pipeline
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreePrewhereSource_1"];
+    n1[label="MergeTreeRestColumnsTransform_2"];
+    n2[label="MergeTreePrewhereSource_3"];
+    n3[label="MergeTreeRestColumnsTransform_4"];
+    n4[label="ExpressionTransform_5"];
+    n5[label="ExpressionTransform_6"];
+    n6[label="AggregatingTransform_7"];
+    n7[label="AggregatingTransform_8"];
+    n8[label="Resize_9"];
+    n9[label="ExpressionTransform_10"];
+    n10[label="ExpressionTransform_11"];
+  }
+  n0 -> n1;
+  n1 -> n4;
+  n2 -> n3;
+  n3 -> n5;
+  n4 -> n6;
+  n5 -> n7;
+  n6 -> n8;
+  n7 -> n8;
+  n8 -> n9;
+  n8 -> n10;
+}
+-- Standard reader: multiple prewhere conditions
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreeSelect(pool: ReadPool, algorithm: Thread)_1"];
+    n1[label="MergeTreeSelect(pool: ReadPool, algorithm: Thread)_2"];
+    n2[label="ExpressionTransform_3"];
+    n3[label="ExpressionTransform_4"];
+    n4[label="AggregatingTransform_5"];
+    n5[label="AggregatingTransform_6"];
+    n6[label="Resize_7"];
+    n7[label="ExpressionTransform_8"];
+    n8[label="ExpressionTransform_9"];
+  }
+  n0 -> n2;
+  n1 -> n3;
+  n2 -> n4;
+  n3 -> n5;
+  n4 -> n6;
+  n5 -> n6;
+  n6 -> n7;
+  n6 -> n8;
+}
+-- Pipelined reader: multiple prewhere conditions
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreePrewhereSource_1"];
+    n1[label="MergeTreeRestColumnsTransform_2"];
+    n2[label="MergeTreePrewhereSource_3"];
+    n3[label="MergeTreeRestColumnsTransform_4"];
+    n4[label="ExpressionTransform_5"];
+    n5[label="ExpressionTransform_6"];
+    n6[label="AggregatingTransform_7"];
+    n7[label="AggregatingTransform_8"];
+    n8[label="Resize_9"];
+    n9[label="ExpressionTransform_10"];
+    n10[label="ExpressionTransform_11"];
+  }
+  n0 -> n1;
+  n1 -> n4;
+  n2 -> n3;
+  n3 -> n5;
+  n4 -> n6;
+  n5 -> n7;
+  n6 -> n8;
+  n7 -> n8;
+  n8 -> n9;
+  n8 -> n10;
+}
+-- Standard reader: InOrder
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder)_1"];
+    n1[label="ExpressionTransform_2"];
+    n2[label="AggregatingTransform_3"];
+    n3[label="ExpressionTransform_4"];
+  }
+  n0 -> n1;
+  n1 -> n2;
+  n2 -> n3;
+}
+-- Pipelined reader: InOrder
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreePrewhereSource_1"];
+    n1[label="MergeTreeRestColumnsTransform_2"];
+    n2[label="ExpressionTransform_3"];
+    n3[label="AggregatingTransform_4"];
+    n4[label="ExpressionTransform_5"];
+  }
+  n0 -> n1;
+  n1 -> n2;
+  n2 -> n3;
+  n3 -> n4;
+}
+-- Pipelined reader: no prewhere (falls back to standard)
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreeSelect(pool: ReadPool, algorithm: Thread)_1"];
+    n1[label="MergeTreeSelect(pool: ReadPool, algorithm: Thread)_2"];
+    n2[label="FilterTransform_3"];
+    n3[label="FilterTransform_4"];
+    n4[label="ExpressionTransform_5"];
+    n5[label="ExpressionTransform_6"];
+    n6[label="AggregatingTransform_7"];
+    n7[label="AggregatingTransform_8"];
+    n8[label="Resize_9"];
+    n9[label="ExpressionTransform_10"];
+    n10[label="ExpressionTransform_11"];
+  }
+  n0 -> n2;
+  n1 -> n3;
+  n2 -> n4;
+  n3 -> n5;
+  n4 -> n6;
+  n5 -> n7;
+  n6 -> n8;
+  n7 -> n8;
+  n8 -> n9;
+  n8 -> n10;
+}

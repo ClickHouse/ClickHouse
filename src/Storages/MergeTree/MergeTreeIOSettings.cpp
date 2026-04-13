@@ -21,6 +21,7 @@ namespace Setting
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
     extern const SettingsBool enable_multiple_prewhere_read_steps;
+    extern const SettingsBool use_pipelined_mergetree_reader;
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
@@ -114,6 +115,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_asynchronous_read_from_pool = settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree]
         && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1);
     result.enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps];
+    result.use_pipelined_mergetree_reader = settings[Setting::use_pipelined_mergetree_reader];
     result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters];
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer];
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
