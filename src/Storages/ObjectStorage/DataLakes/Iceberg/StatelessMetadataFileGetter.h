@@ -28,7 +28,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
-    const IcebergPathFromMetadata & filename,
+    const String & filename,
     size_t bytes_size);
 
 /// Creates a fully initialized ManifestFileIterator from a cache key.
@@ -47,7 +47,7 @@ ManifestFileCacheKeys getManifestList(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
-    const IcebergPathFromMetadata & filename,
+    const String & filename,
     LoggerPtr log);
 
 }

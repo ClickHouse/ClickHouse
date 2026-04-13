@@ -220,7 +220,7 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *getInMemoryMetadataPtr();
     new_metadata.setDataLakeTableState(*state);
 
     if (configuration->shouldReloadSchemaForConsistency(query_context))
@@ -248,7 +248,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         local_context,
         predicate,
         filter,
-        getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        virtual_columns,
         hive_partition_columns_to_read_from_file_path,
         nullptr,
         local_context->getFileProgressCallback(),

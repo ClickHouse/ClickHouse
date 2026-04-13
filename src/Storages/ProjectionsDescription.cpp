@@ -4,10 +4,7 @@
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -61,32 +58,6 @@ extern const SettingsBool enable_positional_arguments_for_projections;
 
 }
 
-namespace
-{
-
-VirtualsDescriptionPtr createProjectionVirtuals(const KeyDescription * partition_key)
-{
-    auto desc = std::make_shared<VirtualColumnsDescription>();
-
-    desc->addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part", VirtualsMaterializationPlace::Reader);
-    desc->addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result", VirtualsMaterializationPlace::Reader);
-    desc->addEphemeral("_part_starting_offset", std::make_shared<DataTypeUInt64>(), "Cumulative starting row of the part in the query result", VirtualsMaterializationPlace::Reader);
-    desc->addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)", VirtualsMaterializationPlace::Reader);
-    desc->addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition", VirtualsMaterializationPlace::Reader);
-    desc->addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)", VirtualsMaterializationPlace::Reader);
-    desc->addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name", VirtualsMaterializationPlace::Reader);
-
-    if (partition_key && partition_key->sample_block.columns() > 0)
-    {
-        auto partition_types = partition_key->sample_block.getDataTypes();
-        desc->addEphemeral("_partition_value", std::make_shared<DataTypeTuple>(std::move(partition_types)), "Value (a tuple) of a PARTITION BY expression", VirtualsMaterializationPlace::Reader);
-    }
-
-    return desc;
-}
-
-}
-
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
@@ -121,12 +92,9 @@ ProjectionDescription ProjectionDescription::clone() const
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
-    other.with_block_number = with_block_number;
-    other.with_block_offset = with_block_offset;
     other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
-    other.virtuals = virtuals;
 
     return other;
 }
@@ -159,9 +127,7 @@ public:
         storage_metadata.setColumns(columns_description);
         setInMemoryMetadata(storage_metadata);
         VirtualColumnsDescription desc;
-        desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
-        desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "");
-        desc.addPersistent(BlockOffsetColumn::name, BlockOffsetColumn::type, BlockOffsetColumn::codec, "");
+        desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "");
         setVirtuals(std::move(desc));
     }
 
@@ -280,11 +246,8 @@ void ProjectionDescription::loadSettings(const SettingsChanges & changes)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes cannot be 0, which leads to fixed granularity");
 }
 
-ProjectionDescription ProjectionDescription::getProjectionFromAST(
-    const ASTPtr & definition_ast,
-    const ColumnsDescription & columns,
-    const KeyDescription * partition_key,
-    const ContextPtr & query_context)
+ProjectionDescription
+ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -302,7 +265,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     {
         chassert(projection_definition->type);
         result.index = ProjectionIndexFactory::instance().get(*projection_definition);
-        result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context);
+        result.index->fillProjectionDescription(result, projection_definition->index, columns, query_context);
         if (projection_definition->with_settings)
             result.loadSettings(projection_definition->with_settings->changes);
         return result;
@@ -311,16 +274,12 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     if (projection_definition->with_settings)
         result.loadSettings(projection_definition->with_settings->changes);
 
-    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context);
+    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, query_context);
     return result;
 }
 
 void ProjectionDescription::fillProjectionDescriptionByQuery(
-    ProjectionDescription & result,
-    const ASTProjectionSelectQuery & query,
-    const ColumnsDescription & columns,
-    const KeyDescription * partition_key,
-    const ContextPtr & query_context)
+    ProjectionDescription & result, const ASTProjectionSelectQuery & query, const ColumnsDescription & columns, ContextPtr query_context)
 {
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
@@ -435,16 +394,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-
-        /// Build sorting key — add virtual column types so KeyDescription can resolve them.
-        auto columns_for_key = columns;
-        if (!columns.has(BlockNumberColumn::name))
-            columns_for_key.add(ColumnDescription(BlockNumberColumn::name, BlockNumberColumn::type));
-        if (!columns.has(BlockOffsetColumn::name))
-            columns_for_key.add(ColumnDescription(BlockOffsetColumn::name, BlockOffsetColumn::type));
-
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns_for_key, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns_for_key, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, query_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -458,10 +409,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         result.with_parent_part_offset = true;
         std::erase_if(result.required_columns, [](const String & s) { return s.contains("_part_offset"); });
     }
-
-    /// Track whether projection stores _block_number/_block_offset from the parent table.
-    result.with_block_number = result.sample_block.has(BlockNumberColumn::name);
-    result.with_block_offset = result.sample_block.has(BlockOffsetColumn::name);
 
     NamesAndTypesList metadata_columns;
     for (const auto & column_with_type_name : result.sample_block)
@@ -486,16 +433,14 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
     metadata.setColumns(ColumnsDescription(metadata_columns));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
-    result.virtuals = createProjectionVirtuals(partition_key);
 }
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const ColumnsDescription & columns,
-    const ASTPtr & partition_columns,
+    ASTPtr partition_columns,
     const Names & minmax_columns,
     const KeyDescription & primary_key,
-    const KeyDescription * partition_key,
-    const ContextPtr & query_context)
+    ContextPtr query_context)
 {
     ProjectionDescription result;
 
@@ -526,10 +471,10 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
     if (partition_columns && !partition_columns->children.empty())
     {
-        auto partition_columns_copy = partition_columns->clone();
-        for (const auto & partition_column : partition_columns_copy->children)
+        partition_columns = partition_columns->clone();
+        for (const auto & partition_column : partition_columns->children)
             KeyDescription::moduloToModuloLegacyRecursive(partition_column);
-        select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, std::move(partition_columns_copy));
+        select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, partition_columns->clone());
     }
 
     result.definition_ast = select_query;
@@ -590,8 +535,12 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     metadata.sorting_key = KeyDescription::buildEmptyKey();
     metadata.primary_key = KeyDescription::buildEmptyKey();
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
-    result.virtuals = createProjectionVirtuals(partition_key);
     return result;
+}
+
+void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context)
+{
+    *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
 
 Block ProjectionDescription::calculate(
@@ -599,7 +548,6 @@ Block ProjectionDescription::calculate(
 {
     if (index)
         return index->calculate(*this, block, starting_offset, context, perm_ptr);
-
     return calculateByQuery(block, starting_offset, context, perm_ptr);
 }
 
@@ -725,11 +673,7 @@ String ProjectionsDescription::toString() const
     return list.formatWithSecretsOneLine();
 }
 
-ProjectionsDescription ProjectionsDescription::parse(
-    const String & str,
-    const ColumnsDescription & columns,
-    const KeyDescription * parent_partition_key,
-    const ContextPtr & query_context)
+ProjectionsDescription ProjectionsDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr query_context)
 {
     ProjectionsDescription result;
     if (str.empty())
@@ -740,7 +684,7 @@ ProjectionsDescription ProjectionsDescription::parse(
 
     for (const auto & projection_ast : list->children)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, parent_partition_key, query_context);
+        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, query_context);
         result.add(std::move(projection));
     }
 

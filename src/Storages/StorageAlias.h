@@ -105,14 +105,27 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
-
-    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override
+    StorageInMemoryMetadata getInMemoryMetadata() const override
     {
         auto target = tryGetTargetTable();
         if (!target)
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+            return IStorage::getInMemoryMetadata();
+        return target->getInMemoryMetadata();
+    }
+    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache) const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
+        return target->getInMemoryMetadataPtr(bypass_metadata_cache);
+    }
+    std::optional<StorageMetadataPtr> tryGetInMemoryMetadataPtr() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
 
-        return target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        return target->getInMemoryMetadataPtr();
     }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -146,7 +159,7 @@ public:
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
 
-    VirtualsDescriptionPtr getVirtuals() const { return getTargetTable()->getVirtualsPtr(); }
+    NamesAndTypesList getVirtuals() const { return getTargetTable()->getVirtualsList(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,

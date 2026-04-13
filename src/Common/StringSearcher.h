@@ -162,11 +162,8 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
     {
-        if (needle == needle_end)
-            return true;
-
 #ifdef __SSE4_1__
         if (isPageSafe(pos))
         {
@@ -183,7 +180,7 @@ public:
                     pos += N;
                     const auto * needle_pos = needle + N;
 
-                    while (needle_pos < needle_end && pos < haystack_end && std::tolower(*pos) == std::tolower(*needle_pos))
+                    while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
                     {
                         ++pos;
                         ++needle_pos;
@@ -205,7 +202,7 @@ public:
             ++pos;
             const auto * needle_pos = needle + 1;
 
-            while (needle_pos < needle_end && pos < haystack_end && std::tolower(*pos) == std::tolower(*needle_pos))
+            while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
             {
                 ++pos;
                 ++needle_pos;
@@ -473,9 +470,6 @@ public:
 
     ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
     {
-        if (needle == needle_end)
-            return true;
-
 #ifdef __SSE4_1__
         if (isPageSafe(pos) && !force_fallback)
         {

@@ -475,6 +475,8 @@ void KeeperTCPHandler::runImpl()
         compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
+    max_request_size = static_cast<UInt64>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
+
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
@@ -575,7 +577,7 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response, request_with_response.request);
                 packageSent();
 
-                const auto maybe_finalize_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+                const auto maybe_finalize_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
                 {
                     if (!request)
                         return;
@@ -601,11 +603,11 @@ void KeeperTCPHandler::runImpl()
                 }
                 catch (...)
                 {
-                    maybe_finalize_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+                    maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
                     throw;
                 }
 
-                maybe_finalize_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
+                maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
 
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
@@ -723,8 +725,6 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
     const UInt64 receive_start_time = ZooKeeperOpentelemetrySpans::now();
-
-    const size_t max_request_size = static_cast<size_t>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
 
     std::optional<LimitReadBuffer> limited_buffer_holder;
     /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size

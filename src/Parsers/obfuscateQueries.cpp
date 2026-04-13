@@ -758,10 +758,9 @@ void obfuscateIdentifier(std::string_view src, WriteBuffer & result, WordMap & o
             result.write('_');
             ++word_begin;
         }
-        else if (word_has_alphanumerics && isUpperAlphaASCII(src_pos[0]))
+        else if (word_has_alphanumerics && isUpperAlphaASCII(src_pos[0]) && isLowerAlphaASCII(src_pos[-1])) /// xX
         {
-            if (src_pos > src.data() && isLowerAlphaASCII(src_pos[-1])) /// xX
-                append_word();
+            append_word();
         }
 
         ++src_pos;

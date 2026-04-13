@@ -2,8 +2,6 @@
 
 #if USE_YTSAURUS
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageFactory.h>
@@ -46,7 +44,7 @@ StorageYTsaurus::StorageYTsaurus(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
-    : StorageWithCommonVirtualColumns{table_id_}
+    : IStorage{table_id_}
     , cypress_path(std::move(configuration_.cypress_path))
     , settings(configuration_.settings)
     , client_connection_info{
@@ -62,15 +60,6 @@ StorageYTsaurus::StorageYTsaurus(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
-}
-
-VirtualColumnsDescription StorageYTsaurus::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 Pipe StorageYTsaurus::read(
