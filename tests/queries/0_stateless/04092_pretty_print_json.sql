@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
-
+-- Needs rapidjson library
 SELECT prettyPrintJSON('{"a":1,"b":"hello"}');
 SELECT prettyPrintJSON('{"nested":{"key":"value"}}');
 SELECT prettyPrintJSON('[1,2,3]');
