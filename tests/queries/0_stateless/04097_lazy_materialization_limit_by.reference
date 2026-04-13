@@ -1,0 +1,35 @@
+-- Basic:
+Lazily read columns: value
+9	99	val-99
+8	98	val-98
+7	97	val-97
+-- Basic SELECT value:
+Lazily read columns: value
+val-99
+val-98
+val-97
+-- ORDER BY <expr>:
+Lazily read columns: value
+9	99	val-99
+8	98	val-98
+7	97	val-97
+-- LIMIT BY <expr>:
+Lazily read columns: value
+9	99	val-99
+8	98	val-98
+7	97	val-97
+-- ORDER BY <expr> LIMIT BY <expr>:
+Lazily read columns: value
+9	99	val-99
+8	98	val-98
+7	97	val-97
+-- ORDER BY <alias> LIMIT BY <alias>:
+Lazily read columns: value
+9	99	val-99
+8	98	val-98
+7	97	val-97
+-- Basic sorted:
+Lazily read columns: value
+9	99	val-99
+8	98	val-98
+7	97	val-97

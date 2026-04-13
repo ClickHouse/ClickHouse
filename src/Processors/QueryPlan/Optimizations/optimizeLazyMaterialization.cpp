@@ -3,6 +3,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -411,7 +412,34 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (limit_step->withTies())
         return false;
 
-    auto * sorting_step = typeid_cast<SortingStep *>(root.children.front()->step.get());
+    auto * limit_by_node = root.children.front();
+    auto * limit_by_step = typeid_cast<LimitByStep *>(root.children.front()->step.get());
+    ExpressionStep * limit_by_expr_step = nullptr;
+    PlanStepWithRequiredDAGPositions limit_by_expr_step_to_split;
+
+    QueryPlan::Node * sorting_node = nullptr;
+    // The query may include a LIMIT BY clause, and in this case lazy
+    // materialization expects the following plan structure:
+    // ORDER BY -> Expression -> LIMIT BY -> LIMIT
+    // where the Expression step computes LIMIT BY columns
+    if (limit_by_step)
+    {
+        if (limit_by_node->children.size() != 1)
+            return false;
+
+        auto * limit_by_expr_node = limit_by_node->children.front();
+        limit_by_expr_step = typeid_cast<ExpressionStep *>(limit_by_expr_node->step.get());
+        if (!limit_by_expr_step || limit_by_expr_node->children.size() != 1)
+            return false;
+
+        limit_by_expr_step_to_split.step = limit_by_expr_step;
+
+        sorting_node = limit_by_expr_node->children.front();
+    }
+    else
+        sorting_node = root.children.front();
+
+    auto * sorting_step = typeid_cast<SortingStep *>(sorting_node->step.get());
     if (!sorting_step)
         return false;
 
@@ -426,7 +454,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     StepStack steps_to_update;
 
-    auto * sorting_node = root.children.front();
     auto * reading_step = findReadingStep(*sorting_node->children.front(), steps_to_update);
     if (!reading_step)
         return false;
@@ -434,12 +461,38 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (!canUseLazyMaterializationForReadingStep(reading_step))
         return false;
 
-    const auto & sorting_header = *sorting_step->getOutputHeader();
     /// At this moment, required_columns are corresponding to output header columns of every step.
-    std::vector<bool> required_columns(sorting_header.columns(), false);
+    std::vector<bool> required_columns;
 
-    for (const auto & descr : sorting_step->getSortDescription())
-        required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
+    if (limit_by_step)
+    {
+        const auto & limit_by_header = *limit_by_step->getOutputHeader();
+        required_columns.assign(limit_by_header.columns(), false);
+
+        for (const auto & column : limit_by_step->getColumns())
+            required_columns[limit_by_header.getPositionByName(column)] = true;
+
+        const auto & limit_by_expr = limit_by_expr_step->getExpression();
+        limit_by_expr_step_to_split.required_positions.insert(
+            limit_by_expr_step_to_split.required_positions.end(),
+            required_columns.begin(),
+            required_columns.begin() + limit_by_expr.getOutputs().size());
+        required_columns = getRequiredHeaderPositions(
+            limit_by_expr,
+            *limit_by_expr_step->getInputHeaders().front(),
+            std::move(required_columns));
+
+        for (const auto & descr : sorting_step->getSortDescription())
+            required_columns[sorting_step->getOutputHeader()->getPositionByName(descr.column_name)] = true;
+    }
+    else
+    {
+        const auto & sorting_header = *sorting_step->getOutputHeader();
+        required_columns.assign(sorting_header.columns(), false);
+
+        for (const auto & descr : sorting_step->getSortDescription())
+            required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
+    }
 
     bool has_filter = false;
 
@@ -577,9 +630,20 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
     }
 
-    auto new_sorting_step = std::move(root.children.front()->step); // = std::make_unique<SortingStep>(main_plan.getCurrentHeader(), sorting_step->getSortDescription(), sorting_step->getLimit(), sorting_step->getSettings());
+    auto new_sorting_step = std::move(sorting_node->step);
     new_sorting_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(new_sorting_step));
+
+    if (limit_by_step)
+    {
+        auto split_result = splitExpressionStep(*limit_by_expr_step, limit_by_expr_step_to_split.required_positions, required_columns);
+        main_plan.addStep(std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(split_result.main_expression_step)));
+        lazy_steps.push_back(std::move(split_result.lazy_expression_step));
+
+        auto new_limit_by_step = std::move(limit_by_node->step);
+        new_limit_by_step->updateInputHeader(main_plan.getCurrentHeader());
+        main_plan.addStep(std::move(new_limit_by_step));
+    }
 
     limit_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(root.step));
