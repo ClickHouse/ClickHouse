@@ -2114,8 +2114,15 @@ class TestCase:
             tags
             and ("no-llvm-coverage" in tags)
             and args.llvm_coverage
+            and not args.excluded_from_llvm
         ):
             # Skip tests that are incompatible with LLVM coverage
+            return FailureReason.NO_LLVM_COVERAGE
+
+        if args.excluded_from_llvm and (
+            not tags or "no-llvm-coverage" not in tags
+        ):
+            # Run only tests that are normally disabled under LLVM coverage
             return FailureReason.NO_LLVM_COVERAGE
 
         if tags and ("no-replicated-database" in tags) and args.replicated_database:
@@ -2418,6 +2425,17 @@ class TestCase:
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
+
+        # Filter out LLVM profiling runtime noise from stderr.
+        # In coverage builds, short-lived clickhouse-client processes contend over
+        # profraw merge pool files, producing "LLVM Profile Error:" messages that
+        # are not real test failures — the test output is correct. See #97020.
+        if stderr:
+            stderr = "\n".join(
+                line
+                for line in stderr.splitlines()
+                if not line.startswith("LLVM Profile Error:")
+            ).strip()
 
         if debug_log:
             debug_log = trim_for_log(debug_log, 100)
@@ -5254,6 +5272,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="This run will be used to collect code coverage with llvm-cov",
+    )
+    parser.add_argument(
+        "--excluded-from-llvm",
+        action="store_true",
+        default=False,
+        help="Run only tests that are normally disabled under LLVM coverage (tagged no-llvm-coverage)",
     )
     # Explicit, non-random settings (copy-paste friendly)
     parser.add_argument(
