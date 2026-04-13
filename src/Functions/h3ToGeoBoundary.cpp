@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -10,6 +10,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+
+#include <h3api.h>
+
 
 namespace DB
 {
@@ -25,11 +28,7 @@ class FunctionH3ToGeoBoundary : public IFunction
 public:
     static constexpr auto name = "h3ToGeoBoundary";
     String getName() const override { return name; }
-    H3Validator validator;
-
-    explicit FunctionH3ToGeoBoundary(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToGeoBoundary>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToGeoBoundary>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -79,12 +78,6 @@ public:
             H3Index h3index = data[row];
             CellBoundary boundary{};
 
-            if (!validator.validateCell(h3index))
-            {
-                offsets->insert(current_offset);
-                continue;
-            }
-
             auto err = cellToBoundary(h3index, &boundary);
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", h3index, err);
@@ -131,7 +124,7 @@ Returns array of pairs `(lat, lon)`, which corresponds to the boundary of the pr
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToGeoBoundary>(documentation);
 }
 

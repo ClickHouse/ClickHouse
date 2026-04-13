@@ -45,7 +45,6 @@ public:
     std::string getDiskPath() const override;
     ReservationPtr reserve(UInt64 bytes) const override;
     ReservationPtr tryReserve(UInt64 bytes) const override;
-    DiskPtr getDisk() const;
 
     ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const override;
     ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const override;
@@ -113,9 +112,8 @@ public:
     SyncGuardPtr getDirectorySyncGuard() const override;
     bool hasActiveTransaction() const override;
 
-    bool isCaseInsensitive() const override;
-
 protected:
+    DiskPtr getDisk() const;
 
     DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
     virtual MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const = 0;

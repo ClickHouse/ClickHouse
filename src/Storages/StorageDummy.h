@@ -3,12 +3,12 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
 
-class StorageDummy final : public StorageWithCommonVirtualColumns
+class StorageDummy final : public IStorage
 {
 public:
     StorageDummy(
@@ -18,8 +18,6 @@ public:
         bool supports_replication_ = false);
 
     std::string getName() const override { return "StorageDummy"; }
-
-    static VirtualColumnsDescription createVirtuals();
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -31,7 +29,8 @@ public:
     }
 
     bool supportsSubcolumns() const override { return true; }
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
     bool canMoveConditionsToPrewhere() const override
     {
         return original_storage_snapshot ? original_storage_snapshot->storage.canMoveConditionsToPrewhere() : false;
@@ -44,7 +43,7 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
     {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
     }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
@@ -53,7 +52,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const override;
 
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -66,6 +65,8 @@ public:
     bool supportsReplication() const override { return supports_replication; }
 
 private:
+    const ColumnsDescription object_columns;
+
     /// The original storage snapshot which is replaced during planning. See collectFiltersForAnalysis for example.
     StorageSnapshotPtr original_storage_snapshot;
     const bool supports_replication;

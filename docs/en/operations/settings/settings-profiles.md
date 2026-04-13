@@ -4,7 +4,6 @@ sidebar_label: 'Settings profiles'
 sidebar_position: 61
 slug: /operations/settings/settings-profiles
 title: 'Settings profiles'
-doc_type: 'reference'
 ---
 
 # Settings profiles
@@ -41,12 +40,6 @@ Example:
         <!-- The maximum number of threads when running a single query. -->
         <max_threads>8</max_threads>
     </default>
-
-    <!-- Background operations settings -->
-    <background>
-        <!-- Re-defining maximum number of threads for background operations -->
-        <max_threads>12</max_threads>
-    </background>
 
     <!-- Settings for queries from the user interface -->
     <web>
@@ -85,8 +78,6 @@ Example:
 
 The example specifies two profiles: `default` and `web`.
 
-The `default` profile has a special purpose: it must always be present and is applied when starting the server. In other words, the `default` profile contains default settings. The name of the default profile can be changed via `default_profile` server setting.
-
-The `background` profile has a special purpose: it might be present to override settings for background operations. The parameter is optional and its name can be changed via `background_profile` server setting.
+The `default` profile has a special purpose: it must always be present and is applied when starting the server. In other words, the `default` profile contains default settings.
 
 The `web` profile is a regular profile that can be set using the `SET` query or using a URL parameter in an HTTP query.
