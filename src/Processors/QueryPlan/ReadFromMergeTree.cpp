@@ -2300,6 +2300,15 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         /// an empty right side) closes its inputs early, DelayedPortsProcessor may terminate
         /// the set-building pipeline before the set is ready.
         /// Building sets synchronously here eliminates this race condition entirely.
+        ///
+        /// Build ordered sets for the index filter DAG first, so that IN subquery sets
+        /// retain explicit set elements needed for primary key analysis. If we built
+        /// non-ordered sets for PREWHERE first, the set would be created without elements,
+        /// and KeyCondition would not be able to use it for index analysis (the set is
+        /// shared between the PREWHERE DAG and the index filter DAG via ColumnSet).
+        if (index_filter_dag)
+            VirtualColumnUtils::buildOrderedSetsForDAG(*index_filter_dag, context);
+
         if (query_info.prewhere_info)
             VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
         if (query_info.row_level_filter)
