@@ -13,3 +13,8 @@ while [[ $i -lt $retries ]]; do
     timeout 3s ${CLICKHOUSE_CLIENT} --max_threads 10 --query "SELECT * FROM url('http://127.0.0.{1..10}:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+sleep(0.1)', TSV, 'x UInt8')" --format Null && break
     ((++i))
 done
+
+if [[ $i -ge $retries ]]; then
+    echo "All $retries retry attempts failed or timed out" >&2
+    exit 1
+fi
