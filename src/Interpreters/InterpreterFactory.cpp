@@ -38,6 +38,8 @@
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTCreateReplicaQuery.h>
+#include <Parsers/ASTAlterReplicaQuery.h>
+#include <Parsers/ASTDropReplicaQuery.h>
 #include <Parsers/ASTCreateShardQuery.h>
 #include <Parsers/ASTAlterShardQuery.h>
 #include <Parsers/ASTDropShardQuery.h>
@@ -277,6 +279,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterAlterNamedCollectionQuery";
     }
+    else if (query->as<ASTAlterReplicaQuery>())
+    {
+        interpreter_name = "InterpreterAlterReplicaQuery";
+    }
     else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>() || query->as<ASTCheckDatabaseQuery>())
     {
         interpreter_name = "InterpreterCheckQuery";
@@ -344,6 +350,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDropNamedCollectionQuery>())
     {
         interpreter_name = "InterpreterDropNamedCollectionQuery";
+    }
+    else if (query->as<ASTDropReplicaQuery>())
+    {
+        interpreter_name = "InterpreterDropReplicaQuery";
     }
     else if (query->as<ASTGrantQuery>())
     {

@@ -1,0 +1,5 @@
+nc_plain_type_test	
+nc_replica_type_test	REPLICA
+0
+1
+nc_replica_type_test	127.0.0.2	9000

@@ -60,6 +60,8 @@ void registerInterpreterDropResourceQuery(InterpreterFactory & factory);
 void registerInterpreterCreateIndexQuery(InterpreterFactory & factory);
 void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory);
 void registerInterpreterCreateReplicaQuery(InterpreterFactory & factory);
+void registerInterpreterAlterReplicaQuery(InterpreterFactory & factory);
+void registerInterpreterDropReplicaQuery(InterpreterFactory & factory);
 void registerInterpreterCreateShardQuery(InterpreterFactory & factory);
 void registerInterpreterAlterShardQuery(InterpreterFactory & factory);
 void registerInterpreterDropShardQuery(InterpreterFactory & factory);
@@ -136,6 +138,8 @@ void registerInterpreters()
     registerInterpreterCreateIndexQuery(factory);
     registerInterpreterCreateNamedCollectionQuery(factory);
     registerInterpreterCreateReplicaQuery(factory);
+    registerInterpreterAlterReplicaQuery(factory);
+    registerInterpreterDropReplicaQuery(factory);
     registerInterpreterCreateShardQuery(factory);
     registerInterpreterAlterShardQuery(factory);
     registerInterpreterDropShardQuery(factory);

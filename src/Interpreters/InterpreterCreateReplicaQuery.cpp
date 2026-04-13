@@ -5,6 +5,7 @@
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Access/ContextAccess.h>
 #include <Common/Clusters/SQLClusterCatalogPropertyValidation.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTCreateReplicaQuery.h>
@@ -31,6 +32,7 @@ BlockIO InterpreterCreateReplicaQuery::execute()
 
     auto named_collection_ast = make_intrusive<ASTCreateNamedCollectionQuery>();
     named_collection_ast->collection_name = replica_query.replica_name;
+    named_collection_ast->collection_type = "REPLICA";
     named_collection_ast->changes = replica_query.properties;
     named_collection_ast->if_not_exists = replica_query.if_not_exists;
 

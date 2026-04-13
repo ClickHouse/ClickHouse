@@ -78,6 +78,8 @@ public:
 
     virtual SourceId getSourceId() const { return SourceId::NONE; }
 
+    virtual String getCollectionType() const { return {}; }
+
     virtual String getCreateStatement(bool /*show_secrects*/) { return  {}; }
 
     virtual void update(const ASTAlterNamedCollectionQuery & query);
@@ -112,6 +114,8 @@ public:
     void update(const ASTAlterNamedCollectionQuery & query) override;
 
     NamedCollection::SourceId getSourceId() const override { return SourceId::SQL; }
+
+    String getCollectionType() const override { return create_query_ptr.collection_type; }
 
 private:
     explicit NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_);

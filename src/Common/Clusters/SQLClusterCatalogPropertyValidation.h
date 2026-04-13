@@ -39,6 +39,7 @@
 #include <Common/SettingsChanges.h>
 #include <Core/Field.h>
 
+#include <cctype>
 #include <string_view>
 #include <unordered_set>
 
@@ -61,6 +62,27 @@ inline void assertNoDuplicatePropertyNames(const SettingsChanges & changes)
         if (!seen.insert(std::string_view(ch.name)).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate property `{}` in PROPERTIES", ch.name);
     }
+}
+
+inline UInt64 parseUnsignedIntegerPropertyValue(const Field & value, std::string_view property_name)
+{
+    if (value.getType() == Field::Types::String)
+    {
+        const auto & text = value.safeGet<String>();
+        if (text.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` must not be empty", property_name);
+
+        UInt64 result = 0;
+        for (const auto ch : text)
+        {
+            if (!std::isdigit(static_cast<unsigned char>(ch)))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` must be an unsigned integer, got `{}`", property_name, text);
+            result = result * 10 + static_cast<UInt64>(ch - '0');
+        }
+        return result;
+    }
+
+    return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value);
 }
 }
 
@@ -232,8 +254,7 @@ inline void validateReplicaLevelPropertyKeys(const SettingsChanges & changes)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Unknown property `{}` in replica-level PROPERTIES (allowed: host, port, user, password, secure, compression, priority, bind_host, default_database). "
-                "Shard options (weight, internal_replication) belong on shard-level clauses, not here.",
+                "Unknown property `{}` in replica-level PROPERTIES (allowed: host, port, user, password, secure, compression, priority, bind_host, default_database).",
                 ch.name);
         }
     }
@@ -265,7 +286,7 @@ inline void validateReplicaLevelPropertiesForSQLReplica(const SettingsChanges & 
     if (!port_value)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica-level PROPERTIES require `port`");
 
-    UInt64 port = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), *port_value);
+    UInt64 port = SQLClusterCatalogPropertyValidationDetail::parseUnsignedIntegerPropertyValue(*port_value, "port");
     if (port == 0 || port > 65535)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica-level PROPERTIES require `port` between 1 and 65535, got {}", port);
 }
