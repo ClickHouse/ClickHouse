@@ -609,7 +609,7 @@ private:
         {
             if (!event_sequences[event - 1].empty())
             {
-                max_level = event;
+                max_level = static_cast<UInt8>(event);
                 break;
             }
         }
