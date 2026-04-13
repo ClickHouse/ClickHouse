@@ -14,6 +14,9 @@ extern const int LOGICAL_ERROR;
 extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
+/// Same limit as other aggregate functions (groupArray, topK, etc.)
+constexpr size_t AGGREGATE_FUNCTION_GROUP_CONCAT_MAX_DATA_SIZE = 0xFFFFFF;
+
 void GroupConcatDataBase::checkAndUpdateSize(UInt64 add, Arena * arena)
 {
     if (data_size + add >= allocated_size)
@@ -171,6 +174,13 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
 
     UInt64 temp_size = 0;
     readVarUInt(temp_size, buf);
+
+    if (temp_size > AGGREGATE_FUNCTION_GROUP_CONCAT_MAX_DATA_SIZE)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Too large data size in groupConcat state: {} (maximum: {})",
+            temp_size,
+            AGGREGATE_FUNCTION_GROUP_CONCAT_MAX_DATA_SIZE);
 
     cur_data.checkAndUpdateSize(temp_size, arena);
 
