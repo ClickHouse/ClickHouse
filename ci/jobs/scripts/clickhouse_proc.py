@@ -1102,7 +1102,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "trace_log",
             "transactions_info_log",
             "metric_log",
-            "blob_storage_log",
+            # "blob_storage_log", # NOTE (strtgbb): contains Azure container name, currently considered secret by s3 upload secret scanner.
             "error_log",
             "query_metric_log",
             "part_log",
@@ -1328,6 +1328,7 @@ if __name__ == "__main__":
     res = False
     try:
         if command == "logs_export_config":
+            exit(0) # Note (strtgbb): We don't use log exports
             if not Info().is_local_run:
                 # Disable log export for local runs - ideally this command wouldn't be triggered,
                 # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)

@@ -83,6 +83,12 @@ def get_additional_envs(info, check_name: str) -> List[str]:
     result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
     if "azure" in check_name:
         result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
+        result.extend([
+            "AZURE_STORAGE_KEY=$AZURE_STORAGE_KEY",
+            "AZURE_ACCOUNT_NAME=$AZURE_ACCOUNT_NAME",
+            "AZURE_CONTAINER_NAME=$AZURE_CONTAINER_NAME",
+            "AZURE_STORAGE_ACCOUNT_URL=$AZURE_STORAGE_ACCOUNT_URL",
+        ])
 
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")

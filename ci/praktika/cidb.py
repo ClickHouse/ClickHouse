@@ -142,7 +142,6 @@ WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
     -- AND check_name = '{jn}'
     AND test_status IN ('FAIL', 'ERROR')
 {pr_filter}
-{failure_filter}
 GROUP BY day
 ORDER BY day DESC
 """

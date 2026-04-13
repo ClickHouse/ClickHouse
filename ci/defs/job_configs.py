@@ -564,42 +564,42 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel"],
-        ),
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential"],
-        ),
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel"],
-        ),
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential"],
-        ),
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, AsyncInsert, s3 storage, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel"],
-        ),
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, AsyncInsert, s3 storage, sequential",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential"],
-        ),
+        # Job.ParamSet( # NOTE (strtgbb): llvm cov jobs not configured yet. Determine if useful first.
+        #     parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,  # large machine - no boost, why?
+        #     requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+        #     provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel"],
+        # ),
+        # Job.ParamSet(
+        #     parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        #     requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+        #     provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential"],
+        # ),
+        # Job.ParamSet(
+        #     parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, parallel",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,  # large machine - no boost, why?
+        #     requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+        #     provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel"],
+        # ),
+        # Job.ParamSet(
+        #     parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, sequential",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        #     requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+        #     provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential"],
+        # ),
+        # Job.ParamSet(
+        #     parameter="amd_llvm_coverage, AsyncInsert, s3 storage, parallel",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,  # large machine - no boost, why?
+        #     requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+        #     provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel"],
+        # ),
+        # Job.ParamSet(
+        #     parameter="amd_llvm_coverage, AsyncInsert, s3 storage, sequential",
+        #     runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        #     requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+        #     provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential"],
+        # ),
         Job.ParamSet(
             parameter="amd_debug, parallel",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
