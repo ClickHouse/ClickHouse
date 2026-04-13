@@ -85,6 +85,10 @@ SELECT 'intDivOrNull_Int128_mat', intDivOrNull(materialize(toInt128('-1701411834
 SELECT 'moduloOrNull_Int128_mat', moduloOrNull(materialize(toInt128('-170141183460469231731687303715884105728')), materialize(toInt128(-1)));
 SELECT 'intDivOrNull_Int256_mat', intDivOrNull(materialize(toInt256('-57896044618658097711785492504343953926634992332820282019728792003956564819968')), materialize(toInt256(-1)));
 SELECT 'moduloOrNull_Int256_mat', moduloOrNull(materialize(toInt256('-57896044618658097711785492504343953926634992332820282019728792003956564819968')), materialize(toInt256(-1)));
+SELECT 'positiveModuloOrNull_Int128', positiveModuloOrNull(toInt128('-170141183460469231731687303715884105728'), toInt128(-1));
+SELECT 'positiveModuloOrNull_Int256', positiveModuloOrNull(toInt256('-57896044618658097711785492504343953926634992332820282019728792003956564819968'), toInt256(-1));
+SELECT 'positiveModuloOrNull_Int128_mat', positiveModuloOrNull(materialize(toInt128('-170141183460469231731687303715884105728')), materialize(toInt128(-1)));
+SELECT 'positiveModuloOrNull_Int256_mat', positiveModuloOrNull(materialize(toInt256('-57896044618658097711785492504343953926634992332820282019728792003956564819968')), materialize(toInt256(-1)));
 -- Verify normal operations still work
 SELECT 'normal_intDivOrNull', intDivOrNull(10, 3);
 SELECT 'normal_moduloOrNull', moduloOrNull(10, 3);

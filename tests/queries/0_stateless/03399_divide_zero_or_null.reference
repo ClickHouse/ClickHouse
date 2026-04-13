@@ -82,6 +82,10 @@ intDivOrNull_Int128_mat	\N
 moduloOrNull_Int128_mat	\N
 intDivOrNull_Int256_mat	\N
 moduloOrNull_Int256_mat	\N
+positiveModuloOrNull_Int128	\N
+positiveModuloOrNull_Int256	\N
+positiveModuloOrNull_Int128_mat	\N
+positiveModuloOrNull_Int256_mat	\N
 normal_intDivOrNull	3
 normal_moduloOrNull	1
 normal_divideOrNull	5
