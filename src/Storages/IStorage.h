@@ -310,7 +310,7 @@ public:
     virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
 
 private:
-    StorageID storage_id;
+    StorageID storage_id TSA_GUARDED_BY(id_mutex);
 
     mutable std::mutex id_mutex;
 
