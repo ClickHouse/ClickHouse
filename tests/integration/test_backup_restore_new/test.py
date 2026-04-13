@@ -2308,8 +2308,10 @@ def test_async_backup_restore_with_max_execution_time_zero():
 
 
 def test_structure_only_restores_access_entities_and_udfs():
-    """structure_only=true should restore all access entity types and UDFs
-    (structural definitions) but not table data."""
+    """Verifies two things:
+    1. structure_only=true alone does NOT restore access entities or UDFs (backward compat).
+    2. structure_only=true with structure_only_restore_definitions=true restores access entities
+       (users, roles, settings profiles, row policies, quotas) and UDFs, but not table data."""
     instance.query("CREATE DATABASE test")
     instance.query(
         "CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY x"
