@@ -3,7 +3,6 @@
 // Include this first, because `#define _asan_poison_address` from
 // llvm/Support/Compiler.h conflicts with its forward declaration in
 // sanitizer/asan_interface.h
-#include <functional>
 #include <memory>
 #include <type_traits>
 
