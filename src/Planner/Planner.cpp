@@ -525,8 +525,9 @@ ALWAYS_INLINE void addExpressionStep(
     const char (&step_description)[size],
     UsefulSets & useful_sets)
 {
+    const auto & current_header = *query_plan.getCurrentHeader();
     NameSet input_columns_set;
-    for (const auto & column : query_plan.getCurrentHeader()->getColumnsWithTypeAndName())
+    for (const auto & column : current_header.getColumnsWithTypeAndName())
         input_columns_set.insert(column.name);
     for (const auto & correlated_subquery : correlated_subtrees.subqueries)
     {
@@ -539,7 +540,7 @@ ALWAYS_INLINE void addExpressionStep(
                     identifier,
                     query_plan.getCurrentHeader()->dumpNames());
         }
-        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options, current_header);
     }
 
     auto actions = std::move(expression_actions->dag);
@@ -563,7 +564,7 @@ ALWAYS_INLINE void addFilterStep(
 {
     for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
     {
-        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options, *query_plan.getCurrentHeader());
     }
 
     auto actions = std::move(filter_analysis_result.filter_actions->dag);

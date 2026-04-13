@@ -68,6 +68,19 @@ public:
     RawTableExpressionDataMap & getTableExpressionDataMap() noexcept { return shared_table_expression_data; }
     const RawTableExpressionDataMap & getTableExpressionDataMap() const noexcept { return shared_table_expression_data; }
 
+    void setCorrelatedColumnTypeOverrides(std::unordered_map<String, DataTypePtr> && overrides)
+    {
+        correlated_column_type_overrides = std::move(overrides);
+    }
+
+    DataTypePtr getCorrelatedColumnTypeOverride(const String & column_name) const
+    {
+        auto it = correlated_column_type_overrides.find(column_name);
+        if (it != correlated_column_type_overrides.end())
+            return it->second;
+        return nullptr;
+    }
+
     /// The query which will be executed with parallel replicas.
     /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
     const QueryNode * const parallel_replicas_node = nullptr;
@@ -82,6 +95,10 @@ private:
 
     /// Table expression node to data map for correlated columns sources
     RawTableExpressionDataMap shared_table_expression_data;
+
+    /// Actual post-aggregation types for correlated columns when `group_by_use_nulls`
+    /// wraps GROUP BY keys in Nullable. Keyed by column identifier.
+    std::unordered_map<String, DataTypePtr> correlated_column_type_overrides;
 };
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
