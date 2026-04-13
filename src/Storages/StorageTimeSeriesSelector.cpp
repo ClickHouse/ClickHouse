@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -142,6 +143,7 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
     const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_)
     : StorageWithCommonVirtualColumns{table_id_}
     , config(config_)
+    , log(getLogger("StorageTimeSeriesSelector"))
 {
     const auto * node = config.selector.getRoot();
     if (!node || (node->node_type != PrometheusQueryTree::NodeType::InstantSelector))
@@ -460,6 +462,9 @@ void StorageTimeSeriesSelector::readImpl(
         config.id_data_type,
         config.timestamp_data_type,
         config.scalar_data_type);
+
+    LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
+    LOG_DEBUG(log, "Will execute query:\n{}", select_query_from_data_table->formatForLogging());
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
