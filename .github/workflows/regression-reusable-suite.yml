@@ -1,0 +1,193 @@
+name: Regression suite
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit SHA to checkout. Default: current (empty string)."
+        type: string
+        default: ""
+      workflow_config:
+        required: true
+        type: string
+      flags:
+        required: false
+        type: string
+      output_format:
+        required: true
+        type: string
+      extra_args:
+        required: false
+        type: string
+      suite_name:
+        required: true
+        type: string
+      suite_executable:
+        required: false
+        type: string
+        default: "regression.py"
+      timeout_minutes:
+        required: true
+        type: number
+      storage_path:
+        required: false
+        type: string
+        default: ""
+      regression_args:
+        required: false
+        type: string
+        default: ""
+      runner_type:
+        required: false
+        type: string
+        default: ""
+      runner_arch:
+        required: false
+        type: string
+        default: "x86"
+      job_name:
+        required: false
+        type: string
+        default: ""
+      part:
+        required: false
+        type: string
+        default: ""
+      build_sha:
+        required: false
+        type: string
+        default: ""
+      set_commit_status:
+        required: false
+        type: boolean
+        default: false
+jobs:
+  suite:
+    name: ${{ format('{0}{1}', inputs.job_name != '' && inputs.job_name || inputs.suite_name, inputs.part != '' && format('_{0}', inputs.part) || '') }}
+    runs-on: [
+      "self-hosted",
+      "altinity-on-demand",
+      "${{ inputs.runner_type }}",
+    ]
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    env:
+      SUITE: ${{ inputs.suite_name }}
+      SUITE_EXECUTABLE: ${{ inputs.suite_executable }}
+      STORAGE: ${{ inputs.storage_path }}
+      PART: ${{ inputs.part }}
+      REPORT_JOB_NAME: ${{ format('{0}{1}', inputs.job_name != '' && inputs.job_name || inputs.suite_name, inputs.part != '' && format('_{0}', inputs.part) || '') }}
+      # AWS credentials
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+      # Docker credentials
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      # Database credentials
+      CHECKS_DATABASE_HOST: ${{ secrets.CHECKS_DATABASE_HOST }}
+      CHECKS_DATABASE_USER: ${{ secrets.CLICKHOUSE_TEST_STAT_LOGIN }}
+      CHECKS_DATABASE_PASSWORD: ${{ secrets.CLICKHOUSE_TEST_STAT_PASSWORD }}
+      # LocalStack token 
+      LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
+      # Python encoding
+      PYTHONIOENCODING: utf-8
+      build_sha: ${{ inputs.build_sha }}
+      pr_number: ${{ github.event.number }}
+      artifacts: builds
+      # Args
+      args: --test-to-end
+        --no-colors
+        --local
+        --collect-service-logs
+        --output ${{ inputs.output_format }}
+        --attr project="${GITHUB_REPOSITORY}" project.id="${GITHUB_REPOSITORY_ID}" user.name="${GITHUB_ACTOR}" version="${{ fromJson(inputs.workflow_config).JOB_KV_DATA.version.string }}" package="$clickhouse_path" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.name="$REPORT_JOB_NAME" job.retry=$GITHUB_RUN_ATTEMPT job.url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" arch="$(uname -i)"
+        --cicd
+        --log raw.log
+        ${{ inputs.flags != 'none' && inputs.flags || ''}}
+        ${{ inputs.extra_args }}
+      artifact_paths: |
+        ./report.html
+        ./*.log.txt
+        ./*.log
+        ./*.html
+        ./*/_instances/*.log
+        ./*/_instances/*/logs/*.log
+        ./*/*/_instances/*/logs/*.log
+        ./*/*/_instances/*.log
+
+    steps:
+      - name: ⤵️ Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: Altinity/clickhouse-regression
+          ref: ${{ inputs.ref }}
+
+      - name: ♻️ Cache setup
+        uses: ./.github/actions/cache-setup
+
+      - name: 🛠️ Setup
+        run: .github/setup.sh
+
+      - name: 📦 Get deb url
+        env:
+          S3_BASE_URL: https://altinity-build-artifacts.s3.amazonaws.com/
+          PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
+        run: |
+          REPORTS_PATH=${{ runner.temp }}/reports_dir
+          mkdir -p $REPORTS_PATH
+          cat > $REPORTS_PATH/workflow_config.json << 'EOF'
+          ${{ toJson(fromJson(inputs.workflow_config).WORKFLOW_CONFIG) }}
+          EOF
+
+          python3 .github/get-deb-url.py --github-env $GITHUB_ENV --workflow-config $REPORTS_PATH/workflow_config.json --s3-base-url $S3_BASE_URL --pr-number $PR_NUMBER --branch-name ${{ github.ref_name }} --commit-hash ${{ inputs.build_sha || github.sha }} --binary
+
+      - name: 🔄 Process regression args
+        run: |
+          REGRESSION_ARGS='${{ inputs.regression_args }}'
+          # AWS replacements
+          REGRESSION_ARGS="${REGRESSION_ARGS//'{{AWS_BUCKET}}'/${{ secrets.REGRESSION_AWS_S3_BUCKET }}}"
+          REGRESSION_ARGS="${REGRESSION_ARGS//'{{AWS_REGION}}'/${{ secrets.REGRESSION_AWS_S3_REGION }}}"
+          REGRESSION_ARGS="${REGRESSION_ARGS//'{{AWS_KEY_ID}}'/${{ secrets.REGRESSION_AWS_S3_KEY_ID }}}"
+          REGRESSION_ARGS="${REGRESSION_ARGS//'{{AWS_ACCESS_KEY}}'/${{ secrets.REGRESSION_AWS_S3_SECRET_ACCESS_KEY }}}"
+          # GCS replacements
+          REGRESSION_ARGS="${REGRESSION_ARGS//'{{GCS_URI}}'/${{ secrets.REGRESSION_GCS_URI }}}"
+          REGRESSION_ARGS="${REGRESSION_ARGS//'{{GCS_KEY_ID}}'/${{ secrets.REGRESSION_GCS_KEY_ID }}}"
+          REGRESSION_ARGS="${REGRESSION_ARGS//'{{GCS_KEY_SECRET}}'/${{ secrets.REGRESSION_GCS_KEY_SECRET }}}"
+          # Azure replacements
+          REGRESSION_ARGS="${REGRESSION_ARGS//'{{AZURE_ACCOUNT_NAME}}'/${{ secrets.AZURE_ACCOUNT_NAME }}}"
+          REGRESSION_ARGS="${REGRESSION_ARGS//'{{AZURE_STORAGE_KEY}}'/${{ secrets.AZURE_STORAGE_KEY }}}"
+          REGRESSION_ARGS="${REGRESSION_ARGS//'{{AZURE_CONTAINER_NAME}}'/${{ secrets.AZURE_CONTAINER_NAME }}}"
+          echo "REGRESSION_ARGS=$REGRESSION_ARGS" >> $GITHUB_ENV
+
+      - name: 🧪 Run ${{ env.SUITE }} suite
+        id: run_suite
+        run: python3 
+          -u ${{ env.SUITE }}/${{ env.SUITE_EXECUTABLE }}
+          --clickhouse ${{ env.clickhouse_path }}
+          ${{ env.REGRESSION_ARGS }}
+          ${{ env.args }} || EXITCODE=$?;
+          .github/add_link_to_logs.sh;
+          exit $EXITCODE
+
+      - name: 📊 Set Commit Status
+        if: ${{ !cancelled() && inputs.set_commit_status }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_OUTCOME: ${{ steps.run_suite.outcome }}
+          SUITE_NAME: ${{ format('Regression {0} {1}{2}', inputs.runner_arch, inputs.job_name != '' && inputs.job_name || inputs.suite_name, inputs.part != '' && format('_{0}', inputs.part) || '') }}
+        run: python3 .github/set_builds_status.py
+
+      - name: 📝 Create and upload logs
+        if: ${{ !cancelled() }}
+        run: .github/create_and_upload_logs.sh 1
+
+      - name: 📤 Upload logs to results database
+        if: ${{ !cancelled() }}
+        timeout-minutes: 20
+        run: .github/upload_results_to_database.sh 1
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ${{ format('{0}{1}-artifacts-{2}{3}', inputs.job_name != '' && inputs.job_name || inputs.suite_name, inputs.part != '' && format('_{0}', inputs.part) || '', inputs.runner_arch, contains(inputs.extra_args, '--use-keeper') && '_keeper' || '_zookeeper') }}
+          path: ${{ env.artifact_paths }}
+

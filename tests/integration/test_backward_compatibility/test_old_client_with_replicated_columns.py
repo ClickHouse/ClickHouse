@@ -11,7 +11,7 @@ upstream = cluster.add_instance(
 )
 backward = cluster.add_instance(
     "backward",
-    image="clickhouse/clickhouse-server",
+    image="altinity/clickhouse-server",
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
 )

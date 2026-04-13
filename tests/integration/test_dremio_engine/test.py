@@ -1,8 +1,11 @@
 import pytest
 from helpers.client import QueryRuntimeException
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.config_cluster import dremio_user, dremio_pass
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance(

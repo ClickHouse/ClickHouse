@@ -133,6 +133,7 @@ class _Environment(MetaClasses.Serializable):
             elif "inputs" in github_event:
                 # assume this is a dispatch
                 EVENT_TYPE = Workflow.Event.DISPATCH
+                EVENT_TIME = github_event.get("repository", {}).get("updated_at", None)
                 SHA = os.getenv(
                     "GITHUB_SHA", "0000000000000000000000000000000000000000"
                 )
@@ -167,23 +168,27 @@ class _Environment(MetaClasses.Serializable):
             else:
                 assert False, "TODO: not supported"
 
-            INSTANCE_TYPE = (
-                os.getenv("INSTANCE_TYPE", None)
-                or Shell.get_output("ec2metadata --instance-type")
-                or ""
-            )
-            INSTANCE_ID = (
-                os.getenv("INSTANCE_ID", None)
-                or Shell.get_output("ec2metadata --instance-id")
-                or ""
-            )
-            INSTANCE_LIFE_CYCLE = (
-                os.getenv("INSTANCE_LIFE_CYCLE", None)
-                or Shell.get_output(
-                    "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
-                )
-                or ""
-            )
+            # NOTE (strtgbb): Override instance metadata, we don't use it
+            # INSTANCE_TYPE = (
+            #     os.getenv("INSTANCE_TYPE", None)
+            #     or Shell.get_output("ec2metadata --instance-type")
+            #     or ""
+            # )
+            # INSTANCE_ID = (
+            #     os.getenv("INSTANCE_ID", None)
+            #     or Shell.get_output("ec2metadata --instance-id")
+            #     or ""
+            # )
+            # INSTANCE_LIFE_CYCLE = (
+            #     os.getenv("INSTANCE_LIFE_CYCLE", None)
+            #     or Shell.get_output(
+            #         "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
+            #     )
+            #     or ""
+            # )
+            INSTANCE_TYPE = "altinity-self-hosted"
+            INSTANCE_ID = "altinity-self-hosted"
+            INSTANCE_LIFE_CYCLE = "altinity-self-hosted"
 
         else:
             print("WARNING: Local execution - dummy Environment will be generated")
@@ -264,23 +269,23 @@ class _Environment(MetaClasses.Serializable):
         env_dict = json.loads(data_str) if isinstance(data_str, str) else data_str
 
         # Reread instance metadata from the host
-        env_dict["INSTANCE_TYPE"] = (
-            os.getenv("INSTANCE_TYPE", None)
-            or Shell.get_output("ec2metadata --instance-type")
-            or ""
-        )
-        env_dict["INSTANCE_ID"] = (
-            os.getenv("INSTANCE_ID", None)
-            or Shell.get_output("ec2metadata --instance-id")
-            or ""
-        )
-        env_dict["INSTANCE_LIFE_CYCLE"] = (
-            os.getenv("INSTANCE_LIFE_CYCLE", None)
-            or Shell.get_output(
-                "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
-            )
-            or ""
-        )
+        # env_dict["INSTANCE_TYPE"] = (
+        #     os.getenv("INSTANCE_TYPE", None)
+        #     or Shell.get_output("ec2metadata --instance-type")
+        #     or ""
+        # )
+        # env_dict["INSTANCE_ID"] = (
+        #     os.getenv("INSTANCE_ID", None)
+        #     or Shell.get_output("ec2metadata --instance-id")
+        #     or ""
+        # )
+        # env_dict["INSTANCE_LIFE_CYCLE"] = (
+        #     os.getenv("INSTANCE_LIFE_CYCLE", None)
+        #     or Shell.get_output(
+        #         "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
+        #     )
+        #     or ""
+        # )
 
         return cls.from_dict(env_dict)
 

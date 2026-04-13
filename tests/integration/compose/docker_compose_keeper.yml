@@ -1,6 +1,6 @@
 services:
     zoo1:
-        image: ${image:-clickhouse/integration-test}
+        image: ${image:-altinityinfra/integration-test}
         stop_grace_period: 5s
         restart: always
         user: ${user:-}
@@ -39,7 +39,7 @@ services:
             - rotate
         cpus: 3
     zoo2:
-        image: ${image:-clickhouse/integration-test}
+        image: ${image:-altinityinfra/integration-test}
         stop_grace_period: 5s
         restart: always
         user: ${user:-}
@@ -78,7 +78,7 @@ services:
             - rotate
         cpus: 3
     zoo3:
-        image: ${image:-clickhouse/integration-test}
+        image: ${image:-altinityinfra/integration-test}
         stop_grace_period: 5s
         restart: always
         user: ${user:-}

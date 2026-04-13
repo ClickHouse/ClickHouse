@@ -33,8 +33,9 @@ def main():
             # TODO: attach gdb
             # and ch.attach_gdb()
 
-        if ch.create_log_export_config():
-            ch.start_log_exports(check_start_time=stop_watch.start_time)
+        # Note (strtgbb): We don't use this
+        # if ch.create_log_export_config():
+        #     ch.start_log_exports(check_start_time=stop_watch.start_time)
 
     if res:
         print("AST Fuzzer")

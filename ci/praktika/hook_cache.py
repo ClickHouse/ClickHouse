@@ -66,7 +66,7 @@ class CacheRunnerHooks:
         # implement algorithm to skip dependee jobs if dependency is not in the cache
         # Step 1: Separate jobs into two groups based on digest prefix relationships
         fetched_records = []
-        if os.environ.get("DISABLE_CI_CACHE", "0") == "1":
+        if os.environ.get("DISABLE_CI_CACHE", "0") in ("1", "true"):
             print("NOTE: CI Cache disabled via GH Variable DISABLE_CI_CACHE=1")
         else:
             # Filter eligible jobs (exclude null digests and filtered jobs)

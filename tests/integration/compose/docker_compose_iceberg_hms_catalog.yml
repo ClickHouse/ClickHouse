@@ -18,7 +18,7 @@ services:
     stop_grace_period: 5s
     cpus: 3
   hive:
-    image: clickhouse/integration-test-with-hms
+    image: altinityinfra/integration-test-with-hms
     restart: unless-stopped
     depends_on:
       minio:

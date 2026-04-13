@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import quote
+import re
 
 from ._environment import _Environment
 from .settings import Settings
@@ -21,6 +22,39 @@ except ImportError:
     BOTO3_AVAILABLE = False
     ClientError = None
     NoCredentialsError = None
+
+sensitive_var_pattern = re.compile(r"[A-Z_]*(SECRET|PASSWORD|KEY|TOKEN|AZURE)[A-Z_]*")
+sensitive_strings = {
+    var: value for var, value in os.environ.items() if sensitive_var_pattern.match(var)
+}
+
+
+def scan_file_for_sensitive_data(file_content, file_name):
+    """
+    Scan the content of a file for sensitive strings.
+    Raises ValueError if any sensitive values are found.
+    """
+
+    def clean_line(line):
+        for name, value in sensitive_strings.items():
+            line = line.replace(value, f"SECRET[{name}]")
+        return line
+
+    matches = []
+    for line_number, line in enumerate(file_content.splitlines(), start=1):
+        for name, value in sensitive_strings.items():
+            if value in line:
+                matches.append((file_name, line_number, clean_line(line)))
+
+    if not matches:
+        return
+
+    print(f"ERROR: Sensitive values found in {file_name}")
+    for file_name, line_number, match in matches:
+        print(f"{file_name}:{line_number}: {match}")
+
+    raise ValueError(f"Sensitive values found in {file_name}")
+
 
 
 class S3:
@@ -110,6 +144,13 @@ class S3:
         s3_full_path = s3_path
         if not s3_full_path.endswith(file_name) and not with_rename:
             s3_full_path = f"{s3_path}/{Path(local_path).name}"
+
+        try:
+            file_content = Path(local_path).read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            print(f"WARNING: Failed to scan file {local_path}, unknown encoding")
+        else:
+            scan_file_for_sensitive_data(file_content, Path(local_path).name)
 
         # Use boto3 if available, otherwise fall back to AWS CLI
         if BOTO3_AVAILABLE and cls._get_boto3_client():

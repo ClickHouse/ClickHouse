@@ -1,4 +1,4 @@
-# docker build -t clickhouse/mysql-php-client .
+# docker build -t altinityinfra/mysql-php-client .
 # MySQL PHP client docker container
 # Rebuild to enable SBOM/provenance attestations (see #97903, #98511)
 

@@ -21,6 +21,7 @@ from version_helper import (
     get_abs_path,
     get_version_from_repo,
     get_version_from_tag,
+    get_version_from_string,
 )
 
 # This array gives the preferred category order, and is also used to
@@ -246,7 +247,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--repo",
-        default="ClickHouse/ClickHouse",
+        default="Altinity/ClickHouse",
         help="a repository to query for pull-requests from GitHub",
     )
     parser.add_argument(
@@ -287,7 +288,8 @@ def parse_args() -> argparse.Namespace:
 # Returns None if the PR should not be mentioned in changelog.
 def generate_description(item: PullRequest, repo: Repository) -> Optional[Description]:
     backport_number = item.number
-    if item.head.ref.startswith("backport/"):
+    # NOTE(vnemkov): intentionally without trailing slash, so it will match upstream's 'backport/' and our 'backports/' branch names.
+    if item.head.ref.startswith("backport"):
         branch_parts = item.head.ref.split("/")
         if len(branch_parts) == 3:
             try:
@@ -504,6 +506,19 @@ def get_year(prs: PullRequests) -> int:
 
 
 def get_branch_and_patch_by_tag(tag: str) -> Tuple[Optional[str], Optional[int]]:
+    try:
+        try:
+            patch = get_version_from_string(tag.removeprefix('v')).patch
+            branch = runner.run(f"git branch --contains {tag} | head -n1", stderr=DEVNULL).strip()
+        except:
+            # most likely the `tag` is not a tag, but a commit
+            patch = 999999999999
+            branch = runner.run(f"git branch --contains {tag} | head -n1", stderr=DEVNULL).strip().removeprefix('*').strip()
+
+        return branch, patch
+    except:
+        logging.exception(f"Failed to get branch from a tag {tag} using git commands", exc_info=True)
+
     tag = tag.removeprefix("v")
     versions = tag.split(".")
     if len(versions) < 4:

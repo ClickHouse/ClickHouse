@@ -1876,9 +1876,9 @@
         <!-- the ClickHouse core developers team. -->
         <!-- Doing so at least in pre-production environments is highly appreciated -->
         <!-- The reports are anonymized -->
-        <enabled>true</enabled>
-        <send_logical_errors>true</send_logical_errors>
-        <endpoint>https://crash.clickhouse.com/</endpoint>
+        <enabled>false</enabled>
+        <send_logical_errors>false</send_logical_errors>
+        <endpoint></endpoint>
     </send_crash_reports>
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->

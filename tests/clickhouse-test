@@ -11,6 +11,10 @@ import copy
 import enum
 import glob
 
+# For processing the broken tests rules
+from functools import lru_cache
+import yaml
+
 # Not requests, to avoid requiring extra dependency.
 import http.client
 import io
@@ -100,6 +104,114 @@ def detect_cgroup_version():
 
 
 CGROUP_VERSION = detect_cgroup_version()
+
+
+@lru_cache(maxsize=1)
+def get_broken_tests_rules(broken_tests_file_path: str) -> dict:
+    if (
+        not os.path.isfile(broken_tests_file_path)
+        or os.path.getsize(broken_tests_file_path) == 0
+    ):
+        raise ValueError(
+            "There is something wrong with getting broken tests rules: "
+            f"file '{broken_tests_file_path}' is empty or does not exist."
+        )
+
+    with open(broken_tests_file_path, "r", encoding="utf-8") as broken_tests_file:
+        broken_tests = yaml.safe_load(broken_tests_file)
+
+    compiled_rules = {"exact": {}, "pattern": {}}
+
+    for test in broken_tests:
+        regex = test.get("regex") is True
+        rule = {
+            "reason": test["reason"],
+        }
+
+        if test.get("message"):
+            rule["message"] = re.compile(test["message"]) if regex else test["message"]
+
+        if test.get("not_message"):
+            rule["not_message"] = (
+                re.compile(test["not_message"]) if regex else test["not_message"]
+            )
+        if test.get("check_types"):
+            rule["check_types"] = test["check_types"]
+
+        if regex:
+            rule["regex"] = True
+            compiled_rules["pattern"][re.compile(test["name"])] = rule
+        else:
+            compiled_rules["exact"][test["name"]] = rule
+
+    return compiled_rules
+
+
+def test_is_known_fail(test_name, test_logs, build_flags, broken_tests_file_path):
+    matching_rules = []
+
+    test_name = test_name.replace(".gen", "")  # Remove suffix from templated tests
+
+    def matches_substring(substring, log, is_regex):
+        if log is None:
+            return False
+        if is_regex:
+            return bool(substring.search(log))
+        return substring in log
+
+    broken_tests_log = "ci/tmp/broken_tests_handler.log"
+
+    with open(broken_tests_log, "a") as log_file:
+        try:
+            known_broken_tests = get_broken_tests_rules(broken_tests_file_path)
+        except Exception as e:
+            log_file.write(f"Error getting broken tests rules: {e}\n")
+            return False
+
+        log_file.write(f"Checking known broken tests for failed test: {test_name}\n")
+        log_file.write("Potential matching rules:\n")
+        exact_rule = known_broken_tests["exact"].get(test_name)
+        if exact_rule:
+            log_file.write(f"{test_name} - {exact_rule}\n")
+            matching_rules.append(exact_rule)
+
+        for name_re, data in known_broken_tests["pattern"].items():
+            if name_re.fullmatch(test_name):
+                log_file.write(f"{name_re} - {data}\n")
+                matching_rules.append(data)
+
+        if not matching_rules:
+            return False
+
+        log_file.write(f"First line of test logs: {test_logs.splitlines()[0]}\n")
+
+        for rule_data in matching_rules:
+            if rule_data.get("check_types") and not any(
+                ct in build_flags for ct in rule_data["check_types"]
+            ):
+                log_file.write(
+                    f"Skip rule: Check types didn't match: '{rule_data['check_types']}' not in '{build_flags}'\n"
+                )
+                continue  # check_types didn't match → skip rule
+
+            is_regex = rule_data.get("regex", False)
+            not_message = rule_data.get("not_message")
+            if not_message and matches_substring(not_message, test_logs, is_regex):
+                log_file.write(
+                    f"Skip rule: Not message matched: '{rule_data['not_message']}'\n"
+                )
+                continue  # not_message matched → skip rule
+            message = rule_data.get("message")
+            if message and not matches_substring(message, test_logs, is_regex):
+                log_file.write(
+                    f"Skip rule: Message didn't match: '{rule_data['message']}'\n"
+                )
+                continue
+
+            log_file.write(f"Matched rule: {rule_data}\n")
+            return rule_data["reason"]
+
+        return False
 
 
 class SharedEngineReplacer:
@@ -1070,6 +1182,7 @@ class TestStatus(enum.Enum):
     OK = "OK"
     SKIPPED = "SKIPPED"
     NOT_FAILED = "NOT_FAILED"
+    BROKEN = "BROKEN"
 
 
 class FailureReason(enum.Enum):
@@ -2954,6 +3067,22 @@ class TestCase:
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
 
+                if args.known_fails_file_path:
+                    # Check if the test is known to fail
+                    known_fail_reason = test_is_known_fail(
+                        self.name,
+                        f"Reason: {result.reason.value} {result.description}",
+                        args.build_flags,
+                        args.known_fails_file_path,
+                    )
+                    if known_fail_reason:
+                        result.status = TestStatus.BROKEN
+
+                        # Place the message on the second line
+                        result.description = result.description.replace(
+                            "\n", f"\nMarked as broken: {known_fail_reason}\n", 1
+                        )
+
             if args.cloud and result.status == TestStatus.FAIL:
                 # If error is in list of skipped errors, mark this test as SKIPPED
                 for skip_error in self.suite.cloud_skip_errors_list:
@@ -3518,6 +3647,11 @@ def run_tests_array(
         + colored(" NOT_FAILED ", args, "red", attrs=["bold"])
         + CL_SQUARE_BRACKET
     )
+    MSG_BROKEN = (
+        OP_SQUARE_BRACKET
+        + colored(" BROKEN ", args, "cyan", attrs=["bold"])
+        + CL_SQUARE_BRACKET
+    )
 
     MESSAGES = {
         TestStatus.FAIL: MSG_FAIL,
@@ -3525,12 +3659,14 @@ def run_tests_array(
         TestStatus.OK: MSG_OK,
         TestStatus.SKIPPED: MSG_SKIPPED,
         TestStatus.NOT_FAILED: MSG_NOT_FAILED,
+        TestStatus.BROKEN: MSG_BROKEN,
     }
 
     passed_total = 0
     skipped_total = 0
     failures_total = 0
     failures_chain = 0
+    broken_total = 0
     start_time = datetime.now()
 
     client_options = get_additional_client_options(args)
@@ -3633,6 +3769,8 @@ def run_tests_array(
                     raise ServerDied("Server died")
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
+            elif test_result.status == TestStatus.BROKEN:
+                broken_total += 1
 
         except KeyboardInterrupt as e:
             print(colored("Break tests execution", args, "red"))
@@ -3648,6 +3786,7 @@ def run_tests_array(
             colored(
                 f"\nHaving {failures_total} errors! {passed_total} tests passed."
                 f" {skipped_total} tests skipped."
+                f" {broken_total} broken tests."
                 f" {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
                 f" ({multiprocessing.current_process().name}).",
                 args,
@@ -4748,6 +4887,8 @@ def parse_args():
     parser = ArgumentParser(description="ClickHouse functional tests")
     parser.add_argument("-q", "--queries", help="Path to queries dir")
     parser.add_argument("--tmp", help="Path to tmp dir")
+
+    parser.add_argument("--known-fails-file-path", help="Path to known fails file")
 
     parser.add_argument(
         "-b",

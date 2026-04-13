@@ -633,6 +633,8 @@ class GH:
             return Result.Status.PENDING
         elif status in Result.Status.DROPPED:
             return Result.Status.ERROR
+        elif status in Result.Status.SKIPPED:
+            return Result.Status.SUCCESS
         else:
             assert (
                 False
@@ -650,7 +652,9 @@ class GH:
 
     @classmethod
     def print_actions_debug_info(cls):
-        cls.print_log_in_group("GITHUB_ENVS", Shell.get_output("env | grep ^GITHUB_"))
+        cls.print_log_in_group(
+            "GITHUB_ENVS", Shell.get_output("env | grep -P '^GITHUB_(?!.*TOKEN)'")
+        )
         cls.print_log_in_group(
             "GITHUB_EVENT", Shell.get_output("cat $GITHUB_EVENT_PATH")
         )
