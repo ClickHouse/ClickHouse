@@ -468,6 +468,9 @@ def main():
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
+                if not CH.start_kafka():
+                    print("WARNING: Failed to start Kafka")
+
                 # Note (strtgbb): We don't use this
                 # if not Info().is_local_run:
                 #     if not CH.start_log_exports(stop_watch.start_time):

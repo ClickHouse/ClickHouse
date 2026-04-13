@@ -172,7 +172,7 @@ def main():
     os.environ["SCCACHE_LOG"] = "info"
 
     info = Info()
-    if info.is_local_run or info..is_community_pr:
+    if info.is_local_run or info.is_community_pr:
         print("NOTE: Community contribution or local run - set sccache to run without AWS credentials")
         os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     else:
@@ -309,7 +309,7 @@ def main():
 
         res = CH.run_test(fast_test_command)
 
-        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run()
+        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR, test_options=["fast"]).run()
         if not res:
             test_results.results.append(
                 Result.create_from(

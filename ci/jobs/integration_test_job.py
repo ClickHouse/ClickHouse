@@ -756,8 +756,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
     session_timeout_sequential = 3600
 
     if is_llvm_coverage:
-        session_timeout_parallel = 7200
-        session_timeout_sequential = 7200
+        session_timeout_parallel = 3600 * 3
+        session_timeout_sequential = 3600 * 3
 
     if args.session_timeout:
         session_timeout_parallel = args.session_timeout * 2
@@ -877,10 +877,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         test_result_retries = run_pytest_and_collect_results(
-            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
+            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=3600",
             env=test_env,
             report_name="retries",
-            timeout=1200 + 600,
+            timeout=3600 + 600,
         )
         successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
         failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
