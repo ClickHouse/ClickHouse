@@ -12,6 +12,8 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
+    extern const Event SelectedMarks;
+    extern const Event SelectedRanges;
 }
 
 namespace DB
@@ -92,6 +94,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
                         ranges.getNumberOfMarks(), total_granules, part.data_part->name);
         total_granules = ranges.getNumberOfMarks();
     }
+
+    ProfileEvents::increment(ProfileEvents::SelectedMarks, ranges.getNumberOfMarks());
+    ProfileEvents::increment(ProfileEvents::SelectedRanges, ranges.size());
 
     if (is_cancelled)
         return {};

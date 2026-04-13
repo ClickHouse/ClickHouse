@@ -33,8 +33,8 @@ class Validator:
 
         if Settings.USE_CUSTOM_GH_AUTH:
             cls.evaluate_check_simple(
-                Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY,
-                f"Setting SECRET_GH_APP_ID and SECRET_GH_APP_PEM_KEY must be provided with USE_CUSTOM_GH_AUTH == True",
+                Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY and Settings.SECRET_GH_APP_INSTALLATION_ID,
+                f"Setting SECRET_GH_APP_ID, SECRET_GH_APP_PEM_KEY and SECRET_GH_APP_INSTALLATION_ID must be provided with USE_CUSTOM_GH_AUTH == True",
             )
 
         workflows = _get_workflows(_for_validation_check=True)
@@ -51,6 +51,12 @@ class Validator:
                 cls.evaluate_check(
                     bool(secret),
                     f"Secret [{Settings.SECRET_GH_APP_PEM_KEY}] must be configured for workflow",
+                    workflow.name,
+                )
+                secret = workflow.get_secret(Settings.SECRET_GH_APP_INSTALLATION_ID)
+                cls.evaluate_check(
+                    bool(secret),
+                    f"Secret [{Settings.SECRET_GH_APP_INSTALLATION_ID}] must be configured for workflow",
                     workflow.name,
                 )
 
@@ -193,15 +199,15 @@ class Validator:
 
             if workflow.enable_report:
                 assert (
-                    Settings.HTML_S3_PATH
-                ), f"HTML_S3_PATH Setting must be defined if enable_html=True, workflow [{workflow.name}]"
+                    Settings.S3_REPORT_BUCKET
+                ), f"S3_REPORT_BUCKET Setting must be defined if enable_html=True, workflow [{workflow.name}]"
                 assert (
                     Settings.S3_BUCKET_TO_HTTP_ENDPOINT
                 ), f"S3_BUCKET_TO_HTTP_ENDPOINT Setting must be defined if enable_html=True, workflow [{workflow.name}]"
                 assert (
-                    Settings.HTML_S3_PATH.split("/")[0]
+                    Settings.S3_REPORT_BUCKET.split("/")[0]
                     in Settings.S3_BUCKET_TO_HTTP_ENDPOINT
-                ), f"S3_BUCKET_TO_HTTP_ENDPOINT Setting must include bucket name [{Settings.HTML_S3_PATH}] from HTML_S3_PATH, workflow [{workflow.name}]"
+                ), f"S3_BUCKET_TO_HTTP_ENDPOINT Setting must include bucket name [{Settings.S3_REPORT_BUCKET}] from S3_REPORT_BUCKET, workflow [{workflow.name}]"
 
             if workflow.enable_cache:
                 for artifact in workflow.artifacts or []:

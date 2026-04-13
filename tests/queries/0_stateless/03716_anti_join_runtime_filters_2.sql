@@ -2,6 +2,8 @@
 
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
+SET execute_exists_as_scalar_subquery = 0; -- scalar rewrite changes EXISTS column flow, producing different plan actions/positions
+SET query_plan_remove_unused_columns = 1; -- CI may inject False; exists(__table2) column is then not pruned/replaced by __join_result_dummy, changing actions/positions throughout the plan
 
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey;
 CREATE TABLE customer(c_custkey Int32, c_nationkey Int32) ENGINE MergeTree ORDER BY c_custkey;
@@ -25,7 +27,7 @@ FROM (
         WHERE c_nationkey = n_nationkey
     )
 )
-SETTINGS correlated_subqueries_default_join_kind = 'right';
+SETTINGS correlated_subqueries_default_join_kind = 'right', execute_exists_as_scalar_subquery = 0, query_plan_convert_any_join_to_semi_or_anti_join = 1;
 
 SELECT count()
 FROM customer
@@ -48,7 +50,7 @@ FROM (
         WHERE c_nationkey = n_nationkey
     )
 )
-SETTINGS correlated_subqueries_default_join_kind = 'left';
+SETTINGS correlated_subqueries_default_join_kind = 'left', execute_exists_as_scalar_subquery = 0, query_plan_convert_any_join_to_semi_or_anti_join = 1;
 
 SELECT count()
 FROM customer
