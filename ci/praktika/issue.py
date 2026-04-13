@@ -12,6 +12,7 @@ sys.path.append(os.path.dirname(__file__) + "/../")
 from praktika.gh import GH
 from praktika.result import Result
 from praktika.s3 import S3
+from praktika.settings import Settings
 from praktika.utils import MetaClasses, Shell, Utils
 
 if TYPE_CHECKING:
@@ -46,13 +47,13 @@ def fetch_github_issues(
         )
         label_query = " ".join([f'label:"{lbl}"' for lbl in label])
         search_query = f"{label_query} is:closed closed:>{date_threshold}"
-        base_cmd = f"gh issue list {repo_arg} --search '{search_query}' --json number,title,body,closedAt,labels --limit {limit_per_request}"
+        base_cmd = f"gh issue list {repo_arg} --search '{search_query}' --json number,title,body,closedAt,labels,url --limit {limit_per_request}"
         print(
             f"Fetching {state} issues with label '{label}' closed in last {hours_back} hours (since {date_threshold})..."
         )
     else:
         label_args = " ".join([f'--label "{lbl}"' for lbl in label])
-        base_cmd = f"gh issue list {repo_arg} {label_args} --state {state} --json number,title,body,closedAt,labels --limit {limit_per_request}"
+        base_cmd = f"gh issue list {repo_arg} {label_args} --state {state} --json number,title,body,closedAt,labels,url --limit {limit_per_request}"
         print(f"Fetching {state} issues with label '{label}'...")
 
     try:
@@ -323,6 +324,7 @@ class Issue:
         labels,
         closed_at="",
         number=0,
+        url="",
     ):
         body_fields = cls.parse_issue_body_fields(body)
         test_name = body_fields["test_name"]
@@ -332,16 +334,11 @@ class Issue:
                 test_name = cls.extract_test_name(title)
             else:
                 test_name = title
-        issue_url = (
-            f"https://github.com/ClickHouse/ClickHouse/issues/{number}"
-            if number
-            else ""
-        )
         return Issue(
             test_name=test_name,
             closed_at=closed_at if closed_at else "",
             number=int(number),
-            url=issue_url,
+            url=url,
             title=title,
             body=body if body else "",
             labels=labels,
@@ -376,11 +373,12 @@ class Issue:
         title = issue.get("title", "")
         body = issue.get("body", "")
         closed_at = issue.get("closedAt", "")
+        url = issue.get("url", "")
         assert number > 0, f"Issue {number} has no number"
         assert title, f"Issue {number} has no title"
         # Extract label names from the labels array
         labels = [label.get("name", "") for label in issue.get("labels", [])]
-        return cls.create_from(title, body, labels, closed_at, number)
+        return cls.create_from(title, body, labels, closed_at, number, url=url)
 
 
 @dataclass
@@ -492,24 +490,18 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         compressed_name = Utils.compress_gz(local_name)
         link = S3.copy_file_to_s3(
             local_path=compressed_name,
-            s3_path=f"clickhouse-test-reports/statistics",
+            s3_path=f"{Settings.S3_REPORT_BUCKET}/statistics",
             content_type="application/json",
             content_encoding="gzip",
         )
         return link
 
     @classmethod
-    def from_s3(cls):
-        """
-        Download catalog from S3.
-
-
-        Returns:
-            TestCaseIssueCatalog instance or None if download failed
-        """
-        local_catalog_gz = cls.file_name_static(cls.name) + ".gz"
-        local_catalog_json = cls.file_name_static(cls.name)
-        s3_catalog_path = f"clickhouse-test-reports/statistics/{Utils.normalize_string(cls.name)}.json.gz"
+    def _download_catalog(cls, bucket, suffix=""):
+        """Download and decompress a single catalog from an S3 bucket."""
+        local_catalog_gz = cls.file_name_static(cls.name + suffix) + ".gz"
+        local_catalog_json = cls.file_name_static(cls.name + suffix)
+        s3_catalog_path = f"{bucket}/statistics/{Utils.normalize_string(cls.name)}.json.gz"
 
         if not S3.copy_file_from_s3(
             s3_catalog_path, local_catalog_gz, _skip_download_counter=True
@@ -517,10 +509,8 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
             print(f"  WARNING: Could not download catalog from S3: {s3_catalog_path}")
             return None
 
-        # Decompress the file
         Shell.check(f"gunzip -f {local_catalog_gz}", verbose=True)
 
-        # Load from decompressed file
         if not Path(local_catalog_json).exists():
             print(
                 f"  WARNING: Decompressed catalog file not found: {local_catalog_json}"
@@ -528,6 +518,40 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
             return None
 
         return cls.from_file(local_catalog_json)
+
+    @classmethod
+    def from_s3(cls):
+        """
+        Download catalog from S3. If S3_UPSTREAM_REPORT_BUCKET is set,
+        also downloads the upstream catalog and merges issues from both.
+
+        Returns:
+            TestCaseIssueCatalog instance or None if download failed
+        """
+        catalog = cls._download_catalog(Settings.S3_REPORT_BUCKET)
+
+        if Settings.S3_UPSTREAM_REPORT_BUCKET:
+            upstream = cls._download_catalog(
+                Settings.S3_UPSTREAM_REPORT_BUCKET, suffix="_upstream"
+            )
+            if upstream:
+                if catalog is None:
+                    catalog = upstream
+                else:
+                    existing = {
+                        issue.number for issue in catalog.active_test_issues
+                    }
+                    added = 0
+                    for issue in upstream.active_test_issues:
+                        if issue.number not in existing:
+                            catalog.active_test_issues.append(issue)
+                            added += 1
+                    print(
+                        f"  Merged {added} issues from upstream catalog "
+                        f"(total: {len(catalog.active_test_issues)})"
+                    )
+
+        return catalog
 
 
 if __name__ == "__main__":

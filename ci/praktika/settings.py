@@ -76,6 +76,10 @@ class _Settings:
     ######################################
     #        CI Cache settings           #
     ######################################
+    # If enabled, Config Workflow creates a content-addressed .git/modules/ archive
+    # in S3. Jobs with needs_submodules=True download it instead of cloning from GitHub.
+    ENABLE_SUBMODULE_CACHE: bool = False
+
     CACHE_VERSION: int = 1
     CACHE_DIGEST_LEN: int = 20
     CACHE_S3_PATH: str = ""
@@ -84,7 +88,9 @@ class _Settings:
     ######################################
     #        Report settings             #
     ######################################
-    HTML_S3_PATH: str = ""
+    S3_REPORT_BUCKET: str = ""
+    # Optional: upstream report bucket to merge issue catalogs from (e.g. "clickhouse-test-reports")
+    S3_UPSTREAM_REPORT_BUCKET: str = ""
     HTML_PAGE_FILE: str = "./ci/praktika/json.html"
     S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
     TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
@@ -129,7 +135,8 @@ class _Settings:
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
     "CACHE_S3_PATH",
-    "HTML_S3_PATH",
+    "S3_REPORT_BUCKET",
+    "S3_UPSTREAM_REPORT_BUCKET",
     "CLOUD_INFRASTRUCTURE_CONFIG_PATH",
     "EVENT_FEED_S3_PATH",
     "AWS_REGION",
@@ -174,6 +181,7 @@ _USER_DEFINED_SETTINGS = [
     "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
+    "ENABLE_SUBMODULE_CACHE",
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",

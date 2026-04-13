@@ -553,10 +553,10 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
 
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
-    auto triple = llvm::sys::getProcessTriple();
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
+    auto triple = llvm::Triple(llvm::sys::getProcessTriple());
+    const auto * target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
     if (!target)
-        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple, error);
+        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple.str(), error);
 
     llvm::SubtargetFeatures features;
     for (const auto & f : llvm::sys::getHostCPUFeatures())
