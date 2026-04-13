@@ -332,7 +332,7 @@ def test_optimize_manifest_files_partitioned(started_cluster_iceberg_with_spark,
             "iceberg_manifest_min_count_to_compact": 2,
         },
     )
-    assert "OPTIMIZE MANIFEST is incompatible with FINAL, PARTITION, DEDUPLICATE, and CLEANUP options" in error_message
+    assert "OPTIMIZE MANIFEST is incompatible with FINAL, PARTITION, DEDUPLICATE, CLEANUP, and DRY RUN options" in error_message
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
