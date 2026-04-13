@@ -907,14 +907,14 @@ class FunctionBinaryArithmetic : public IFunction
 
     /// Type dispatch for integral division/modulo overflow is block-invariant; resolve it once per block
     /// and only load operands per row (avoids repeated castBothTypes in the hot loop).
-    static std::function<bool(size_t)> buildIntegralDivisionOverflowCheckerForBlock(
+    static bool buildIntegralDivisionOverflowCheckerForBlock(
         const DataTypePtr & left_type,
         const DataTypePtr & right_type,
         const ColumnPtr & left_column_prepared,
-        const ColumnPtr & right_column_prepared)
+        const ColumnPtr & right_column_prepared,
+        const size_t row)
     {
-        std::function<bool(size_t)> check_row = [](size_t) { return false; };
-
+        bool res = false;
         castBothTypes(
             removeLowCardinalityAndNullable(left_type).get(),
             removeLowCardinalityAndNullable(right_type).get(),
@@ -929,19 +929,14 @@ class FunctionBinaryArithmetic : public IFunction
                     /// Include wide integers (Int128/Int256); std::is_integral_v is false for those types.
                     if constexpr (is_integer<A> && is_integer<B>)
                     {
-                        check_row = [left_column_prepared, right_column_prepared](size_t row) -> bool
-                        {
-                            A a = getNumericValueFromColumn<A>(*left_column_prepared, row);
-                            B b = getNumericValueFromColumn<B>(*right_column_prepared, row);
-                            return divisionLeadsToFPE(a, b);
-                        };
-                        return true; /// Matched the concrete type pair; stop castTypeToEither search.
+                        A a = getNumericValueFromColumn<A>(*left_column_prepared, row);
+                        B b = getNumericValueFromColumn<B>(*right_column_prepared, row);
+                        res = divisionLeadsToFPE(a, b);
                     }
                 }
                 return false;
             });
-
-        return check_row;
+        return res;
     }
 
     static FunctionOverloadResolverPtr
@@ -2700,27 +2695,13 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     left_prepared = prepareNumericColumnForIntegralFPECheck(left_argument.column);
                     right_prepared = prepareNumericColumnForIntegralFPECheck(right_argument.column);
                 }
-
-                const std::function<bool(size_t)> integral_overflow_at_row = [&]
-                {
-                    if constexpr (integral_div_or_modulo_overflow_to_null)
-                    {
-                        return buildIntegralDivisionOverflowCheckerForBlock(
-                            left_argument.type,
-                            right_argument.type,
-                            left_prepared,
-                            right_prepared);
-                    }
-                    return std::function<bool(size_t)>{};
-                }();
-
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     bool is_null = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
                     if constexpr (integral_div_or_modulo_overflow_to_null)
                     {
                         if (!is_null)
-                            is_null = integral_overflow_at_row(i);
+                            is_null = buildIntegralDivisionOverflowCheckerForBlock(left_argument.type, right_argument.type, left_prepared, right_prepared, i);
                     }
                     null_map_data[i] = is_null;
                 }
