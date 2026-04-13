@@ -191,8 +191,8 @@ def test_optimize_manifest_files_partitioned(started_cluster_iceberg_with_spark,
     - Data correctness is preserved after compaction.
     - Time-travel via snapshot_id still works after compaction.
     - A second OPTIMIZE invocation is a no-op (already optimal).
-    - The compaction threshold setting is honoured: with the default threshold (5)
-      a table that already has <= 5 manifest files is left untouched, while with
+    - The compaction threshold setting is honoured: with the default threshold (30)
+      a table that already has <= 30 manifest files is left untouched, while with
       a lower threshold (2) compaction is triggered sooner.
     """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -248,7 +248,7 @@ def test_optimize_manifest_files_partitioned(started_cluster_iceberg_with_spark,
     )) == 90
 
     # ── Many more small inserts to create many manifest files ─────────────────
-    # 6 batches × 3 regions = 18 additional inserts → well above threshold (5)
+    # 6 batches × 3 regions = 18 additional inserts → well above the lowered threshold (2)
     for batch_start in range(30, 90, 10):
         for region in REGIONS:
             spark.sql(
@@ -284,20 +284,22 @@ def test_optimize_manifest_files_partitioned(started_cluster_iceberg_with_spark,
     )
 
     # ── Data correctness after compaction ────────────────────────────────────
+    # Check the current (post-compaction) snapshot via the default read path.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == total_rows
+
+    for region in REGIONS:
+        expected_count = 90  # 30 initial + 6 × 10 additional
+        actual_count = int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME} WHERE region = '{region}'"
+        ))
+        assert actual_count == expected_count, \
+            f"Region '{region}': expected {expected_count} rows after compaction, got {actual_count}"
+
+    # Cross-check: the pre-compaction snapshot must also still be readable.
     assert int(instance.query(
         f"SELECT count() FROM {TABLE_NAME} "
         f"SETTINGS iceberg_snapshot_id = {snapshot_id}"
     )) == total_rows
-    #assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == total_rows
-
-    # Every region should have the same row count
-    for region in REGIONS:
-        expected_count = 90  # 30 initial + 6 × 10 additional
-        actual_count = int(instance.query(
-            f"SELECT count() FROM {TABLE_NAME} WHERE region = '{region}' SETTINGS iceberg_snapshot_id = {snapshot_id}"
-        ))
-        assert actual_count == expected_count, \
-            f"Region '{region}': expected {expected_count} rows, got {actual_count}"
 
     # ── Time-travel still works after compaction ──────────────────────────────
     assert int(instance.query(
@@ -311,7 +313,7 @@ def test_optimize_manifest_files_partitioned(started_cluster_iceberg_with_spark,
     )) == 90
 
     # ── Second OPTIMIZE should be a no-op (already one manifest per partition) ─
-    # This must not raise and must leave data intact
+    # This must not raise and must leave data intact.
     instance.query(
         f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST;",
         settings={
@@ -319,10 +321,8 @@ def test_optimize_manifest_files_partitioned(started_cluster_iceberg_with_spark,
             "iceberg_manifest_min_count_to_compact": 2,
         },
     )
-    assert int(instance.query(
-        f"SELECT count() FROM {TABLE_NAME} "
-        f"SETTINGS iceberg_snapshot_id = {snapshot_id}"
-    )) == total_rows
+    # Verify the current snapshot is still intact after the no-op.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == total_rows
 
     # ── Third OPTIMIZE should throw exception
     error_message = instance.query_and_get_error(
