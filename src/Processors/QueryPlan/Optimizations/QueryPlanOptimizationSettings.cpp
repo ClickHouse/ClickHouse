@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsBool query_plan_convert_join_to_in;
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
     extern const SettingsBool query_plan_direct_read_from_text_index;
+    extern const SettingsBool query_plan_eliminate_redundant_join;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
@@ -167,6 +168,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
     use_join_disjunctions_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::use_join_disjunctions_push_down];
     remove_unused_columns = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_unused_columns];
+    eliminate_redundant_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_eliminate_redundant_join];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
