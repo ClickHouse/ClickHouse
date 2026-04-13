@@ -126,7 +126,7 @@ static void deserializeValue(const rocksdb::Slice & slice, Int64 & size, FileCac
     }
     else
     {
-        throw Exception(ErrorCodes::ROCKSDB_ERROR, "Unsupported RocksDB index value version: {}", version_byte);
+        throw Exception(ErrorCodes::ROCKSDB_ERROR, "Unsupported RocksDB index value version: {}", static_cast<UInt16>(version_byte));
     }
 }
 
