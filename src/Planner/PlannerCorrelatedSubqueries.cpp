@@ -634,19 +634,17 @@ void buildQueryPlanForCorrelatedSubquery(
     QueryPlan & query_plan,
     const CorrelatedSubquery & correlated_subquery,
     const SelectQueryOptions & select_query_options,
-    const Block & outer_header)
+    const SharedHeader & outer_header)
 {
     auto * query_node = correlated_subquery.query_tree->as<QueryNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     auto * union_node = correlated_subquery.query_tree->as<UnionNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
 
-    auto outer_header_ptr = std::make_shared<const Block>(outer_header);
-
     switch (correlated_subquery.kind)
     {
         case DB::CorrelatedSubqueryKind::SCALAR:
         {
-            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options, outer_header_ptr);
+            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options, outer_header);
             /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
 
