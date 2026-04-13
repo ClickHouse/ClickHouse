@@ -520,7 +520,7 @@ Chunk StorageObjectStorageSource::generate()
                             }
                         }
 
-                        if (unmatched_ranges.empty())
+                        if (!unmatched_ranges.empty())
                         {
                             auto query_condition_cache = read_context->getQueryConditionCache();
                             query_condition_cache->write(
