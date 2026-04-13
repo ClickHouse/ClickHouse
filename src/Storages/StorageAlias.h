@@ -105,8 +105,20 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
-    StorageInMemoryMetadata getInMemoryMetadata() const override { return getTargetTable()->getInMemoryMetadata(); }
-    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache) const override { return getTargetTable()->getInMemoryMetadataPtr(bypass_metadata_cache); }
+    StorageInMemoryMetadata getInMemoryMetadata() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return IStorage::getInMemoryMetadata();
+        return target->getInMemoryMetadata();
+    }
+    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache) const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
+        return target->getInMemoryMetadataPtr(bypass_metadata_cache);
+    }
     std::optional<StorageMetadataPtr> tryGetInMemoryMetadataPtr() const override
     {
         auto target = tryGetTargetTable();
@@ -147,7 +159,7 @@ public:
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
 
-    NamesAndTypesList getVirtuals() const { return getTargetTable()->getVirtualsList(); }
+    VirtualsDescriptionPtr getVirtuals() const { return getTargetTable()->getVirtualsPtr(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
@@ -188,7 +200,13 @@ public:
         return target->getSerializationHints();
     }
 
-    ActionLock getActionLock(StorageActionBlockType type) override { return getTargetTable()->getActionLock(type); }
+    ActionLock getActionLock(StorageActionBlockType type) override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return {};
+        return target->getActionLock(type);
+    }
 
     TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const { return getTargetTable()->lockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000)); }
     TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const

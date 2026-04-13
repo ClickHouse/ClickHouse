@@ -4,6 +4,8 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
@@ -298,7 +300,7 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     std::vector<String> parts_,
     const ASTPtr & predicate_,
     const OptionalVectorSearchParameters & vector_search_parameters_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , source_table(source_table_)
     , predicate(predicate_)
     , vector_search_parameters(vector_search_parameters_)
@@ -320,9 +322,18 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 }
 
-void StorageMergeTreeAnalyzeIndexes::read(
+VirtualColumnsDescription StorageMergeTreeAnalyzeIndexes::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageMergeTreeAnalyzeIndexes::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

@@ -1565,6 +1565,7 @@ class MergeTreeSettingsRandomizer:
         "max_buckets_in_map": lambda: random.randint(1, 100),
         "map_buckets_strategy": lambda: random.choice(["constant", "sqrt", "linear"]),
         "map_buckets_min_avg_size": lambda: random.randint(1, 1000),
+        "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -1924,6 +1925,329 @@ class TestCase:
 
         return description + "\n"
 
+    def _run_with_settings(self, args, suite, client_options, settings, mt_settings):
+        """Re-run this test with specific effective settings, returning the TestResult."""
+        saved_settings = self.effective_settings
+        saved_mt_settings = self.effective_merge_tree_settings
+        saved_runs_count = self.runs_count
+        self.effective_settings = settings
+        self.effective_merge_tree_settings = mt_settings
+        try:
+            result = self.run(args, suite, client_options)
+            # Don't let diagnosis reruns trigger further retries
+            result.need_retry = False
+            return result
+        finally:
+            self.effective_settings = saved_settings
+            self.effective_merge_tree_settings = saved_mt_settings
+            self.runs_count = saved_runs_count
+
+    def _run_within_budget(self, args, suite, client_options, settings, mt_settings):
+        """Run the test repeatedly within the step time budget.
+
+        Respects both the per-step budget and the global stop_time limit.
+        Returns (fail_count, ok_count, other_count, total_runs, timed_out).
+        timed_out is True if the global stop_time was reached.
+        """
+        budget = args.diagnose_random_settings_step_time_budget
+        deadline = time() + budget
+        if args.stop_time:
+            deadline = min(deadline, args.stop_time)
+
+        fail_count = 0
+        ok_count = 0
+        other_count = 0
+        timed_out = False
+        while time() < deadline:
+            result = self._run_with_settings(
+                args, suite, client_options, settings, mt_settings
+            )
+            if result.status == TestStatus.FAIL:
+                fail_count += 1
+            elif result.status == TestStatus.OK:
+                ok_count += 1
+            else:
+                other_count += 1
+            if args.stop_time and time() > args.stop_time:
+                timed_out = True
+                break
+        total = fail_count + ok_count + other_count
+        return fail_count, ok_count, other_count, total, timed_out
+
+    def _is_global_deadline_reached(self, args):
+        return args.stop_time and time() > args.stop_time
+
+    def diagnose_random_settings(self, args, suite, client_options):
+        """Diagnose which randomized settings caused a test failure.
+
+        Uses a time-budget approach: each step runs the test as many times as
+        possible within a configurable time budget to handle sporadic failures
+        reliably. Respects the global stop_time limit.
+
+        Algorithm:
+        1. Re-run with the same settings to confirm reproducibility.
+        2. Re-run without any randomization to confirm the failure is settings-related.
+        3. If step 1 has failures and step 2 does not, minimize the settings via
+           ddmin (delta debugging) to find the minimal set that triggers the failure.
+
+        Returns a diagnosis string to append to the test description.
+        """
+        failed_settings = dict(self.effective_settings)
+        failed_mt_settings = dict(self.effective_merge_tree_settings)
+
+        if not failed_settings and not failed_mt_settings:
+            return ""
+
+        step_budget = args.diagnose_random_settings_step_time_budget
+        diagnosis_lines = ["\n\n--- Randomized settings diagnosis ---"]
+
+        # Step 1: Re-run with the same settings within the time budget
+        diagnosis_lines.append(
+            f"Step 1: Re-running with the same randomized settings (budget: {step_budget}s)..."
+        )
+        fail1, ok1, other1, total1, timed_out = self._run_within_budget(
+            args, suite, client_options, failed_settings, failed_mt_settings
+        )
+        diagnosis_lines.append(
+            f"  Runs: {total1}, Failed: {fail1}, Passed: {ok1}, Other: {other1}"
+        )
+        if timed_out:
+            diagnosis_lines.append("Result: Inconclusive (global time limit reached).")
+            return "\n".join(diagnosis_lines) + "\n"
+        if fail1 == 0:
+            if ok1 > 0:
+                diagnosis_lines.append(
+                    "Result: All reruns passed. The failure is not reproducible (likely a transient issue)."
+                )
+            else:
+                diagnosis_lines.append(
+                    "Result: No failures, but no clean passes either. Inconclusive."
+                )
+            return "\n".join(diagnosis_lines) + "\n"
+
+        diagnosis_lines.append("Result: Failure is reproducible.")
+
+        if self._is_global_deadline_reached(args):
+            diagnosis_lines.append("Stopping diagnosis: global time limit reached.")
+            return "\n".join(diagnosis_lines) + "\n"
+
+        # Step 2: Re-run without any randomization within the time budget
+        diagnosis_lines.append(
+            f"Step 2: Re-running without randomized settings (budget: {step_budget}s)..."
+        )
+        fail2, ok2, other2, total2, timed_out = self._run_within_budget(
+            args, suite, client_options, {}, {}
+        )
+        diagnosis_lines.append(
+            f"  Runs: {total2}, Failed: {fail2}, Passed: {ok2}, Other: {other2}"
+        )
+        if timed_out:
+            diagnosis_lines.append("Result: Inconclusive (global time limit reached).")
+            return "\n".join(diagnosis_lines) + "\n"
+        if fail2 > 0:
+            diagnosis_lines.append(
+                "Result: Test also fails without randomized settings (not a randomization issue)."
+            )
+            return "\n".join(diagnosis_lines) + "\n"
+        if ok2 == 0:
+            diagnosis_lines.append(
+                "Result: No failures, but no clean passes either. Inconclusive."
+            )
+            return "\n".join(diagnosis_lines) + "\n"
+
+        diagnosis_lines.append(
+            "Result: Passes without randomization. Confirmed: the failure is caused by randomized settings."
+        )
+
+        if self._is_global_deadline_reached(args):
+            diagnosis_lines.append("Stopping diagnosis: global time limit reached.")
+            return "\n".join(diagnosis_lines) + "\n"
+
+        # Step 3: Minimize settings via ddmin (delta debugging)
+        minimize_budget = args.diagnose_random_settings_minimize_budget
+        diagnosis_lines.append(
+            f"Step 3: Minimizing settings to find the culprit(s) (budget: {minimize_budget}s)..."
+        )
+        minimize_deadline = time() + minimize_budget
+        if args.stop_time:
+            minimize_deadline = min(minimize_deadline, args.stop_time)
+
+        culprit_settings = {}
+        culprit_mt_settings = {}
+        minimize_hit_limit = False
+
+        # Determine which category(ies) actually cause the failure before
+        # minimizing, to avoid reporting false culprits from the other category.
+        minimize_regular = bool(failed_settings)
+        minimize_mt = bool(failed_mt_settings)
+
+        if failed_settings and failed_mt_settings:
+            # Test regular settings alone (no MergeTree settings)
+            result_regular_only = self._run_with_settings(
+                args, suite, client_options, failed_settings, {}
+            )
+            # Test MergeTree settings alone (no regular settings)
+            result_mt_only = self._run_with_settings(
+                args, suite, client_options, {}, failed_mt_settings
+            )
+
+            regular_alone_fails = result_regular_only.status == TestStatus.FAIL
+            mt_alone_fails = result_mt_only.status == TestStatus.FAIL
+
+            if regular_alone_fails and not mt_alone_fails:
+                diagnosis_lines.append(
+                    "  Regular settings alone reproduce the failure; skipping MergeTree minimization."
+                )
+                minimize_mt = False
+            elif mt_alone_fails and not regular_alone_fails:
+                diagnosis_lines.append(
+                    "  MergeTree settings alone reproduce the failure; skipping regular minimization."
+                )
+                minimize_regular = False
+            # else: neither alone or both — minimize both categories
+
+        # Minimize regular settings (keep all MT settings active during minimization)
+        if minimize_regular:
+            culprit_settings, hit_limit = self._minimize_settings(
+                args, suite, client_options,
+                failed_settings, failed_mt_settings if minimize_mt else {},
+                is_merge_tree=False,
+                deadline=minimize_deadline,
+            )
+            minimize_hit_limit = minimize_hit_limit or hit_limit
+
+        # Minimize MergeTree settings (keep full regular settings to preserve
+        # cross-category interactions)
+        if minimize_mt and not minimize_hit_limit:
+            culprit_mt_settings, hit_limit = self._minimize_settings(
+                args, suite, client_options,
+                failed_settings if minimize_regular else {}, failed_mt_settings,
+                is_merge_tree=True,
+                deadline=minimize_deadline,
+            )
+            minimize_hit_limit = minimize_hit_limit or hit_limit
+
+        if minimize_hit_limit:
+            diagnosis_lines.append(
+                "Note: minimization time limit reached, result may not be fully minimized."
+            )
+
+        if culprit_settings or culprit_mt_settings:
+            if culprit_settings:
+                diagnosis_lines.append(
+                    f"Culprit settings: {self.cli_format_settings(culprit_settings)}"
+                )
+            if culprit_mt_settings:
+                diagnosis_lines.append(
+                    f"Culprit MergeTree settings: {self.cli_format_settings(culprit_mt_settings)}"
+                )
+        else:
+            # Could not isolate — the failure requires the full combination
+            diagnosis_lines.append(
+                "Could not isolate individual culprit settings — the failure may require "
+                "the full combination of randomized settings."
+            )
+            if failed_settings:
+                diagnosis_lines.append(
+                    f"All randomized settings: {self.cli_format_settings(failed_settings)}"
+                )
+            if failed_mt_settings:
+                diagnosis_lines.append(
+                    f"All randomized MergeTree settings: {self.cli_format_settings(failed_mt_settings)}"
+                )
+
+        return "\n".join(diagnosis_lines) + "\n"
+
+    def _minimize_settings(
+        self, args, suite, client_options,
+        all_settings, all_mt_settings, is_merge_tree,
+        deadline,
+    ):
+        """Delta-debugging (ddmin) minimization for one settings category.
+
+        Implements the ddmin algorithm by Andreas Zeller: tests subsets and their
+        complements at increasing granularity to find the minimal failing
+        combination — including cases where multiple settings interact.
+
+        The other category's settings are kept intact during minimization so that
+        cross-category interactions are preserved.
+
+        Returns (culprit_dict, hit_limit). If deadline is reached, returns the
+        last known failing combination and hit_limit=True.
+        """
+        target = dict(all_mt_settings if is_merge_tree else all_settings)
+        other_settings = all_settings if is_merge_tree else {}
+        other_mt_settings = all_mt_settings if not is_merge_tree else {}
+
+        if not target:
+            return {}, False
+
+        def run_with_subset(subset_dict):
+            if is_merge_tree:
+                return self._run_with_settings(
+                    args, suite, client_options, other_settings, subset_dict
+                )
+            else:
+                return self._run_with_settings(
+                    args, suite, client_options, subset_dict, other_mt_settings
+                )
+
+        def is_deadline_reached():
+            return time() > deadline
+
+        # ddmin: start with the full failing set, reduce it
+        failing_keys = list(target.keys())
+        n = 2  # initial granularity
+
+        while len(failing_keys) >= 2:
+            if is_deadline_reached():
+                return {k: target[k] for k in failing_keys}, True
+
+            chunk_size = max(1, len(failing_keys) // n)
+            chunks = []
+            for i in range(0, len(failing_keys), chunk_size):
+                chunks.append(failing_keys[i : i + chunk_size])
+
+            found_reduction = False
+
+            # Test each chunk (subset): does this small piece alone cause failure?
+            for chunk in chunks:
+                if is_deadline_reached():
+                    return {k: target[k] for k in failing_keys}, True
+                subset = {k: target[k] for k in chunk}
+                result = run_with_subset(subset)
+                if result.status == TestStatus.FAIL:
+                    # This chunk alone fails — recurse into it
+                    failing_keys = chunk
+                    n = 2
+                    found_reduction = True
+                    break
+
+            if found_reduction:
+                continue
+
+            # Test each complement: does removing this chunk still fail?
+            for i, chunk in enumerate(chunks):
+                if is_deadline_reached():
+                    return {k: target[k] for k in failing_keys}, True
+                complement = [k for j, c in enumerate(chunks) for k in c if j != i]
+                subset = {k: target[k] for k in complement}
+                result = run_with_subset(subset)
+                if result.status == TestStatus.FAIL:
+                    # Failing without this chunk — the chunk is not needed
+                    failing_keys = complement
+                    n = max(n - 1, 2)
+                    found_reduction = True
+                    break
+
+            if not found_reduction:
+                if n >= len(failing_keys):
+                    # Already at maximum granularity — result is 1-minimal
+                    break
+                n = min(n * 2, len(failing_keys))
+
+        return {k: target[k] for k in failing_keys}, False
+
     def apply_random_settings_limits(self, random_settings):
         for setting in random_settings:
             if setting in self.random_settings_limits:
@@ -2113,8 +2437,15 @@ class TestCase:
             tags
             and ("no-llvm-coverage" in tags)
             and args.llvm_coverage
+            and not args.excluded_from_llvm
         ):
             # Skip tests that are incompatible with LLVM coverage
+            return FailureReason.NO_LLVM_COVERAGE
+
+        if args.excluded_from_llvm and (
+            not tags or "no-llvm-coverage" not in tags
+        ):
+            # Run only tests that are normally disabled under LLVM coverage
             return FailureReason.NO_LLVM_COVERAGE
 
         if tags and ("no-replicated-database" in tags) and args.replicated_database:
@@ -2417,6 +2748,17 @@ class TestCase:
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
+
+        # Filter out LLVM profiling runtime noise from stderr.
+        # In coverage builds, short-lived clickhouse-client processes contend over
+        # profraw merge pool files, producing "LLVM Profile Error:" messages that
+        # are not real test failures — the test output is correct. See #97020.
+        if stderr:
+            stderr = "\n".join(
+                line
+                for line in stderr.splitlines()
+                if not line.startswith("LLVM Profile Error:")
+            ).strip()
 
         if debug_log:
             debug_log = trim_for_log(debug_log, 100)
@@ -3712,6 +4054,20 @@ def run_tests_array(
                 if not test_result or not test_result.need_retry:
                     break
                 restarted_tests.append(test_result)
+
+            # Diagnose which randomized settings caused the failure
+            if (
+                test_result
+                and test_result.status == TestStatus.FAIL
+                and args.diagnose_random_settings
+                and (test_case.effective_settings or test_case.effective_merge_tree_settings)
+                and test_result.reason != FailureReason.SERVER_DIED
+            ):
+                diagnosis = test_case.diagnose_random_settings(
+                    args, test_suite, client_options
+                )
+                if diagnosis:
+                    test_result.description += diagnosis
 
             # First print the description, then invoke the check result logic
             description += test_result.description
@@ -5249,10 +5605,34 @@ def parse_args():
         help="Disable MergeTree settings randomization",
     )
     parser.add_argument(
+        "--diagnose-random-settings",
+        action="store_true",
+        default=False,
+        help="When a test fails with randomized settings, diagnose which specific settings caused the failure",
+    )
+    parser.add_argument(
+        "--diagnose-random-settings-step-time-budget",
+        type=int,
+        default=60,
+        help="Time budget in seconds for each diagnosis step (default: 60)",
+    )
+    parser.add_argument(
+        "--diagnose-random-settings-minimize-budget",
+        type=int,
+        default=300,
+        help="Time budget in seconds for the settings minimization phase (default: 300)",
+    )
+    parser.add_argument(
         "--llvm-coverage",
         action="store_true",
         default=False,
         help="This run will be used to collect code coverage with llvm-cov",
+    )
+    parser.add_argument(
+        "--excluded-from-llvm",
+        action="store_true",
+        default=False,
+        help="Run only tests that are normally disabled under LLVM coverage (tagged no-llvm-coverage)",
     )
     # Explicit, non-random settings (copy-paste friendly)
     parser.add_argument(

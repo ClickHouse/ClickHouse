@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/FileCache/FileCacheKey.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
 #include "config.h"
 
 namespace Poco
@@ -129,6 +129,8 @@ public:
         object_storage->tagObjects(objects, tag_key, tag_value);
     }
 #endif
+
+    ObjectStoragePtr getUnderlying() override { return object_storage; }
 
 private:
     FileCacheKey getCacheKey(const std::string & path) const;
