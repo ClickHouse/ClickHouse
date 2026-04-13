@@ -44,6 +44,7 @@ namespace ProfileEvents
     extern const Event KeeperMultiReadRequest;
     extern const Event KeeperGetRequest;
     extern const Event KeeperListRequest;
+    extern const Event KeeperListRecursiveRequest;
     extern const Event KeeperExistsRequest;
     extern const Event KeeperPreprocessElapsedMicroseconds;
     extern const Event KeeperProcessElapsedMicroseconds;
@@ -1531,6 +1532,8 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
             return function(static_cast<Coordination::ZooKeeperRemoveRequest &>(zk_request));
         case Coordination::OpNum::RemoveRecursive:
             return function(static_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(zk_request));
+        case Coordination::OpNum::ListRecursive:
+            return function(static_cast<Coordination::ZooKeeperListRecursiveRequest &>(zk_request));
         case Coordination::OpNum::Exists:
             return function(static_cast<Coordination::ZooKeeperExistsRequest &>(zk_request));
         case Coordination::OpNum::Set:
@@ -2428,6 +2431,134 @@ process(const Coordination::ZooKeeperRemoveRecursiveRequest & zk_request, Storag
 }
 
 /// REMOVERECURSIVE Request ///
+
+/// GETRECURSIVECHILDREN Request ///
+
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Read, session_id, is_local);
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperListRecursiveRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t /*session_id*/,
+    int64_t /*time*/,
+    uint64_t * /*digest*/,
+    const KeeperContext & /*keeper_context*/)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperListRecursiveRequest);
+
+    if (zk_request.path == Coordination::keeper_api_feature_flags_path
+        || zk_request.path == Coordination::keeper_config_path
+        || zk_request.path == Coordination::keeper_availability_zone_path)
+        return {};
+
+    if (!storage.uncommitted_state.getNode(zk_request.path))
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
+
+    return {};
+}
+
+template <bool local, typename Storage>
+Coordination::ZooKeeperResponsePtr
+processImpl(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
+{
+    auto response = std::make_shared<Coordination::ZooKeeperListRecursiveResponse>();
+
+    if constexpr (!local)
+    {
+        if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
+        {
+            response->error = result;
+            return response;
+        }
+    }
+
+    auto & container = storage.container;
+
+    auto node_it = container.find(zk_request.path);
+    if (node_it == container.end())
+    {
+        if constexpr (local)
+            response->error = Coordination::Error::ZNONODE;
+        else
+            onStorageInconsistency("Failed to find node because it's missing");
+        return response;
+    }
+
+    response->children.push_back(std::string{zk_request.path});
+    for (size_t frontier = 0; frontier < response->children.size(); ++frontier)
+    {
+        const std::string & current_path = response->children[frontier];
+        std::filesystem::path current_path_fs(current_path);
+
+        if constexpr (Storage::use_rocksdb)
+        {
+            auto children = container.getChildren(current_path, /*read_meta=*/false, /*read_data=*/false);
+            for (auto && [child_name, _] : children)
+            {
+                auto child_path = (current_path_fs / child_name).generic_string();
+                if (storage.checkACL(child_path, Coordination::ACL::Read, session_id, local, false))
+                {
+                    if (response->children.size() - 1 >= zk_request.children_nodes_limit)
+                    {
+                        response->error = Coordination::Error::ZOK;
+                        response->children.erase(response->children.begin());
+                        return response;
+                    }
+                    response->children.push_back(std::move(child_path));
+                }
+            }
+        }
+        else
+        {
+            auto it = container.find(current_path);
+            if (it == container.end())
+                continue;
+            for (const auto & child_name : it->value.getChildren())
+            {
+                auto child_path = (current_path_fs / child_name).generic_string();
+                if (storage.checkACL(child_path, Coordination::ACL::Read, session_id, local, false))
+                {
+                    if (response->children.size() - 1 >= zk_request.children_nodes_limit)
+                    {
+                        response->error = Coordination::Error::ZOK;
+                        response->children.erase(response->children.begin());
+                        return response;
+                    }
+                    response->children.push_back(std::move(child_path));
+                }
+            }
+        }
+    }
+
+    /// Remove the root path
+    response->children.erase(response->children.begin());
+
+    response->error = Coordination::Error::ZOK;
+    return response;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
+{
+    return processImpl<false>(zk_request, storage, std::move(deltas), session_id);
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+processLocal(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperListRecursiveRequest);
+    return processImpl<true>(zk_request, storage, std::move(deltas), session_id);
+}
+
+/// GETRECURSIVECHILDREN Request ///
+
 
 /// EXISTS Request ///
 template <typename Storage>

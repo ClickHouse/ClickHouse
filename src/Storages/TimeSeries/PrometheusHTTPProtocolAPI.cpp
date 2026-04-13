@@ -86,6 +86,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto sql_query = converter.getSQL();
 
     chassert(sql_query);
+    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     PullingPipelineExecutor executor(io.pipeline);

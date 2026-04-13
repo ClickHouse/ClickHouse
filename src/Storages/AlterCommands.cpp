@@ -60,6 +60,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
+    extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
@@ -69,6 +70,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_STATISTICS;
+    extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
@@ -1469,6 +1471,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
+
+        if ((command.type == AlterCommand::ADD_STATISTICS || command.type == AlterCommand::DROP_STATISTICS
+             || command.type == AlterCommand::MODIFY_STATISTICS)
+            && !context->getSettingsRef()[Setting::allow_statistics])
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
