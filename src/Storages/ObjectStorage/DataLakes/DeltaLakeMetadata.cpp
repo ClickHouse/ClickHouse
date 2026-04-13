@@ -60,11 +60,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace Setting
 {
     extern const SettingsBool allow_experimental_delta_kernel_rs;
+    extern const SettingsInt64 delta_lake_snapshot_version;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
 }
 
 
@@ -645,6 +649,23 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
         return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration);
     }
 #endif
+    const auto & settings = local_context->getSettingsRef();
+    if (settings[Setting::delta_lake_snapshot_version].value != -1)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Time travel (delta_lake_snapshot_version) is not supported "
+            "without DeltaKernel. Use S3 or Local storage with "
+            "allow_experimental_delta_kernel_rs = 1");
+
+    if (settings[Setting::delta_lake_snapshot_start_version].value != -1
+        || settings[Setting::delta_lake_snapshot_end_version].value != -1)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Change data feed (delta_lake_snapshot_start_version / "
+            "delta_lake_snapshot_end_version) is not supported "
+            "without DeltaKernel. Use S3 or Local storage with "
+            "allow_experimental_delta_kernel_rs = 1");
+
     return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 }
 
