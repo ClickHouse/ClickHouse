@@ -172,7 +172,7 @@ def main():
     os.environ["SCCACHE_LOG"] = "info"
 
     info = Info()
-    if info.is_local_run or info..is_community_pr:
+    if info.is_local_run or info.is_community_pr:
         print("NOTE: Community contribution or local run - set sccache to run without AWS credentials")
         os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     else:
