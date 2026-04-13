@@ -169,40 +169,25 @@ ManifestStats getManifestStats(
     }
 
     std::unordered_set<String> unique_partitions;
-    size_t num_manifest_files = 0;
 
-    try
+    LOG_TEST(log, "Reading manifest list for current snapshot_id {}", current_snapshot_id);
+    auto manifest_list = getManifestList(
+        object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
+
+    size_t num_manifest_files = manifest_list.size();
+
+    for (const auto & manifest_file : manifest_list)
     {
-        LOG_TEST(log, "Reading manifest list for current snapshot_id {}", current_snapshot_id);
-        auto manifest_list = getManifestList(
-            object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
-
-        num_manifest_files = manifest_list.size();
-
-        for (const auto & manifest_file : manifest_list)
+        LOG_TEST(log, "Manifest file path {}", manifest_file.manifest_file_path);
+        auto files_handle = getManifestFileEntriesHandle(
+            object_storage, persistent_table_components, context, log, manifest_file, current_schema_id);
+        for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
-            LOG_TEST(log, "Manifest file path {}", manifest_file.manifest_file_path);
-            try
-            {
-                auto files_handle = getManifestFileEntriesHandle(
-                    object_storage, persistent_table_components, context, log, manifest_file, current_schema_id);
-                for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
-                {
-                    String partition_key;
-                    for (const auto & val : data_file->parsed_entry->partition_key_value)
-                        partition_key += val.dump() + "|";
-                    unique_partitions.insert(partition_key);
-                }
-            }
-            catch (const Exception & e)
-            {
-                LOG_WARNING(log, "Failed to read manifest file entries {}: {}", manifest_file.manifest_file_path, e.what());
-            }
+            String partition_key;
+            for (const auto & val : data_file->parsed_entry->partition_key_value)
+                partition_key += val.dump() + "|";
+            unique_partitions.insert(partition_key);
         }
-    }
-    catch (const Exception & e)
-    {
-        LOG_WARNING(log, "Failed to read manifest list {}: {}", current_manifest_list_path, e.what());
     }
 
     ManifestStats stats;
