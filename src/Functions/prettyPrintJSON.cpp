@@ -79,10 +79,19 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            auto str_ref = col->getDataAt(i);
+            auto str_view = col->getDataAt(i);
+
+            /// Since RapidJSON uses '\0' as end-of-stream char in its stream abstraction,
+            /// we have to default to this check to prevent silent truncation of the input
+            /// unescaped '\0' is not valid in JSON strings anyway
+            if (str_view.find('\0') != std::string_view::npos)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid JSON string in function {}: embedded NUL byte",
+                    getName());
 
             rapidjson::Document document;
-            document.Parse(std::string{str_ref}.c_str());
+            document.Parse(str_view.data(), str_view.size());
 
             if (document.HasParseError())
                 throw Exception(
@@ -129,10 +138,10 @@ Returns a pretty-printed version of a JSON string with newlines and indentation 
         },
         {
             "Custom indent",
-            R"(SELECT prettyPrintJSON('{"a":1}', 2);)",
+            R"(SELECT prettyPrintJSON('{"a":1}', 8);)",
             R"(
 {
-  "a": 1
+        "a": 1
 }
             )"
         }
