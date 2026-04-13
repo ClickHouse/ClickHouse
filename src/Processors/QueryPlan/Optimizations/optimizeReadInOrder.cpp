@@ -80,7 +80,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         for (const auto & table : tables)
         {
             auto storage = std::get<StoragePtr>(table);
-            const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+            const auto & sorting_key = storage->getInMemoryMetadataPtr(merge->getContext(), false)->getSortingKey();
             if (sorting_key.column_names.empty())
                 return nullptr;
         }
@@ -969,7 +969,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        auto metadata = storage->getInMemoryMetadataPtr();
+        auto metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
         const auto & sorting_key = metadata->getSortingKey();
         // const auto & pk_column_names = metadata->getPrimaryKey().column_names;
 
@@ -1037,7 +1037,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+        const auto & sorting_key = storage->getInMemoryMetadataPtr(merge->getContext(), false)->getSortingKey();
         const auto & sorting_key_columns = sorting_key.column_names;
 
         if (sorting_key_columns.empty())

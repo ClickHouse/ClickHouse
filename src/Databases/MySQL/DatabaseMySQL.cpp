@@ -235,7 +235,8 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         true,
         static_cast<unsigned>(settings[Setting::max_parser_depth]),
         static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
-        throw_on_error);
+        throw_on_error,
+        getContext());
     return create_table_query;
 }
 

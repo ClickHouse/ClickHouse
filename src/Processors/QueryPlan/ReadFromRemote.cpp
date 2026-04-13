@@ -389,6 +389,16 @@ ASTPtr tryBuildAdditionalFilterAST(
                 if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
                     set_from_subquery && set_from_subquery->getSourceAST())
                 {
+                    /// If the set has already been built without explicit elements
+                    /// (e.g. use_index_for_in_with_subqueries_max_values was exceeded),
+                    /// we cannot populate an external table from it. Skip this GLOBAL IN
+                    /// predicate — the distributed filter will simply omit it.
+                    if (auto existing_set = set_from_subquery->get();
+                        existing_set && !existing_set->hasExplicitSetElements())
+                    {
+                        continue;
+                    }
+
                     auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
 
                     /// Support running optimization multiple times

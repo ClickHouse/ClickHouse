@@ -927,7 +927,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 data->creating_pipe_callback = [cur, limits, my_context = this->context]()
                 {
                     SelectQueryInfo query_info;
-                    auto metadata_snapshot = cur->getInMemoryMetadataPtr();
+                    auto metadata_snapshot = cur->getInMemoryMetadataPtr(my_context, false);
                     auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, my_context);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
                         my_context, QueryProcessingStage::Complete, storage_snapshot, query_info);
