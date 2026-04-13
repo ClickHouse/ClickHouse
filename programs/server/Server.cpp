@@ -60,7 +60,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Server/waitServersToFinish.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>

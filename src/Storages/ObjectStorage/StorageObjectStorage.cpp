@@ -541,7 +541,7 @@ void StorageObjectStorage::read(
         object_storage,
         configuration,
         column_names,
-        getVirtualsList(),
+        getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         query_info,
         storage_snapshot,
         modified_format_settings,
