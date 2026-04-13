@@ -333,10 +333,12 @@ private:
     void buildHyperedges();
     BitSet getNeighborhood(const BitSet & node_set) const;
 
-    void emitCsg(const BitSet & csg);
-    void enumerateCsgRec(const BitSet & csg, const BitSet & exclusion);
-    void emitCsgCmp(const BitSet & left_csg, const BitSet & right_csg);
-    void enumerateCmpRec(const BitSet & csg, const BitSet & complement, const BitSet & exclusion);
+    /// DPhyp enumeration functions from "Dynamic Programming Strikes Back"
+    /// (Moerkotte & Neumann, SIGMOD 2008), Section 3.
+    void emitCsg(const BitSet & csg);                       /// Generate complement seeds for a connected subgraph
+    void enumerateCsgRec(const BitSet & csg, const BitSet & exclusion); /// Grow the primary connected subgraph
+    void emitCsgCmp(const BitSet & left_csg, const BitSet & right_csg); /// Evaluate a csg-cmp pair
+    void enumerateCmpRec(const BitSet & csg, const BitSet & complement, const BitSet & exclusion); /// Grow the complement
 
     constexpr static auto APPLY_DP_THRESHOLD = 10;
 
@@ -1005,12 +1007,11 @@ void JoinOrderOptimizer::buildHyperedges()
 /// Returns the set of all relations adjacent to `node_set` via any hyperedge,
 /// excluding `node_set` itself.
 ///
-/// Per the DPhyp paper, for a directed hyperedge (L, R):
-///   - R is in N(node_set) if L is fully contained in node_set
-///   - L is in N(node_set) if R is fully contained in node_set
+/// A hyperedge (L, R) represents a join predicate with left sources L and right sources R.
+/// For example, `A.x = B.y` gives L={A}, R={B}; `A.x + B.y = C.z` gives L={A,B}, R={C}.
+/// R is reachable from node_set when L is fully contained in node_set (and vice versa).
 ///
-/// For undirected hyperedges (L == R, e.g. complex predicates spanning multiple tables),
-/// all nodes in the hyperedge are neighbors of each other.
+/// Non-binary predicates like `f(A,B,C) = const` are represented as L={A,B,C}, R={A,B,C}
 BitSet JoinOrderOptimizer::getNeighborhood(const BitSet & node_set) const
 {
     BitSet neighbors;
@@ -1027,7 +1028,8 @@ BitSet JoinOrderOptimizer::getNeighborhood(const BitSet & node_set) const
             const auto & edge = hyperedges[hyperedge_id];
             if (edge.left == edge.right)
             {
-                /// Undirected: any node present makes all others neighbors.
+                /// In case of non-binary predicate (`f(A,B,C) = const`) the hyperedge is
+                /// represented as L={A,B,C}, R={A,B,C}
                 neighbors |= edge.left;
             }
             else
@@ -1136,13 +1138,7 @@ void JoinOrderOptimizer::emitCsg(const BitSet & csg)
 {
     LOG_TEST(log, "DPhyp: emitCsg({{ {} }})", fmt::join(csg, ","));
 
-    /// exclusion = csg | {all relations with index < min(csg)}
-    BitSet exclusion = csg;
-    {
-        size_t min_relation_idx = *exclusion.begin();
-        for (size_t rel = 0; rel < min_relation_idx; ++rel)
-            exclusion.set(rel);
-    }
+    BitSet exclusion = csg | BitSet::allSet(*csg.begin());
 
     BitSet csg_neighborhood = getNeighborhood(csg).andNot(exclusion);
     if (!csg_neighborhood)
