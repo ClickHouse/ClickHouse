@@ -117,13 +117,10 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
 
 float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & arguments, const ResolvedConfig & config) const
 {
-    if (arguments.empty())
-        return config.temperature;
-
-    const auto & last_arg = arguments.back();
-    if (isFloat(last_arg.type))
+    size_t temp_idx = getFirstDataArgIndex(arguments) + 2;
+    if (temp_idx < arguments.size() && isFloat(arguments[temp_idx].type))
     {
-        const auto * col_const = typeid_cast<const ColumnConst *>(last_arg.column.get());
+        const auto * col_const = typeid_cast<const ColumnConst *>(arguments[temp_idx].column.get());
         if (col_const)
             return static_cast<float>((*col_const)[0].safeGet<Float64>());
     }

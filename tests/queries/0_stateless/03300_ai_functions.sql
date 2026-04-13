@@ -210,8 +210,8 @@ SELECT count() FROM (SELECT aiGenerateContent(x, 'system', 0.5) AS result FROM _
 SELECT '-- Temperature: zero';
 SELECT count() FROM (SELECT aiGenerateContent(x, 'system', toFloat32(0.0)) AS result FROM _03300_input);
 
-SELECT '-- Temperature: without system prompt (prompt, temp)';
-SELECT count() FROM (SELECT aiGenerateContent(x, toFloat32(0.5)) AS result FROM _03300_input);
+SELECT '-- Temperature without system prompt';
+SELECT aiGenerateContent(x, toFloat32(0.5)) FROM _03300_input; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- =============================================================================
 -- 15. Named collection arg with too few remaining args

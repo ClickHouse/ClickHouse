@@ -36,11 +36,18 @@ public:
     {
         if (arguments.empty() || arguments.size() > 4)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires 1-4 arguments: [collection,] prompt[, system_prompt][, temperature]", name);
+                "Function {} requires 1-4 arguments: [collection,] prompt[, system_prompt[, temperature]]", name);
 
         if (hasNamedCollectionArg(arguments) && arguments.size() < 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} with a named collection as first argument requires at least a prompt argument", name);
+
+        size_t idx = getFirstDataArgIndex(arguments);
+
+        /// Temperature (float) requires system_prompt (string) before it
+        if (arguments.size() > idx + 1 && isFloat(arguments[idx + 1].type))
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires a system_prompt argument (String) before temperature (Float)", name);
 
         return std::make_shared<DataTypeString>();
     }
@@ -89,7 +96,7 @@ and API key. If omitted, the [default_ai_provider](/operations/settings/settings
 Note that `default_ai_provider` is empty by default and must be explicitly set to a named collection before
 omitting the collection argument.
 )",
-        .syntax = "aiGenerateContent([collection,] prompt[, system_prompt][, temperature])",
+        .syntax = "aiGenerateContent([collection,] prompt[, system_prompt[, temperature]])",
         .arguments
         = {{"collection", "Name of a named collection containing provider credentials and configuration. Optional if `default_ai_provider` is set.", {"String"}},
            {"prompt", "The user prompt or question to send to the model.", {"String"}},
