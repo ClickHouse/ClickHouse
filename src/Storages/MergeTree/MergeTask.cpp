@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/PatchParts/PatchBlockIndex.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
@@ -941,6 +942,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams);
+
+    /// For patch-part merges, create a PatchBlockIndexWriter to build the on-disk index.
+    if (global_ctx->new_data_part->info.isPatch())
+        global_ctx->to->setPatchIndexWriter(std::make_unique<PatchBlockIndexWriter>());
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;

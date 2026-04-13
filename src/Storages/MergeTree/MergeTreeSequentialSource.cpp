@@ -166,7 +166,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             parts_ranges,
             build_extras,
             merge_reader_settings,
-            /*num_buckets=*/ 1,
             /*num_threads=*/ 1))
         {
             PipelineExecutor executor(processors, /*elem=*/ nullptr);

@@ -507,30 +507,116 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const ConstBlockPtr 
     return patch_to_apply;
 }
 
-PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entries & entries, const PatchJoinCache & cache)
+/// Cursor-based join using the on-disk PatchBlockIndex.
+static PatchToApplyPtr applyPatchJoinWithIndex(const Block & result_block, const PatchJoinCache::Entry & entry)
 {
     auto patch_to_apply = std::make_shared<PatchToApply>();
 
     size_t num_rows = result_block.rows();
-    size_t num_buckets = cache.getNumBuckets();
-    if (num_rows == 0 || entries.empty())
+    if (num_rows == 0 || entry.block.rows() == 0)
         return patch_to_apply;
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
 
-    /// Build mapping: bucket_index -> patch_block index in patch_to_apply->patch_blocks.
-    std::vector<size_t> bucket_to_block_idx(num_buckets, std::numeric_limits<size_t>::max());
-    for (size_t b = 0; b < num_buckets; ++b)
+    patch_to_apply->patch_blocks.push_back(std::make_shared<const Block>(entry.block));
+
+    auto block_number_column = result_block.getByName(BlockNumberColumn::name).column->convertToFullIfNeeded();
+    auto block_offset_column = result_block.getByName(BlockOffsetColumn::name).column->convertToFullIfNeeded();
+
+    const auto & result_block_number = assert_cast<const ColumnUInt64 &>(*block_number_column).getData();
+    const auto & result_block_offset = assert_cast<const ColumnUInt64 &>(*block_offset_column).getData();
+
+    patch_to_apply->result_row_indices.reserve(num_rows);
+    patch_to_apply->patch_row_indices.reserve(num_rows);
+    patch_to_apply->patch_block_indices.reserve(num_rows);
+
+    auto & index = *entry.index;
+    auto & codec = index.getCodec();
+
+    /// Cache: block_number -> streaming cursor (survives block_number switches).
+    struct CursorState
     {
-        if (b < entries.size() && entries[b] && entries[b]->block.rows() > 0)
+        std::shared_ptr<PatchBlockIndex::GroupCursor> cursor;
+        bool found = false;
+    };
+
+    absl::flat_hash_map<UInt64, CursorState, HashCRC32<UInt64>> cursors;
+    CursorState * current = nullptr;
+    UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        UInt64 bn = result_block_number[row];
+        UInt64 bo = result_block_offset[row];
+
+        if (bn < index.minBlockNumber() || bn > index.maxBlockNumber())
+            continue;
+
+        if (bn != prev_block_number)
         {
-            bucket_to_block_idx[b] = patch_to_apply->patch_blocks.size();
-            patch_to_apply->patch_blocks.push_back(std::make_shared<const Block>(entries[b]->block));
+            prev_block_number = bn;
+            auto [it, inserted] = cursors.try_emplace(bn);
+
+            if (inserted)
+            {
+                const auto * idx_entry = index.findGroup(bn);
+                if (idx_entry && bo <= idx_entry->max_offset)
+                {
+                    it->second.cursor = index.createCursor(*idx_entry);
+                    it->second.found = true;
+                }
+            }
+
+            current = &it->second;
+        }
+
+        if (!current || !current->found)
+            continue;
+
+        auto & c = *current->cursor;
+
+        /// Skip values in current chunk that are below target.
+        while (c.pos < c.count && c.offsets[c.pos] < bo)
+            ++c.pos;
+
+        /// If current chunk exhausted, skip/decompress chunks until we find
+        /// one that may contain bo.
+        if (c.pos >= c.count)
+        {
+            if (!c.advanceTo(bo, codec))
+            {
+                current->found = false;
+                continue;
+            }
+
+            /// Position within newly decompressed chunk.
+            while (c.pos < c.count && c.offsets[c.pos] < bo)
+                ++c.pos;
+        }
+
+        if (c.pos < c.count && c.offsets[c.pos] == bo)
+        {
+            patch_to_apply->result_row_indices.push_back(row);
+            patch_to_apply->patch_row_indices.push_back(c.row_indices[c.pos]);
+            patch_to_apply->patch_block_indices.push_back(0);
         }
     }
 
-    if (patch_to_apply->patch_blocks.empty())
+    return patch_to_apply;
+}
+
+/// Legacy hash-map-based join (single entry, no buckets).
+static PatchToApplyPtr applyPatchJoinWithHashMap(const Block & result_block, const PatchJoinCache::Entry & entry)
+{
+    auto patch_to_apply = std::make_shared<PatchToApply>();
+
+    size_t num_rows = result_block.rows();
+    if (num_rows == 0 || entry.block.rows() == 0)
         return patch_to_apply;
+
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
+
+    patch_to_apply->patch_blocks.push_back(std::make_shared<const Block>(entry.block));
 
     auto block_number_column = result_block.getByName(BlockNumberColumn::name).column->convertToFullIfNeeded();
     auto block_offset_column = result_block.getByName(BlockOffsetColumn::name).column->convertToFullIfNeeded();
@@ -545,7 +631,6 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     struct IteratorsPair
     {
         bool found = false;
-        size_t block_idx = 0;
         PatchOffsetsMap::const_iterator it;
         PatchOffsetsMap::const_iterator end;
     };
@@ -561,12 +646,6 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     for (size_t row = 0; row < num_rows; ++row)
     {
         UInt64 block_number = result_block_number[row];
-        size_t bucket = cache.getBucket(block_number);
-
-        if (bucket_to_block_idx[bucket] == std::numeric_limits<size_t>::max())
-            continue;
-
-        const auto & entry = *entries[bucket];
 
         if (block_number < entry.min_block || block_number > entry.max_block)
             continue;
@@ -596,7 +675,6 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
                     auto & iterators = block_number_it->second;
 
                     iterators.found = true;
-                    iterators.block_idx = bucket_to_block_idx[bucket];
                     iterators.it = offsets_map.lower_bound(result_block_offset[row]);
                     iterators.end = offsets_map.end();
                 }
@@ -619,12 +697,20 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 
                 patch_to_apply->result_row_indices.push_back(row);
                 patch_to_apply->patch_row_indices.push_back(patch_row_index);
-                patch_to_apply->patch_block_indices.push_back(iterators.block_idx);
+                patch_to_apply->patch_block_indices.push_back(0);
             }
         }
     }
 
     return patch_to_apply;
+}
+
+PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & entry)
+{
+    if (entry.hasIndex())
+        return applyPatchJoinWithIndex(result_block, entry);
+
+    return applyPatchJoinWithHashMap(result_block, entry);
 }
 
 void applyPatchesToBlock(

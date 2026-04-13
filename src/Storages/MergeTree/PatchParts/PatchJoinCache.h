@@ -6,6 +6,7 @@
 #include <Core/Block_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
+#include <Storages/MergeTree/PatchParts/PatchBlockIndex.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
@@ -54,10 +55,9 @@ using PatchHashMap = absl::node_hash_map<
   *  The cache is a pure data structure: `init` sets up empty entries,
   *  and the pipeline fills them via `Entry::addBlock`.
   *
-  *  Data is distributed into `num_buckets` entries per patch part by range:
-  *  bucket = (block_number - min_block) * num_buckets / (max_block - min_block + 1).
-  *  This gives locality -- consecutive block numbers land in the same bucket,
-  *  which benefits btree_map insert hints.
+  *  Each patch part has a single Entry. When the on-disk PatchBlockIndex
+  *  is available, the entry's `index` field is set and the hash_map is
+  *  not built. Otherwise, the legacy hash-map-based path is used.
   *
   *  After the cache is built, it is read-only and no locking is needed.
   *
@@ -71,34 +71,29 @@ struct PatchJoinCache
 
     struct Entry
     {
+        /// On-disk index loaded from patch part files (when available).
+        std::shared_ptr<PatchBlockIndex> index;
+
+        /// Legacy: hash map built at runtime (when index absent).
         PatchHashMap hash_map;
         Block block;
 
         UInt64 min_block = std::numeric_limits<UInt64>::max();
         UInt64 max_block = 0;
 
-        /// Lock-free: used during build when each bucket has a single writer.
+        bool hasIndex() const { return index && index->loaded(); }
+
+        /// Lock-free: used during build when each entry has a single writer.
         void addBlock(Block read_block);
     };
 
     using EntryPtr = std::shared_ptr<Entry>;
-    using Entries = std::vector<EntryPtr>;
 
-    /// Initialize empty cache structure (entries per patch per bucket). No I/O.
-    /// min_block/max_block define the block_number range for range-based bucket assignment.
-    void init(
-        const RangesInPatchParts & ranges_in_patches,
-        size_t num_buckets,
-        UInt64 min_block,
-        UInt64 max_block);
+    /// Initialize empty cache structure (one entry per patch part name). No I/O.
+    void init(const RangesInPatchParts & ranges_in_patches);
 
-    /// Compute bucket index for a given block_number.
-    /// Same formula used by ScatterByRangeTransform during build.
-    size_t getBucket(UInt64 block_number) const;
-
-    /// Returns the entries for a specific patch part (all buckets).
-    const Entries & getEntries(const String & patch_name) const;
-    size_t getNumBuckets() const { return num_buckets; }
+    /// Returns the entry for a specific patch part. Returns nullptr if not found.
+    EntryPtr getEntry(const String & patch_name) const;
 
     const MarkRanges & getAllRanges(const String & patch_name) const
     {
@@ -112,12 +107,8 @@ struct PatchJoinCache
     }
 
 private:
-    size_t num_buckets = 1;
-    UInt64 min_block_value = 0;
-    UInt64 block_range = 1; /// max_block - min_block + 1
-
-    /// Per-patch-name buckets, each vector has size = num_buckets. Immutable after build.
-    absl::node_hash_map<String, Entries> cache;
+    /// One entry per patch part name. Immutable after build.
+    absl::node_hash_map<String, EntryPtr> cache;
 
     /// Ranges are filled on initialization and then are read-only.
     absl::node_hash_map<String, MarkRanges> all_ranges_by_name;
@@ -127,12 +118,12 @@ using PatchJoinCachePtr = std::shared_ptr<PatchJoinCache>;
 
 struct PatchJoinReadResult : public PatchReadResult
 {
-    PatchJoinCache::Entries entries;
+    PatchJoinCache::EntryPtr entry;
     const PatchJoinCache * cache = nullptr;
 
-    bool empty() const override { return entries.empty(); }
+    bool empty() const override { return !entry; }
 };
 
-PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entries & entries, const PatchJoinCache & cache);
+PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & entry);
 
 }

@@ -9,7 +9,6 @@
 #include <Processors/Port.h>
 #include <set>
 #include <Processors/ResizeProcessor.h>
-#include <Processors/Transforms/ScatterByRangeTransform.h>
 
 namespace DB
 {
@@ -144,7 +143,6 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
     const RangesInDataParts & parts_ranges,
     const MergeTreeReadTask::Extras & extras,
     const MergeTreeReaderSettings & reader_settings,
-    size_t num_buckets,
     size_t num_threads)
 {
     /// 1. Collect Join-mode patch info.
@@ -166,10 +164,7 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
     auto patch_stats_by_name = collectPatchStats(ranges_in_patch_parts, join_patches, reader_settings);
 
     /// 3. For each data part, read its minmax stats and filter patch ranges by per-part overlap.
-    ///    Track global `_block_number` range for bucket assignment.
     absl::node_hash_map<String, std::set<MarkRange>> filtered_ranges_by_patch;
-    UInt64 global_min_block = std::numeric_limits<UInt64>::max();
-    UInt64 global_max_block = 0;
     const auto & all_patch_ranges = ranges_in_patch_parts.getRanges();
 
     for (const auto & part_idx : part_indexes_with_patches)
@@ -184,11 +179,7 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         if (auto stats = getPatchMinMaxStats(data_part, data_mark_ranges, BlockNumberColumn::name, reader_settings))
         {
             for (const auto & stat : *stats)
-            {
                 data_block_number_ranges.push_back(stat);
-                global_min_block = std::min(global_min_block, stat.min);
-                global_max_block = std::max(global_max_block, stat.max);
-            }
         }
 
         if (auto stats = getPatchMinMaxStats(data_part, data_mark_ranges, BlockOffsetColumn::name, reader_settings))
@@ -230,19 +221,38 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         }
     }
 
-    if (global_min_block > global_max_block)
-    {
-        global_min_block = 0;
-        global_max_block = 0;
-    }
-
     if (filtered_ranges_by_patch.empty())
         return nullptr;
 
-    /// 4. Initialize cache structure.
-    patch_join_cache->init(ranges_in_patch_parts, num_buckets, global_min_block, global_max_block);
+    /// 4. Initialize cache structure (one entry per patch, no buckets).
+    patch_join_cache->init(ranges_in_patch_parts);
 
-    /// 5. Build pipeline.
+    /// 5. For each patch, try to load the on-disk PatchBlockIndex.
+    ///    If the index exists, set it on the entry and skip building the hash map.
+    for (auto & [patch_name, _] : filtered_ranges_by_patch)
+    {
+        auto patch_it = join_patches.find(patch_name);
+        if (patch_it == join_patches.end())
+            continue;
+
+        const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(patch_it->second.patch_part.part.get());
+        if (!loaded_part)
+            continue;
+
+        const auto & part_storage = loaded_part->getDataPart()->getDataPartStorage();
+        if (part_storage.existsFile(PatchBlockIndex::BIN_FILE) && part_storage.existsFile(PatchBlockIndex::IDX_FILE))
+        {
+            auto entry = patch_join_cache->getEntry(patch_name);
+            if (entry)
+            {
+                auto index = std::make_shared<PatchBlockIndex>();
+                index->load(part_storage);
+                entry->index = std::move(index);
+            }
+        }
+    }
+
+    /// 6. Build pipeline: [Sources] -> [Resize(N->1)] -> [BuildPatchJoinCacheSink].
     auto processors = std::make_shared<Processors>();
 
     for (auto & [patch_name, filtered_ranges_set] : filtered_ranges_by_patch)
@@ -282,7 +292,6 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         for (const auto & col : resolved_columns)
             patch_header.insert(ColumnWithTypeAndName(col.type->createColumn(), col.type, col.name));
 
-        size_t block_number_pos = patch_header.getPositionByName(BlockNumberColumn::name);
         size_t num_sources = std::min(num_threads, patch_ranges.size());
 
         if (num_sources == 0)
@@ -319,63 +328,24 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
             processors->push_back(std::move(source));
         }
 
-        const auto & entries = patch_join_cache->getEntries(patch_name);
-
-        if (num_buckets <= 1)
-        {
-            /// No scatter needed -- resize num_sources->1 then sink.
-            auto resize = std::make_shared<ResizeProcessor>(shared_header, num_sources, 1);
-            {
-                auto & inputs = resize->getInputs();
-                auto input_it = inputs.begin();
-
-                for (size_t source_idx = 0; source_idx < num_sources; ++source_idx, ++input_it)
-                    connect(sources[source_idx]->getOutputs().front(), *input_it);
-            }
-
-            auto sink = std::make_shared<BuildPatchJoinCacheSink>(shared_header, entries[0]);
-            connect(resize->getOutputs().front(), sink->getPort());
-            processors->push_back(std::move(resize));
-            processors->push_back(std::move(sink));
+        auto entry = patch_join_cache->getEntry(patch_name);
+        if (!entry)
             continue;
-        }
 
-        /// Create scatter transforms.
-        std::vector<IProcessor *> scatters;
-        for (size_t source_idx = 0; source_idx < num_sources; ++source_idx)
+        /// Simple pipeline: Resize num_sources->1 then Sink.
+        auto resize = std::make_shared<ResizeProcessor>(shared_header, num_sources, 1);
         {
-            auto scatter = std::make_shared<ScatterByRangeTransform>(
-                shared_header,
-                num_buckets,
-                block_number_pos,
-                global_min_block,
-                global_max_block);
-
-            connect(sources[source_idx]->getOutputs().front(), scatter->getInputs().front());
-            scatters.push_back(scatter.get());
-            processors->push_back(std::move(scatter));
-        }
-
-        /// Create resize processors + sinks per bucket.
-        for (size_t bucket_idx = 0; bucket_idx < num_buckets; ++bucket_idx)
-        {
-            auto resize = std::make_shared<ResizeProcessor>(shared_header, num_sources, 1);
             auto & inputs = resize->getInputs();
             auto input_it = inputs.begin();
 
             for (size_t source_idx = 0; source_idx < num_sources; ++source_idx, ++input_it)
-            {
-                auto out_it = scatters[source_idx]->getOutputs().begin();
-                std::advance(out_it, bucket_idx);
-                connect(*out_it, *input_it);
-            }
-
-            auto sink = std::make_shared<BuildPatchJoinCacheSink>(shared_header, entries[bucket_idx]);
-            connect(resize->getOutputs().front(), sink->getPort());
-
-            processors->push_back(std::move(resize));
-            processors->push_back(std::move(sink));
+                connect(sources[source_idx]->getOutputs().front(), *input_it);
         }
+
+        auto sink = std::make_shared<BuildPatchJoinCacheSink>(shared_header, entry);
+        connect(resize->getOutputs().front(), sink->getPort());
+        processors->push_back(std::move(resize));
+        processors->push_back(std::move(sink));
     }
 
     if (processors->empty())

@@ -15,7 +15,6 @@ namespace Setting
 {
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
-    extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
@@ -429,9 +428,6 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
 
 std::shared_ptr<Processors> MergeTreeReadPoolBase::buildPatchJoinCachePipeline(size_t num_threads)
 {
-    const auto & settings = getContext()->getSettingsRef();
-    size_t num_buckets = settings[Setting::apply_patch_parts_join_cache_buckets];
-
     return DB::buildPatchJoinCachePipeline(
         patch_join_cache,
         ranges_in_patch_parts,
@@ -439,7 +435,6 @@ std::shared_ptr<Processors> MergeTreeReadPoolBase::buildPatchJoinCachePipeline(s
         parts_ranges,
         getExtras(),
         reader_settings,
-        num_buckets,
         num_threads);
 }
 

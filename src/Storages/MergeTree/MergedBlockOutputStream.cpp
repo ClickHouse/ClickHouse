@@ -2,10 +2,12 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Core/Settings.h>
+#include <Columns/ColumnsNumber.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
 
 
@@ -337,6 +339,12 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                     source_parts.writeBinary(buffer);
                 });
             }
+
+            /// Write on-disk patch block index if available.
+            if (patch_index_writer && !patch_index_writer->empty())
+                patch_index_writer->finalize(new_part->getDataPartStorage(), checksums);
+            if (gathered_data.patch_block_index_writer && !gathered_data.patch_block_index_writer->empty())
+                gathered_data.patch_block_index_writer->finalize(new_part->getDataPartStorage(), checksums);
         }
     }
 
@@ -437,6 +445,31 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     size_t rows = block.rows();
     if (!rows)
         return;
+
+    /// Accumulate patch block index data before writing (need original column order
+    /// for permutation-aware extraction).
+    if (patch_index_writer && block.has(BlockNumberColumn::name) && block.has(BlockOffsetColumn::name))
+    {
+        const auto & block_numbers = assert_cast<const ColumnUInt64 &>(*block.getByName(BlockNumberColumn::name).column).getData();
+        const auto & block_offsets = assert_cast<const ColumnUInt64 &>(*block.getByName(BlockOffsetColumn::name).column).getData();
+
+        if (permutation)
+        {
+            /// Apply permutation to get the physical order.
+            PaddedPODArray<UInt64> perm_numbers(rows);
+            PaddedPODArray<UInt64> perm_offsets(rows);
+            for (size_t i = 0; i < rows; ++i)
+            {
+                perm_numbers[i] = block_numbers[(*permutation)[i]];
+                perm_offsets[i] = block_offsets[(*permutation)[i]];
+            }
+            patch_index_writer->addRows(perm_numbers, perm_offsets, static_cast<UInt32>(rows_count), rows);
+        }
+        else
+        {
+            patch_index_writer->addRows(block_numbers, block_offsets, static_cast<UInt32>(rows_count), rows);
+        }
+    }
 
     writer->write(block, permutation);
     if (reset_columns)

@@ -20,6 +20,8 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/PatchParts/PatchBlockIndex.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
@@ -889,6 +891,33 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     IMergedBlockOutputStream::GatheredData gathered_data;
     gathered_data.statistics = std::move(statistics);
+
+    /// For patch parts, create a PatchBlockIndexWriter to build the on-disk
+    /// index mapping (_block_number, _block_offset) -> row_index.
+    if (!new_data_part->getSourcePartsSet().empty()
+        && block.has(BlockNumberColumn::name) && block.has(BlockOffsetColumn::name))
+    {
+        gathered_data.patch_block_index_writer = std::make_unique<PatchBlockIndexWriter>();
+
+        const auto & block_numbers = assert_cast<const ColumnUInt64 &>(*block.getByName(BlockNumberColumn::name).column).getData();
+        const auto & block_offsets = assert_cast<const ColumnUInt64 &>(*block.getByName(BlockOffsetColumn::name).column).getData();
+
+        if (perm_ptr)
+        {
+            PaddedPODArray<UInt64> perm_numbers(block.rows());
+            PaddedPODArray<UInt64> perm_offsets(block.rows());
+            for (size_t i = 0; i < block.rows(); ++i)
+            {
+                perm_numbers[i] = block_numbers[(*perm_ptr)[i]];
+                perm_offsets[i] = block_offsets[(*perm_ptr)[i]];
+            }
+            gathered_data.patch_block_index_writer->addRows(perm_numbers, perm_offsets, 0, block.rows());
+        }
+        else
+        {
+            gathered_data.patch_block_index_writer->addRows(block_numbers, block_offsets, 0, block.rows());
+        }
+    }
 
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,

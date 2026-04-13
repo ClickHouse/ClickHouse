@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Storages/MergeTree/PatchParts/PatchBlockIndex.h>
 #include <IO/WriteSettings.h>
 #include <Storages/Statistics/Statistics.h>
 
@@ -74,6 +75,10 @@ public:
 
     void finalizeIndexGranularity();
 
+    /// Set a PatchBlockIndexWriter to accumulate index data during writeImpl.
+    /// The writer will be finalized in finalizePartOnDisk.
+    void setPatchIndexWriter(std::unique_ptr<PatchBlockIndexWriter> writer_) { patch_index_writer = std::move(writer_); }
+
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.
       * This is necessary to not keep the whole block in the RAM to sort it.
@@ -90,6 +95,9 @@ private:
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
     MergeTreeWriterSettings writer_settings;
+
+    /// Optional writer for the on-disk patch block index (used for patch parts).
+    std::unique_ptr<PatchBlockIndexWriter> patch_index_writer;
 };
 
 using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;

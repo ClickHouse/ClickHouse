@@ -29,49 +29,24 @@ static const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, c
     return assert_cast<const ColumnUInt64 &>(*block.getByName(column_name).column).getData();
 }
 
-void PatchJoinCache::init(
-    const RangesInPatchParts & ranges_in_patches,
-    size_t num_buckets_,
-    UInt64 min_block,
-    UInt64 max_block)
+void PatchJoinCache::init(const RangesInPatchParts & ranges_in_patches)
 {
-    num_buckets = num_buckets_;
-    min_block_value = min_block;
-    block_range = (max_block >= min_block) ? (max_block - min_block + 1) : 1;
-
     const auto & all_ranges = ranges_in_patches.getRanges();
     for (const auto & [patch_name, ranges] : all_ranges)
     {
         if (ranges.empty())
             continue;
 
-        auto & entries = cache[patch_name];
-        entries.resize(num_buckets);
-        for (size_t i = 0; i < num_buckets; ++i)
-            entries[i] = std::make_shared<Entry>();
-
+        cache[patch_name] = std::make_shared<Entry>();
         all_ranges_by_name[patch_name] = ranges;
     }
 }
 
-size_t PatchJoinCache::getBucket(UInt64 block_number) const
-{
-    if (num_buckets <= 1)
-        return 0;
-    if (block_number < min_block_value)
-        return 0;
-    return std::min(
-        static_cast<size_t>((block_number - min_block_value) * num_buckets / block_range),
-        num_buckets - 1);
-}
-
-static const PatchJoinCache::Entries empty_entries;
-
-const PatchJoinCache::Entries & PatchJoinCache::getEntries(const String & patch_name) const
+PatchJoinCache::EntryPtr PatchJoinCache::getEntry(const String & patch_name) const
 {
     auto it = cache.find(patch_name);
     if (it == cache.end())
-        return empty_entries;
+        return nullptr;
     return it->second;
 }
 
@@ -117,6 +92,10 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
     if (base_row_offset + num_read_rows > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too large row offset ({}) in patch join cache", base_row_offset + num_read_rows);
+
+    /// When we have an on-disk index, skip building the hash map — only accumulate the block.
+    if (hasIndex())
+        return;
 
     PatchOffsetsMap * current_offsets = nullptr;
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();

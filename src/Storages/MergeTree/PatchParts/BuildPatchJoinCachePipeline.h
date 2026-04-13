@@ -18,7 +18,6 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
     const RangesInDataParts & parts_ranges,
     const MergeTreeReadTask::Extras & extras,
     const MergeTreeReaderSettings & reader_settings,
-    size_t num_buckets,
     size_t num_threads);
 
 }

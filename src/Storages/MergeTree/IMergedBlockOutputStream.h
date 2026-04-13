@@ -7,8 +7,12 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Common/Logger.h>
 
+#include <memory>
+
 namespace DB
 {
+
+class PatchBlockIndexWriter;
 
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
@@ -31,6 +35,7 @@ public:
         MergeTreeData::DataPart::Checksums checksums;
         ColumnsSubstreams columns_substreams;
         ColumnsStatistics statistics;
+        std::unique_ptr<PatchBlockIndexWriter> patch_block_index_writer;
     };
 
     virtual void write(const Block & block) = 0;
