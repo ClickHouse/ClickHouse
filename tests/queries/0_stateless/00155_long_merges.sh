@@ -18,7 +18,6 @@ function create {
     $CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 --query="CREATE TABLE replacing_00155 (d Date DEFAULT today(), x UInt64, s Int8 DEFAULT 1, v UInt64) ENGINE = ReplacingMergeTree(d, (x), 8192, v)"
 }
 
-
 function cleanup {
     $CLICKHOUSE_CLIENT --query="DROP TABLE summing_00155"
     $CLICKHOUSE_CLIENT --query="DROP TABLE collapsing_00155"
