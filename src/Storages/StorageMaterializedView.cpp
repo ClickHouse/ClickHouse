@@ -29,6 +29,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryDescription.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
@@ -109,7 +110,7 @@ StorageMaterializedView::StorageMaterializedView(
     LoadingStrictnessLevel mode,
     const String & comment,
     bool is_restore_from_backup)
-    : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
+    : StorageWithCommonVirtualColumns(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -335,11 +336,21 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
 
 StorageSnapshotPtr StorageMaterializedView::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
 {
-    /// We cannot set virtuals at table creation because target table may not exist at that time.
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, getTargetTable()->getVirtualsPtr());
+    /// Override _table and _database to be materialized at the Plan level
+    /// by StorageWithCommonVirtualColumns, not by the target storage's reader.
+    auto virtuals = std::make_shared<VirtualColumnsDescription>();
+    for (auto desc : *getTargetTable()->getVirtualsPtr())
+    {
+        if (desc.name == "_table" || desc.name == "_database")
+            desc.place = VirtualsMaterializationPlace::Plan;
+
+        virtuals->add(std::move(desc));
+    }
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(virtuals));
 }
 
-void StorageMaterializedView::read(
+void StorageMaterializedView::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -362,6 +373,14 @@ void StorageMaterializedView::read(
     {
         std::tie(storage, lock) = refresher->getAndLockTargetTable(getTargetTableId(), context);
     }
+
+    /// For datalake target tables (e.g. IcebergLocal), we must refresh external metadata
+    /// before reading. Without this call the storage snapshot will lack the
+    /// datalake_table_state, causing a LOGICAL_ERROR in iterate().
+    /// Normally updateExternalDynamicMetadataIfExists is called by the analyzer/interpreter
+    /// on the outermost storage, but for materialized views that is the view itself
+    /// (which is a no-op), not the target table.
+    storage->updateExternalDynamicMetadataIfExists(context);
 
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);

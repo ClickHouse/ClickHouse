@@ -401,19 +401,9 @@ bool applyTrivialCountIfPossible(
     auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
     column->insertFrom(place);
 
-    /// get count() argument type
-    DataTypes argument_types;
-    argument_types.reserve(columns_names.size());
-    {
-        const Block source_header = table_node ? table_node->getStorageSnapshot()->getSampleBlockForColumns(columns_names)
-                                               : table_function_node->getStorageSnapshot()->getSampleBlockForColumns(columns_names);
-        for (const auto & column_name : columns_names)
-            argument_types.push_back(source_header.getByName(column_name).type);
-    }
-
     auto block_with_count = std::make_shared<const Block>(Block{
         {std::move(column),
-         std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), argument_types, Array{}),
+         std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), agg_count.getArgumentTypes(), Array{}),
          columns_names.front()}});
 
     auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
@@ -570,6 +560,8 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
     for (const auto & row_policy : row_policy_filter->policies)
     {
         auto name = row_policy->getFullName().toString();
+        if (query_context->hasQueryContext())
+            query_context->getQueryContext()->addUsedRowPolicy(name);
         used_row_policies.emplace(std::move(name));
     }
 
@@ -755,6 +747,9 @@ bool extractRequiredNonTableColumnsFromStorage(
         return false;
 
     if (std::dynamic_pointer_cast<StorageDistributed>(storage))
+        return false;
+
+    if (storage->getVirtualsPtr()->has("_table"))
         return false;
 
     bool has_table_virtual_column = false;
@@ -1361,6 +1356,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
                         auto expression_step = std::make_unique<ExpressionStep>(data_header, std::move(adding_column_dag));
+                        expression_step->setStepDescription("Materializing _table column");
                         query_plan.addStep(std::move(expression_step));
                     }
                 }
