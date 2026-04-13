@@ -3,11 +3,15 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
 #include <Processors/Port.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <numeric>
+#include <unordered_map>
 
 namespace DB
 {
@@ -15,6 +19,58 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// State of one bucket during the bucket-reduction phase.
+struct BucketState
+{
+    size_t leader_row_index;   /// Index in merged_columns where aggregate states live
+    Int64 bucket_id;
+    Float64 min_cluster_key;
+    Float64 max_cluster_key;
+    bool alive = true;         /// False if merged into another bucket
+};
+
+/// Merge aggregate states of row `src` into row `dst` in merged_columns.
+void mergeAggregateStates(
+    MutableColumns & merged_columns,
+    const ColumnsMask & aggregates_mask,
+    size_t dst,
+    size_t src)
+{
+    for (size_t col_idx = 0; col_idx < merged_columns.size(); ++col_idx)
+    {
+        if (!aggregates_mask[col_idx])
+            continue;
+
+        auto * agg_col = typeid_cast<ColumnAggregateFunction *>(merged_columns[col_idx].get());
+        if (!agg_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnAggregateFunction");
+
+        auto & data = agg_col->getData();
+        const auto & func = agg_col->getAggregateFunction();
+
+        func->merge(data[dst], data[src], /*arena=*/nullptr);
+    }
+}
+
+/// Compute a 64-bit hash of (non_cluster_key_values..., bucket_id) for a given row.
+UInt64 computeBucketHash(
+    const MutableColumns & merged_columns,
+    const std::vector<size_t> & non_cluster_key_positions,
+    size_t row,
+    Int64 bucket_id)
+{
+    SipHash hash;
+    for (size_t pos : non_cluster_key_positions)
+        merged_columns[pos]->updateHashWithValue(row, hash);
+    hash.update(bucket_id);
+    return hash.get64();
+}
+
 }
 
 ClusterMergingTransform::ClusterMergingTransform(
@@ -69,116 +125,149 @@ Chunk ClusterMergingTransform::generate()
     /// Find column positions
     size_t cluster_key_pos = header.getPositionByName(cluster_key_name);
 
-    /// Build a list of all key column positions (non-aggregate columns)
-    std::vector<size_t> all_key_positions;
+    /// Build a list of key column positions (non-aggregate columns)
     std::vector<size_t> non_cluster_key_positions;
     for (size_t i = 0; i < num_columns; ++i)
     {
-        if (!aggregates_mask[i])
+        if (!aggregates_mask[i] && i != cluster_key_pos)
+            non_cluster_key_positions.push_back(i);
+    }
+
+    /// --- Phase A: Bucket reduction ---
+    /// For distance == 0, each unique value is its own bucket (no merging across values).
+    /// For distance > 0, bucket_id = floor(cluster_key / distance) groups nearby values.
+    /// All values within the same bucket differ by at most distance-1 < distance,
+    /// so they unconditionally belong to the same cluster.
+
+    std::vector<BucketState> buckets;
+    std::unordered_map<UInt64, size_t> bucket_map; /// hash → index in buckets vector
+
+    for (size_t i = 0; i < total_rows; ++i)
+    {
+        Float64 cluster_val = merged_columns[cluster_key_pos]->getFloat64(i);
+
+        Int64 bucket_id;
+        if (cluster_distance > 0)
+            bucket_id = static_cast<Int64>(std::floor(cluster_val / cluster_distance));
+        else
         {
-            all_key_positions.push_back(i);
-            if (i != cluster_key_pos)
-                non_cluster_key_positions.push_back(i);
+            /// distance == 0: each distinct value is its own bucket.
+            /// Use memcpy to reinterpret Float64 bits as Int64,
+            /// so identical values get the same bucket_id.
+            static_assert(sizeof(Float64) == sizeof(Int64));
+            std::memcpy(&bucket_id, &cluster_val, sizeof(Int64));
+        }
+
+        UInt64 hash = computeBucketHash(merged_columns, non_cluster_key_positions, i, bucket_id);
+
+        auto it = bucket_map.find(hash);
+        if (it != bucket_map.end())
+        {
+            /// Existing bucket: merge aggregate states, update min/max
+            auto & bucket = buckets[it->second];
+            mergeAggregateStates(merged_columns, aggregates_mask, bucket.leader_row_index, i);
+            bucket.min_cluster_key = std::min(bucket.min_cluster_key, cluster_val);
+            bucket.max_cluster_key = std::max(bucket.max_cluster_key, cluster_val);
+        }
+        else
+        {
+            /// New bucket
+            size_t idx = buckets.size();
+            buckets.push_back({i, bucket_id, cluster_val, cluster_val, true});
+            bucket_map[hash] = idx;
         }
     }
 
-    /// Create a permutation: sort by non-cluster keys first, then cluster key
-    IColumn::Permutation perm(total_rows);
-    std::iota(perm.begin(), perm.end(), 0);
+    /// --- Phase B: Sort buckets and merge adjacent ones ---
+    /// Sort by (non_cluster_keys, bucket_id)
+    std::vector<size_t> bucket_order(buckets.size());
+    std::iota(bucket_order.begin(), bucket_order.end(), 0);
 
-    std::sort(perm.begin(), perm.end(), [&](size_t a, size_t b)
+    std::sort(bucket_order.begin(), bucket_order.end(), [&](size_t a, size_t b)
     {
+        size_t row_a = buckets[a].leader_row_index;
+        size_t row_b = buckets[b].leader_row_index;
+
         /// Compare non-cluster keys first
         for (size_t pos : non_cluster_key_positions)
         {
-            int cmp = merged_columns[pos]->compareAt(a, b, *merged_columns[pos], 1);
+            int cmp = merged_columns[pos]->compareAt(row_a, row_b, *merged_columns[pos], 1);
             if (cmp != 0)
                 return cmp < 0;
         }
-        /// Then compare by cluster key
-        return merged_columns[cluster_key_pos]->compareAt(a, b, *merged_columns[cluster_key_pos], 1) < 0;
+        /// Then compare by bucket_id
+        return buckets[a].bucket_id < buckets[b].bucket_id;
     });
 
-    /// Apply permutation to all columns
-    for (size_t i = 0; i < num_columns; ++i)
+    /// Adjacent bucket merging is only needed when distance > 0.
+    /// With distance == 0, Phase A already merged all identical values,
+    /// and no cross-bucket merging should occur.
+    if (cluster_distance > 0)
     {
-        auto permuted = merged_columns[i]->permute(perm, 0);
-        merged_columns[i] = IColumn::mutate(std::move(permuted));
-    }
-
-    /// Now scan sorted data and merge adjacent rows within distance.
-    /// We use a "leader" approach: for each group of adjacent rows with the same
-    /// non-cluster keys and cluster key values within distance, we merge into the first row.
-
-    /// Mark which rows to keep (leaders of clusters)
-    std::vector<bool> keep(total_rows, true);
-    /// For each row, track which leader it belongs to
-    std::vector<size_t> leader(total_rows);
-    std::iota(leader.begin(), leader.end(), 0);
-
-    for (size_t i = 1; i < total_rows; ++i)
-    {
-        size_t prev_leader = leader[i - 1];
-
-        /// Check if non-cluster keys match the previous leader
-        bool same_non_cluster = true;
-        for (size_t pos : non_cluster_key_positions)
+        /// Linear scan: merge adjacent buckets where non_cluster_keys match
+        /// and max_cluster_key of the leader is within distance of min_cluster_key of the next.
+        for (size_t i = 1; i < bucket_order.size(); ++i)
         {
-            if (merged_columns[pos]->compareAt(i, prev_leader, *merged_columns[pos], 1) != 0)
+            size_t curr_idx = bucket_order[i];
+            auto & curr = buckets[curr_idx];
+
+            /// Find the previous alive bucket
+            size_t prev_alive_pos = i - 1;
+            while (prev_alive_pos < bucket_order.size() && !buckets[bucket_order[prev_alive_pos]].alive)
             {
-                same_non_cluster = false;
-                break;
+                if (prev_alive_pos == 0)
+                    break;
+                --prev_alive_pos;
             }
-        }
 
-        if (!same_non_cluster)
-            continue;
+            if (prev_alive_pos >= bucket_order.size() || !buckets[bucket_order[prev_alive_pos]].alive)
+                continue;
 
-        /// Check if cluster key is within distance of the PREVIOUS row (not the leader).
-        /// This implements the "chain" semantics: each element is within distance of its neighbor.
-        Float64 prev_value = merged_columns[cluster_key_pos]->getFloat64(i - 1);
-        Float64 curr_value = merged_columns[cluster_key_pos]->getFloat64(i);
-        Float64 diff = curr_value - prev_value;
-        if (diff < 0)
-            diff = -diff;
+            size_t prev_idx = bucket_order[prev_alive_pos];
+            auto & prev = buckets[prev_idx];
 
-        if (diff <= cluster_distance)
-        {
-            /// Merge row i into the leader
-            leader[i] = prev_leader;
-            keep[i] = false;
-
-            /// Merge aggregate states
-            for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
+            /// Check if non-cluster keys match
+            bool same_non_cluster = true;
+            for (size_t pos : non_cluster_key_positions)
             {
-                if (!aggregates_mask[col_idx])
-                    continue;
+                if (merged_columns[pos]->compareAt(prev.leader_row_index, curr.leader_row_index, *merged_columns[pos], 1) != 0)
+                {
+                    same_non_cluster = false;
+                    break;
+                }
+            }
 
-                auto * agg_col = typeid_cast<ColumnAggregateFunction *>(merged_columns[col_idx].get());
-                if (!agg_col)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnAggregateFunction");
+            if (!same_non_cluster)
+                continue;
 
-                auto & data = agg_col->getData();
-                const auto & func = agg_col->getAggregateFunction();
-
-                /// Merge state of row i into the leader's state
-                func->merge(data[prev_leader], data[i], /*arena=*/nullptr);
+            /// Check if buckets should merge: max of previous cluster is within distance of min of current
+            if (prev.max_cluster_key + cluster_distance >= curr.min_cluster_key)
+            {
+                /// Merge current bucket into previous
+                mergeAggregateStates(merged_columns, aggregates_mask, prev.leader_row_index, curr.leader_row_index);
+                prev.max_cluster_key = std::max(prev.max_cluster_key, curr.max_cluster_key);
+                prev.min_cluster_key = std::min(prev.min_cluster_key, curr.min_cluster_key);
+                curr.alive = false;
             }
         }
     }
 
-    /// Build result columns keeping only leader rows
-    size_t result_rows = std::count(keep.begin(), keep.end(), true);
+    /// --- Phase C: Build result columns from surviving bucket leaders ---
+    size_t result_rows = 0;
+    for (auto & bucket : buckets)
+        if (bucket.alive)
+            ++result_rows;
+
     MutableColumns result_columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
         result_columns[i] = merged_columns[i]->cloneEmpty();
 
-    for (size_t i = 0; i < total_rows; ++i)
+    for (size_t idx : bucket_order)
     {
-        if (keep[i])
+        if (buckets[idx].alive)
         {
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
-                result_columns[col_idx]->insertFrom(*merged_columns[col_idx], i);
+                result_columns[col_idx]->insertFrom(*merged_columns[col_idx], buckets[idx].leader_row_index);
         }
     }
 
