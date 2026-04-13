@@ -101,6 +101,7 @@ public:
         FLUSH_LOGS,
         FLUSH_DISTRIBUTED,
         FLUSH_ASYNC_INSERT_QUEUE,
+        FLUSH_OBJECT_STORAGE_QUEUE,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
@@ -189,6 +190,8 @@ public:
     String schema_cache_storage;
 
     String schema_cache_format;
+
+    String queue_path;
 
     String fail_point_name;
 

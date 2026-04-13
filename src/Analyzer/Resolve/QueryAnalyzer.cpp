@@ -3784,7 +3784,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         if (storage_snapshot->storage.supportsSubcolumns())
         {
             get_column_options.withSubcolumns();

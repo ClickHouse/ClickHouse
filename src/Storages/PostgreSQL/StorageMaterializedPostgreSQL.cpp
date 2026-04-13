@@ -146,8 +146,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 VirtualColumnsDescription StorageMaterializedPostgreSQL::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_sign", std::make_shared<DataTypeInt8>(), "");
-    desc.addEphemeral("_version", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_sign", std::make_shared<DataTypeInt8>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_version", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
     return desc;
 }
 

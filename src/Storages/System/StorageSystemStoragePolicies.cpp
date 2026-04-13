@@ -4,6 +4,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Disks/IVolume.h>
@@ -34,7 +36,7 @@ namespace
 
 
 StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & table_id_)
-        : IStorage(table_id_)
+        : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(
@@ -52,6 +54,15 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & tab
     }));
     // TODO: Add string column with custom volume-type-specific options
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
+}
+
+VirtualColumnsDescription StorageSystemStoragePolicies::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 Pipe StorageSystemStoragePolicies::read(
