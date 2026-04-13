@@ -448,6 +448,10 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
         new_step->setStepDescription(*expression_node->step);
         expression_node->step = std::move(new_step);
+
+        /// The SortingStep's input header must reflect the new ExpressionStep output header
+        /// (which now has _distance consumed and L2Distance(...) produced via ALIAS).
+        sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
     }
 
     return true;
