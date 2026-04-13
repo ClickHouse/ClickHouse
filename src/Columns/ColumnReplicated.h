@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnIndex.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -226,7 +227,10 @@ ColumnPtr recursiveRemoveReplicated(const ColumnPtr & column);
 ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.
-bool isLazyReplicationUseful(const ColumnPtr & column);
+bool isLazyReplicationUseful(
+    const ColumnPtr & column,
+    std::optional<size_t> replicated_rows = std::nullopt,
+    double max_expansion_ratio = ColumnReplicated::DEFAULT_MAX_EXPANSION_RATIO_FOR_MATERIALIZATION);
 /// Apply transformation on replicated columns with shared index only once.
 void transformColumnsWithSharedIndex(
     Columns & columns,

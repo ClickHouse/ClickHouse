@@ -75,9 +75,10 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
     return right_column;
 }
 
-static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes)
+static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes, bool lazy_columns_indexing)
 {
-    if (isLazyReplicationUseful(column))
+    std::optional<size_t> replicated_rows = lazy_columns_indexing || offsets.empty() ? std::nullopt : std::optional{offsets.back()};
+    if (isLazyReplicationUseful(column, replicated_rows))
     {
         if (!indexes)
             indexes = convertOffsetsToIndexes(offsets);
@@ -162,7 +163,7 @@ static void appendRightColumns(
             transformColumnsWithSharedIndex(
                 columns_to_replicate,
                 [&](const ColumnPtr & index) { return index->replicate(offsets); },
-                [&](ColumnPtr & col) { replicateColumnLazily(col, offsets, indexes); },
+                [&](ColumnPtr & col) { replicateColumnLazily(col, offsets, indexes, properties.enable_lazy_columns_indexing); },
                 positions);
         }
         else
@@ -277,6 +278,14 @@ Block HashJoinResult::generateBlock(
         state->filter,
         lazy_output.type_name,
         properties);
+
+    if (!properties.enable_lazy_columns_indexing)
+    {
+        auto cols = block.getColumns();
+        for (auto & col : cols)
+            col = col->convertToFullColumnIfReplicationNotUseful(ColumnReplicated::DEFAULT_MAX_EXPANSION_RATIO_FOR_MATERIALIZATION);
+        block.setColumns(cols);
+    }
 
     if (is_state_finished)
         state.reset();

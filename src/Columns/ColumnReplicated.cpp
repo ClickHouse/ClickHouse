@@ -130,15 +130,7 @@ ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicationNotUseful(double max_expansion_ratio) const
 {
-    size_t current_bytes = allocatedBytes();
-    size_t nested_rows = nested_column->size();
-    if (nested_rows == 0)
-        return convertToFullColumnIfReplicated();
-
-    double avg_row_bytes = static_cast<double>(nested_column->allocatedBytes()) / static_cast<double>(nested_rows);
-    size_t estimated_materialized_bytes = static_cast<size_t>(static_cast<double>(size()) * avg_row_bytes);
-
-    if (estimated_materialized_bytes <= static_cast<size_t>(static_cast<double>(current_bytes) * max_expansion_ratio))
+    if (!isLazyReplicationUseful(nested_column, size(), max_expansion_ratio))
         return convertToFullColumnIfReplicated();
 
     return getPtr();
@@ -713,9 +705,27 @@ ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets)
     return convertOffsetsToIndexesImpl<UInt64>(offsets);
 }
 
-bool isLazyReplicationUseful(const ColumnPtr & column)
+bool isLazyReplicationUseful(const ColumnPtr & column, std::optional<size_t> replicated_rows, double max_expansion_ratio)
 {
-    return !column->isConst() && !column->isReplicated() && !column->lowCardinality() && (!column->isFixedAndContiguous() || column->sizeOfValueIfFixed() > 8);
+    if (column->isConst() || column->isReplicated() || column->lowCardinality()
+        || (column->isFixedAndContiguous() && column->sizeOfValueIfFixed() <= 8))
+        return false;
+
+    if (replicated_rows)
+    {
+        size_t input_rows = column->size();
+        if (input_rows == 0)
+            return false;
+
+        double avg_row_bytes = static_cast<double>(column->allocatedBytes()) / static_cast<double>(input_rows);
+        size_t estimated_materialized = static_cast<size_t>(static_cast<double>(*replicated_rows) * avg_row_bytes);
+        size_t estimated_replicated = column->allocatedBytes() + *replicated_rows * sizeof(UInt64);
+
+        if (estimated_materialized <= static_cast<size_t>(static_cast<double>(estimated_replicated) * max_expansion_ratio))
+            return false;
+    }
+
+    return true;
 }
 
 void transformColumnsWithSharedIndex(

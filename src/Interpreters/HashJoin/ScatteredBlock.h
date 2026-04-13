@@ -304,7 +304,7 @@ struct ScatteredBlock : private boost::noncopyable
             [&](ColumnPtr & col) 
             {
                 if (isLazyReplicationUseful(col))
-                col = ColumnReplicated::create(col, indexes_col);
+                    col = ColumnReplicated::create(col, indexes_col);
                 else
                     col = col->index(selector.getIndexes(), /*limit*/ 0);
             });
