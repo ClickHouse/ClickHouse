@@ -23,6 +23,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -170,85 +171,6 @@ namespace
         return "";
     }
 
-    /// Sorts tags by name, removes exact duplicates and tags with empty values,
-    /// and throws if the `__name__` tag is missing or appears with conflicting values.
-    void sortTagsAndRemoveDuplicates(std::vector<std::pair<std::string_view, std::string_view>> & tags)
-    {
-        std::sort(tags.begin(), tags.end());
-        tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
-        std::erase_if(tags, [](const auto & x) { return x.second.empty(); });
-
-        auto adjacent = std::adjacent_find(tags.begin(), tags.end(),
-            [](const auto & left, const auto & right) { return left.first == right.first; });
-        if (adjacent != tags.end())
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
-                "Found two tags with the same name {} but different values {} and {}",
-                adjacent->first, adjacent->second, std::next(adjacent)->second);
-        }
-
-        auto it = std::lower_bound(tags.begin(), tags.end(), TimeSeriesTagNames::MetricName,
-            [](const auto & tag, const char * name) { return tag.first < name; });
-        if (it == tags.end() || it->first != TimeSeriesTagNames::MetricName)
-            throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS, "Metric name (tag {}) not found", TimeSeriesTagNames::MetricName);
-    }
-
-    /// Dispatches one row of already-sorted tags into the appropriate output columns.
-    /// Tags matching a key in `columns_by_tag_name` go to that column; the rest go to `out_tags_names`/`out_tags_values`.
-    /// The optional `all_tags_*` columns (pass `nullptr` to skip) receive every non-`__name__` tag.
-    void insertSortedTagsToColumns(
-        const std::vector<std::pair<std::string_view, std::string_view>> & sorted_tags,
-        IColumn & out_metric_name_column,
-        IColumn & out_tags_names,
-        IColumn & out_tags_values,
-        IColumn & out_tags_offsets,
-        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name,
-        IColumn * all_tags_names,
-        IColumn * all_tags_values,
-        IColumn * all_tags_offsets)
-    {
-        for (const auto & [tag_name, tag_value] : sorted_tags)
-        {
-            if (tag_name == TimeSeriesTagNames::MetricName)
-            {
-                out_metric_name_column.insertData(tag_value.data(), tag_value.size());
-            }
-            else
-            {
-                if (all_tags_names)
-                {
-                    all_tags_names->insertData(tag_name.data(), tag_name.size());
-                    all_tags_values->insertData(tag_value.data(), tag_value.size());
-                }
-
-                auto it = columns_by_tag_name.find(tag_name);
-                if (it != columns_by_tag_name.end())
-                {
-                    it->second->insertData(tag_value.data(), tag_value.size());
-                }
-                else
-                {
-                    out_tags_names.insertData(tag_name.data(), tag_name.size());
-                    out_tags_values.insertData(tag_value.data(), tag_value.size());
-                }
-            }
-        }
-
-        out_tags_offsets.insert(out_tags_names.size());
-        if (all_tags_names)
-            all_tags_offsets->insert(all_tags_names->size());
-
-        /// For named-tag columns that had no matching tag in this row, insert the default value.
-        size_t expected_num_rows = out_tags_offsets.size();
-
-        for (IColumn * column : std::views::values(columns_by_tag_name))
-        {
-            if (column->size() < expected_num_rows)
-                column->insertDefault();
-        }
-    }
-
     /// Returns true if a column contains DateTime64 or Nullable(DateTime64).
     bool isDateTime64Column(const IColumn & column)
     {
@@ -282,9 +204,9 @@ namespace
             for (const auto & label : element.labels())
                 sorted_tags.emplace_back(label.name(), label.value());
 
-            sortTagsAndRemoveDuplicates(sorted_tags);
+            TimeSeriesSink::sortTagsAndRemoveDuplicates(sorted_tags);
 
-            insertSortedTagsToColumns(
+            TimeSeriesSink::insertSortedTagsToColumns(
                 sorted_tags,
                 out_metric_name_column,
                 out_tags_names, out_tags_values, out_tags_offsets,

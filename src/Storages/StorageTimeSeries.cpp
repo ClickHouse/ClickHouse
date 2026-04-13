@@ -8,11 +8,13 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
@@ -489,9 +491,16 @@ void StorageTimeSeries::readImpl(
 
 
 SinkToStoragePtr StorageTimeSeries::write(
-    const ASTPtr & /* query */, const StorageMetadataPtr & /* metadata_snapshot */, ContextPtr /* local_context */, bool /* async_insert */)
+    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INSERT is not supported by storage {} yet", getName());
+    Names insert_columns;
+    if (const auto * insert_query = query->as<ASTInsertQuery>())
+    {
+        if (insert_query->columns)
+            for (const auto & col : insert_query->columns->children)
+                insert_columns.push_back(col->getColumnName());
+    }
+    return std::make_shared<TimeSeriesSink>(*this, metadata_snapshot->getSampleBlock(), insert_columns, local_context, async_insert);
 }
 
 
