@@ -254,9 +254,10 @@ void RestorerFromBackup::logNumberOfDatabasesAndTablesToRestore() const
 
 void RestorerFromBackup::loadSystemAccessTables()
 {
+    if (restore_settings.structure_only && !restore_settings.structure_only_restore_definitions)
+        return;
+
     /// Special handling for ACL-related system tables.
-    /// Access entities (users, roles, quotas, etc.) are structural definitions, not data,
-    /// so they should be restored even with structure_only=true.
     std::lock_guard lock{mutex};
     for (const auto & [table_name, table_info] : table_infos)
     {
@@ -301,8 +302,8 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 if (isSystemFunctionsTableName(table_name))
                 {
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
-                    /// UDFs are structural definitions so they are restored even with structure_only=true.
-                    if (table_info.has_data)
+                    if (table_info.has_data
+                        && (!restore_settings.structure_only || restore_settings.structure_only_restore_definitions))
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
                 }
                 /// Privileges required to restore ACL system tables are checked separately
@@ -842,12 +843,14 @@ void RestorerFromBackup::insertDataToTables()
 
 void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name)
 {
-    /// Access entities and user-defined functions are structural definitions, not data,
-    /// so they should be restored even with structure_only=true.
-    if (restore_settings.structure_only
-        && !isSystemAccessTableName(table_name)
-        && !isSystemFunctionsTableName(table_name))
-        return;
+    if (restore_settings.structure_only)
+    {
+        /// With structure_only_restore_definitions, access entities and UDFs
+        /// are still restored because they are definitions, not table data.
+        if (!restore_settings.structure_only_restore_definitions
+            || (!isSystemAccessTableName(table_name) && !isSystemFunctionsTableName(table_name)))
+            return;
+    }
 
     StoragePtr storage;
     String data_path_in_backup;

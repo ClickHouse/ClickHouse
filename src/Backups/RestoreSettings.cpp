@@ -150,6 +150,7 @@ namespace
     M(String, id) \
     M(String, password) \
     M(Bool, structure_only) \
+    M(Bool, structure_only_restore_definitions) \
     M(RestoreTableCreationMode, create_table) \
     M(RestoreDatabaseCreationMode, create_database) \
     M(Bool, allow_different_table_def) \

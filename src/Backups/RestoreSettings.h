@@ -56,6 +56,12 @@ struct RestoreSettings
     /// without the data of tables.
     bool structure_only = false;
 
+    /// If this is set to true together with structure_only, access entities
+    /// (users, roles, settings profiles, row policies, quotas) and user-defined
+    /// functions will also be restored despite structure_only being set.
+    /// These are considered definitions rather than table data.
+    bool structure_only_restore_definitions = false;
+
     /// How RESTORE command should work if a table to restore already exists.
     RestoreTableCreationMode create_table = RestoreTableCreationMode::kCreateIfNotExists;
 

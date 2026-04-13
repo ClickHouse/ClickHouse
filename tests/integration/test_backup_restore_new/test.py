@@ -2343,7 +2343,34 @@ def test_structure_only_restores_access_entities_and_udfs():
     instance.query("DROP QUOTA q1")
     instance.query("DROP FUNCTION linear_equation")
 
+    # First: verify backward compatibility — structure_only alone does NOT restore access/UDFs
     instance.query(f"RESTORE ALL FROM {backup_name} SETTINGS structure_only=true")
+
+    assert instance.query("EXISTS test.table") == "1\n"
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+    assert instance.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.roles WHERE name = 'r1'") == "0\n"
+    assert (
+        instance.query(
+            "SELECT count() FROM system.settings_profiles WHERE name = 'prof1'"
+        )
+        == "0\n"
+    )
+    assert (
+        instance.query(
+            "SELECT count() FROM system.row_policies WHERE short_name = 'rowpol1'"
+        )
+        == "0\n"
+    )
+    assert instance.query("SELECT count() FROM system.quotas WHERE name = 'q1'") == "0\n"
+
+    instance.query("DROP DATABASE test")
+
+    # Second: structure_only + structure_only_restore_definitions restores access entities and UDFs
+    instance.query(
+        f"RESTORE ALL FROM {backup_name} SETTINGS structure_only=true, structure_only_restore_definitions=true"
+    )
 
     # Table exists but has no data
     assert instance.query("EXISTS test.table") == "1\n"
