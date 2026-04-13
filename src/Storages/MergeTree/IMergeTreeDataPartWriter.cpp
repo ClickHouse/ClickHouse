@@ -142,7 +142,7 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
     if (const auto * column_desc = columns.tryGet(column_name))
         return column_desc->codec ? column_desc->codec : default_codec_desc;
 
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
+    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
         return virtual_desc->codec ? virtual_desc->codec : default_codec_desc;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
