@@ -1508,7 +1508,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (postprocessor->hasActions())
     {
         ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
-        ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray &>(*tokenized));
+        ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
         addDocumentsFromArray(postprocessed, 0, rows_read);
     }
     else if (isArray(index_column.type))

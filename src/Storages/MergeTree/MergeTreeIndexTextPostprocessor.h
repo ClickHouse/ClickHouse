@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -30,13 +31,13 @@ public:
     /// Returns a new column of transformed tokens. Preferred over processToken for
     /// indexing because it amortizes expression execution overhead over all tokens
     /// in a document rather than paying it once per token.
-    ColumnPtr processTokensBatch(ColumnPtr tokens) const;
+    ColumnPtr processTokensBatch(const ColumnString * tokens) const;
 
     /// Processes a ColumnArray(String) where each row is an array of tokens for one document.
     /// The postprocessor expression is applied to all elements across the whole column in a
     /// single execution. Tokens mapped to an empty string by the postprocessor are dropped from
     /// their respective arrays. Returns a new ColumnArray(String) with updated offsets.
-    ColumnPtr processTokensArrayBatch(const ColumnArray & tokens) const;
+    ColumnPtr processTokensArrayBatch(const ColumnArray * tokens) const;
 
     /// Returns an ActionsDAG applying the postprocessor to `haystack_column_name` as a whole.
     /// Symmetric to how the preprocessor transforms the haystack; used when direct index read is off.
