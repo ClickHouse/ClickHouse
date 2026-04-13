@@ -405,7 +405,7 @@ static void writeDataFiles(
 
 bool writeConsolidatedManifestFile(
     int metadata_version,
-    Poco::JSON::Object::Ptr initial_metadata_object,
+    Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage, ContextPtr context,
     SharedHeader sample_block_,
@@ -416,12 +416,12 @@ bool writeConsolidatedManifestFile(
     auto log = getLogger("IcebergManifestConsolidation");
 
     // Derive current snapshot info directly from the metadata file.
-    if (!initial_metadata_object->has(Iceberg::f_current_snapshot_id))
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
         return true;
     }
-    Int64 current_snapshot_id_val = initial_metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
+    Int64 current_snapshot_id_val = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
     if (current_snapshot_id_val < 0)
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
@@ -432,7 +432,7 @@ bool writeConsolidatedManifestFile(
     String current_manifest_list_path;
 
     {
-        auto snapshots = initial_metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+        auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
         for (size_t i = 0; i < snapshots->size(); ++i)
         {
             const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
@@ -451,19 +451,6 @@ bool writeConsolidatedManifestFile(
     }
 
     LOG_INFO(log, "Writing consolidated manifest file from current snapshot {}", current_snapshot_id);
-
-    // Create a deep copy of the metadata object to avoid modifying the original
-    // This ensures we create a new metadata file rather than updating the existing one
-    auto deepCopy = [](Poco::JSON::Object::Ptr obj) -> Poco::JSON::Object::Ptr
-    {
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        obj->stringify(oss);
-        Poco::JSON::Parser parser;
-        auto result = parser.parse(oss.str());
-        return result.extract<Poco::JSON::Object::Ptr>();
-    };
-
-    Poco::JSON::Object::Ptr metadata_object = deepCopy(initial_metadata_object);
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;
