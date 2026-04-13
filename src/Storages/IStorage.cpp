@@ -51,14 +51,7 @@ IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadat
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column
-    const auto virtual_columns = virtuals.get();
-    return !metadata_snapshot->getColumns().has(column_name) && (virtual_columns->has(column_name) || getCommonVirtuals(virtual_columns)->has(column_name));
-}
-
-VirtualColumnsDescription IStorage::createCommonVirtuals([[maybe_unused]] const VirtualColumnsDescription & storage_virtuals)
-{
-    VirtualColumnsDescription desc;
-    return desc;
+    return !metadata_snapshot->getColumns().has(column_name) && virtuals.get()->has(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -352,7 +345,8 @@ Names IStorage::getAllRegisteredNames() const
 NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
 {
     NameDependencies name_deps;
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(storage_id);
+    auto current_storage_id = getStorageID();
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(current_storage_id);
     for (const auto & view_id : view_ids)
     {
         auto view = DatabaseCatalog::instance().getTable(view_id, context);
@@ -364,7 +358,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
             {
                 auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
                 auto query_tree = interpreter.getQueryTree();
-                required_columns = collectSelectedColumnsFromTable(query_tree, storage_id, context);
+                required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
             }
             else
             {

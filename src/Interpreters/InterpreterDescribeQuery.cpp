@@ -166,22 +166,9 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         if (table)
         {
             auto virtuals = table->getVirtualsPtr();
-            NameSet column_names;
             for (const auto & column : *virtuals)
-            {
                 if (!column_descriptions.has(column.name))
-                {
                     virtual_columns.push_back(column);
-                    column_names.insert(column.name);
-                }
-            }
-
-            auto common_virtuals = table->getCommonVirtuals(virtuals);
-            for (const auto & column : *common_virtuals)
-            {
-                if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
-                    virtual_columns.push_back(column);
-            }
         }
     }
 }
@@ -206,22 +193,9 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     if (settings[Setting::describe_include_virtual_columns])
     {
         auto virtuals = table->getVirtualsPtr();
-        NameSet column_names;
         for (const auto & column : *virtuals)
-        {
             if (!column_descriptions.has(column.name))
-            {
                 virtual_columns.push_back(column);
-                column_names.insert(column.name);
-            }
-        }
-
-        auto common_virtuals = table->getCommonVirtuals(virtuals);
-        for (const auto & column : *common_virtuals)
-        {
-            if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
-                virtual_columns.push_back(column);
-        }
     }
 }
 

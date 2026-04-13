@@ -10,9 +10,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>

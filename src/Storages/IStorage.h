@@ -242,11 +242,6 @@ public:
     /// By default return empty list of columns.
     VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
 
-    VirtualsDescriptionPtr getCommonVirtuals(VirtualsDescriptionPtr cur_virtuals) const
-    {
-        return std::make_unique<VirtualColumnsDescription>(createCommonVirtuals(*cur_virtuals));
-    }
-
     Names getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
@@ -311,7 +306,7 @@ public:
     virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
 
 private:
-    StorageID storage_id;
+    StorageID storage_id TSA_GUARDED_BY(id_mutex);
 
     mutable std::mutex id_mutex;
 
@@ -320,8 +315,6 @@ private:
 
     /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
-
-    static VirtualColumnsDescription createCommonVirtuals(const VirtualColumnsDescription & storage_virtuals);
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(

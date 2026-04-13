@@ -1204,27 +1204,12 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     if (storage_snapshot)
     {
         const auto & virtuals = storage_snapshot->virtual_columns;
-        const auto common_virtual_columns = storage_snapshot->storage.getCommonVirtuals(virtuals);
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
             if (auto column = virtuals->tryGet(*it, VirtualsKind::All, VirtualsMaterializationPlace::All))
             {
                 source_columns.push_back(*column);
                 it = unknown_required_source_columns.erase(it);
-            }
-            else if (const auto * common_column_desc = common_virtual_columns->tryGetDescription(*it, VirtualsKind::All, VirtualsMaterializationPlace::All))
-            {
-                /// Ephemeral common virtual columns (e.g. `_table`) are only supported
-                /// by the analyzer which fills them via ExpressionStep.
-                /// The old analyzer has no mechanism to fill them, so skip them here
-                /// to avoid a type mismatch between the header and the actual data.
-                if (!common_column_desc->isEphemeral())
-                {
-                    source_columns.emplace_back(common_column_desc->name, common_column_desc->type);
-                    it = unknown_required_source_columns.erase(it);
-                }
-                else
-                    ++it;
             }
             else
             {
