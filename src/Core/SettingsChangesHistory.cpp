@@ -39,6 +39,22 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.3.1.20001.altinityantalya",
+        {
+            {"allow_experimental_database_iceberg", false, true, "Turned ON by default for Antalya."},
+            {"allow_experimental_database_unity_catalog", false, true, "Turned ON by default for Antalya."},
+            {"allow_experimental_database_glue_catalog", false, true, "Turned ON by default for Antalya."},
+            {"allow_database_iceberg", false, true, "Turned ON by default for Antalya (alias)."},
+            {"allow_database_unity_catalog", false, true, "Turned ON by default for Antalya (alias)."},
+            {"allow_database_glue_catalog", false, true, "Turned ON by default for Antalya (alias)."},
+
+            {"object_storage_cluster", "", "", "Antalya: New setting"},
+            {"object_storage_max_nodes", 0, 0, "Antalya: New setting"},
+            {"object_storage_remote_initiator", false, false, "New setting."},
+            {"object_storage_remote_initiator_cluster", "", "", "New setting."},
+            {"iceberg_partition_timezone", "", "", "New setting."},
+            {"iceberg_timezone_for_timestamptz", "UTC", "UTC", "New setting."},
+        });
         addSettingsChanges(settings_changes_history, "26.3",
         {
             {"allow_experimental_polyglot_dialect", false, false, "New setting to enable the polyglot SQL transpiler dialect."},
@@ -103,11 +119,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"jemalloc_profile_text_collapsed_use_count", false, false, "New setting to aggregate by allocation count instead of bytes in the collapsed jemalloc heap profile format"},
             {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
-        });
-        addSettingsChanges(settings_changes_history, "26.1.3.20001.altinityantalya",
-        {
-            {"iceberg_partition_timezone", "", "", "New setting."},
-            {"object_storage_remote_initiator_cluster", "", "", "New setting."},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -193,7 +204,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
-
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -289,20 +299,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"os_threads_nice_value_query", 0, 0, "New setting."},
             {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
             {"os_thread_priority", 0, 0, "Alias for os_threads_nice_value_query."},
-        });
-        addSettingsChanges(settings_changes_history, "25.8.16.20001.altinityantalya",
-        {
-            {"allow_experimental_database_iceberg", false, true, "Turned ON by default for Antalya."},
-            {"allow_experimental_database_unity_catalog", false, true, "Turned ON by default for Antalya."},
-            {"allow_experimental_database_glue_catalog", false, true, "Turned ON by default for Antalya."},
-            {"allow_database_iceberg", false, true, "Turned ON by default for Antalya (alias)."},
-            {"allow_database_unity_catalog", false, true, "Turned ON by default for Antalya (alias)."},
-            {"allow_database_glue_catalog", false, true, "Turned ON by default for Antalya (alias)."},
-
-            {"iceberg_timezone_for_timestamptz", "UTC", "UTC", "New setting."},
-            {"object_storage_remote_initiator", false, false, "New setting."},
-            {"object_storage_cluster", "", "", "Antalya: New setting"},
-            {"object_storage_max_nodes", 0, 0, "Antalya: New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
