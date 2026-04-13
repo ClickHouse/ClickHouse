@@ -2,7 +2,6 @@
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperSpans.h>
 #include <Common/StaticString.h>
@@ -853,32 +852,6 @@ struct ZooKeeperSessionIDResponse final : ZooKeeperResponse
     Coordination::OpNum getOpNum() const override { return OpNum::SessionID; }
 };
 
-struct ZooKeeperListRecursiveRequest final : ListRecursiveRequest, ZooKeeperRequest
-{
-    ZooKeeperListRecursiveRequest() = default;
-    explicit ZooKeeperListRecursiveRequest(const ListRecursiveRequest & base) : ListRecursiveRequest(base) {}
-
-    OpNum getOpNum() const override { return OpNum::ListRecursive; }
-    void writeImpl(WriteBuffer & out) const override;
-    void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl(bool short_format) const override;
-    size_t sizeImpl() const override;
-
-    ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return true; }
-
-    size_t bytesSize() const override { return ListRecursiveRequest::bytesSize() + sizeof(xid); }
-};
-
-struct ZooKeeperListRecursiveResponse : ListRecursiveResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override;
-    void writeImpl(WriteBuffer & out) const override;
-    size_t sizeImpl() const override;
-    OpNum getOpNum() const override { return OpNum::ListRecursive; }
-
-    size_t bytesSize() const override { return ListRecursiveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
-};
 class ZooKeeperRequestFactory final : private boost::noncopyable
 {
 

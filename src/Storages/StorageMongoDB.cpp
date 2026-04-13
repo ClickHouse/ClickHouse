@@ -18,8 +18,6 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -76,7 +74,7 @@ StorageMongoDB::StorageMongoDB(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
-    : StorageWithCommonVirtualColumns{table_id_}
+    : IStorage{table_id_}
     , configuration{std::move(configuration_)}
     , log(getLogger("StorageMongoDB (" + table_id_.getFullTableName() + ")"))
 {
@@ -85,15 +83,6 @@ StorageMongoDB::StorageMongoDB(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
-}
-
-VirtualColumnsDescription StorageMongoDB::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 Pipe StorageMongoDB::read(

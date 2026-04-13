@@ -64,7 +64,7 @@ from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
     os.path.dirname(os.path.realpath(__file__))
 )
-cluster = ClickHouseCluster(__file__, with_spark=True)
+cluster = ClickHouseCluster(__file__, with_spark=True, azurite_default_port=10000)
 
 S3_DATA = [
     "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet",
@@ -361,7 +361,7 @@ def create_delta_table(
             f"""
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
-            ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '{table_name}', format={format})
+            ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
             """
         )
     elif storage_type == "local":
@@ -390,16 +390,9 @@ def default_upload_directory(
             local_path, remote_path, **kwargs
         )
     elif storage_type == "azure":
-        # Azure blob storage preserves leading slashes in blob names, unlike S3/MinIO which strips
-        # them. Use relative-path mode with a stripped remote prefix so that blob names match what
-        # delta-kernel-rs expects (no leading slash in the az:// table location path component).
-        effective_remote = remote_path.lstrip("/") if remote_path else local_path.lstrip("/")
-        azure_uploader = AzureUploader(
-            started_cluster.blob_service_client,
-            started_cluster.azure_container_name,
-            use_relpath=True,
+        return started_cluster.default_azure_uploader.upload_directory(
+            local_path, remote_path, **kwargs
         )
-        return azure_uploader.upload_directory(local_path, effective_remote, **kwargs)
     elif storage_type == "local":
         return started_cluster.local_uploader.upload_directory(
             local_path, remote_path, **kwargs
@@ -450,7 +443,7 @@ def create_initial_data_file(
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -494,47 +487,9 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     )
 
 
-def test_single_log_file_azure_connection_string(started_cluster):
-    """Test DeltaLakeAzure with connection string authentication and delta kernel enabled."""
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = randomize_table_name("test_single_log_file_azure_cs")
-
-    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
-    parquet_data_path = create_initial_data_file(
-        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
-    )
-
-    delta_path = f"/{TABLE_NAME}"
-    write_delta_from_file(spark, parquet_data_path, delta_path)
-
-    files = default_upload_directory(
-        started_cluster,
-        "azure",
-        delta_path,
-        "",
-    )
-
-    assert len(files) == 2  # 1 metadata file + 1 data file
-
-    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME}
-        ENGINE=DeltaLakeAzure('{connection_string}', '{started_cluster.azure_container_name}', '{TABLE_NAME}', Parquet)
-        """
-    )
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
-        inserted_data
-    )
-
-
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -579,7 +534,7 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -2145,7 +2100,7 @@ deltaLake(
     )
 
 @pytest.mark.parametrize(
-    "new_analyzer, storage_type", [["1", "s3"], ["0", "s3"]]
+    "new_analyzer, storage_type", [["1", "s3"], ["1", "azure"], ["0", "s3"]]
 )
 def test_cluster_function(started_cluster, new_analyzer, storage_type):
     instance = started_cluster.instances["node1"]
@@ -2202,6 +2157,38 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
             '{minio_secret_key}',
             SETTINGS allow_experimental_delta_kernel_rs=1)
         """
+    elif storage_type == "azure":
+        # For azure we will only test new cluster as this function is added recently
+        storage_options = {
+            "AZURE_STORAGE_ACCOUNT_NAME": "devstoreaccount1",
+            "AZURE_STORAGE_ACCOUNT_KEY": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+            "AZURE_STORAGE_CONTAINER_NAME": "{cluster.azure_container_name}",
+            "AZURE_STORAGE_USE_EMULATOR": "true",
+        }
+        path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
+        table = pa.Table.from_arrays(data, schema=schema)
+        write_deltalake_with_retry(
+            path, table, storage_options=storage_options, partition_by=["b"]
+        )
+
+        table_function = f"""
+        deltaLakeAzureCluster(cluster, azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '{table_name}')
+        """
+        instance.query(
+            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
+        assert 5 == int(
+            instance.query(
+                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            )
+        )
+        assert "1\taa\n"
+        "2\tbb\n"
+        "3\tcc\n"
+        "4\taa\n"
+        "5\tbb\n" == instance.query(
+            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
 
 
 def test_partition_columns_3(started_cluster):
@@ -2411,7 +2398,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1, use_parquet_metadata_cache=0",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
             query_id=query_id,
         )
     )
@@ -4713,14 +4700,14 @@ def test_struct_dotted_field_names(started_cluster):
 
     table_function2 = f"deltaLakeLocal('{path2}')"
 
-    result2_d2 = instance.query(f"SELECT d2.inner.`a.foo` FROM {table_function2}").strip()
-    assert result2_d2 == "afoo2", f"Unexpected d2.inner.`a.foo` result: {result2_d2!r}"
+    result2_d2 = instance.query(f"SELECT d2.inner.`a.foo` FROM {table_function}").strip()
+    assert result2_d2 == "afoo2", f"Unexpected d2.inner.`a.foo` result: {result_d2!r}"
 
-    result2_d3 = instance.query(f"SELECT d3.l2.l3.`a.foo` FROM {table_function2}").strip()
-    assert result2_d3 == "afoo3", f"Unexpected d3.l2.l3.`a.foo` result: {result2_d3!r}"
+    result2_d3 = instance.query(f"SELECT d3.l2.l3.`a.foo` FROM {table_function}").strip()
+    assert result2_d3 == "afoo3", f"Unexpected d3.l2.l3.`a.foo` result: {result_d3!r}"
 
-    result2_d4 = instance.query(f"SELECT d4.l2.l3.l4.`a.foo` FROM {table_function2}").strip()
-    assert result2_d4 == "afoo4", f"Unexpected d4.l2.l3.l4.`a.foo` result: {result2_d4!r}"
+    result2_d4 = instance.query(f"SELECT d4.l2.l3.l4.`a.foo` FROM {table_function}").strip()
+    assert result2_d4 == "afoo4", f"Unexpected d4.l2.l3.l4.`a.foo` result: {result_d4!r}"
 
 
 def test_snapshot_consistency(started_cluster):
@@ -5070,14 +5057,3 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
     )
     assert result == 0
     node.query(f"DROP TABLE IF EXISTS {table_name2}_dst ON CLUSTER cluster")
-    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
-    filtered = int(
-        node.query(
-            f"""
-            SELECT ProfileEvents['ObjectStoragePredicateFilteredObjects']
-            FROM system.query_log
-            WHERE query_id = '{query_id}' AND type = 'QueryFinish' AND is_initial_query = 1
-            """
-        )
-    )
-    assert filtered >= 2

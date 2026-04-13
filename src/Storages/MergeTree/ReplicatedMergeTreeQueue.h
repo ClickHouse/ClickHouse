@@ -5,7 +5,7 @@
 #include <expected>
 
 #include <Common/ActionBlocker.h>
-#include <Common/SharedMutex.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -19,8 +19,6 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-
 
 namespace DB
 {
@@ -84,7 +82,7 @@ private:
     LoggerPtr log = nullptr;
 
     /// Protects the queue, future_parts and other queue state variables.
-    mutable SharedMutex state_mutex;
+    mutable std::mutex state_mutex;
 
     /// A set of parts that should be on this replica according to the queue entries that have been done
     /// up to this point. The invariant holds: `virtual_parts` = `current_parts` + `queue`.
@@ -221,7 +219,7 @@ private:
     /// Insert new entry from log into queue
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
-        std::lock_guard<SharedMutex> & state_lock);
+        std::lock_guard<std::mutex> & state_lock);
 
     void removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
@@ -234,7 +232,7 @@ private:
         MergeTreeDataMergerMutator & merger_mutator,
         MergeTreeData & data,
         const CommittingBlocks & committing_blocks,
-        std::unique_lock<SharedMutex> & state_lock) const;
+        std::unique_lock<std::mutex> & state_lock) const;
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
     /// with getDataVersion() == data_version. (Either this mutation was already applied or the part
@@ -249,7 +247,7 @@ private:
     bool isCoveredByFuturePartsImpl(
         const LogEntry & entry,
         const String & new_part_name, String & out_reason,
-        std::unique_lock<SharedMutex> & state_lock,
+        std::unique_lock<std::mutex> & state_lock,
         std::vector<LogEntryPtr> * covered_entries_to_wait) const;
 
     /// After removing the queue element, update the insertion times in the RAM. Running under state_mutex.
@@ -258,7 +256,7 @@ private:
         bool is_successful,
         std::optional<time_t> & min_unprocessed_insert_time_changed,
         std::optional<time_t> & max_processed_insert_time_changed,
-        std::unique_lock<SharedMutex> & state_lock);
+        std::unique_lock<std::mutex> & state_lock);
 
     /// Add part for mutations with block_number > part.getDataVersion()
     void addPartToMutations(const String & part_name, const MergeTreePartInfo & part_info);
@@ -297,11 +295,11 @@ private:
 
     bool isIntersectingWithDropReplaceIntent(
         const LogEntry & entry,
-        const String & part_name, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex lock*/) const;
+        const String & part_name, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex lock*/) const;
 
-    bool isMergeOfPatchPartsBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const;
-    bool isDropOfPatchPartBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const;
-    bool havePendingPatchPartsForMutation(const LogEntry & entry, String & out_reason, const CommittingBlocks & committing_blocks, std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const;
+    bool isMergeOfPatchPartsBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
+    bool isDropOfPatchPartBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
+    bool havePendingPatchPartsForMutation(const LogEntry & entry, String & out_reason, const CommittingBlocks & committing_blocks, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
 
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
@@ -316,14 +314,14 @@ private:
         CurrentlyExecuting(
             const ReplicatedMergeTreeQueue::LogEntryPtr & entry_,
             ReplicatedMergeTreeQueue & queue_,
-            std::unique_lock<SharedMutex> & state_lock);
+            std::unique_lock<std::mutex> & state_lock);
 
         /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under state_mutex.
         static void setActualPartName(
             ReplicatedMergeTreeQueue::LogEntry & entry,
             const String & actual_part_name,
             ReplicatedMergeTreeQueue & queue,
-            std::unique_lock<SharedMutex> & state_lock,
+            std::unique_lock<std::mutex> & state_lock,
             std::vector<LogEntryPtr> & covered_entries_to_wait);
 
     public:
@@ -472,7 +470,6 @@ public:
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
-
     MutationCounters getMutationCounters() const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
@@ -548,7 +545,7 @@ public:
 
     void removeCurrentPartsFromMutations();
 
-    using QueueLocks = std::scoped_lock<SharedMutex, std::mutex, std::mutex>;
+    using QueueLocks = std::scoped_lock<std::mutex, std::mutex, std::mutex>;
 
     /// This method locks all important queue mutexes: state_mutex,
     /// pull_logs_to_queue and update_mutations_mutex. It should be used only

@@ -276,11 +276,13 @@ def parse_args():
 
 
 def find_prev_build(info, build_type):
-    commits = info.get_kv_data("master_track_commits_sha") or []
+    commits = info.get_kv_data("previous_commits_sha") or []
+    assert commits, "No commits found to fetch reference build"
     for sha in commits:
         link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
         if Shell.check(f"curl -sfI {link} > /dev/null"):
             return link
+
     return None
 
 
@@ -321,9 +323,10 @@ def main():
 
     if Utils.is_arm():
         if compare_against_master:
-            link_for_ref_ch = find_prev_build(info, "build_arm_release")
-            if not link_for_ref_ch:
-                print("WARNING: No build found for master track commits, falling back to latest master build")
+            if info.git_branch == "master":
+                link_for_ref_ch = find_prev_build(info, "build_arm_release")
+                assert link_for_ref_ch, "previous clickhouse build has not been found"
+            else:
                 link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_arm_release")
@@ -332,9 +335,10 @@ def main():
             assert False
     elif Utils.is_amd():
         if compare_against_master:
-            link_for_ref_ch = find_prev_build(info, "build_amd_release")
-            if not link_for_ref_ch:
-                print("WARNING: No build found for master track commits, falling back to latest master build")
+            if info.git_branch == "master":
+                link_for_ref_ch = find_prev_build(info, "build_amd_release")
+                assert link_for_ref_ch, "previous clickhouse build has not been found"
+            else:
                 link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_amd_release")
@@ -448,25 +452,10 @@ def main():
             cidb = CIDBCluster(
                 url="https://play.clickhouse.com?user=play", user="", pwd=""
             )
-            if not cidb.is_ready():
-                print(
-                    "WARNING: CIDB is not ready, will proceed without historical thresholds"
-                )
-                Shell.check(
-                    f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
-                )
-                return True
+            assert cidb.is_ready()
             result = cidb.do_select_query(
                 query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
             )
-            if result is None:
-                print(
-                    "WARNING: Failed to fetch historical thresholds, will proceed without them"
-                )
-                Shell.check(
-                    f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
-                )
-                return True
             with open(
                 f"{perf_wd}/historical-thresholds.tsv", "w", encoding="utf-8"
             ) as f:
@@ -494,7 +483,6 @@ def main():
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
-                "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
             cmds = []
             for dataset_path in dataset_paths.values():
@@ -550,8 +538,6 @@ def main():
             f"cp -al {db_path} {perf_right}/db ||:",
             f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
             f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
-            # Symlink user_files from the repository into both servers' user_files directories
-            f'for f in ./tests/performance/user_files/*; do [ -e "$f" ] || continue; ln -sf "$(readlink -f "$f")" {perf_left}/db/user_files/; ln -sf "$(readlink -f "$f")" {perf_right}/db/user_files/; done',
         ]
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
@@ -614,7 +600,7 @@ def main():
 
         def run_tests():
             # Run 10 random queries per test by default, but all queries for benchmarks
-            benchmarks = {"clickbench.xml", "tpch.xml", "tpcds.xml"}
+            benchmarks = {"clickbench.xml", "tpch.xml"}
             for test in test_files:
                 max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
@@ -773,6 +759,19 @@ def main():
                 name="Check Results", status=status, info=message, duration=sw.duration
             )
         )
+
+    # dmesg -T > dmesg.log
+    #
+    # ls -lath
+    #
+    # 7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
+    #    {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
+    #    report analyze benchmark metrics \
+    #    ./*.core.dmp ./*.core
+
+    ## If the files aren't same, copy it
+    # cmp --silent compare.log /tmp/praktika/compare.log || \
+    #  cp compare.log /output
 
     files_to_attach = []
     if res:

@@ -212,8 +212,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
         true,
         static_cast<uint32_t>(settings[Setting::max_parser_depth]),
         static_cast<uint32_t>(settings[Setting::max_parser_backtracks]),
-        throw_on_error,
-        getContext());
+        throw_on_error);
 
     return create_table_query;
 }

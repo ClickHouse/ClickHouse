@@ -121,7 +121,7 @@ public:
     virtual bool isDictionary() const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
-    virtual bool supportsSampling() const;
+    virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
@@ -173,8 +173,8 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
-    /// Returns true if the storage supports columns with dynamic structure (like JSON or Dynamic types).
-    virtual bool supportsColumnsWithDynamicStructure() const { return false; }
+    /// Returns true if the storage supports storing of dynamic subcolumns.
+    virtual bool supportsDynamicSubcolumns() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
@@ -201,15 +201,21 @@ public:
     using IndexSizeByName = std::unordered_map<std::string, IndexSize>;
     virtual IndexSizeByName getSecondaryIndexSizes() const { return {}; }
 
+    /// Get mutable version (snapshot) of storage metadata. Metadata object is
+    /// multiversion, so it can be concurrently changed, but returned copy can be
+    /// used without any locks.
+    virtual StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
+
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    /// Pass query context to enable metadata caching in MergeTree.
-    /// Pass nullptr when no query context is available.
-    virtual StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr /*context*/, bool /*bypass_metadata_cache*/) const
+    virtual StorageMetadataPtr getInMemoryMetadataPtr(bool /*bypass_metadata_cache*/ = false) const // NOLINT
     {
         return metadata.get();
     }
+
+    /// Same as getInMemoryMetadataPtr() but may return nullopt in some specific engines like Alias
+    virtual std::optional<StorageMetadataPtr> tryGetInMemoryMetadataPtr() const { return getInMemoryMetadataPtr(); }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
@@ -235,6 +241,10 @@ public:
     ///
     /// By default return empty list of columns.
     VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
+    NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
+    Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
+
+    static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
 
     Names getAllRegisteredNames() const override;
 
@@ -309,6 +319,11 @@ private:
 
     /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
+
+    /// Description of common virtual columns.
+    static const VirtualColumnsDescription common_virtuals;
+
+    static VirtualColumnsDescription createCommonVirtuals();
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
@@ -558,8 +573,6 @@ public:
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);
-
-    virtual Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context);
 
     /// Cancel a mutation.
     virtual CancellationCode killMutation(const String & /*mutation_id*/);
