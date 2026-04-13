@@ -298,6 +298,7 @@ add_object_library(clickhouse_analyzer_passes Analyzer/Resolve)
 add_object_library(clickhouse_planner Planner)
 add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
+add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
@@ -447,7 +448,7 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
             common
             ch_contrib::double_conversion
-            ch_contrib::dragonbox_to_chars
+            ch_contrib::zmij
             ch_contrib::libdivide
 )
 

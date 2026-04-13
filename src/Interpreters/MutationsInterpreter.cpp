@@ -404,9 +404,23 @@ MutationsInterpreter::MutationsInterpreter(
     ContextPtr context_,
     Settings settings_)
     : MutationsInterpreter(
+        storage_, metadata_snapshot_, std::move(commands_),
+        getAvailableColumnsWithVirtuals(metadata_snapshot_, *storage_),
+        std::move(context_), std::move(settings_))
+{
+}
+
+MutationsInterpreter::MutationsInterpreter(
+    StoragePtr storage_,
+    StorageMetadataPtr metadata_snapshot_,
+    MutationCommands commands_,
+    Names available_columns_,
+    ContextPtr context_,
+    Settings settings_)
+    : MutationsInterpreter(
         Source(storage_),
         metadata_snapshot_, std::move(commands_),
-        getAvailableColumnsWithVirtuals(metadata_snapshot_, *storage_),
+        std::move(available_columns_),
         std::move(context_), std::move(settings_))
 {
     if (settings.can_execute && !settings.return_mutated_rows && dynamic_cast<const MergeTreeData *>(source.getStorage().get()))
@@ -441,7 +455,7 @@ MutationsInterpreter::MutationsInterpreter(
     }
 
     const auto & part_columns = source_part_->getColumnsDescription();
-    auto persistent_virtuals = storage_.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
+    auto persistent_virtuals = storage_.getVirtualsPtr()->getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
     for (const auto & column : persistent_virtuals)
@@ -546,7 +560,7 @@ static void validateUpdateColumns(
                 if (!source.supportsLightweightDelete())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
             }
-            else if (virtual_columns.tryGet(column_name) || common_virtual_columns->tryGet(column_name))
+            else if (virtual_columns.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All) || common_virtual_columns->tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
             }
@@ -644,7 +658,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
 
     auto storage_snapshot = std::make_shared<StorageSnapshot>(*source.getStorage(), metadata_snapshot);
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
 
     auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
@@ -1459,7 +1473,7 @@ void MutationsInterpreter::addStageIfNeeded(std::optional<UInt64> mutation_versi
 void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context, settings.can_execute);
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
 
     auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
 

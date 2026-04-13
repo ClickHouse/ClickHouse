@@ -1,5 +1,5 @@
 #include <IO/copyData.h>
-#include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/FileCache/IFileCachePriority.h>
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -17,11 +17,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/EvictionCandidates.h>
-#include <Interpreters/Cache/SLRUFileCachePriority.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
+#include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
@@ -39,7 +39,7 @@
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>

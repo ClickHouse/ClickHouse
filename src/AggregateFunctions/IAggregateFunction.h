@@ -165,6 +165,16 @@ public:
         std::atomic<bool> & /*is_cancelled*/,
         Arena * /*arena*/) const;
 
+    /// Batch merge multiple states into the first one in parallel.
+    /// Should be used only if isAbleToParallelizeMerge() returned true.
+    /// Default implementation falls back to pairwise merge with thread pool.
+    /// Override for optimized implementations (e.g. bucket-wise merge).
+    virtual void parallelizeMergeMulti(
+        AggregateDataPtrs & /*places*/,
+        ThreadPool & /*thread_pool*/,
+        std::atomic<bool> & /*is_cancelled*/,
+        Arena * /*arena*/) const;
+
     /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
     /// then destroy states (on which src places points to).
     virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
