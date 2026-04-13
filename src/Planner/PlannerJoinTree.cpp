@@ -1276,7 +1276,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             table_expression_query_info.table_expression = dist_table_node;
                             effective_storage = underlying_dist;
                             effective_snapshot = underlying_dist->getStorageSnapshot(
-                                underlying_dist->getInMemoryMetadataPtr(), query_context);
+                                underlying_dist->getInMemoryMetadataPtr(query_context, false), query_context);
                         }
                     }
                 }
@@ -1286,11 +1286,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     till_stage = effective_storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, effective_snapshot, table_expression_query_info);
                 }
-
-                Names extracted_column_names;
-                bool has_table_virtual_column
-                        = extractRequiredNonTableColumnsFromStorage(columns_names, effective_storage, effective_snapshot, till_stage, extracted_column_names);
-                const auto & storage_column_names = has_table_virtual_column ? extracted_column_names : columns_names;
 
                 if (select_query_options.build_logical_plan)
                 {
@@ -1370,7 +1365,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         effective_storage->read(
                         effective_storage->read(
                             query_plan,
-                            storage_column_names,
+                            columns_names,
                             effective_snapshot,
                             table_expression_query_info,
                             std::move(updated_context),
@@ -1382,7 +1377,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         effective_storage->read(
                             query_plan,
-                            storage_column_names,
+                            columns_names,
                             effective_snapshot,
                             table_expression_query_info,
                             query_context,

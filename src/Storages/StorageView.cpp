@@ -28,6 +28,7 @@
 #include <Analyzer/TableNode.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Functions/FunctionFactory.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTWindowDefinition.h>
@@ -198,6 +199,38 @@ bool hasSubqueryOrWindow(const ASTPtr & expr)
     return false;
 }
 
+/// Returns true if `expr` contains any function that is not safe to evaluate on a remote shard.
+/// A function is unsafe when isDeterministic() is false, which covers globally non-deterministic
+/// functions (rand, now, today), block-dependent functions (nowInBlock, blockNumber), and
+/// server-local constants (hostName, serverUUID) — the latter inherit isDeterministic() == false
+/// from FunctionConstantBase.
+bool hasNonDeterministicFunction(const ASTPtr & expr, ContextPtr context)
+{
+    if (!expr)
+    {
+        return false;
+    }
+    if (const auto * func = expr->as<ASTFunction>())
+    {
+        if (!func->name.empty() && func->name != "lambda")
+        {
+            auto builder = FunctionFactory::instance().tryGet(func->name, context);
+            if (!builder || !builder->isDeterministic())
+            {
+                return true;
+            }
+        }
+    }
+    for (const auto & child : expr->children)
+    {
+        if (hasNonDeterministicFunction(child, context))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Returns the underlying storage if the view's inner query is "trivial":
 /// a plain SELECT of columns, expressions, or * from a single table, optionally with a simple WHERE
 /// (no subqueries), and no other transformations. Scalar subqueries, window functions, and aggregate
@@ -218,7 +251,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     }
 
     if (select->with() || select->prewhere()
-        || (select->where() && hasSubquery(select->where()))
+        || (select->where() && (hasSubquery(select->where()) || hasNonDeterministicFunction(select->where(), context)))
         || select->groupBy() || select->having() || select->qualify()
         || select->orderBy() || select->limitLength() || select->limitOffset() || select->limitBy()
         || select->distinct || select->arrayJoinExpressionList().first)
@@ -237,7 +270,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
         {
             continue;
         }
-        if (hasSubqueryOrWindow(expr) || hasAggregate(expr))
+        if (hasSubqueryOrWindow(expr) || hasAggregate(expr) || hasNonDeterministicFunction(expr, context))
         {
             return nullptr;
         }

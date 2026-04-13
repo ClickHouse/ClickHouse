@@ -201,6 +201,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
             {"optimize_trivial_view_pushdown_to_distributed", true, true, "New setting to push the full outer query to shards for trivial views over Distributed tables."},
+            {"optimize_trivial_view_pushdown_to_distributed", false, true, "New setting to push the full outer query to shards for trivial views over Distributed tables."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

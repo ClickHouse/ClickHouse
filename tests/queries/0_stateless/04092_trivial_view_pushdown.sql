@@ -2,6 +2,7 @@
 -- to Distributed tables (optimize_trivial_view_pushdown_to_distributed).
 -- Tags: distributed
 
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET optimize_trivial_view_pushdown_to_distributed = 1;
 
@@ -26,10 +27,12 @@ CREATE VIEW 04092_view_replacing AS SELECT * FROM 04092_dist_replacing;
 
 SYSTEM STOP MERGES 04092_local_replacing;
 
--- Insert the same key twice in separate batches so two parts exist.
-INSERT INTO 04092_local_replacing VALUES (1, 10, 1);
-INSERT INTO 04092_local_replacing VALUES (1, 20, 2);
-INSERT INTO 04092_local_replacing VALUES (2, 30, 1);
+-- Insert via the Distributed table so rows land on whichever shard
+-- test_shard_localhost resolves to (important in multi-shard CI environments).
+INSERT INTO 04092_dist_replacing VALUES (1, 10, 1);
+INSERT INTO 04092_dist_replacing VALUES (1, 20, 2);
+INSERT INTO 04092_dist_replacing VALUES (2, 30, 1);
+SYSTEM FLUSH DISTRIBUTED 04092_dist_replacing;
 
 -- Without FINAL both versions of id=1 are visible.
 SELECT count() FROM 04092_view_replacing;
@@ -53,7 +56,8 @@ ENGINE = Distributed(test_shard_localhost, currentDatabase(), 04092_local_sample
 
 CREATE VIEW 04092_view_sampled AS SELECT * FROM 04092_dist_sampled;
 
-INSERT INTO 04092_local_sampled SELECT number FROM numbers(1000);
+INSERT INTO 04092_dist_sampled SELECT number FROM numbers(1000);
+SYSTEM FLUSH DISTRIBUTED 04092_dist_sampled;
 
 -- SAMPLE 1 must return every row.
 SELECT count() FROM 04092_view_sampled SAMPLE 1;
@@ -94,6 +98,40 @@ FROM (EXPLAIN SELECT * FROM 04092_view_expr FINAL);
 SET optimize_trivial_view_pushdown_to_distributed = 1;
 
 DROP VIEW 04092_view_expr;
+
+-- -----------------------------------------------------------------------
+-- Test 4: Non-deterministic expressions in the SELECT list must suppress
+-- the optimization. hostName() and rand() are both non-deterministic
+-- (isDeterministic() == false) and must not be pushed to shards.
+-- -----------------------------------------------------------------------
+SET optimize_trivial_view_pushdown_to_distributed = 1;
+
+CREATE VIEW 04092_view_hostname AS
+    SELECT hostName() AS h, id FROM 04092_dist_replacing;
+
+-- Optimization must NOT fire: "VIEW subquery" steps must be present.
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
+FROM (EXPLAIN SELECT * FROM 04092_view_hostname);
+
+DROP VIEW 04092_view_hostname;
+
+CREATE VIEW 04092_view_rand AS
+    SELECT rand() AS r, id FROM 04092_dist_replacing;
+
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
+FROM (EXPLAIN SELECT * FROM 04092_view_rand);
+
+DROP VIEW 04092_view_rand;
+
+-- A non-deterministic function in WHERE must also suppress the optimization.
+CREATE VIEW 04092_view_rand_where AS
+    SELECT id FROM 04092_dist_replacing WHERE rand() < 1;
+
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
+FROM (EXPLAIN SELECT * FROM 04092_view_rand_where);
+
+DROP VIEW 04092_view_rand_where;
+
 DROP VIEW 04092_view_replacing;
 DROP TABLE 04092_dist_replacing;
 DROP TABLE 04092_local_replacing;
