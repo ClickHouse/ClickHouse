@@ -745,6 +745,9 @@ def test_create_tables_under_same_namespace(started_cluster):
     listed_table_names = sorted([t[1] for t in tables])
     assert listed_table_names == sorted(table_names), f"Expected {sorted(table_names)}, got {listed_table_names}"
     assert len(tables) == 10
+    node.query("SYSTEM FLUSH LOGS")
+    assert int(node.query("SELECT count() FROM system.text_log WHERE level = 'Debug' AND message LIKE '%already exists, skipping creation%'")) == 9
+
 
 
 def test_drop_table(started_cluster):

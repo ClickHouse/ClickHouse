@@ -945,7 +945,7 @@ void RestCatalog::sendRequest(
     Poco::JSON::Object::Ptr request_body,
     const String & method,
     bool ignore_result,
-    std::vector<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors) const
+    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)

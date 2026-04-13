@@ -77,8 +77,7 @@ bool ReadWriteBufferFromHTTP::isRetriableError(Poco::Net::HTTPResponse::HTTPStat
                     [&](const auto status) { return http_status == status; }))
         return false;
 
-    if (std::find(custom_non_retryable_errors.begin(), custom_non_retryable_errors.end(), http_status)
-        != custom_non_retryable_errors.end())
+    if (custom_non_retryable_errors.contains(http_status))
         return false;
 
     return true;
@@ -210,7 +209,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     HTTPHeaderEntries http_header_entries_,
     bool delay_initialization,
     std::optional<HTTPFileInfo> file_info_,
-    std::vector<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors_)
+    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors_)
     : SeekableReadBuffer(nullptr, 0)
     , connection_group(connection_group_)
     , initial_uri(uri_)
