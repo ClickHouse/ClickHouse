@@ -142,7 +142,6 @@ any_join_distinct_right_table_keys	0
 apply_deleted_mask	1
 apply_mutations_on_fly	0
 apply_patch_parts	1
-apply_patch_parts_join_cache_buckets	8
 apply_prewhere_after_final	0
 apply_row_policy_after_final	1
 apply_settings_from_server	1
