@@ -807,8 +807,11 @@ void KeeperRequestDispatcher2::onCommit(const KeeperRequestForSession & request_
     if (req.session_id != request_for_session.session_id ||
         req.request->xid != request_for_session.request->xid)
     {
-        chassert(false);
-        LOG_ERROR(log, "Requests that were passed to KeeperAppendStream as one batch ended up not all committed consecutively. This should be impossible!");
+        if (batch.committed_requests > 0)
+        {
+            chassert(false);
+            LOG_ERROR(log, "Requests that were passed to KeeperAppendStream as one batch ended up not all committed consecutively. This should be impossible!");
+        }
         return;
     }
 

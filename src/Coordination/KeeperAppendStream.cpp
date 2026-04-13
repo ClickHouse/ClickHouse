@@ -21,7 +21,8 @@ KeeperAppendStream::KeeperAppendStream(KeeperServer * server_) : server(server_)
 
 bool KeeperAppendStream::isBroken() const
 {
-    return is_broken->load();
+    /// Note: this needs to be cheap. get_term() just reads an atomic.
+    return is_broken->load() || (term != 0 && server->raft_instance->get_term() != term);
 }
 
 void KeeperAppendStream::markAsBroken()
@@ -31,7 +32,7 @@ void KeeperAppendStream::markAsBroken()
 
 void KeeperAppendStream::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions, std::function<void(bool)> callback)
 {
-    if (isBroken())
+    if (is_broken->load())
     {
         if (callback)
             callback(false);
@@ -45,21 +46,18 @@ void KeeperAppendStream::putRequestBatch(const KeeperRequestsForSessions & reque
             callback(false);
     };
 
-    if (!client && !term)
+    if (term == 0)
     {
         int32_t leader_id = server->raft_instance->get_leader();
-        if (leader_id == -1)
+        term = server->raft_instance->get_term();
+        if (leader_id == -1 || term == 0)
         {
             fail();
             return;
         }
         int32_t my_id = server->raft_instance->get_id();
 
-        if (leader_id == my_id)
-        {
-            term = server->raft_instance->get_term();
-        }
-        else
+        if (leader_id != my_id)
         {
             auto c_conf = server->raft_instance->get_config();
             auto srv_conf = c_conf->get_server(leader_id);
@@ -77,32 +75,11 @@ void KeeperAppendStream::putRequestBatch(const KeeperRequestsForSessions & reque
     for (const auto & request_for_session : requests_for_sessions)
         entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(request_for_session));
 
-    if (term)
-    {
-        nuraft::raft_server::req_ext_params params;
-        params.expected_term_ = term.value();
-        auto res = server->raft_instance->append_entries_ext(entries, params);
-        if (!res || !res->get_accepted())
-        {
-            fail();
-            return;
-        }
-
-        /// We pretend that this is async, but actually `res` is always ready here and doesn't need
-        /// a callback, when async replication is enabled.
-        res->when_ready(
-            [is_broken_ = is_broken, callback](nuraft::ptr<nuraft::buffer> &, nuraft::ptr<std::exception> & err)
-            {
-                if (err != nullptr)
-                    is_broken_->store(true);
-                if (callback)
-                    callback(err == nullptr);
-            });
-    }
-    else
+    if (client)
     {
         /// Form the message the same way as nuraft's append_entries.
-        auto req = nuraft::cs_new<nuraft::req_msg>(0, nuraft::msg_type::client_request, 0, 0, 0, 0, 0);
+        /// See comment on STREAM_FORWARDING in contrib/NuRaft/src/asio_service.cxx for explanation.
+        auto req = nuraft::cs_new<nuraft::req_msg>(term, nuraft::msg_type::client_request, 0, 0, 0, 0, 0);
         req->set_extra_flags(nuraft::req_msg::STREAM_FORWARDING_REQUEST);
         req->log_entries().reserve(entries.size());
         for (auto & buf : entries)
@@ -122,6 +99,28 @@ void KeeperAppendStream::putRequestBatch(const KeeperRequestsForSessions & reque
                     callback(err == nullptr);
             };
         client->send(req, wrapped_callback, timeout_ms);
+    }
+    else
+    {
+        nuraft::raft_server::req_ext_params params;
+        params.expected_term_ = term;
+        auto res = server->raft_instance->append_entries_ext(entries, params);
+        if (!res || !res->get_accepted())
+        {
+            fail();
+            return;
+        }
+
+        /// We pretend that this is async, but actually `res` is always ready here and doesn't need
+        /// a callback, when async replication is enabled.
+        res->when_ready(
+            [is_broken_ = is_broken, callback](nuraft::ptr<nuraft::buffer> &, nuraft::ptr<std::exception> & err)
+            {
+                if (err != nullptr)
+                    is_broken_->store(true);
+                if (callback)
+                    callback(err == nullptr);
+            });
     }
 }
 

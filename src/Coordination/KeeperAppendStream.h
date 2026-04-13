@@ -29,7 +29,9 @@ class KeeperAppendStream
 public:
     explicit KeeperAppendStream(KeeperServer * server_);
 
-    /// If true, this stream is permanently defunct, you'll have to create a new one if you need to write more.
+    /// If true, this stream is permanently defunct, you'll have to create a new one if you need to
+    /// write more. This is meant to be called periodically and frequently as there's no other
+    /// notification for failed requests.
     bool isBroken() const;
 
     /// Makes isBroken() return true.
@@ -39,15 +41,14 @@ public:
     /// callback(true) is called if the leader accepts entries for processing
     ///   (entries may still get lost after that, the real confirmation is commit callback).
     /// callback(false) is called if anything fails.
-    /// callback may be called inline.
-    /// Set to false if/when the stream is broken.
+    /// callback may be called inline. callback may be called after KeeperAppendStream is destroyed.
     /// It's ok to not use the callback and rely on isBroken() for errors and commit callback for successes.
     void putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions, std::function<void(bool)> callback = nullptr);
 
 private:
     KeeperServer * server;
 
-    std::optional<uint64_t> term; // if set, we're passing requests to local leader
+    uint64_t term = 0;
     nuraft::ptr<nuraft::rpc_client> client; // if set, we're sending requests to remote leader
 
     std::shared_ptr<std::atomic<bool>> is_broken = std::make_shared<std::atomic<bool>>(false);
