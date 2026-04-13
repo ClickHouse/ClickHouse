@@ -6,10 +6,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-i=0 retries=60
-# Sometimes five seconds are not enough due to system overload.
-# But if it can run in less than five seconds at least sometimes - it is enough for the test.
+i=0 retries=10
+# Sometimes the query takes longer than expected due to system overload.
+# Reduced sleep(1)->sleep(0.1) and retries 60->10 to keep worst case under 30s.
 while [[ $i -lt $retries ]]; do
-    timeout 5s ${CLICKHOUSE_CLIENT} --max_threads 10 --query "SELECT * FROM url('http://127.0.0.{1..10}:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+sleep(1)', TSV, 'x UInt8')" --format Null && break
+    timeout 3s ${CLICKHOUSE_CLIENT} --max_threads 10 --query "SELECT * FROM url('http://127.0.0.{1..10}:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+sleep(0.1)', TSV, 'x UInt8')" --format Null && break
     ((++i))
 done
