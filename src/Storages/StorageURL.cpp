@@ -211,7 +211,8 @@ IStorageURLBase::IStorageURLBase(
             std::make_shared<DataTypeMap>(
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-            "");
+            "",
+            VirtualsMaterializationPlace::Reader);
     }
 
     setVirtuals(virtual_columns_desc);
@@ -333,7 +334,8 @@ StorageURLSource::StorageURLSource(
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
-    bool need_only_count_)
+    bool need_only_count_,
+    StorageID storage_id_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -349,6 +351,7 @@ StorageURLSource::StorageURLSource(
     , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
+    , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
@@ -493,6 +496,7 @@ Chunk StorageURLSource::generate()
                 requested_virtual_columns,
                 {
                     .path = curr_uri.getPath(),
+                    .storage_id = storage_id,
                     .size = current_file_size,
                 },
                 getContext());
@@ -1270,7 +1274,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     else if (is_url_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->getVirtualsList(), info.hive_partition_columns_to_read_from_file_path, context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -1338,7 +1342,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             storage->headers,
             read_uri_params,
             is_url_with_globs,
-            need_only_count);
+            need_only_count,
+            storage->getStorageID());
 
         pipes.emplace_back(std::move(source));
     }

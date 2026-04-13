@@ -390,6 +390,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+                res->coverage_test_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            break;
+        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
@@ -455,6 +462,19 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ false, /* allow_string_literal = */ false))
                 return false;
+            break;
+        }
+
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
+                return false;
+            if (!ParserKeyword{Keyword::PATH}.ignore(pos, expected))
+                return false;
+            ASTPtr path_ast;
+            if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
+                return false;
+            res->queue_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
             break;
         }
 
