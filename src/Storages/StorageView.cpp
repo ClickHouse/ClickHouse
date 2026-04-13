@@ -1,5 +1,4 @@
 #include <Access/ViewDefinerDependencies.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -20,7 +19,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
@@ -34,7 +32,6 @@
 
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
@@ -119,21 +116,13 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
 
 }
 
-VirtualColumnsDescription StorageView::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
 StorageView::StorageView(
     const StorageID & table_id_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
     bool is_parameterized_view_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     if (!is_parameterized_view_)
@@ -156,7 +145,7 @@ StorageView::StorageView(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
     SelectQueryDescription description;
 
-    description.inner_query = query.select->ptr();
+    description.inner_query = query.getChild(*query.select);
 
     NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);
@@ -164,10 +153,9 @@ StorageView::StorageView(
     is_parameterized_view = is_parameterized_view_ || query.isParameterizedView();
     storage_metadata.setSelectQuery(description);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
-void StorageView::readImpl(
+void StorageView::read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -241,7 +229,7 @@ void StorageView::drop()
 {
     auto table_id = getStorageID();
 
-    if (getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->sql_security_type == SQLSecurityType::DEFINER)
+    if (getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
         ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 }
 
@@ -251,8 +239,8 @@ void StorageView::alter(
     AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
     DatabaseCatalog::instance()
@@ -365,17 +353,6 @@ void registerStorageView(StorageFactory & factory)
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     });
-}
-
-ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)
-{
-    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    Settings view_settings = view_context->getSettingsCopy();
-    view_settings[Setting::max_result_rows] = 0;
-    view_settings[Setting::max_result_bytes] = 0;
-    view_settings[Setting::extremes] = false;
-    view_context->setSettings(view_settings);
-    return view_context;
 }
 
 }

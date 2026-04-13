@@ -157,11 +157,6 @@ public:
         uint32_t remove_nodes_limit,
         RemoveRecursiveCallback callback) override;
 
-    void listRecursive(
-        const String & path,
-        uint32_t get_children_recursive_nodes_limit,
-        ListRecursiveCallback callback) override;
-
     void exists(
         const String & path,
         ExistsCallback callback,
@@ -182,9 +177,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtrOrEventPtr watch,
-        bool with_stat,
-        bool with_data) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void check(
         const String & path,
@@ -269,8 +262,6 @@ private:
 
     bool use_compression = false;
     bool use_xid_64 = false;
-    bool pass_opentelemetry_tracing_context = false;
-    bool enforce_component_tracking = false;
 
     int64_t close_xid = CLOSE_XID;
 
@@ -288,7 +279,6 @@ private:
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
         WatchCallbackPtrOrEventPtr watch;
-        StaticString component;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
@@ -302,7 +292,6 @@ private:
     std::mutex operations_mutex;
 
     Watches watches TSA_GUARDED_BY(watches_mutex);
-    Watches list_watches TSA_GUARDED_BY(watches_mutex);
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference
@@ -364,7 +353,7 @@ private:
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
     /// Observes the operation in Aggregated ZooKeeper Log.
-    void observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component, bool is_subrequest = false);
+    void observeOperation(const ZooKeeperRequest * request, const ZooKeeperResponse * response, UInt64 elapsed_microseconds);
 
     std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 

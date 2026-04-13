@@ -12,7 +12,6 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/DatabaseCatalog.h>
@@ -189,7 +188,6 @@ public:
     template <bool for_update>
     void finalize(bool strict)
     {
-        auto component_guard = Coordination::setCurrentComponent("StorageKeeperMapSink::finalize");
         const auto & settings = context->getSettingsRef();
 
         ZooKeeperRetriesControl zk_retry{
@@ -315,7 +313,6 @@ public:
 
     Chunk generate() override
     {
-        auto component_guard = Coordination::setCurrentComponent("StorageKeeperMapSource::generate");
         if (it >= end)
         {
             it = {};
@@ -353,7 +350,7 @@ StorageKeeperMap::StorageKeeperMap(
     const std::string & zk_root_path_,
     UInt64 keys_limit_,
     bool override_metadata)
-    : StorageWithCommonVirtualColumns(table_id)
+    : IStorage(table_id)
     , WithContext(context_->getGlobalContext())
     , zk_root_path(zkutil::extractZooKeeperPath(zk_root_path_, false))
     , primary_key(primary_key_)
@@ -361,7 +358,6 @@ StorageKeeperMap::StorageKeeperMap(
     , keys_limit(keys_limit_)
     , log(getLogger(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::StorageKeeperMap");
     std::string path_prefix = context_->getConfigRef().getString("keeper_map_path_prefix", "");
     if (path_prefix.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined");
@@ -370,7 +366,9 @@ StorageKeeperMap::StorageKeeperMap(
 
     setInMemoryMetadata(metadata);
 
-    setVirtuals(createVirtuals());
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "");
+    setVirtuals(std::move(virtuals));
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
@@ -524,11 +522,6 @@ StorageKeeperMap::StorageKeeperMap(
 
                     if (!drop_finished)
                     {
-                        /// Backward compatibility: tables created before 25.1 don't have
-                        /// the drop_lock_version node. Create it if missing so the set below
-                        /// doesn't fail with ZNONODE (same pattern as drop() uses).
-                        client->createIfNotExists(zk_dropped_lock_version_path, "");
-
                         Coordination::Requests drop_lock_requests{
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
                             zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1),
@@ -558,13 +551,6 @@ StorageKeeperMap::StorageKeeperMap(
                                 return;
                         }
                     }
-                }
-
-                /// Root path may have been removed by dropTableData above.
-                if (zk_root_path != "/" && !client->exists(zk_root_path))
-                {
-                    client->createAncestors(zk_root_path);
-                    client->createIfNotExists(zk_root_path, "");
                 }
 
                 Coordination::Requests create_requests{
@@ -646,15 +632,6 @@ private:
     Strings getAllKeys() const;
 };
 
-VirtualColumnsDescription StorageKeeperMap::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "", VirtualsMaterializationPlace::Reader);
-    return desc;
-}
-
 bool StorageKeeperMap::isMetadataStringEqual(
     const std::string & zk_metadata_string,
     const std::string & local_metadata_string,
@@ -715,7 +692,7 @@ bool StorageKeeperMap::isMetadataStringEqual(
 }
 
 
-void StorageKeeperMap::readImpl(
+void StorageKeeperMap::read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -725,7 +702,6 @@ void StorageKeeperMap::readImpl(
         size_t max_block_size,
         size_t num_streams)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::read");
     checkTable<true>(context_);
     storage_snapshot->check(column_names);
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
@@ -752,7 +728,6 @@ void StorageKeeperMap::readImpl(
 
 void ReadFromKeeperMap::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto component_guard = Coordination::setCurrentComponent("ReadFromKeeperMap::initializePipeline");
     if (all_scan)
         initializePipelineImpl(pipeline, std::make_shared<Strings>(getAllKeys()));
     else
@@ -826,7 +801,7 @@ Strings ReadFromKeeperMap::getAllKeys() const
 
 void ReadFromKeeperMap::describeActions(FormatSettings & format_settings) const
 {
-    const std::string & prefix = format_settings.detail_prefix;
+    std::string prefix(format_settings.offset, format_settings.indent_char);
     if (!all_scan)
     {
         format_settings.out << prefix << "ReadType: GetKeys\n";
@@ -849,14 +824,12 @@ void ReadFromKeeperMap::describeActions(JSONBuilder::JSONMap & map) const
 
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::write");
     checkTable<true>(local_context);
     return std::make_shared<StorageKeeperMapSink>(*this, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), local_context);
 }
 
 void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::truncate");
     checkTable<true>(local_context);
     const auto & settings = local_context->getSettingsRef();
     ZooKeeperRetriesControl zk_retry{
@@ -1003,7 +976,6 @@ bool StorageKeeperMap::dropTableData(
 
 void StorageKeeperMap::drop()
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::drop");
     auto current_table_status = getTableStatus(getContext());
     if (current_table_status == TableStatus::UNKNOWN)
     {
@@ -1104,7 +1076,6 @@ private:
 
     BackupEntries generate() override
     {
-        auto component_guard = Coordination::setCurrentComponent("KeeperMapBackup::generate");
         auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
         std::vector<std::string> data_children;
         {
@@ -1169,7 +1140,6 @@ private:
 
 void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::backupData");
     auto coordination = backup_entries_collector.getBackupCoordination();
     coordination->addKeeperMapTable(zk_root_path, table_unique_id, data_path_in_backup);
 
@@ -1177,7 +1147,6 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
     /// assign each path to a single table only.
     auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
     {
-        auto local_component_guard = Coordination::setCurrentComponent("StorageKeeperMap::post_collecting_task");
         auto path_with_data = coordination->getKeeperMapDataPath(zk_root_path);
         if (path_with_data != my_data_path_in_backup)
         {
@@ -1213,7 +1182,6 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
 
 void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::restoreDataFromBackup");
     auto backup = restorer.getBackup();
     if (!backup->hasFiles(data_path_in_backup))
         return;
@@ -1265,7 +1233,6 @@ void StorageKeeperMap::restoreDataImpl(
     std::shared_ptr<WithRetries> with_retries,
     bool allow_non_empty_tables)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::restoreDataImpl");
     const auto & table_id = toString(getStorageID().uuid);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
@@ -1334,7 +1301,6 @@ void StorageKeeperMap::restoreDataImpl(
 
 zkutil::ZooKeeperPtr StorageKeeperMap::getClient() const
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::getClient");
     std::lock_guard lock{zookeeper_mutex};
     if (!zookeeper_client || zookeeper_client->expired())
     {
@@ -1463,7 +1429,7 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Nam
 Chunk StorageKeeperMap::getBySerializedKeys(
     const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const
 {
-    Block sample_block = getInMemoryMetadataPtr(local_context, false)->getSampleBlock();
+    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
     MutableColumnPtr version_column = nullptr;
 
@@ -1541,7 +1507,7 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
 Block StorageKeeperMap::getSampleBlock(const Names &) const
 {
-    auto metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata = getInMemoryMetadataPtr();
     return metadata->getSampleBlock();
 }
 
@@ -1571,7 +1537,6 @@ void StorageKeeperMap::checkMutationIsPossible(const MutationCommands & commands
 
 void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::mutate");
     checkTable<true>(local_context);
 
     if (commands.empty())
@@ -1581,12 +1546,9 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     chassert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, local_context);
-
-    auto mutation_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
-    mutation_columns.push_back(String(version_column_name));
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
@@ -1598,7 +1560,6 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             storage_ptr,
             metadata_snapshot,
             commands,
-            mutation_columns,
             local_context,
             mutation_settings);
 
@@ -1690,7 +1651,6 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         storage_ptr,
         metadata_snapshot,
         commands,
-        mutation_columns,
         local_context,
         settings);
 
@@ -1737,7 +1697,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->primary_key), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");

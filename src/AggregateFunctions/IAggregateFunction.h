@@ -12,7 +12,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <IO/ReadBuffer.h>
 #include "config.h"
@@ -41,7 +40,7 @@ class IDataType;
 class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using DataTypes = std::vector<DataTypePtr>;
 
 struct AggregateFunctionProperties;
 
@@ -161,16 +160,6 @@ public:
     virtual void merge(
         AggregateDataPtr __restrict /*place*/,
         ConstAggregateDataPtr /*rhs*/,
-        ThreadPool & /*thread_pool*/,
-        std::atomic<bool> & /*is_cancelled*/,
-        Arena * /*arena*/) const;
-
-    /// Batch merge multiple states into the first one in parallel.
-    /// Should be used only if isAbleToParallelizeMerge() returned true.
-    /// Default implementation falls back to pairwise merge with thread pool.
-    /// Override for optimized implementations (e.g. bucket-wise merge).
-    virtual void parallelizeMergeMulti(
-        AggregateDataPtrs & /*places*/,
         ThreadPool & /*thread_pool*/,
         std::atomic<bool> & /*is_cancelled*/,
         Arena * /*arena*/) const;
@@ -357,7 +346,10 @@ public:
     /// For most functions if one of arguments is always NULL, we return NULL (it's implemented in combinator Null),
     /// but in some functions we can want to process this argument somehow (for example condition argument in If combinator).
     /// This method returns the set of argument indexes that can be always NULL, they will be skipped in combinator Null.
-    virtual UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const { return {}; }
+    virtual std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const
+    {
+        return {};
+    }
 
     /** Return the nested function if this is an Aggregate Function Combinator.
       * Otherwise return nullptr.

@@ -90,13 +90,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"left_tuple", &isTuple, nullptr, "Tuple"},
-            {"right_tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
 
         const auto & left_types = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get())->getElements();
@@ -176,13 +169,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements;
@@ -250,14 +242,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"},
-            {"value", nullptr, nullptr, "Any"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
@@ -330,15 +320,16 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"left_tuple", &isTuple, nullptr, "Tuple"},
-            {"right_tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
+
+        if (!left_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
+        if (!right_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuple, got {}",
+                            getName(), arguments[1].type->getName());
 
         const auto & left_types = left_tuple->getElements();
         const auto & right_types = right_tuple->getElements();
@@ -452,14 +443,18 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"date_or_datetime", &isDateOrDate32OrDateTimeOrDateTime64, nullptr, "Date, Date32, DateTime or DateTime64"},
-            {"intervals_tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
+        if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+                throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {}. Should be a date or a date with time",
+                    arguments[0].type->getName(), getName()};
 
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
+
+        if (!cur_tuple)
+            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of second argument of function {}. Should be a tuple",
+                    arguments[0].type->getName(), getName()};
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements;
@@ -714,13 +709,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
@@ -815,13 +809,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements;
@@ -967,13 +960,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements;
@@ -1072,14 +1064,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"},
-            {"p", nullptr, nullptr, "Any"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements;
@@ -1210,9 +1200,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionTupleMinus tuple_minus(context);
-        // Only pass the first two arguments (the tuples) to tupleMinus
-        ColumnsWithTypeAndName tuple_args{arguments[0], arguments[1]};
-        auto type = tuple_minus.getReturnTypeImpl(tuple_args);
+        auto type = tuple_minus.getReturnTypeImpl(arguments);
 
         ColumnWithTypeAndName minus_res{type, {}};
 
@@ -1226,10 +1214,8 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         FunctionTupleMinus tuple_minus(context);
-        // Only pass the first two arguments (the tuples) to tupleMinus
-        ColumnsWithTypeAndName tuple_args{arguments[0], arguments[1]};
-        auto type = tuple_minus.getReturnTypeImpl(tuple_args);
-        auto column = tuple_minus.executeImpl(tuple_args, DataTypePtr(), input_rows_count);
+        auto type = tuple_minus.getReturnTypeImpl(arguments);
+        auto column = tuple_minus.executeImpl(arguments, DataTypePtr(), input_rows_count);
 
         ColumnWithTypeAndName minus_res{column, type, {}};
 
@@ -1323,13 +1309,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"left_tuple", &isTuple, nullptr, "Tuple"},
-            {"right_tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
         if (tuple_size == 0)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -1427,8 +1406,6 @@ public:
     size_t getNumberOfArguments() const override { return array_function->getNumberOfArguments(); }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return array_function->getArgumentsThatAreAlwaysConstant(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -2025,24 +2002,7 @@ If either the tuple or div contain non-integer elements then the result is calcu
     FunctionDocumentation documentation_tupleIntDivOrZeroByNumber = {description_tupleIntDivOrZeroByNumber, syntax_tupleIntDivOrZeroByNumber, arguments_tupleIntDivOrZeroByNumber, {}, returned_value_tupleIntDivOrZeroByNumber, examples_tupleIntDivOrZeroByNumber, introduced_in_tupleIntDivOrZeroByNumber, category_tupleIntDivOrZeroByNumber};
     factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>(documentation_tupleIntDivOrZeroByNumber);
 
-    FunctionDocumentation::Description description_dotProduct = R"(
-Calculates the [dot product](https://en.wikipedia.org/wiki/Dot_product) (scalar product) of two vectors (tuples or arrays of equal size).
-Returns the sum of the products of the corresponding elements.
-    )";
-    FunctionDocumentation::Syntax syntax_dotProduct = "dotProduct(vector1, vector2)";
-    FunctionDocumentation::Arguments arguments_dotProduct = {
-        {"vector1", "First vector.", {"Array(T)", "Tuple(T)"}},
-        {"vector2", "Second vector. Must be the same size as the first vector.", {"Array(T)", "Tuple(T)"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_dotProduct = {"Returns the dot product of the two vectors.", {"(U)Int*", "Float*", "Decimal"}};
-    FunctionDocumentation::Examples examples_dotProduct = {
-        {"Basic usage", "SELECT dotProduct((1, 2), (3, 4))", "11"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_dotProduct = {21, 11};
-    FunctionDocumentation::Category category_dotProduct = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_dotProduct = {description_dotProduct, syntax_dotProduct, arguments_dotProduct, {}, returned_value_dotProduct, examples_dotProduct, introduced_in_dotProduct, category_dotProduct};
-
-    factory.registerFunction<TupleOrArrayFunctionDotProduct>(documentation_dotProduct);
+    factory.registerFunction<TupleOrArrayFunctionDotProduct>();
     factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::Case::Insensitive);
 
     /// L1Norm documentation
@@ -2202,7 +2162,7 @@ Calculates the distance between two points (the elements of the vectors are the 
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l1_distance = {"Returns the 1-norm distance. For `Array` inputs, returns `Float32` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Float64`. For `Tuple` inputs, the return type follows the arithmetic result type of the element-wise operations (integer types are preserved).", {"(U)Int*", "Float*"}};
+    FunctionDocumentation::ReturnedValue returned_value_l1_distance = {"Returns the 1-norm distance.", {"UInt32", "Float64"}};
     FunctionDocumentation::Examples examples_l1_distance = {
         {
             "Basic usage",
@@ -2230,7 +2190,7 @@ Calculates the distance between two points (the elements of the vectors are the 
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_distance = {"Returns the 2-norm distance. For `Array` inputs, returns `Float32` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Float64`. For `Tuple` inputs, always returns `Float64`.", {"Float*"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_distance = {"Returns the 2-norm distance.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_distance = {
         {
             "Basic usage",
@@ -2258,7 +2218,7 @@ Calculates the sum of the squares of the difference between the corresponding el
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_squared_distance = {"Returns the sum of the squares of the differences between the corresponding elements of two vectors. For `Array` inputs, returns `Float32` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Float64`. For `Tuple` inputs, the return type follows the arithmetic result type of the element-wise operations (integer types are preserved).", {"(U)Int*", "Float*"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_squared_distance = {"Returns the sum of the squares of the difference between the corresponding elements of two vectors.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_squared_distance = {
         {
             "Basic usage",
@@ -2286,7 +2246,7 @@ Calculates the distance between two points (the elements of the vectors are the 
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_linf_distance = {"Returns the infinity-norm distance. For `Array` inputs, returns `Float32` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Float64`. For `Tuple` inputs, always returns `Float64`.", {"Float*"}};
+    FunctionDocumentation::ReturnedValue returned_value_linf_distance = {"Returns the Infinity-norm distance.", {"Float64"}};
     FunctionDocumentation::Examples examples_linf_distance = {
         {
             "Basic usage",
@@ -2315,7 +2275,7 @@ Calculates the distance between two points (the elements of the vectors are the 
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}},
         {"p", "The power. Possible values: real number from `[1; inf)`.", {"UInt*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_lp_distance = {"Returns the p-norm distance. For `Array` inputs, returns `Float32` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Float64`. For `Tuple` inputs, always returns `Float64`.", {"Float*"}};
+    FunctionDocumentation::ReturnedValue returned_value_lp_distance = {"Returns the p-norm distance.", {"Float64"}};
     FunctionDocumentation::Examples examples_lp_distance = {
         {
             "Basic usage",
@@ -2343,7 +2303,7 @@ Calculates the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity
         {"vector1", "First tuple.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second tuple.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_cosine_distance = {"Returns the cosine distance (one minus the cosine similarity). For `Array` inputs, returns `Float32` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Float64`. For `Tuple` inputs, always returns `Float64`.", {"Float*"}};
+    FunctionDocumentation::ReturnedValue returned_value_cosine_distance = {"Returns the cosine of the angle between two vectors subtracted from one.", {"Float64"}};
     FunctionDocumentation::Examples examples_cosine_distance = {
         {
             "Basic usage",
@@ -2356,7 +2316,7 @@ SELECT cosineDistance((1, 2), (2, 3));
 └────────────────────────────────┘
             )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_cosine_distance = {21, 11};
+    FunctionDocumentation::IntroducedIn introduced_in_cosine_distance = {1, 1};
     FunctionDocumentation::Category category_cosine_distance = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_cosine_distance = {description_cosine_distance, syntax_cosine_distance, arguments_cosine_distance, {}, returned_value_cosine_distance, examples_cosine_distance, introduced_in_cosine_distance, category_cosine_distance};
 
@@ -2369,7 +2329,7 @@ Calculates the approximate distance between two points (the values of the vector
     FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p)";
     FunctionDocumentation::Arguments arguments_l2_distance_transposed
         = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}};
-    FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance. Always returns `Float64`.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_distance_transposed
         = {{"Basic usage",
             R"(
@@ -2410,7 +2370,7 @@ Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosin
             "using more bits increases accuracy at the cost of performance.",
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed
-        = {"Returns the approximate cosine distance (one minus the cosine similarity). Always returns Float64.", {"Float64"}};
+        = {"Returns the approximate cosine of the angle between two vectors subtracted from one.", {"Float64"}};
     FunctionDocumentation::Examples examples_cosine_distance_transposed
         = {{"Basic usage",
             R"(
@@ -2443,7 +2403,6 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
     factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("distanceCosine", TupleOrArrayFunctionCosineDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2Transposed", L2DistanceTransposedName, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceCosineTransposed", CosineDistanceTransposedName, FunctionFactory::Case::Insensitive);
 

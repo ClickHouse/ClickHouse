@@ -3,7 +3,6 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
@@ -171,10 +170,10 @@ public:
 
 private:
     template <typename Value>
-    using CollectionsHolder = VectorWithMemoryTracking<typename HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
+    using CollectionsHolder = std::vector<typename HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
-    using NullableSets = VectorWithMemoryTracking<NullableSet>;
+    using NullableSets = std::vector<NullableSet>;
 
     struct Attribute final
     {
@@ -205,9 +204,7 @@ private:
             CollectionsHolder<IPv4>,
             CollectionsHolder<IPv6>,
             CollectionsHolder<std::string_view>,
-            CollectionsHolder<Array>,
-            CollectionsHolder<Map>,
-            CollectionsHolder<Object>>
+            CollectionsHolder<Array>>
             containers;
     };
 
@@ -268,7 +265,7 @@ private:
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryConfiguration configuration;
 
-    VectorWithMemoryTracking<Attribute> attributes;
+    std::vector<Attribute> attributes;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;
@@ -278,8 +275,8 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    VectorWithMemoryTracking<std::unique_ptr<Arena>> string_arenas;
-    VectorWithMemoryTracking<typename HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
+    std::vector<std::unique_ptr<Arena>> string_arenas;
+    std::vector<typename HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 
@@ -335,7 +332,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         if (container.empty())
             return;
 
-        if (!pool.trySchedule([&container, thread_group = getCurrentThreadGroup()]
+        if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
             {
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_DTOR);
 
@@ -438,45 +435,6 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     [&](size_t) { out->insertDefault(); },
                     default_mask);
             }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute,
-                    extractor,
-                    [&](const size_t, const Map & value) { out->insert(value); },
-                    [&](size_t) { out->insertDefault(); },
-                    default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-                if (is_attribute_nullable)
-                {
-                    getItemsShortCircuitImpl<ValueType, true>(
-                        attribute,
-                        extractor,
-                        [&](size_t row, const Object & value)
-                        {
-                            (*vec_null_map_to)[row] = false;
-                            out->insert(value);
-                        },
-                        [&](size_t row)
-                        {
-                            (*vec_null_map_to)[row] = true;
-                            out->insertDefault();
-                        },
-                        default_mask);
-                }
-                else
-                    getItemsShortCircuitImpl<ValueType, false>(
-                        attribute,
-                        extractor,
-                        [&](const size_t, const Object & value) { out->insert(value); },
-                        [&](size_t) { out->insertDefault(); },
-                        default_mask);
-            }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
@@ -542,36 +500,6 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     extractor,
                     [&](const size_t, const Array & value, bool) { out->insert(value); },
                     default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    extractor,
-                    [&](const size_t, const Map & value, bool) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-                if (is_attribute_nullable)
-                    getItemsImpl<ValueType, true>(
-                        attribute,
-                        extractor,
-                        [&](size_t row, const Object & value, bool is_null)
-                        {
-                            (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
-                        },
-                        default_value_extractor);
-                else
-                    getItemsImpl<ValueType, false>(
-                        attribute,
-                        extractor,
-                        [&](const size_t, const Object & value, bool) { out->insert(value); },
-                        default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {

@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <base/scope_guard.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ErrnoException.h>
 
 #include <thread>
 #include <memory>

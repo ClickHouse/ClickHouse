@@ -1,6 +1,5 @@
 #include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
 
-#include <Common/CurrentThread.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
@@ -80,10 +79,10 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 
 MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info, LoggerPtr log_)
     : storage(storage_info.storage)
-    , table_description(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getSampleBlock())
+    , table_description(storage_info.storage->getInMemoryMetadataPtr()->getSampleBlock())
     , columns_attributes(storage_info.attributes)
-    , column_names(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getNamesOfPhysical())
-    , array_info(createArrayInfos(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getAllPhysical(), table_description))
+    , column_names(storage_info.storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical())
+    , array_info(createArrayInfos(storage_info.storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical(), table_description))
 {
     auto columns_num = table_description.sample_block.columns();
     /// +2 because of _sign and _version columns
@@ -301,7 +300,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
 {
     Int16 num_columns = readInt16(message, pos, size);
 
-    auto process_column_value = [&](Int8 identifier, Int16 column_idx)
+    auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
     {
         switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
         {
@@ -350,7 +349,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
     {
         try
         {
-            process_column_value(readInt8(message, pos, size), column_idx);
+            proccess_column_value(readInt8(message, pos, size), column_idx);
         }
         catch (...)
         {
@@ -455,7 +454,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
             auto & storage_data = storages.find(table_name)->second;
 
-            auto process_identifier = [&](Int8 identifier) -> bool
+            auto proccess_identifier = [&](Int8 identifier) -> bool
             {
                 bool read_next = true;
                 switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
@@ -484,11 +483,11 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             };
 
             /// Read either 'K' or 'O'. Never both of them. Also possible not to get both of them.
-            bool read_next = process_identifier(readInt8(replication_message, pos, size));
+            bool read_next = proccess_identifier(readInt8(replication_message, pos, size));
 
             /// 'N'. Always present, but could come in place of 'K' and 'O'.
             if (read_next)
-                process_identifier(readInt8(replication_message, pos, size));
+                proccess_identifier(readInt8(replication_message, pos, size));
 
             break;
         }

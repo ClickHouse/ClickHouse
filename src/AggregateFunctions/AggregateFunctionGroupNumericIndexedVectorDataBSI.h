@@ -4,9 +4,6 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
 #include <Common/JSONBuilder.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/SetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <base/demangle.h>
 
@@ -111,7 +108,7 @@ private:
      * data_array stores all indexes and values whose value is not 0 using roaringBitmap and Bit-Sliced Index.
      */
     std::shared_ptr<Roaring> zero_indexes = std::make_shared<Roaring>();
-    VectorWithMemoryTracking<std::shared_ptr<Roaring>> data_array;
+    std::vector<std::shared_ptr<Roaring>> data_array;
 
     /// The only way NaN and Inf values can enter BSI is if user adds them as they cannot appear in BSI by any permitted operation.
     /// Do not allow user to do this as it achieves nothing and is very likely by mistake.
@@ -299,27 +296,7 @@ public:
           *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
           */
         using ScaledValueType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
-
-        Int64 scaled_value;
-        if constexpr (std::is_floating_point_v<ValueType>)
-        {
-            UInt64 scaling = 1ULL << fraction_bit_num;
-            auto scaled = static_cast<Float64>(value * static_cast<ValueType>(scaling));
-            /// 2^63 is exactly representable in Float64; Int64 range is [-2^63, 2^63 - 1].
-            constexpr Float64 int64_upper = static_cast<Float64>(1ULL << 63);
-            if (scaled >= int64_upper || scaled < -int64_upper)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Value {} is out of range for BSI with integer_bit_num={} and fraction_bit_num={}",
-                    Float64(value),
-                    integer_bit_num,
-                    fraction_bit_num);
-            scaled_value = static_cast<Int64>(value * static_cast<ValueType>(scaling));
-        }
-        else
-        {
-            scaled_value = static_cast<Int64>(value * static_cast<ScaledValueType>(1ULL << fraction_bit_num));
-        }
+        Int64 scaled_value = Int64(value * static_cast<ScaledValueType>(1ULL << fraction_bit_num));
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             if (scaled_value & (1ULL << i))
@@ -672,8 +649,8 @@ public:
 
     /// Set Roaring containers to RoaringBitmapWithSmallSet
     static inline void setContainers(
-        VectorWithMemoryTracking<roaring::internal::container_t *> & ctns,
-        VectorWithMemoryTracking<UInt8> & types,
+        std::vector<roaring::internal::container_t *> & ctns,
+        std::vector<UInt8> & types,
         UInt32 container_id,
         BSINumericIndexedVector & vector)
     {
@@ -720,8 +697,8 @@ public:
                 length,
                 static_cast<UInt32>(roaring::internal::DEFAULT_MAX_SIZE));
 
-        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
-        VectorWithMemoryTracking<UInt8> types(total_bit_num);
+        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
+        std::vector<UInt8> types(total_bit_num);
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             ctns[i] = roaring::internal::array_container_create_given_capacity(length);
@@ -741,9 +718,9 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt16>> bit_buffer(64, VectorWithMemoryTracking<UInt16>(k_batch_size, 0));
+        std::vector<std::vector<UInt16>> bit_buffer(64, std::vector<UInt16>(k_batch_size, 0));
         /// number of keys in each bitmap of vector.
-        VectorWithMemoryTracking<UInt16> cnt(64);
+        std::vector<UInt16> cnt(64);
 
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
@@ -828,8 +805,8 @@ public:
 
         const UInt32 total_bit_num = vector.getTotalBitNum();
 
-        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
-        VectorWithMemoryTracking<UInt8> types(total_bit_num);
+        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
+        std::vector<UInt8> types(total_bit_num);
 
         for (size_t i = 0; i < total_bit_num; ++i)
         {
@@ -838,7 +815,7 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        VectorWithMemoryTracking<UInt32> bit_buffer(64 * k_batch_size, 0);
+        std::vector<UInt32> bit_buffer(64 * k_batch_size, 0);
         size_t cnt = 0;
         constexpr UInt64 shift = 6;
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
@@ -912,8 +889,8 @@ public:
 
         const UInt32 total_bit_num = vector.getTotalBitNum();
 
-        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
-        VectorWithMemoryTracking<UInt8> types(total_bit_num);
+        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
+        std::vector<UInt8> types(total_bit_num);
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             ctns[i] = array_container_create_given_capacity(roaring::internal::DEFAULT_MAX_SIZE);
@@ -921,8 +898,8 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt16>> bit_buffer(total_bit_num, VectorWithMemoryTracking<UInt16>(k_batch_size, 0));
-        VectorWithMemoryTracking<UInt16> cnt(total_bit_num);
+        std::vector<std::vector<UInt16>> bit_buffer(total_bit_num, std::vector<UInt16>(k_batch_size, 0));
+        std::vector<UInt16> cnt(total_bit_num);
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
             memset(cnt.data(), 0, sizeof(UInt16) * total_bit_num);
@@ -1105,7 +1082,7 @@ public:
         PaddedPODArray<Float64> rhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        SetWithMemoryTracking<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
+        std::set<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = and_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1169,7 +1146,7 @@ public:
         PaddedPODArray<Float64> lhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        SetWithMemoryTracking<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
+        std::set<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = lhs_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1317,35 +1294,15 @@ public:
 
         res_bm = lhs.getAllNonZeroIndex();
 
-        /// Convert the scalar to the same fixed-point two's complement representation
-        /// used by initializeFromVectorAndValue, then compare bit by bit.
-        using ScaledValueType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
-        UInt64 scaling = 1ULL << lhs.fraction_bit_num;
+        UInt64 long_value = UInt64(std::floor(rhs));
+        /// if ValueType is floating point, use ValueType for calculation, otherwise use UInt64
+        using CalculationType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
+        UInt64 decimal_value = static_cast<UInt64>((rhs - static_cast<CalculationType>(long_value)) * static_cast<CalculationType>(1ULL << lhs.fraction_bit_num));
 
-        Int64 scaled_value;
-        if constexpr (std::is_floating_point_v<ValueType>)
+        size_t i = 0;
+        for (; i < lhs.fraction_bit_num; ++i)
         {
-            auto scaled = static_cast<Float64>(rhs * static_cast<ValueType>(scaling));
-            /// 2^63 is exactly representable in Float64; Int64 range is [-2^63, 2^63 - 1].
-            constexpr Float64 int64_upper = static_cast<Float64>(1ULL << 63);
-            if (scaled >= int64_upper || scaled < -int64_upper)
-                return std::make_shared<Roaring>(); /// Out of representable range, no element can match.
-            scaled_value = static_cast<Int64>(rhs * static_cast<ValueType>(scaling));
-        }
-        else
-        {
-            scaled_value = static_cast<Int64>(rhs * static_cast<ScaledValueType>(scaling));
-        }
-
-        UInt64 bit_pattern = static_cast<UInt64>(scaled_value);
-
-        const UInt32 total_bit_num = lhs.getTotalBitNum();
-        if (total_bit_num == 0)
-            return std::make_shared<Roaring>();
-
-        for (size_t i = 0; i < total_bit_num; ++i)
-        {
-            if ((bit_pattern >> i) & 1)
+            if ((decimal_value & 1L) == 1)
             {
                 res_bm->rb_and(*lhs.getDataArrayAt(i));
             }
@@ -1353,22 +1310,26 @@ public:
             {
                 res_bm->rb_andnot(*lhs.getDataArrayAt(i));
             }
+            decimal_value >>= 1;
         }
-
-        /// Check if the value has significant bits beyond what BSI stores.
-        /// For signed two's complement, the remaining upper bits must all match the sign bit.
-        if (total_bit_num < 64)
+        const UInt32 total_bit_num = lhs.getTotalBitNum();
+        for (; i < total_bit_num; ++i)
         {
-            UInt64 remaining = bit_pattern >> total_bit_num;
-            bool sign_bit = (bit_pattern >> (total_bit_num - 1)) & 1;
-            UInt64 expected = sign_bit ? (UINT64_MAX >> total_bit_num) : 0;
-            if (remaining != expected)
+            if ((long_value & 1L) == 1)
             {
-                Roaring for_clear;
-                res_bm->rb_and(for_clear);
+                res_bm->rb_and(*lhs.getDataArrayAt(i));
             }
+            else
+            {
+                res_bm->rb_andnot(*lhs.getDataArrayAt(i));
+            }
+            long_value >>= 1;
         }
-
+        if (long_value != 0)
+        {
+            Roaring for_clear;
+            res_bm->rb_and(for_clear);
+        }
         return res_bm;
     }
 
@@ -1706,10 +1667,9 @@ public:
         }
         else if constexpr (std::is_same_v<ValueType, Float32> || std::is_same_v<ValueType, Float64>)
         {
-            auto scaled = static_cast<Float64>(value * static_cast<ValueType>(scaling));
-            /// 2^63 is exactly representable in Float64; Int64 range is [-2^63, 2^63 - 1].
-            constexpr Float64 int64_upper = static_cast<Float64>(1ULL << 63);
-            if (scaled >= int64_upper || scaled < -int64_upper)
+            constexpr Float64 lim = static_cast<Float64>(std::numeric_limits<Int64>::max());
+
+            if (fabs(value) > lim / static_cast<Float64>(scaling))
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Value {} is out of range for BSI with integer_bit_num={} and fraction_bit_num={}",
@@ -1860,7 +1820,7 @@ public:
         if ((which.isUInt() or which.isInt()) and fraction_bit_num > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "fraction_bit_num should be zero when value type is Int/UInt");
 
-        MapWithMemoryTracking<IndexType, UInt64> index2value;
+        std::map<IndexType, UInt64> index2value;
 
         PaddedPODArray<IndexType> zero_indexes_array;
         zero_indexes->rb_to_array(zero_indexes_array);

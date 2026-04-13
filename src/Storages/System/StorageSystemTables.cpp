@@ -5,7 +5,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -27,9 +26,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/typeid_cast.h>
 
 #include <boost/range/adaptor/map.hpp>
@@ -44,6 +41,12 @@ namespace Setting
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 namespace detail
 {
@@ -116,32 +119,16 @@ ColumnPtr getFilteredTables(
         }
         else
         {
-            if (engine_column || uuid_column)
+            auto table_it = database->getLightweightTablesIterator(context,
+                                                                   /* filter_by_table_name */ {},
+                                                                   /* skip_not_loaded */ false);
+            for (; table_it->isValid(); table_it->next())
             {
-                auto table_it = database->getTablesIterator(context,
-                                                                       /* filter_by_table_name */ {},
-                                                                       /* skip_not_loaded */ false);
-                for (; table_it->isValid(); table_it->next())
-                {
-                    const auto & table = table_it->table();
-                    if (!table)
-                        continue; /// Table was concurrently dropped and should be skipped
-                    table_column->insert(table_it->name());
-                    if (engine_column)
-                        engine_column->insert(table->getName());
-                    if (uuid_column)
-                        uuid_column->insert(table->getStorageID().uuid);
-                }
-            }
-            else
-            {
-                auto table_details = database->getLightweightTablesIterator(context,
-                                                                      /* filter_by_table_name */ {},
-                                                                      /* skip_not_loaded */ false);
-                for (const auto & table_detail : table_details)
-                {
-                    table_column->insert(table_detail.name);
-                }
+                table_column->insert(table_it->name());
+                if (engine_column)
+                    engine_column->insert(table_it->table()->getName());
+                if (uuid_column)
+                    uuid_column->insert(table_it->table()->getStorageID().uuid);
             }
         }
     }
@@ -161,7 +148,7 @@ ColumnPtr getFilteredTables(
 }
 
 StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -188,7 +175,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
-        {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
+        {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
         },
@@ -206,7 +193,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of marks in all parts in this table."},
         {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
-        {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMN) suitable for applying on the fly."},
+        {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMNs) suitable for applying on the fly."},
         {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
         {"columns_descriptions_cache_size", std::make_shared<DataTypeUInt64>(), "Size of columns description cache for *MergeTree tables"},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
@@ -240,15 +227,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
 
     storage_metadata.setColumns(std::move(description));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
-}
-
-VirtualColumnsDescription StorageSystemTables::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 class TablesBlockSource : public ISource
@@ -290,7 +268,7 @@ protected:
     {
         if (table)
         {
-            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            StorageMetadataPtr metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
             if (!metadata_snapshot)
             {
                 columns[res_index++]->insertDefault();
@@ -310,45 +288,10 @@ protected:
         }
     }
 
-
-    size_t fillTableNamesOnly(MutableColumns & res_columns)
-    {
-        auto table_details = database->getLightweightTablesIterator(context,
-                                /* filter_by_table_name */ {},
-                                /* skip_not_loaded */ false);
-
-        size_t count = 0;
-
-        const auto access = context->getAccess();
-        for (const auto & table_detail: table_details)
-        {
-            if (!tables.contains(table_detail.name))
-                continue;
-
-            size_t src_index = 0;
-            size_t res_index = 0;
-
-            if (!access->isGranted(AccessType::SHOW_TABLES, database_name, table_detail.name))
-                continue;
-
-            if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(database_name);
-
-            if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(table_detail.name);
-
-            ++count;
-        }
-        ++database_idx;
-        return count;
-    }
-
     Chunk generate() override
     {
         if (done)
             return {};
-
-        auto component_guard = Coordination::setCurrentComponent("TablesBlockSource::generate");
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
@@ -503,23 +446,8 @@ protected:
 
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-            /// This is for queries similar to 'show tables', where only name of the table is needed
-            auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
-            bool needs_one_column = (needed_columns.size() == 1 && needed_columns[0].name == "name");
-
-            bool needs_two_columns = (needed_columns.size() == 2 &&
-                        ((needed_columns[0].name == "name" && needed_columns[1].name == "database") ||
-                            (needed_columns[0].name == "database" && needed_columns[1].name == "name")));
-
-            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables)
-            {
-                size_t rows_added = fillTableNamesOnly(res_columns);
-                rows_count += rows_added;
-                continue;
-            }
-
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIterator(context,
+                tables_it = database->getLightweightTablesIterator(context,
                         /* filter_by_table_name */ {},
                         /* skip_not_loaded */ false);
 
@@ -534,7 +462,7 @@ protected:
 
                 StoragePtr table = tables_it->table();
                 if (!table)
-                    continue; /// Table was concurrently dropped between iterator snapshot and table() call so we should skip it
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database iterator returned nullptr for the table, which is a bug");
 
                 TableLockHolder lock;
 
@@ -595,7 +523,7 @@ protected:
 
                 StorageMetadataPtr metadata_snapshot;
                 if (table)
-                    metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                    metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
 
                 if (columns_mask[src_index++])
                 {
@@ -917,6 +845,7 @@ protected:
                 }
             }
         }
+
         UInt64 num_rows = res_columns.at(0)->size();
         return Chunk(std::move(res_columns), num_rows);
     }
@@ -968,7 +897,7 @@ private:
     ColumnPtr filtered_tables_column;
 };
 
-void StorageSystemTables::readImpl(
+void StorageSystemTables::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

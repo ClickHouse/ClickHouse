@@ -105,14 +105,27 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
-
-    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override
+    StorageInMemoryMetadata getInMemoryMetadata() const override
     {
         auto target = tryGetTargetTable();
         if (!target)
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+            return IStorage::getInMemoryMetadata();
+        return target->getInMemoryMetadata();
+    }
+    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache) const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
+        return target->getInMemoryMetadataPtr(bypass_metadata_cache);
+    }
+    std::optional<StorageMetadataPtr> tryGetInMemoryMetadataPtr() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
 
-        return target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        return target->getInMemoryMetadataPtr();
     }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -121,7 +134,7 @@ public:
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
-    bool supportsColumnsWithDynamicStructure() const override { return getTargetTable()->supportsColumnsWithDynamicStructure(); }
+    bool supportsDynamicSubcolumns() const override { return getTargetTable()->supportsDynamicSubcolumns(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
     bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
@@ -135,7 +148,10 @@ public:
     bool areAsynchronousInsertsEnabled() const override { return getTargetTable()->areAsynchronousInsertsEnabled(); }
     bool isRemote() const override { return getTargetTable()->isRemote(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
-    bool supportsReplication() const override { return getTargetTable()->supportsReplication(); }
+
+    /// This is important for DatabaseReplicated, avoid not supported by distributed DDL
+    bool supportsReplication() const override { return false; }
+
     bool hasLightweightDeletedMask() const override { return getTargetTable()->hasLightweightDeletedMask(); }
     bool supportsLightweightDelete() const override { return getTargetTable()->supportsLightweightDelete(); }
     std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getTargetTable()->supportsLightweightUpdate(); }
@@ -146,7 +162,7 @@ public:
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
 
-    VirtualsDescriptionPtr getVirtuals() const { return getTargetTable()->getVirtualsPtr(); }
+    NamesAndTypesList getVirtuals() const { return getTargetTable()->getVirtualsList(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
@@ -195,14 +211,14 @@ public:
         return target->getActionLock(type);
     }
 
-    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const { return getTargetTable()->lockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000)); }
+    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const { return getTargetTable()->lockForShare(query_id, acquire_timeout); }
     TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
     {
         auto target = tryGetTargetTable();
         if (!target)
             return nullptr;
 
-        return target->tryLockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000));
+        return target->tryLockForShare(query_id, acquire_timeout);
     }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getTargetTable()->totalRows(query_context); }

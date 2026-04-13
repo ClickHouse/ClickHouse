@@ -1,7 +1,6 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
 
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -174,7 +173,6 @@ private:
             if (worker_state.next_task.load() >= worker_state.tasks.size())
                 break;
 
-            /// Passing a reference to worker_state is safe, because the variable outlives runner
             auto worker = [&worker_state] ()
             {
                 for (auto id = worker_state.next_task++; id < worker_state.tasks.size(); id = worker_state.next_task++)
@@ -257,7 +255,7 @@ private:
 }
 
 StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription{{
@@ -275,15 +273,6 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
         {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
     }});
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
-}
-
-VirtualColumnsDescription StorageSystemDetachedParts::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 class ReadFromSystemDetachedParts : public SourceStepWithFilter
@@ -345,7 +334,7 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
     }
 }
 
-void StorageSystemDetachedParts::readImpl(
+void StorageSystemDetachedParts::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
