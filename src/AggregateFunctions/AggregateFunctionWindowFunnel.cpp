@@ -16,8 +16,6 @@
 
 #include <list>
 
-#include <list>
-
 namespace DB
 {
 struct Settings;
