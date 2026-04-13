@@ -30,6 +30,7 @@ public:
 
     /// Record counts of input and output tokens. To be called after the API call.
     void recordResponse(UInt64 in_tokens, UInt64 out_tokens);
+
     bool handleRowError();
     bool isQuotaExceeded() const { return quota_exceeded.load(MEMORY_ORDER); }
     String onError() const { return on_error; }

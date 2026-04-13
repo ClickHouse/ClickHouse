@@ -39,7 +39,7 @@ protected:
     String sanitizeTextForAI(const String & input);
 };
 
-using AIProviderPtr = std::shared_ptr<IAIProvider>;
+using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key);
 
