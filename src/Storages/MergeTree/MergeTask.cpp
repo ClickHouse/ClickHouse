@@ -884,6 +884,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         global_ctx->merging_skip_indexes.clear();
         global_ctx->skip_indexes_by_column.clear();
+        global_ctx->text_indexes_to_merge.clear();
     }
 
     /// Add implicit minmax indexes for `_block_number` and `_block_offset` if persisted.
@@ -2930,7 +2931,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         {
             for (const auto & column : global_ctx->merging_columns)
             {
-                if (virtuals.tryGet(column.name, VirtualsKind::Persistent))
+                if (virtuals.tryGet(column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
                     continue;
 
                 global_ctx->deduplicate_by_columns.emplace_back(column.name);

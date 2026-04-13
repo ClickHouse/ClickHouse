@@ -16,7 +16,7 @@ public:
 
     virtual StoragePtr getNested() const = 0;
 
-    String getName() const override { return "StorageProxy"; }
+    String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
     bool isView() const override { return getNested()->isView(); }
@@ -32,6 +32,11 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
+    {
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, getNested()->getVirtualsPtr());
+    }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr context,

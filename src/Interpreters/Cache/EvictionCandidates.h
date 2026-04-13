@@ -1,6 +1,6 @@
 #pragma once
 #include <Interpreters/Cache/IFileCachePriority.h>
-#include <Interpreters/Cache/UserCacheUsage.h>
+#include <Interpreters/Cache/CacheUsage.h>
 #include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <deque>
 
