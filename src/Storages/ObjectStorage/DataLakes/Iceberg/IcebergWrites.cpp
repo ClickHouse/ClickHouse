@@ -249,7 +249,8 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr partition_spec,
     Int64 partition_spec_id,
     WriteBuffer & buf,
-    Iceberg::FileContentType content_type)
+    Iceberg::FileContentType content_type,
+    const std::vector<std::pair<Int64, Int64>> & per_file_metrics)
 {
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -281,8 +282,9 @@ void generateManifestFile(
     Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec);
     writer.setMetadata(Iceberg::f_partition_spec, oss_partition_spec.str());
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
-    for (const auto & data_file_name : data_file_names)
+    for (size_t file_idx = 0; file_idx < data_file_names.size(); ++file_idx)
     {
+        const auto & data_file_name = data_file_names[file_idx];
         avro::GenericDatum manifest_datum(root_schema);
         avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
 
@@ -364,23 +366,29 @@ void generateManifestFile(
             if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
                 set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
         }
-        auto summary = new_snapshot->getObject(Iceberg::f_summary);
-        if (summary->has(Iceberg::f_added_records))
+        Int64 record_count;
+        Int64 file_size_in_bytes;
+        if (!per_file_metrics.empty())
         {
-            Int64 added_records = summary->getValue<Int64>(Iceberg::f_added_records);
-            Int64 added_files_size = summary->getValue<Int64>(Iceberg::f_added_files_size);
-
-            data_file.field(Iceberg::f_record_count) = avro::GenericDatum(added_records);
-            data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(added_files_size);
+            record_count = per_file_metrics[file_idx].first;
+            file_size_in_bytes = per_file_metrics[file_idx].second;
         }
         else
         {
-            Int64 added_records = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
-            Int64 added_files_size = summary->getValue<Int64>(Iceberg::f_added_files_size);
-
-            data_file.field(Iceberg::f_record_count) = avro::GenericDatum(added_records);
-            data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(added_files_size);
+            auto summary = new_snapshot->getObject(Iceberg::f_summary);
+            if (summary->has(Iceberg::f_added_records))
+            {
+                record_count = summary->getValue<Int64>(Iceberg::f_added_records);
+                file_size_in_bytes = summary->getValue<Int64>(Iceberg::f_added_files_size);
+            }
+            else
+            {
+                record_count = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
+                file_size_in_bytes = summary->getValue<Int64>(Iceberg::f_added_files_size);
+            }
         }
+        data_file.field(Iceberg::f_record_count) = avro::GenericDatum(record_count);
+        data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(file_size_in_bytes);
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {

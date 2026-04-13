@@ -491,6 +491,8 @@ bool writeConsolidatedManifestFile(
     {
         Row partition_values;
         std::vector<IcebergPathFromMetadata> file_paths;
+        /// Parallel to file_paths: {record_count, file_size_in_bytes} from the source manifest entry.
+        std::vector<std::pair<Int64, Int64>> file_metrics;
 
         explicit PartitionData(Poco::JSON::Array::Ptr /*schema*/)
         {}
@@ -534,6 +536,7 @@ bool writeConsolidatedManifestFile(
             if (std::find(pd.file_paths.begin(), pd.file_paths.end(), data_file->parsed_entry->file_path_key) == pd.file_paths.end())
             {
                 pd.file_paths.push_back(data_file->parsed_entry->file_path_key);
+                pd.file_metrics.emplace_back(data_file->parsed_entry->record_count, data_file->parsed_entry->file_size_in_bytes);
                 ++total_data_files;
             }
         }
@@ -595,7 +598,8 @@ bool writeConsolidatedManifestFile(
             partition_spec,
             partition_spec_id,
             *buffer_manifest,
-            Iceberg::FileContentType::DATA);
+            Iceberg::FileContentType::DATA,
+            pd.file_metrics);
 
         buffer_manifest->finalize();
         Int64 manifest_size = buffer_manifest->count();

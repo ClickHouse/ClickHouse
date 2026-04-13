@@ -58,7 +58,11 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr partition_spec,
     Int64 partition_spec_id,
     WriteBuffer & buf,
-    Iceberg::FileContentType content_type);
+    Iceberg::FileContentType content_type,
+    /// Per-file {record_count, file_size_in_bytes} overrides. When non-empty, these values
+    /// are used instead of the snapshot summary's added-* counters (which are zero for
+    /// manifest-only rewrite snapshots and would corrupt every rewritten manifest entry).
+    const std::vector<std::pair<Int64, Int64>> & per_file_metrics = {});
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
