@@ -71,6 +71,9 @@ UInt64 computeBucketHash(
     return hash.get64();
 }
 
+/// Compile-time switch: true = bucket optimization, false = old sort-based algorithm.
+static constexpr bool USE_BUCKET_OPTIMIZATION = true;
+
 }
 
 ClusterMergingTransform::ClusterMergingTransform(
@@ -131,6 +134,89 @@ Chunk ClusterMergingTransform::generate()
     {
         if (!aggregates_mask[i] && i != cluster_key_pos)
             non_cluster_key_positions.push_back(i);
+    }
+
+    if constexpr (!USE_BUCKET_OPTIMIZATION)
+    {
+        /// Old sort-based algorithm: O(n log n)
+        /// Sort all rows by (non_cluster_keys, cluster_key), then linear merge.
+        std::vector<size_t> row_order(total_rows);
+        std::iota(row_order.begin(), row_order.end(), 0);
+
+        std::sort(row_order.begin(), row_order.end(), [&](size_t a, size_t b)
+        {
+            for (size_t pos : non_cluster_key_positions)
+            {
+                int cmp = merged_columns[pos]->compareAt(a, b, *merged_columns[pos], 1);
+                if (cmp != 0)
+                    return cmp < 0;
+            }
+            return merged_columns[cluster_key_pos]->compareAt(a, b, *merged_columns[cluster_key_pos], 1) < 0;
+        });
+
+        /// Linear scan: merge adjacent rows within distance
+        std::vector<bool> alive(total_rows, true);
+        std::vector<Float64> max_cluster(total_rows);
+        for (size_t i = 0; i < total_rows; ++i)
+            max_cluster[i] = merged_columns[cluster_key_pos]->getFloat64(row_order[i]);
+
+        for (size_t i = 1; i < total_rows; ++i)
+        {
+            /// Find previous alive row
+            size_t prev = i - 1;
+            while (prev < total_rows && !alive[prev])
+            {
+                if (prev == 0) break;
+                --prev;
+            }
+            if (prev >= total_rows || !alive[prev])
+                continue;
+
+            size_t prev_row = row_order[prev];
+            size_t curr_row = row_order[i];
+
+            /// Check non-cluster keys match
+            bool same = true;
+            for (size_t pos : non_cluster_key_positions)
+            {
+                if (merged_columns[pos]->compareAt(prev_row, curr_row, *merged_columns[pos], 1) != 0)
+                {
+                    same = false;
+                    break;
+                }
+            }
+            if (!same) continue;
+
+            Float64 curr_val = merged_columns[cluster_key_pos]->getFloat64(curr_row);
+            if (max_cluster[prev] + cluster_distance >= curr_val)
+            {
+                mergeAggregateStates(merged_columns, aggregates_mask, prev_row, curr_row);
+                max_cluster[prev] = std::max(max_cluster[prev], curr_val);
+                alive[i] = false;
+            }
+        }
+
+        /// Build result
+        size_t result_rows = 0;
+        for (bool a : alive)
+            if (a) ++result_rows;
+
+        MutableColumns result_columns(num_columns);
+        for (size_t i = 0; i < num_columns; ++i)
+            result_columns[i] = merged_columns[i]->cloneEmpty();
+
+        for (size_t i = 0; i < total_rows; ++i)
+        {
+            if (alive[i])
+            {
+                for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
+                    result_columns[col_idx]->insertFrom(*merged_columns[col_idx], row_order[i]);
+            }
+        }
+
+        Chunk result(std::move(result_columns), result_rows);
+        finalizeChunk(result, aggregates_mask);
+        return result;
     }
 
     /// --- Phase A: Bucket reduction ---
