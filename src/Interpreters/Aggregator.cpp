@@ -1164,6 +1164,7 @@ void Aggregator::executeImpl(
     if (top_n)
         method.top_n_heap.initIfNeeded(
             state.getKeyColumns(), params.top_n_key_columns,
+            params.keys.size(),
             params.top_n_keys, params.top_n_keys_directions,
             params.top_n_keys_nulls_directions, params.top_n_keys_collators);
 

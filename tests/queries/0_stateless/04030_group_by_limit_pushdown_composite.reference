@@ -8,3 +8,9 @@ prefix_two_of_three
 prefix_with_offset
 composite_two_level
 prefix_two_level
+nullable_nulls_first_asc
+nullable_nulls_last_asc
+nullable_nulls_first_desc
+nullable_nulls_last_desc
+composite_nullable_nulls_first
+composite_nullable_nulls_last

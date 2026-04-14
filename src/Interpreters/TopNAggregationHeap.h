@@ -47,6 +47,13 @@ struct TopNAggregationHeap
     /// True when the heap stores composite (multi-column) keys via ColumnTuple.
     bool is_composite = false;
 
+    /// True when the heap tracks only a prefix of the GROUP BY keys (ORDER BY
+    /// uses fewer columns than GROUP BY).  In this case the evicted heap value
+    /// does not represent the full hash-table key, so hash-table pruning must
+    /// be skipped — reading KeyType bytes from the prefix column would be an
+    /// out-of-bounds read or match the wrong entry.
+    bool is_prefix_mode = false;
+
     TopNAggregationHeap() = default;
     TopNAggregationHeap(const TopNAggregationHeap &) = delete;
     TopNAggregationHeap & operator=(const TopNAggregationHeap &) = delete;
@@ -57,6 +64,7 @@ struct TopNAggregationHeap
         , nulls_directions(std::move(other.nulls_directions))
         , collators(std::move(other.collators))
         , is_composite(other.is_composite)
+        , is_prefix_mode(other.is_prefix_mode)
         , should_skip_numeric_fn(other.should_skip_numeric_fn)
         , capacity(other.capacity)
         , compaction_threshold(other.compaction_threshold)
@@ -87,6 +95,7 @@ struct TopNAggregationHeap
             nulls_directions = std::move(other.nulls_directions);
             collators = std::move(other.collators);
             is_composite = other.is_composite;
+            is_prefix_mode = other.is_prefix_mode;
             should_skip_numeric_fn = other.should_skip_numeric_fn;
             capacity = other.capacity;
             compaction_threshold = other.compaction_threshold;
@@ -167,9 +176,12 @@ struct TopNAggregationHeap
 
     /// Initialize the heap if not already initialized.
     /// Dispatches to the single-column or composite init based on `heap_key_count`.
+    /// `total_group_by_keys` is the total number of GROUP BY key columns;
+    /// when `heap_key_count < total_group_by_keys`, the heap is in prefix mode.
     void initIfNeeded(
         const ColumnRawPtrs & key_columns,
         size_t heap_key_count,
+        size_t total_group_by_keys,
         size_t cap,
         const std::vector<int> & dirs,
         const std::vector<int> & null_dirs,
@@ -177,6 +189,8 @@ struct TopNAggregationHeap
     {
         if (heap_column)
             return;
+
+        is_prefix_mode = heap_key_count < total_group_by_keys;
 
         if (heap_key_count == 1)
         {
@@ -270,7 +284,12 @@ struct TopNAggregationHeap
         {
             size_t evicted = heap.top();
             heap.pop();
-            if (!is_composite)
+            /// Hash-table pruning is only safe when the heap stores the full
+            /// GROUP BY key as a single column.  Skip when composite (multi-column
+            /// heap — can't reconstruct the hash key) or when in prefix mode
+            /// (heap column is narrower than the hash-table key — reading KeyType
+            /// bytes would be an out-of-bounds read or match the wrong entry).
+            if (!is_composite && !is_prefix_mode)
                 on_evict(evicted);
         }
 

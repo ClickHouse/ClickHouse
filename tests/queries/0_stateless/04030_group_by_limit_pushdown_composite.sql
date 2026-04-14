@@ -192,4 +192,76 @@ SELECT * FROM (
     SETTINGS group_by_limit_pushdown = 0
 ) ORDER BY x, y ASC;
 
+-- =====================
+-- Nullable key with NULLS FIRST (ASC): NULLs should appear before non-NULL values.
+-- =====================
+SELECT 'nullable_nulls_first_asc';
+SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS FIRST LIMIT 5
+SETTINGS group_by_limit_pushdown = 1
+EXCEPT
+SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS FIRST LIMIT 5
+SETTINGS group_by_limit_pushdown = 0;
+
+-- =====================
+-- Nullable key with NULLS LAST (ASC): NULLs should appear after all non-NULL values.
+-- =====================
+SELECT 'nullable_nulls_last_asc';
+SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS LAST LIMIT 5
+SETTINGS group_by_limit_pushdown = 1
+EXCEPT
+SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS LAST LIMIT 5
+SETTINGS group_by_limit_pushdown = 0;
+
+-- =====================
+-- Nullable key with NULLS FIRST (DESC): NULLs should appear before non-NULL values.
+-- =====================
+SELECT 'nullable_nulls_first_desc';
+SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS FIRST LIMIT 5
+SETTINGS group_by_limit_pushdown = 1
+EXCEPT
+SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS FIRST LIMIT 5
+SETTINGS group_by_limit_pushdown = 0;
+
+-- =====================
+-- Nullable key with NULLS LAST (DESC): NULLs should appear after all non-NULL values.
+-- =====================
+SELECT 'nullable_nulls_last_desc';
+SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS LAST LIMIT 5
+SETTINGS group_by_limit_pushdown = 1
+EXCEPT
+SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS LAST LIMIT 5
+SETTINGS group_by_limit_pushdown = 0;
+
+-- =====================
+-- Composite key with NULLS FIRST: GROUP BY a, d ORDER BY a, d ASC NULLS FIRST LIMIT N
+-- =====================
+SELECT 'composite_nullable_nulls_first';
+SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS FIRST LIMIT 10
+SETTINGS group_by_limit_pushdown = 1
+EXCEPT
+SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS FIRST LIMIT 10
+SETTINGS group_by_limit_pushdown = 0;
+
+-- =====================
+-- Composite key with NULLS LAST: GROUP BY a, d ORDER BY a, d ASC NULLS LAST LIMIT N
+-- =====================
+SELECT 'composite_nullable_nulls_last';
+SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST LIMIT 10
+SETTINGS group_by_limit_pushdown = 1
+EXCEPT
+SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST LIMIT 10
+SETTINGS group_by_limit_pushdown = 0;
+
 DROP TABLE t_gbylimit_comp;
