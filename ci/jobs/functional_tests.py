@@ -127,7 +127,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
-    "targeted": "--flaky-check",
+    "targeted": "--flaky-check --no-self-parallel",
 }
 
 
@@ -273,8 +273,7 @@ def main():
         # random settings per TestCase; --max-failures 5 stops early on broken PRs.
         rerun_count = 50
     elif is_targeted_check:
-        print("Rerun count set to 5 for targeted check")
-        rerun_count = 5
+        rerun_count = 50
 
     if is_flaky_check:
         # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
@@ -401,28 +400,12 @@ def main():
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
             elif is_flaky_check:
-                # Step 1: changed/new test files in this PR
-                changed_tests = targeter.get_changed_tests()
-                changed_str = ", ".join(changed_tests) if changed_tests else "(none)"
-                print(f"[flaky-check] Step 1 — changed/new tests ({len(changed_tests)}): {changed_str}")
-
-                # Step 2: tests that failed in previous CI runs for this PR
-                try:
-                    previously_failed = targeter.get_previously_failed_tests()
-                except Exception as e:
-                    print(f"[flaky-check] Step 2 — failed to fetch previously-failed tests: {e}")
-                    previously_failed = []
-                failed_str = ", ".join(previously_failed) if previously_failed else "(none)"
-                print(f"[flaky-check] Step 2 — previously failed tests ({len(previously_failed)}): {failed_str}")
-
-                # Merge both sets preserving priority order (changed first)
-                seen: set = set()
-                tests = []
-                for t in list(changed_tests) + list(previously_failed):
-                    if t not in seen:
-                        seen.add(t)
-                        tests.append(t)
-                print(f"[flaky-check] Total unique tests to run: {len(tests)}")
+                # Flaky check runs only changed/new test files in this PR.
+                # Previously failed and coverage-relevant tests are handled
+                # by the separate targeted check jobs.
+                tests = targeter.get_changed_tests()
+                tests_str = ", ".join(tests) if tests else "(none)"
+                print(f"[flaky-check] Changed/new tests ({len(tests)}): {tests_str}")
             else:
                 tests = targeter.get_changed_tests()
 
@@ -438,6 +421,7 @@ def main():
         assert not args.test, "--test not supposed to be used for targeted check"
         tests, results_with_info = targeter.get_all_relevant_tests_with_info()
         results.append(results_with_info)
+
         if not tests:
             # early exit
             Result.create_from(
@@ -566,15 +550,8 @@ def main():
 
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
-        # For targeted checks with multiple iterations, use N separate clickhouse-test
-        # invocations so that every invocation creates fresh TestCase objects with
-        # independently randomized settings.
-        run_sets_cnt = rerun_count if is_targeted_check else 1
-        rerun_count = 1 if is_targeted_check else rerun_count
-
         global_time_limit = 0
         if is_flaky_check:
-            # Hard 45-minute wall-clock limit for the test runner.
             FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min
             global_time_limit = max(
                 FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 0
@@ -584,6 +561,17 @@ def main():
                 f" (elapsed so far: {int(stop_watch.duration)}s,"
                 f" remaining: {global_time_limit}s)"
             )
+
+            run_tests(
+                batch_num=0,
+                batch_total=0,
+                tests=list(tests) if tests else tests,
+                extra_args=runner_options,
+                random_order=True,
+                rerun_count=rerun_count,
+                global_time_limit=global_time_limit,
+            )
+
         elif is_targeted_check:
             job_timeout = int(3600 * 2.5)
             soft_limit_margin = 3600
@@ -595,28 +583,23 @@ def main():
                 f" (elapsed so far: {int(stop_watch.duration)}s)"
             )
 
-        tests_to_run = list(tests) if tests else tests
-
-        for cnt in range(run_sets_cnt):
-            if run_sets_cnt > 1 and cnt > 0:
-                if is_targeted_check:
-                    job_timeout = int(3600 * 2.5)
-                    soft_limit_margin = 3600
-                    global_time_limit = max(
-                        job_timeout - soft_limit_margin - int(stop_watch.duration), 0
-                    )
-                if global_time_limit <= 0:
-                    print(
-                        "NOTE: Time limit exhausted; stopping before next iteration"
-                    )
-                    break
-
             run_tests(
-                batch_num=batch_num if not tests_to_run else 0,
-                batch_total=total_batches if not tests_to_run else 0,
-                tests=tests_to_run,
+                batch_num=0,
+                batch_total=0,
+                tests=list(tests) if tests else tests,
                 extra_args=runner_options,
-                random_order=is_flaky_check or is_targeted_check or is_bugfix_validation,
+                random_order=True,
+                rerun_count=rerun_count,
+                global_time_limit=global_time_limit,
+            )
+
+        else:
+            run_tests(
+                batch_num=batch_num,
+                batch_total=total_batches,
+                tests=list(tests) if tests else tests,
+                extra_args=runner_options,
+                random_order=is_bugfix_validation,
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
             )

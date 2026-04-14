@@ -9,6 +9,12 @@
 
     <asynchronous_metrics_keeper_metrics_only>true</asynchronous_metrics_keeper_metrics_only>
 
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </asynchronous_metric_log>
+
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>

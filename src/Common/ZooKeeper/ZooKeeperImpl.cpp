@@ -70,6 +70,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperSync;
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperGetACL;
+    extern const Event ZooKeeperListRecursive;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
@@ -1696,6 +1697,27 @@ void ZooKeeper::removeRecursive(
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveRecursiveResponse &>(response)); };
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
+}
+
+void ZooKeeper::listRecursive(
+    const String & path,
+    uint32_t get_children_recursive_nodes_limit,
+    ListRecursiveCallback callback)
+{
+    if (!isFeatureEnabled(KeeperFeatureFlag::GET_CHILDREN_RECURSIVE))
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListRecursive request type cannot be used because it's not supported by the server");
+
+    ZooKeeperListRecursiveRequest request;
+    request.path = path;
+    request.children_nodes_limit = get_children_recursive_nodes_limit;
+
+    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperListRecursiveRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListRecursiveResponse &>(response)); };
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperListRecursive);
 }
 
 void ZooKeeper::exists(
