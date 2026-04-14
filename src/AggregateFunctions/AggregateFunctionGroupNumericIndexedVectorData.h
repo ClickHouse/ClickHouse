@@ -92,7 +92,7 @@ public:
         VectorImpl::pointwiseMultiply(lhs.impl, rhs, res.impl);
     }
 
-    // Multiply numeric indexed vector with a bitmap
+    /// Multiply numeric indexed vector with a bitmap
     static void
     pointwiseMultiply(const NumericIndexedVector & lhs, const AggregateFunctionGroupBitmapData<IndexType> & rhs, NumericIndexedVector & res)
     {
