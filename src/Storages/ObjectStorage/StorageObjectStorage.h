@@ -54,6 +54,7 @@ public:
         ASTPtr order_by_ = nullptr,
         bool is_table_function_ = false,
         bool lazy_init = false,
+        bool updated_configuration = false, // avoid double update configuration from cluster and local versions
         std::optional<std::string> sample_path_ = std::nullopt);
 
     String getName() const override;

@@ -109,7 +109,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->getFormat() == "auto");
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && catalog;
 
-    auto log_ = getLogger("StorageObjectStorageCluster");
+    auto log = getLogger("StorageObjectStorageCluster");
 
     bool is_delta_lake_cdf = context_->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
             || context_->getSettingsRef()[Setting::delta_lake_snapshot_end_version] != -1;
@@ -121,18 +121,21 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode_ == LoadingStrictnessLevel::CREATE)
     {
-        LOG_DEBUG(log_, "Creating new storage with specified columns");
+        LOG_DEBUG(log, "Creating new storage with specified columns");
         configuration->create(
             object_storage, context_, columns_in_table_or_function_definition, partition_by, order_by, if_not_exists, catalog, table_id_);
     }
 
+    bool updated_configuration = false;
     try
     {
         if (!do_lazy_init)
         {
-            configuration->update(
-                object_storage,
-                context_);
+            if (is_table_function)
+                configuration->lazyInitializeIfNeeded(object_storage, context_);
+            else
+                configuration->update(object_storage, context_);
+            updated_configuration = true;
         }
     }
     catch (...)
@@ -143,7 +146,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         {
             throw;
         }
-        tryLogCurrentException(log_);
+        tryLogCurrentException(log);
     }
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
@@ -154,11 +157,13 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         validateSupportedColumns(columns, *configuration);
     configuration->check(context_);
 
-    if (sample_path.empty()
-        && context_->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->isDataLakeConfiguration()
-        && !configuration->getPartitionStrategy())
+    if (updated_configuration && sample_path.empty()
+            && context_->getSettingsRef()[Setting::use_hive_partitioning]
+            && !configuration->isDataLakeConfiguration()
+            && !configuration->getPartitionStrategy())
+    {
         sample_path = getPathSample(context_);
+    }
 
     /// Not grabbing the file_columns because it is not necessary to do it here.
     std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
@@ -226,6 +231,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         order_by,
         /* is_table_function */is_table_function,
         /* lazy_init */lazy_init,
+        updated_configuration,
         sample_path);
 
     auto virtuals_ = getVirtualsPtr();

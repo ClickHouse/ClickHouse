@@ -112,6 +112,7 @@ StorageObjectStorage::StorageObjectStorage(
     ASTPtr /*order_by_*/,
     bool is_table_function_,
     bool lazy_init,
+    bool updated_configuration,
     std::optional<std::string> sample_path_)
     : IStorage(table_id_)
     , configuration(configuration_)
@@ -144,10 +145,9 @@ StorageObjectStorage::StorageObjectStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
     }
 
-    bool updated_configuration = false;
     try
     {
-        if (!do_lazy_init)
+        if (!do_lazy_init && !updated_configuration)
         {
             if (is_table_function)
                 configuration->lazyInitializeIfNeeded(object_storage, context);
