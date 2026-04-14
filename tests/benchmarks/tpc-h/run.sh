@@ -415,36 +415,114 @@ for QN in "${QUERY_NUMS[@]}"; do
 TIMEJSON
     done
 
-    # ---- Execute query: hot runs ----
-    for ((r = 1; r <= HOT_RUNS; r++)); do
-        echo -n "  hot  run ${r}/${HOT_RUNS}... "
+    # ---- Execute query: hot runs (single connection for all runs) ----
+    # All hot runs are sent through one client connection to ensure they
+    # hit the same server. This matters when connecting through a load
+    # balancer — separate connections may be routed to different servers,
+    # defeating cache warm-up.
+    if [[ "$HOT_RUNS" -gt 0 ]]; then
+        echo -n "  hot  runs 1-${HOT_RUNS}... "
 
-        LOG_FILE="${RUN_DIR}/logs/q${QN_PAD}_hot_${r}.log"
-        TIME_FILE="${RUN_DIR}/times/q${QN_PAD}_hot_${r}.json"
-        RESULT_FILE="${RUN_DIR}/results/q${QN_PAD}_hot_${r}.tsv"
+        HOT_COMBINED_LOG="${RUN_DIR}/logs/q${QN_PAD}_hot_combined.log"
+        HOT_COMBINED_RESULT="${RUN_DIR}/results/q${QN_PAD}_hot_combined.tsv"
+
+        # Build a batch: SET_PREFIX once, then the query repeated HOT_RUNS times.
+        # For Q15-style multi-statement queries (CREATE VIEW / SELECT / DROP VIEW),
+        # repeating the entire file works — the view is created and dropped each time.
+        HOT_BATCH="${SET_PREFIX}"
+        for ((r = 1; r <= HOT_RUNS; r++)); do
+            HOT_BATCH+="$(cat "$QUERY_FILE")"$'\n'
+        done
 
         START_TS="$(date +%s%N)"
-        run_query_file "$QUERY_FILE" --format TabSeparated \
-            > "$RESULT_FILE" 2> "$LOG_FILE" || true
+        echo "$HOT_BATCH" | "${CLIENT_BASE[@]}" "${SETTINGS_ARGS[@]}" \
+            --multiquery --format TabSeparated \
+            > "$HOT_COMBINED_RESULT" 2> "$HOT_COMBINED_LOG" || true
         END_TS="$(date +%s%N)"
 
-        ELAPSED_NS=$(( END_TS - START_TS ))
-        ELAPSED_SEC="$(echo "scale=3; ${ELAPSED_NS} / 1000000000" | bc)"
+        TOTAL_ELAPSED_NS=$(( END_TS - START_TS ))
 
-        READ_ROWS="$(grep -oP 'Read \K[0-9]+(?= rows)' "$LOG_FILE" | tail -1)" || READ_ROWS=""
-        READ_BYTES="$(grep -oP 'Read [0-9]+ rows, \K[0-9.]+' "$LOG_FILE" | tail -1)" || READ_BYTES=""
-        RESULT_ROWS="$(wc -l < "$RESULT_FILE")"
+        # Extract per-run server times from the combined log.
+        # Each query execution produces one "executeQuery: Read ... in X sec" line.
+        # For multi-statement queries (Q15), the main SELECT's line is the one we want.
+        # We take the last N lines matching the pattern (N = HOT_RUNS).
+        mapfile -t HOT_SERVER_TIMES < <(
+            grep -oP 'executeQuery: Read .* in \K[\d.]+(?= sec)' "$HOT_COMBINED_LOG" \
+            | tail -n "$HOT_RUNS"
+        )
 
-        report_query_status "$LOG_FILE" "$RESULT_FILE" "$ELAPSED_SEC"
+        # Extract per-run read stats (same approach — last N matches).
+        mapfile -t HOT_READ_ROWS < <(
+            grep -oP 'executeQuery: Read \K[0-9]+(?= rows)' "$HOT_COMBINED_LOG" \
+            | tail -n "$HOT_RUNS"
+        )
+        mapfile -t HOT_READ_BYTES < <(
+            grep -oP 'executeQuery: Read [0-9]+ rows, \K[0-9.]+' "$HOT_COMBINED_LOG" \
+            | tail -n "$HOT_RUNS"
+        )
 
-        printf "%s\thot\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-            "Q${QN_PAD}" "$r" "$ELAPSED_SEC" "$SERVER_TIME" "$READ_ROWS" "$READ_BYTES" "$RESULT_ROWS" "$QUERY_ERROR" \
-            >> "$SUMMARY_FILE"
+        # Check for errors in the combined log.
+        HOT_ERROR=""
+        HOT_ERR_MSG="$(grep -oP 'Code: \d+\. DB::Exception: \K[^(]+' "$HOT_COMBINED_LOG" 2>/dev/null | head -1 || true)"
+        if [[ -z "$HOT_ERR_MSG" ]]; then
+            HOT_ERR_MSG="$(grep -oP 'DB::Exception:.*?(?=\. \(|, Stack)' "$HOT_COMBINED_LOG" 2>/dev/null | head -1 || true)"
+        fi
+        [[ -n "$HOT_ERR_MSG" ]] && HOT_ERROR="$HOT_ERR_MSG"
 
-        cat > "$TIME_FILE" <<TIMEJSON
-{"query": "Q${QN_PAD}", "type": "hot", "run": ${r}, "elapsed_sec": ${ELAPSED_SEC}, "server_sec": "${SERVER_TIME}", "read_rows": "${READ_ROWS}", "result_rows": ${RESULT_ROWS}, "error": "${QUERY_ERROR}"}
+        # Count result rows: for deterministic queries all runs produce the same
+        # result, so total_lines / HOT_RUNS gives per-run count.
+        TOTAL_RESULT_LINES="$(wc -l < "$HOT_COMBINED_RESULT")"
+
+        # Emit per-run entries into summary.tsv and individual time/log files.
+        for ((r = 1; r <= HOT_RUNS; r++)); do
+            IDX=$((r - 1))
+            RUN_SERVER_TIME="${HOT_SERVER_TIMES[$IDX]:-}"
+            RUN_READ_ROWS="${HOT_READ_ROWS[$IDX]:-}"
+            RUN_READ_BYTES="${HOT_READ_BYTES[$IDX]:-}"
+
+            # Approximate per-run elapsed from server time + per-run share of overhead.
+            if [[ -n "$RUN_SERVER_TIME" ]]; then
+                TOTAL_SERVER="$(echo "${HOT_SERVER_TIMES[@]}" | tr ' ' '+' | bc)"
+                OVERHEAD="$(echo "scale=6; ${TOTAL_ELAPSED_NS} / 1000000000 - ${TOTAL_SERVER}" | bc)"
+                PER_RUN_OVERHEAD="$(echo "scale=6; ${OVERHEAD} / ${HOT_RUNS}" | bc)"
+                ELAPSED_SEC="$(echo "scale=3; ${RUN_SERVER_TIME} + ${PER_RUN_OVERHEAD}" | bc)"
+            else
+                ELAPSED_SEC="$(echo "scale=3; ${TOTAL_ELAPSED_NS} / 1000000000 / ${HOT_RUNS}" | bc)"
+            fi
+
+            RESULT_ROWS="$((TOTAL_RESULT_LINES / HOT_RUNS))"
+
+            if [[ -n "$HOT_ERROR" ]]; then
+                echo "${ELAPSED_SEC}s ERROR: ${HOT_ERROR}"
+            elif [[ "$r" -eq 1 ]]; then
+                echo "${ELAPSED_SEC}s (${RESULT_ROWS} rows, server ${RUN_SERVER_TIME:-?}s) x${HOT_RUNS}"
+            fi
+
+            printf "%s\thot\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+                "Q${QN_PAD}" "$r" "$ELAPSED_SEC" "$RUN_SERVER_TIME" "$RUN_READ_ROWS" "$RUN_READ_BYTES" "$RESULT_ROWS" "$HOT_ERROR" \
+                >> "$SUMMARY_FILE"
+
+            TIME_FILE="${RUN_DIR}/times/q${QN_PAD}_hot_${r}.json"
+            cat > "$TIME_FILE" <<TIMEJSON
+{"query": "Q${QN_PAD}", "type": "hot", "run": ${r}, "elapsed_sec": ${ELAPSED_SEC}, "server_sec": "${RUN_SERVER_TIME}", "read_rows": "${RUN_READ_ROWS}", "result_rows": ${RESULT_ROWS}, "error": "${HOT_ERROR}"}
 TIMEJSON
-    done
+        done
+
+        # Symlink per-run log files to the combined log for backward compatibility.
+        for ((r = 1; r <= HOT_RUNS; r++)); do
+            ln -sf "q${QN_PAD}_hot_combined.log" "${RUN_DIR}/logs/q${QN_PAD}_hot_${r}.log"
+        done
+
+        # Split combined result into per-run files.
+        if [[ "$HOT_RUNS" -gt 0 ]] && [[ "$TOTAL_RESULT_LINES" -gt 0 ]]; then
+            LINES_PER_RUN="$((TOTAL_RESULT_LINES / HOT_RUNS))"
+            for ((r = 1; r <= HOT_RUNS; r++)); do
+                RESULT_FILE="${RUN_DIR}/results/q${QN_PAD}_hot_${r}.tsv"
+                sed -n "$(( (r-1)*LINES_PER_RUN + 1 )),$(( r*LINES_PER_RUN ))p" \
+                    "$HOT_COMBINED_RESULT" > "$RESULT_FILE"
+            done
+        fi
+    fi
 done
 
 # ---------- extract optimizer traces from logs ----------
