@@ -1575,7 +1575,7 @@ The connector implements the Spark DataSource V2 push-down interfaces, meaning t
 | **Column pruning** | `SupportsPushDownRequiredColumns` | Only the columns selected by the query are fetched from ClickHouse. `SELECT col1, col2` avoids transferring all columns. |
 | **Filter predicates** | `SupportsPushDownFilters` | `WHERE` conditions using standard comparison operators, `IN`, `IS NULL`, `LIKE`, etc. Unsupported expressions fall back to Spark-side evaluation. |
 | **Limit** | `SupportsPushDownLimit` | `LIMIT N` is sent to ClickHouse, preventing full table scans for small result sets. |
-| **Aggregations** | `SupportsPushDownAggregates` | `GROUP BY` + aggregate functions (`SUM`, `COUNT`, `MIN`, `MAX`, `AVG`) are executed in ClickHouse. A probe query (`WHERE 1=0`) is first sent to determine the output schema. |
+| **Aggregations** | `SupportsPushDownAggregates` | `GROUP BY` + aggregate functions (`SUM`, `COUNT`, `MIN`, `MAX`, `AVG`) are executed in ClickHouse. |
 | **Runtime filters** | `SupportsRuntimeFiltering` | Dynamic filters produced during query execution (e.g. from broadcast joins) are applied at scan time. Must be enabled explicitly. |
 
 To enable runtime filtering:
@@ -1746,14 +1746,11 @@ To apply ClickHouse server settings only to read requests (not writes), use `spa
 
 | Tuning | Configuration | Notes |
 |---|---|---|
-| **Increase batch size** | `spark.clickhouse.write.batchSize=50000` | Default is 10,000. Larger batches reduce round-trips. Reduce if you see "Broken Pipe" errors. |
+| **Increase batch size** | `spark.clickhouse.write.batchSize=50000` | Default is 10,000. Larger batches reduce round-trips. |
 | **Arrow write format** | `spark.clickhouse.write.format=arrow` (default) | Arrow is faster than JSON for most data types. Use `json` only for Variant/JSON column types. |
 | **Compression** | `spark.clickhouse.write.compression.codec=lz4` (default) | Reduces network transfer during writes. |
-| **Async inserts** | `option.clickhouse_setting_async_insert=1` | Shifts buffering to ClickHouse, reducing memory pressure on the server for high-frequency writes. |
-| **Pre-sort data** | `spark.clickhouse.write.localSortByKey=true` (default) | Local sort before writing reduces MergeTree merge pressure. |
 | **Repartition by partition** | `spark.clickhouse.write.repartitionByPartition=true` (default) | Groups rows by partition before writing, reducing the number of parts created. |
 | **Explicit partition count** | `spark.clickhouse.write.repartitionNum=N` | Forces Spark to repartition to exactly N partitions before writing (via `requiredNumPartitions()`). Default `0` means no requirement. Alternatively, use `df.repartition(N)` before the write call. |
-| **Strict distribution** | `spark.clickhouse.write.repartitionStrictly=true` | Controls whether Spark can skip the connector's required write distribution (e.g. by coalescing partitions). When `false`, Spark may apply optimizations that bypass the connector's partitioning contract; when `true`, Spark always enforces it. This is distinct from `df.repartition()`, which reshuffles data before the write pipeline begins. Defaults to `false` on Spark 3.4+; on earlier versions it always behaves as `true` regardless of this setting. |
 
 ### Recommended starting configuration for bulk loads {#bulk-load-config}
 
@@ -1762,58 +1759,9 @@ spark.conf.set("spark.clickhouse.write.batchSize", "50000")
 spark.conf.set("spark.clickhouse.write.format", "arrow")
 spark.conf.set("spark.clickhouse.write.compression.codec", "lz4")
 spark.conf.set("spark.clickhouse.write.repartitionByPartition", "true")
-spark.conf.set("spark.clickhouse.write.localSortByKey", "true")
 ```
 
 ## Troubleshooting {#troubleshooting}
-
-### Broken pipe or connection reset during write {#troubleshooting-broken-pipe}
-
-**Symptom**: `CHServerException: [HTTP] Broken pipe (Write failed)` or `Connection reset by peer` during INSERT.
-
-**Cause**: ClickHouse closed the connection mid-stream, typically due to memory pressure on the ClickHouse server when the batch is too large.
-
-**Fix**:
-1. Reduce `spark.clickhouse.write.batchSize`. Start with 1,000–5,000 and increase gradually.
-2. Enable async inserts to shift buffering to ClickHouse:
-   ```python
-   spark.conf.set("spark.sql.catalog.clickhouse.option.clickhouse_setting_async_insert", "1")
-   spark.conf.set("spark.sql.catalog.clickhouse.option.clickhouse_setting_wait_for_async_insert", "1")
-   ```
-3. Increase `max_memory_usage` on the ClickHouse server, or raise it for the session via:
-   ```python
-   spark.conf.set("spark.sql.catalog.clickhouse.option.clickhouse_setting_max_memory_usage", "10000000000")
-   ```
-
----
-
-### Too many schema inference `WHERE 1=0` queries {#troubleshooting-schema-inference}
-
-**Symptom**: A `SELECT ... WHERE 1=0` query appears in ClickHouse query logs whenever a query with aggregation push-down is executed from Spark.
-
-**Cause**: When aggregation push-down is triggered, the connector sends a probe query to ClickHouse to determine the output schema of the pushed-down aggregation. This is by design and only occurs when aggregation push-down is active.
-
-**Fix**: There is no connector-level option to suppress the probe query. The `WHERE 1=0` probe is a near-zero-cost round-trip that does not scan data. If it is unacceptable, use one of the following options:
-
-**Option 1 — Disable aggregate push-down at the session level** (Spark 3.3+):
-
-```python
-spark.conf.set("spark.sql.sources.v2.pushAggregation.enabled", "false")
-```
-
-This prevents Spark's optimizer from calling `pushAggregation()` entirely. The aggregation runs in Spark instead of being pushed to ClickHouse.
-
-**Option 2 — Read raw data and aggregate in Spark**:
-
-```python
-# Read raw data — no aggregation push-down, no probe query
-df = spark.sql("SELECT * FROM clickhouse.default.my_table")
-result = df.groupBy("id").agg({"value": "sum"})
-```
-
-Note: supplying `.schema(...)` on the `DataFrameReader` only skips the `inferSchema()` round-trip; it does not suppress the `WHERE 1=0` probe, which is part of query optimization and not schema inference.
-
----
 
 ### Cannot connect to shard hostname {#troubleshooting-shard-hostname}
 
@@ -1828,18 +1776,6 @@ Note: supplying `.schema(...)` on the `DataFrameReader` only skips the `inferSch
   spark.clickhouse.read.distributed.convertLocal   false
   spark.clickhouse.write.distributed.useClusterNodes  false
   ```
-
----
-
-### Too many Spark tasks when reading a partitioned Distributed table {#troubleshooting-too-many-tasks}
-
-**Symptom**: Spark creates far more tasks than expected (e.g., thousands) when reading a `Distributed` table.
-
-**Cause**: With `spark.clickhouse.read.distributed.convertLocal=true` (default), one Spark partition is created per (shard × ClickHouse partition). A 4-shard cluster with a table partitioned by day over 1 year = 4 × 365 = 1,460 Spark tasks.
-
-**Fix**:
-- Use `spark.clickhouse.read.distributed.convertLocal=false` to read through the coordinator (1 task total).
-- Apply a partition filter in your query so only relevant partitions are read, reducing the partition list the connector discovers.
 
 ---
 
@@ -1867,6 +1803,22 @@ If you also have `spark.clickhouse.write.distributed.convertLocal=true`, ignorin
 ```python
 spark.catalog.refreshTable("clickhouse.database.table_name")
 ```
+
+---
+
+### KEEPER_EXCEPTION during writes {#troubleshooting-keeper-exception}
+
+**Symptom**: Writes fail with `Coordination::Exception: Can't get data for node ... node doesn't exist (KEEPER_EXCEPTION)`. Retries may produce duplicate data.
+
+**Cause**: Too many concurrent Spark tasks overwhelm the ClickHouse replica's coordination layer (ClickHouse Keeper / ZooKeeper). This is common when the replica has limited CPU or memory relative to the write concurrency.
+
+**Fix**:
+- Reduce the number of Spark write tasks by repartitioning the DataFrame before writing:
+  ```python
+  df.repartition(N).writeTo("clickhouse.db.table").append()
+  ```
+- Increase the ClickHouse replica's compute resources (CPU / memory).
+- If using `ReplicatedMergeTree`, consider writing through a `Distributed` table to spread load across shards.
 
 ## Contributing and support {#contributing-and-support}
 
