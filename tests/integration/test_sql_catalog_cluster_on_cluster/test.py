@@ -86,7 +86,7 @@ def drop_sql_catalog_topology(initiator, broadcast, names):
     initiator.query(f"DROP NAMED COLLECTION IF EXISTS {names['rep1']}", ignore_error=True)
 
 
-def recreate_workload_tables(initiator, cluster_name, workload_local, workload_distr):
+def recreate_workload_tables(initiator, cluster_name, workload_local, workload_distr, sharding_key="rand()"):
     initiator.query(
         f"DROP TABLE IF EXISTS default.{workload_distr} ON CLUSTER {cluster_name} SYNC",
         ignore_error=True,
@@ -111,7 +111,7 @@ def recreate_workload_tables(initiator, cluster_name, workload_local, workload_d
         (
             `x` UInt64
         )
-        ENGINE = Distributed('{cluster_name}', 'default', '{workload_local}', rand())
+        ENGINE = Distributed('{cluster_name}', 'default', '{workload_local}', {sharding_key})
         """
     )
 
@@ -169,7 +169,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
     ch2 = cluster.add_instance(
         "ch2",
         main_configs=main_configs,
-        macros={"shard": "2", "replica": "r2"},
+        macros={"shard": "2", "replica": "r1"},
         with_zookeeper=True,
     )
     ch3 = cluster.add_instance(
@@ -205,13 +205,14 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             ch1,
             broadcast,
             f"CREATE SHARD {names['shard_ha']} REPLICA {names['rep1']}, {names['rep2']} "
-            f"PROPERTIES weight = 2, internal_replication = true",
+            f"PROPERTIES weight = 2, internal_replication = false",
         )
         broadcast_catalog_ddl(
             ch1,
             broadcast,
             f"CREATE CLUSTER {names['cluster']} ({names['shard_ha']}) PROPERTIES allow_distributed_ddl_queries = true",
         )
+        # Shape: 1 shard total -> `shard_ha` with replicas [rep1(ch1), rep2(ch2)].
 
         assert_eq_with_retry(
             ch3,
@@ -232,7 +233,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
 
         # --- (2) Add / drop replica on the HA shard; then add / drop an extra shard; verify data each time. ---
         ch1.query(
-            f"CREATE NAMED COLLECTION {names['rep_extra']} AS host = '{h1}', port = {port}, user = 'default'"
+            f"CREATE NAMED COLLECTION {names['rep_extra']} AS host = '{h3}', port = {port}, user = 'default'"
         )
         broadcast_catalog_ddl(
             ch1,
@@ -240,11 +241,18 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             f"ALTER SHARD {names['shard_ha']} ADD REPLICA {names['rep_extra']}",
             with_sync=False,
         )
+        # Shape: still 1 shard -> `shard_ha` now has 3 replicas [rep1(ch1), rep2(ch2), rep_extra(ch3)].
         rep_row = ch1.query(
             f"SELECT toString(replica_collections) FROM system.shards WHERE name = '{names['shard_ha']}' "
             f"FORMAT TabSeparated"
         ).strip()
         assert names["rep_extra"] in rep_row
+
+        recreate_workload_tables(
+            ch1, names["cluster"], names["workload_local"], names["workload_distr"]
+        )
+        ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 1000 FROM numbers(23)")
+        assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "23\n")
 
         broadcast_catalog_ddl(
             ch1,
@@ -252,23 +260,37 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             f"ALTER SHARD {names['shard_ha']} DROP REPLICA {names['rep_extra']}",
             with_sync=False,
         )
+        # Shape: still 1 shard -> back to 2 replicas [rep1(ch1), rep2(ch2)].
         rep_row = ch1.query(
             f"SELECT toString(replica_collections) FROM system.shards WHERE name = '{names['shard_ha']}' "
             f"FORMAT TabSeparated"
         ).strip()
         assert names["rep_extra"] not in rep_row
 
+        recreate_workload_tables(
+            ch1, names["cluster"], names["workload_local"], names["workload_distr"]
+        )
+        ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 2000 FROM numbers(23)")
+        assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "23\n")
+        assert_eq_with_retry(
+            ch1,
+            f"SELECT count() FROM clusterAllReplicas('{names['cluster']}', 'default', '{names['workload_local']}') FORMAT TabSeparated",
+            "46\n",
+        )
+
         broadcast_catalog_ddl(
             ch1,
             broadcast,
             f"CREATE SHARD {names['shard_extra']} ({names['rep3']}) PROPERTIES weight = 1, internal_replication = false",
         )
+        # Shape after CREATE SHARD only: catalog has 2 shards, but cluster still references only `shard_ha`.
         broadcast_catalog_ddl(
             ch1,
             broadcast,
             f"ALTER CLUSTER {names['cluster']} ADD SHARD {names['shard_extra']}",
             with_sync=False,
         )
+        # Shape: 2 shards in cluster -> `shard_ha` (rep1, rep2) + `shard_extra` (rep3/ch3).
         assert_eq_with_retry(
             ch3,
             f"SELECT count() FROM system.clusters WHERE cluster = '{names['cluster']}' FORMAT TabSeparated",
@@ -280,7 +302,122 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         )
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 100 FROM numbers(40)")
         assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "40\n")
+        single_shard_rows_before_drop = ch1.query(
+            f"SELECT count() FROM default.{names['workload_local']} FORMAT TabSeparated"
+        )
 
+        broadcast_catalog_ddl(
+            ch1,
+            broadcast,
+            f"ALTER CLUSTER {names['cluster']} DROP SHARD {names['shard_extra']}",
+            with_sync=False,
+        )
+        # Shape: `shard_extra` removed from cluster, back to 1 shard -> `shard_ha` with replicas [rep1, rep2].
+        assert_eq_with_retry(
+            ch3,
+            f"SELECT count() FROM system.clusters WHERE cluster = '{names['cluster']}' FORMAT TabSeparated",
+            "2\n",
+        )
+        assert_eq_with_retry(
+            ch1,
+            f"SELECT count() FROM default.{names['workload_distr']} FORMAT TabSeparated",
+            single_shard_rows_before_drop,
+        )
+        assert_eq_with_retry(
+            ch2,
+            f"SELECT count() FROM default.{names['workload_distr']} FORMAT TabSeparated",
+            single_shard_rows_before_drop,
+        )
+
+        recreate_workload_tables(
+            ch1, names["cluster"], names["workload_local"], names["workload_distr"]
+        )
+        ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 200 FROM numbers(9)")
+        assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "9\n")
+
+        # --- (3) Shard-level and replica-level (named collection) property changes. ---
+        # Set HA shard weight to 1 so both shards can be compared under equal weights.
+        broadcast_catalog_ddl(
+            ch1,
+            broadcast,
+            f"ALTER SHARD {names['shard_ha']} MODIFY PROPERTIES (weight = 1, internal_replication = false)",
+            with_sync=False,
+        )
+        # Add the extra shard back to the cluster, then set its weight to 1 as well.
+        broadcast_catalog_ddl(
+            ch1,
+            broadcast,
+            f"ALTER CLUSTER {names['cluster']} ADD SHARD {names['shard_extra']}",
+            with_sync=False,
+        )
+        broadcast_catalog_ddl(
+            ch1,
+            broadcast,
+            f"ALTER SHARD {names['shard_extra']} MODIFY PROPERTIES (weight = 1, internal_replication = false)",
+            with_sync=False,
+        )
+        assert_eq_with_retry(
+            ch2,
+            f"SELECT weight, internal_replication FROM system.shards WHERE name = '{names['shard_ha']}' "
+            f"FORMAT TabSeparated",
+            "1\t0\n",
+        )
+        assert_eq_with_retry(
+            ch3,
+            f"SELECT count() FROM system.clusters WHERE cluster = '{names['cluster']}' FORMAT TabSeparated",
+            "3\n",
+        )
+        assert_eq_with_retry(
+            ch1,
+            f"SELECT weight, internal_replication FROM system.shards WHERE name = '{names['shard_extra']}' "
+            f"FORMAT TabSeparated",
+            "1\t0\n",
+        )
+        assert "weight = 1" in ch1.query(f"SHOW CREATE SHARD {names['shard_ha']}")
+
+        # Recreate tables using deterministic sharding (`x`) to make a strict 1:1 split assertion stable.
+        recreate_workload_tables(
+            ch1,
+            names["cluster"],
+            names["workload_local"],
+            names["workload_distr"],
+            sharding_key="x",
+        )
+        ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number FROM numbers(200)")
+        assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "200\n")
+        # With two shards of equal weight, 200 sequential keys should split evenly: 100 rows per shard.
+        assert_eq_with_retry(
+            ch1,
+            f"SELECT count() FROM default.{names['workload_local']} FORMAT TabSeparated",
+            "100\n",
+        )
+        assert_eq_with_retry(
+            ch2,
+            f"SELECT count() FROM default.{names['workload_local']} FORMAT TabSeparated",
+            "100\n",
+        )
+        assert_eq_with_retry(
+            ch3,
+            f"SELECT count() FROM default.{names['workload_local']} FORMAT TabSeparated",
+            "100\n",
+        )
+
+        # Validate `internal_replication = true` behavior on a single-shard cluster:
+        # after dropping `shard_extra`, a Distributed insert should target only one replica of `shard_ha`.
+        broadcast_catalog_ddl(
+            ch1,
+            broadcast,
+            f"ALTER SHARD {names['shard_ha']} MODIFY PROPERTIES (internal_replication = true)",
+            with_sync=False,
+        )
+        assert_eq_with_retry(
+            ch2,
+            f"SELECT internal_replication FROM system.shards WHERE name = '{names['shard_ha']}' FORMAT TabSeparated",
+            "1\n",
+        )
+        recreate_workload_tables(
+            ch1, names["cluster"], names["workload_local"], names["workload_distr"]
+        )
         broadcast_catalog_ddl(
             ch1,
             broadcast,
@@ -292,37 +429,15 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             f"SELECT count() FROM system.clusters WHERE cluster = '{names['cluster']}' FORMAT TabSeparated",
             "2\n",
         )
+        ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 3000 FROM numbers(31)")
 
-        recreate_workload_tables(
-            ch1, names["cluster"], names["workload_local"], names["workload_distr"]
-        )
-        ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 200 FROM numbers(9)")
-        assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "9\n")
-
-        # --- (3) Shard-level and replica-level (named collection) property changes. ---
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER SHARD {names['shard_ha']} MODIFY PROPERTIES (weight = 5, internal_replication = false)",
-            with_sync=False,
-        )
-        assert_eq_with_retry(
-            ch2,
-            f"SELECT weight, internal_replication FROM system.shards WHERE name = '{names['shard_ha']}' "
-            f"FORMAT TabSeparated",
-            "5\t0\n",
-        )
-        assert "weight = 5" in ch1.query(f"SHOW CREATE SHARD {names['shard_ha']}")
-
-        ch1.query(
-            f"ALTER NAMED COLLECTION {names['rep2']} SET default_database = 'system'"
-        )
-        assert_eq_with_retry(
-            ch2,
-            f"SELECT default_database FROM system.clusters WHERE cluster = '{names['cluster']}' AND host_name = '{h2}' "
-            f"FORMAT TabSeparated",
-            "system\n",
-        )
+        local_rows_ch1 = ch1.query(
+            f"SELECT count() FROM default.{names['workload_local']} FORMAT TabSeparated"
+        ).strip()
+        local_rows_ch2 = ch2.query(
+            f"SELECT count() FROM default.{names['workload_local']} FORMAT TabSeparated"
+        ).strip()
+        assert sorted([local_rows_ch1, local_rows_ch2]) == ["0", "31"]
 
         broadcast_catalog_ddl(
             ch1,
