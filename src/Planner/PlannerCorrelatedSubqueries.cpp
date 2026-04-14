@@ -683,7 +683,7 @@ void buildQueryPlanForCorrelatedSubquery(
         }
         case CorrelatedSubqueryKind::EXISTS:
         {
-            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options, outer_header_ptr);
+            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options, outer_header);
             /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
 
