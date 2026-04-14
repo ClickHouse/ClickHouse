@@ -16,6 +16,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context.h>
+#include <Functions/FunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
 #include <unordered_set>
@@ -72,34 +73,37 @@ static bool containsAliases(const ASTPtr & expr)
     return false;
 }
 
-/// Recursively check if an AST tree contains calls to known non-deterministic functions.
-/// Non-deterministic predicates (rand(), now(), etc.) evaluate differently at materialization
-/// time vs query time, so textual conjunct matching is unsound for them.
-static bool containsNonDeterministicFunctions(const ASTPtr & expr)
+/// Recursively check if an AST tree contains calls to non-deterministic functions
+/// by querying function metadata via FunctionFactory.
+/// Non-deterministic predicates (rand(), now(), nowInBlock(), etc.) evaluate differently
+/// at materialization time vs query time, so textual conjunct matching is unsound for them.
+static bool containsNonDeterministicFunctions(const ASTPtr & expr, ContextPtr context)
 {
     if (!expr)
         return false;
 
     if (const auto * func = expr->as<ASTFunction>())
     {
-        /// Conservative list of non-deterministic functions commonly used in WHERE.
-        /// These produce different results on each execution, making textual implication unsafe.
-        static const std::unordered_set<String> non_deterministic = {
-            "rand", "rand32", "rand64", "randConstant", "randUniform", "randNormal",
-            "randBernoulli", "randExponential", "randChiSquared", "randStudentT", "randFisher",
-            "now", "now64", "today", "yesterday", "timeSlot",
-            "generateUUIDv4", "generateULID",
-            "rowNumberInAllBlocks", "rowNumberInBlock",
-            "currentDatabase", "currentUser",
-            "dictGet", "dictGetOrDefault", "dictHas",
-        };
-        if (non_deterministic.contains(func->name))
+        /// Use FunctionFactory metadata instead of a hardcoded blacklist.
+        /// This automatically covers all current and future non-deterministic functions.
+        /// IFunctionOverloadResolver provides isDeterministic() and isDeterministicInScopeOfQuery()
+        /// without needing to resolve argument types.
+        auto resolver = FunctionFactory::instance().tryGet(func->name, context);
+        if (resolver)
+        {
+            if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
+                return true;
+        }
+        else
+        {
+            /// Unknown function — conservatively treat as non-deterministic.
             return true;
+        }
     }
 
     for (const auto & child : expr->children)
     {
-        if (containsNonDeterministicFunctions(child))
+        if (containsNonDeterministicFunctions(child, context))
             return true;
     }
 
@@ -123,7 +127,8 @@ static bool containsNonDeterministicFunctions(const ASTPtr & expr)
 /// but it is safe: it will never incorrectly accept a query that doesn't match the projection.
 static bool doesQueryFilterImplyProjectionWhere(
     const ActionsDAG::Node * query_filter_node,
-    const ASTPtr & projection_where)
+    const ASTPtr & projection_where,
+    ContextPtr context)
 {
     if (!projection_where)
         return true; /// No projection filter = always applicable
@@ -140,7 +145,7 @@ static bool doesQueryFilterImplyProjectionWhere(
     /// Safety guard 2: reject if projection WHERE contains non-deterministic functions.
     /// Such expressions evaluate differently at materialization time vs query time,
     /// so textual equality does not imply semantic equivalence.
-    if (containsNonDeterministicFunctions(projection_where))
+    if (containsNonDeterministicFunctions(projection_where, context))
         return false;
 
     /// Extract projection's WHERE conjuncts from the AST.
@@ -388,7 +393,7 @@ std::optional<String> optimizeUseNormalProjections(
         /// if the query's filter guarantees it won't need rows outside that subset.
         if (projection->where_clause_ast)
         {
-            if (!doesQueryFilterImplyProjectionWhere(query.filter_node, projection->where_clause_ast))
+            if (!doesQueryFilterImplyProjectionWhere(query.filter_node, projection->where_clause_ast, context))
             {
                 LOG_DEBUG(logger,
                     "Projection {} skipped: query WHERE does not imply projection WHERE",
