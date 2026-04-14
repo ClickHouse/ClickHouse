@@ -82,6 +82,9 @@ class Job:
         # Per-job secrets (exported only for this job, not all jobs in the workflow)
         secrets: list = field(default_factory=list)
 
+        # If True, runner.py restores the submodule cache from S3 before the job starts
+        needs_submodules: bool = False
+
         # List of commands to call before job starts
         pre_hooks: List[str] = field(default_factory=list)
 

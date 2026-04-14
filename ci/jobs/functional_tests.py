@@ -146,6 +146,7 @@ def main():
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
     is_llvm_coverage = False
+    is_excluded_from_llvm = False
     is_per_test_coverage = False
     runner_options = ""
     # optimal value for most of the jobs
@@ -188,6 +189,8 @@ def main():
             is_bugfix_validation = True
         elif to.startswith("amd_") and "coverage" in to:
             is_llvm_coverage = True
+        if "excluded_from_llvm" in to:
+            is_excluded_from_llvm = True
         if "per_test_coverage" in to:
             is_per_test_coverage = True
         if "s3 storage" in to:
@@ -238,7 +241,10 @@ def main():
         # The 45-min global_time_limit is the primary stopping condition for healthy PRs.
         runner_options += " --max-failures 5"
 
-    if is_llvm_coverage:
+    if is_excluded_from_llvm:
+        # Run only tests that are normally disabled under LLVM coverage
+        runner_options += " --excluded-from-llvm"
+    elif is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
         runner_options += " --llvm-coverage"
         os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
@@ -409,16 +415,10 @@ def main():
                 failed_str = ", ".join(previously_failed) if previously_failed else "(none)"
                 print(f"[flaky-check] Step 2 — previously failed tests ({len(previously_failed)}): {failed_str}")
 
-                # Step 3: coverage-relevant tests (direct lines, indirect callees, siblings)
-                relevant_tests, relevance_result = targeter.get_most_relevant_tests()
-                results.append(relevance_result)
-                relevant_preview = ", ".join(relevant_tests[:20]) + ("..." if len(relevant_tests) > 20 else "")
-                print(f"[flaky-check] Step 3 — coverage-relevant tests ({len(relevant_tests)}): {relevant_preview if relevant_tests else '(none)'}")
-
-                # Merge all three sets preserving priority order (changed first)
+                # Merge both sets preserving priority order (changed first)
                 seen: set = set()
                 tests = []
-                for t in list(changed_tests) + list(previously_failed) + list(relevant_tests):
+                for t in list(changed_tests) + list(previously_failed):
                     if t not in seen:
                         seen.add(t)
                         tests.append(t)
