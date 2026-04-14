@@ -239,7 +239,12 @@ public:
         }
 
         replica_status[announcement.replica_num].is_announcement_received = true;
-        replica_status[announcement.replica_num].announced_splits.insert(announcement.split_id);
+
+        if (!replica_status[announcement.replica_num].announced_splits.insert(announcement.split_id).second)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Duplicate announcement for split_id {} from replica {}",
+                announcement.split_id, announcement.replica_num);
 
         /// Use `min_marks_per_request` from the first announcement (the local replica that did PK analysis).
         /// Old replicas (protocol < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK) don't send

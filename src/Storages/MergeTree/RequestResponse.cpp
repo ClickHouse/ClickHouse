@@ -102,6 +102,7 @@ void ParallelReadRequest::merge(ParallelReadRequest & other)
     assert(mode == other.mode);
     assert(replica_num == other.replica_num);
     assert(min_marks_per_request == other.min_marks_per_request);
+    assert(split_id == other.split_id);
     description.merge(other.description);
 }
 
