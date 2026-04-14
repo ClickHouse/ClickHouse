@@ -195,8 +195,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
+    /// In-memory buffer for correlated subqueries uses a non-serializable ChunkBuffer,
+    /// incompatible with distributed execution. When make_distributed_plan is enabled,
+    /// always use the materialization path (materializeQueryPlanReferences) instead.
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
-        && from[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
+        && from[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT
+        && !from[Setting::make_distributed_plan];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];

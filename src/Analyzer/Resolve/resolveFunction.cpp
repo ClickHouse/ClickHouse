@@ -81,6 +81,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsBool rewrite_in_to_join;
 }
 
@@ -672,9 +673,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Replace IN (subquery)
     /// NOTE: the resulting subquery in the argument of EXISTS will have correlated column x, that's why this rewriting has to be before handling
     /// EXISTS which is done below in 'if (is_special_function_exists)' case.
+    /// When make_distributed_plan is enabled, IN subqueries are always rewritten to joins
+    /// so that the Cascades optimizer can distribute them across the cluster.
     if (is_special_function_in &&
         (function_name == "in" || function_name == "notIn") &&
-        scope.context->getSettingsRef()[Setting::rewrite_in_to_join])
+        (scope.context->getSettingsRef()[Setting::rewrite_in_to_join]
+         || scope.context->getSettingsRef()[Setting::make_distributed_plan]))
     {
         if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
             throw Exception(
