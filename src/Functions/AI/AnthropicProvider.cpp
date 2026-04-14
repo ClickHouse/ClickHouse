@@ -98,7 +98,7 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
 
     std::ostringstream body_stream; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
     root->stringify(body_stream);
-    String body = body_stream.str();
+    String body = std::move(body_stream).str();
 
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeouts, ProxyConfiguration{});
 
@@ -114,11 +114,11 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
     Poco::Net::HTTPResponse http_response;
     auto & in_stream = session->receiveResponse(http_response);
 
-    std::string response_body;
+    String response_body;
     {
         std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
         ss << in_stream.rdbuf();
-        response_body = ss.str();
+        response_body = std::move(ss).str();
     }
 
     auto status = http_response.getStatus();
