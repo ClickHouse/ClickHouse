@@ -1,0 +1,20 @@
+boundingBoxCartesian Ring
+[(0,0),(6,0),(6,5),(0,5),(0,0)]
+boundingBoxCartesian Polygon
+[(0,0),(6,0),(6,5),(0,5),(0,0)]
+boundingBoxCartesian Point
+[(3,4),(3,4),(3,4),(3,4),(3,4)]
+boundingBoxCartesian LineString
+[(1,2),(5,2),(5,8),(1,8),(1,2)]
+boundingBoxCartesian MultiPolygon
+[(0,0),(8,0),(8,7),(0,7),(0,0)]
+boundingBoxCartesian WKT
+[(1,1),(4,1),(4,3),(1,3),(1,1)]
+boundingBoxSpherical Ring
+[(4.338074,50.833264),(4.367945,50.833264),(4.367945,50.858306),(4.338074,50.858306),(4.338074,50.833264)]
+boundingBoxSpherical Polygon
+[(4.338074,50.833264),(4.367945,50.833264),(4.367945,50.858306),(4.338074,50.858306),(4.338074,50.833264)]
+boundingBoxSpherical Point
+[(4.35,50.85),(4.35,50.85),(4.35,50.85),(4.35,50.85),(4.35,50.85)]
+boundingBoxSpherical LineString
+[(0,50),(10,50),(10,50.10752663762204),(0,50.10752663762204),(0,50)]
