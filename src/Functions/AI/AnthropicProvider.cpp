@@ -60,12 +60,12 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
     root->set("temperature", ai_request.temperature);
 
     if (!ai_request.system_prompt.empty())
-        root->set("system", sanitizeTextForAI(ai_request.system_prompt));
+        root->set("system", ai_request.system_prompt);
 
     Poco::JSON::Array::Ptr messages = new Poco::JSON::Array;
     Poco::JSON::Object::Ptr user_msg = new Poco::JSON::Object;
     user_msg->set("role", "user");
-    user_msg->set("content", sanitizeTextForAI(ai_request.user_message));
+    user_msg->set("content", ai_request.user_message);
     messages->add(user_msg);
     root->set("messages", messages);
 

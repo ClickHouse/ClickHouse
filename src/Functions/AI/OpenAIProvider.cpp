@@ -72,13 +72,13 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     {
         Poco::JSON::Object::Ptr sys_msg = new Poco::JSON::Object;
         sys_msg->set("role", "system");
-        sys_msg->set("content", sanitizeTextForAI(ai_request.system_prompt));
+        sys_msg->set("content", ai_request.system_prompt);
         messages->add(sys_msg);
     }
 
     Poco::JSON::Object::Ptr user_msg = new Poco::JSON::Object;
     user_msg->set("role", "user");
-    user_msg->set("content", sanitizeTextForAI(ai_request.user_message));
+    user_msg->set("content", ai_request.user_message);
     messages->add(user_msg);
 
     root->set("messages", messages);

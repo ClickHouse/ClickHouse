@@ -11,24 +11,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
-/// Tabs and newlines are preserved as they're valid in most AI contexts;
-/// everything else is replaced with a space.
-String IAIProvider::sanitizeTextForAI(const String & input)
-{
-    String output;
-    output.reserve(input.size());
-    for (unsigned char ch : input)
-    {
-        if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r')
-            output.push_back(' ');
-        else
-            output.push_back(static_cast<char>(ch));
-    }
-    return output;
-}
-
-
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key)
 {
     if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")

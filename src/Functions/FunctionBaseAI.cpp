@@ -43,6 +43,25 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace {
+
+/// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
+static String sanitizeTextForAI(const String & input)
+{
+    String output;
+    output.reserve(input.size());
+    for (unsigned char ch : input)
+    {
+        if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r')
+            output.push_back(' ');
+        else
+            output.push_back(static_cast<char>(ch));
+    }
+    return output;
+}
+
+}
+
 FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context_weak(context_)
 {
     if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
@@ -149,7 +168,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
-    String system_prompt = buildSystemPrompt(arguments);
+    String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments));
     String response_format = buildResponseFormatJSON(arguments);
 
     auto result_col = ColumnString::create();
@@ -170,7 +189,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             continue;
         }
 
-        String user_message = buildUserMessage(arguments, i);
+        String user_message = sanitizeTextForAI(buildUserMessage(arguments, i));
 
         if (!quota->checkBeforeDispatch(user_message.size() + system_prompt.size()))
         {

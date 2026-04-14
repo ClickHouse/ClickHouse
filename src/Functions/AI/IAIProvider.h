@@ -34,9 +34,6 @@ public:
     virtual String providerName() const = 0;
 
     virtual AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) = 0;
-
-protected:
-    String sanitizeTextForAI(const String & input);
 };
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
