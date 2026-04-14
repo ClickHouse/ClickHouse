@@ -7883,9 +7883,6 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     DECLARE(Bool, allow_experimental_ai_functions, false, R"(
 Enable experimental AI functions (`aiGenerateContent`). These functions make external HTTP calls to AI providers.
 )", EXPERIMENTAL) \
-    DECLARE(String, default_ai_provider, "", R"(
-Default named collection for AI functions. When set, functions can be called without passing a collection name as the first argument.
-)", EXPERIMENTAL) \
     DECLARE(UInt64, ai_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_max_retries`.
 )", EXPERIMENTAL) \

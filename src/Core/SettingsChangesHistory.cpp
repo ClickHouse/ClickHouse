@@ -66,7 +66,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"allow_experimental_ai_functions", false, false, "New setting"},
-            {"default_ai_provider", "", "", "New setting"},
             {"ai_request_timeout_sec", 60, 60, "New setting"},
             {"ai_max_retries", 3, 3, "New setting"},
             {"ai_retry_initial_delay_ms", 1000, 1000, "New setting"},

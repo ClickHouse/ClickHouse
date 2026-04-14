@@ -11,6 +11,7 @@ namespace DB
 
 static constexpr auto DEFAULT_AI_PROVIDER = "openai";
 static constexpr UInt64 DEFAULT_AI_MAX_TOKENS = 1024;
+static constexpr size_t FIRST_DATA_ARG_INDEX = 1;
 
 class FunctionBaseAI : public IFunction
 {
@@ -49,9 +50,6 @@ protected:
 
     virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
 
-    virtual size_t getTextColumnIndex() const { return 0; }
-    virtual bool hasNamedCollectionArg(const ColumnsWithTypeAndName & arguments) const;
-    size_t getFirstDataArgIndex(const ColumnsWithTypeAndName & arguments) const;
 
 
 private:

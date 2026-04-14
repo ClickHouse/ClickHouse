@@ -21,7 +21,7 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection. If omitted, the [`default_ai_provider`](/operations/settings/settings#default_ai_provider) setting is used.
+AI functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection.
 
 ```sql
 CREATE NAMED COLLECTION ai_credentials AS

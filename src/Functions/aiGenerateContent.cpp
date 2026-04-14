@@ -34,18 +34,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 4)
+        if (arguments.size() < 2 || arguments.size() > 4)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires 1-4 arguments: [collection,] prompt[, system_prompt[, temperature]]", name);
-
-        if (hasNamedCollectionArg(arguments) && arguments.size() < 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} with a named collection as first argument requires at least a prompt argument", name);
-
-        size_t idx = getFirstDataArgIndex(arguments);
+                "Function {} requires 2-4 arguments: collection, prompt[, system_prompt[, temperature]]", name);
 
         /// Temperature (float) requires system_prompt (string) before it
-        if (arguments.size() > idx + 1 && isFloat(arguments[idx + 1].type))
+        if (arguments.size() > FIRST_DATA_ARG_INDEX + 1 && isFloat(arguments[FIRST_DATA_ARG_INDEX + 1].type))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires a system_prompt argument (String) before temperature (Float)", name);
 
@@ -60,7 +54,7 @@ protected:
 
     String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t prompt_idx = getFirstDataArgIndex(arguments);
+        size_t prompt_idx = FIRST_DATA_ARG_INDEX;
 
         if (arguments.size() > prompt_idx + 1 && isString(arguments[prompt_idx + 1].type))
         {
@@ -74,7 +68,7 @@ protected:
 
     String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
-        size_t prompt_idx = getFirstDataArgIndex(arguments);
+        size_t prompt_idx = FIRST_DATA_ARG_INDEX;
         return String(arguments[prompt_idx].column->getDataAt(row));
     }
 };
@@ -91,14 +85,11 @@ The function sends the prompt to the configured AI provider and returns the gene
 An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
 If no system prompt is given, the default system prompt is: `)" + String(default_system_prompt) + R"(`
 
-The first argument can optionally be a named collection that specifies the provider, model, endpoint,
-and API key. If omitted, the [default_ai_provider](/operations/settings/settings#default_ai_provider) setting is used.
-Note that `default_ai_provider` is empty by default and must be explicitly set to a named collection before
-omitting the collection argument.
+The first argument is a named collection that specifies the provider, model, endpoint, and API key.
 )",
-        .syntax = "aiGenerateContent([collection,] prompt[, system_prompt[, temperature]])",
+        .syntax = "aiGenerateContent(collection, prompt[, system_prompt[, temperature]])",
         .arguments
-        = {{"collection", "Name of a named collection containing provider credentials and configuration. Optional if `default_ai_provider` is set.", {"String"}},
+        = {{"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
            {"prompt", "The user prompt or question to send to the model.", {"String"}},
            {"system_prompt", "Optional system-level instruction that guides the model's behavior (e.g. persona, output format).", {"String"}},
            {"temperature", "Sampling temperature controlling randomness. Default: `0.7`.", {"Float64"}}},

@@ -25,7 +25,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_ai_functions;
-    extern const SettingsString default_ai_provider;
     extern const SettingsUInt64 ai_request_timeout_sec;
     extern const SettingsUInt64 ai_max_retries;
     extern const SettingsUInt64 ai_retry_initial_delay_ms;
@@ -69,52 +68,15 @@ FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context_weak(context_)
             "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
 }
 
-bool FunctionBaseAI::hasNamedCollectionArg(const ColumnsWithTypeAndName & arguments) const
-{
-    if (arguments.empty())
-        return false;
-
-    if (!isString(arguments[0].type))
-        return false;
-
-    const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
-    if (!col_const)
-        return false;
-
-    String first_arg = col_const->getValue<String>();
-    if (first_arg.empty())
-        return false;
-
-    return NamedCollectionFactory::instance().exists(first_arg);
-}
-
-size_t FunctionBaseAI::getFirstDataArgIndex(const ColumnsWithTypeAndName & arguments) const
-{
-    return hasNamedCollectionArg(arguments) ? 1 : 0;
-}
-
 FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
 {
     ResolvedConfig config;
-    const auto & settings = getContext()->getSettingsRef();
 
-    String collection_name;
-    if (hasNamedCollectionArg(arguments))
-    {
-        const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
-        collection_name = col_const->getValue<String>();
-    }
-    else
-    {
-        collection_name = settings[Setting::default_ai_provider].value;
-    }
+    const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
+    if (!col_const)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument to AI function must be a named collection (constant String)");
 
-    if (collection_name.empty())
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "No AI named collection specified and default_ai_provider is not set");
-    }
-
+    String collection_name = col_const->getValue<String>();
     const auto & nc = NamedCollectionFactory::instance().get(collection_name);
 
     config.provider = nc->getOrDefault<String>("provider", DEFAULT_AI_PROVIDER);
@@ -137,7 +99,7 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
 
 float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & arguments, const ResolvedConfig & config) const
 {
-    size_t temp_idx = getFirstDataArgIndex(arguments) + 2;
+    size_t temp_idx = FIRST_DATA_ARG_INDEX + 2;
     if (temp_idx < arguments.size() && isFloat(arguments[temp_idx].type))
     {
         const auto * col_const = typeid_cast<const ColumnConst *>(arguments[temp_idx].column.get());
@@ -173,7 +135,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto response_format = buildResponseFormat(arguments);
 
     auto result_col = ColumnString::create();
-    const auto & text_col = arguments[getFirstDataArgIndex(arguments)].column;
+    const auto & text_col = arguments[FIRST_DATA_ARG_INDEX].column;
 
     UInt64 total_api_calls = 0;
     UInt64 total_input_tokens = 0;

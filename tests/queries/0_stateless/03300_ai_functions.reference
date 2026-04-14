@@ -3,15 +3,10 @@
 aiGenerateContent
 -- aiGenerateContent: too few arguments
 -- aiGenerateContent: too many arguments
--- No provider: bare call
 -- Named collection missing endpoint
 -- Named collection missing model
 -- Named collection missing api_key
 -- Nonexistent named collection
--- default_ai_provider resolves collection
-0
--- Explicit collection overrides default
-0
 -- aiGenerateContent return type
 result	String
 -- NULL input returns empty string
@@ -30,7 +25,6 @@ result	String
 -- Temperature: zero
 0
 -- Temperature without system prompt
--- Named collection with no prompt
 -- Setting defaults
 ai_max_api_calls_per_query	0
 ai_max_input_tokens_per_query	1000000
@@ -41,5 +35,4 @@ ai_on_quota_exceeded	throw
 ai_request_timeout_sec	60
 ai_retry_initial_delay_ms	1000
 allow_experimental_ai_functions	0
-default_ai_provider	
 -- Re-disabled blocks function

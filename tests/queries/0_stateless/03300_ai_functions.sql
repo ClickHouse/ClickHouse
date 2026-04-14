@@ -19,7 +19,7 @@ CREATE TABLE _03300_input (x String) ENGINE = Memory;
 -- =============================================================================
 
 SELECT '-- Disabled by default';
-SELECT aiGenerateContent('hello'); -- { serverError SUPPORT_IS_DISABLED }
+SELECT aiGenerateContent('hello', 'world'); -- { serverError SUPPORT_IS_DISABLED }
 
 SET allow_experimental_ai_functions = 1;
 
@@ -31,22 +31,13 @@ SELECT name FROM system.functions WHERE name = 'aiGenerateContent';
 -- =============================================================================
 
 SELECT '-- aiGenerateContent: too few arguments';
-SELECT aiGenerateContent(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiGenerateContent('a'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 SELECT '-- aiGenerateContent: too many arguments';
-SELECT aiGenerateContent('a', 'b', 0.7, 'x', 'y'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiGenerateContent('a', 'b', 'c', 0.7, 'x'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- =============================================================================
--- 3. No provider configured
--- =============================================================================
-
-SET default_ai_provider = '';
-
-SELECT '-- No provider: bare call';
-SELECT aiGenerateContent('hello'); -- { serverError BAD_ARGUMENTS }
-
--- =============================================================================
--- 4. Named collection: missing required fields
+-- 3. Named collection: missing required fields
 -- =============================================================================
 
 DROP NAMED COLLECTION IF EXISTS ai_no_endpoint;
@@ -83,14 +74,14 @@ SELECT aiGenerateContent('ai_no_api_key', x) FROM _03300_input; -- { serverError
 DROP NAMED COLLECTION ai_no_api_key;
 
 -- =============================================================================
--- 5. Named collection: nonexistent collection
+-- 4. Named collection: nonexistent collection
 -- =============================================================================
 
 SELECT '-- Nonexistent named collection';
-SELECT aiGenerateContent('nonexistent_collection_xyz', 'hello'); -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerateContent('nonexistent_collection_xyz', 'hello'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
 -- =============================================================================
--- 6. default_ai_provider setting
+-- 5. Test collection for remaining tests
 -- =============================================================================
 
 DROP NAMED COLLECTION IF EXISTS ai_test;
@@ -100,43 +91,20 @@ CREATE NAMED COLLECTION ai_test AS
     model = 'test-model',
     api_key = 'fake-key';
 
-SET default_ai_provider = 'ai_test';
-
--- With default_ai_provider set, the function should resolve config without
--- an explicit collection arg. Zero rows means no HTTP calls.
-SELECT '-- default_ai_provider resolves collection';
-SELECT count() FROM (SELECT aiGenerateContent(x) AS result FROM _03300_input);
-
 -- =============================================================================
--- 7. Explicit collection overrides default_ai_provider
--- =============================================================================
-
-DROP NAMED COLLECTION IF EXISTS ai_other;
-CREATE NAMED COLLECTION ai_other AS
-    provider = 'openai',
-    endpoint = 'http://localhost:1/v1/chat/completions',
-    model = 'other-model',
-    api_key = 'other-key';
-
-SELECT '-- Explicit collection overrides default';
-SELECT count() FROM (SELECT aiGenerateContent('ai_other', x) AS result FROM _03300_input);
-
-DROP NAMED COLLECTION ai_other;
-
--- =============================================================================
--- 8. Return type verification
+-- 6. Return type verification
 -- =============================================================================
 
 SELECT '-- aiGenerateContent return type';
 DROP TABLE IF EXISTS _03300_ret_content;
 CREATE TABLE _03300_ret_content ENGINE = Memory AS
-    SELECT aiGenerateContent(x) AS result FROM _03300_input;
+    SELECT aiGenerateContent('ai_test', x) AS result FROM _03300_input;
 SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_content';
 DROP TABLE IF EXISTS _03300_ret_content;
 
 -- =============================================================================
--- 9. NULL input propagation
+-- 7. NULL input propagation
 -- =============================================================================
 
 DROP TABLE IF EXISTS _03300_null_input;
@@ -146,20 +114,20 @@ INSERT INTO _03300_null_input VALUES (NULL);
 SELECT '-- NULL input returns empty string';
 DROP TABLE IF EXISTS _03300_null_result;
 CREATE TABLE _03300_null_result ENGINE = Memory AS
-    SELECT aiGenerateContent(x) AS result FROM _03300_null_input;
+    SELECT aiGenerateContent('ai_test', x) AS result FROM _03300_null_input;
 SELECT result = '' FROM _03300_null_result;
 DROP TABLE IF EXISTS _03300_null_result;
 DROP TABLE IF EXISTS _03300_null_input;
 
 -- =============================================================================
--- 10. Empty string input: zero rows, should not error
+-- 8. Empty string input: zero rows, should not error
 -- =============================================================================
 
 SELECT '-- Empty string input accepted';
-SELECT count() FROM (SELECT aiGenerateContent(x) AS result FROM _03300_input);
+SELECT count() FROM (SELECT aiGenerateContent('ai_test', x) AS result FROM _03300_input);
 
 -- =============================================================================
--- 11. Unknown provider name
+-- 9. Unknown provider name
 -- =============================================================================
 
 DROP NAMED COLLECTION IF EXISTS ai_bad_provider;
@@ -175,7 +143,7 @@ SELECT aiGenerateContent('ai_bad_provider', x) FROM _03300_input; -- { serverErr
 DROP NAMED COLLECTION ai_bad_provider;
 
 -- =============================================================================
--- 12. Provider name: anthropic
+-- 10. Provider name: anthropic
 -- =============================================================================
 
 DROP NAMED COLLECTION IF EXISTS ai_anthropic;
@@ -191,37 +159,30 @@ SELECT count() FROM (SELECT aiGenerateContent('ai_anthropic', x) AS result FROM 
 DROP NAMED COLLECTION ai_anthropic;
 
 -- =============================================================================
--- 13. Custom system prompt argument
+-- 11. Custom system prompt argument
 -- =============================================================================
 
 SELECT '-- Custom system prompt accepted';
-SELECT count() FROM (SELECT aiGenerateContent(x, 'You are a pirate') AS result FROM _03300_input);
+SELECT count() FROM (SELECT aiGenerateContent('ai_test', x, 'You are a pirate') AS result FROM _03300_input);
 
 -- =============================================================================
--- 14. Temperature argument
+-- 12. Temperature argument
 -- =============================================================================
 
 SELECT '-- Temperature: Float32';
-SELECT count() FROM (SELECT aiGenerateContent(x, 'system', toFloat32(0.5)) AS result FROM _03300_input);
+SELECT count() FROM (SELECT aiGenerateContent('ai_test', x, 'system', toFloat32(0.5)) AS result FROM _03300_input);
 
 SELECT '-- Temperature: Float64';
-SELECT count() FROM (SELECT aiGenerateContent(x, 'system', 0.5) AS result FROM _03300_input);
+SELECT count() FROM (SELECT aiGenerateContent('ai_test', x, 'system', 0.5) AS result FROM _03300_input);
 
 SELECT '-- Temperature: zero';
-SELECT count() FROM (SELECT aiGenerateContent(x, 'system', toFloat32(0.0)) AS result FROM _03300_input);
+SELECT count() FROM (SELECT aiGenerateContent('ai_test', x, 'system', toFloat32(0.0)) AS result FROM _03300_input);
 
 SELECT '-- Temperature without system prompt';
-SELECT aiGenerateContent(x, toFloat32(0.5)) FROM _03300_input; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiGenerateContent('ai_test', x, toFloat32(0.5)) FROM _03300_input; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- =============================================================================
--- 15. Named collection arg with too few remaining args
--- =============================================================================
-
-SELECT '-- Named collection with no prompt';
-SELECT aiGenerateContent('ai_test'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-
--- =============================================================================
--- 16. Setting types and defaults
+-- 13. Setting types and defaults
 -- =============================================================================
 
 SELECT '-- Setting defaults';
@@ -231,7 +192,6 @@ SELECT
 FROM system.settings
 WHERE name IN (
     'allow_experimental_ai_functions',
-    'default_ai_provider',
     'ai_request_timeout_sec',
     'ai_max_retries',
     'ai_retry_initial_delay_ms',
@@ -244,12 +204,12 @@ WHERE name IN (
 ORDER BY name;
 
 -- =============================================================================
--- 17. Re-disable the setting mid-session
+-- 14. Re-disable the setting mid-session
 -- =============================================================================
 
 SET allow_experimental_ai_functions = 0;
 SELECT '-- Re-disabled blocks function';
-SELECT aiGenerateContent('hello'); -- { serverError SUPPORT_IS_DISABLED }
+SELECT aiGenerateContent('ai_test', 'hello'); -- { serverError SUPPORT_IS_DISABLED }
 
 SET allow_experimental_ai_functions = 1;
 
