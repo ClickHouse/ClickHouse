@@ -1,7 +1,7 @@
-# docker build -t clickhouse/performance-comparison .
+# docker build -t altinityinfra/performance-comparison .
 
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM altinityinfra/test-base:$FROM_TAG
 
 # Remove problematic Kitware repository
 RUN rm -f /etc/apt/sources.list.d/*kitware* || true
@@ -40,7 +40,7 @@ COPY requirements.txt /
 RUN python3.13 -m pip install --no-cache-dir -r requirements.txt
 
 
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
+COPY --from=altinityinfra/cctools:c0aae9395f33405b6e2b /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
 # aws cli to acquire secrets and params from ssm

@@ -1,4 +1,4 @@
-# docker build -t clickhouse/integration-test-with-unity-catalog .
+# docker build -t altinityinfra/integration-test-with-unity-catalog .
 ARG FROM_TAG=latest
 FROM clickhouse/integration-test:$FROM_TAG
 

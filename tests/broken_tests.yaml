@@ -1,0 +1,308 @@
+# Name fields should be unique.
+- name: 02844_max_backup_bandwidth_s3
+  reason: INVESTIGATE - Fails on debug
+  message: result differs with reference
+  check_types:
+  - debug
+- name: 00626_replace_partition_from_table
+  reason: INVESTIGATE - Unstable on tsan
+  message: 'DB::Exception: Cannot OPTIMIZE table: Current background tasks memory
+    usage'
+  check_types:
+  - tsan
+- name: 01550_mutation_subquery
+  reason: INVESTIGATE - Unstable on tsan
+  message: 'DB::Exception: Exception happened during execution of mutation'
+  check_types:
+  - tsan
+- name: 02435_rollback_cancelled_queries
+  reason: INVESTIGATE - Unstable on tsan
+  message: 'DB::Exception: There is no current transaction. (INVALID_TRANSACTION)'
+  check_types:
+  - tsan
+- name: 02443_detach_attach_partition
+  reason: INVESTIGATE - Unstable
+  message: 'Cannot rename parts to perform operation on them: Code: 521. DB::ErrnoException: Cannot rename'
+- name: 03441_deltalake_clickhouse_public_datasets
+  reason: INVESTIGATE - S3 sometimes unreachable
+  message: 'Error interacting with object store: Generic S3 error: Error performing GET'
+- name: 03441_deltalake_clickhouse_virtual_columns
+  reason: INVESTIGATE - S3 sometimes unreachable
+  message: 'Error interacting with object store: Generic S3 error: Error performing GET'
+- name: 00167_read_bytes_from_fs
+  reason: INVESTIGATE - Memory limit exceeded
+  message: 'DB::Exception: (total) memory limit exceeded:'
+- name: 02700_s3_part_INT_MAX
+  reason: KNOWN - Memory limit exceeded
+  message: 'DB::Exception: (total) memory limit exceeded:'
+- name: 03572_export_merge_tree_part_to_object_storage
+  reason: INVESTIGATE - Unstable on asan, tsan, msan
+  message: result differs with reference
+  check_types:
+  - asan
+  - tsan
+  - msan
+- name: 03321_clickhouse_local_initialization_not_too_slow_even_under_sanitizers
+  reason: INVESTIGATE - Unstable on msan
+  message: result differs with reference
+  check_types:
+  - msan
+  - tsan
+- name: 02676_optimize_old_parts_replicated
+  reason: INVESTIGATE - Unstable on tsan
+  message: result differs with reference
+  check_types:
+  - tsan
+- name: 03221_refreshable_matview_progress
+  reason: INVESTIGATE - Unstable on msan
+  message: result differs with reference
+  check_types:
+  - msan
+- name: 02313_filesystem_cache_seeks
+  reason: fails when azure storage is not set up
+  message: 'DB::Exception: Cannot wrap disk `azure` with cache layer'
+- name: 02286_drop_filesystem_cache
+  reason: fails when azure storage is not set up
+  message: 'DB::Exception: Cannot wrap disk `azure` with cache layer'
+- name: 02242_system_filesystem_cache_log_table
+  reason: fails when azure storage is not set up
+  message: 'DB::Exception: Cannot wrap disk `azure` with cache layer'
+- name: 02241_filesystem_cache_on_write_operations
+  reason: fails when azure storage is not set up
+  message: 'DB::Exception: Cannot wrap disk `azure` with cache layer'
+- name: 02240_system_filesystem_cache_table
+  reason: fails when azure storage is not set up
+  message: 'DB::Exception: Cannot wrap disk `azure` with cache layer'
+- name: 02226_filesystem_cache_profile_events
+  reason: fails when azure storage is not set up
+  message: 'DB::Exception: Cannot wrap disk `azure` with cache layer'
+- name: 00024_random_counters
+  reason: INVESTIGATE - random timeout
+  message: Timeout! Processes left in process group
+- name: 03211_nested_json_merges
+  reason: KNOWN - Unstable upstream
+- name: 03644_object_storage_correlated_subqueries
+  reason: KNOWN - Unstable in upstream 25.8.
+  message: Timeout! Processes left in process group
+- name: 03206_no_exceptions_clickhouse_local
+  reason: 'KNOWN - Unstable upstream'
+  message: 'return code:  134'
+- name: 02815_no_throw_in_simple_queries
+  reason: 'KNOWN - Unstable upstream'
+  message: 'spawn id exp5 not open'
+- name: 03367_l2_distance_transposed_1
+  reason: INVESTIGATE - Float precision issue on Hetzner ARM https://github.com/ClickHouse/ClickHouse/issues/96764
+  check_types:
+  - arm
+  - cpu-aarch64
+- name: 03369_l2_distance_transposed_variadic
+  reason: INVESTIGATE - Float precision issue on Hetzner ARM https://github.com/ClickHouse/ClickHouse/issues/96764
+  check_types:
+  - arm
+  - cpu-aarch64
+- name: 03367_l2_distance_transposed_2
+  reason: INVESTIGATE - Float precision issue on Hetzner ARM https://github.com/ClickHouse/ClickHouse/issues/96764
+  check_types:
+  - arm
+  - cpu-aarch64
+- name: 03377_qbit_parameters
+  reason: INVESTIGATE - Float precision issue on Hetzner ARM https://github.com/ClickHouse/ClickHouse/issues/96764
+  check_types:
+  - arm
+  - cpu-aarch64
+- name: 03370_l2_distance_transposed_negative
+  reason: INVESTIGATE - Float precision issue on Hetzner ARM https://github.com/ClickHouse/ClickHouse/issues/96764
+  check_types:
+  - arm
+  - cpu-aarch64
+- name: 03375_l2_distance_transposed_partial_reads_pass
+  reason: INVESTIGATE - Float precision issue on Hetzner ARM https://github.com/ClickHouse/ClickHouse/issues/96764
+  check_types:
+  - arm
+  - cpu-aarch64
+- name: 03378_cosine_distance_transposed
+  reason: INVESTIGATE - Float precision issue on Hetzner ARM https://github.com/ClickHouse/ClickHouse/issues/96764
+  check_types:
+  - arm
+  - cpu-aarch64
+- name: 01154_move_partition_long
+  reason: INVESTIGATE - Unstable on debug
+  message: 'curl: (28) Operation timed out'
+  check_types:
+  - debug
+- name: test_storage_s3_queue/test_5.py::test_migration[1-s3queue_]
+  reason: KNOWN - Sometimes fails due to test order
+  message: 'Failed: Timeout >900.0s'
+- name: test_storage_s3_queue/test_5.py::test_migration[3-s3queue_]
+  reason: KNOWN - Sometimes fails due to test order
+  message: 'Failed: Timeout >900.0s'
+- name: test_storage_s3_queue/test_5.py::test_migration[1-]
+  reason: KNOWN - Sometimes fails due to test order
+  message: 'Failed: Timeout >900.0s'
+- name: test_storage_s3_queue/test_5.py::test_migration[3-]
+  reason: KNOWN - Sometimes fails due to test order
+  message: 'Failed: Timeout >900.0s'
+- name: test_scheduler_cpu_preemptive/test.py::test_downscaling[cpu-slot-preemption-timeout-1ms]
+  reason: INVESTIGATE - Unstable on tsan, asan
+  message: 'Failed: Timeout >900.0s'
+  check_types:
+  - tsan
+  - asan
+- name: test_grpc_protocol/test.py::test_ipv6_select_one
+  reason: INVESTIGATE - Internal test timeout
+  message: FutureTimeoutError
+- name: test_backup_restore_on_cluster/test_different_versions.py::test_different_versions
+  reason: INVESTIGATE - NETLINK_ERROR
+  message: NETLINK_ERROR
+- name: test_backup_restore_on_cluster/test_cancel_backup.py::test_shutdown_cancels_backup
+  reason: INVESTIGATE - NETLINK_ERROR
+  message: NETLINK_ERROR
+- name: test_backup_restore_on_cluster/test_cancel_backup.py::test_cancel_backup_with_settings
+  reason: INVESTIGATE - NETLINK_ERROR
+  message: NETLINK_ERROR
+- name: test_overcommit_tracker/test.py::test_user_overcommit
+  reason: INVESTIGATE - AssertionError on tsan
+  message: 'AssertionError: all tasks are killed'
+  check_types:
+  - tsan
+- name: test_storage_delta/test.py::test_concurrent_queries[False]
+  reason: INVESTIGATE - Unstable test
+- name: test_storage_s3_queue/test_0.py::test_streaming_to_many_views[unordered]
+  reason: 'KNOWN - Unstable upstream'
+- name: test_storage_s3_queue/test_0.py::test_streaming_to_many_views[ordered]
+  reason: 'KNOWN - Unstable upstream'
+- name: test_storage_s3_queue/test_2.py::test_shards_distributed[unordered-1]
+  reason: 'KNOWN - Unstable upstream'
+- name: test_storage_s3_queue/test_2.py::test_shards_distributed[unordered-8]
+  reason: 'KNOWN - Unstable upstream'
+- name: test_storage_s3_queue/test_2.py::test_shards_distributed[ordered-1]
+  reason: 'KNOWN - Unstable upstream'
+- name: test_storage_s3_queue/test_2.py::test_shards_distributed[ordered-2]
+  reason: 'KNOWN - Unstable upstream'
+- name: test_storage_s3_queue/test_4.py::test_list_and_delete_race
+  reason: 'KNOWN - Unstable upstream'
+  message: AssertionError
+- name: test_storage_s3_queue/test_5.py::test_failed_startup
+  reason: 'INVESTIGATE - Unstable on tsan'
+  check_types:
+  - tsan
+- name: test_storage_s3_queue/test_5.py::test_mv_settings[1-ordered]
+  reason: 'INVESTIGATE - Unstable on tsan'
+  check_types:
+  - tsan
+- name: test_storage_s3_queue/test_5.py::test_persistent_processing_nodes_cleanup
+  reason: 'INVESTIGATE - Unstable on tsan'
+  check_types:
+  - tsan
+- name: test_storage_s3_queue/test_5.py::test_detach_attach_table
+  reason: 'INVESTIGATE - Unstable on tsan'
+  check_types:
+  - tsan
+- name: test_storage_s3_queue/test_5.py::test_persistent_processing
+  reason: 'INVESTIGATE - Unstable on tsan'
+  check_types:
+  - tsan
+- name: test_storage_s3_queue/test_5.py::test_shutdown_order
+  reason: 'INVESTIGATE - Unstable on tsan'
+  check_types:
+  - tsan
+- name: test_storage_s3_queue/test_5.py::test_mv_settings[1-unordered]
+  reason: 'INVESTIGATE - Unstable on tsan'
+  check_types:
+  - tsan
+- name: test_storage_s3_queue/test_5.py::test_mv_settings[9999999999-unordered]
+  reason: 'INVESTIGATE - Unstable on tsan'
+  check_types:
+  - tsan
+- name: test_storage_s3_queue/test_5.py::test_mv_settings[9999999999-ordered]
+  reason: 'INVESTIGATE - Unstable on tsan'
+  check_types:
+  - tsan
+- name: test_storage_s3_queue/test_5.py::test_create_or_replace_table
+  reason: 'INVESTIGATE - Unstable on tsan'
+  check_types:
+  - tsan
+- name: test_database_hms/test.py::test_list_tables
+  reason: 'KNOWN: Occasional timeout'
+  message: docker_compose_iceberg_hms_catalog.yml', '--verbose', 'up', '-d']' timed out after 300 seconds
+- name: test_database_hms/test.py::test_many_namespaces
+  reason: 'KNOWN: Occasional timeout'
+  message: docker_compose_iceberg_hms_catalog.yml', '--verbose', 'up', '-d']' timed out after 300 seconds
+- name: test_database_hms/test.py::test_select
+  reason: 'KNOWN: Occasional timeout'
+  message: docker_compose_iceberg_hms_catalog.yml', '--verbose', 'up', '-d']' timed out after 300 seconds
+- name: test_database_hms/test.py::test_tables_with_same_location
+  reason: 'KNOWN: Occasional timeout'
+  message: docker_compose_iceberg_hms_catalog.yml', '--verbose', 'up', '-d']' timed out after 300 seconds
+- name: test_database_hms/test.py::test_hide_sensitive_info
+  reason: 'KNOWN: Occasional timeout'
+  message: docker_compose_iceberg_hms_catalog.yml', '--verbose', 'up', '-d']' timed out after 300 seconds
+- name: test_keeper_memory_soft_limit/test.py::test_soft_limit_create
+  reason: 'INVESTIGATE - Out of Memory or startup instability'
+- name: test_s3_cache_locality/test.py::test_cache_locality[0]
+  reason: 'INVESTIGATE - Timeout or AssertionError'
+- name: test_dirty_pages_force_purge/test.py::test_dirty_pages_force_purge
+  reason: 'KNOWN: https://github.com/Altinity/ClickHouse/issues/1369'
+  message: 'RuntimeError: Failed to find peak memory counter'
+- name: test_storage_s3_queue/test_0.py::test_move_after_processing[same_bucket-AzureQueue]
+  reason: 'INVESTIGATE - Fails on ARM'
+  check_types:
+  - arm_binary
+- name: test_backup_restore_s3/test.py::test_backup_to_s3_different_credentials[data_file_name_from_checksum-non_native_single]
+  reason: 'INVESTIGATE - Timeout on tsan'
+  message: 'Timeout exceeded'
+  check_types:
+  - tsan
+- name: test_backup_restore_s3/test.py::test_backup_restore_system_tables_with_plain_rewritable_disk[data_file_name_from_checksum]
+  reason: 'INVESTIGATE - Timeout on tsan'
+  message: 'Timeout exceeded'
+  check_types:
+  - tsan
+- name: test_backup_restore_s3/test.py::test_backup_restore_system_tables_with_plain_rewritable_disk[data_file_name_from_first_file_name]
+  reason: 'INVESTIGATE - Timeout on tsan'
+  message: 'Timeout'
+  check_types:
+  - tsan
+- name: test_checking_s3_blobs_paranoid/test.py::test_when_s3_timeout_at_listing
+  reason: 'INVESTIGATE - Unstable on tsan'
+  message: 'Client failed!'
+  check_types:
+  - tsan
+- name: test_checking_s3_blobs_paranoid/test.py::test_query_is_canceled_with_inf_retries
+  reason: 'INVESTIGATE - Unstable on tsan'
+  message: 'Client failed!'
+  check_types:
+  - tsan
+- name: test_checking_s3_blobs_paranoid/test.py::test_adaptive_timeouts[node_with_inf_s3_retries]
+  reason: 'INVESTIGATE - Unstable on tsan'
+  message: 'Client failed!'
+  check_types:
+  - tsan
+- name: test_ttl_replicated/test.py::test_ttl_compatibility[node_left1-node_right1-1]
+  reason: 'INVESTIGATE - Unstable on asan'
+  message: 'Client timed out!'
+  check_types:
+  - asan
+
+
+# Regex rules should be ordered from most specific to least specific.
+# regex: true applies to name, message, and not_message fields, but not to reason or check_types fields.
+# If a test fail matches multiple rules, the report will take the reason from the first name that matches, ignoring message and not_message fields.
+
+# Match all sanitizer related timeouts in stateless tests
+# Note that this style of multiline string is inserting a space before each |.
+# Make sure to include final punctuation marks as each sub-pattern has a space appended.
+- name: \d{5}_.*
+  reason: 'KNOWN: Random timeout with sanitizer'
+  message: 'Timeout! Processes left in process group
+     |DB::Exception: Timeout exceeded:?
+     |Timeout exceeded while receiving data from server\.
+     |DB::Exception: Estimated query execution time \((\d+\.\d+) seconds\) is too long\.
+     |curl: \(28\) Operation timed out'
+  not_message: 'Sanitizer trap|Sanitizer assert'
+  regex: true
+  check_types:
+  - tsan
+  - asan
+  - msan
+  - ubsan

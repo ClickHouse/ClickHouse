@@ -23,10 +23,10 @@ if __name__ == "__main__":
     digest = Digest().calc_job_digest(some_build_job, {}, {}).split("-")[0]
     info.store_kv_data("build_digest", digest)
 
-    if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
+    if info.workflow_name == "MasterCI" and info.repo_name == "Altinity/ClickHouse":
         # store previous commits for perf tests
         raw = Shell.get_output(
-            f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={info.git_branch}&per_page=30' -q '.[].sha' | head -n30",
+            f"gh api 'repos/Altinity/ClickHouse/commits?sha={info.git_branch}&per_page=30' -q '.[].sha' | head -n30",
             verbose=True,
         )
         commits = raw.splitlines()
@@ -41,7 +41,7 @@ if __name__ == "__main__":
         try:
             # Get the merge base commit using git
             merge_base_commit_sha = Shell.get_output(
-                f"gh api repos/ClickHouse/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
+                f"gh api repos/Altinity/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
                 verbose=True,
             ).strip()
             info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)

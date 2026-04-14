@@ -6,7 +6,7 @@
  *   node fetch_ci_report.js <url> [options]
  *
  * URL formats supported:
- *   - GitHub PR URLs: https://github.com/ClickHouse/ClickHouse/pull/12345 (fetches ALL CI reports)
+ *   - GitHub PR URLs: https://github.com/Altinity/ClickHouse/pull/12345 (fetches ALL CI reports)
  *   - HTML URLs: https://s3.amazonaws.com/.../json.html?PR=...&sha=...&name_0=...
  *   - Direct JSON URLs: https://s3.amazonaws.com/.../result_*.json
  *
@@ -21,10 +21,10 @@
  *   --credentials <user,password>  HTTP Basic Auth credentials (comma-separated). Only for ClickHouse_private repository
  *
  * Examples:
- *   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171"
- *   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --failed --cidb
- *   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --report 2
- *   node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=94537&..."
+ *   node fetch_ci_report.js "https://github.com/Altinity/ClickHouse/pull/97171"
+ *   node fetch_ci_report.js "https://github.com/Altinity/ClickHouse/pull/97171" --failed --cidb
+ *   node fetch_ci_report.js "https://github.com/Altinity/ClickHouse/pull/97171" --report 2
+ *   node fetch_ci_report.js "https://s3.amazonaws.com/altinity-build-artifacts/json.html?PR=94537&..."
  *   node fetch_ci_report.js "https://s3.amazonaws.com/.../result_integration_tests.json"
  *   node fetch_ci_report.js "<url>" --test peak_memory --links
  *   node fetch_ci_report.js "<url>" --failed --download-logs
@@ -291,7 +291,7 @@ function extractArtifactLinks(jsonData) {
  */
 async function getCIReportsFromPR(prUrl) {
   // Parse PR number from URL
-  const match = prUrl.match(/github\.com\/ClickHouse\/ClickHouse\/pull\/(\d+)/);
+  const match = prUrl.match(/github\.com\/Altinity\/ClickHouse\/pull\/(\d+)/);
   if (!match) {
     throw new Error('Invalid GitHub PR URL format');
   }
@@ -301,7 +301,7 @@ async function getCIReportsFromPR(prUrl) {
 
   // Fetch PR comments to find CI bot comment
   try {
-    const commentsJson = execSync(`gh api repos/ClickHouse/ClickHouse/issues/${prNumber}/comments --paginate --jq '.[] | select(.user.login == "clickhouse-gh[bot]") | {body, created_at}'`, {
+    const commentsJson = execSync(`gh api repos/Altinity/ClickHouse/issues/${prNumber}/comments --paginate --jq '.[] | select(.user.login == "clickhouse-gh[bot]") | {body, created_at}'`, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
     });
@@ -313,7 +313,7 @@ async function getCIReportsFromPR(prUrl) {
     }
 
     // Search through all bot comments for CI report URLs (not just the latest)
-    const reportUrlPattern = /https:\/\/s3\.amazonaws\.com\/clickhouse-test-reports\/json\.html\?[^\s)]+/g;
+    const reportUrlPattern = /https:\/\/s3\.amazonaws\.com\/altinity-build-artifacts\/json\.html\?[^\s)]+/g;
     for (const comment of comments) {
       if (!comment.body) continue;
       const urls = comment.body.match(reportUrlPattern);
@@ -654,7 +654,7 @@ async function main() {
 Usage: node fetch_ci_report.js <url> [options]
 
 URL formats:
-  - GitHub PR: https://github.com/ClickHouse/ClickHouse/pull/12345 (fetches ALL CI reports)
+  - GitHub PR: https://github.com/Altinity/ClickHouse/pull/12345 (fetches ALL CI reports)
   - CI HTML:   https://s3.amazonaws.com/.../json.html?PR=...&sha=...&name_0=...
   - Direct JSON: https://s3.amazonaws.com/.../result_*.json
 
@@ -669,10 +669,10 @@ Options:
   --credentials <user,password>  HTTP Basic Auth credentials
 
 Examples:
-  node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171"
-  node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --failed --cidb
-  node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --report 2
-  node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=94537&sha=abc123&name_0=Integration%20tests"
+  node fetch_ci_report.js "https://github.com/Altinity/ClickHouse/pull/97171"
+  node fetch_ci_report.js "https://github.com/Altinity/ClickHouse/pull/97171" --failed --cidb
+  node fetch_ci_report.js "https://github.com/Altinity/ClickHouse/pull/97171" --report 2
+  node fetch_ci_report.js "https://s3.amazonaws.com/altinity-build-artifacts/json.html?PR=94537&sha=abc123&name_0=Integration%20tests"
   node fetch_ci_report.js "<url>" --test peak_memory --links
   node fetch_ci_report.js "<url>" --failed --download-logs
 `);

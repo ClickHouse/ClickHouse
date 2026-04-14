@@ -10,6 +10,7 @@ FAIL_SIGN = "[ FAIL "
 TIMEOUT_SIGN = "[ Timeout! "
 UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
+BROKEN_SIGN = "[ BROKEN "
 HUNG_SIGN = "Found hung queries in processlist"
 SERVER_DIED_SIGN = "Server died, terminating all processes"
 SERVER_DIED_SIGN2 = "Server does not respond to health check"
@@ -24,9 +25,8 @@ RETRIES_SIGN = "Some tests were restarted"
 # This ensures we only match actual test result lines, not patterns embedded in error messages
 # Note: Test names can contain letters, digits, underscores, hyphens, and dots
 TEST_RESULT_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|Timeout!) \])\s+([\d.]+) sec\."
+    r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|BROKEN|UNKNOWN|Timeout!) \])\s+([\d.]+) sec\."
 )
-
 
 class FTResultsProcessor:
     @dataclasses.dataclass
@@ -36,6 +36,7 @@ class FTResultsProcessor:
         unknown: int
         failed: int
         success: int
+        broken: int
         test_results: List[Result]
         hung: bool = False
         server_died: bool = False
@@ -43,9 +44,10 @@ class FTResultsProcessor:
         success_finish: bool = False
         test_end: bool = True
 
-    def __init__(self, wd):
+    def __init__(self, wd, test_options):
         self.tests_output_file = f"{wd}/test_result.txt"
         self.debug_files = []
+        self.test_options = test_options
 
     def _process_test_output(self):
         total = 0
@@ -53,6 +55,7 @@ class FTResultsProcessor:
         unknown = 0
         failed = 0
         success = 0
+        broken = 0
         hung = False
         server_died = False
         retries = False
@@ -106,13 +109,16 @@ class FTResultsProcessor:
                     elif SKIPPED_SIGN in status_marker:
                         skipped += 1
                         test_results.append((test_name, "SKIPPED", test_time, []))
+                    elif BROKEN_SIGN in line:
+                        broken += 1
+                        test_results.append((test_name, "BROKEN", test_time, []))
                     else:
                         success += int(OK_SIGN in status_marker)
                         test_results.append((test_name, "OK", test_time, []))
                     test_end = False
                 elif (
                     len(test_results) > 0
-                    and test_results[-1][1] in ("FAIL", "SKIPPED")
+                    and test_results[-1][1] in ("FAIL", "SKIPPED", "BROKEN")
                     and not test_end
                 ):
                     test_results[-1][3].append(original_line)
@@ -135,6 +141,7 @@ class FTResultsProcessor:
                         info="".join(test[3])[:16384],
                     )
                 )
+
             except Exception as e:
                 print(f"ERROR: Failed to parse test results: {test}")
                 traceback.print_exc()
@@ -160,6 +167,7 @@ class FTResultsProcessor:
             unknown=unknown,
             failed=failed,
             success=success,
+            broken=broken,
             test_results=test_results,
             hung=hung,
             server_died=server_died,
@@ -209,7 +217,7 @@ class FTResultsProcessor:
             pass
 
         if not info:
-            info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
+            info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}, Broken: {s.broken}"
 
         result = Result.create_from(
             name=task_name,

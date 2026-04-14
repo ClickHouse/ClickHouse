@@ -12,7 +12,7 @@ builds_for_release_branch = [
 
 # Add long retention tags to subset of artifacts
 clickhouse_binaries_with_tags = []
-for artifact in ArtifactConfigs.clickhouse_binaries:
+for artifact in ArtifactConfigs.clickhouse_binaries + ArtifactConfigs.clickhouse_stripped_binaries:
     if artifact.name in BINARIES_WITH_LONG_RETENTION:
         artifact = artifact.add_tags({"retention": "long"})
     clickhouse_binaries_with_tags.append(artifact)

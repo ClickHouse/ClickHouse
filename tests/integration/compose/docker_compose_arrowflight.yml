@@ -1,6 +1,6 @@
 services:
   arrowflight1:
-    image: clickhouse/arrowflight-server-test:${DOCKER_ARROWFLIGHT_SERVER_TAG:-latest}
+    image: altinityinfra/arrowflight-server-test:${DOCKER_ARROWFLIGHT_SERVER_TAG:-latest}
     ports:
       - "5005:5005"
       - "5006:5006"

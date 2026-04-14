@@ -1,0 +1,7 @@
+[{{ repo_name }}]
+name={{ repo_title }}
+baseurl=https://{{ repo_dns_name }}/{{ repo_prefix }}yum-repo
+enabled=1
+repo_gpgcheck=1
+gpgcheck=1
+gpgkey=https://{{ repo_dns_name }}/{{ repo_prefix }}yum-repo/RPM-GPG-KEY-{{ repo_name }}

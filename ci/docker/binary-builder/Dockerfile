@@ -1,6 +1,6 @@
-# docker build -t clickhouse/binary-builder .
+# docker build -t altinityinfra/binary-builder .
 ARG FROM_TAG
-FROM clickhouse/fasttest:$FROM_TAG
+FROM altinityinfra/fasttest:$FROM_TAG
 ARG TARGETARCH
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
@@ -8,10 +8,10 @@ ENV CXX=clang++-${LLVM_VERSION}
 #non-functional change
 
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /cctools /cctools
+COPY --from=altinityinfra/cctools:c0aae9395f33405b6e2b /cctools /cctools
 
 # We need OpenSSL FIPS in permissive mode for build on MasterCI
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+COPY --from=altinityinfra/cctools:c0aae9395f33405b6e2b \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \
@@ -23,6 +23,9 @@ RUN apt-get update \
 
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
+    && apt-get remove --yes clang-tools-${LLVM_VERSION} || true \
+    && apt-get install --yes \
+        clang-tools-${LLVM_VERSION} \
     && apt-get install --yes \
         binutils-dev \
         build-essential \

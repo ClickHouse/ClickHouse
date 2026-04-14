@@ -7,7 +7,7 @@ workflow = Workflow.Config(
     name="MergeQueueCI",
     event=Workflow.Event.MERGE_QUEUE,
     jobs=[
-        JobConfigs.style_check,
+        # JobConfigs.style_check, # NOTE (strtgbb): We don't use style check
         JobConfigs.fast_test,
         *[job for job in JobConfigs.build_jobs if job.name == "Build (amd_binary)"],
     ],
@@ -27,7 +27,7 @@ workflow = Workflow.Config(
     enable_commit_status_on_failure=True,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/set_dummy_sync_commit_status.py",
+        # "python3 ./ci/jobs/scripts/workflow_hooks/set_dummy_sync_commit_status.py", # NOTE (strtgbb): We don't use this
     ],
 )
 

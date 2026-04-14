@@ -1,0 +1,17 @@
+# The configuration file must be named `dco.yml` and placed in the `.github` directory in the default branch of the repository.
+#
+# This configuration file is backwards compatible with the *dcoapp/app* (https://github.com/dcoapp/app) configuration file.
+
+# https://github.com/cncf/dco2?#remediation-commits
+allowRemediationCommits:
+  # Allow individual remediation commits
+  # https://github.com/cncf/dco2?#individual
+  individual: true
+  # Allow third-party remediation commits
+  # https://github.com/cncf/dco2?#third-party
+  thirdParty: false
+
+require:
+  # Members are required to sign-off commits
+  # https://github.com/cncf/dco2?#skipping-sign-off-for-organization-members
+  members: false
