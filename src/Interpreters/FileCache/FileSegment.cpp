@@ -605,13 +605,29 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
+    bool is_first_reservation = (current_downloaded_size == 0 && already_reserved_size == 0);
+
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
 
     if (!reserved)
+    {
         setDownloadFailedUnlocked(lock());
+        return false;
+    }
 
-    return reserved;
+#if USE_ROCKSDB
+    /// Register in RocksDB index on first successful reservation, not at segment creation.
+    /// Many EMPTY segments are never downloaded (unused prefetches, LIMIT in query, etc.),
+    /// so deferring avoids redundant contention on creation/removal of empty segments.
+    if (is_first_reservation)
+    {
+        if (auto index = cache->getRocksDBIndex())
+            index->put(file_key, offset(), /* size */ -1, getKeyMetadata()->origin);
+    }
+#endif
+
+    return true;
 }
 
 void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
@@ -1203,11 +1219,17 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     /// If a crash happens between index removal and file deletion,
     /// the worst case is an orphaned file (leaked disk space),
     /// which is safer than a stale index entry pointing to a missing file.
-    if (!cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
+    ///
+    /// Only remove if the segment was ever reserved (i.e. has a RocksDB entry).
+    /// Segments that were created but never reserved have no index entry.
+    if (reserved_size > 0)
+    {
+        if (!cache)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
 
-    if (auto index = cache->getRocksDBIndex())
-        index->remove(file_key, offset());
+        if (auto index = cache->getRocksDBIndex())
+            index->remove(file_key, offset());
+    }
 #endif
 }
 

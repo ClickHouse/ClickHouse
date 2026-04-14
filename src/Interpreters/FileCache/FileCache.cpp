@@ -1062,11 +1062,6 @@ KeyMetadata::iterator FileCache::addFileSegment(
             "Failed to insert {}:{}: entry already exists", key, offset);
     }
 
-#if USE_ROCKSDB
-    if (rocksdb_index)
-        rocksdb_index->put(key, offset, /* size */ -1, locked_key.getKeyMetadata()->origin);
-#endif
-
     return file_segment_metadata_it;
 }
 
