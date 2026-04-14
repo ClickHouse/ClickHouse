@@ -1073,6 +1073,16 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
         if (split_part_it == parts_to_read.end())
             continue;
 
+        if (split_part_it->replicas.empty())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Part {} requested by replica {} is not registered in working set",
+                part.info.getPartNameV1(),
+                request.replica_num);
+
+        if (!split_part_it->replicas.contains(request.replica_num))
+            continue;
+
         /// Propagate min_marks_per_task from the coordinator's stored data (set by the first announcement).
         part.min_marks_per_task = split_part_it->description.min_marks_per_task;
 
