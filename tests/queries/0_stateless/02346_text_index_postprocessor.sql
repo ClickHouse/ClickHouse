@@ -312,3 +312,23 @@ SELECT count() FROM tab WHERE hasToken(val, 'world');  -- row 3, new part (index
 
 SYSTEM START MERGES tab;
 DROP TABLE tab;
+
+SELECT '12. Array tokenizer + postprocessor: has() must not use Exact direct-read.';
+-- With a postprocessor, indexed tokens differ from stored values, so Exact mode is unsafe.
+-- 'Foo' → lower → 'foo'; has(val, 'Foo') must match the stored value, not the indexed token.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Array(String),
+    INDEX idx(val) TYPE text(tokenizer = 'array', postprocessor = lower(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
+
+SELECT count() FROM tab WHERE has(val, 'Foo');   -- 1: stored 'Foo', row-level match
+SELECT count() FROM tab WHERE has(val, 'BAR');   -- 1
+SELECT count() FROM tab WHERE has(val, 'foo');   -- 0: no row stores 'foo'
+
+DROP TABLE tab;

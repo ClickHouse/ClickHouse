@@ -73,3 +73,7 @@
 1
 1
 1
+12. Array tokenizer + postprocessor: has() must not use Exact direct-read.
+1
+1
+0
