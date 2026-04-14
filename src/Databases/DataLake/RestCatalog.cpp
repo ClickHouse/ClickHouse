@@ -239,7 +239,7 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
     /// Option 2: user provided grant_type, client_id and client_secret.
     /// We would make OAuthClientCredentialsRequest
     /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
-    if (!client_id.empty())
+    if (!client_secret.empty())
     {
         if (!access_token.has_value() || update_token)
         {
@@ -270,7 +270,7 @@ OneLakeCatalog::OneLakeCatalog(
     client_secret = onelake_client_secret;
     update_token_if_expired = true;
     // Get token before loading config so getAuthHeaders() can work
-    if (!client_id.empty() && !client_secret.empty())
+    if (!client_secret.empty())
     {
         access_token = retrieveAccessToken();
     }
@@ -280,6 +280,12 @@ OneLakeCatalog::OneLakeCatalog(
 AccessToken RestCatalog::retrieveAccessToken() const
 {
     static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
+
+    /// Some catalog implementations (e.g. Snowflake Polaris) support token exchange
+    /// where client_secret contains a pre-issued token (PAT/JWT) and client_id is not required.
+    /// In this case we must NOT send client_id at all, otherwise server returns 400.
+    if (client_id.empty() && !client_secret.empty())
+        LOG_DEBUG(log, "Sending OAuth token request without client_id");
 
     /// TODO:
     /// 1. support oauth2-server-uri
@@ -296,24 +302,37 @@ AccessToken RestCatalog::retrieveAccessToken() const
 
         Poco::URI::QueryParameters params = {
             {"grant_type", "client_credentials"},
-            {"scope", auth_scope},
-            {"client_id", client_id},
-            {"client_secret", client_secret},
+            {"scope", auth_scope}
         };
+
+        if (!client_id.empty())
+            params.emplace_back("client_id", client_id);
+
+        if (!client_secret.empty())
+            params.emplace_back("client_secret", client_secret);
+
         url.setQueryParameters(params);
     }
     else
     {
         String encoded_auth_scope;
-        String encoded_client_id;
-        String encoded_client_secret;
-        Poco::URI::encode(auth_scope, auth_scope, encoded_auth_scope);
-        Poco::URI::encode(client_id, client_id, encoded_client_id);
-        Poco::URI::encode(client_secret, client_secret, encoded_client_secret);
+        Poco::URI::encode(auth_scope, "", encoded_auth_scope);
 
-        body = fmt::format(
-            "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
-            encoded_auth_scope, encoded_client_id, encoded_client_secret);
+        body = fmt::format("grant_type=client_credentials&scope={}", encoded_auth_scope);
+        if (!client_id.empty())
+        {
+            String encoded_client_id;
+            Poco::URI::encode(client_id, "", encoded_client_id);
+            body += fmt::format("&client_id={}", encoded_client_id);
+        }
+
+        if (!client_secret.empty())
+        {
+            String encoded_client_secret;
+            Poco::URI::encode(client_secret, "", encoded_client_secret);
+            body += fmt::format("&client_secret={}", encoded_client_secret);
+        }
+
         body_size = body.size();
         out_stream_callback = [&](std::ostream & os)
         {
