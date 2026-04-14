@@ -11,7 +11,7 @@ CREATE TABLE alias_table ENGINE = Alias(currentDatabase(), base_table);
 DROP TABLE base_table;
 
 -- Querying via remote() should throw UNKNOWN_TABLE instead of Logical error
-SELECT * FROM remote('localhost:9900', currentDatabase(), alias_table); -- { serverError UNKNOWN_TABLE }
+SELECT * FROM remote('localhost', currentDatabase(), alias_table); -- { serverError UNKNOWN_TABLE }
 
 -- Cleanup
 DROP TABLE IF EXISTS alias_table;
