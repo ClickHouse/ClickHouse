@@ -160,7 +160,7 @@ EOL
 
                 <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
                 <enable_analyzer>
-                    <readonly/>
+                    <min>1</min>
                 </enable_analyzer>
 
                 <!-- Prevent stack overflow -->
@@ -225,7 +225,7 @@ function stop_server()
     #
     # Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
     for i in {1..30}; do
-        if clickhouse client -q "SYSTEM STOP DISTRIBUTED SENDS"; then
+        if clickhouse client --receive_timeout=10 -q "SYSTEM STOP DISTRIBUTED SENDS"; then
             break
         fi
     done

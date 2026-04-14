@@ -243,13 +243,6 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     ///   in case of long block of empty arrays we may not need read dictionary at first reading.
     bool need_update_dictionary = false;
 
-    /// True if this part has a single dictionary for the entire column, detected via
-    /// `has_uniform_marks_callback` in the prefix. When true, non-continuous reads
-    /// (granule skips) do not invalidate the cached dictionary, and if the
-    /// `DictionaryKeys` stream already contains the dictionary body in the prefix
-    /// it can be read once and shared across all threads via `clone`.
-    bool single_dictionary_for_part = false;
-
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
@@ -316,12 +309,6 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         return;
     }
 
-    /// Check whether all marks for this substream have uniform positions before
-    /// obtaining the stream. The path currently ends with DictionaryKeys.
-    bool is_single_dict = settings.has_uniform_marks_callback
-        && settings.data_part_type == MergeTreeDataPartType::Wide
-        && settings.has_uniform_marks_callback(settings.path, 2);
-
     auto * stream = settings.getter(settings.path);
     settings.path.pop_back();
 
@@ -331,33 +318,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     UInt64 keys_version;
     readBinaryLittleEndian(keys_version, *stream);
 
-    auto new_state = std::make_shared<DeserializeStateLowCardinality>(keys_version);
-    new_state->single_dictionary_for_part = is_single_dict;
-
-    if (is_single_dict && !stream->eof())
-    {
-        /// For `Wide` parts with a single dictionary, the stream is now positioned
-        /// right at the dictionary data (after the version). Read it here so that
-        /// all threads sharing this prefix state via `DeserializationPrefixesCache`
-        /// get the dictionary through a shared_ptr clone instead of each reading
-        /// it independently.
-        ///
-        /// Some streams are allowed to contain only `keys_version` with no dictionary
-        /// body afterwards, for example unused `LowCardinality` alternatives inside
-        /// `Variant` or empty nested `LowCardinality` streams. In that case `eof`
-        /// is true and we keep `global_dictionary` empty.
-        UInt64 num_keys;
-        readBinaryLittleEndian(num_keys, *stream);
-
-        auto keys_type = removeNullable(dictionary_type);
-        auto global_dict_keys = keys_type->createColumn();
-        dict_inner_serialization->deserializeBinaryBulk(*global_dict_keys, *stream, 0, num_keys, 0);
-
-        new_state->global_dictionary = DataTypeLowCardinality::createColumnUnique(
-            *dictionary_type, std::move(global_dict_keys));
-    }
-
-    state = std::move(new_state);
+    state = std::make_shared<DeserializeStateLowCardinality>(keys_version);
 }
 
 namespace
@@ -712,8 +673,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     {
         low_cardinality_state->num_pending_rows = 0;
 
-        /// Some granules were skipped; the next granule header may signal a dictionary
-        /// update. For multi-dict parts this forces a re-read at the next boundary.
+        /// Remember in state that some granules were skipped and we need to update dictionary.
         low_cardinality_state->need_update_dictionary = true;
     }
 
@@ -733,10 +693,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
                 !global_dictionary || index_type.need_update_dictionary || low_cardinality_state->need_update_dictionary;
             if (index_type.need_global_dictionary && need_update_dictionary)
             {
-                /// For single-dict parts the in-memory dictionary is valid for the entire part,
-                /// so skip re-reading it even if the stream was seeked back to the beginning.
-                if (!low_cardinality_state->single_dictionary_for_part || !global_dictionary)
-                    read_dictionary();
+                read_dictionary();
                 low_cardinality_state->need_update_dictionary = false;
             }
 

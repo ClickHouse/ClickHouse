@@ -184,10 +184,6 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 }
 
-void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextPtr /* query_context */)
-{
-}
-
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ActionsDAG * filter,
@@ -206,7 +202,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         local_context,
         predicate,
         filter,
-        getVirtualsList(),
+        getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         hive_partition_columns_to_read_from_file_path,
         nullptr,
         local_context->getFileProgressCallback(),

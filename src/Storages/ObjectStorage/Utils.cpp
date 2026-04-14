@@ -1,13 +1,12 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Context.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>

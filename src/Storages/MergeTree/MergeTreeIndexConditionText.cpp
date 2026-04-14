@@ -3,8 +3,11 @@
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/hasAnyAllTokens.h>
+#include <IO/WriteBufferFromString.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -589,12 +592,22 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
     return patterns;
 }
 
+/// Converts a Field value to its text representation using `serializeText`,
+/// matching the format produced by `JSONAllValues`.
+static String serializeFieldAsText(const Field & value, const DataTypePtr & type)
+{
+    auto column = type->createColumn();
+    column->insert(value);
+    WriteBufferFromOwnString buf;
+    type->getDefaultSerialization()->serializeText(*column, 0, buf, {});
+    return buf.str();
+}
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
-    const DataTypePtr & value_type,
-    const Field & value_field,
+    DataTypePtr value_type,
+    Field value_field,
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
@@ -612,6 +625,20 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
+    }
+    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
+    {
+        has_index_column = true;
+        direct_read_mode = getHintOrNoneMode();
+        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+
+        /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
+        /// Keep array values as-is for special text index functions.
+        if (!is_special_text_index_function && !WhichDataType(value_type).isStringOrFixedString())
+        {
+            value_field = serializeFieldAsText(value_field, value_type);
+            value_type = std::make_shared<DataTypeString>();
+        }
     }
 
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
@@ -715,7 +742,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
+        {
+            const String & string_needle = value_field.safeGet<String>();
+            if (!string_needle.empty())
+            {
+                /// hasToken uses splitByNonAlpha as its tokenizer, so:
+                ///  - A needle without any word character (alphanumeric or non-ASCII) is invalid.
+                ///  - Bypass the index in that case so the row-level evaluation throws BAD_ARGUMENTS (or returns NULL for hasTokenOrNull)
+                ///  -- Consistnt with the no-index behaviour.
+                /// If the needle does contain word characters (e.g. "abc" with ngrams(4)):
+                ///  - It is valid but too short for the index's tokenizer:
+                ///  -- Fall through to push "" so all granules are pruned and the query returns 0 rows.
+                if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
+                    return false;
+            }
             tokens.push_back("");
+        }
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -995,7 +1037,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     auto output_column_name = outputs.front()->result_name;
 
     /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
-    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header);
+    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header, "JSONAllPaths");
     if (!json_info)
         return false;
 
@@ -1046,6 +1088,13 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 {
     std::optional<size_t> set_key_position;
 
+    auto has_index = [&](const RPNBuilderTreeNode & node)
+    {
+        return header.has(node.getColumnName())
+            || hasIndexForMapElementValue(node)
+            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+    };
+
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
     {
         const auto function = lhs.toFunctionNode();
@@ -1054,7 +1103,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function.getArgumentAt(i);
-            if (header.has(argument.getColumnName()) || hasIndexForMapElementValue(argument))
+
+            if (has_index(argument))
             {
                 /// Text index support only one index column.
                 if (set_key_position.has_value())
@@ -1066,7 +1116,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     }
     else
     {
-        if (header.has(lhs.getColumnName()) || hasIndexForMapElementValue(lhs))
+        if (has_index(lhs))
             set_key_position = 0;
     }
 

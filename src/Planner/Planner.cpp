@@ -1,4 +1,5 @@
 #include <Planner/Planner.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
@@ -291,6 +292,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         for (const auto & input : post_filter->getInputs())
         {
             if (!header.has(input->result_name))
+            {
+                all_inputs_present = false;
+                break;
+            }
+            if (!input->result_type->equals(*header.getByName(input->result_name).type))
             {
                 all_inputs_present = false;
                 break;

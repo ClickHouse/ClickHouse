@@ -115,8 +115,12 @@ class Workflow:
                 if secret.name == name:
                     return secret
                 names.append(secret.name)
-            print(f"ERROR: Failed to find secret [{name}], workflow secrets [{names}]")
-            raise
+            message = (
+                f"Failed to find secret [{name}] in workflow [{self.name}]. "
+                f"Available workflow secrets: [{names}]"
+            )
+            print(f"ERROR: {message}")
+            raise RuntimeError(message)
 
         def _enabled_workflow_config(self):
             return (

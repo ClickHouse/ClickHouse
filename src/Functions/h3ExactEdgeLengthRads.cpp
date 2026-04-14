@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -7,8 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-
-#include <h3api.h>
 
 
 namespace DB
@@ -27,7 +25,11 @@ class FunctionH3ExactEdgeLengthRads : public IFunction
 public:
     static constexpr auto name = "h3ExactEdgeLengthRads";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ExactEdgeLengthRads>(); }
+    H3Validator validator;
+
+    explicit FunctionH3ExactEdgeLengthRads(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ExactEdgeLengthRads>(context); }
 
     std::string getName() const override { return name; }
 
@@ -76,8 +78,9 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
-            double res = 0;
-            edgeLengthRads(index, &res);
+            Float64 res = 0;
+            if (validator.validateEdge(index))
+                edgeLengthRads(index, &res);
             dst_data[row] = res;
         }
 
@@ -97,7 +100,7 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
         {"index", "Hexagon index number.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the exact length of the H3 edge in radians.",
+        "Returns the exact length of the H3 edge in radians. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
         {"Float64"}
     };
     FunctionDocumentation::Examples examples = {

@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/SystemLog.h>
