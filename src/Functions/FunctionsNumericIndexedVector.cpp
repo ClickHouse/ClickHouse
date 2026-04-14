@@ -104,7 +104,7 @@ Performs pointwise multiplication between a numericIndexedVector and either anot
         FunctionDocumentation::Examples examples
             = {{"",
                 R"(
-with
+WITH
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec1,
     numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec2
 SELECT
@@ -134,7 +134,7 @@ Performs pointwise division between a numericIndexedVector and either another nu
         FunctionDocumentation::Examples examples
             = {{"Usage example",
                 R"(
-with
+WITH
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
     numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec2
 SELECT
@@ -165,7 +165,7 @@ The result is a numericIndexedVector containing the indices where the values are
         FunctionDocumentation::Examples examples
             = {{"",
                 R"(
-with
+WITH
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
     numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 20, 30]))) as vec2
 SELECT
@@ -196,7 +196,7 @@ The result is a numericIndexedVector containing the indices where the values are
         FunctionDocumentation::Examples examples
             = {{"Usage example",
                 R"(
-with
+WITH
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
     numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 20, 30]))) as vec2
 SELECT
@@ -227,7 +227,7 @@ The result is a numericIndexedVector containing the indices where the first vect
         FunctionDocumentation::Examples examples
             = {{"Usage example",
                 R"(
-with
+WITH
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
     numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
 SELECT
@@ -258,7 +258,7 @@ The result is a numericIndexedVector containing the indices where the first vect
         FunctionDocumentation::Examples examples
             = {{"Usage example",
                 R"(
-with
+WITH
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
     numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
 SELECT
@@ -289,7 +289,7 @@ The result is a numericIndexedVector containing the indices where the first vect
         FunctionDocumentation::Examples examples
             = {{"Usage example",
                 R"(
-with
+WITH
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) as vec1,
     numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
 SELECT
@@ -320,7 +320,7 @@ The result is a numericIndexedVector containing the indices where the first vect
         FunctionDocumentation::Examples examples
             = {{"Usage example",
                 R"(
-with
+WITH
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) as vec1,
     numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
 SELECT
@@ -340,16 +340,13 @@ SELECT
     /// numericIndexedVectorPointwiseMax
     {
         FunctionDocumentation::Description description = R"(
-Performs a pointwise maximum between two numericIndexedVector objects. For each key: if it appears in both, the larger value is kept; if it appears in only one side, that side's value is used.
+Performs pointwise maximum between two numericIndexedVector objects.
+The result is a numericIndexedVector containing the union of indices from both vectors, where each value is the larger of the two values at that index; for indices present in only one vector, that vector's value is used.
         )";
-
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMax(v1, v2)";
-
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}}, {"v2", "Another numericIndexedVector object.", {"numericIndexedVector"}}};
-
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
-
         FunctionDocumentation::Examples examples
             = {{"Usage example",
                 R"(
@@ -368,7 +365,6 @@ SELECT
 │ {1:10,2:20,3:30,4:5}  │
 └───────────────────────┘
                 )"}};
-
         FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
@@ -377,16 +373,13 @@ SELECT
     /// numericIndexedVectorPointwiseMin
     {
         FunctionDocumentation::Description description = R"(
-Performs a pointwise minimum between two numericIndexedVector objects. For each key: if it appears in both, the smaller value is kept; if it appears in only one side, that side's value is used.
+Performs pointwise minimum between two numericIndexedVector objects.
+The result is a numericIndexedVector containing the union of indices from both vectors, where each value is the smaller of the two values at that index; for indices present in only one vector, that vector's value is used.
         )";
-
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMin(v1, v2)";
-
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}}, {"v2", "Another numericIndexedVector object.", {"numericIndexedVector"}}};
-
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
-
         FunctionDocumentation::Examples examples
             = {{"Usage example",
                 R"(
@@ -405,7 +398,6 @@ SELECT
 │ {1:10,2:15,3:25,4:5}  │
 └───────────────────────┘
                 )"}};
-
         FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
@@ -439,7 +431,7 @@ SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 
     /// numericIndexedVectorGetMaxValue
     {
         FunctionDocumentation::Description description = R"(
-Returns the maximum value stored in a numericIndexedVector. The comparison respects the vector's value type (signed/unsigned) and fixed-point fractional bits.
+Returns the maximum value stored in a numericIndexedVector.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorGetMaxValue(v)";
         FunctionDocumentation::Arguments arguments = {
@@ -465,7 +457,7 @@ SELECT numericIndexedVectorGetMaxValue(numericIndexedVectorBuild(mapFromArrays([
     /// numericIndexedVectorGetMinValue
     {
         FunctionDocumentation::Description description = R"(
-Returns the minimum value stored in a numericIndexedVector. The comparison respects the vector's value type (signed/unsigned) and fixed-point fractional bits.
+Returns the minimum value stored in a numericIndexedVector.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorGetMinValue(v)";
         FunctionDocumentation::Arguments arguments = {
