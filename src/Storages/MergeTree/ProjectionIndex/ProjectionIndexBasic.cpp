@@ -37,7 +37,11 @@ static ASTPtr wrapInTupleIfNeeded(ASTPtr expr_list)
 }
 
 void ProjectionIndexBasic::fillProjectionDescription(
-    ProjectionDescription & result, const IAST * index_expr, const ColumnsDescription & columns, ContextPtr query_context) const
+    ProjectionDescription & result,
+    const IAST * index_expr,
+    const ColumnsDescription & columns,
+    const KeyDescription * partition_key,
+    const ContextPtr & query_context) const
 {
     auto select_query = make_intrusive<ASTProjectionSelectQuery>();
     auto select_expr_list = make_intrusive<ASTExpressionList>();
@@ -45,7 +49,7 @@ void ProjectionIndexBasic::fillProjectionDescription(
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expr_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, wrapInTupleIfNeeded(index_expr->clone()));
 
-    ProjectionDescription::fillProjectionDescriptionByQuery(result, *select_query, columns, query_context);
+    ProjectionDescription::fillProjectionDescriptionByQuery(result, *select_query, columns, partition_key, query_context);
 }
 
 Block ProjectionIndexBasic::calculate(
