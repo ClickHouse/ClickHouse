@@ -45,7 +45,7 @@ protected:
 
     /// How the response should be formatted. Different AI providers treat this differently. OpenAI-like providers have a specific field
     /// for the response format, while Anthropic does not but it can be approximated with a tool-use pattern, see AnthropicProvider.h/cpp
-    virtual String buildResponseFormatJSON(const ColumnsWithTypeAndName & /*arguments*/) const { return ""; }
+    virtual Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
 
     virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
 

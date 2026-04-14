@@ -83,12 +83,8 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
 
     root->set("messages", messages);
 
-    if (!ai_request.response_format_json.empty())
-    {
-        Poco::JSON::Parser fmt_parser;
-        auto fmt_result = fmt_parser.parse(ai_request.response_format_json);
-        root->set("response_format", fmt_result.extract<Poco::JSON::Object::Ptr>());
-    }
+    if (ai_request.response_format)
+        root->set("response_format", ai_request.response_format);
 
     std::ostringstream body_stream; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
     root->stringify(body_stream);

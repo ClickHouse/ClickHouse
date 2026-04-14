@@ -69,20 +69,17 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
     messages->add(user_msg);
     root->set("messages", messages);
 
-    if (!ai_request.response_format_json.empty())
+    if (ai_request.response_format)
     {
-        Poco::JSON::Parser fmt_parser;
         Poco::JSON::Array::Ptr tools_array = new Poco::JSON::Array;
 
         Poco::JSON::Object::Ptr tool = new Poco::JSON::Object;
         tool->set("name", "structured_output");
         tool->set("description", "Return the result in the specified format");
 
-        auto schema_result = fmt_parser.parse(ai_request.response_format_json);
-        const auto & schema_obj = schema_result.extract<Poco::JSON::Object::Ptr>();
-        if (schema_obj->has("json_schema"))
+        if (ai_request.response_format->has("json_schema"))
         {
-            auto json_schema = schema_obj->getObject("json_schema");
+            auto json_schema = ai_request.response_format->getObject("json_schema");
             if (json_schema->has("schema"))
                 tool->set("input_schema", json_schema->getObject("schema"));
         }

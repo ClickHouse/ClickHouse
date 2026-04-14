@@ -12,7 +12,7 @@ struct AIRequest
 {
     String system_prompt;
     String user_message;
-    String response_format_json;
+    Poco::JSON::Object::Ptr response_format;
     String model;
     float temperature = 0;
     UInt64 max_tokens = 0;

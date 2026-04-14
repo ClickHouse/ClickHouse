@@ -169,7 +169,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
     String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments));
-    String response_format = buildResponseFormatJSON(arguments);
+    auto response_format = buildResponseFormat(arguments);
 
     auto result_col = ColumnString::create();
     const auto & text_col = arguments[getFirstDataArgIndex(arguments)].column;
@@ -208,7 +208,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 AIRequest ai_request;
                 ai_request.system_prompt = system_prompt;
                 ai_request.user_message = user_message;
-                ai_request.response_format_json = response_format;
+                ai_request.response_format = response_format;
                 ai_request.model = config.model;
                 ai_request.temperature = temperature;
                 ai_request.max_tokens = config.max_tokens;
