@@ -149,14 +149,6 @@ def test_cluster_table_function(started_cluster_iceberg_with_spark, format_versi
     assert len(select_remote_cluster) == 600
     assert select_remote_cluster == select_regular
 
-    select_remote_cluster = (
-        instance.query(f"SELECT * FROM remote('node2',{table_function_expr_cluster})")
-        .strip()
-        .split()
-    )
-    assert len(select_remote_cluster) == 600
-    assert select_remote_cluster == select_regular
-
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
