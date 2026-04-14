@@ -1,0 +1,12 @@
+float32_asc
+float32_desc
+float64_asc
+float64_desc
+float32_asc_nulls_first
+float32_asc_nulls_last
+float32_desc_nulls_first
+float32_desc_nulls_last
+float64_asc_nulls_first
+float64_desc_nulls_last
+datetime_asc
+datetime_desc
