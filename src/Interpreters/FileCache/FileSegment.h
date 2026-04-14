@@ -242,8 +242,6 @@ public:
 
     bool isBackgroundDownloadEnabled() const { return background_download_enabled; }
 
-    FileCache * getCache() const { return cache; }
-
 private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;

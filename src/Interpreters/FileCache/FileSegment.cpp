@@ -1210,6 +1210,10 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     if (download_state == State::DETACHED)
         return;
 
+    if (!downloader_id.empty())
+        resetDownloaderUnlocked(lock);
+    setDetachedState(lock);
+
 #if USE_ROCKSDB
     /// Remove from RocksDB index BEFORE the file is deleted from disk.
     /// If a crash happens between index removal and file deletion,
@@ -1221,10 +1225,6 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     if (auto index = cache->getRocksDBIndex())
         index->remove(file_key, offset());
 #endif
-
-    if (!downloader_id.empty())
-        resetDownloaderUnlocked(lock);
-    setDetachedState(lock);
 }
 
 void FileSegment::increasePriority()

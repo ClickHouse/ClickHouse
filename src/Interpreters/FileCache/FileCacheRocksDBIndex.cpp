@@ -40,7 +40,6 @@ FileCacheRocksDBIndex::FileCacheRocksDBIndex(const std::string & cache_base_path
     options.info_log_level = rocksdb::InfoLogLevel::ERROR_LEVEL;
     options.compression = rocksdb::kLZ4Compression;
     options.max_background_jobs = 2;
-    options.write_buffer_size = 4 * 1024 * 1024;
 
     rocksdb::DB * raw_db = nullptr;
     auto status = rocksdb::DB::Open(options, rocksdb_path.string(), &raw_db);
@@ -64,6 +63,7 @@ FileCacheRocksDBIndex::~FileCacheRocksDBIndex()
 std::string FileCacheRocksDBIndex::serializeKey(const FileCacheKey & key, size_t offset)
 {
     /// Key format: UInt128 key (16 bytes, native endian) + UInt64 offset (8 bytes, native endian).
+    static_assert(std::is_same_v<decltype(key.key), UInt128>, "FileCacheKey::key must be UInt128");
     std::string result;
     result.resize(sizeof(key.key) + sizeof(UInt64));
     memcpy(result.data(), &key.key, sizeof(key.key));
