@@ -100,12 +100,12 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
 
     using Key = FileCacheKey;
     using iterator = iterator;
-    using OriginInfo = FileCacheOriginInfo;
-    using UserID = OriginInfo::UserID;
+    using UserInfo = FileCacheUserInfo;
+    using UserID = UserInfo::UserID;
 
     KeyMetadata(
         const Key & key_,
-        const OriginInfo & origin_,
+        const UserInfo & user_id_,
         const CacheMetadata * cache_metadata_,
         bool created_base_directory_ = false);
 
@@ -117,11 +117,10 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     };
 
     const Key key;
-    const OriginInfo origin;
+    const UserInfo user;
 
     LockedKeyPtr lock();
 
-    /// Will only fail if key is not in ACTIVE state, e.g. REMOVING or REMOVED.
     LockedKeyPtr tryLock();
 
     bool createBaseDirectory(bool throw_if_failed = false);
@@ -140,8 +139,6 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     template< class... Args >
     auto emplaceUnlocked(Args &&... args) { return emplace(std::forward<Args>(args)...); }
     size_t sizeUnlocked() const { return size(); }
-
-    KeyState getState();
 
 private:
     const CacheMetadata * cache_metadata;
@@ -171,8 +168,8 @@ class CacheMetadata : private boost::noncopyable
 public:
     using Key = FileCacheKey;
     using IterateFunc = std::function<void(LockedKey &)>;
-    using OriginInfo = FileCacheOriginInfo;
-    using UserID = OriginInfo::UserID;
+    using UserInfo = FileCacheUserInfo;
+    using UserID = UserInfo::UserID;
 
     explicit CacheMetadata(
         const std::string & path_,
@@ -186,13 +183,13 @@ public:
 
     const String & getBaseDirectory() const { return path; }
 
-    String getKeyPath(const Key & key, const OriginInfo & origin) const;
+    String getKeyPath(const Key & key, const UserInfo & user) const;
 
     String getFileSegmentPath(
         const Key & key,
         size_t offset,
         FileSegmentKind segment_kind,
-        const OriginInfo & origin) const;
+        const UserInfo & user) const;
 
     void iterate(IterateFunc && func, const UserID & user_id);
 
@@ -211,17 +208,17 @@ public:
     KeyMetadataPtr getKeyMetadata(
         const Key & key,
         KeyNotFoundPolicy key_not_found_policy,
-        const OriginInfo & origin,
+        const UserInfo & user,
         bool is_initial_load = false);
 
     LockedKeyPtr lockKeyMetadata(
         const Key & key,
         KeyNotFoundPolicy key_not_found_policy,
-        const OriginInfo & origin,
+        const UserInfo & user,
         bool is_initial_load = false);
 
-    void removeKey(const Key & key, bool if_exists, const UserID & user_id);
-    void removeAllKeys(const UserID & user_id);
+    void removeKey(const Key & key, bool if_exists, bool if_releasable, const UserID & user_id);
+    void removeAllKeys(bool if_releasable, const UserID & user_id);
 
     void shutdown();
 
@@ -349,7 +346,7 @@ struct LockedKey : private boost::noncopyable
     std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
     std::shared_ptr<KeyMetadata> getKeyMetadata() { return key_metadata; }
 
-    bool removeAllFileSegments();
+    bool removeAllFileSegments(bool if_releasable = true);
 
     KeyMetadata::iterator removeFileSegment(
         size_t offset,

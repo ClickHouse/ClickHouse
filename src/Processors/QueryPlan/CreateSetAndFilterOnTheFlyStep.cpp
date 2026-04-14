@@ -186,7 +186,7 @@ void CreateSetAndFilterOnTheFlyStep::describeActions(JSONBuilder::JSONMap & map)
 
 void CreateSetAndFilterOnTheFlyStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
     settings.out << prefix << getName();
 
     settings.out << '\n';

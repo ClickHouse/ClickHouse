@@ -85,24 +85,14 @@ public:
             if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
             {
                 for (auto it = mapped.begin(); it.ok(); ++it)
-                {
-                    auto & flag = per_row_flags[&it->columns_info->columns][it->row_num];
-                    if (!flag.load(std::memory_order_relaxed))
-                        flag.store(true, std::memory_order_relaxed);
-                }
+                    per_row_flags[&it->columns_info->columns][it->row_num].store(true, std::memory_order_relaxed);
             }
             else
-            {
-                auto & flag = per_row_flags[&mapped.columns_info->columns][mapped.row_num];
-                if (!flag.load(std::memory_order_relaxed))
-                    flag.store(true, std::memory_order_relaxed);
-            }
+                per_row_flags[&mapped.columns_info->columns][mapped.row_num].store(true, std::memory_order_relaxed);
         }
         else
         {
-            auto & flag = per_offset_flags[f.getOffset()];
-            if (!flag.load(std::memory_order_relaxed))
-                flag.store(true, std::memory_order_relaxed);
+            per_offset_flags[f.getOffset()].store(true, std::memory_order_relaxed);
         }
     }
 
@@ -115,15 +105,11 @@ public:
         /// Could be set simultaneously from different threads.
         if constexpr (flag_per_row)
         {
-            auto & flag = per_row_flags[columns][row_num];
-            if (!flag.load(std::memory_order_relaxed))
-                flag.store(true, std::memory_order_relaxed);
+            per_row_flags[columns][row_num].store(true, std::memory_order_relaxed);
         }
         else
         {
-            auto & flag = per_offset_flags[offset];
-            if (!flag.load(std::memory_order_relaxed))
-                flag.store(true, std::memory_order_relaxed);
+            per_offset_flags[offset].store(true, std::memory_order_relaxed);
         }
     }
 

@@ -48,8 +48,8 @@ minimal negative number by minus one.
         {"Dividing a minimal negative number by minus 1", "SELECT intDivOrZero(0.05, -1)", "0"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionIntDivOrZero>(documentation);
 }

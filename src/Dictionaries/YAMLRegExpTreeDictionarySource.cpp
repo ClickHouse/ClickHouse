@@ -5,7 +5,8 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <unordered_map>
+#include <unordered_set>
 #include <Poco/Logger.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
@@ -42,7 +43,6 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 
@@ -151,8 +151,8 @@ struct MatchNode
     UInt64 id;
     UInt64 parent_id;
     String reg_exp;
-    VectorWithMemoryTracking<Field> keys;
-    VectorWithMemoryTracking<Field> values;
+    std::vector<Field> keys;
+    std::vector<Field> values;
 };
 
 struct ResultColumns
@@ -165,7 +165,7 @@ struct ResultColumns
     ResultColumns() = default;
 };
 
-using StringToNode = UnorderedMapWithMemoryTracking<String, YAML::Node>;
+using StringToNode = std::unordered_map<String, YAML::Node>;
 
 YAML::Node loadYAML(const String & filepath)
 {

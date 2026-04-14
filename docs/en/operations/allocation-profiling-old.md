@@ -19,7 +19,7 @@ To make allocation profiling more convenient, `SYSTEM` commands are provided alo
 If you want to sample and profile allocations in `jemalloc`, you need to start ClickHouse/Keeper with profiling enabled using the environment variable `MALLOC_CONF`:
 
 ```sh
-MALLOC_CONF=background_thread:true,prof:true,prof_active:true
+MALLOC_CONF=background_thread:true,prof:true
 ```
 
 `jemalloc` will sample allocations and store the information internally.

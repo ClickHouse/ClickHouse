@@ -1,12 +1,10 @@
-#include <Common/AllocationInterceptors.h>
 #include <Common/Allocator.h>
-#include <Common/BitHelpers.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/VersionNumber.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/AllocationInterceptors.h>
 
 #include <base/errnoToString.h>
 #include <base/getPageSize.h>
@@ -62,7 +60,7 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
     if (len_ < POPULATE_THRESHOLD)
         return;
 
-    if (!is_supported_by_kernel) [[unlikely]]
+    if (unlikely(!is_supported_by_kernel))
         return;
 
     auto [buf, len] = adjustToPageSize(buf_, len_, staticPageSize);
@@ -71,37 +69,27 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 }
 
 template <bool clear_memory, bool populate>
-void * allocImpl(size_t size, size_t alignment)
+void * allocNoTrack(size_t size, size_t alignment)
 {
-    auto trace = CurrentMemoryTracker::alloc(size);
-
     void * buf;
-    if (alignment <= MALLOC_MIN_ALIGNMENT) [[likely]]
+    if (likely(alignment <= MALLOC_MIN_ALIGNMENT))
     {
         if constexpr (clear_memory)
             buf = __real_calloc(size, 1);
         else
             buf = __real_malloc(size);
 
-        if (nullptr == buf) [[unlikely]]
-        {
-            [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(size);
-            throw DB::ErrnoException(
-                DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(static_cast<double>(size)));
-        }
+        if (unlikely(nullptr == buf))
+            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(static_cast<double>(size)));
     }
     else
     {
         buf = nullptr;
         int res = __real_posix_memalign(&buf, alignment, size);
 
-        if (0 != res) [[unlikely]]
-        {
-            [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(size);
-            // The value of `errno` is not set according to the man: https://man7.org/linux/man-pages/man3/posix_memalign.3.html
-            DB::ErrnoException::throwWithErrno(
-                DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res, "Cannot allocate memory (posix_memalign) {}.", ReadableSize(size));
-        }
+        if (unlikely(0 != res))
+            throw DB::ErrnoException(
+                DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate memory (posix_memalign) {}.", ReadableSize(size));
 
         if constexpr (clear_memory)
             memset(buf, 0, size);
@@ -110,11 +98,10 @@ void * allocImpl(size_t size, size_t alignment)
     if constexpr (populate)
         prefaultPages(buf, size);
 
-    trace.onAlloc(buf, size);
     return buf;
 }
 
-void freeImpl(void * buf)
+void freeNoTrack(void * buf)
 {
     __real_free(buf);
 }
@@ -122,7 +109,7 @@ void freeImpl(void * buf)
 void checkSize(size_t size)
 {
     /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
-    if (size >= 0x8000000000000000ULL) [[unlikely]]
+    if (unlikely(size >= 0x8000000000000000ULL))
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too large size ({}) passed to allocator. It indicates an error.", size);
 }
 
@@ -136,7 +123,10 @@ template <bool clear_memory_, bool populate>
 void * Allocator<clear_memory_, populate>::alloc(size_t size, size_t alignment)
 {
     checkSize(size);
-    return allocImpl<clear_memory_, populate>(size, alignment);
+    auto trace = CurrentMemoryTracker::alloc(size);
+    void * ptr = allocNoTrack<clear_memory_, populate>(size, alignment);
+    trace.onAlloc(ptr, size);
+    return ptr;
 }
 
 
@@ -146,7 +136,7 @@ void Allocator<clear_memory_, populate>::free(void * buf, size_t size)
     try
     {
         checkSize(size);
-        freeImpl(buf);
+        freeNoTrack(buf);
         auto trace = CurrentMemoryTracker::free(size);
         trace.onFree(buf, size);
     }
@@ -169,7 +159,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         return buf;
     }
 
-    if (alignment <= MALLOC_MIN_ALIGNMENT) [[likely]]
+    if (likely(alignment <= MALLOC_MIN_ALIGNMENT))
     {
         /// Resize malloc'd memory region with no special alignment requirement.
         /// Realloc can do 2 possible things:
@@ -180,7 +170,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
 
         void * new_buf = __real_realloc(buf, new_size);
-        if (nullptr == new_buf) [[unlikely]]
+        if (unlikely(nullptr == new_buf))
         {
             [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
             throw DB::ErrnoException(
