@@ -533,9 +533,9 @@ class JobConfigs:
     )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
-            parameter="arm_asan_ubsan, targeted",
-            runs_on=RunnerLabels.ARM_MEDIUM,
-            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            parameter="amd_debug, targeted",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
