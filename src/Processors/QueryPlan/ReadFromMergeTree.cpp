@@ -4764,9 +4764,6 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     /// non-bucket read is rebuilt and re-optimized on the worker, which re-derives them.
     if (distributed_read_bucket_count > 0)
     {
-        if (query_info.input_order_info)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan does not support a read-in-order distributed read");
         if (deferred_row_level_filter || deferred_prewhere_info)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "make_distributed_plan does not support a distributed read with deferred FINAL filters");
@@ -4834,6 +4831,15 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         for (const auto & part_name : part_names)
             writeStringBinary(part_name, ctx.out);
     }
+
+    bool has_input_order = query_info.input_order_info != nullptr;
+    writeVarUInt(has_input_order, ctx.out);
+    if (has_input_order)
+    {
+        writeVarUInt(query_info.input_order_info->used_prefix_of_sorting_key_size, ctx.out);
+        writeIntBinary(query_info.input_order_info->direction, ctx.out);
+        writeVarUInt(query_info.input_order_info->limit, ctx.out);
+    }
 }
 
 std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization & ctx)
@@ -4900,6 +4906,18 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         }
     }
 
+    bool has_input_order = false;
+    readVarUInt(has_input_order, ctx.in);
+    size_t input_order_prefix_size = 0;
+    int input_order_direction = 0;
+    UInt64 input_order_limit = 0;
+    if (has_input_order)
+    {
+        readVarUInt(input_order_prefix_size, ctx.in);
+        readIntBinary(input_order_direction, ctx.in);
+        readVarUInt(input_order_limit, ctx.in);
+    }
+
     StorageID table_id(database_name, table_name);
     auto storage_ptr = DatabaseCatalog::instance().tryGetTable(table_id, ctx.context);
     if (!storage_ptr)
@@ -4921,14 +4939,18 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         max_block_size,
         num_streams);
 
+    auto * read_from_merge_tree_step = dynamic_cast<ReadFromMergeTree *>(step.get());
+    if (!read_from_merge_tree_step)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
+
     if (distributed_read_bucket_count)
     {
-        auto * read_from_merge_tree_step = dynamic_cast<ReadFromMergeTree *>(step.get());
-        if (!read_from_merge_tree_step)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
         read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
         read_from_merge_tree_step->setDistributedReadParts(std::move(distributed_read_part_names));
     }
+
+    if (has_input_order)
+        read_from_merge_tree_step->requestReadingInOrder(input_order_prefix_size, input_order_direction, input_order_limit);
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution
     ctx.storage_holders.push_back(storage_ptr);
