@@ -1,0 +1,150 @@
+-- INNER JOIN (broadcast)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (any scatter)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_orders)
+            BroadcastExchange
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_items)
+350	91612.5
+350	91612.5
+-- LEFT JOIN (broadcast)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (any scatter)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_orders)
+            BroadcastExchange
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_items)
+400
+400
+-- RIGHT JOIN (shuffle)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (by hash([__table1.order_id]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_orders)
+            ScatterExchange (by hash([__table2.order_id]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_items)
+400
+400
+-- FULL JOIN (shuffle)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (by hash([__table1.order_id]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_orders)
+            ScatterExchange (by hash([__table2.order_id]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_items)
+450
+450
+-- LEFT SEMI JOIN (broadcast)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (any scatter)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_orders)
+            BroadcastExchange
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_items)
+350
+350
+-- LEFT ANTI JOIN (broadcast)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (any scatter)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_orders)
+            BroadcastExchange
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_items)
+50
+50
+-- RIGHT SEMI JOIN (shuffle)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (by hash([__table1.order_id]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_orders)
+            ScatterExchange (by hash([__table2.order_id]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_items)
+350
+350
+-- RIGHT ANTI JOIN (shuffle)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (by hash([__table1.order_id]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_orders)
+            ScatterExchange (by hash([__table2.order_id]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_items)
+50
+50
+-- ANY INNER JOIN (broadcast)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (any scatter)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_orders)
+            BroadcastExchange
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_items)
+350
+350
+-- ANY LEFT JOIN (broadcast)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (any scatter)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_orders)
+            BroadcastExchange
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.dist_items)
+400
+400

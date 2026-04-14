@@ -53,16 +53,20 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     if (node.children.size() != 2)
         return;
 
-    /// Check if join is possible to be distributed
+    /// Check if join is possible to be distributed.
     const auto & join_info = join_step->getJoinOperator();
-    if (join_info.kind != JoinKind::Inner ||
-        join_info.strictness != JoinStrictness::All ||
-        (join_info.locality != JoinLocality::Unspecified && join_info.locality != JoinLocality::Global) ||
-        std::ranges::all_of(join_info.expression, [](const auto & expr) { return !expr.isFunction(JoinConditionOperator::Equals); }))
-    {
-        return;
-    }
 
+    /// Must have a known locality.
+    if (join_info.locality != JoinLocality::Unspecified && join_info.locality != JoinLocality::Global)
+        return;
+
+    /// Asof joins have inequality predicates that shuffle cannot handle correctly.
+    if (join_info.strictness == JoinStrictness::Asof)
+        return;
+
+    /// Must have at least one equi-join predicate (required for shuffle partitioning).
+    if (std::ranges::all_of(join_info.expression, [](const auto & expr) { return !expr.isFunction(JoinConditionOperator::Equals); }))
+        return;
 
     QueryPlan::Node * source_a = node.children[0];
     QueryPlan::Node * source_b = node.children[1];
@@ -75,8 +79,17 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         Broadcast
     } strategy = Shuffle;
 
+    /// In a broadcast join, the right side is replicated to all workers and the
+    /// left side is scattered.  For RIGHT and FULL joins the right side can
+    /// produce unmatched output rows.  When the right side is replicated, every
+    /// worker independently decides which right rows are unmatched based only on
+    /// its local slice of the left side, producing duplicate unmatched rows.
+    const bool broadcast_unsafe
+        = join_info.kind == JoinKind::Right
+        || join_info.kind == JoinKind::Full;
+
     /// Check if right table is small enough for broadcast
-    if (row_count_b && row_count_b <= optimization_settings.distributed_plan_max_rows_to_broadcast)
+    if (!broadcast_unsafe && row_count_b && row_count_b <= optimization_settings.distributed_plan_max_rows_to_broadcast)
         strategy = Broadcast;
 
     QueryPlan::Node * exchange_scatter_a_node = nullptr;
