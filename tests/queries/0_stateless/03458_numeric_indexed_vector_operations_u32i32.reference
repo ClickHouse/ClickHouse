@@ -31,3 +31,6 @@ TEST numericIndexedVectorPointwise operations with zero values and Int32 value t
 {10000001:1,10000002:1,30000005:1}
 TEST numericIndexedVectorPointwise operations with Bitmap second argument
 {10000001:7,10000002:8,30000005:100}
+TEST numericIndexedVectorPointwiseLess signed twos-complement regression
+{1:1,3:1,4:1}
+{1:1,3:1,4:1}
