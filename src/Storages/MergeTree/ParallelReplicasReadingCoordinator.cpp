@@ -1047,14 +1047,15 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 
     auto & parts_to_read = split_it->second;
 
-    /// Build the response part list.
+    /// Build the response part list, including only parts that the requesting replica has.
     /// For old protocol requests (description is non-empty), use it for compatibility.
     RangesInDataPartsDescription response_parts;
     if (request.description.empty())
     {
         for (const auto & part : parts_to_read)
-            response_parts.push_back(
-                {.info = part.description.info, .ranges = {}, .projection_name = part.description.projection_name});
+            if (part.replicas.contains(request.replica_num))
+                response_parts.push_back(
+                    {.info = part.description.info, .ranges = {}, .projection_name = part.description.projection_name});
     }
     else
     {
