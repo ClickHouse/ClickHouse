@@ -1,5 +1,3 @@
-#include "config.h"
-
 #include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileSegment.h>
@@ -1163,7 +1161,6 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     try
     {
         const auto path = key_metadata->getFileSegmentPath(*file_segment);
-
         if (file_segment->downloaded_size == 0)
         {
             chassert(!fs::exists(path));
@@ -1190,7 +1187,6 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
                         path, getKey(), file_segment->offset());
 #endif
         }
-
     }
     catch (...)
     {

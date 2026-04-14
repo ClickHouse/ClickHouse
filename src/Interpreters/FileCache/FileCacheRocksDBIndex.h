@@ -28,7 +28,7 @@ namespace DB
 /// Operation ordering:
 /// - Segment created: put(key, offset, -1, origin) BEFORE writing file data.
 /// - Segment fully downloaded: put(key, offset, actual_size, origin) AFTER file is fsynced.
-/// - Segment removed: remove(key, offset) AFTER file is deleted from disk.
+/// - Segment removed: remove(key, offset) BEFORE file is deleted from disk (in detach).
 /// - Startup: iterate all entries. size >= 0 -> use as-is. size == -1 -> stat the file.
 class FileCacheRocksDBIndex
 {
@@ -39,14 +39,14 @@ public:
     /// Store a segment entry. Use size = -1 for not-yet-downloaded segments.
     void put(const FileCacheKey & key, size_t offset, Int64 size, const FileCacheOriginInfo & origin);
 
-    /// Remove a segment's entry. Called AFTER the file is deleted from disk.
+    /// Remove a segment's entry. Called BEFORE the file is deleted from disk (in detach).
     void remove(const FileCacheKey & key, size_t offset);
 
     struct Entry
     {
         FileCacheKey key;
-        size_t offset;
-        Int64 size; /// -1 means unknown (need stat)
+        size_t offset = 0;
+        Int64 size = -1; /// -1 means unknown (need stat)
         FileCacheOriginInfo origin;
     };
 
