@@ -162,7 +162,7 @@ run_query "wide, read in order with prewhere" "
 
 # -- stage 2: flush logs, then collect results --------------------------------
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
 
 collect_all_scopes
 
