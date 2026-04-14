@@ -219,7 +219,7 @@ void StorageDataLakeCluster<DataLakeMetadata>::updateExternalDynamicMetadataIfEx
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr();
+    auto new_metadata = *getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/false);
     new_metadata.setDataLakeTableState(*state);
 
     if (current_metadata->shouldReloadSchemaForConsistency(query_context))

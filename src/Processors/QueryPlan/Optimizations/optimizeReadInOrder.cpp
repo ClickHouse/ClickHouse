@@ -85,6 +85,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         return merge;
     }
 
+#if USE_AVRO
     if (auto * reading = typeid_cast<ReadFromIcebergStep *>(step))
     {
         /// Already read-in-order, skip.
@@ -100,6 +101,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         }
         return reading;
     }
+#endif
 
     return nullptr;
 }
@@ -934,6 +936,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
         limit);
 }
 
+#if USE_AVRO
 SortingInputOrder buildInputOrderFromSortDescription(
     const ReadFromIcebergStep * reading,
     const FixedColumns & fixed_columns,
@@ -951,6 +954,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
         pk_column_names,
         limit);
 }
+
+#endif
 
 
 SortingInputOrder buildInputOrderFromSortDescription(
@@ -1007,6 +1012,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
         sorting_key.expression->getActionsDAG(), sorting_key_columns);
 }
 
+#if USE_AVRO
+
 InputOrder buildInputOrderFromUnorderedKeys(
     ReadFromIcebergStep * reading, const FixedColumns & fixed_columns, const std::optional<ActionsDAG> & dag, const Names & unordered_keys)
 {
@@ -1018,6 +1025,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
         dag, unordered_keys,
         sorting_key.expression->getActionsDAG(), sorting_key_columns);
 }
+
+#endif
 
 InputOrder buildInputOrderFromUnorderedKeys(
     ReadFromMerge * merge,
@@ -1151,6 +1160,8 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         return order_info.input_order;
     }
+
+#if USE_AVRO
     if (auto * iceberg_step = typeid_cast<ReadFromIcebergStep *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromSortDescription(
@@ -1170,6 +1181,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         return order_info.input_order;
     }
+#endif
 
     return nullptr;
 }
@@ -1239,6 +1251,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
         return order_info;
     }
 
+#if USE_AVRO
     if (auto * iceberg_step = typeid_cast<ReadFromIcebergStep *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
@@ -1257,6 +1270,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
+#endif
 
     return {};
 }
@@ -1358,6 +1372,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         return order_info;
     }
 
+#if USE_AVRO
     if (auto * iceberg_step = typeid_cast<ReadFromIcebergStep *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
@@ -1375,6 +1390,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
+#endif
 
     return {};
 }

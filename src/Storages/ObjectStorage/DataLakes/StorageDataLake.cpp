@@ -293,13 +293,13 @@ bool StorageDataLake<DataLakeMetadata>::supportsSubsetOfColumns(const ContextPtr
 template <typename DataLakeMetadata>
 std::optional<NameSet> StorageDataLake<DataLakeMetadata>::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ {});
+    return getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/false)->getColumnsWithoutDefaultExpressions(/*exclude=*/{});
 }
 
 template <typename DataLakeMetadata>
 IStorage::ColumnSizeByName StorageDataLake<DataLakeMetadata>::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+    return getInMemoryMetadataPtr(/*context=*/nullptr, /*bypass_metadata_cache=*/false)->getFakeColumnSizes();
 }
 
 template <typename DataLakeMetadata>
@@ -321,7 +321,7 @@ void StorageDataLake<DataLakeMetadata>::updateExternalDynamicMetadataIfExists(Co
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr();
+    auto new_metadata = *getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/false);
     /// Always pin the current snapshot version to prevent logical races between query
     /// analysis (which picks the schema) and query execution (which iterates files).
     new_metadata.setDataLakeTableState(*state);
@@ -446,7 +446,7 @@ void StorageDataLake<DataLakeMetadata>::read(
         configuration,
         table_options,
         column_names,
-        getVirtualsList(),
+        getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         query_info,
         storage_snapshot,
         modified_format_settings,

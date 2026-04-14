@@ -196,12 +196,13 @@ bool StorageDataLake<IcebergMetadata>::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageDataLake<IcebergMetadata>::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ {});
+    return getInMemoryMetadataPtr(/*context=*/nullptr, /*bypass_metadata_cache=*/false)
+        ->getColumnsWithoutDefaultExpressions(/*exclude=*/{});
 }
 
 IStorage::ColumnSizeByName StorageDataLake<IcebergMetadata>::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+    return getInMemoryMetadataPtr(/*context=*/nullptr, /*bypass_metadata_cache=*/false)->getFakeColumnSizes();
 }
 
 IcebergMetadata * StorageDataLake<IcebergMetadata>::getIcebergMetadata(ContextPtr context)
@@ -287,7 +288,7 @@ void StorageDataLake<IcebergMetadata>::read(
         configuration,
         table_options,
         column_names,
-        getVirtualsList(),
+        getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         query_info,
         storage_snapshot,
         modified_format_settings,
@@ -355,7 +356,7 @@ void StorageDataLake<IcebergMetadata>::addInferredEngineArgsToCreateQuery(ASTs &
 
 void StorageDataLake<IcebergMetadata>::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(/*context=*/nullptr, /*bypass_metadata_cache=*/false);
     auto storage = getStorageID();
     current_metadata->mutate(commands, configuration, context_, storage, metadata_snapshot, catalog, format_settings);
 }
@@ -373,7 +374,7 @@ Pipe StorageDataLake<IcebergMetadata>::executeCommand(const String & command_nam
 
 void StorageDataLake<IcebergMetadata>::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(/*context=*/nullptr, /*bypass_metadata_cache=*/false);
     params.apply(new_metadata, context);
 
     current_metadata->alter(params, context);
