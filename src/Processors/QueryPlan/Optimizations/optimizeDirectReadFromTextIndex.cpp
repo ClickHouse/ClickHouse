@@ -1,4 +1,6 @@
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -287,6 +289,17 @@ public:
 
         /// Cache for added input nodes for each virtual column.
         std::unordered_map<String, const ActionsDAG::Node *> virtual_column_to_node;
+
+        /// Pre-populate the cache with any text-index virtual column inputs that are already present in this DAG from a previous
+        /// optimization pass. This prevents them from being re-added to `added_columns` when the same DAG is processed again.
+        ///
+        /// See: https://github.com/ClickHouse/ClickHouse/issues/101913#issuecomment-4198784580
+        for (const auto * input : actions_dag.getInputs())
+        {
+            if (input->result_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
+                virtual_column_to_node.emplace(input->result_name, input);
+        }
+
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
         auto nodes_ptrs = actions_dag.getNodesPointers();
 
@@ -560,7 +573,7 @@ private:
                 else if (condition.search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
 
-                VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral);
+                VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader);
                 virtual_column.default_desc.kind = ColumnDefaultKind::Default;
                 virtual_column.default_desc.expression = std::move(default_expression);
 

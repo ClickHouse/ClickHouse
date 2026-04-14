@@ -175,7 +175,7 @@ StorageBuffer::StorageBuffer(
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr()->getColumns());
+        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr(context_, false)->getColumns());
     }
     else
         storage_metadata.setColumns(columns_);
@@ -199,7 +199,7 @@ StorageBuffer::StorageBuffer(
 VirtualColumnsDescription StorageBuffer::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
     return desc;
 }
 
@@ -275,7 +275,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
-        const auto & destination_metadata = destination->getInMemoryMetadataPtr();
+        const auto & destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
         return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
     }
 
@@ -330,10 +330,10 @@ void StorageBuffer::read(
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
-        auto destination_columns = destination_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals());
-        auto our_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals());
+        auto destination_columns = destination_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+        auto our_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [&](const String & column_name)
         {
@@ -852,7 +852,7 @@ void StorageBuffer::flushAndPrepareForShutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(getContext(), false), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
     }
     catch (...)
     {
@@ -1085,7 +1085,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         LOG_ERROR(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
-    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
 
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
@@ -1272,7 +1272,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
     optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
