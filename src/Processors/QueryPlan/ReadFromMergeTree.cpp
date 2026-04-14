@@ -1388,7 +1388,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     part.parent_part,
                     part.part_index_in_query,
                     part.part_starting_offset_in_query,
-                    std::move(ranges_to_get_from_part));
+                    std::move(ranges_to_get_from_part),
+                    part.read_hints);
             }
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
@@ -1731,7 +1732,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     part_it->parent_part,
                     part_it->part_index_in_query,
                     part_it->part_starting_offset_in_query,
-                    part_it->ranges);
+                    part_it->ranges,
+                    part_it->read_hints);
                 current_ranges_marks += part_it->getMarksCount();
             }
 
@@ -2714,7 +2716,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                             it_parts->parent_part,
                             it_parts->part_index_in_query,
                             it_parts->part_starting_offset_in_query,
-                            std::move(diff_ranges));
+                            std::move(diff_ranges),
+                            it_parts->read_hints);
                     }
 
                     ++it_parts;

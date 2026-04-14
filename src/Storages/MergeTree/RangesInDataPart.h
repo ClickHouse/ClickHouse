@@ -122,7 +122,8 @@ struct RangesInDataPart
         const DataPartPtr & parent_part_,
         size_t part_index_in_query_,
         size_t part_starting_offset_in_query_,
-        const MarkRanges & ranges_);
+        const MarkRanges & ranges_,
+        const RangesInDataPartReadHints & read_hints_);
 
     explicit RangesInDataPart(
         const DataPartPtr & data_part_,
