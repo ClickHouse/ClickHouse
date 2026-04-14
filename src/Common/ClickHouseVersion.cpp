@@ -27,6 +27,9 @@ ClickHouseVersion::ClickHouseVersion(std::string_view version)
     {
         if (split_element == "altinityantalya")
         {
+            /// version like '26.3.1.20001.altinityantalya'
+            if (components.size() != 4 || split.size() != 5)
+                throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
             is_antalya = true;
             continue;
         }
