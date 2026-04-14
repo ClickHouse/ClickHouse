@@ -56,7 +56,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , index(std::move(index_))
-    , granule(std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule_))
     , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index.index).getPostingListCodec())
 {
     for (const auto & column : columns_)
@@ -95,7 +94,31 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     lazy_mode_requested = (apply_mode == TextIndexPostingListApplyMode::LAZY);
     lazy_density_threshold = ctx_settings[Setting::text_index_density_threshold].value;
 
+    if (index_granule_)
+        setIndexGranule(std::move(index_granule_));
+
     initializeFallbackReader(main_reader_);
+}
+
+void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_granule)
+{
+    granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
+    deserialization_state->version = granule->getSparseIndexVersion();
+
+    const auto * posting_list_codec = granule->getPostingListCodec();
+    postings_serialization = PostingsSerialization(posting_list_codec);
+    bool has_posting_list_codec = posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None;
+
+    if (lazy_mode_requested && !has_posting_list_codec)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Lazy posting list apply mode requires a posting list codec (e.g. posting_list_codec = 'bitpacking'). "
+            "The current text index was created without one, so `PostingListCursor` cannot decode non-compressed postings. "
+            "Either recreate the index with posting_list_codec = 'bitpacking', "
+            "or use text_index_posting_list_apply_mode = 'materialize'");
+    }
+
+    use_lazy_mode = lazy_mode_requested && has_posting_list_codec;
 }
 
 void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader * main_reader)
@@ -204,22 +227,11 @@ void MergeTreeReaderTextIndex::readGranule()
 
     LOG_TRACE(getLogger("MergeTreeReaderTextIndex"), "Reading text index granule for data part '{}'", data_part->getDataPartStorage().getFullPath());
 
-    auto make_stream = [&](const auto & substream)
-    {
-        return makeTextIndexInputStream(
-            data_part->getDataPartStoragePtr(),
-            index.index->getFileName() + substream.suffix,
-            substream.extension,
-            MergeTreeIndexReader::patchSettings(settings, substream.type));
-    };
-
-    auto sparse_index_stream = make_stream(substreams[0]);
-    auto dictionary_stream = make_stream(substreams[1]);
-    small_postings_stream = make_stream(substreams[2]);
+    auto sparse_index_stream = makeTextIndexStream(substreams[0]);
+    auto dictionary_stream = makeTextIndexStream(substreams[1]);
+    small_postings_stream = makeTextIndexStream(substreams[2]);
 
     sparse_index_stream->seekToStart();
-    dictionary_stream->seekToStart();
-    small_postings_stream->seekToStart();
     lazy_cursor_handles.clear();
 
     MergeTreeIndexInputStreams streams;
@@ -229,24 +241,7 @@ void MergeTreeReaderTextIndex::readGranule()
 
     auto granule_ptr = index.index->createIndexGranule();
     granule_ptr->deserializeBinaryWithMultipleStreams(streams, *deserialization_state);
-    granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(granule_ptr);
-
-    deserialization_state->version = granule->getSparseIndexVersion();
-    postings_serialization = PostingsSerialization(granule->getPostingListCodec());
-
-    bool has_posting_list_codec = postings_serialization.getPostingListCodec()
-        && postings_serialization.getPostingListCodec()->getType() != IPostingListCodec::Type::None;
-
-    if (lazy_mode_requested && !has_posting_list_codec)
-    {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Lazy posting list apply mode requires a posting list codec (e.g. posting_list_codec = 'bitpacking'). "
-            "The current text index was created without one, so `PostingListCursor` cannot decode non-compressed postings. "
-            "Either recreate the index with posting_list_codec = 'bitpacking', "
-            "or use text_index_posting_list_apply_mode = 'materialize'");
-    }
-
-    use_lazy_mode = lazy_mode_requested && has_posting_list_codec;
+    setIndexGranule(std::move(granule_ptr));
 }
 
 void MergeTreeReaderTextIndex::analyzeTokensCardinality()
@@ -315,24 +310,12 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
     auto data_part = getDataPart();
     auto substream = index.index->getSubstreams()[2];
 
-    auto make_stream = [&]
-    {
-        auto stream = makeTextIndexInputStream(
-            data_part->getDataPartStoragePtr(),
-            index.index->getFileName() + substream.suffix,
-            substream.extension,
-            MergeTreeIndexReader::patchSettings(settings, substream.type));
-
-        stream->seekToStart();
-        return stream;
-    };
-
     for (const auto & [token, token_info] : remaining_tokens)
     {
         if (granule->getPostingsForRareToken(token) || !useful_tokens.contains(token))
             continue;
 
-        large_postings_streams.emplace(token, make_stream());
+        large_postings_streams.emplace(token, makeTextIndexStream(substream));
     }
 
     for (const auto & [token, token_info] : pattern_tokens)
@@ -340,20 +323,23 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
         if (granule->getPostingsForRareToken(token) || !useful_tokens.contains(token))
             continue;
 
-        large_postings_streams.emplace(token, make_stream());
+        large_postings_streams.emplace(token, makeTextIndexStream(substream));
     }
 }
 
-PostingListCursorHandlePtr MergeTreeReaderTextIndex::makeLazyCursorHandle(std::string_view token, const TokenPostingsInfo & token_info) const
+PostingListCursorHandlePtr MergeTreeReaderTextIndex::makeLazyCursorHandle(std::string_view token, const TokenPostingsInfo & token_info)
 {
     if (token_info.header & PostingsSerialization::Flags::IsCompressed)
     {
         auto stream_it = large_postings_streams.find(token);
-        auto * postings_stream = stream_it != large_postings_streams.end()
-            ? stream_it->second.get()
-            : small_postings_stream.get();
 
-        return std::make_shared<PostingListCursorHandle>(*postings_stream, token_info);
+        if (stream_it != large_postings_streams.end())
+            return std::make_shared<PostingListCursorHandle>(*stream_it->second, token_info);
+
+        if (!small_postings_stream)
+            small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
+
+        return std::make_shared<PostingListCursorHandle>(*small_postings_stream, token_info);
     }
 
     if (auto rare_postings = granule->getPostingsForRareToken(token))
@@ -502,6 +488,17 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
         if (columns[i] == nullptr)
             columns[i] = columns_to_read[i].type->createColumn(*serializations[i]);
     }
+}
+
+std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexStream(const MergeTreeIndexSubstream & substream) const
+{
+    auto data_part = getDataPart();
+
+    return makeTextIndexInputStream(
+        data_part->getDataPartStoragePtr(),
+        index.index->getFileName() + substream.suffix,
+        substream.extension,
+        MergeTreeIndexReader::patchSettings(settings, substream.type));
 }
 
 double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
@@ -892,7 +889,7 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
     auto it = granules.find(index.index->index.name);
 
     if (it != granules.end() && it->second)
-        granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(it->second);
+        setIndexGranule(it->second);
 }
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(

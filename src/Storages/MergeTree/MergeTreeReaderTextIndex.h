@@ -48,8 +48,10 @@ public:
     void setPrecomputedGranule(const IndexGranulesMap & granules);
 
 private:
+    void setIndexGranule(MergeTreeIndexGranulePtr index_granule);
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(Columns & columns) const;
+    std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
 
     /// Returns postings for all all tokens required for the given mark.
     PostingsMap readPostingsIfNeeded(size_t mark);
@@ -74,7 +76,7 @@ private:
     void readGranule();
     void analyzeTokensCardinality();
     void initializePostingStreams();
-    PostingListCursorHandlePtr makeLazyCursorHandle(std::string_view token, const TokenPostingsInfo & token_info) const;
+    PostingListCursorHandlePtr makeLazyCursorHandle(std::string_view token, const TokenPostingsInfo & token_info);
     void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
     double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
