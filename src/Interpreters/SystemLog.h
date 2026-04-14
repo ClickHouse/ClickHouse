@@ -179,6 +179,7 @@ struct SystemLogSettings
 
     String engine;
     bool symbolize_traces = false;
+    bool skip_alias_columns = false;
 };
 
 template <typename LogElement>

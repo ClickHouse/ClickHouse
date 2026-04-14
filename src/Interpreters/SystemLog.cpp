@@ -248,6 +248,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
 
+    log_settings.skip_alias_columns = config.getBool("default_system_log_flush_policy.skip_alias_columns", false);
+
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
 
     if constexpr (std::is_same_v<TSystemLog, MetricLog>)
@@ -560,7 +562,7 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>())
+    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(settings_.skip_alias_columns))
 {
     create_query = getCreateTableQuery()->formatWithSecretsOneLine();
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
