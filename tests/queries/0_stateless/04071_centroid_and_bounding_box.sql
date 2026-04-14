@@ -50,3 +50,30 @@ SELECT 'MultiPolygon across date line';
 SELECT boundingBoxSpherical([[[(179., 50.), (180., 50.), (180., 51.), (179., 51.), (179., 50.)]], [[(-180., 50.), (-179., 50.), (-179., 51.), (-180., 51.), (-180., 50.)]]]);
 
 SELECT boundingBoxCartesian(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT 'centroidCartesian Point';
+SELECT centroidCartesian((2., 3.));
+
+SELECT 'centroidCartesian Ring';
+SELECT centroidCartesian([(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]);
+
+SELECT 'centroidCartesian Polygon';
+SELECT centroidCartesian([[(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]]);
+
+SELECT 'centroidCartesian LineString';
+SELECT centroidCartesian(CAST([(0., 0.), (4., 0.)], 'LineString'));
+
+SELECT 'centroidCartesian MultiLineString';
+SELECT centroidCartesian(CAST([[(0., 0.), (2., 0.)], [(2., 0.), (4., 0.)]], 'MultiLineString'));
+
+SELECT 'centroidCartesian MultiPolygon';
+SELECT centroidCartesian([[[(0., 0.), (0., 2.), (2., 2.), (2., 0.), (0., 0.)]], [[(4., 4.), (4., 6.), (6., 6.), (6., 4.), (4., 4.)]]]);
+
+SELECT 'centroidCartesian WKT';
+SELECT centroidCartesian(readWKTPolygon('POLYGON((0 0, 0 4, 4 4, 4 0, 0 0))'));
+
+SELECT 'centroidCartesian triangle';
+SELECT centroidCartesian([(0., 0.), (6., 0.), (3., 6.), (0., 0.)]);
+
+SELECT centroidCartesian(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+

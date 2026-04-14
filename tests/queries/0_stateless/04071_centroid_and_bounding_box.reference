@@ -18,3 +18,19 @@ boundingBoxSpherical Point
 [(4.35,50.85),(4.35,50.85),(4.35,50.85),(4.35,50.85),(4.35,50.85)]
 boundingBoxSpherical LineString
 [(0,50),(10,50),(10,50.10752663762204),(0,50.10752663762204),(0,50)]
+centroidCartesian Point
+(2,3)
+centroidCartesian Ring
+(2,2)
+centroidCartesian Polygon
+(2,2)
+centroidCartesian LineString
+(0,0)
+centroidCartesian MultiLineString
+(0,0)
+centroidCartesian MultiPolygon
+(3,3)
+centroidCartesian WKT
+(2,2)
+centroidCartesian triangle
+(3,2)
