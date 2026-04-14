@@ -1674,6 +1674,13 @@ void NO_INLINE Aggregator::executeImplBatch(
                             if (destroyed_set.contains(places[j]))
                                 places[j] = discarded_row_state;
                         }
+
+                        /// The current row's key may have been inserted and
+                        /// pushed to the heap, then immediately evicted by
+                        /// the trim that just ran.  In that case
+                        /// aggregate_data points to a destroyed state.
+                        if (destroyed_set.contains(aggregate_data))
+                            aggregate_data = discarded_row_state;
                     }
                 }
             }
