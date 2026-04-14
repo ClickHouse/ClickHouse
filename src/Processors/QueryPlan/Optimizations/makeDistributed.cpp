@@ -60,10 +60,6 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     if (join_info.locality != JoinLocality::Unspecified && join_info.locality != JoinLocality::Global)
         return;
 
-    /// Asof joins have inequality predicates that shuffle cannot handle correctly.
-    if (join_info.strictness == JoinStrictness::Asof)
-        return;
-
     /// Must have at least one equi-join predicate (required for shuffle partitioning).
     if (std::ranges::all_of(join_info.expression, [](const auto & expr) { return !expr.isFunction(JoinConditionOperator::Equals); }))
         return;

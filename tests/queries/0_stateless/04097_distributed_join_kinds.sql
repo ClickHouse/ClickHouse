@@ -183,5 +183,58 @@ FROM dist_orders ANY LEFT JOIN dist_items ON dist_orders.order_id = dist_items.o
 SETTINGS make_distributed_plan = 0;
 
 
+-- ASOF JOIN: broadcast (equality predicate is sufficient for shuffle partitioning,
+-- the HashJoin ASOF implementation sorts the right side internally per equality-key
+-- bucket, so input order after shuffle does not matter)
+DROP TABLE IF EXISTS dist_trades;
+DROP TABLE IF EXISTS dist_quotes;
+
+CREATE TABLE dist_trades (symbol String, ts DateTime, price Decimal(10, 2))
+ENGINE = MergeTree ORDER BY (symbol, ts)
+SETTINGS index_granularity = 8192, auto_statistics_types = '';
+
+CREATE TABLE dist_quotes (symbol String, ts DateTime, bid Decimal(10, 2))
+ENGINE = MergeTree ORDER BY (symbol, ts)
+SETTINGS index_granularity = 8192, auto_statistics_types = '';
+
+-- Multiple symbols across multiple parts to exercise shuffle partitioning.
+SYSTEM STOP MERGES dist_trades;
+INSERT INTO dist_trades SELECT 'S' || toString(number % 5), toDateTime('2024-01-01 10:00:00') + number * 60, toDecimal64(100 + number * 0.1, 2) FROM numbers(100);
+INSERT INTO dist_trades SELECT 'S' || toString(number % 5), toDateTime('2024-01-01 10:00:00') + (number + 100) * 60, toDecimal64(100 + (number + 100) * 0.1, 2) FROM numbers(100);
+
+SYSTEM STOP MERGES dist_quotes;
+INSERT INTO dist_quotes SELECT 'S' || toString(number % 5), toDateTime('2024-01-01 09:58:00') + number * 30, toDecimal64(99.5 + number * 0.05, 2) FROM numbers(200);
+INSERT INTO dist_quotes SELECT 'S' || toString(number % 5), toDateTime('2024-01-01 09:58:00') + (number + 200) * 30, toDecimal64(99.5 + (number + 200) * 0.05, 2) FROM numbers(200);
+
+SELECT '-- ASOF JOIN (broadcast)';
+EXPLAIN PLAN SELECT symbol, count(), sum(price), sum(bid)
+FROM dist_trades ASOF LEFT JOIN dist_quotes ON dist_trades.symbol = dist_quotes.symbol AND dist_trades.ts >= dist_quotes.ts
+GROUP BY symbol ORDER BY symbol;
+
+SELECT symbol, count(), sum(price), sum(bid)
+FROM dist_trades ASOF LEFT JOIN dist_quotes ON dist_trades.symbol = dist_quotes.symbol AND dist_trades.ts >= dist_quotes.ts
+GROUP BY symbol ORDER BY symbol;
+
+-- Force shuffle by setting broadcast threshold to 0.
+SELECT '-- ASOF JOIN (shuffle)';
+EXPLAIN PLAN SELECT symbol, count(), sum(price), sum(bid)
+FROM dist_trades ASOF LEFT JOIN dist_quotes ON dist_trades.symbol = dist_quotes.symbol AND dist_trades.ts >= dist_quotes.ts
+GROUP BY symbol ORDER BY symbol
+SETTINGS distributed_plan_max_rows_to_broadcast = 0;
+
+SELECT symbol, count(), sum(price), sum(bid)
+FROM dist_trades ASOF LEFT JOIN dist_quotes ON dist_trades.symbol = dist_quotes.symbol AND dist_trades.ts >= dist_quotes.ts
+GROUP BY symbol ORDER BY symbol
+SETTINGS distributed_plan_max_rows_to_broadcast = 0;
+
+-- Single-node baseline.
+SELECT symbol, count(), sum(price), sum(bid)
+FROM dist_trades ASOF LEFT JOIN dist_quotes ON dist_trades.symbol = dist_quotes.symbol AND dist_trades.ts >= dist_quotes.ts
+GROUP BY symbol ORDER BY symbol
+SETTINGS make_distributed_plan = 0;
+
+DROP TABLE dist_trades;
+DROP TABLE dist_quotes;
+
 DROP TABLE dist_orders;
 DROP TABLE dist_items;

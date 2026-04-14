@@ -148,3 +148,52 @@ Expression ((Project names + Projection))
                 ReadFromMergeTree (default.dist_items)
 400
 400
+-- ASOF JOIN (broadcast)
+Expression (Project names)
+  GatherExchange (sorted by (__table1.symbol ASC))
+    Sorting (Sorting for ORDER BY)
+      ScatterExchange (any scatter)
+        Expression ((Before ORDER BY + Projection))
+          MergingAggregated (merge)
+            GatherExchange
+              Aggregating (partial)
+                Expression (Before GROUP BY)
+                  JoinLogical
+                    ScatterExchange (any scatter)
+                      Expression (Change column names to column identifiers)
+                        ReadFromMergeTree (default.dist_trades)
+                    BroadcastExchange
+                      Expression (Change column names to column identifiers)
+                        ReadFromMergeTree (default.dist_quotes)
+S0	40	4390	4370
+S1	40	4394	4382
+S2	40	4398	4384
+S3	40	4402	4386
+S4	40	4406	4388
+-- ASOF JOIN (shuffle)
+Expression (Project names)
+  GatherExchange (sorted by (__table1.symbol ASC))
+    Sorting (Sorting for ORDER BY)
+      ScatterExchange (any scatter)
+        Expression ((Before ORDER BY + Projection))
+          MergingAggregated (merge)
+            GatherExchange
+              Aggregating (partial)
+                Expression (Before GROUP BY)
+                  JoinLogical
+                    ShuffleExchange (by hash([__table1.symbol]))
+                      Expression (Change column names to column identifiers)
+                        ReadFromMergeTree (default.dist_trades)
+                    ShuffleExchange (by hash([__table2.symbol]))
+                      Expression (Change column names to column identifiers)
+                        ReadFromMergeTree (default.dist_quotes)
+S0	40	4390	4370
+S1	40	4394	4382
+S2	40	4398	4384
+S3	40	4402	4386
+S4	40	4406	4388
+S0	40	4390	4370
+S1	40	4394	4382
+S2	40	4398	4384
+S3	40	4402	4386
+S4	40	4406	4388
