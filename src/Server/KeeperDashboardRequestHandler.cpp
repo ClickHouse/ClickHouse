@@ -18,9 +18,6 @@
 #include <Common/re2.h>
 
 /// Embedded HTML pages
-///
-/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to
-/// make a scratch build.
 constexpr unsigned char resource_keeper_dashboard_html[] =
 {
 #embed "../../programs/keeper/dashboard.html"

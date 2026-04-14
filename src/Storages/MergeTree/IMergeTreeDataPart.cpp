@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <base/JSON.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/FieldAccurateComparison.h>
@@ -276,7 +277,7 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
 void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage)
 {
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
     size_t minmax_idx_size = minmax_column_names.size();
@@ -460,6 +461,12 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
     return index;
 }
 
+IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
+{
+    std::scoped_lock lock(index_mutex);
+    return index;
+}
+
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
     auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
@@ -490,6 +497,9 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     index_cache->remove(key);
 }
 
+/// Remove all vector similarity index cache entries for this part.
+/// The cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
+/// the key used during insertion in `MergeTreeIndexReader::read`.
 void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const
 {
     if (!vector_similarity_index_cache)
@@ -677,7 +687,7 @@ StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
     if (info.isPatch())
         return storage.getPatchPartMetadata(*columns_description, info.getPartitionId(), storage.getContext());
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     if (!parent_part)
         return metadata_snapshot;
 
@@ -723,7 +733,7 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
     if (!index_mark_cache)
         return;
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
     if (secondary_indices.empty())
         return;
@@ -773,7 +783,7 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
 
     /// Bypass QueryMetadataCache: this runs during part destruction, and caching a dying
     /// storage's pointer would poison lookups if a new storage is allocated at the same address.
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(/*bypass_metadata_cache=*/ true);
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), true);
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
     if (secondary_indices.empty())
         return;
@@ -1058,8 +1068,16 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         auto file_buf = reader.readFile(filename, read_settings, file_size);
 
         CompressedReadBuffer compressed_buf(*file_buf);
-        auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-        result.emplace(column_desc->name, std::move(column_stat));
+        try
+        {
+            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            result.emplace(column_desc->name, std::move(column_stat));
+        }
+        catch (...)
+        {
+            LOG_WARNING(storage.log, "Cannot load statistics for column {} from file {}, ignoring: {}",
+                column_desc->name, filename, getCurrentExceptionMessage(false));
+        }
     }
 
     return result;
@@ -1081,8 +1099,16 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
         auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
         CompressedReadBuffer compressed_buf(*file_buf);
-        auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-        result.emplace(column_desc->name, std::move(column_stat));
+        try
+        {
+            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            result.emplace(column_desc->name, std::move(column_stat));
+        }
+        catch (...)
+        {
+            LOG_WARNING(storage.log, "Cannot load statistics for column {} from file {}, ignoring: {}",
+                column_desc->name, filename, getCurrentExceptionMessage(false));
+        }
     }
 
     return result;
@@ -1090,6 +1116,8 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
+
     if (auto * reader = getStatisticsPackedReader())
         return loadStatisticsPacked(*reader, {});
 
@@ -1239,7 +1267,7 @@ void IMergeTreeDataPart::addProjectionPart(
 void IMergeTreeDataPart::loadProjections(
     bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded, bool only_metadata)
 {
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     for (const auto & projection : metadata_snapshot->projections)
     {
         auto path = projection.name + ".proj";
@@ -1576,7 +1604,7 @@ void IMergeTreeDataPart::removeMetadataVersion()
 
 CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
 {
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
 
     const auto & storage_columns = metadata_snapshot->getColumns();
     CompressionCodecPtr result = nullptr;
@@ -1854,7 +1882,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
     NamesAndTypesList cols;
     cols.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
 
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     auto alter_conversions = std::make_shared<AlterConversions>();
@@ -2002,7 +2030,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
     if (!loaded_metadata_version)
     {
-        auto storage_metdata_snapshot = storage.getInMemoryMetadataPtr();
+        auto storage_metdata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
         loaded_metadata_version = storage_metdata_snapshot->getMetadataVersion();
         old_part_with_no_metadata_version_on_disk = true;
     }
@@ -2673,7 +2701,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     if (checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate secondary indexes sizes when columns or checksums are not initialized");
 
-    auto secondary_indices_descriptions = storage.getInMemoryMetadataPtr()->secondary_indices;
+    auto secondary_indices_descriptions = storage.getInMemoryMetadataPtr(storage.getContext(), false)->secondary_indices;
     IndexSizeByName new_secondary_index_sizes;
 
     for (auto & index_description : secondary_indices_descriptions)
@@ -3033,7 +3061,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     NamesAndTypesList cols;
     cols.emplace_back(column);
 
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     /// We need to read only prefixes, so no data will be read.

@@ -1,5 +1,6 @@
+#include <Columns/IColumn.h>
 #include <IO/copyData.h>
-#include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/FileCache/IFileCachePriority.h>
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -17,11 +18,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/EvictionCandidates.h>
-#include <Interpreters/Cache/SLRUFileCachePriority.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
+#include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
@@ -39,7 +40,7 @@
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
@@ -68,6 +69,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
+    extern const FileCacheSettingsBool allow_dynamic_cache_resize;
 }
 
 void printRanges(const auto & segments)
@@ -355,14 +357,19 @@ public:
             fs::remove_all(cache_base_path);
         if (fs::exists(cache_base_path2))
             fs::remove_all(cache_base_path2);
+        if (fs::exists(cache_base_path3))
+            fs::remove_all(cache_base_path3);
         fs::create_directories(cache_base_path);
         fs::create_directories(cache_base_path2);
+        fs::create_directories(cache_base_path3);
     }
 
     void TearDown() override
     {
         if (fs::exists(cache_base_path))
             fs::remove_all(cache_base_path);
+        if (fs::exists(cache_base_path3))
+            fs::remove_all(cache_base_path3);
     }
 
     pcg64 rng;
@@ -1440,6 +1447,98 @@ TEST_F(FileCacheTest, SLRUPolicy)
         assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
         assertProtected(cache->dumpQueue(), { Range(10, 14), Range(0, 4), Range(5, 9)  });
     }
+}
+
+TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
+{
+    /// Test that SLRU dynamic resize correctly evicts from both sub-queues
+    /// after the per-queue stat fix.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+
+    auto write_file = [](const std::string & filename, const std::string & s)
+    {
+        std::string file_path = fs::current_path() / filename;
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(s.data(), s.size());
+        wb->next();
+        wb->finalize();
+        return file_path;
+    };
+
+    /// Create SLRU cache: max_size=30, max_elements=6, ratio=0.5
+    /// So protected = 15 bytes / 3 elements, probationary = 15 bytes / 3 elements.
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 6;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::allow_dynamic_cache_resize] = true;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_resize", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto read_and_check = [&](const std::string & file, const FileCacheKey & key, const std::string & expect_result)
+    {
+        auto read_buffer_creator = [&]()
+        {
+            return createReadBufferFromFileBase(file, read_settings, std::nullopt, std::nullopt);
+        };
+        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+            file, key, cache, user, read_buffer_creator, read_settings,
+            "test", expect_result.size(), false, false, std::nullopt, nullptr);
+        WriteBufferFromOwnString result;
+        copyData(*cached_buffer, result);
+        ASSERT_EQ(result.str(), expect_result);
+    };
+
+    /// Read file1 twice -> 15 bytes in protected (3 segs x 5)
+    std::string data1(15, '*');
+    auto file1 = write_file("test_resize1", data1);
+    auto key1 = DB::FileCacheKey::fromPath(file1);
+    read_and_check(file1, key1, data1);
+    read_and_check(file1, key1, data1);
+
+    assertProtected(cache->dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14) });
+
+    /// Read file2 once -> 10 bytes in probationary (2 segs x 5)
+    std::string data2(10, '+');
+    auto file2 = write_file("test_resize2", data2);
+    auto key2 = DB::FileCacheKey::fromPath(file2);
+    read_and_check(file2, key2, data2);
+
+    assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
+    ASSERT_EQ(cache->getUsedCacheSize(), 25);
+    ASSERT_EQ(cache->getFileSegmentsNum(), 5);
+
+    /// Resize to max_size=8, max_elements=6.
+    /// Protected limit = 4, probationary limit = 4.
+    /// Both queues need eviction. Without the fix, the protected pass
+    /// would short-circuit and modifySizeLimits would throw LOGICAL_ERROR.
+    DB::FileCacheSettings new_settings = settings;
+    new_settings[FileCacheSetting::max_size] = 8;
+    DB::FileCacheSettings actual_settings = settings;
+
+    /// Must not throw -- this is the core regression test for the bug.
+    ASSERT_NO_THROW(cache->applySettingsIfPossible(new_settings, actual_settings));
+
+    /// Verify limits were applied.
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 8);
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_elements].value, 6);
+
+    /// Verify cache usage is within new limits.
+    ASSERT_LE(cache->getUsedCacheSize(), 8);
+    ASSERT_LE(cache->getFileSegmentsNum(), 6);
 }
 
 TEST_F(FileCacheTest, FileCacheGetOrSet)

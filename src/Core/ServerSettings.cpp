@@ -15,6 +15,14 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
+#include <Storages/MergeTree/TextIndexCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
+#if USE_AVRO
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#endif
+#if USE_PARQUET
+#    include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#endif
 #include <Storages/System/ServerSettingColumnsParams.h>
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
@@ -194,6 +202,7 @@ namespace
     DECLARE(UInt64, max_backup_bandwidth_for_server, 0, R"(The maximum read speed in bytes per second for all backups on server. Zero means unlimited.)", 0) \
     DECLARE(NonZeroUInt64, restore_threads, 16, R"(The maximum number of threads to execute RESTORE requests.)", 0) \
     DECLARE(Bool, shutdown_wait_backups_and_restores, true, R"(If set to true ClickHouse will wait for running backups and restores to finish before shutdown.)", 0) \
+    DECLARE(UInt64, max_held_snapshots, 0, R"(Maximum number of lightweight snapshots that can be held at the same time. Zero means unlimited. If the number of snapshots reaches this limit, an exception is thrown when trying to create a new snapshot.)", 0) \
     DECLARE(Double, cannot_allocate_thread_fault_injection_probability, 0, R"(For testing purposes.)", 0) \
     DECLARE(Int32, max_connections, 4096, R"(Max server connections.)", 0) \
     DECLARE(UInt32, asynchronous_metrics_update_period_s, 1, R"(Period in seconds for updating asynchronous metrics.)", 0) \
@@ -992,6 +1001,10 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <validate_tcp_client_information>false</validate_tcp_client_information>
     ```)", 0) \
     DECLARE(Bool, storage_metadata_write_full_object_key, true, R"(Write disk metadata files with VERSION_FULL_OBJECT_KEY format. This is enabled by default. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
+    DECLARE(Bool, disk_transaction_wait_for_blob_removal, true, R"(
+    Default value for the per-disk `wait_for_blob_removal` setting.
+    When enabled, the server waits for background blob removal to complete before acknowledging the operation.
+    )", 0) \
     DECLARE(UInt64, max_materialized_views_count_for_table, 0, R"(
     A limit on the number of materialized views attached to a table.
 
@@ -1113,6 +1126,25 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, prepare_system_log_tables_on_startup, false, R"(
     If true, ClickHouse creates all configured `system.*_log` tables before the startup. It can be helpful if some startup scripts depend on these tables.
     )", 0) \
+    DECLARE(Bool, use_shared_merge_tree_log_pipeline, false, R"(
+    Only available on ClickHouse Cloud. When enabled, `system.*_log` tables are backed by `SharedMergeTree` via an S3-based pipeline.
+    For each log `<log>`, the following objects are created automatically on startup:
+
+    - `system.<log>_s3` — an `S3`-backed table that is the direct flush target; each
+      `SYSTEM FLUSH LOGS` call writes a new partitioned file here.
+    - `system.<log>_s3queue` — an `S3Queue` table (ordered mode) that picks up files from
+      `<log>_s3` and streams rows downstream. Each node processes only its own files via
+      `partition_regex`-based partitioning.
+    - `system.<log>_mv` — a `MATERIALIZED VIEW` that routes rows from `<log>_s3queue` into
+      the final `SharedMergeTree` table.
+    - `system.<log>` — the final `SharedMergeTree` table where rows accumulate and are queried.
+
+    On schema or settings change, the affected table is renamed to `<log>_0`, `<log>_1`, etc.
+    and recreated, consistent with the existing `SystemLog` rotation behavior.
+
+    Requires `<shared_log_pipeline><endpoint>` to be set in the server configuration.
+    See also: `shared_log_pipeline.enable_polling`, `shared_log_pipeline.flush_timeout_seconds`.
+    )", EXPERIMENTAL) \
     DECLARE(UInt64, config_reload_interval_ms, 2000, R"(
     How often clickhouse will reload config and check for new changes
     )", 0) \
@@ -1245,6 +1277,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_interval_bytes, 0, R"(Flushing jemalloc profile will be done after global peak memory usage increased by jemalloc_flush_profile_interval_bytes)", 0) \
     DECLARE(Bool, jemalloc_flush_profile_on_memory_exceeded, 0, R"(Flushing jemalloc profile will be done on total memory exceeded errors)", 0) \
+    DECLARE(UInt64, jemalloc_flush_profile_on_memory_exceeded_interval, 0, R"(If non-zero, sets the minimum interval in seconds between flushing jemalloc profiles on total memory exceeded errors. For example, 5 means at most one profile flush every 5 seconds. Takes priority over `jemalloc_flush_profile_on_memory_exceeded`.)", 0) \
     DECLARE(Bool, jemalloc_enable_global_profiler, Jemalloc::default_enable_global_profiler, R"(Enable jemalloc's allocation profiler for all threads. Jemalloc will sample allocations and all deallocations for sampled allocations.
     Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
     Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
@@ -1743,6 +1776,10 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_postings_cache_size", {std::to_string(context->getTextIndexPostingsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
@@ -1828,6 +1865,18 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {std::to_string(context->getCommonExecutor()->getMaxThreads()), ChangeableWithoutRestart::IncreaseOnly}});
     }
 
+#if USE_AVRO
+    if (context->getIcebergMetadataFilesCache())
+        changeable_settings.insert(
+            {"iceberg_metadata_files_cache_size",
+             {std::to_string(context->getIcebergMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+#endif
+#if USE_PARQUET
+    if (context->getParquetMetadataCache())
+        changeable_settings.insert(
+            {"parquet_metadata_cache_size",
+             {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+#endif
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();

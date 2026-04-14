@@ -28,6 +28,8 @@ from typing import Any, List, Sequence, Tuple, Union
 import requests
 import urllib3
 
+temp_dir = "../../ci/tmp"
+
 try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
@@ -147,6 +149,7 @@ def run_and_check(
     args: Union[Sequence[str], str],
     env=None,
     shell=False,
+    input=None,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
     timeout=300,
@@ -175,6 +178,7 @@ def run_and_check(
     try:
         res = subprocess.run(
             args,
+            input=input,
             stdout=stdout,
             stderr=stderr,
             env=env,
@@ -636,6 +640,8 @@ class ClickHouseCluster:
         self.instances: dict[str, ClickHouseInstance] = {}
         self.with_arrowflight = False
         self.arrowflight_host = "arrowflight1"
+        self._arrowflight_port = 0
+        self._arrowflight_auth_port = 0
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -691,10 +697,11 @@ class ClickHouseCluster:
         self.spark_session = None
         self.with_iceberg_catalog = False
         self._iceberg_rest_catalog_port = None
+        self._iceberg_minio_port = None
         self.with_glue_catalog = False
-        self.glue_catalog_port = 3000
+        self._glue_catalog_port = None
         self.with_hms_catalog = False
-        self.hms_catalog_port = 9083
+        self._hms_catalog_port = None
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1013,6 +1020,27 @@ class ClickHouseCluster:
         return self._iceberg_rest_catalog_port
 
     @property
+    def iceberg_minio_port(self):
+        if self._iceberg_minio_port:
+            return self._iceberg_minio_port
+        self._iceberg_minio_port = self.port_pool.get_port()
+        return self._iceberg_minio_port
+
+    @property
+    def glue_catalog_port(self):
+        if self._glue_catalog_port:
+            return self._glue_catalog_port
+        self._glue_catalog_port = self.port_pool.get_port()
+        return self._glue_catalog_port
+
+    @property
+    def hms_catalog_port(self):
+        if self._hms_catalog_port:
+            return self._hms_catalog_port
+        self._hms_catalog_port = self.port_pool.get_port()
+        return self._hms_catalog_port
+
+    @property
     def redis_port(self):
         if self._redis_port:
             return self._redis_port
@@ -1032,6 +1060,20 @@ class ClickHouseCluster:
             return self._nats_port
         self._nats_port = self.port_pool.get_port()
         return self._nats_port
+
+    @property
+    def arrowflight_port(self):
+        if self._arrowflight_port:
+            return self._arrowflight_port
+        self._arrowflight_port = self.port_pool.get_port()
+        return self._arrowflight_port
+
+    @property
+    def arrowflight_auth_port(self):
+        if self._arrowflight_auth_port:
+            return self._arrowflight_auth_port
+        self._arrowflight_auth_port = self.port_pool.get_port()
+        return self._arrowflight_auth_port
 
     @property
     def ytsaurus_port(self):
@@ -1174,7 +1216,7 @@ class ClickHouseCluster:
 
             result = run_and_check(["docker volume ls | wc -l"], shell=True)
             if int(result) > 1:
-                run_and_check(["docker", "volume", "prune", "-f"])
+                run_and_check(["docker", "volume", "prune", "-f", "--all"])
             logging.debug(f"Volumes pruned: {result}")
         except:
             pass
@@ -1672,6 +1714,10 @@ class ClickHouseCluster:
 
     def setup_arrowflight_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_arrowflight = True
+        env_variables["ARROWFLIGHT_EXTERNAL_PORT"] = str(self.arrowflight_port)
+        env_variables["ARROWFLIGHT_AUTH_EXTERNAL_PORT"] = str(
+            self.arrowflight_auth_port
+        )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml")]
         )
@@ -1722,6 +1768,7 @@ class ClickHouseCluster:
 
     def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_glue_catalog = True
+        env_variables["GLUE_CATALOG_PORT"] = str(self.glue_catalog_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -1738,6 +1785,7 @@ class ClickHouseCluster:
 
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
+        env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -1762,8 +1810,8 @@ class ClickHouseCluster:
         file_name = "docker_compose_iceberg_rest_catalog.yml"
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
-        if file_name == "docker_compose_iceberg_rest_catalog.yml":
-            env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
+        env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
+        env_variables["ICEBERG_MINIO_PORT"] = str(self.iceberg_minio_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -3383,6 +3431,31 @@ class ClickHouseCluster:
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
 
+    def login_to_ecr(self):
+        if Path(f"{temp_dir}/ecr_token.json").exists():
+            with open(f"{temp_dir}/ecr_token.json", "r") as f:
+                tokens = json.load(f)
+
+            registries = set()
+            for i in self.instances.values():
+                registries.add(i.image.split("/", 1)[0])
+
+            for instance_registry in registries:
+                for region in tokens.keys():
+                    if region in instance_registry:
+                        user, password = (
+                            base64.b64decode(tokens[region])
+                            .decode("utf-8")
+                            .split(":", 1)
+                        )
+                        logging.info(
+                            f"Logging into {instance_registry}"
+                        )
+                        run_and_check(
+                            ["docker", "login", instance_registry, "-u", user, "--password-stdin"],
+                            input=password.encode(),
+                        )
+
     def start(self, connection_timeout=None):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
@@ -3448,6 +3521,7 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
+            self.login_to_ecr()
             retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, timeout=180)
 
             def logging_compose_up(**kwargs):
@@ -3493,6 +3567,11 @@ class ClickHouseCluster:
                     os.makedirs(dir)
 
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
+                    nuraft_streaming_mode = (
+                        random.randint(0, 1)
+                        if self.keeper_randomize_feature_flags
+                        else 0
+                    )
                     for i in range(1, 4):
                         current_keeper_config_dir = os.path.join(
                             f"{self.keeper_instance_dir_prefix}{i}", "config"
@@ -3542,6 +3621,16 @@ class ClickHouseCluster:
                                 ]:
                                     ff_config.write(
                                         f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                    )
+
+                                if self.keeper_randomize_feature_flags:
+                                    indentation = 4 * " "
+                                    ff_config.write(
+                                        f"{indentation}coordination_settings:\n"
+                                    )
+                                    indentation *= 2
+                                    ff_config.write(
+                                        f"{indentation}nuraft_streaming_mode: {nuraft_streaming_mode}\n"
                                     )
                         else:
                             basename = os.path.basename(
@@ -3935,6 +4024,7 @@ class ClickHouseCluster:
                 )
             )
             self.up_called = True
+
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
@@ -5615,7 +5705,7 @@ class ClickHouseInstance:
                         f.write(key + "=" + value + "\n")
 
     @contextmanager
-    def with_replace_config(self, path, replacement):
+    def with_replace_config(self, path, replacement, reload_before=False, reload_after=False):
         """Create a copy of existing config (if exists) and revert on leaving the context"""
         _directory, filename = os.path.split(path)
         basename, extension = os.path.splitext(filename)
@@ -5627,12 +5717,16 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
         )
+        if reload_before:
+            self.query("SYSTEM RELOAD CONFIG")
         try:
             yield
         finally:
             self.exec_in_container(
                 ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
             )
+            if reload_after:
+                self.query("SYSTEM RELOAD CONFIG")
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(
@@ -5969,7 +6063,7 @@ class ClickHouseInstance:
 
         port_lines = []
         # KEEPER_PUBLISH_CLIENT: publish keeper client port 9181 to host for keeper-bench on host
-        
+
         if os.environ.get("KEEPER_PUBLISH_CLIENT") == "1":
             base = int(os.environ.get("KEEPER_PUBLISH_CLIENT_BASE") or "19181")
             m = re.search(r"keeper(\d+)", str(self.name or ""), re.I)

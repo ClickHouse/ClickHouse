@@ -8,6 +8,7 @@
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <base/scope_guard.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -118,6 +119,10 @@ public:
 
     virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
 
+    /// When true, `handleRequest` parses `application/x-www-form-urlencoded` (and multipart) bodies for POST/PUT.
+    /// Must stay false for RemoteWrite/RemoteRead so the raw body stream stays available for protobuf.
+    virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
+
 protected:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
@@ -128,7 +133,12 @@ protected:
             params.reset();
         });
 
-        params = std::make_unique<HTMLForm>(default_settings, request);
+        const auto & method = request.getMethod();
+        if (shouldParseFormFromRequestBody(request)
+            && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
+            params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
+        else
+            params = std::make_unique<HTMLForm>(default_settings, request);
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
         if (!authenticateUserAndMakeContext(request, response))
@@ -328,6 +338,8 @@ class PrometheusRequestHandler::QueryAPIImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
+
+    bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
