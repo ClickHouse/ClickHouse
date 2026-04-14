@@ -38,6 +38,8 @@ public:
             FileMetadataPtr file_metadata_);
 
         FileMetadataPtr file_metadata;
+
+        ObjectInfoPtr clone() const override { return std::make_shared<ObjectStorageQueueObjectInfo>(*this); }
     };
 
     class FileIterator : public IObjectIterator, private WithContext
