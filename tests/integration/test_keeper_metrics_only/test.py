@@ -33,3 +33,12 @@ def test_prometheus_keeper_metrics_only(start_cluster):
     assert prometheus_handler_response.status_code == 200
     assert "ClickHouseAsyncMetrics_KeeperIsStandalone" in prometheus_handler_response.text
     assert "PolygonDictionaryThreads" not in prometheus_handler_response.text
+
+
+
+def test_asynchronous_metric_log(start_cluster):
+    node.query("SYSTEM FLUSH LOGS")
+
+    assert int(node.query(
+        "SELECT count() FROM system.asynchronous_metric_log WHERE metric = 'KeeperIsLeader'"
+    ).strip()) > 0
