@@ -9,7 +9,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/Collator.h>
 
-#include <Interpreters/TopNAggregationHeap.h>
+#include <Interpreters/TopKAggregationHeap.h>
 
 namespace DB
 {
@@ -25,7 +25,7 @@ struct AggregationMethodOneNumber
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    TopNAggregationHeap top_n_heap;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodOneNumber() = default;
 
@@ -69,7 +69,7 @@ struct AggregationMethodString
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    TopNAggregationHeap top_n_heap;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodString() = default;
 
@@ -106,7 +106,7 @@ struct AggregationMethodStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    TopNAggregationHeap top_n_heap;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodStringNoCache() = default;
 
@@ -140,7 +140,7 @@ struct AggregationMethodFixedString
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    TopNAggregationHeap top_n_heap;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodFixedString() = default;
 
@@ -174,7 +174,7 @@ struct AggregationMethodFixedStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    TopNAggregationHeap top_n_heap;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodFixedStringNoCache() = default;
 
@@ -209,7 +209,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using Base::data;
-    TopNAggregationHeap top_n_heap;
+    TopKAggregationHeap top_k_heap;
 
     template <bool use_cache>
     using BaseStateImpl = typename Base::template StateImpl<use_cache>;
@@ -247,7 +247,7 @@ struct AggregationMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     Data data;
-    TopNAggregationHeap top_n_heap;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodKeysFixed() = default;
 
@@ -295,7 +295,7 @@ struct AggregationMethodSerialized
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    TopNAggregationHeap top_n_heap;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodSerialized() = default;
 

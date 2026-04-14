@@ -57,7 +57,7 @@ public:
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     void applyLimitPushdown(
-        size_t top_n,
+        size_t top_k,
         std::vector<int> directions,
         std::vector<int> nulls_directions,
         std::vector<const Collator *> collators,

@@ -28,7 +28,7 @@ namespace DB
   * Uses std::priority_queue over row indices into `heap_column`.
   * The boundary element (the worst kept key that would be evicted next) is at the top.
   */
-struct TopNAggregationHeap
+struct TopKAggregationHeap
 {
     /// Column holding the key values currently in the heap.
     /// For single-column keys this is a plain column; for composite keys it is a ColumnTuple.
@@ -54,11 +54,11 @@ struct TopNAggregationHeap
     /// out-of-bounds read or match the wrong entry.
     bool is_prefix_mode = false;
 
-    TopNAggregationHeap() = default;
-    TopNAggregationHeap(const TopNAggregationHeap &) = delete;
-    TopNAggregationHeap & operator=(const TopNAggregationHeap &) = delete;
+    TopKAggregationHeap() = default;
+    TopKAggregationHeap(const TopKAggregationHeap &) = delete;
+    TopKAggregationHeap & operator=(const TopKAggregationHeap &) = delete;
 
-    TopNAggregationHeap(TopNAggregationHeap && other) noexcept
+    TopKAggregationHeap(TopKAggregationHeap && other) noexcept
         : heap_column(std::move(other.heap_column))
         , directions(std::move(other.directions))
         , nulls_directions(std::move(other.nulls_directions))
@@ -86,7 +86,7 @@ struct TopNAggregationHeap
         }
     }
 
-    TopNAggregationHeap & operator=(TopNAggregationHeap && other) noexcept
+    TopKAggregationHeap & operator=(TopKAggregationHeap && other) noexcept
     {
         if (this != &other)
         {
@@ -394,7 +394,7 @@ private:
     /// so we return true when `a` should be below `b` in ORDER BY order.
     struct HeapComparator
     {
-        const TopNAggregationHeap * owner;
+        const TopKAggregationHeap * owner;
 
         bool operator()(size_t a, size_t b) const
         {
@@ -413,7 +413,7 @@ private:
     /// Type-erased function pointer for the numeric skip fast path.
     /// Resolved once at init time based on `heap_column->getDataType()`.
     /// Takes (self, raw_key_data, row_index) and returns true if the row should be skipped.
-    using ShouldSkipNumericFn = bool (*)(const TopNAggregationHeap &, const void *, size_t);
+    using ShouldSkipNumericFn = bool (*)(const TopKAggregationHeap &, const void *, size_t);
     ShouldSkipNumericFn should_skip_numeric_fn = nullptr;
 
     /// Typed implementation of the numeric skip comparison.
@@ -421,7 +421,7 @@ private:
     /// The source data pointer is reinterpreted from the hash key type (always unsigned)
     /// to the actual column type — safe because they have the same size and bit layout.
     template <typename ActualKeyType>
-    static bool shouldSkipNumericImpl(const TopNAggregationHeap & self, const void * source_data, size_t source_row)
+    static bool shouldSkipNumericImpl(const TopKAggregationHeap & self, const void * source_data, size_t source_row)
     {
         const auto * src = reinterpret_cast<const ActualKeyType *>(source_data);
         const auto & heap_data = assert_cast<const ColumnVector<ActualKeyType> &>(*self.heap_column).getData();
@@ -458,7 +458,7 @@ private:
     }
 
     std::priority_queue<size_t, std::vector<size_t>, HeapComparator> heap;
-    size_t capacity = 0;              /// target heap size (= top_n_keys)
+    size_t capacity = 0;              /// target heap size (= top_k_keys)
     size_t compaction_threshold = 0;  /// heap size at which to trigger trim+compact (1.5x capacity)
 };
 

@@ -135,13 +135,13 @@ public:
 
         bool serialize_string_with_zero_byte = false;
 
-        size_t top_n_keys = 0;
-        std::vector<int> top_n_keys_directions;            // per-column ORDER BY directions
-        std::vector<int> top_n_keys_nulls_directions;      // per-column NULLS/NaNs directions
-        std::vector<const Collator *> top_n_keys_collators;  // per-column collators for ORDER BY COLLATE
+        size_t top_k_keys = 0;
+        std::vector<int> top_k_keys_directions;            // per-column ORDER BY directions
+        std::vector<int> top_k_keys_nulls_directions;      // per-column NULLS/NaNs directions
+        std::vector<const Collator *> top_k_keys_collators;  // per-column collators for ORDER BY COLLATE
         /// How many leading GROUP BY key columns the heap compares on.
         /// Equals the number of ORDER BY columns (which is a prefix of GROUP BY keys).
-        size_t top_n_key_columns = 0;
+        size_t top_k_key_columns = 0;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
@@ -421,10 +421,10 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    /// When top_n is true, the top-N GROUP BY limit pushdown heap logic is compiled in.
-    /// Using a template bool keeps the common path (top_n=false) free of heap code,
+    /// When top_k is true, the top-N GROUP BY limit pushdown heap logic is compiled in.
+    /// Using a template bool keeps the common path (top_k=false) free of heap code,
     /// avoiding instruction cache pressure, while eliminating source duplication.
-    template <bool prefetch, bool top_n = false, typename Method, typename State>
+    template <bool prefetch, bool top_k = false, typename Method, typename State>
     void executeImplBatch(
         Method & method,
         State & state,
@@ -440,7 +440,7 @@ private:
     /// Trim the bounded heap back to capacity by batch-popping excess entries,
     /// erasing evicted keys from the hash table and destroying their aggregate states.
     /// Kept in a separate NO_INLINE method to avoid code bloat in executeImplBatch
-    /// when top_n_keys == 0 (the common case).
+    /// when top_k_keys == 0 (the common case).
     template <typename Method>
     void NO_INLINE trimHeapAndPruneHashTable(Method & method, bool destroy_states, std::vector<AggregateDataPtr> * destroyed_states = nullptr) const;
 

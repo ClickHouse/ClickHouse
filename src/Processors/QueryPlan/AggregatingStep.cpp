@@ -170,17 +170,17 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
 }
 
 void AggregatingStep::applyLimitPushdown(
-    size_t top_n,
+    size_t top_k,
     std::vector<int> directions_,
     std::vector<int> nulls_directions_,
     std::vector<const Collator *> collators_,
     size_t num_key_columns)
 {
-    params.top_n_keys = top_n;
-    params.top_n_keys_directions = std::move(directions_);
-    params.top_n_keys_nulls_directions = std::move(nulls_directions_);
-    params.top_n_keys_collators = std::move(collators_);
-    params.top_n_key_columns = num_key_columns;
+    params.top_k_keys = top_k;
+    params.top_k_keys_directions = std::move(directions_);
+    params.top_k_keys_nulls_directions = std::move(nulls_directions_);
+    params.top_k_keys_collators = std::move(collators_);
+    params.top_k_key_columns = num_key_columns;
 }
 
 const SortDescription & AggregatingStep::getSortDescription() const
