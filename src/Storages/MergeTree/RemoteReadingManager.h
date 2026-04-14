@@ -65,14 +65,22 @@ struct ReadScope : public std::enable_shared_from_this<ReadScope>
     Phase phase = Rest;
 
     /// Compressed file byte range for each granule across all mark_ranges.
-    /// For mark_ranges = {[2,5), [10,12)}, granule_ranges has 5 entries:
+    /// For mark_ranges = {[2,5), [10,12)}, reading_ranges has 5 entries:
     /// granules 2, 3, 4, 10, 11 — each with its own {begin, end} in the .bin file.
     struct ByteRange
     {
         size_t begin;
         size_t end;
     };
-    std::vector<ByteRange> granule_ranges;
+    std::vector<ByteRange> reading_ranges;
+
+    /// Per-range: bytes to predownload before each reading_range
+    /// to satisfy cache segment alignment.
+    /// cache_pre_padding_bytes[i] corresponds to reading_ranges[i].
+    /// Actual predownload range: [reading_ranges[i].begin - cache_pre_padding_bytes[i], reading_ranges[i].begin).
+    /// Most entries are 0. Non-zero when a reading_range starts mid-segment after a gap.
+    /// This data is not coordinated — it doesn't participate in column group lockstep.
+    std::vector<size_t> cache_pre_padding_bytes;
 
     /// Thread group of the query that created this scope.
     /// Captured at scope creation time so that async prefetch threads
@@ -82,9 +90,11 @@ struct ReadScope : public std::enable_shared_from_this<ReadScope>
     String toString() const;
 
     static std::shared_ptr<const ReadScope> create(
-        String part_id_, MarkRanges mark_ranges_, Phase phase_, std::vector<ByteRange> granule_ranges_ = {});
+        String part_id_, MarkRanges mark_ranges_, Phase phase_,
+        std::vector<ByteRange> reading_ranges_ = {},
+        std::vector<size_t> cache_pre_padding_bytes_ = {});
 
-    /// Return a scope with `granule_ranges` clipped and translated to
+    /// Return a scope with `reading_ranges` clipped and translated to
     /// object-local coordinates.  Returns `shared_from_this` when no
     /// adjustment is needed.  Ranges entirely outside the object are
     /// dropped; ranges that straddle an object boundary are clamped.
@@ -93,11 +103,14 @@ struct ReadScope : public std::enable_shared_from_this<ReadScope>
 private:
     /// Captures `CurrentThread::getGroup` — used by `create`.
     ReadScope(String part_id_, MarkRanges mark_ranges_, Phase phase_,
-              std::vector<ByteRange> granule_ranges_);
+              std::vector<ByteRange> reading_ranges_,
+              std::vector<size_t> cache_pre_padding_bytes_);
 
     /// Explicit thread group — used by `adjustForObject` to preserve the original query's group.
     ReadScope(String part_id_, MarkRanges mark_ranges_, Phase phase_,
-              std::vector<ByteRange> granule_ranges_, ThreadGroupPtr thread_group_);
+              std::vector<ByteRange> reading_ranges_,
+              std::vector<size_t> cache_pre_padding_bytes_,
+              ThreadGroupPtr thread_group_);
 };
 
 using ReadScopePtr = std::shared_ptr<const ReadScope>;

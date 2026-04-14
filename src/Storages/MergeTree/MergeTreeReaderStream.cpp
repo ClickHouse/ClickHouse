@@ -83,13 +83,13 @@ void MergeTreeReaderStream::init()
 
     /// Build per-granule compressed file byte ranges for RRM.
     /// marks_getter is loaded by estimateMarkRangeBytes above.
-    std::vector<ReadScope::ByteRange> granule_ranges;
+    std::vector<ReadScope::ByteRange> reading_ranges;
     if (marks_getter)
     {
         size_t total_granules = 0;
         for (const auto & range : all_mark_ranges)
             total_granules += range.end - range.begin;
-        granule_ranges.reserve(total_granules);
+        reading_ranges.reserve(total_granules);
 
         for (const auto & range : all_mark_ranges)
         {
@@ -99,13 +99,13 @@ void MergeTreeReaderStream::init()
                 size_t end = (mark + 1 < range.end)
                     ? marks_getter->getMark(mark + 1, 0).offset_in_compressed_file
                     : getRightOffset(range.end);
-                granule_ranges.push_back({begin, end});
+                reading_ranges.push_back({begin, end});
             }
         }
     }
 
     auto scope = ReadScope::create(
-        data_part_storage->getRelativePath(), all_mark_ranges, settings.read_phase, std::move(granule_ranges));
+        data_part_storage->getRelativePath(), all_mark_ranges, settings.read_phase, std::move(reading_ranges));
 
     /// Initialize the objects that shall be used to perform read operations.
     if (!settings.is_compressed)

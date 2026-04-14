@@ -940,7 +940,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 path = object_info.getPath(),
                 nested_buffer_read_settings = modified_read_settings.withNestedBuffer(/* seekable */false),
                 object_size,
-                object_storage]()
+                object_storage](ReadScopePtr /* adjusted_scope */)
             {
                 return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
             };

@@ -13,6 +13,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/assert_cast.h>
+#include <Storages/MergeTree/RemoteReadingManager.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
@@ -69,6 +70,97 @@ void CachedOnDiskReadBufferFromFile::ReadInfo::reset()
     remote_file_reader.reset();
     cache_file_reader.reset();
     file_segments = {};
+    adjusted_read_scope.reset();
+}
+
+void CachedOnDiskReadBufferFromFile::ReadInfo::computeAdjustedReadScope()
+{
+    adjusted_read_scope.reset();
+
+    if (!settings.read_scope || settings.read_scope->reading_ranges.empty() || !file_segments || file_segments->empty())
+        return;
+
+    const auto & original = *settings.read_scope;
+    std::vector<size_t> padding(original.reading_ranges.size(), 0);
+
+    /// Track projected write offset per segment.
+    /// Multiple reading ranges may fall within the same MISSING segment.
+    /// After downloading range[i], the write offset advances to range[i].end,
+    /// reducing the predownload gap for range[i+1].
+    size_t current_seg_idx = 0;
+    size_t projected_write_offset = 0;
+    bool tracking_segment = false;
+
+    for (size_t i = 0; i < original.reading_ranges.size(); ++i)
+    {
+        const auto & rr = original.reading_ranges[i];
+
+        /// Advance to the segment that contains rr.begin.
+        while (current_seg_idx < file_segments->size())
+        {
+            auto it = file_segments->begin();
+            std::advance(it, current_seg_idx);
+            const auto & seg = *it;
+            const auto & seg_range = seg->range();
+
+            if (rr.begin <= seg_range.right)
+            {
+                /// This segment covers rr.begin.
+                if (rr.end <= seg_range.left)
+                {
+                    /// Reading range is entirely before this segment — no overlap.
+                    break;
+                }
+
+                /// Only MISSING segments need predownload.
+                if (seg->state() == FileSegment::State::DOWNLOADED)
+                {
+                    ++current_seg_idx;
+                    tracking_segment = false;
+                    continue;
+                }
+
+                if (!tracking_segment)
+                {
+                    projected_write_offset = seg->getCurrentWriteOffset();
+                    tracking_segment = true;
+                }
+
+                if (projected_write_offset < rr.begin)
+                    padding[i] = rr.begin - projected_write_offset;
+
+                /// After this range is downloaded, write offset advances.
+                size_t effective_end = std::min<size_t>(rr.end, seg_range.right + 1);
+                projected_write_offset = std::max(projected_write_offset, effective_end);
+                break;
+            }
+
+            /// Segment is entirely before this reading range — move to next.
+            ++current_seg_idx;
+            tracking_segment = false;
+        }
+    }
+
+    /// Only create adjusted scope if there's actual padding needed.
+    bool has_padding = false;
+    for (size_t p : padding)
+    {
+        if (p > 0)
+        {
+            has_padding = true;
+            break;
+        }
+    }
+
+    if (!has_padding)
+        return;
+
+    adjusted_read_scope = ReadScope::create(
+        original.part_id,
+        original.mark_ranges,
+        original.phase,
+        original.reading_ranges,
+        std::move(padding));
 }
 
 CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
@@ -124,7 +216,7 @@ std::optional<size_t> CachedOnDiskReadBufferFromFile::tryGetFileSize()
     if (file_size.has_value())
         return file_size;
 
-    file_size = info.implementation_buffer_creator()->tryGetFileSize();
+    file_size = info.implementation_buffer_creator(nullptr)->tryGetFileSize();
     return file_size;
 }
 
@@ -208,7 +300,12 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
             info.settings.filesystem_cache_boundary_alignment);
     }
 
-    return !info.file_segments->empty();
+    if (!info.file_segments->empty())
+    {
+        info.computeAdjustedReadScope();
+        return true;
+    }
+    return false;
 }
 
 void CachedOnDiskReadBufferFromFile::initialize()
@@ -304,7 +401,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 
             if (!remote_fs_segment_reader)
             {
-                auto impl = info.implementation_buffer_creator();
+                auto impl = info.implementation_buffer_creator(info.adjusted_read_scope);
                 if (impl->supportsRightBoundedReads())
                     remote_fs_segment_reader = std::move(impl);
                 else
@@ -330,7 +427,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
             if (reader && offset == reader->getFileOffsetOfBufferEnd())
                 info.remote_file_reader = reader;
             else
-                info.remote_file_reader = info.implementation_buffer_creator();
+                info.remote_file_reader = info.implementation_buffer_creator(info.adjusted_read_scope);
 
             return info.remote_file_reader;
         }
