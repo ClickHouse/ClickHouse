@@ -1,4 +1,5 @@
 #include <optional>
+#include <unordered_set>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>
@@ -1221,7 +1222,7 @@ void Aggregator::executeImpl(
 /// This is NO_INLINE to avoid inflating the code size of executeImplBatch
 /// for the common case when top_n_keys == 0.
 template <typename Method>
-void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destroy_states) const
+void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destroy_states, std::vector<AggregateDataPtr> * destroyed_states) const
 {
     using DataType = typename Method::Data;
     using KeyType = typename Method::Key;
@@ -1241,6 +1242,8 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destr
                             AggregateDataPtr null_mapped = method.data.getNullKeyData();
                             if (null_mapped)
                             {
+                                if (destroyed_states)
+                                    destroyed_states->push_back(null_mapped);
                                 for (size_t j = 0; j < aggregate_functions.size(); ++j)
                                     aggregate_functions[j]->destroy(null_mapped + offsets_of_aggregate_states[j]);
                             }
@@ -1274,6 +1277,8 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destr
                     AggregateDataPtr mapped = it->getMapped();
                     if (mapped)
                     {
+                        if (destroyed_states)
+                            destroyed_states->push_back(mapped);
                         for (size_t j = 0; j < aggregate_functions.size(); ++j)
                             aggregate_functions[j]->destroy(mapped + offsets_of_aggregate_states[j]);
                     }
@@ -1289,6 +1294,7 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destr
     {
         /// FixedHashTable (key8/key16) has no erase() — just trim without pruning.
         /// With at most 256/65536 possible keys, the hash table stays small regardless.
+        (void)destroyed_states;
         auto noop = [](size_t) {};
         method.top_n_heap.trimAndCompact(noop);
     }
@@ -1569,6 +1575,11 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// are redirected here; the state accumulates garbage and is destroyed
     /// at the end of this function.
     [[maybe_unused]] AggregateDataPtr discarded_row_state = nullptr;
+    /// Collects aggregate state pointers destroyed by trimHeapAndPruneHashTable.
+    /// After each trim, we scan places[key_start..current_row] and redirect any
+    /// matching (stale) pointers to discarded_row_state, preventing use-after-destroy
+    /// when executeAggregateInstructions later calls add on every row.
+    [[maybe_unused]] std::vector<AggregateDataPtr> destroyed_states;
     if constexpr (top_n)
     {
         discarded_row_state = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
@@ -1647,7 +1658,23 @@ void NO_INLINE Aggregator::executeImplBatch(
                 /// Batch trim after emplace_result is no longer used.
                 /// erase() may move cells via memcpy, invalidating emplace_result.
                 if (method.top_n_heap.needsTrim())
-                    trimHeapAndPruneHashTable(method, !is_simple_count);
+                {
+                    destroyed_states.clear();
+                    trimHeapAndPruneHashTable(method, !is_simple_count, !is_simple_count ? &destroyed_states : nullptr);
+
+                    /// Redirect any places[] entries that now point to destroyed aggregate
+                    /// states.  Without this, executeAggregateInstructions would call add
+                    /// on freed memory (use-after-destroy).
+                    if (!destroyed_states.empty())
+                    {
+                        std::unordered_set<AggregateDataPtr> destroyed_set(destroyed_states.begin(), destroyed_states.end());
+                        for (size_t j = key_start; j < i; ++j)
+                        {
+                            if (destroyed_set.contains(places[j]))
+                                places[j] = discarded_row_state;
+                        }
+                    }
+                }
             }
 
             assert(aggregate_data != nullptr);

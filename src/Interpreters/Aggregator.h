@@ -442,7 +442,7 @@ private:
     /// Kept in a separate NO_INLINE method to avoid code bloat in executeImplBatch
     /// when top_n_keys == 0 (the common case).
     template <typename Method>
-    void NO_INLINE trimHeapAndPruneHashTable(Method & method, bool destroy_states) const;
+    void NO_INLINE trimHeapAndPruneHashTable(Method & method, bool destroy_states, std::vector<AggregateDataPtr> * destroyed_states = nullptr) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,
