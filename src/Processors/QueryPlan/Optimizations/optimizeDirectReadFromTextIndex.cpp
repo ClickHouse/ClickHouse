@@ -1,4 +1,6 @@
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>

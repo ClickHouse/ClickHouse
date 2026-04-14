@@ -927,7 +927,7 @@ Text index lookups read relatively little data and are therefore much faster tha
 
 Direct read is controlled by two settings:
 - Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (true by default) which specifies if direct read is generally enabled.
-- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read), another prerequisite for direct read. In ClickHouse versions >= 26.1, the setting is enabled by default. In earlier versions, you need to run `SET use_skip_indexes_on_data_read = 1` explicitly.
+- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) was a prerequisite for direct read in ClickHouse versions < 26.4.
 
 **Supported functions**
 
@@ -945,7 +945,6 @@ SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
 SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
-         use_skip_indexes_on_data_read = 1;
 ```
 
 returns
@@ -968,7 +967,6 @@ SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
 SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
-         use_skip_indexes_on_data_read = 1;
 ```
 
 returns
@@ -1007,7 +1005,7 @@ EXPLAIN actions = 1
 SELECT count()
 FROM table
 WHERE (col LIKE '%some-token%') AND (d >= today())
-SETTINGS use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 0
+SETTINGS query_plan_text_index_add_hint = 0
 FORMAT TSV
 ```
 
@@ -1026,7 +1024,7 @@ EXPLAIN actions = 1
 SELECT count()
 FROM table
 WHERE col LIKE '%some-token%'
-SETTINGS use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 1
+SETTINGS query_plan_text_index_add_hint = 1
 ```
 
 returns
@@ -1290,7 +1288,7 @@ We'll search for comments containing either 'love' or 'ClickHouse'.
 SELECT count()
 FROM hackernews
 WHERE hasAnyTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+SETTINGS query_plan_direct_read_from_text_index = 0;
 
 ┌─count()─┐
 │  408426 │
@@ -1305,7 +1303,7 @@ SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_re
 SELECT count()
 FROM hackernews
 WHERE hasAnyTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+SETTINGS query_plan_direct_read_from_text_index = 1;
 
 ┌─count()─┐
 │  408426 │
@@ -1329,7 +1327,7 @@ It filters down the 28.7M rows to just 147.46K rows, but it still must read 57.0
 SELECT count()
 FROM hackernews
 WHERE hasAllTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+SETTINGS query_plan_direct_read_from_text_index = 0;
 
 ┌─count()─┐
 │      11 │
@@ -1345,7 +1343,7 @@ Direct read answers the query by operating on the index data, reading only 147.4
 SELECT count()
 FROM hackernews
 WHERE hasAllTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+SETTINGS query_plan_direct_read_from_text_index = 1;
 
 ┌─count()─┐
 │      11 │
@@ -1367,7 +1365,7 @@ Here, we'll perform a case-insensitive search for 'ClickHouse' OR 'clickhouse'.
 SELECT count()
 FROM hackernews
 WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
-SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+SETTINGS query_plan_direct_read_from_text_index = 0;
 
 ┌─count()─┐
 │     769 │
@@ -1382,7 +1380,7 @@ SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_re
 SELECT count()
 FROM hackernews
 WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
-SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+SETTINGS query_plan_direct_read_from_text_index = 1;
 
 ┌─count()─┐
 │     769 │

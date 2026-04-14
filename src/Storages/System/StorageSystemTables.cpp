@@ -27,6 +27,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/typeid_cast.h>
@@ -289,7 +290,7 @@ protected:
     {
         if (table)
         {
-            StorageMetadataPtr metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
+            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
             if (!metadata_snapshot)
             {
                 columns[res_index++]->insertDefault();
@@ -594,7 +595,7 @@ protected:
 
                 StorageMetadataPtr metadata_snapshot;
                 if (table)
-                    metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
+                    metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
 
                 if (columns_mask[src_index++])
                 {

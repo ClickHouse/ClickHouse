@@ -19,14 +19,12 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -39,7 +37,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/getMostSubtype.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/DivisionUtils.h>

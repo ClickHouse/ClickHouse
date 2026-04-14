@@ -415,16 +415,10 @@ def main():
                 failed_str = ", ".join(previously_failed) if previously_failed else "(none)"
                 print(f"[flaky-check] Step 2 — previously failed tests ({len(previously_failed)}): {failed_str}")
 
-                # Step 3: coverage-relevant tests (direct lines, indirect callees, siblings)
-                relevant_tests, relevance_result = targeter.get_most_relevant_tests()
-                results.append(relevance_result)
-                relevant_preview = ", ".join(relevant_tests[:20]) + ("..." if len(relevant_tests) > 20 else "")
-                print(f"[flaky-check] Step 3 — coverage-relevant tests ({len(relevant_tests)}): {relevant_preview if relevant_tests else '(none)'}")
-
-                # Merge all three sets preserving priority order (changed first)
+                # Merge both sets preserving priority order (changed first)
                 seen: set = set()
                 tests = []
-                for t in list(changed_tests) + list(previously_failed) + list(relevant_tests):
+                for t in list(changed_tests) + list(previously_failed):
                     if t not in seen:
                         seen.add(t)
                         tests.append(t)

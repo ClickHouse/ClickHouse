@@ -1519,6 +1519,7 @@ KeeperDigest KeeperStateMachine<Storage>::getNodesDigest() const
 template<typename Storage>
 int64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
 {
+    KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getZXID();
 }
 

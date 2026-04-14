@@ -30,6 +30,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
@@ -1091,12 +1092,12 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
 }
 
 bool IStorageURLBase::prefersLargeBlocks() const

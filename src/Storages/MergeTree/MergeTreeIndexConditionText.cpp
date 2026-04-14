@@ -748,7 +748,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
+        {
+            const String & string_needle = value_field.safeGet<String>();
+            if (!string_needle.empty())
+            {
+                /// hasToken uses splitByNonAlpha as its tokenizer, so:
+                ///  - A needle without any word character (alphanumeric or non-ASCII) is invalid.
+                ///  - Bypass the index in that case so the row-level evaluation throws BAD_ARGUMENTS (or returns NULL for hasTokenOrNull)
+                ///  -- Consistnt with the no-index behaviour.
+                /// If the needle does contain word characters (e.g. "abc" with ngrams(4)):
+                ///  - It is valid but too short for the index's tokenizer:
+                ///  -- Fall through to push "" so all granules are pruned and the query returns 0 rows.
+                if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
+                    return false;
+            }
             tokens.push_back("");
+        }
 
         tokens = postprocessor->applyBatch(tokens);
 

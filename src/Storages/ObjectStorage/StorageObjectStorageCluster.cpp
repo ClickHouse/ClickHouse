@@ -220,7 +220,7 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr();
+    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
     new_metadata.setDataLakeTableState(*state);
 
     if (configuration->shouldReloadSchemaForConsistency(query_context))

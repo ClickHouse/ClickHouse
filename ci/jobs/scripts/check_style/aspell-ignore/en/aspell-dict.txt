@@ -3525,6 +3525,7 @@ tcp
 tcpPort
 tcpnodelay
 templateignorespaces
+textarea
 tgamma
 tgz
 th
