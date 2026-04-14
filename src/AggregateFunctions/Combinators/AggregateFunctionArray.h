@@ -4,7 +4,6 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <IO/WriteHelpers.h>
 
 #include <absl/container/inlined_vector.h>
 

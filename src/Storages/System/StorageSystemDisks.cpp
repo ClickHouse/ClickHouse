@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDisks.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeLowCardinality.h>

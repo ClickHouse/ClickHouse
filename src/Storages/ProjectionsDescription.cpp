@@ -1,4 +1,5 @@
 #include <Storages/ProjectionsDescription.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>

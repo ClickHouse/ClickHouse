@@ -1,5 +1,3 @@
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
 #if USE_NURAFT
@@ -163,31 +161,6 @@ void KeeperOverDispatcher::get(
     pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
         callback(dynamic_cast<const GetResponse &>(*response));
-    });
-}
-
-void KeeperOverDispatcher::listRecursive(
-    const String & path,
-    uint32_t get_children_recursive_nodes_limit,
-    ListRecursiveCallback callback)
-{
-
-    const auto request = std::make_shared<ZooKeeperListRecursiveRequest>();
-    request->path = path;
-    request->children_nodes_limit = get_children_recursive_nodes_limit;
-    request->xid = next_xid++;
-
-    {
-        std::lock_guard lock(callback_state->callbacks_mutex);
-        callback_state->callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
-        {
-            callback(dynamic_cast<const ListRecursiveResponse &>(*response));
-        };
-    }
-
-    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
-    {
-        callback(dynamic_cast<const ListRecursiveResponse &>(*response));
     });
 }
 

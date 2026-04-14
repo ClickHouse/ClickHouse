@@ -2430,13 +2430,14 @@ bool FileCache::doDynamicResizeImpl(
         return true;
     }
 
-    result_limits.max_size = std::min(
-        prev_limits.max_size,
-        desired_limits.max_size + failed_candidates.total_cache_size);
-
-    result_limits.max_elements = std::min(
-        prev_limits.max_elements,
-        desired_limits.max_elements + failed_candidates.total_cache_elements);
+    /// Restore to previous limits. Using prev_limits is safe because
+    /// the entries existed under those limits before the resize attempt,
+    /// so each sub-queue had enough room. Computing a tighter bound
+    /// (desired + failed) would be incorrect for SLRU: when all failed
+    /// entries belong to one sub-queue (e.g. protected with ratio 0.6),
+    /// the total might not translate into enough per-sub-queue space
+    /// after the ratio split.
+    result_limits = prev_limits;
 
     LOG_INFO(
         log, "Having {} failed candidates with total size {}. "
@@ -2486,13 +2487,15 @@ bool FileCache::doDynamicResizeImpl(
                 log, "Adding back file segment after failed eviction: {}:{}, size: {}",
                 file_segment->key(), file_segment->offset(), file_segment->getDownloadedSize());
 
-            auto main_priority_iterator = main_priority->add(
+            auto original_queue_type = eviction_candidates.getOriginalQueueType(candidate.get());
+
+            auto main_priority_iterator = main_priority->addForRestore(
                 key_metadata,
                 file_segment->offset(),
                 file_segment->getDownloadedSize(),
+                original_queue_type,
                 cache_write_lock,
-                &state_lock,
-                false);
+                &state_lock);
 
             candidate->setRemovedFlag(*locked_key, /* value */false);
             file_segment->setQueueIterator(main_priority_iterator);

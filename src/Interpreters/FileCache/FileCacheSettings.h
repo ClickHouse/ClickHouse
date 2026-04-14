@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>

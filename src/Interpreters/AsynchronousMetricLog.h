@@ -2,7 +2,6 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Common/AsynchronousMetrics.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
