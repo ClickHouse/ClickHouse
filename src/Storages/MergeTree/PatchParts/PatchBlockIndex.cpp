@@ -5,6 +5,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
 
 #include <codecfactory.h>
 #include <deltautil.h>
@@ -224,62 +225,14 @@ void PatchBlockIndex::load(const IDataPartStorage & storage)
         }
     }
 
-    /// 2. Read .bin: for each group, read its raw bytes into compressed_groups.
+    /// 2. Read entire .bin into a single contiguous buffer (zero-copy for cursors).
     {
         auto bin_in = storage.readFile(BIN_FILE, {}, std::nullopt);
-        compressed_groups.resize(entries.size());
 
-        for (size_t g = 0; g < entries.size(); ++g)
-        {
-            /// Groups are sequential in .bin. Read num_chunks header then each chunk's data.
-            UInt32 num_chunks = 0;
-            readIntBinary(num_chunks, *bin_in);
-
-            /// We'll collect all raw bytes for this group into a string buffer.
-            /// Re-serialize the num_chunks header + all chunk data.
-            String group_data;
-            {
-                WriteBufferFromString wb(group_data);
-                writeIntBinary(num_chunks, wb);
-
-                for (UInt32 c = 0; c < num_chunks; ++c)
-                {
-                    /// Read chunk header.
-                    UInt64 max_offset = 0;
-                    UInt32 last_row_index = 0;
-                    UInt32 num_values = 0;
-                    readIntBinary(max_offset, *bin_in);
-                    readIntBinary(last_row_index, *bin_in);
-                    readIntBinary(num_values, *bin_in);
-
-                    writeIntBinary(max_offset, wb);
-                    writeIntBinary(last_row_index, wb);
-                    writeIntBinary(num_values, wb);
-
-                    /// Read compressed offsets.
-                    UInt32 compressed_offsets_count = 0;
-                    readIntBinary(compressed_offsets_count, *bin_in);
-                    writeIntBinary(compressed_offsets_count, wb);
-
-                    size_t bytes = compressed_offsets_count * sizeof(uint32_t);
-                    String buf(bytes, '\0');
-                    bin_in->readStrict(buf.data(), bytes);
-                    wb.write(buf.data(), bytes);
-
-                    /// Read compressed row_indices.
-                    UInt32 compressed_row_indices_count = 0;
-                    readIntBinary(compressed_row_indices_count, *bin_in);
-                    writeIntBinary(compressed_row_indices_count, wb);
-
-                    bytes = compressed_row_indices_count * sizeof(uint32_t);
-                    buf.resize(bytes);
-                    bin_in->readStrict(buf.data(), bytes);
-                    wb.write(buf.data(), bytes);
-                }
-            }
-
-            compressed_groups[g] = std::move(group_data);
-        }
+        /// Determine file size from last group's byte_offset + data.
+        /// Just read until EOF into the string.
+        WriteBufferFromString wb(bin_data);
+        copyData(*bin_in, wb);
     }
 
     is_loaded = true;
@@ -309,30 +262,25 @@ const PatchBlockIndexEntry * PatchBlockIndex::findGroup(UInt64 block_number) con
     return nullptr;
 }
 
-std::shared_ptr<PatchBlockIndex::GroupCursor> PatchBlockIndex::createCursor(const PatchBlockIndexEntry & entry)
+PatchBlockIndex::GroupCursor PatchBlockIndex::createCursor(const PatchBlockIndexEntry & entry)
 {
-    /// Find the index of this entry.
-    size_t idx = static_cast<size_t>(&entry - entries.data());
-    if (idx >= entries.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid PatchBlockIndexEntry pointer");
+    GroupCursor cursor;
 
-    auto cursor = std::make_shared<GroupCursor>();
-    const auto & group_data = compressed_groups[idx];
-
-    cursor->chunk_ptr = group_data.data();
-    cursor->chunk_end = group_data.data() + group_data.size();
-    cursor->last_offset = entry.min_offset;
-    cursor->last_row_index = 0;
+    /// Point directly into the contiguous .bin buffer at this group's byte offset.
+    cursor.chunk_ptr = bin_data.data() + entry.byte_offset;
+    cursor.chunk_end = bin_data.data() + bin_data.size();
+    cursor.last_offset = entry.min_offset;
+    cursor.last_row_index = 0;
 
     /// Read num_chunks from the buffer.
     UInt32 num_chunks = 0;
-    memcpy(&num_chunks, cursor->chunk_ptr, sizeof(UInt32));
-    cursor->chunk_ptr += sizeof(UInt32);
-    cursor->chunks_remaining = num_chunks;
+    memcpy(&num_chunks, cursor.chunk_ptr, sizeof(UInt32));
+    cursor.chunk_ptr += sizeof(UInt32);
+    cursor.chunks_remaining = num_chunks;
 
     /// Decompress the first chunk.
-    if (cursor->chunks_remaining > 0)
-        cursor->decompressNextChunk(*codec);
+    if (cursor.chunks_remaining > 0)
+        cursor.decompressNextChunk(*codec);
 
     return cursor;
 }

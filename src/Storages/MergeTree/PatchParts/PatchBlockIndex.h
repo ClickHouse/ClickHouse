@@ -19,15 +19,12 @@ class IDataPartStorage;
 class PatchBlockIndexWriter
 {
 public:
-    /// Append rows from a block being written. base_row_index is the global
-    /// row position in the output part (i.e. rows_count before this block).
     void addRows(
         const PaddedPODArray<UInt64> & block_numbers,
         const PaddedPODArray<UInt64> & block_offsets,
         UInt32 base_row_index,
         size_t num_rows);
 
-    /// Sort, group, delta+PFOR compress, and write both files. Adds to checksums.
     void finalize(IDataPartStorage & storage, MergeTreeDataPartChecksums & checksums);
 
     bool empty() const { return rows.empty(); }
@@ -56,9 +53,9 @@ struct PatchBlockIndexEntry
 /// Reads the index files and provides cursor-based lookup by _block_number.
 /// Replaces PatchHashMap for Join mode when the on-disk index is present.
 ///
-/// At construction time, loads .idx entirely and reads all compressed data
-/// from .bin into memory. Decompression (PFOR decode + inverse delta)
-/// happens lazily per-group via GroupCursor.
+/// At load time, reads .idx into memory and slurps the entire .bin into a
+/// single contiguous buffer. Decompression happens lazily per-group via
+/// GroupCursor, which holds raw pointers into the buffer (zero-copy).
 class PatchBlockIndex
 {
 public:
@@ -71,8 +68,6 @@ public:
     PatchBlockIndex();
     ~PatchBlockIndex();
 
-    /// Load .idx into memory and read all compressed data from .bin.
-    /// After this call, the .bin file is no longer accessed.
     void load(const IDataPartStorage & storage);
     bool loaded() const { return is_loaded; }
     bool empty() const { return entries.empty(); }
@@ -84,9 +79,7 @@ public:
     const PatchBlockIndexEntry * findGroup(UInt64 block_number) const;
 
     /// Cursor for streaming through a block_number's offsets.
-    /// Chunks are decompressed lazily: when the current chunk is exhausted,
-    /// the next one is decoded on demand. Chunks can be skipped without
-    /// decompression if the target offset exceeds the chunk's max_offset.
+    /// Points into the contiguous .bin buffer — no copies.
     struct GroupCursor
     {
         /// Currently decompressed chunk
@@ -95,37 +88,31 @@ public:
         UInt32 count = 0;
         UInt32 pos = 0;
 
-        /// Pointer into in-memory compressed data for remaining chunks
+        /// Raw pointer into the contiguous .bin buffer for remaining chunks
         const char * chunk_ptr = nullptr;
         const char * chunk_end = nullptr;
         UInt64 last_offset = 0;
         UInt32 last_row_index = 0;
         UInt32 chunks_remaining = 0;
 
-        /// Decompress next chunk. Returns false if no more chunks.
         bool decompressNextChunk(FastPForLib::IntegerCODEC & codec);
-
-        /// Skip next chunk without decompressing. Reads its header
-        /// and advances chunk_ptr past the compressed data.
         bool skipNextChunk();
-
-        /// Skip chunks whose max_offset < target_offset, then decompress
-        /// the first chunk that may contain target_offset.
         bool advanceTo(UInt64 target_offset, FastPForLib::IntegerCODEC & codec);
 
         bool valid() const { return pos < count || chunks_remaining > 0; }
     };
 
-    /// Create a cursor for a block_number group. Decompresses the first chunk.
-    std::shared_ptr<GroupCursor> createCursor(const PatchBlockIndexEntry & entry);
+    /// Create a cursor positioned at the start of a group.
+    /// The cursor is a value type — no heap allocation.
+    GroupCursor createCursor(const PatchBlockIndexEntry & entry);
 
     FastPForLib::IntegerCODEC & getCodec() { return *codec; }
 
 private:
     std::vector<PatchBlockIndexEntry> entries; /// sorted by block_number
 
-    /// Raw compressed data read from .bin at load() time, one buffer per group.
-    std::vector<String> compressed_groups;
+    /// Entire .bin file contents in a single contiguous buffer.
+    String bin_data;
 
     std::unique_ptr<FastPForLib::IntegerCODEC> codec;
     bool is_loaded = false;

@@ -534,9 +534,10 @@ static PatchToApplyPtr applyPatchJoinWithIndex(const Block & result_block, const
     auto & codec = index.getCodec();
 
     /// Cache: block_number -> streaming cursor (survives block_number switches).
+    /// Cursors are value types stored directly in the map — no heap allocation per cursor.
     struct CursorState
     {
-        std::shared_ptr<PatchBlockIndex::GroupCursor> cursor;
+        PatchBlockIndex::GroupCursor cursor;
         bool found = false;
     };
 
@@ -573,7 +574,7 @@ static PatchToApplyPtr applyPatchJoinWithIndex(const Block & result_block, const
         if (!current || !current->found)
             continue;
 
-        auto & c = *current->cursor;
+        auto & c = current->cursor;
 
         /// Skip values in current chunk that are below target.
         while (c.pos < c.count && c.offsets[c.pos] < bo)
