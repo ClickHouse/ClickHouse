@@ -23,21 +23,27 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
 }
 
+/// Check if the hash table type supports the prefetch interface.
 template <typename Map, typename KeyHolder>
 concept HasPrefetchMemberFunc = requires
 {
     {std::declval<Map>().prefetch(std::declval<KeyHolder>())};
 };
 
+/// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
+/// Threshold: 4 * max(L2 cache size, 256KB).
 inline size_t getMinBytesForPrefetchInJoin()
 {
-    size_t l2_size = 0;
+    static const size_t result = []
+    {
+        size_t l2_size = 0;
 #if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-    if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-        l2_size = ret;
+        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
+            l2_size = ret;
 #endif
-
-    return 4 * std::max<size_t>(l2_size, 256 * 1024);
+        return 4 * std::max<size_t>(l2_size, 256 * 1024);
+    }();
+    return result;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -517,6 +523,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = IColumn::Offsets(rows);
 
+    /// Software prefetch: compute hash of a future row and bring the corresponding
+    /// hash table bucket into CPU cache before we actually need it.
+    /// Enabled only when key computation is cheap and the map supports prefetch.
     using KeyHolderType = decltype(key_getter.getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()));
     constexpr bool can_prefetch = KeyGetter::has_cheap_key_calculation
         && HasPrefetchMemberFunc<std::remove_const_t<Map>, KeyHolderType>;
@@ -535,6 +544,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         {
             if (use_prefetch)
             {
+                /// Adaptively adjust look-ahead distance after initial measurement.
                 if (i == PrefetchingHelper::iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
@@ -661,6 +671,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         added_columns.offsets_to_replicate.reserve(rows);
     }
 
+    /// Software prefetch for multi-map variant.
+    /// Only prefetch the first map.
     using KeyHolderType = decltype(key_getter_vector[0].getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()));
     constexpr bool can_prefetch = KeyGetter::has_cheap_key_calculation
         && HasPrefetchMemberFunc<std::remove_const_t<Map>, KeyHolderType>;
@@ -958,6 +970,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
         pool = std::make_unique<Arena>();
         IColumn::Offset current_added_rows = 0;
 
+        /// Software prefetch during the probe phase.
         using KeyHolderType = decltype(key_getter_vector[0].getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()));
         constexpr bool can_prefetch = KeyGetter::has_cheap_key_calculation
             && HasPrefetchMemberFunc<std::remove_const_t<Map>, KeyHolderType>;
