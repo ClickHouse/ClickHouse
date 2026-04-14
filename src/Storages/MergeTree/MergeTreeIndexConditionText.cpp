@@ -804,7 +804,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, std::vector<String>(), std::move(patterns)));
+                        function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, std::vector<String>(), std::move(patterns)));
                 return true;
             }
         }
@@ -829,7 +829,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.function = RPNElement::FUNCTION_LIKE;
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
-                    function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, std::vector<String>(), std::move(patterns)));
+                    function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, std::vector<String>(), std::move(patterns)));
             return true;
         }
         return false;
