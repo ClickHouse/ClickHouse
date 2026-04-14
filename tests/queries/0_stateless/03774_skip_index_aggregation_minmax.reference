@@ -93,4 +93,4 @@ ReadFromPreparedSource (_column_statistics_aggregation)
 ReadFromMergeTree (default.test_col_stats_agg)
 25	1225
 ReadFromPreparedSource (_column_statistics_aggregation)
-100	400
+25	400

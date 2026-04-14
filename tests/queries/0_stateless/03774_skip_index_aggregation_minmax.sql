@@ -39,7 +39,8 @@ CREATE TABLE test_col_stats_agg (
     value_with_null Nullable(Float64),
     value_all_null Nullable(Float64),
     value_with_inf Float64,
-    p Int32
+    p Int32,
+    INDEX skip_minmax_value (value) TYPE minmax GRANULARITY 1
 ) ENGINE = MergeTree
 PARTITION BY p
 ORDER BY id
@@ -281,28 +282,10 @@ SELECT min(value), sum(value) FROM test_col_stats_agg;
 -- Column statistics priority over skip index
 -- ==================================================
 
--- Create a table with BOTH column statistics and a skip index on the same column.
+-- test_col_stats_agg has BOTH column statistics (via auto_statistics_types='minmax')
+-- and a skip index (skip_minmax_value) on the same column.
 -- Column statistics should take priority (checked before skip index in the optimizer).
-DROP TABLE IF EXISTS test_col_stats_and_skip_index;
-CREATE TABLE test_col_stats_and_skip_index (
-    id UInt64,
-    value Float64,
-    p Int32,
-    INDEX skip_minmax_value (value) TYPE minmax GRANULARITY 1
-) ENGINE = MergeTree
-PARTITION BY p
-ORDER BY id
-SETTINGS auto_statistics_types = 'minmax';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value), max(value) FROM test_col_stats_agg) WHERE explain LIKE '%_column_statistics_aggregation%';
+SELECT min(value), max(value) FROM test_col_stats_agg;
 
-INSERT INTO test_col_stats_and_skip_index VALUES
-    (1, 100.0, 1),
-    (2, 200.0, 1),
-    (3, 300.0, 2),
-    (4, 400.0, 2);
-
--- Should use column statistics (shown as _column_statistics_aggregation), not skip index
-SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value), max(value) FROM test_col_stats_and_skip_index) WHERE explain LIKE '%ReadFromPreparedSource%';
-SELECT min(value), max(value) FROM test_col_stats_and_skip_index;
-
-DROP TABLE test_col_stats_and_skip_index;
 DROP TABLE test_col_stats_agg;

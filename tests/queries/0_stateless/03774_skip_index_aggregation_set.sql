@@ -4,20 +4,22 @@ DROP TABLE IF EXISTS test_skip_index_set_agg;
 CREATE TABLE test_skip_index_set_agg (
     id UInt64,
     value Int32,
+    overflow_value Int32,
     p String,
-    INDEX skip_set_value (value) TYPE set(100) GRANULARITY 1
+    INDEX skip_set_value (value) TYPE set(100) GRANULARITY 1,
+    INDEX skip_set_overflow (overflow_value) TYPE set(2) GRANULARITY 1
 ) ENGINE = MergeTree
 PARTITION BY p
 ORDER BY id;
 
 INSERT INTO test_skip_index_set_agg VALUES
-    (1, 10, 'p1'),
-    (2, 20, 'p1'),
-    (3, 5, 'p1'),
-    (4, 30, 'p2'),
-    (5, 15, 'p2'),
-    (6, 2, 'p3'),
-    (7, 40, 'p3');
+    (1, 10, 10, 'p1'),
+    (2, 20, 20, 'p1'),
+    (3, 5, 5, 'p1'),
+    (4, 30, 30, 'p2'),
+    (5, 15, 15, 'p2'),
+    (6, 2, 2, 'p3'),
+    (7, 40, 40, 'p3');
 
 SET optimize_use_skip_index_aggregation = 1;
 SET optimize_use_projections = 1;
@@ -108,23 +110,13 @@ SELECT avg(value) FROM test_skip_index_set_agg;
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniq(value) FROM test_skip_index_set_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
 SELECT uniq(value) FROM test_skip_index_set_agg;
 
-DROP TABLE test_skip_index_set_agg;
-
 -- ==================================================
 -- Set index overflow test
 -- ==================================================
 
-CREATE TABLE test_skip_index_set_overflow (
-    id UInt64,
-    value Int32,
-    INDEX skip_set_value (value) TYPE set(2) GRANULARITY 1  -- max_rows=2, will overflow
-) ENGINE = MergeTree
-ORDER BY id;
+-- The overflow_value column has a set(2) index but 3+ distinct values per partition,
+-- so the granule overflows. Should NOT use skip index and fall back to ReadFromMergeTree.
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqExact(overflow_value) FROM test_skip_index_set_agg) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT uniqExact(overflow_value) FROM test_skip_index_set_agg;
 
-INSERT INTO test_skip_index_set_overflow VALUES (1, 10), (2, 20), (3, 30), (4, 40);
-
--- Should NOT use skip index due to overflow
-SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqExact(value) FROM test_skip_index_set_overflow) WHERE explain LIKE '%ReadFromMergeTree%';
-SELECT uniqExact(value) FROM test_skip_index_set_overflow;
-
-DROP TABLE test_skip_index_set_overflow;
+DROP TABLE test_skip_index_set_agg;
