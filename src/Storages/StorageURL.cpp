@@ -1805,7 +1805,7 @@ void registerStorageURL(StorageFactory & factory)
                 args.comment,
                 format_settings,
                 args.mode,
-                configuration->getCatalog(context, args.query.attach),
+                configuration->getCatalog(context, args.table_id),
                 args.query.if_not_exists,
                 /* is_datalake_query */ false,
                 /* distributed_processing */ false,
