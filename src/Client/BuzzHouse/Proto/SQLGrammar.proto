@@ -2666,6 +2666,7 @@ message TableOrFunction {
         ExprSchemaTable est = 1;
         TableFunction tfunc = 2;
         ExplainQuery select = 3;
+        ValuesStatement values_standard = 4;
     }
 }
 
@@ -3324,7 +3325,9 @@ enum IndexType {
     IDX_ngrambf_v1 = 5;
     IDX_tokenbf_v1 = 6;
     IDX_text = 7;
+    /// Indexes for projections
     IDX_basic = 8;
+    IDX_commit_order = 9;
 }
 
 message IndexDef {
@@ -3898,6 +3901,9 @@ message DictionarySourceDetails {
     optional string user = 5;
     optional string password = 6;
     optional RedisStorageType redis_storage = 7;
+    optional string invalidate_query = 8;
+    optional ColumnPath update_field = 9;
+    optional uint32 update_lag = 10;
 }
 
 message DictionarySource {
@@ -4151,6 +4157,11 @@ enum DeltaKernelTraceLevel {
     TRACE = 5;
 }
 
+message UnlockSnapshot {
+    required string name = 1;
+    optional BackupOut from = 2;
+}
+
 message SystemCommand {
     optional Cluster cluster = 1;
     oneof system_cmd_oneof {
@@ -4252,7 +4263,7 @@ message SystemCommand {
         bool start_thread_fuzzer = 96;
         bool stop_thread_fuzzer = 97;
         bool drop_distributed_cache = 98;
-        string unlock_snapshot = 99;
+        UnlockSnapshot unlock_snapshot = 99;
     }
 }
 
@@ -4278,20 +4289,29 @@ message BackupRestore {
         RESTORE = 2;
     }
     required BackupCommand command = 1;
-    required BackupRestoreElement backup_element = 2;
-    repeated BackupRestoreElement other_elements = 3;
-    optional Cluster cluster = 4;
-    required BackupOut out = 5;
-    optional SettingValues setting_values = 6;
+    oneof backup_source {
+        BackupRestoreElement backup_element = 2;
+        /// BACKUP FROM SNAPSHOT {snapshot_source} TO {out}
+        BackupOut from_snapshot = 3;
+    }
+    repeated BackupRestoreElement other_elements = 4;
+    optional Cluster cluster = 5;
+    required BackupOut out = 6;
+    optional SettingValues setting_values = 7;
     enum SyncOrAsync {
         SYNC = 1;
         ASYNC = 2;
     }
-    optional SyncOrAsync sync = 7;
+    optional SyncOrAsync sync = 8;
     oneof backup_format_oneof {
-        InFormat informat = 8;
-        OutFormat outformat = 9;
+        InFormat informat = 9;
+        OutFormat outformat = 10;
     }
+}
+
+message SnapshotQuery {
+    required BackupRestoreElement element = 1;
+    required BackupOut out = 2;
 }
 
 message Rename {
@@ -4428,6 +4448,7 @@ message SQLQueryInner {
         Kill kill = 23;
         ShowStatement show = 24;
         CreatePolicy create_policy = 25;
+        SnapshotQuery snapshot_query = 26;
     }
 }
 

@@ -1,0 +1,27 @@
+-- { echoOn }
+
+-- Without the setting, SELECT * returns only ordinary columns.
+SELECT * FROM test_virtuals_memory ORDER BY id;
+1	a
+2	b
+3	c
+-- With the setting, SELECT * also returns virtual columns (_table for Memory).
+SELECT * FROM test_virtuals_memory ORDER BY id SETTINGS asterisk_include_virtual_columns = 1;
+1	a	test_virtuals_memory	default
+2	b	test_virtuals_memory	default
+3	c	test_virtuals_memory	default
+-- Qualified asterisk should also work.
+SELECT t.* FROM test_virtuals_memory AS t ORDER BY id SETTINGS asterisk_include_virtual_columns = 1;
+1	a	test_virtuals_memory	default
+2	b	test_virtuals_memory	default
+3	c	test_virtuals_memory	default
+-- COLUMNS matcher should not be affected.
+SELECT COLUMNS('id|value') FROM test_virtuals_memory ORDER BY id SETTINGS asterisk_include_virtual_columns = 1;
+1	a
+2	b
+3	c
+-- Combined with other asterisk settings.
+SELECT * FROM test_virtuals_memory ORDER BY id SETTINGS asterisk_include_virtual_columns = 1, asterisk_include_alias_columns = 1;
+1	a	Alias_1	test_virtuals_memory	default
+2	b	Alias_2	test_virtuals_memory	default
+3	c	Alias_3	test_virtuals_memory	default

@@ -9,7 +9,6 @@
 #include <Common/ArenaAllocator.h>
 #include <Common/iota.h>
 
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Common/VectorWithMemoryTracking.h>
 

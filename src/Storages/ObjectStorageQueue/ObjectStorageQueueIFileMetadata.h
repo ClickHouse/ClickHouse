@@ -121,6 +121,28 @@ public:
 
     static std::string generateProcessingID();
 
+    enum class PathState
+    {
+        /// The path has been successfully processed.
+        Processed,
+        /// The path has permanently failed; the failure message is populated.
+        Failed,
+        /// The path has not been processed yet (or its status is unknown).
+        Unknown,
+    };
+
+    /// Check Keeper to determine whether this file has already been processed or failed.
+    /// Sets `failure_message` when the result is `Failed`.
+    virtual PathState getPathState(std::string & failure_message) const = 0;
+
+    const std::string & getFailedNodePath() const { return failed_node_path; }
+
+    /// Return the Keeper node path to watch for processing completion.
+    /// For unordered mode this is the per-file processed node.
+    /// For ordered mode this is the processed pointer node (bucket-aware), with the
+    /// partition key appended when HIVE/REGEX partitioning is in use.
+    virtual const std::string & getProcessedWatchPath() const { return processed_node_path; }
+
     virtual bool useBucketsForProcessing() const { return false; }
     virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
 
@@ -188,6 +210,11 @@ public:
     };
 
 protected:
+    /// Returns a single-component Keeper node name for the given file path.
+    /// Raw file paths contain '/' and cannot be used directly as Keeper node names,
+    /// so SipHash64 of the path is used instead.
+    static std::string getNodeName(const std::string & path);
+
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) = 0;
@@ -228,8 +255,6 @@ protected:
     std::string processor_info;
 
     bool checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
-
-    static std::string getNodeName(const std::string & path);
 
     static NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = {}, size_t retries = 0);
 

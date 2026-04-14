@@ -111,8 +111,11 @@ public:
     virtual void describeProjections(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeProjections(FormatSettings & /*settings*/) const {}
 
-    /// Get description of the distributed plan. Shown in with options `distributed = 1
+    /// Get description of the distributed plan. Shown with option `distributed = 1`.
     virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) {}
+
+    /// Get description of the distributed pipeline. Shown with option `distributed = 1` in EXPLAIN PIPELINE.
+    virtual void describeDistributedPipeline(FormatSettings & /*settings*/, bool /*distributed*/) {}
 
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}

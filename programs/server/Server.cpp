@@ -60,7 +60,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Server/waitServersToFinish.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
@@ -2301,6 +2301,11 @@ try
             global_context->reloadLocalThrottlerConfig(local_read_bandwidth,local_write_bandwidth);
             LOG_INFO(log, "Setting max_local_read_bandwidth_for_server was set to {}", local_read_bandwidth);
             LOG_INFO(log, "Setting max_local_write_bandwidth_for_server was set to {}", local_write_bandwidth);
+
+#if ENABLE_DISTRIBUTED_CACHE
+            for (const auto & distr_cache_instance : distr_cache_instances)
+                distr_cache_instance->updateConfig(config());
+#endif
 
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);

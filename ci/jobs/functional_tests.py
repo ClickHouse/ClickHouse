@@ -76,7 +76,7 @@ def parse_args():
 def run_tests(
     batch_num: int,
     batch_total: int,
-    tests: list[str] = None,
+    tests: list[str] | None = None,
     extra_args="",
     rerun_count=1,
     random_order=False,
@@ -92,18 +92,15 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    global_time_limit_option = (
-        f"--global_time_limit={global_time_limit}" if global_time_limit > 0 else ""
-    )
     memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
     command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
-                {extra_args} {global_time_limit_option} \
+                {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    Shell.run(command, verbose=True)
+    Shell.run(command, verbose=True, timeout=global_time_limit if global_time_limit > 0 else None)
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
@@ -130,6 +127,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
+    "targeted": "--flaky-check",
 }
 
 
@@ -148,6 +146,7 @@ def main():
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
     is_llvm_coverage = False
+    is_excluded_from_llvm = False
     is_per_test_coverage = False
     runner_options = ""
     # optimal value for most of the jobs
@@ -182,12 +181,16 @@ def main():
                     f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
                 )
 
-        if "flaky" in to:
+        if "targeted" in to:
+            is_targeted_check = True
+        elif "flaky" in to:
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
         elif to.startswith("amd_") and "coverage" in to:
             is_llvm_coverage = True
+        if "excluded_from_llvm" in to:
+            is_excluded_from_llvm = True
         if "per_test_coverage" in to:
             is_per_test_coverage = True
         if "s3 storage" in to:
@@ -238,7 +241,10 @@ def main():
         # The 45-min global_time_limit is the primary stopping condition for healthy PRs.
         runner_options += " --max-failures 5"
 
-    if is_llvm_coverage:
+    if is_excluded_from_llvm:
+        # Run only tests that are normally disabled under LLVM coverage
+        runner_options += " --excluded-from-llvm"
+    elif is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
         runner_options += " --llvm-coverage"
         os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
@@ -265,7 +271,15 @@ def main():
         # Large repeat count so the 45-min global_time_limit is the effective stopping
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
         # random settings per TestCase; --max-failures 5 stops early on broken PRs.
-        rerun_count = 100
+        rerun_count = 50
+    elif is_targeted_check:
+        print("Rerun count set to 5 for targeted check")
+        rerun_count = 5
+
+    if is_flaky_check:
+        # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
+        # Derived from rerun_count so the ratio stays stable as policy evolves.
+        runner_options += f" --sequential-test-runs {rerun_count // 2}"
 
 
     if not info.is_local_run:
@@ -341,6 +355,7 @@ def main():
         is_flaky_check
         or is_per_test_coverage
         or is_bugfix_validation
+        or is_targeted_check
         or info.is_local_run
     ):
         stages.remove(JobStages.RETRIES)
@@ -400,16 +415,10 @@ def main():
                 failed_str = ", ".join(previously_failed) if previously_failed else "(none)"
                 print(f"[flaky-check] Step 2 — previously failed tests ({len(previously_failed)}): {failed_str}")
 
-                # Step 3: coverage-relevant tests (direct lines, indirect callees, siblings)
-                relevant_tests, relevance_result = targeter.get_most_relevant_tests()
-                results.append(relevance_result)
-                relevant_preview = ", ".join(relevant_tests[:20]) + ("..." if len(relevant_tests) > 20 else "")
-                print(f"[flaky-check] Step 3 — coverage-relevant tests ({len(relevant_tests)}): {relevant_preview if relevant_tests else '(none)'}")
-
-                # Merge all three sets preserving priority order (changed first)
+                # Merge both sets preserving priority order (changed first)
                 seen: set = set()
                 tests = []
-                for t in list(changed_tests) + list(previously_failed) + list(relevant_tests):
+                for t in list(changed_tests) + list(previously_failed):
                     if t not in seen:
                         seen.add(t)
                         tests.append(t)
@@ -423,6 +432,17 @@ def main():
             # early exit
             Result.create_from(
                 status=Result.Status.SKIPPED, info="No tests to run"
+            ).complete_job()
+
+    if is_targeted_check:
+        assert not args.test, "--test not supposed to be used for targeted check"
+        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
+        results.append(results_with_info)
+        if not tests:
+            # early exit
+            Result.create_from(
+                status=Result.Status.SKIPPED,
+                info="No failed tests found from previous runs",
             ).complete_job()
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
@@ -546,6 +566,12 @@ def main():
 
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
+        # For targeted checks with multiple iterations, use N separate clickhouse-test
+        # invocations so that every invocation creates fresh TestCase objects with
+        # independently randomized settings.
+        run_sets_cnt = rerun_count if is_targeted_check else 1
+        rerun_count = 1 if is_targeted_check else rerun_count
+
         global_time_limit = 0
         if is_flaky_check:
             # Hard 45-minute wall-clock limit for the test runner.
@@ -558,16 +584,43 @@ def main():
                 f" (elapsed so far: {int(stop_watch.duration)}s,"
                 f" remaining: {global_time_limit}s)"
             )
+        elif is_targeted_check:
+            job_timeout = int(3600 * 2.5)
+            soft_limit_margin = 3600
+            global_time_limit = max(
+                job_timeout - soft_limit_margin - int(stop_watch.duration), 0
+            )
+            print(
+                f"Soft time limit for test runner: {global_time_limit}s"
+                f" (elapsed so far: {int(stop_watch.duration)}s)"
+            )
 
-        run_tests(
-            batch_num=batch_num if not tests else 0,
-            batch_total=total_batches if not tests else 0,
-            tests=tests,
-            extra_args=runner_options,
-            random_order=is_flaky_check or is_bugfix_validation,
-            rerun_count=rerun_count,
-            global_time_limit=global_time_limit,
-        )
+        tests_to_run = list(tests) if tests else tests
+
+        for cnt in range(run_sets_cnt):
+            if run_sets_cnt > 1 and cnt > 0:
+                if is_targeted_check:
+                    job_timeout = int(3600 * 2.5)
+                    soft_limit_margin = 3600
+                    global_time_limit = max(
+                        job_timeout - soft_limit_margin - int(stop_watch.duration), 0
+                    )
+                if global_time_limit <= 0:
+                    print(
+                        "NOTE: Time limit exhausted; stopping before next iteration"
+                    )
+                    break
+
+            run_tests(
+                batch_num=batch_num if not tests_to_run else 0,
+                batch_total=total_batches if not tests_to_run else 0,
+                tests=tests_to_run,
+                extra_args=runner_options,
+                random_order=is_flaky_check or is_targeted_check or is_bugfix_validation,
+                rerun_count=rerun_count,
+                global_time_limit=global_time_limit,
+            )
+
         test_result = ft_res_processor.run()
 
         if not info.is_local_run:
@@ -717,10 +770,6 @@ def main():
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
-    if is_flaky_check:
-        # Flaky-check exits normally via --global_time_limit or --max-failures.
-        # Both are expected stopping conditions; do not block the pipeline.
-        force_ok_exit = True
     if "parallel" in test_options and test_result:
         failures_cnt = len([r for r in test_result.results if not r.is_ok()])
         if failures_cnt > 0 and failures_cnt < 4:
