@@ -279,8 +279,18 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         const auto & part_columns = loaded_part->getColumns();
         NamesAndTypesList resolved_columns;
 
+        /// When the on-disk index is present, skip reading _block_number and
+        /// _block_offset — the index provides the mapping and these columns
+        /// are not needed in entry.block.
+        bool has_index = false;
+        if (auto patch_entry = patch_join_cache->getEntry(patch_name))
+            has_index = patch_entry->hasIndex();
+
         for (const auto & column : patch_info.columns)
         {
+            if (has_index && (column.name == BlockNumberColumn::name || column.name == BlockOffsetColumn::name))
+                continue;
+
             auto part_column = part_columns.tryGetByName(column.name);
             resolved_columns.push_back(part_column ? *part_column : column);
         }

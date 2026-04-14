@@ -60,6 +60,31 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
     ProfileEvents::increment(ProfileEvents::PatchesJoinRowsAddedToHashTable, num_read_rows);
 
+    if (num_read_rows > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::TOO_MANY_ROWS, "Too many rows ({}) in patch ranges", num_read_rows);
+
+    /// When the on-disk index is present, _block_number and _block_offset are
+    /// not read by the pipeline — just accumulate the block as-is.
+    if (hasIndex())
+    {
+        size_t base_row_offset = block.rows();
+        if (base_row_offset + num_read_rows > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Too large row offset ({}) in patch join cache", base_row_offset + num_read_rows);
+
+        if (base_row_offset == 0)
+        {
+            block = std::move(read_block);
+        }
+        else
+        {
+            auto mutable_columns = block.mutateColumns();
+            for (size_t col = 0; col < mutable_columns.size(); ++col)
+                mutable_columns[col]->insertRangeFrom(*read_block.getByPosition(col).column, 0, num_read_rows);
+            block.setColumns(std::move(mutable_columns));
+        }
+        return;
+    }
+
     const auto & block_number_column = getColumnUInt64Data(read_block, BlockNumberColumn::name);
     const auto & block_offset_column = getColumnUInt64Data(read_block, BlockOffsetColumn::name);
     const auto & data_version_column = getColumnUInt64Data(read_block, PartDataVersionColumn::name);
@@ -87,15 +112,8 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
         block.setColumns(std::move(mutable_columns));
     }
 
-    if (num_read_rows > std::numeric_limits<UInt32>::max())
-        throw Exception(ErrorCodes::TOO_MANY_ROWS, "Too many rows ({}) in patch ranges", num_read_rows);
-
     if (base_row_offset + num_read_rows > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too large row offset ({}) in patch join cache", base_row_offset + num_read_rows);
-
-    /// When we have an on-disk index, skip building the hash map — only accumulate the block.
-    if (hasIndex())
-        return;
 
     PatchOffsetsMap * current_offsets = nullptr;
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
