@@ -1296,12 +1296,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .total_query_nodes = total_query_nodes,
     };
 
-    const bool is_initiator = isParallelReplicasLocalPlanForInitiator();
+    const bool is_local_plan_initiator = isParallelReplicasLocalPlanForInitiator();
 
     /// For non-initiator parallel replicas, keep a copy of all parts before splitting.
     /// Non-initiator replicas use a single pool with all parts (split_id=0).
     RangesInDataParts all_parts_for_replicas;
-    if (is_parallel_reading_from_replicas && !is_initiator)
+    if (is_parallel_reading_from_replicas && !is_local_plan_initiator)
         all_parts_for_replicas = parts_with_ranges;
 
     const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
@@ -1380,7 +1380,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
 
     Pipes pipes;
-    if (is_initiator)
+    if (is_local_plan_initiator)
     {
         /// Initiator with local plan: each split gets its own subset of parts (genuine splitting).
         const size_t num_splits = split_parts_and_ranges.size();
@@ -1391,9 +1391,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 input_order_info->limit, /*split_id=*/i));
         }
     }
-    else if (
-        is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
-        && context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    else if (isParallelReplicasLocalPlanForFollower())
     {
         /// Non-initiator with local_plan=1: N splits, each with ALL parts.
         /// The coordinator uses the initiator's split structure for range partitioning.
@@ -2834,6 +2832,12 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 {
     return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
         && context->canUseParallelReplicasOnInitiator();
+}
+
+bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
+{
+    return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
+        && context->canUseParallelReplicasOnFollower();
 }
 
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)

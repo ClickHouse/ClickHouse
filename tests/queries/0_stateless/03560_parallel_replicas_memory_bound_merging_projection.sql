@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings
+-- no-random-merge-tree-settings: to fix pipeline structure
 
 drop table if exists pr_t;
 
