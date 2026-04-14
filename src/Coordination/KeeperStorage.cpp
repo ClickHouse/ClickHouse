@@ -1573,6 +1573,9 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
 namespace
 {
 
+/// prevent recursive lock
+thread_local size_t storage_mutex_lock_depth = 0;
+
 template<typename Storage>
 Coordination::ACLs getNodeACLs(Storage & storage, std::string_view path, bool is_local, bool should_lock_storage)
 {
@@ -1609,7 +1612,8 @@ void handleSystemNodeModification(const KeeperContext & keeper_context, std::str
 template<typename Container>
 bool KeeperStorage<Container>::checkACL(std::string_view path, int32_t permission, int64_t session_id, bool is_local, bool is_reconfig)
 {
-    const auto node_acls = getNodeACLs(*this, path, is_local, /*should_lock_storage=*/ !is_local || is_reconfig);
+    bool should_lock_storage = (!is_local || is_reconfig) && !storage_mutex_lock_depth;
+    const auto node_acls = getNodeACLs(*this, path, is_local, should_lock_storage);
     if (node_acls.empty())
         return true;
 
@@ -3845,6 +3849,8 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
         Coordination::ZooKeeperResponsePtr response = nullptr;
         {
             std::lock_guard lock(storage_mutex);
+            ++storage_mutex_lock_depth;
+            SCOPE_EXIT(--storage_mutex_lock_depth);
             response = process(dynamic_cast<const Coordination::ZooKeeperHeartbeatRequest &>(*zk_request), *this, deltas_range, session_id);
         }
         response->xid = zk_request->xid;
@@ -3860,6 +3866,8 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
             {
                 std::lock_guard lock(storage_mutex);
+                ++storage_mutex_lock_depth;
+                SCOPE_EXIT(--storage_mutex_lock_depth);
                 response = process(concrete_zk_request, *this, deltas_range, session_id);
                 if (!keeper_context->digestEnabledOnCommit())
                     nodes_digest = transaction_digest;
