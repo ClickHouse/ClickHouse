@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/ObjectStorageReaderHolder.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
 namespace DB
@@ -94,34 +95,7 @@ protected:
     size_t total_files_read = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
 
-    struct ReaderHolder : private boost::noncopyable
-    {
-    public:
-        ReaderHolder(
-            ObjectInfoPtr object_info_,
-            std::unique_ptr<ReadBuffer> read_buf_,
-            std::shared_ptr<ISource> source_,
-            std::unique_ptr<QueryPipeline> pipeline_,
-            std::unique_ptr<PullingPipelineExecutor> reader_);
-
-        ReaderHolder() = default;
-        ReaderHolder(ReaderHolder && other) noexcept { *this = std::move(other); }
-        ReaderHolder & operator=(ReaderHolder && other) noexcept;
-
-        explicit operator bool() const { return reader != nullptr; }
-        PullingPipelineExecutor * operator->() { return reader.get(); }
-        const PullingPipelineExecutor * operator->() const { return reader.get(); }
-
-        ObjectInfoPtr getObjectInfo() const { return object_info; }
-        const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
-
-    private:
-        ObjectInfoPtr object_info;
-        std::unique_ptr<ReadBuffer> read_buf;
-        std::shared_ptr<ISource> source;
-        std::unique_ptr<QueryPipeline> pipeline;
-        std::unique_ptr<PullingPipelineExecutor> reader;
-    };
+    using ReaderHolder = ObjectStorageReaderHolder;
 
     ReaderHolder reader;
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;

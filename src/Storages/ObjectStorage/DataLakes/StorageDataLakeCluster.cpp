@@ -1,23 +1,16 @@
 #include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 
 #include <Core/Settings.h>
-#include <Core/SettingsEnums.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Sources/RemoteSource.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/IPartitionStrategy.h>
 
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/extractTableFunctionFromSelectQuery.h>
-#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
+#include <Storages/ObjectStorage/ClusterUtils.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIceberg.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -28,16 +21,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
-    extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
-}
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 template <typename DataLakeMetadata>
 void StorageDataLakeCluster<DataLakeMetadata>::ensureMetadataInitialized(ContextPtr context) const
@@ -160,53 +143,7 @@ void StorageDataLakeCluster<DataLakeMetadata>::updateQueryToSendIfNeeded(
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
-    auto * table_function = extractTableFunctionFromSelectQuery(query);
-    if (!table_function)
-        return;
-    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
-    if (!expression_list)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected SELECT query from table function {}, got '{}'",
-            String(DataLakeMetadata::name) + configuration->getEngineName(), query->formatForErrorMessage());
-    }
-
-    ASTs & args = expression_list->children;
-    const auto & structure = storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription();
-    if (args.empty())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Unexpected empty list of arguments for {}Cluster table function",
-            String(DataLakeMetadata::name) + configuration->getEngineName());
-    }
-
-    ASTPtr settings_temporary_storage = nullptr;
-    for (auto it = args.begin(); it != args.end(); ++it)
-    {
-        ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
-        if (settings_ast)
-        {
-            settings_temporary_storage = std::move(*it);
-            args.erase(it);
-            break;
-        }
-    }
-
-    if (!endsWith(table_function->name, "Cluster"))
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, table_options.format, context, /*with_structure=*/true);
-    else
-    {
-        ASTPtr cluster_name_arg = args.front();
-        args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, table_options.format, context, /*with_structure=*/true);
-        args.insert(args.begin(), cluster_name_arg);
-    }
-    if (settings_temporary_storage)
-    {
-        args.insert(args.end(), std::move(settings_temporary_storage));
-    }
+    updateClusterQueryToSendIfNeeded(query, storage_snapshot, context, configuration, table_options, getName());
 }
 
 template <typename DataLakeMetadata>
@@ -248,44 +185,7 @@ RemoteQueryExecutor::Extension StorageDataLakeCluster<DataLakeMetadata>::getTask
         storage_metadata_snapshot,
         local_context);
 
-    if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
-    {
-        iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
-            std::move(iterator),
-            table_options.format,
-            object_storage,
-            local_context
-        );
-    }
-
-    std::vector<std::string> ids_of_hosts;
-    for (const auto & shard : cluster->getShardsInfo())
-    {
-        if (shard.per_replica_pools.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {} with empty shard {}", cluster->getName(), shard.shard_num);
-        for (const auto & replica : shard.per_replica_pools)
-        {
-            if (!replica)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {}, shard {} with empty node", cluster->getName(), shard.shard_num);
-            ids_of_hosts.push_back(replica->getAddress());
-        }
-    }
-
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
-        iterator,
-        std::move(ids_of_hosts),
-        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
-
-    auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
-        {
-            auto task = task_distributor->getNextTask(number_of_current_replica);
-            if (task)
-                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
-            return std::make_shared<ClusterFunctionReadTaskResponse>();
-        });
-
-    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+    return buildClusterTaskIteratorExtension(std::move(iterator), table_options, object_storage, local_context, std::move(cluster));
 }
 
 #if USE_AVRO

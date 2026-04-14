@@ -50,16 +50,11 @@ namespace DB
 
 void logIcebergFileStats(IcebergDataObjectInfoPtr object_info, const LoggerPtr & log)
 {
-#if USE_AVRO
     const auto & info = object_info->info;
     if (info.record_count.has_value())
         LOG_TEST(log, "Iceberg record_count for '{}': {}", object_info->getPath(), *info.record_count);
     if (info.file_size_in_bytes.has_value())
         LOG_TEST(log, "Iceberg file_size_in_bytes for '{}': {}", object_info->getPath(), *info.file_size_in_bytes);
-#else
-    UNUSED(object_info);
-    UNUSED(log);
-#endif
 }
 
 namespace Setting
@@ -179,10 +174,8 @@ Chunk IcebergSource::generate()
             const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
 
             const String * iceberg_metadata_file_path = nullptr;
-#if USE_AVRO
             if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
                 iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
-#endif
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
@@ -476,34 +469,6 @@ std::future<IcebergSource::ReaderHolder> IcebergSource::createReaderAsync()
 {
     return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
 }
-
-IcebergSource::ReaderHolder::ReaderHolder(
-    ObjectInfoPtr object_info_,
-    std::unique_ptr<ReadBuffer> read_buf_,
-    std::shared_ptr<ISource> source_,
-    std::unique_ptr<QueryPipeline> pipeline_,
-    std::unique_ptr<PullingPipelineExecutor> reader_)
-    : object_info(std::move(object_info_))
-    , read_buf(std::move(read_buf_))
-    , source(std::move(source_))
-    , pipeline(std::move(pipeline_))
-    , reader(std::move(reader_))
-{
-}
-
-IcebergSource::ReaderHolder &
-IcebergSource::ReaderHolder::operator=(ReaderHolder && other) noexcept
-{
-    /// The order of destruction is important.
-    /// reader uses pipeline, pipeline uses read_buf.
-    reader = std::move(other.reader);
-    pipeline = std::move(other.pipeline);
-    source = std::move(other.source);
-    read_buf = std::move(other.read_buf);
-    object_info = std::move(other.object_info);
-    return *this;
-}
-
 }
 
 #endif
