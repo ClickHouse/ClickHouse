@@ -692,9 +692,9 @@ public:
                 return false;
             }
         }
-        else if (element.isUInt64() && insert_settings.allow_type_conversion)
+        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
-            value = element.getUInt64();
+            value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
         {
@@ -757,9 +757,9 @@ public:
                 return false;
             }
         }
-        else if (element.isUInt64() && insert_settings.allow_type_conversion)
+        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
-            value = element.getUInt64();
+            value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
         {
