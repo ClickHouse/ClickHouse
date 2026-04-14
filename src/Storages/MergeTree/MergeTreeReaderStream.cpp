@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/RemoteReadingManager.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 
 #include <base/getThreadId.h>
@@ -77,13 +78,39 @@ void MergeTreeReaderStream::init()
     if (!read_settings.local_fs_buffer_size || !read_settings.remote_fs_buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
+    auto & rrm = RemoteReadingManager::instance();
+    const String file_name = path_prefix + data_file_extension;
+
+    /// Build per-granule compressed file byte ranges for RRM.
+    /// marks_getter is loaded by estimateMarkRangeBytes above.
+    std::vector<ReadScope::ByteRange> granule_ranges;
+    if (marks_getter)
+    {
+        size_t total_granules = 0;
+        for (const auto & range : all_mark_ranges)
+            total_granules += range.end - range.begin;
+        granule_ranges.reserve(total_granules);
+
+        for (const auto & range : all_mark_ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                size_t begin = marks_getter->getMark(mark, 0).offset_in_compressed_file;
+                size_t end = (mark + 1 < range.end)
+                    ? marks_getter->getMark(mark + 1, 0).offset_in_compressed_file
+                    : getRightOffset(range.end);
+                granule_ranges.push_back({begin, end});
+            }
+        }
+    }
+
+    auto scope = ReadScope::create(
+        data_part_storage->getRelativePath(), all_mark_ranges, settings.read_phase, std::move(granule_ranges));
+
     /// Initialize the objects that shall be used to perform read operations.
     if (!settings.is_compressed)
     {
-        auto buffer = data_part_storage->readFile(
-            path_prefix + data_file_extension,
-            read_settings,
-            estimated_sum_mark_range_bytes);
+        auto buffer = rrm.createReadBuffer(scope, *data_part_storage, file_name, read_settings, estimated_sum_mark_range_bytes);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -95,14 +122,12 @@ void MergeTreeReaderStream::init()
     else if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
-            [this, estimated_sum_mark_range_bytes, read_settings]()
+            std::string(fs::path(data_part_storage->getFullPath()) / file_name),
+            [this, scope, estimated_sum_mark_range_bytes, read_settings]()
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
-                return data_part_storage->readFile(
-                    path_prefix + data_file_extension,
-                    read_settings,
-                    estimated_sum_mark_range_bytes);
+                return RemoteReadingManager::instance().createReadBuffer(
+                    scope, *data_part_storage, path_prefix + data_file_extension, read_settings, estimated_sum_mark_range_bytes);
             },
             uncompressed_cache,
             settings.allow_different_codecs);
@@ -120,10 +145,8 @@ void MergeTreeReaderStream::init()
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            data_part_storage->readFile(
-                path_prefix + data_file_extension,
-                read_settings,
-                estimated_sum_mark_range_bytes), settings.allow_different_codecs);
+            rrm.createReadBuffer(scope, *data_part_storage, file_name, read_settings, estimated_sum_mark_range_bytes),
+            settings.allow_different_codecs);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

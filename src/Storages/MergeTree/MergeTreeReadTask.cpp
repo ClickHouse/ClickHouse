@@ -153,6 +153,9 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     {
         auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions);
 
+        auto reader_settings = extras.reader_settings;
+        reader_settings.read_phase = is_prewhere ? ReadScope::Phase::Prewhere : ReadScope::Phase::Rest;
+
         return createMergeTreeReader(
             part_info,
             columns_to_read,
@@ -163,7 +166,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
-            extras.reader_settings,
+            reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };

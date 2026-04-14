@@ -5,6 +5,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/RemoteReadingManager.h>
 
 namespace DB
 {
@@ -73,6 +74,9 @@ struct MergeTreeReaderSettings
     /// This information can be used for more optimal reading of
     /// columns prefixes.
     bool read_only_column_sample = false;
+
+    /// Reading phase for RRM scope: prewhere columns are read before rest columns.
+    ReadScope::Phase read_phase = ReadScope::Phase::Rest;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove

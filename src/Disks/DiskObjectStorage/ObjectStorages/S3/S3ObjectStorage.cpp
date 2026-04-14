@@ -15,6 +15,8 @@
 #include <Disks/IO/getThreadPoolReader.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/SessionAwareIOStream.h>
+#include <Storages/MergeTree/RemoteReadingManager.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/deleteFileFromS3.h>
@@ -214,6 +216,44 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const ReadSettings & read_settings,
     std::optional<size_t>) const
 {
+    if (read_settings.read_scope)
+    {
+        auto & rrm = RemoteReadingManager::instance();
+
+        /// Capture S3-specific context into a factory that RRM can call
+        /// to open HTTP connections for arbitrary byte ranges.
+        auto factory = [
+            client_ptr = client.get(),
+            bucket_ = uri.bucket,
+            key_ = object.remote_path,
+            version_id_ = uri.version_id,
+            patched_settings = patchSettings(read_settings)
+        ](size_t range_begin, size_t range_end, size_t attempt) -> RemoteConnectionResult
+        {
+            auto result = ReadBufferFromS3::sendGetObjectRequest(
+                *client_ptr, bucket_, key_, version_id_,
+                attempt, range_begin, range_end > 0 ? std::make_optional(range_end - 1) : std::nullopt,
+                patched_settings);
+
+            /// Move result into a shared_ptr to keep session alive.
+            /// Extract body stream and socket FD after the move.
+            auto holder = std::make_shared<Aws::S3::Model::GetObjectResult>(std::move(result));
+            auto * body_stream = &holder->GetBody();
+            int fd = -1;
+            if (auto * session_stream = dynamic_cast<SessionAwareIOStream<HTTPSessionPtr> *>(body_stream))
+            {
+                auto & session = session_stream->getSession();
+                fd = session->socket().impl()->sockfd();
+            }
+            return RemoteConnectionResult{fd, body_stream, std::move(holder)};
+        };
+
+        auto buffer = rrm.createObjectReadBuffer(*read_settings.read_scope, object, std::move(factory));
+        if (buffer)
+            return buffer;
+        /// nullptr means fall through to default creation.
+    }
+
     auto settings_ptr = s3_settings.get();
     return std::make_unique<ReadBufferFromS3>(
         client.get(),
