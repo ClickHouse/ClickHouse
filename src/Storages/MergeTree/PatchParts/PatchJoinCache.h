@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Storages/MergeTree/PatchParts/PatchBlockIndex.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
+#include <mutex>
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
@@ -83,8 +84,12 @@ struct PatchJoinCache
 
         bool hasIndex() const { return index && index->loaded(); }
 
-        /// Lock-free: used during build when each entry has a single writer.
+        /// When hasIndex(): thread-safe via mutex (multiple sinks in parallel).
+        /// When !hasIndex(): lock-free, each entry has a single writer.
         void addBlock(Block read_block);
+
+    private:
+        std::mutex block_mutex; /// protects block accumulation in indexed path
     };
 
     using EntryPtr = std::shared_ptr<Entry>;

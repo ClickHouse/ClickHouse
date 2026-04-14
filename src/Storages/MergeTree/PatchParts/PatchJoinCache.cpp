@@ -65,8 +65,11 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
     /// When the on-disk index is present, _block_number and _block_offset are
     /// not read by the pipeline — just accumulate the block as-is.
+    /// Multiple sinks may call addBlock concurrently, so guard with a mutex.
     if (hasIndex())
     {
+        std::lock_guard lock(block_mutex);
+
         size_t base_row_offset = block.rows();
         if (base_row_offset + num_read_rows > std::numeric_limits<UInt32>::max())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Too large row offset ({}) in patch join cache", base_row_offset + num_read_rows);

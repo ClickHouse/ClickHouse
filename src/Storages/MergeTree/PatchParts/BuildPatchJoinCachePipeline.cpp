@@ -342,20 +342,34 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         if (!entry)
             continue;
 
-        /// Simple pipeline: Resize num_sources->1 then Sink.
-        auto resize = std::make_shared<ResizeProcessor>(shared_header, num_sources, 1);
+        if (has_index)
         {
-            auto & inputs = resize->getInputs();
-            auto input_it = inputs.begin();
-
-            for (size_t source_idx = 0; source_idx < num_sources; ++source_idx, ++input_it)
-                connect(sources[source_idx]->getOutputs().front(), *input_it);
+            /// With the on-disk index, addBlock is mutex-protected — use N parallel
+            /// sinks (one per source) for full read parallelism.
+            for (size_t source_idx = 0; source_idx < num_sources; ++source_idx)
+            {
+                auto sink = std::make_shared<BuildPatchJoinCacheSink>(shared_header, entry);
+                connect(sources[source_idx]->getOutputs().front(), sink->getPort());
+                processors->push_back(std::move(sink));
+            }
         }
+        else
+        {
+            /// Legacy path: single sink per entry (lock-free, single writer).
+            auto resize = std::make_shared<ResizeProcessor>(shared_header, num_sources, 1);
+            {
+                auto & inputs = resize->getInputs();
+                auto input_it = inputs.begin();
 
-        auto sink = std::make_shared<BuildPatchJoinCacheSink>(shared_header, entry);
-        connect(resize->getOutputs().front(), sink->getPort());
-        processors->push_back(std::move(resize));
-        processors->push_back(std::move(sink));
+                for (size_t source_idx = 0; source_idx < num_sources; ++source_idx, ++input_it)
+                    connect(sources[source_idx]->getOutputs().front(), *input_it);
+            }
+
+            auto sink = std::make_shared<BuildPatchJoinCacheSink>(shared_header, entry);
+            connect(resize->getOutputs().front(), sink->getPort());
+            processors->push_back(std::move(resize));
+            processors->push_back(std::move(sink));
+        }
     }
 
     if (processors->empty())
