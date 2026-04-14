@@ -47,6 +47,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->statistics_decl = res->children.emplace_back(statistics_decl->clone()).get();
     if (partition)
         res->partition = res->children.emplace_back(partition->clone()).get();
+    if (partitions)
+        res->partitions = res->children.emplace_back(partitions->clone()).get();
     if (predicate)
         res->predicate = res->children.emplace_back(predicate->clone()).get();
     if (update_assignments)
@@ -436,7 +438,12 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     {
         ostr << "DELETE";
 
-        if (partition)
+        if (partitions)
+        {
+            ostr << " IN PARTITION ";
+            partitions->format(ostr, settings, state, frame);
+        }
+        else if (partition)
         {
             ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
@@ -450,7 +457,12 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << "UPDATE ";
         update_assignments->format(ostr, settings, state, frame);
 
-        if (partition)
+        if (partitions)
+        {
+            ostr << " IN PARTITION ";
+            partitions->format(ostr, settings, state, frame);
+        }
+        else if (partition)
         {
             ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
@@ -589,6 +601,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::i
     f(&projection, nullptr);
     f(&statistics_decl, nullptr);
     f(&partition, nullptr);
+    f(&partitions, nullptr);
     f(&predicate, nullptr);
     f(&update_assignments, nullptr);
     f(&comment, nullptr);

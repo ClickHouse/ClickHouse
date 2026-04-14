@@ -24,6 +24,7 @@ ASTPtr ASTUpdateQuery::clone() const
     };
 
     add_children_if_needed(partition, res->partition);
+    add_children_if_needed(partitions, res->partitions);
     add_children_if_needed(predicate, res->predicate);
     add_children_if_needed(assignments, res->assignments);
     add_children_if_needed(settings_ast, res->settings_ast);
@@ -48,7 +49,12 @@ void ASTUpdateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     ostr << " SET ";
     assignments->format(ostr, settings, state, frame);
 
-    if (partition)
+    if (partitions)
+    {
+        ostr << " IN PARTITION ";
+        partitions->format(ostr, settings, state, frame);
+    }
+    else if (partition)
     {
         ostr << " IN PARTITION ";
         partition->format(ostr, settings, state, frame);

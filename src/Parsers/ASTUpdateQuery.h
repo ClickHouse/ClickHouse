@@ -25,6 +25,9 @@ public:
     ASTPtr assignments;
     ASTPtr partition;
 
+    /// Multiple partitions specified via IN PARTITION p1, p2, ...
+    ASTPtr partitions;
+
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };

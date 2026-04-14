@@ -1629,6 +1629,14 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, use_partition_key) \
+    DECLARE(Bool, optimize_mutations_with_partition_pruning, true, R"(
+When enabled, ClickHouse automatically detects partition key conditions in the WHERE clause of ALTER TABLE UPDATE/DELETE mutations and only mutates the affected partitions instead of all partitions.
+
+Possible values:
+
+- 0 — Disabled. Mutations will process all partitions.
+- 1 — Enabled. Mutations will only process partitions that match the WHERE condition.
+)", 0) \
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
 

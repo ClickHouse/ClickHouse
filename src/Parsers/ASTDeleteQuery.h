@@ -24,6 +24,9 @@ public:
      */
     ASTPtr partition;
 
+    /// Multiple partitions specified via IN PARTITION p1, p2, ...
+    ASTPtr partitions;
+
     ASTPtr predicate;
 
 protected:

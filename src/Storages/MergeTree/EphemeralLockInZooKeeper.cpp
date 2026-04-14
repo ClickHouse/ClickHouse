@@ -167,7 +167,7 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
 }
 
 
-EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
+EphemeralLocksInPartitions::EphemeralLocksInPartitions(
     const String & block_numbers_path,
     const String & path_prefix,
     const String & temp_path,
@@ -196,7 +196,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
         Coordination::Error rc = zookeeper->tryMulti(lock_ops, lock_responses);
         if (rc == Coordination::Error::ZBADVERSION)
         {
-            LOG_TRACE(getLogger("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
+            LOG_TRACE(getLogger("EphemeralLocksInPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
             continue;
         }
         if (rc != Coordination::Error::ZOK)
@@ -217,7 +217,83 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
     }
 }
 
-void EphemeralLocksInAllPartitions::unlock()
+EphemeralLocksInPartitions::EphemeralLocksInPartitions(
+    const String & block_numbers_path,
+    const String & path_prefix,
+    const String & temp_path,
+    const std::optional<String> & znode_data,
+    zkutil::ZooKeeper & zookeeper_,
+    const std::set<String> & partition_ids,
+    std::optional<int32_t> expected_block_numbers_version)
+    : zookeeper(&zookeeper_)
+{
+    String holder_path = znode_data.value_or(temp_path + "/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER);
+
+    std::vector<String> partitions(partition_ids.begin(), partition_ids.end());
+
+    Coordination::Requests lock_ops;
+    for (const auto & partition : partitions)
+    {
+        String partition_path_prefix = block_numbers_path + "/" + partition + "/" + path_prefix;
+        lock_ops.push_back(zkutil::makeCreateRequest(
+                partition_path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential));
+    }
+
+    /// If a version check was requested, add it to detect new partitions appearing
+    /// between the time we decided which partitions to lock and the actual locking.
+    if (expected_block_numbers_version.has_value())
+        lock_ops.push_back(zkutil::makeCheckRequest(block_numbers_path, *expected_block_numbers_version));
+
+    Coordination::Responses lock_responses;
+    Coordination::Error rc = zookeeper_.tryMulti(lock_ops, lock_responses);
+
+    if (rc == Coordination::Error::ZNONODE)
+    {
+        /// Some partition znodes don't exist yet — create them and retry.
+        for (const auto & partition : partitions)
+        {
+            String partition_path = block_numbers_path + "/" + partition;
+
+            Coordination::Requests create_ops;
+            create_ops.push_back(zkutil::makeCreateRequest(partition_path, "", zkutil::CreateMode::Persistent));
+            create_ops.push_back(zkutil::makeSetRequest(block_numbers_path, "", -1));
+
+            Coordination::Responses create_responses;
+            Coordination::Error code = zookeeper_.tryMulti(create_ops, create_responses);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+                throw Coordination::Exception(code);
+        }
+
+        /// After creating partition znodes, we need to re-read the version since
+        /// the creates above bump block_numbers_path version.
+        if (expected_block_numbers_version.has_value())
+        {
+            Coordination::Stat stat;
+            zookeeper_.get(block_numbers_path, &stat);
+
+            lock_ops.pop_back();
+            lock_ops.push_back(zkutil::makeCheckRequest(block_numbers_path, stat.version));
+        }
+
+        rc = zookeeper_.tryMulti(lock_ops, lock_responses);
+    }
+
+    if (rc != Coordination::Error::ZOK)
+        throw Coordination::Exception(rc);
+
+    for (size_t i = 0; i < partitions.size(); ++i)
+    {
+        size_t prefix_size = block_numbers_path.size() + 1 + partitions[i].size() + 1 + path_prefix.size();
+        const String & path = dynamic_cast<const Coordination::CreateResponse &>(*lock_responses[i]).path_created;
+
+        const UInt64 number = parseSequentialNodeNumber(path, prefix_size);
+        warnIfBlockNumberIsHigh(number, path);
+        CurrentMetrics::max(CurrentMetrics::MaxAllocatedEphemeralLockSequentialNumber, number);
+        locks.push_back(LockInfo{path, partitions[i], number});
+    }
+}
+
+void EphemeralLocksInPartitions::unlock()
 {
     if (!zookeeper)
         return;
@@ -236,12 +312,12 @@ void EphemeralLocksInAllPartitions::unlock()
     zookeeper = nullptr;
 }
 
-void EphemeralLocksInAllPartitions::assumeUnlocked()
+void EphemeralLocksInPartitions::assumeUnlocked()
 {
     zookeeper = nullptr;
 }
 
-void EphemeralLocksInAllPartitions::getUnlockOps(Coordination::Requests & ops) const
+void EphemeralLocksInPartitions::getUnlockOps(Coordination::Requests & ops) const
 {
     if (!zookeeper)
         return;
@@ -250,7 +326,7 @@ void EphemeralLocksInAllPartitions::getUnlockOps(Coordination::Requests & ops) c
         ops.emplace_back(zkutil::makeRemoveRequest(lock.path, -1));
 }
 
-EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
+EphemeralLocksInPartitions::~EphemeralLocksInPartitions()
 {
     try
     {
@@ -258,7 +334,7 @@ EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
     }
     catch (...)
     {
-        tryLogCurrentException("~EphemeralLocksInAllPartitions");
+        tryLogCurrentException("~EphemeralLocksInPartitions");
     }
 }
 

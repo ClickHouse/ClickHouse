@@ -63,6 +63,9 @@ struct MutationCommand
     /// For MATERIALIZE INDEX, UPDATE and DELETE.
     ASTPtr partition = {};
 
+    /// Multiple partitions specified via IN PARTITION p1, p2, ...
+    ASTPtr partitions = {};
+
     /// For reads, drops and etc.
     String column_name = {};
     DataTypePtr data_type = {}; /// Maybe empty if we just want to drop column

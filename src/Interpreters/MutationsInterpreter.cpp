@@ -212,6 +212,18 @@ IsStorageTouched isStorageTouchedByMutations(
                 if (partition_id == source_part->info.getPartitionId())
                     all_commands_can_be_skipped = false;
             }
+            else if (command.partitions)
+            {
+                for (const auto & partition_ast : command.partitions->children)
+                {
+                    const String partition_id = storage_from_part->getPartitionIDFromQuery(partition_ast, context);
+                    if (partition_id == source_part->info.getPartitionId())
+                    {
+                        all_commands_can_be_skipped = false;
+                        break;
+                    }
+                }
+            }
             else
             {
                 all_commands_can_be_skipped = false;
@@ -275,7 +287,29 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 )
 {
     ASTPtr partition_predicate_as_ast_func;
-    if (command.partition)
+    if (command.partitions)
+    {
+        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+
+        auto func = makeASTFunction("in");
+        func->arguments->children.push_back(make_intrusive<ASTIdentifier>("_partition_id"));
+        auto tuple_func = makeASTFunction("tuple");
+        for (const auto & partition_ast : command.partitions->children)
+        {
+            String partition_id;
+            if (storage_merge_tree)
+                partition_id = storage_merge_tree->getPartitionIDFromQuery(partition_ast, context);
+            else if (storage_from_merge_tree_data_part)
+                partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(partition_ast, context);
+            else
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
+            tuple_func->arguments->children.push_back(make_intrusive<ASTLiteral>(partition_id));
+        }
+        func->arguments->children.push_back(std::move(tuple_func));
+        partition_predicate_as_ast_func = std::move(func);
+    }
+    else if (command.partition)
     {
         String partition_id;
 
@@ -294,7 +328,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         );
     }
 
-    if (command.predicate && command.partition)
+    if (command.predicate && (command.partition || command.partitions))
         return makeASTOperator("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
     return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
 }

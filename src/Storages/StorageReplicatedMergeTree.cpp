@@ -6588,28 +6588,78 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
     ContextPtr query_context,
     const zkutil::ZooKeeperPtr & zookeeper) const
 {
-    const std::set<String> mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
+    const auto mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
     auto block_data = serializeCommittingBlockOpToString(op);
 
-    if (mutation_affected_partition_ids.size() == 1)
+    if (mutation_affected_partition_ids.has_value())
     {
-        const auto & affected_partition_id = *mutation_affected_partition_ids.cbegin();
-        auto block_number_holder = allocateBlockNumber(
-            affected_partition_id,
-            zookeeper,
-            {},
-            "",
-            block_data);
+        /// Widening with ZK-only partitions is needed when any command uses
+        /// predicate pruning (no explicit IN PARTITION). The pruner only sees local
+        /// parts and may miss partitions that exist in ZK but haven't been fetched
+        /// to this replica yet. For explicit IN PARTITION the target set is exact.
+        bool has_pruned_commands = std::any_of(commands.begin(), commands.end(),
+            [](const MutationCommand & cmd) { return !cmd.partition && !cmd.partitions && cmd.predicate; });
 
-        if (!block_number_holder.isLocked())
-            return {};
+        while (true)
+        {
+            Coordination::Stat block_numbers_stat;
+            Strings zk_partitions = zookeeper->getChildren(
+                fs::path(zookeeper_path) / "block_numbers", &block_numbers_stat);
 
-        auto block_number = block_number_holder.getNumber();  /// Avoid possible UB due to std::move
-        return {{{affected_partition_id, block_number}}, std::move(block_number_holder)};
+            auto affected = *mutation_affected_partition_ids;
+
+            if (has_pruned_commands)
+            {
+                auto local_partition_ids = getAllPartitionIds();
+                for (const auto & zk_partition : zk_partitions)
+                {
+                    if (zk_partition.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+                        continue;
+
+                    if (!local_partition_ids.contains(zk_partition))
+                        affected.insert(zk_partition);
+                }
+            }
+
+            if (affected.empty())
+                return {};
+
+            try
+            {
+                /// Lock only the specific affected partitions instead of all partitions.
+                /// Pass the block_numbers version to detect new partitions appearing concurrently.
+                EphemeralLocksInPartitions lock_holder(
+                    fs::path(zookeeper_path) / "block_numbers",
+                    "block-",
+                    fs::path(zookeeper_path) / "temp",
+                    block_data,
+                    *zookeeper,
+                    affected,
+                    block_numbers_stat.version);
+
+                PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
+                for (const auto & lock : lock_holder.getLocks())
+                {
+                    block_numbers[lock.partition_id] = lock.number;
+                    LOG_TRACE(log, "Allocated block number {} in partition {}", lock.number, lock.partition_id);
+                }
+
+                return {std::move(block_numbers), std::move(lock_holder)};
+            }
+            catch (const Coordination::Exception & e)
+            {
+                if (e.code == Coordination::Error::ZBADVERSION)
+                {
+                    LOG_TRACE(log, "A new partition appeared while allocating block numbers for pruned mutation. Retry.");
+                    continue;
+                }
+                throw;
+            }
+        }
     }
 
-    /// TODO: Implement optimal block number acquisition algorithm in multiple (but not all) partitions
-    EphemeralLocksInAllPartitions lock_holder(
+    /// All partitions affected - lock everything.
+    EphemeralLocksInPartitions lock_holder(
         fs::path(zookeeper_path) / "block_numbers",
         "block-",
         fs::path(zookeeper_path) / "temp",
@@ -6622,9 +6672,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
         if (lock.partition_id.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
             continue;
 
-        if (mutation_affected_partition_ids.empty() || mutation_affected_partition_ids.contains(lock.partition_id))
-            block_numbers[lock.partition_id] = lock.number;
-
+        block_numbers[lock.partition_id] = lock.number;
         LOG_TRACE(log, "Allocated block number {} in partition {}", lock.number, lock.partition_id);
     }
 

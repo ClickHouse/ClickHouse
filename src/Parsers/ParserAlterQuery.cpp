@@ -168,6 +168,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_projection;
     ASTPtr command_statistics_decl;
     ASTPtr command_partition;
+    ASTPtr command_partitions;
     ASTPtr command_predicate;
     ASTPtr command_update_assignments;
     ASTPtr command_comment;
@@ -858,8 +859,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command_partition, expected))
+                    ParserList partition_list_parser(
+                        std::make_unique<ParserPartition>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+                    ASTPtr partition_list_ast;
+                    if (!partition_list_parser.parse(pos, partition_list_ast, expected))
                         return false;
+
+                    auto & partition_list = partition_list_ast->as<ASTExpressionList &>();
+                    if (partition_list.children.size() == 1)
+                        command_partition = std::move(partition_list.children[0]);
+                    else
+                        command_partitions = std::move(partition_list_ast);
                 }
 
                 if (!s_where.ignore(pos, expected))
@@ -889,8 +899,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command_partition, expected))
+                    ParserList partition_list_parser(
+                        std::make_unique<ParserPartition>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+                    ASTPtr partition_list_ast;
+                    if (!partition_list_parser.parse(pos, partition_list_ast, expected))
                         return false;
+
+                    auto & partition_list = partition_list_ast->as<ASTExpressionList &>();
+                    if (partition_list.children.size() == 1)
+                        command_partition = std::move(partition_list.children[0]);
+                    else
+                        command_partitions = std::move(partition_list_ast);
                 }
 
                 if (!s_where.ignore(pos, expected))
@@ -1094,6 +1113,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->statistics_decl = command->children.emplace_back(std::move(command_statistics_decl)).get();
     if (command_partition)
         command->partition = command->children.emplace_back(std::move(command_partition)).get();
+    if (command_partitions)
+        command->partitions = command->children.emplace_back(std::move(command_partitions)).get();
     if (command_predicate)
         command->predicate = command->children.emplace_back(std::move(command_predicate)).get();
     if (command_update_assignments)

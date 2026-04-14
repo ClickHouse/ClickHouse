@@ -84,6 +84,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -212,6 +213,7 @@ namespace Setting
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool optimize_mutations_with_partition_pruning;
 }
 
 namespace MergeTreeSetting
@@ -7451,22 +7453,102 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
     return partition_ids;
 }
 
-std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
+std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
+    const ASTPtr & predicate, ContextPtr query_context) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    if (!metadata_snapshot->hasPartitionKey())
+        return std::nullopt;
+
+    if (!query_context->getSettingsRef()[Setting::use_partition_pruning])
+        return std::nullopt;
+
+    auto columns = metadata_snapshot->getColumns().getAllPhysical();
+
+    auto predicate_clone = predicate->clone();
+    TreeRewriter tree_rewriter(query_context);
+    auto syntax_result = tree_rewriter.analyze(predicate_clone, columns);
+    auto actions_dag = ExpressionAnalyzer(predicate_clone, syntax_result, query_context).getActionsDAG(false);
+
+    /// The predicate output is the node matching the predicate expression name.
+    /// `getActionsDAG` may include input columns in the outputs list, so we need
+    /// to find the correct node by name.
+    String predicate_column_name = predicate_clone->getColumnName();
+    const auto * predicate_node = actions_dag.tryFindInOutputs(predicate_column_name);
+    if (!predicate_node)
+        return std::nullopt;
+
+    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, query_context);
+
+    PartitionPruner partition_pruner(
+        metadata_snapshot,
+        inverted_dag,
+        query_context,
+        false /* strict */);
+
+    if (partition_pruner.isUseless())
+        return std::nullopt;
+
+    DataPartsVector active_parts;
+    {
+        auto lock = readLockParts();
+        active_parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, lock);
+    }
+
+    std::set<String> affected_partition_ids;
+    for (const auto & part : active_parts)
+    {
+        if (part->info.getPartitionId().starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+            continue;
+
+        if (!partition_pruner.canBePruned(*part))
+            affected_partition_ids.insert(part->info.getPartitionId());
+    }
+
+    LOG_DEBUG(log, "Mutation partition pruning: {} partition(s) affected for predicate '{}'",
+        affected_partition_ids.size(), predicate->formatForErrorMessage());
+
+    return affected_partition_ids;
+}
+
+std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands(
     const MutationCommands & commands, ContextPtr query_context) const
 {
     std::set<String> affected_partition_ids;
+    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning];
 
     for (const auto & command : commands)
     {
-        if (!command.partition)
+        if (command.partitions)
         {
-            affected_partition_ids.clear();
-            break;
+            for (const auto & partition_ast : command.partitions->children)
+            {
+                affected_partition_ids.insert(
+                    getPartitionIDFromQuery(partition_ast, query_context)
+                );
+            }
         }
-
-        affected_partition_ids.insert(
-            getPartitionIDFromQuery(command.partition, query_context)
-        );
+        else if (command.partition)
+        {
+            affected_partition_ids.insert(
+                getPartitionIDFromQuery(command.partition, query_context)
+            );
+        }
+        else if (optimize_with_pruning && command.predicate)
+        {
+            auto pruned = getPartitionIdsPrunedByPredicate(command.predicate, query_context);
+            if (!pruned.has_value())
+            {
+                /// Pruning was not possible, fall back to all partitions
+                return std::nullopt;
+            }
+            affected_partition_ids.insert(pruned->begin(), pruned->end());
+        }
+        else
+        {
+            /// No partition and no predicate (e.g. MATERIALIZE_TTL) - affects all partitions
+            return std::nullopt;
+        }
     }
 
     return affected_partition_ids;

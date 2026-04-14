@@ -72,6 +72,8 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
         res.predicate = command.predicate->clone();
         if (command.partition)
             res.partition = command.partition->clone();
+        if (command.partitions)
+            res.partitions = command.partitions->clone();
         return res;
     }
     if (command.type == ASTAlterCommand::UPDATE)
@@ -80,6 +82,8 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
         res.predicate = command.predicate->clone();
         if (command.partition)
             res.partition = command.partition->clone();
+        if (command.partitions)
+            res.partitions = command.partitions->clone();
         for (const ASTPtr & assignment_ast : command.update_assignments->children)
         {
             const auto & assignment = assignment_ast->as<ASTAssignment &>();

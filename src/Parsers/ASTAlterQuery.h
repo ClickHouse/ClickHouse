@@ -151,6 +151,11 @@ public:
      */
     IAST * partition = nullptr;
 
+    /** Used in UPDATE, DELETE queries with multiple partitions specified via IN PARTITION p1, p2, ...
+     *  An ASTExpressionList of ASTPartition nodes.
+     */
+    IAST * partitions = nullptr;
+
     /// For DELETE/UPDATE WHERE: the predicate that filters the rows to delete/update.
     IAST * predicate = nullptr;
 

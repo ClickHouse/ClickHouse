@@ -20,6 +20,12 @@ ASTPtr ASTDeleteQuery::clone() const
         res->children.push_back(res->partition);
     }
 
+    if (partitions)
+    {
+        res->partitions = partitions->clone();
+        res->children.push_back(res->partitions);
+    }
+
     if (predicate)
     {
         res->predicate = predicate->clone();
@@ -51,7 +57,12 @@ void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     formatOnCluster(ostr, settings);
 
-    if (partition)
+    if (partitions)
+    {
+        ostr << " IN PARTITION ";
+        partitions->format(ostr, settings, state, frame);
+    }
+    else if (partition)
     {
         ostr << " IN PARTITION ";
         partition->format(ostr, settings, state, frame);
