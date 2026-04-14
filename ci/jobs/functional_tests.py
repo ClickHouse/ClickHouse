@@ -478,11 +478,11 @@ def main():
                 #             "WARNING: Failed to start log export"
                 #         )
                 #         print("Failed to start log export")
-                if not CH.create_minio_log_tables():
-                    info.add_workflow_report_message(
-                        "WARNING: Failed to create minio log tables"
-                    )
-                    print("Failed to create minio log tables")
+                # if not CH.create_minio_log_tables():
+                #     info.add_workflow_report_message(
+                #         "WARNING: Failed to create minio log tables"
+                #     )
+                #     print("Failed to create minio log tables")
 
                 if has_stateful_tests:
                     res = (
