@@ -185,6 +185,16 @@ def test_independent_pools():
             "ConcurrencyControlDownscales",
             lambda x: x == 0,
         )
+        # Verify ConcurrencyControlWaitMicroseconds is populated at query level.
+        # With independent pools all running concurrently, each query will experience
+        # scheduler wait time > 0. This serves as a smoke test for the wait timer fix
+        # (the metric is tracked at ThreadGroup level, not per-thread).
+        assert_profile_event(
+            node,
+            query_id,
+            "ConcurrencyControlWaitMicroseconds",
+            lambda x: x > 0,
+        )
         # NOTE: checking thread_ids length is pointless, because query could downscale and then upscale again, gaining more threads than slots
 
     assert_query(node, 'test_production', 15)
