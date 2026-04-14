@@ -66,3 +66,33 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ReplicatedRead default.test_lineitem)
 980
 980
+-- RIGHT JOIN (RIGHT ALL, not commutable, broadcast blocked)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_lineitem)
+20
+20
+-- FULL JOIN (FULL ALL, not commutable, broadcast blocked)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_lineitem)
+1000
+1000

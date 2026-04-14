@@ -1,8 +1,11 @@
--- Correctness test: broadcast join must not be used when the replicated side
--- produces output rows (RIGHT Semi/Anti/Any/RightAny).  Broadcasting the output
--- side causes duplicate rows across nodes.
+-- Correctness test: broadcast join must not be used when the replicated (right)
+-- side can produce output rows.  Broadcasting it causes duplicate rows across
+-- nodes — each node independently marks right-side rows as "unmatched" based
+-- on its local left slice.
 --
--- The filter table (test_lineitem) is small so the optimizer prefers broadcast.
+-- This affects RIGHT joins (all strictness) and FULL joins.
+-- The filter table (test_lineitem) is small so the optimizer prefers broadcast
+-- when it is safe — these tests verify that broadcast is blocked when unsafe.
 
 SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
@@ -93,6 +96,31 @@ SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_
 SETTINGS distributed_plan_execute_locally = 1;
 
 SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_orderkey
+SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
+-- RIGHT ALL: not commutable, broadcast guard must block it.
+-- Without the guard, the 20-row right side would be broadcast and unmatched
+-- right rows would be duplicated across 4 nodes.
+SELECT '-- RIGHT JOIN (RIGHT ALL, not commutable, broadcast blocked)';
+EXPLAIN PLAN keep_logical_steps = 1
+SELECT count() FROM test_orders RIGHT JOIN test_lineitem ON o_orderkey = l_orderkey;
+
+SELECT count() FROM test_orders RIGHT JOIN test_lineitem ON o_orderkey = l_orderkey
+SETTINGS distributed_plan_execute_locally = 1;
+
+SELECT count() FROM test_orders RIGHT JOIN test_lineitem ON o_orderkey = l_orderkey
+SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
+-- FULL ALL: not commutable, broadcast guard must block it.
+-- Both sides produce unmatched rows; broadcasting either side would duplicate them.
+SELECT '-- FULL JOIN (FULL ALL, not commutable, broadcast blocked)';
+EXPLAIN PLAN keep_logical_steps = 1
+SELECT count() FROM test_orders FULL JOIN test_lineitem ON o_orderkey = l_orderkey;
+
+SELECT count() FROM test_orders FULL JOIN test_lineitem ON o_orderkey = l_orderkey
+SETTINGS distributed_plan_execute_locally = 1;
+
+SELECT count() FROM test_orders FULL JOIN test_lineitem ON o_orderkey = l_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 DROP TABLE test_orders;

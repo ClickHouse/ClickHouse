@@ -91,29 +91,23 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
         }
     }
 
-    /// Check if broadcast is unsafe when the RIGHT side produces output rows.
-    /// In a broadcast join, the RIGHT side is replicated to all nodes and the LEFT side
-    /// is partitioned.  For joins where the RIGHT side produces output rows
-    /// (JoinKind::Right with Semi/Anti/Any/RightAny strictness), replicating the right
-    /// side causes duplicate output: each node independently matches its local left
-    /// slice against the full right table, so the same right-side row can be emitted
-    /// by multiple nodes.
+    /// Broadcast replicates the right side to all nodes.  For RIGHT and FULL joins
+    /// the right side produces unmatched output rows — each node would emit them
+    /// independently, causing duplicates.  JoinCommutativity can turn RIGHT Semi/Anti/Any
+    /// into LEFT (making broadcast safe), but not RIGHT ALL or FULL.
     const auto join_kind = join_step->getJoinOperator().kind;
-    const auto join_strictness = join_step->getJoinOperator().strictness;
-    const bool right_output_unsafe = (join_kind == JoinKind::Right)
-        && (join_strictness == JoinStrictness::Semi
-            || join_strictness == JoinStrictness::Anti
-            || join_strictness == JoinStrictness::Any
-            || join_strictness == JoinStrictness::RightAny);
+    const bool broadcast_unsafe
+        = join_kind == JoinKind::Right
+        || join_kind == JoinKind::Full;
 
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)
     {
         /// Strategy 2: Broadcast join — left input partitioned any way across N nodes,
         /// right input replicated to all N nodes.
-        /// Skip when the replicated (right) side produces output in semi/anti joins —
-        /// replicating the output side causes duplicate rows across nodes.
-        if (!right_output_unsafe)
+        /// Skip when the replicated (right) side can produce output rows —
+        /// replicating it causes duplicate rows across nodes.
+        if (!broadcast_unsafe)
         {
             /// Left input: partitioned across N nodes (any column set is acceptable)
             DistributionDescription left_dist;
