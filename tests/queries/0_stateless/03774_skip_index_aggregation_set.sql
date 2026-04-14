@@ -52,6 +52,19 @@ SELECT uniqCombined64(value) FROM test_skip_index_set_agg;
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqHLL12(value) FROM test_skip_index_set_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
 SELECT uniqHLL12(value) FROM test_skip_index_set_agg;
 
+-- ==================================================
+-- Parameterized uniq variants (regression guard)
+-- ==================================================
+
+-- Test uniqCombined with parameter - should use skip index
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqCombined(15)(value) FROM test_skip_index_set_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT uniqCombined(15)(value) FROM test_skip_index_set_agg;
+
+-- Test uniqUpTo with parameter - should use skip index
+-- uniqUpTo without parameter throws, so parameter forwarding must be correct
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqUpTo(3)(value) FROM test_skip_index_set_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT uniqUpTo(3)(value) FROM test_skip_index_set_agg;
+
 -- Test with non-partition filter (primary key) - should NOT use skip index
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqExact(value) FROM test_skip_index_set_agg WHERE id < 3) WHERE explain LIKE '%ReadFromMergeTree%';
 SELECT uniqExact(value) FROM test_skip_index_set_agg WHERE id < 3;
