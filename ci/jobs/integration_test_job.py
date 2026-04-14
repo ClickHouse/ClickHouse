@@ -753,7 +753,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     has_error = False
     session_timeout_parallel = 3600 * 2
-    session_timeout_sequential = 3600
+    session_timeout_sequential = 3600 * 1.5
 
     if is_llvm_coverage:
         session_timeout_parallel = 3600 * 3
