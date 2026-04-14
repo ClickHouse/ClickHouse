@@ -36,15 +36,27 @@ void PatchBlockIndexWriter::addRows(
         rows.push_back({block_numbers[i], block_offsets[i], static_cast<UInt32>(base_row_index + i)});
 }
 
+/// SIMDFastPFor processes data in blocks of 128 uint32_t's using SIMD instructions.
+/// Both encode and decode require input/output buffers padded to a multiple of this.
+static constexpr size_t PFOR_BLOCK_SIZE = 128;
+
+static size_t padToBlock(size_t n)
+{
+    return (n + PFOR_BLOCK_SIZE - 1) / PFOR_BLOCK_SIZE * PFOR_BLOCK_SIZE;
+}
+
 /// Encode a uint32_t array with PFOR compression. Returns the compressed output.
+/// The input array is padded to PFOR_BLOCK_SIZE with zeros if needed.
 static PaddedPODArray<uint32_t> pforEncode(
     FastPForLib::IntegerCODEC & codec,
     PaddedPODArray<uint32_t> & values)
 {
-    /// Output buffer: worst case is 2x input + some overhead.
-    PaddedPODArray<uint32_t> compressed(values.size() * 2 + 1024);
+    size_t padded_size = padToBlock(values.size());
+    values.resize_fill(padded_size, 0);
+
+    PaddedPODArray<uint32_t> compressed(padded_size * 2 + 1024);
     size_t compressed_size = compressed.size();
-    codec.encodeArray(values.data(), values.size(), compressed.data(), compressed_size);
+    codec.encodeArray(values.data(), padded_size, compressed.data(), compressed_size);
     compressed.resize(compressed_size);
     return compressed;
 }
@@ -352,8 +364,11 @@ bool PatchBlockIndex::GroupCursor::decompressNextChunk(FastPForLib::IntegerCODEC
     const auto * compressed_offsets_data = reinterpret_cast<const uint32_t *>(chunk_ptr);
     chunk_ptr += compressed_offsets_count * sizeof(uint32_t);
 
-    PaddedPODArray<uint32_t> decoded_offset_deltas(num_values);
-    size_t decoded_count = num_values;
+    /// Decode buffers must be padded to PFOR block size (128) because
+    /// SIMDFastPFor writes full SIMD blocks during decompression.
+    size_t padded = padToBlock(num_values);
+    PaddedPODArray<uint32_t> decoded_offset_deltas(padded, 0);
+    size_t decoded_count = padded;
     codec_ref.decodeArray(compressed_offsets_data, compressed_offsets_count,
                           decoded_offset_deltas.data(), decoded_count);
 
@@ -374,10 +389,13 @@ bool PatchBlockIndex::GroupCursor::decompressNextChunk(FastPForLib::IntegerCODEC
     const auto * compressed_row_indices_data = reinterpret_cast<const uint32_t *>(chunk_ptr);
     chunk_ptr += compressed_row_indices_count * sizeof(uint32_t);
 
-    row_indices.resize(num_values);
-    decoded_count = num_values;
+    PaddedPODArray<uint32_t> decoded_row_indices(padded, 0);
+    decoded_count = padded;
     codec_ref.decodeArray(compressed_row_indices_data, compressed_row_indices_count,
-                          row_indices.data(), decoded_count);
+                          decoded_row_indices.data(), decoded_count);
+
+    row_indices.resize(num_values);
+    memcpy(row_indices.data(), decoded_row_indices.data(), num_values * sizeof(uint32_t));
 
     /// Update running state.
     last_offset = max_offset;
