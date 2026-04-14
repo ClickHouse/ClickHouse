@@ -8,7 +8,7 @@ namespace DB
 class AnthropicProvider : public IAIProvider
 {
 public:
-    AnthropicProvider(const String & endpoint_, const String & api_key_);
+    AnthropicProvider(const String & endpoint_, const String & api_key_, const String & api_version_);
 
     String providerName() const override { return "anthropic"; }
 
@@ -17,6 +17,7 @@ public:
 private:
     const String endpoint;
     const String api_key;
+    const String api_version;
     const Poco::URI uri;
 };
 

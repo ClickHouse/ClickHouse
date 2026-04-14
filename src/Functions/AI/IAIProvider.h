@@ -38,6 +38,6 @@ public:
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
-AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key);
+AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
 
 }

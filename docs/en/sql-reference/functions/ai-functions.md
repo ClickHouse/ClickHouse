@@ -40,6 +40,7 @@ CREATE NAMED COLLECTION ai_credentials AS
 | `model` | String | — | Model name (e.g. `'gpt-4o-mini'`, `'text-embedding-3-small'`). |
 | `api_key` | String | — | Authentication key for the provider. |
 | `max_tokens` | UInt64 | `1024` | Maximum number of output tokens per API call. |
+| `api_version` | String | — | API version string. Used by Anthropic (`'2023-06-01'`). |
 
 :::note
 Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `provider = 'openai'` and pointing the `endpoint` to your service.

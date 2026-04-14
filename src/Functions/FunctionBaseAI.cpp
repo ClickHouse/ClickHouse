@@ -121,6 +121,7 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
     config.endpoint = nc->getOrDefault<String>("endpoint", "");
     config.model = nc->getOrDefault<String>("model", "");
     config.api_key = nc->getOrDefault<String>("api_key", "");
+    config.api_version = nc->getOrDefault<String>("api_version", "");
     config.max_tokens = nc->getOrDefault<UInt64>("max_tokens", DEFAULT_AI_MAX_TOKENS);
     config.temperature = defaultTemperature();
 
@@ -150,7 +151,7 @@ float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & argument
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
 {
     auto config = resolveConfig(arguments);
-    auto provider = createAIProvider(config.provider, config.endpoint, config.api_key);
+    auto provider = createAIProvider(config.provider, config.endpoint, config.api_key, config.api_version);
     float temperature = resolveTemperature(arguments, config);
 
     const auto & settings = getContext()->getSettingsRef();

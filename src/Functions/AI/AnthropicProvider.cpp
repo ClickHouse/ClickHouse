@@ -45,19 +45,26 @@ String extractProviderError(const std::string & response_body, int status_code)
 }
 
 
-AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & api_key_)
+static constexpr auto DEFAULT_ANTHROPIC_API_VERSION = "2023-06-01";
+
+AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & api_key_, const String & api_version_)
     : endpoint(endpoint_)
     , api_key(api_key_)
+    , api_version(api_version_.empty() ? DEFAULT_ANTHROPIC_API_VERSION : api_version_)
     , uri(endpoint_)
 {
+    /// Currently support only a single API version
+    if (api_version != DEFAULT_ANTHROPIC_API_VERSION)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported Anthropic API version '{}'. Supported: '{}'", api_version, DEFAULT_ANTHROPIC_API_VERSION);
 }
 
 AIResponse AnthropicProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts)
 {
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_request.model);
-    root->set("max_tokens", static_cast<Int64>(ai_request.max_tokens));
     root->set("temperature", ai_request.temperature);
+    root->set("max_tokens", static_cast<Int64>(ai_request.max_tokens));
 
     if (!ai_request.system_prompt.empty())
         root->set("system", ai_request.system_prompt);
@@ -102,7 +109,7 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
     http_request.set("x-api-key", api_key);
-    http_request.set("anthropic-version", "2023-06-01");
+    http_request.set("anthropic-version", api_version);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
