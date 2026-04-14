@@ -46,6 +46,8 @@ PARTITION BY p
 ORDER BY id
 SETTINGS auto_statistics_types = 'minmax';
 
+SET materialize_statistics_on_insert = 1;
+
 INSERT INTO test_col_stats_agg VALUES
     (1, 10, 5, 100.0, 100.0, NULL, 100.0, 1),
     (2, 20, 3, 200.0, 200.0, NULL, 200.0, 1),
