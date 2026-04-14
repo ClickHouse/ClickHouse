@@ -34,6 +34,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int NO_REMOTE_SHARD_AVAILABLE;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -156,7 +157,14 @@ ColumnsDescription getStructureOfRemoteTable(
         if (shard_info.isLocal())
         {
             const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
-            chassert(!res.empty());
+            if (res.empty())
+            {
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TABLE,
+                    "Table {}.{} exists but has no columns (possibly an Alias to a non-existent table)",
+                    table_id.database_name,
+                    table_id.table_name);
+            }
             return res;
         }
     }
