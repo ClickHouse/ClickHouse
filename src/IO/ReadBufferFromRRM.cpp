@@ -72,19 +72,30 @@ bool ReadBufferFromRRM::nextImpl()
     if (data_offset >= prefetched_data.m_size)
         return false;
 
-    /// Point the working buffer at the remaining prefetched data.
     char * data_begin = prefetched_data.m_data + data_offset;
     size_t remaining = prefetched_data.m_size - data_offset;
 
+    if (internal_buffer.size() == 0)
+    {
+        /// Standalone mode: no external buffer provided, point directly at prefetched data.
+        internal_buffer = Buffer(data_begin, data_begin + remaining);
+        working_buffer = internal_buffer;
+        data_offset = prefetched_data.m_size;
+    }
+    else
+    {
+        /// External buffer mode (CachedOnDiskReadBufferFromFile or SwapHelper):
+        /// copy into the caller's buffer to preserve its pointer invariant.
+        size_t to_copy = std::min(remaining, internal_buffer.size());
+        memcpy(internal_buffer.begin(), data_begin, to_copy);
+        working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + to_copy);
+        data_offset += to_copy;
+    }
+
     LOG_DEBUG(log, "nextImpl: object={} serving local_offset={} abs_offset={} remaining={} first_bytes=[{}]",
         object_key, data_offset, range_begin + data_offset, remaining,
-        hexDump(data_begin, remaining));
+        hexDump(working_buffer.begin(), working_buffer.size()));
 
-    /// Serve all remaining data in one go.
-    internal_buffer = Buffer(data_begin, data_begin + remaining);
-    working_buffer = internal_buffer;
-
-    data_offset = prefetched_data.m_size;
     return true;
 }
 
