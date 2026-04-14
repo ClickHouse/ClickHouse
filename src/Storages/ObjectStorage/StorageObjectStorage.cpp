@@ -327,7 +327,8 @@ StorageObjectStorage::StorageObjectStorage(
             std::make_shared<DataTypeMap>(
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-            "");
+            "",
+            VirtualsMaterializationPlace::Reader);
     }
 
     setVirtuals(virtual_columns_desc);
