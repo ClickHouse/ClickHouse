@@ -494,7 +494,8 @@ void KeeperRequestDispatcher2::dispatchThread()
             /// of bytes of responses, so we may be bottlenecked by sending those responses through
             /// network.
             size_t batch_idx = tail_idx.load();
-            size_t num_batches_in_flight = batch_idx - head_idx.load();
+            size_t cur_head_idx = head_idx.load();
+            size_t num_batches_in_flight = batch_idx - cur_head_idx;
             int64_t max_response_queue_bytes = int64_t(keeper_context->getCoordinationSettings()[CoordinationSetting::max_response_queue_bytes_size]);
             if (num_batches_in_flight >= in_flight_batches.size() || response_bytes_in_all_queues.load() > max_response_queue_bytes / 2)
             {
@@ -562,9 +563,16 @@ void KeeperRequestDispatcher2::dispatchThread()
             bool optimize_read_order = coordination_settings[CoordinationSetting::optimize_read_order];
             bool is_exceeding_memory_soft_limit = server->isExceedingMemorySoftLimit();
 
+            /// Write requests to put in the batch.
+            /// (And possibly some read requests that need to go through raft.)
             KeeperRequestsForSessions requests;
             KeeperRequestsForSessions reconfig_requests;
-            std::vector<std::pair<size_t, KeeperRequestsForSessions>> reads;
+            /// Reads that we can execute right in this thread, before sending the batch to leader.
+            KeeperRequestsForSessions early_reads;
+            /// Reads to do in between writes in this batch.
+            std::vector<std::pair<size_t, KeeperRequestsForSessions>> intermediate_reads;
+            /// Reads to do after the whole batch is committed.
+            KeeperRequestsForSessions late_reads;
             size_t batch_bytes = 0;
             size_t batch_subrequests = 0;
             size_t reads_bytes = 0;
@@ -573,24 +581,47 @@ void KeeperRequestDispatcher2::dispatchThread()
             {
                 std::shared_lock sessions_lock(sessions_mutex);
 
-                /// Consecutive read requests can be executed in parallel. So we want to reorder
-                /// requests to group reads together as much as possible.
-                /// We can only reorder requests from different sessions.
+                /// Read request must be executed after all previous requests from the same session.
+                /// There are 3 cases:
+                ///  (1) Reads that depend on some earlier writes in the batch we're making.
+                ///      Put them in the batch's `reads`.
+                ///  (2) Reads that depend on some writes in an earlier batch that is not committed yet.
+                ///      Add them to that batch's `late_reads`.
+                ///  (3) Reads from sessions that have no writes in progress.
+                ///      Execute them right in this thread, before sending the current batch.
+                ///      (This case is likely important in practice: it should greatly reduce read
+                ///       latency for users that mostly do reads, or that alternate blocking reads
+                ///       and writes. This workload is probably common in practice but less common in
+                ///       keeper-bench.)
+                ///
+                /// For case (1) we additionally reorder requests within the batch to have longer
+                /// runs of consecutive read requests, because consecutive read requests can be
+                /// executed in parallel.
+                ///
+                /// We only ever reorder requests from different sessions, so ordering within a
+                /// session is still guaranteed.
+
+                /// Reordering within a batch.
                 /// A read can be moved to a later point, up to the next non-read request from the same session.
                 /// As we iterate over requests, we try to shift all reads to as late as possible, until
-                /// on of them bumps into the next request from its session; when it does, we flush all
-                /// accumulated reads (deferred_reads) and continue.
+                /// one of them bumps into the next request from its session; when it does, we flush all
+                /// accumulated reads (late_reads) and continue.
                 ///
+                /// Invariant: late_reads contains reads that should be done after all requests of
+                ///            the current batch so far.
                 /// Invariant: Session::reordering_version == current_reordering_version
-                ///            iff deferred_reads contains any requests for this session.
-                KeeperRequestsForSessions deferred_reads;
-                auto flush_deferred_reads = [&]
+                ///            iff late_reads contains any requests for this session.
+                ++current_reordering_version;
+                auto flush_to_intermediate_reads = [&]
                 {
-                    if (deferred_reads.empty())
+                    if (late_reads.empty())
+                    {
+                        chassert(!optimize_read_order);
                         return;
+                    }
                     chassert(!requests.empty());
-                    reads.emplace_back(requests.size(), std::move(deferred_reads));
-                    deferred_reads.clear();
+                    intermediate_reads.emplace_back(requests.size(), std::move(late_reads));
+                    late_reads.clear();
                     ++current_reordering_version;
                 };
 
@@ -658,40 +689,63 @@ void KeeperRequestDispatcher2::dispatchThread()
 
                     bool is_read = request.request->isReadRequest();
 
-                    /// If reads have to go through raft, it's sufficient to send the first read of a batch through raft.
-                    /// NOTE: Currently this `if` block is redundant with the `if (is_read && requests.empty())` below.
-                    ///       It's left here to make sure we don't accidentally break quorum_reads if we change the condition below in future.
+                    /// If read has to go through raft, put it in the batch as if it were a write.
+                    /// It's sufficient to do this for the first request of a batch, the rest are ordered after it.
                     if (is_read && requests.empty() && quorum_reads)
                         is_read = false;
 
-                    if (is_read && requests.empty())
-                    {
-                        /// Send the first request of a batch through raft, even if it's a read request, for simplicity.
-                        /// All reads happen in commit thread.
-                        /// We could do some things differently, e.g.:
-                        ///  * Do reads right here in dispatchThread if there are no writes in flight.
-                        ///    Or no writes for the reads' sessions in flight.
-                        ///  * Allow InFlightBatch::reads' first element to contain reads to execute *before*
-                        ///    the first request of the batch. Then we wouldn't have to put first read into the raft batch,
-                        ///    but would still unnecessarily delay that read until the subsequent batch of writes is done.
-                        ///  * Allow InFlightBatch::requests to be empty, so a batch contains only reads and doesn't go through raft.
-                        ///    Its reads would be executed immediately after previous non-read-only batch is committed.
-                        ///    Or, equivalently, allow adding to `reads` of an already in-flight batch.
-                        is_read = false;
-                    }
-
                     if (is_read)
                     {
-                        if (session)
-                            session->reordering_version = current_reordering_version;
+                        /// (We're counting the request towards current batch's limit even if we end
+                        ///  up adding it to another batch's late_reads. Because this is much
+                        ///  simpler than limiting late_reads size. But doesn't this mean that
+                        ///  late_reads can grow unboundedly big? No, it can't get bigger than
+                        ///  max_in_flight_request_batches * max_read_batch_size. Think of it as the
+                        ///  limit being "amortized" across multiple batches.)
                         reads_subrequests += getSubrequestCount(*request.request);
                         reads_bytes += getRequestBytesCost(*request.request);
-                        deferred_reads.push_back(std::move(request));
+
+                        chassert(session);
+
+                        if (quorum_reads)
+                            /// Force the read to be attached to the new batch.
+                            session->last_batch_idx = batch_idx;
+
+                        size_t last_batch = session->last_batch_idx;
+                        if (last_batch == batch_idx)
+                        {
+                            /// Case (1): read request should be attached to the current batch.
+                            /// Put it in late_reads, which will later be flushed to the batch's `reads`.
+                            chassert(!requests.empty());
+                            if (session)
+                                session->reordering_version = current_reordering_version;
+                            late_reads.push_back(std::move(request));
+                        }
+                        else
+                        {
+                            /// There are no write requests from this session in current batch so far.
+                            bool added = false;
+                            if (last_batch >= cur_head_idx)
+                            {
+                                /// The batch with previous request from this session may still be
+                                /// in flight. Try to add the request to that batch's late_reads.
+                                /// If added == true, this is case (2).
+                                /// If added == false, it means last_batch was committed and all its
+                                /// read requests were finished, which means we can execute this
+                                /// request right in dispatchThread.
+                                added = in_flight_batches[last_batch % in_flight_batches.size()].late_reads.add(request);
+                            }
+                            if (!added)
+                                /// Case (3): do the read right in dispatchThread.
+                                early_reads.push_back(std::move(request));
+                        }
                     }
                     else
                     {
                         if ((session && session->reordering_version == current_reordering_version) || !optimize_read_order)
-                            flush_deferred_reads();
+                            flush_to_intermediate_reads();
+                        if (session)
+                            session->last_batch_idx = batch_idx;
 
                         batch_subrequests += getSubrequestCount(*request.request);
                         batch_bytes += getRequestBytesCost(*request.request);
@@ -700,11 +754,13 @@ void KeeperRequestDispatcher2::dispatchThread()
 
                     request = {}; // suppress clang-tidy false positive
                 } while (check_batch_size_limits() && tryPopRequest(request));
-
-                flush_deferred_reads();
             }
+
+            if (!early_reads.empty())
+                executeReads(std::move(early_reads));
+
             if (requests.empty())
-                chassert(reads.empty());
+                chassert(intermediate_reads.empty() && late_reads.empty());
 
             if (!requests.empty())
             {
@@ -717,8 +773,8 @@ void KeeperRequestDispatcher2::dispatchThread()
                 batch.bytes = batch_bytes;
                 batch.start_time = std::chrono::steady_clock::now();
                 batch.requests = std::move(requests);
-                batch.reads = std::move(reads);
-                batch.activate();
+                batch.intermediate_reads = std::move(intermediate_reads);
+                batch.activate(std::move(late_reads));
 
                 tail_idx.store(batch_idx + 1);
 
@@ -756,15 +812,24 @@ void KeeperRequestDispatcher2::dropInFlightRequests()
         while (batch.committed_requests < batch.requests.size())
         {
             addErrorResponse(batch.requests[batch.committed_requests], Coordination::Error::ZCONNECTIONLOSS);
-            if (batch.reads_idx < batch.reads.size() && batch.reads[batch.reads_idx].first == batch.committed_requests + 1)
-            {
-                for (const auto & read_request : batch.reads[batch.reads_idx].second)
-                    addErrorResponse(read_request, Coordination::Error::ZCONNECTIONLOSS);
-                batch.reads_idx += 1;
-            }
             batch.committed_requests += 1;
+            if (batch.intermediate_reads_idx < batch.intermediate_reads.size() &&
+                batch.intermediate_reads[batch.intermediate_reads_idx].first == batch.committed_requests)
+            {
+                for (const auto & read_request : batch.intermediate_reads[batch.intermediate_reads_idx].second)
+                    addErrorResponse(read_request, Coordination::Error::ZCONNECTIONLOSS);
+                batch.intermediate_reads_idx += 1;
+            }
         }
-        chassert(batch.reads_idx == batch.reads.size());
+        chassert(batch.intermediate_reads_idx == batch.intermediate_reads.size());
+        while (true)
+        {
+            auto reads = batch.late_reads.takeAndFinishIfEmpty();
+            if (reads.empty())
+                break;
+            for (const auto & read_request : reads)
+                addErrorResponse(read_request, Coordination::Error::ZCONNECTIONLOSS);
+        }
         popBatch(batch_idx);
     }
 }
@@ -818,33 +883,65 @@ void KeeperRequestDispatcher2::onCommit(const KeeperRequestForSession & request_
     if (current_stream_is_suspect.load())
         current_stream_is_suspect.store(false); // a request succeeded, the stream is working
 
-    if (batch.reads_idx < batch.reads.size() && batch.reads[batch.reads_idx].first == batch.committed_requests + 1)
+    batch.committed_requests += 1;
+
+    if (batch.intermediate_reads_idx < batch.intermediate_reads.size() &&
+        batch.intermediate_reads[batch.intermediate_reads_idx].first == batch.committed_requests)
     {
-        auto reads = std::move(batch.reads[batch.reads_idx].second);
-        batch.reads_idx += 1;
+        auto reads = std::move(batch.intermediate_reads[batch.intermediate_reads_idx].second);
+        batch.intermediate_reads_idx += 1;
 
         /// (We could re-check whether the requests' sessions are still alive, but it doesn't seem
         ///  worth the map lookup cost. We already checked session liveness just before starting
         ///  this raft batch, and hopefully raft commit latency doesn't get high in practice even
         ///  under too much load because we limit the number of in-flight batches.)
-        ProfileEvents::increment(ProfileEvents::KeeperReadBatchCount);
-        ProfileEvents::increment(ProfileEvents::KeeperReadBatchTotalRequests, reads.size());
-
-        using namespace std::chrono;
-        auto now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-        for (auto & r : reads)
-            r.time = now_ms;
-
-        server->putLocalReadRequests(reads);
+        executeReads(std::move(reads));
     }
-
-    batch.committed_requests += 1;
 
     if (batch.committed_requests == batch.requests.size())
     {
-        chassert(batch.reads_idx == batch.reads.size());
+        chassert(batch.intermediate_reads_idx == batch.intermediate_reads.size());
+
+        /// Execute reads that need to happen right after this batch of writes.
+        /// Tricky interaction: dispatchThread may add more reads to this list while we're here.
+        ///
+        /// Note that "read" requests are not truly read-only; they can add/remove/inspect watches.
+        /// So we must execute them in the correct order (within each session).
+        /// (E.g. maybe an earlier "read" request adds a watch, then a later "read" request checks its presence - can't reorder.)
+        /// (Even though server->putLocalReadRequests internally can execute parts of multiple reads in parallel,
+        ///  we must still perform these putLocalReadRequests calls in the correct order.)
+        ///
+        /// So, what should we do if dispatchThread wants to add more reads while onCommit is executing
+        /// previous reads? The new reads should be executed after onCommit is done with the previous reads.
+        /// So we allow dispatchThread to add more reads while we're executing previous reads.
+        /// That's why there's a loop here, taking and executing newly added reads.
+        /// When there are no more reads to execute, LateReads goes into Finished state, which tells
+        /// dispatchThread that subsequent reads can be executed right there.
+        /// (Alternatively, we could make dispatchThread block waiting for onCommit to finish reading,
+        ///  but that's just worse.)
+        while (true)
+        {
+            auto reads = batch.late_reads.takeAndFinishIfEmpty();
+            if (reads.empty())
+                break;
+            executeReads(std::move(reads));
+        }
+
         popBatch(batch_idx);
     }
+}
+
+void KeeperRequestDispatcher2::executeReads(KeeperRequestsForSessions reads)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperReadBatchCount);
+    ProfileEvents::increment(ProfileEvents::KeeperReadBatchTotalRequests, reads.size());
+
+    using namespace std::chrono;
+    auto now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    for (auto & r : reads)
+        r.time = now_ms;
+
+    server->putLocalReadRequests(reads);
 }
 
 void KeeperRequestDispatcher2::onResponseDeallocated(const Coordination::ZooKeeperResponse & response)
