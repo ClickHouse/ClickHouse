@@ -595,6 +595,29 @@ def test_backup_database(started_cluster):
     )
 
 
+def test_restore_database_replace_external_to_null(started_cluster):
+    node = started_cluster.instances["node1"]
+    db_name = "backup_database_null"
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+    node.query(f"BACKUP DATABASE {db_name} TO {backup_name}")
+    node.query(f"DROP DATABASE {db_name} SYNC")
+    assert db_name not in node.query("SHOW DATABASES")
+
+    node.query(
+        f"RESTORE DATABASE {db_name} FROM {backup_name}",
+        settings={
+            "restore_replace_external_engines_to_null": 1,
+            "restore_replace_external_table_functions_to_null": 1,
+            "restore_replace_external_dictionary_source_to_null": 1,
+        },
+    )
+    assert db_name not in node.query("SHOW DATABASES")
+
+
 def test_non_existing_tables(started_cluster):
     node = started_cluster.instances["node1"]
 

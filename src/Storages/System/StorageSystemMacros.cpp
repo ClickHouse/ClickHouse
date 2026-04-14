@@ -1,4 +1,7 @@
 #include <Columns/IColumn.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
 #include <Common/Macros.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemMacros.h>

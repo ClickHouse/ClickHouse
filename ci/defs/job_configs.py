@@ -193,17 +193,20 @@ class JobConfigs:
         needs_submodules=True,
     )
     darwin_fast_test_jobs = Job.Config(
-        name="Darwin fast test",
+        name="Fast test",
         runs_on=None,  # from parametrize()
         command="python3 ./ci/jobs/fast_test.py --set-status-success",
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Darwin tests",
         allow_merge_on_failure=True,
+        post_hooks=[
+            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run*",
+        ],
     ).parametrize(
         Job.ParamSet(
-            parameter=BuildTypes.AMD_DARWIN,
-            runs_on=RunnerLabels.MACOS_AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_DARWIN_BIN],
+            parameter=BuildTypes.ARM_DARWIN,
+            runs_on=RunnerLabels.MACOS_ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
         ),
     )
     smoke_tests_macos = Job.Config(

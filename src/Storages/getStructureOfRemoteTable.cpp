@@ -64,7 +64,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         {
             context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
             auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
-            return storage_ptr->getInMemoryMetadataPtr()->getColumns();
+            return storage_ptr->getInMemoryMetadataPtr(context, false)->getColumns();
         }
 
         /// Request for a table description
