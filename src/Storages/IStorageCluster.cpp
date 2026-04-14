@@ -244,7 +244,7 @@ IStorageCluster::RemoteCallVariables IStorageCluster::convertToRemote(
     if (host_addresses.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty cluster {}", cluster_name_from_settings);
 
-    static pcg64 rng(randomSeed());
+    pcg64 rng(randomSeed());
     size_t shard_num = rng() % host_addresses.size();
     auto shard_addresses = host_addresses[shard_num];
     /// After getClusterImpl each shard must have exactly 1 replica

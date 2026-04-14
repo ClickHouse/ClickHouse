@@ -697,30 +697,21 @@ void StorageObjectStorageCluster::truncate(
 void StorageObjectStorageCluster::checkTableCanBeRenamed(const StorageID & new_name) const
 {
     if (pure_storage)
-    {
         pure_storage->checkTableCanBeRenamed(new_name);
-        return;
-    }
     IStorageCluster::checkTableCanBeRenamed(new_name);
 }
 
 void StorageObjectStorageCluster::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (pure_storage)
-    {
         pure_storage->rename(new_path_to_table_data, new_table_id);
-        return;
-    }
     IStorageCluster::rename(new_path_to_table_data, new_table_id);
 }
 
 void StorageObjectStorageCluster::renameInMemory(const StorageID & new_table_id)
 {
     if (pure_storage)
-    {
         pure_storage->renameInMemory(new_table_id);
-        return;
-    }
     IStorageCluster::renameInMemory(new_table_id);
 }
 
