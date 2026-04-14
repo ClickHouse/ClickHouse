@@ -389,6 +389,7 @@
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
     M(LoadedDataParts, "Number of data parts loaded by MergeTree tables during initialization.", ValueType::Number) \
     M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.", ValueType::Microseconds) \
+    M(FilteringMarksWithPrimaryKeyProcessedMarks, "Total marks processed during PK analysis.", ValueType::Number) \
     M(FilteringMarksWithPrimaryKeyMicroseconds, "Time spent filtering parts by PK.", ValueType::Microseconds) \
     M(FilteringMarksWithSecondaryKeysMicroseconds, "Time spent filtering parts by skip indexes.", ValueType::Microseconds) \
     M(DistributedIndexAnalysisMicroseconds, "Total time spent during distributed index analysis", ValueType::Microseconds) \
@@ -960,6 +961,8 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
     M(KeeperBatchMaxCount, "Number of times the size of batch was limited by the amount", ValueType::Number) \
     M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size", ValueType::Number) \
+    M(KeeperReadBatchCount, "Number of read request batches processed by Keeper", ValueType::Number) \
+    M(KeeperReadBatchTotalRequests, "Total number of read requests processed in batches by Keeper", ValueType::Number) \
     M(KeeperCommits, "Number of successful commits", ValueType::Number) \
     M(KeeperCommitsFailed, "Number of failed commits", ValueType::Number) \
     M(KeeperSnapshotCreations, "Number of snapshots creations", ValueType::Number) \

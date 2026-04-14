@@ -336,7 +336,7 @@ void StorageMergeTree::read(
                 query_plan,
                 getStorageID(),
                 std::move(modified_query_info),
-                getInMemoryMetadataPtr()->getColumns(),
+                getInMemoryMetadataPtr(local_context, false)->getColumns(),
                 storage_snapshot,
                 processed_stage,
                 query_info.query,
@@ -428,8 +428,8 @@ void StorageMergeTree::alter(
     auto old_storage_settings = getSettings();
     const auto & query_settings = local_context->getSettingsRef();
 
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
 
     auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context);
     if (!maybe_mutation_commands.empty())
@@ -1425,7 +1425,7 @@ bool StorageMergeTree::merge(
     bool optimize_skip_merged_partitions)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
 
     auto merge_select_result = [&]()
     {
@@ -1724,7 +1724,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     cleanup_thread.wakeupEarlierIfNeeded();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     MergeMutateSelectedEntryPtr merge_entry;
     MergeMutateSelectedEntryPtr mutate_entry;
 
@@ -1807,7 +1807,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
         /// which is equal or more fresh than commands themselves. In extremely rare case it can happen that we will have alter
         /// in between we took snapshot above and selected commands. That is why we take new snapshot here.
-        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, getInMemoryMetadataPtr(), mutate_entry, shared_lock, common_assignee_trigger);
+        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, getInMemoryMetadataPtr(getContext(), false), mutate_entry, shared_lock, common_assignee_trigger);
         return assignee.scheduleMergeMutateTask(task);
     }
     if (has_mutations)
@@ -1943,7 +1943,7 @@ bool StorageMergeTree::optimize(
     assertNotReadonly();
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
-    if (deduplicate && getInMemoryMetadataPtr()->hasProjections()
+    if (deduplicate && getInMemoryMetadataPtr(local_context, false)->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
@@ -2347,7 +2347,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         if (txn)
         {
             if (auto part = outdatePart(txn.get(), part_name, /*force=*/ true))
-                dropPartsImpl({part}, detach);
+                dropPartsImpl({part}, detach, query_context);
         }
         else
         {
@@ -2361,7 +2361,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
             if (detach)
             {
-                auto metadata_snapshot = getInMemoryMetadataPtr();
+                auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
                 String part_dir = part->getDataPartStorage().getPartDirectory();
                 LOG_INFO(log, "Detaching {}", part_dir);
                 auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
@@ -2422,7 +2422,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 }
                 removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
             }
-            dropPartsImpl(std::move(parts_to_remove), detach);
+            dropPartsImpl(std::move(parts_to_remove), detach, query_context);
         }
         else
         {
@@ -2446,7 +2446,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             {
                 for (const auto & part : parts)
                 {
-                    auto metadata_snapshot = getInMemoryMetadataPtr();
+                    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
                     String part_dir = part->getDataPartStorage().getPartDirectory();
                     LOG_INFO(log, "Detaching {}", part_dir);
                     auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
@@ -2478,9 +2478,9 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
     clearEmptyParts();
 }
 
-void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach)
+void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr query_context)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
 
     if (detach)
     {
@@ -2577,8 +2577,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
 
-    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
-    auto my_metadata_snapshot = getInMemoryMetadataPtr();
+    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
+    auto my_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
@@ -2735,8 +2735,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     OperationDataPartsLock operation_data_parts_lock_src(operation_with_data_parts_mutex, std::adopt_lock);
     OperationDataPartsLock operation_data_parts_lock_dest(dest_table_storage->operation_with_data_parts_mutex, std::adopt_lock);
 
-    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 

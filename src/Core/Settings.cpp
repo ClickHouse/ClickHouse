@@ -1754,7 +1754,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
     DECLARE(Bool, per_part_index_stats, false, R"(
         Logs index statistics per part
 )", 0) \
-    DECLARE(Bool, materialize_statistics_on_insert, true, R"(
+    DECLARE(Bool, materialize_statistics_on_insert, false, R"(
 If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
@@ -3883,6 +3883,11 @@ Possible values:
 )", 0) \
     DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
+)", 0) \
+    DECLARE(Bool, read_in_order_use_virtual_row_per_block, false, R"(
+When enabled together with `read_in_order_use_virtual_row`, emit a virtual row after each block read (not only at the beginning of each part).
+This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
+Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
 )", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.

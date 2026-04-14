@@ -657,7 +657,7 @@ bool StorageKafka::streamToViews()
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
 
     // Create an INSERT query for streaming data
     auto insert = make_intrusive<ASTInsertQuery>();

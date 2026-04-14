@@ -141,11 +141,7 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
 
 size_t RangesInDataPart::getMarksCount() const
 {
-    size_t total = 0;
-    for (const auto & range : ranges)
-        total += range.end - range.begin;
-
-    return total;
+    return ranges.getNumberOfMarks();
 }
 
 size_t RangesInDataPart::getRowsCount() const

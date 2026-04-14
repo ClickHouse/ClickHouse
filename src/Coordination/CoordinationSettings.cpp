@@ -44,6 +44,11 @@ namespace ErrorCodes
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
     DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", HOT_RELOAD) \
     DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", HOT_RELOAD) \
+    DECLARE(UInt64, max_read_batch_size, 100000, "Max size of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
+    DECLARE(UInt64, max_read_batch_bytes_size, 10000000, "Max size in bytes of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
+    DECLARE(UInt64, parallel_read_threads, 8, "Number of threads for parallel local read request processing. 0 means disabled.", HOT_RELOAD) \
+    DECLARE(UInt64, parallel_read_chunk_size, 16, "Number of read requests each worker picks up atomically when parallel reads are enabled.", HOT_RELOAD) \
+    DECLARE(UInt64, parallel_read_min_batch, 128, "Minimum batch size to trigger parallel read processing. Smaller batches are processed sequentially.", HOT_RELOAD) \
     DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", HOT_RELOAD) \
     DECLARE(UInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_requests_append_bytes_size, 10*1024*1024, "Max size in bytes of batch of requests that can be sent to replica in append request", 0) \

@@ -209,6 +209,7 @@ namespace Setting
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
+    extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -738,16 +739,35 @@ Pipe ReadFromMergeTree::readInOrder(
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
+        bool use_virtual_row = virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder);
+        bool use_virtual_row_per_block = use_virtual_row && context->getSettingsRef()[Setting::read_in_order_use_virtual_row_per_block];
+
+        Block pk_header;
+        if (use_virtual_row)
+        {
+            const auto & primary_key = storage_snapshot->metadata->primary_key;
+            size_t num_pk_columns_required = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+
+            ColumnsWithTypeAndName pk_header_columns;
+            pk_header_columns.reserve(num_pk_columns_required);
+            for (size_t j = 0; j < num_pk_columns_required; ++j)
+                pk_header_columns.push_back({primary_key.data_types[j]->createColumn(), primary_key.data_types[j], primary_key.column_names[j]});
+
+            pk_header = Block(std::move(pk_header_columns));
+
+            if (use_virtual_row_per_block)
+                processor->setVirtualRowConversions(virtual_row_conversion, pk_header, read_type == ReadType::InReverseOrder);
+        }
+
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);
 
         Pipe pipe(source);
 
-        if (virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder))
+        if (use_virtual_row)
         {
             const auto & index = part_with_ranges.data_part->getIndex();
-            const auto & primary_key = storage_snapshot->metadata->primary_key;
 
             bool has_final_mark = part_with_ranges.data_part->index_granularity->hasFinalMark();
             bool read_in_direct_order = read_type == ReadType::InOrder;
@@ -757,21 +777,13 @@ Pipe ReadFromMergeTree::readInOrder(
             /// The index may have fewer columns than the primary key if suffix columns were
             /// removed by optimizeIndexColumns (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
             /// In that case, we cannot apply virtual row optimization because we don't have all required columns.
-            size_t num_pk_columns_required = virtual_row_conversion->getRequiredColumnsWithTypes().size();
-            if (index->size() >= num_pk_columns_required && has_pk_value)
+            auto pk_columns = pk_header.cloneEmptyColumns();
+            if (index->size() >= pk_columns.size() && has_pk_value)
             {
-                ColumnsWithTypeAndName pk_columns;
-                pk_columns.reserve(num_pk_columns_required);
+                for (size_t j = 0; j < pk_columns.size(); ++j)
+                    pk_columns[j]->insert((*(*index)[j])[mark_range_pos]);
 
-                for (size_t j = 0; j < num_pk_columns_required; ++j)
-                {
-                    auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
-                    column->insert((*(*index)[j])[mark_range_pos]);
-                    pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
-                }
-
-                Block pk_block(std::move(pk_columns));
-
+                Block pk_block = pk_header.cloneWithColumns(std::move(pk_columns));
                 pipe.addSimpleTransform([&](const SharedHeader & header)
                 {
                     return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
@@ -1274,7 +1286,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         }
     }
 
-    const bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
+    bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
+
+    /// Preliminary MergingSortedTransform consumes virtual row, so it won't reach downstream sorting and optimization won't work.
+    if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
+        need_preliminary_merge = false;
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
@@ -3347,6 +3363,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     shared_virtual_fields.emplace("_sample_factor", result.sampling.used_sample_factor);
     shared_virtual_fields.emplace("_table", data.getStorageID().getTableName());
+    shared_virtual_fields.emplace("_database", data.getStorageID().getDatabaseName());
 
     LOG_DEBUG(
         log,
@@ -3440,11 +3457,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
 
-        std::erase_if(applicable_skip_indexes.useful_indices, [this](const auto & idx)
+        std::erase_if(applicable_skip_indexes.useful_indices, [](const auto & idx)
         {
             /// Vector similarity indexes are not applicable on data reads.
-            /// Indexes for which index read task is created use another mechanism to read index data.
-            return idx.index->isVectorSimilarityIndex() || index_read_tasks.contains(idx.index->index.name);
+            return idx.index->isVectorSimilarityIndex();
         });
 
         if (!applicable_skip_indexes.empty())

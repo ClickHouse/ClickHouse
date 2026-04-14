@@ -1,4 +1,5 @@
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
