@@ -51,7 +51,9 @@
 
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Processors/Sources/NullSource.h>
@@ -1235,8 +1237,61 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         /// Analyze the view's inner query to obtain its query tree.
                         const auto & inner_query_ast = storage_snapshot->metadata->getSelectQuery().inner_query;
+
+                        /// Row policies for the view and the underlying distributed table must be injected
+                        /// into the inner query's WHERE clause. The normal where_filters path is skipped
+                        /// when StorageDistributed returns a processing stage other than FetchColumns.
+                        /// Both policy expressions are resolvable inside the inner query: the view policy
+                        /// may reference view aliases (resolved by the analyzer), and the distributed table
+                        /// policy references original column names (visible before aliasing).
+                        ASTPtr effective_inner_query_ast = inner_query_ast;
+                        {
+                            const auto & view_id = storage->getStorageID();
+                            auto view_row_policy = query_context->getRowPolicyFilter(
+                                view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+                            const auto & dist_id = underlying_dist->getStorageID();
+                            auto dist_row_policy = query_context->getRowPolicyFilter(
+                                dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+                            ASTPtr combined_policy;
+                            for (const auto * policy : {&view_row_policy, &dist_row_policy})
+                            {
+                                if (*policy && !(*policy)->isAlwaysTrue())
+                                {
+                                    /// Register policy names so they appear in system.query_log.used_row_policies,
+                                    /// matching what buildRowPolicyFilterIfNeeded does on the normal path.
+                                    for (const auto & row_policy : (*policy)->policies)
+                                    {
+                                        auto name = row_policy->getFullName().toString();
+                                        if (query_context->hasQueryContext())
+                                            query_context->getQueryContext()->addUsedRowPolicy(name);
+                                        used_row_policies.emplace(std::move(name));
+                                    }
+                                    auto expr = (*policy)->expression->clone();
+                                    combined_policy = combined_policy
+                                        ? makeASTFunction("and", std::move(combined_policy), std::move(expr))
+                                        : std::move(expr);
+                                }
+                            }
+
+                            if (combined_policy)
+                            {
+                                auto cloned_ast = inner_query_ast->clone();
+                                /// inner_query is always an ASTSelectWithUnionQuery; tryGetTrivialViewUnderlyingStorage
+                                /// already verified it contains exactly one SELECT.
+                                auto * union_ast = cloned_ast->as<ASTSelectWithUnionQuery>();
+                                chassert(union_ast && union_ast->list_of_selects->children.size() == 1);
+                                auto & select_ast = union_ast->list_of_selects->children[0]->as<ASTSelectQuery &>();
+                                if (select_ast.where())
+                                    combined_policy = makeASTFunction("and", select_ast.where()->clone(), std::move(combined_policy));
+                                select_ast.setExpression(ASTSelectQuery::Expression::WHERE, std::move(combined_policy));
+                                effective_inner_query_ast = std::move(cloned_ast);
+                            }
+                        }
+
                         auto options = SelectQueryOptions(QueryProcessingStage::FetchColumns).subquery();
-                        InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, query_context, options);
+                        InterpreterSelectQueryAnalyzer inner_interp(effective_inner_query_ast, query_context, options);
                         const auto & inner_query_tree = inner_interp.getQueryTree();
                         /// Mark as subquery so it serializes as (SELECT ...) in the FROM clause.
                         inner_query_tree->as<QueryNode &>().setIsSubquery(true);

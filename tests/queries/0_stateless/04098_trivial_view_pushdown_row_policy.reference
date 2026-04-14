@@ -1,0 +1,8 @@
+5
+1	100
+4	400
+5	500
+1	200
+4	800
+5	1000
+['`04098_policy_dist` ON default.`04098_dist`','`04098_policy_view` ON default.`04098_view`']
