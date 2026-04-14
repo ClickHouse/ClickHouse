@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>

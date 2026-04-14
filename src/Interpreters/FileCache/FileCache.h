@@ -261,7 +261,7 @@ private:
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
     std::atomic<size_t> background_download_max_file_segment_size;
-    size_t load_metadata_threads;
+    UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;
     ThreadFromGlobalPool load_metadata_main_thread;
@@ -335,7 +335,7 @@ private:
 
     void loadMetadata();
     void loadMetadataImpl();
-    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const OriginInfo & origin);
+    void loadMetadataForKey(const std::filesystem::path & key_dir, const OriginInfo & origin);
 
     /// Insert a single file segment into cache during metadata loading.
     /// Returns true if the segment was inserted, false if it didn't fit.

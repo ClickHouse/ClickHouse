@@ -109,6 +109,11 @@ public:
     {
         return object_storage->getAzureBlobStorageAuthMethod();
     }
+
+    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override
+    {
+        return object_storage->getAzureBlobStorageConnectionParams();
+    }
 #endif
 
 #if USE_AWS_S3

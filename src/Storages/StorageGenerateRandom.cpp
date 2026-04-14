@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>

@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <chrono>
 #include <Common/StringUtils.h>
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/KeeperClientCLI/Commands.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 #include <future>
@@ -22,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
 
 bool LSCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
@@ -95,72 +93,6 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
     }
 
     client->cout << "\n";
-}
-
-bool LSRCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
-{
-    String path;
-    if (!pos->isEnd() && pos->type != TokenType::Number && parseKeeperPath(pos, expected, path))
-        node->args.push_back(std::move(path));
-
-    ASTPtr limit_literal;
-    if (ParserUnsignedInteger{}.parse(pos, limit_literal, expected))
-        node->args.push_back(limit_literal->as<ASTLiteral &>().value);
-
-    return true;
-}
-
-void LSRCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
-{
-    if (!client->zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::GET_CHILDREN_RECURSIVE))
-    {
-        client->cerr << "ListRecursive is not supported by this Keeper cluster.\n";
-        return;
-    }
-
-    String path;
-    uint32_t children_limit = LSR_DEFAULT_LIMIT;
-
-    if (!query->args.empty() && query->args[0].getType() == Field::Types::String)
-    {
-        path = client->getAbsolutePath(query->args[0].safeGet<String>());
-        if (query->args.size() >= 2)
-        {
-            UInt64 lim = query->args[1].safeGet<UInt64>();
-            if (lim > LSR_DEFAULT_LIMIT)
-            {
-                client->cerr << "Limit exceeds maximum.\n";
-                return;
-            }
-            children_limit = static_cast<uint32_t>(lim);
-        }
-    }
-    else
-    {
-        path = client->cwd;
-        if (!query->args.empty())
-        {
-            UInt64 lim = query->args[0].safeGet<UInt64>();
-            if (lim > LSR_DEFAULT_LIMIT)
-            {
-                client->cerr << "Limit exceeds maximum.\n";
-                return;
-            }
-            children_limit = static_cast<uint32_t>(lim);
-        }
-    }
-
-    Strings children;
-    auto err = client->zookeeper->tryListRecursive(path, children, children_limit);
-    if (err != Coordination::Error::ZOK)
-    {
-        client->cerr << "Coordination error: " << Coordination::errorMessage(err) << ", path " << path << '\n';
-        return;
-    }
-
-    std::sort(children.begin(), children.end());
-    for (const auto & child : children)
-        client->cout << child << '\n';
 }
 
 bool CDCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -904,7 +836,7 @@ void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperCl
     Coordination::Stat stat;
     client->zookeeper->get(path, &stat);
 
-    int total_num_children = stat.numChildren;
+    int totalNumChildren = stat.numChildren;
     while (!queue.empty())
     {
         auto next_path = queue.front();
@@ -917,12 +849,12 @@ void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperCl
 
         for (size_t i = 0; i < response.size(); ++i)
         {
-            total_num_children += response[i].stat.numChildren;
+            totalNumChildren += response[i].stat.numChildren;
             queue.push(children[i]);
         }
     }
 
-    client->cout << total_num_children << "\n";
+    client->cout << totalNumChildren << "\n";
 }
 
 namespace

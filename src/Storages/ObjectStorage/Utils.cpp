@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
