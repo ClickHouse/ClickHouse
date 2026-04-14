@@ -54,13 +54,22 @@ struct RestoreSettings
 
     /// If this is set to true then only create queries will be read from backup,
     /// without the data of tables.
+    /// Equivalent to setting restore_table_data=false, restore_access_entities=false,
+    /// restore_functions=false. The individual settings can override structure_only.
     bool structure_only = false;
 
-    /// If this is set to true together with structure_only, access entities
-    /// (users, roles, settings profiles, row policies, quotas) and user-defined
-    /// functions will also be restored despite structure_only being set.
-    /// These are considered definitions rather than table data.
-    bool structure_only_restore_definitions = false;
+    /// Whether to restore table data. Default true.
+    /// Can be set to true to restore data even when structure_only is set.
+    std::optional<bool> restore_table_data;
+
+    /// Whether to restore access entities (users, roles, settings profiles,
+    /// row policies, quotas). Default true.
+    /// Can be set to true to restore access entities even when structure_only is set.
+    std::optional<bool> restore_access_entities;
+
+    /// Whether to restore user-defined functions. Default true.
+    /// Can be set to true to restore UDFs even when structure_only is set.
+    std::optional<bool> restore_functions;
 
     /// How RESTORE command should work if a table to restore already exists.
     RestoreTableCreationMode create_table = RestoreTableCreationMode::kCreateIfNotExists;
@@ -174,6 +183,11 @@ struct RestoreSettings
 
     /// Core settings specified in the query.
     SettingsChanges core_settings;
+
+    /// Effective values: explicit setting takes priority, otherwise structure_only inverts the default.
+    bool shouldRestoreTableData() const { return restore_table_data.value_or(!structure_only); }
+    bool shouldRestoreAccessEntities() const { return restore_access_entities.value_or(!structure_only); }
+    bool shouldRestoreFunctions() const { return restore_functions.value_or(!structure_only); }
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

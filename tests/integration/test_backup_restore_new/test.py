@@ -2310,8 +2310,8 @@ def test_async_backup_restore_with_max_execution_time_zero():
 def test_structure_only_restores_access_entities_and_udfs():
     """Verifies two things:
     1. structure_only=true alone does NOT restore access entities or UDFs (backward compat).
-    2. structure_only=true with structure_only_restore_definitions=true restores access entities
-       (users, roles, settings profiles, row policies, quotas) and UDFs, but not table data."""
+    2. structure_only=true with restore_access_entities=true, restore_functions=true restores
+       access entities and UDFs, but not table data."""
     instance.query("CREATE DATABASE test")
     instance.query(
         "CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY x"
@@ -2345,60 +2345,44 @@ def test_structure_only_restores_access_entities_and_udfs():
     instance.query("DROP QUOTA q1")
     instance.query("DROP FUNCTION linear_equation")
 
-    # First: verify backward compatibility — structure_only alone does NOT restore access/UDFs
+    # Phase 1: structure_only alone does NOT restore access/UDFs (backward compat)
     instance.query(f"RESTORE ALL FROM {backup_name} SETTINGS structure_only=true")
 
     assert instance.query("EXISTS test.table") == "1\n"
     assert instance.query("SELECT count() FROM test.table") == "0\n"
-
     assert instance.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
     assert instance.query("SELECT count() FROM system.roles WHERE name = 'r1'") == "0\n"
-    assert (
-        instance.query(
-            "SELECT count() FROM system.settings_profiles WHERE name = 'prof1'"
-        )
-        == "0\n"
-    )
-    assert (
-        instance.query(
-            "SELECT count() FROM system.row_policies WHERE short_name = 'rowpol1'"
-        )
-        == "0\n"
-    )
+    assert instance.query("SELECT count() FROM system.settings_profiles WHERE name = 'prof1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.row_policies WHERE short_name = 'rowpol1'") == "0\n"
     assert instance.query("SELECT count() FROM system.quotas WHERE name = 'q1'") == "0\n"
 
     instance.query("DROP DATABASE test")
 
-    # Second: structure_only + structure_only_restore_definitions restores access entities and UDFs
+    # Phase 2: structure_only + restore_access_entities + restore_functions
     instance.query(
-        f"RESTORE ALL FROM {backup_name} SETTINGS structure_only=true, structure_only_restore_definitions=true"
+        f"RESTORE ALL FROM {backup_name}"
+        f" SETTINGS structure_only=true, restore_access_entities=true, restore_functions=true"
     )
 
     # Table exists but has no data
     assert instance.query("EXISTS test.table") == "1\n"
     assert instance.query("SELECT count() FROM test.table") == "0\n"
 
-    # User and role were restored
+    # All access entity types were restored
     assert (
         instance.query("SHOW CREATE USER u1")
         == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
     )
     assert instance.query("SHOW GRANTS FOR u1") == "GRANT r1 TO u1\n"
     assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
-
-    # Settings profile was restored
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE prof1")
         == "CREATE SETTINGS PROFILE `prof1` SETTINGS custom_b = 2 TO u1\n"
     )
-
-    # Row policy was restored
     assert (
         instance.query("SHOW CREATE ROW POLICY rowpol1")
         == "CREATE ROW POLICY rowpol1 ON test.`table` FOR SELECT USING x < 50 TO u1\n"
     )
-
-    # Quota was restored
     assert instance.query("SHOW CREATE QUOTA q1") == "CREATE QUOTA q1 TO r1\n"
 
     # UDF was restored

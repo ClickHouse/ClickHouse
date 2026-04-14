@@ -7,6 +7,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Backups/SettingsFieldOptionalBool.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 #include <Backups/SettingsFieldOptionalString.h>
 #include <Backups/SettingsFieldOptionalUInt64.h>
@@ -150,7 +151,9 @@ namespace
     M(String, id) \
     M(String, password) \
     M(Bool, structure_only) \
-    M(Bool, structure_only_restore_definitions) \
+    M(OptionalBool, restore_table_data) \
+    M(OptionalBool, restore_access_entities) \
+    M(OptionalBool, restore_functions) \
     M(RestoreTableCreationMode, create_table) \
     M(RestoreDatabaseCreationMode, create_database) \
     M(Bool, allow_different_table_def) \
