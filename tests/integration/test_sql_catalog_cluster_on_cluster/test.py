@@ -439,26 +439,63 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         ).strip()
         assert sorted([local_rows_ch1, local_rows_ch2]) == ["0", "31"]
 
+        # Validate `ALTER CLUSTER ... REPLACE shard_extra TO shard_ha` using data visibility:
+        # 1) bind cluster to `shard_ha` and write 10 rows;
+        # 2) switch cluster to `shard_extra` and write 20 rows there;
+        # 3) replace `shard_extra` with `shard_ha` and check reads return the original 10 rows.
         broadcast_catalog_ddl(
             ch1,
             broadcast,
-            f"ALTER CLUSTER {names['cluster']} REPLACE {names['shard_ha']} TO {names['shard_ha']} "
-            f"MODIFY PROPERTIES (allow_distributed_ddl_queries = false)",
+            f"ALTER SHARD {names['shard_ha']} MODIFY PROPERTIES (internal_replication = false)",
             with_sync=False,
         )
-        assert "allow_distributed_ddl_queries = false" in ch1.query(
-            f"SHOW CREATE CLUSTER {names['cluster']}"
+        recreate_workload_tables(
+            ch1, names["cluster"], names["workload_local"], names["workload_distr"]
+        )
+        ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 4000 FROM numbers(10)")
+        assert_eq_with_retry(
+            ch3,
+            f"SELECT count() FROM default.{names['workload_distr']} FORMAT TabSeparated",
+            "10\n",
         )
 
         broadcast_catalog_ddl(
             ch1,
             broadcast,
-            f"ALTER CLUSTER {names['cluster']} REPLACE {names['shard_ha']} TO {names['shard_ha']} "
-            f"MODIFY PROPERTIES (allow_distributed_ddl_queries = true)",
+            f"ALTER CLUSTER {names['cluster']} ADD SHARD {names['shard_extra']}",
             with_sync=False,
         )
-        assert "allow_distributed_ddl_queries = true" in ch1.query(
-            f"SHOW CREATE CLUSTER {names['cluster']}"
+        broadcast_catalog_ddl(
+            ch1,
+            broadcast,
+            f"ALTER CLUSTER {names['cluster']} DROP SHARD {names['shard_ha']}",
+            with_sync=False,
+        )
+        assert_eq_with_retry(
+            ch3,
+            f"SELECT count() FROM system.clusters WHERE cluster = '{names['cluster']}' FORMAT TabSeparated",
+            "1\n",
+        )
+        recreate_workload_tables(
+            ch1, names["cluster"], names["workload_local"], names["workload_distr"]
+        )
+        ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 5000 FROM numbers(20)")
+        assert_eq_with_retry(
+            ch3,
+            f"SELECT count() FROM default.{names['workload_local']} FORMAT TabSeparated",
+            "20\n",
+        )
+
+        broadcast_catalog_ddl(
+            ch1,
+            broadcast,
+            f"ALTER CLUSTER {names['cluster']} REPLACE {names['shard_extra']} TO {names['shard_ha']}",
+            with_sync=False,
+        )
+        assert_eq_with_retry(
+            ch3,
+            f"SELECT count() FROM default.{names['workload_distr']} FORMAT TabSeparated",
+            "10\n",
         )
 
         # Referential integrity (same spirit as `04071_sql_catalog_shard_cluster.sql`).
