@@ -1,11 +1,12 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <Interpreters/MaterializedCTE.h>
 #include <Storages/IStorage.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
@@ -61,17 +62,54 @@ QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
     std::optional<JoinTableSide> resolved_side,
     IdentifierResolveScope & scope)
 {
+    bool need_nullable = scope.join_use_nulls
+        && JoinCommon::canBecomeNullable(resolved_identifier->getResultType())
+        && (isFull(join_kind)
+            || (isLeft(join_kind) && resolved_side == JoinTableSide::Right)
+            || (isRight(join_kind) && resolved_side == JoinTableSide::Left));
+
+    if (resolved_identifier->getNodeType() == QueryTreeNodeType::FUNCTION)
+    {
+        if (!need_nullable)
+            return resolved_identifier;
+
+        /// For function nodes (e.g., `getSubcolumn` wrapping a column from a storage
+        /// that doesn't support direct subcolumn access), we need to wrap inner column
+        /// arguments in Nullable and re-resolve the function to get the correct result type.
+        auto function_clone = resolved_identifier->clone();
+        auto & function_node = function_clone->as<FunctionNode &>();
+        auto & arguments = function_node.getArguments().getNodes();
+
+        bool any_changed = false;
+        for (auto & arg : arguments)
+        {
+            if (arg->getNodeType() == QueryTreeNodeType::COLUMN)
+            {
+                auto nullable_arg = convertJoinedColumnTypeToNullIfNeeded(
+                    arg, arg->getResultType(), join_kind, resolved_side, scope);
+                if (nullable_arg && !nullable_arg->isEqual(*arg))
+                {
+                    arg = nullable_arg;
+                    any_changed = true;
+                }
+            }
+        }
+
+        if (any_changed)
+        {
+            auto function_resolver = FunctionFactory::instance().tryGet(function_node.getFunctionName(), scope.context);
+            if (function_resolver)
+                function_node.resolveAsFunction(function_resolver->build(function_node.getArgumentColumns()));
+        }
+
+        return function_clone;
+    }
+
     if (resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
         return resolved_identifier;
 
-    if (scope.join_use_nulls &&
-        JoinCommon::canBecomeNullable(resolved_identifier->getResultType()) &&
-        (isFull(join_kind) ||
-        (isLeft(join_kind) && resolved_side == JoinTableSide::Right) ||
-        (isRight(join_kind) && resolved_side == JoinTableSide::Left)))
-    {
+    if (need_nullable)
         result_type = makeNullableOrLowCardinalityNullable(result_type);
-    }
 
     if (result_type)
     {
@@ -204,7 +242,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
-    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
@@ -240,20 +278,6 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
 
     if (!expression_type->hasSubcolumn(nested_path.getFullName()))
     {
-        if (auto * column = compound_expression->as<ColumnNode>())
-        {
-            const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
-            if (column_type->getTypeId() == TypeIndex::ObjectDeprecated)
-            {
-                const auto & object_type = checkAndGetDataType<DataTypeObjectDeprecated>(*column_type);
-                if (object_type.getSchemaFormat() == "json" && object_type.hasNullableSubcolumns())
-                {
-                    QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
-                    return constant_node_null;
-                }
-            }
-        }
-
         if (can_be_not_found)
             return {};
 
@@ -369,26 +393,28 @@ bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLook
   */
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
-    if (scope.column_name_to_column_node.empty() || !identifier_lookup.isExpressionLookup())
+    if (!scope.table_expression_data_for_alias_resolution || !identifier_lookup.isExpressionLookup())
         return {};
 
     const auto & identifier = identifier_lookup.identifier;
-    auto it = scope.column_name_to_column_node.find(identifier.getFullName());
-    bool full_column_name_match = it != scope.column_name_to_column_node.end();
+    auto identifier_full_name = identifier.getFullName();
+    auto it = scope.table_expression_data_for_alias_resolution->column_name_to_column_node.find(identifier_full_name);
+    if (it != scope.table_expression_data_for_alias_resolution->column_name_to_column_node.end())
+        return it->second;
 
-    if (!full_column_name_match)
+    /// Check if it's a subcolumn
+    if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(identifier_full_name))
     {
-        it = scope.column_name_to_column_node.find(identifier_lookup.identifier[0]);
-        if (it == scope.column_name_to_column_node.end())
-            return {};
+        /// Don't read subcolumn of aliases directly, only using getSubcolumn,
+        /// because aliases don't have real subcolumns, they should be extracted
+        /// after alias expression evaluation.
+        if (scope.table_expression_data_for_alias_resolution->supports_subcolumns && !subcolumn_info->column_node->hasExpression())
+            return std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
+
+        return wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
     }
 
-    QueryTreeNodePtr result = it->second;
-
-    if (!full_column_name_match && identifier.isCompound())
-        return tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope);
-
-    return result;
+    return {};
 }
 
 bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup,
@@ -511,43 +537,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         */
 
     QueryTreeNodePtr result_expression;
-    bool match_full_identifier = false;
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    ColumnNodePtr result_column_node;
-    bool can_resolve_directly_from_storage = false;
     if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
     {
-        can_resolve_directly_from_storage = true;
-        result_column_node = it->second;
+        result_expression = it->second;
     }
-    /// Check if it's a dynamic subcolumn
-    else if (table_expression_data.supports_subcolumns)
-    {
-        auto [column_name, dynamic_subcolumn_name] = Nested::splitName(identifier_full_name);
-        auto jt = table_expression_data.column_name_to_column_node.find(column_name);
-        if (jt != table_expression_data.column_name_to_column_node.end() && jt->second->getColumnType()->hasDynamicSubcolumns())
-        {
-            if (auto dynamic_subcolumn_type = jt->second->getColumnType()->tryGetSubcolumnType(dynamic_subcolumn_name))
-            {
-                result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, dynamic_subcolumn_type}, jt->second->getColumnSource());
-                can_resolve_directly_from_storage = true;
-            }
-        }
-    }
-
-
-    if (can_resolve_directly_from_storage)
-    {
-        match_full_identifier = true;
-        result_expression = result_column_node;
-    }
+    /// Check if it's a subcolumn
     else
     {
-        auto it = table_expression_data.column_name_to_column_node.find(identifier_without_column_qualifier.at(0));
-        if (it != table_expression_data.column_name_to_column_node.end())
-            result_expression = it->second;
+        if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_full_name))
+        {
+            /// Don't read subcolumn of aliases directly, only using getSubcolumn,
+            /// because aliases don't have real subcolumns, they should be extracted
+            /// after alias expression evaluation.
+            if (table_expression_data.supports_subcolumns && !subcolumn_info->column_node->hasExpression())
+                result_expression = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
+            else
+                result_expression = wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
+        }
     }
 
     bool clone_is_needed = true;
@@ -555,20 +564,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     String table_expression_source = table_expression_data.table_expression_description;
     if (!table_expression_data.table_expression_name.empty())
         table_expression_source += " with name " + table_expression_data.table_expression_name;
-
-    if (result_expression && !match_full_identifier && identifier_without_column_qualifier.isCompound())
-    {
-        size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
-        result_expression = tryResolveIdentifierFromCompoundExpression(identifier,
-            identifier_bind_size,
-            result_expression,
-            table_expression_source,
-            scope,
-            can_be_not_found);
-        if (can_be_not_found && !result_expression)
-            return {};
-        clone_is_needed = false;
-    }
 
     if (!result_expression)
     {
@@ -787,6 +782,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const auto & table_name = table_expression_data.table_name;
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+
+    if (table_expression_node_type == QueryTreeNodeType::TABLE)
+    {
+        auto * table_node = table_expression_node->as<TableNode>();
+        if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
+            return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+    }
 
     if (identifier.getPartsSize() == 2)
         return {};
@@ -1112,18 +1114,32 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     {
         auto & resolved_column = resolved_identifier_candidate->as<ColumnNode &>();
         auto using_column_node_it = using_column_name_to_column_node.find(resolved_column.getColumnName());
-        if (using_column_node_it != using_column_name_to_column_node.end() &&
-            !using_column_node_it->second->getColumnType()->equals(*resolved_column.getColumnType()))
+        if (using_column_node_it == using_column_name_to_column_node.end())
+            return;
+
+        const auto & using_column_list = using_column_node_it->second->as<ColumnNode &>().getExpressionOrThrow()->as<const ListNode &>();
+        auto matches_using_column = [&](const auto & node) { return node->isEqual(*resolved_identifier_candidate); };
+        if (std::ranges::none_of(using_column_list.getNodes(), matches_using_column))
+            return;
+
+        auto current_type = resolved_column.getColumnType();
+        auto result_type = using_column_node_it->second->getColumnType();
+
+        /// If current column is Nullable because it comes from previous OUTER JOIN, keep nullability,
+        /// even if USING column itself is not Nullable (for LEFT/RIGHT JOIN).
+        if (isNullableOrLowCardinalityNullable(current_type) && !isNullableOrLowCardinalityNullable(result_type))
+            result_type = makeNullableOrLowCardinalityNullable(current_type);
+
+        if (!result_type->equals(*current_type))
         {
-            // std::cerr << "... fixing type for " << resolved_column.dumpTree() << std::endl;
             auto resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
-            resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
+
+            resolved_column_clone->setColumnType(result_type);
 
             auto projection_name_it = projection_name_mapping.find(resolved_identifier_candidate);
             if (projection_name_it != projection_name_mapping.end())
             {
                 projection_name_mapping[resolved_column_clone] = projection_name_it->second;
-                // std::cerr << ".. upd name " << projection_name_it->second << " for col " << resolved_column_clone->dumpTree() << std::endl;
             }
 
             resolve_result = std::move(resolved_column_clone);
@@ -1516,7 +1532,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTreeNode
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Scope FROM section expected table, table function, query, union, join or array join. Actual {}. In scope {}",
+                "Scope FROM section expected table, table function, query, union, join or array join. Actual {}: {}. In scope {}",
+                join_tree_node->getNodeTypeName(),
                 join_tree_node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }

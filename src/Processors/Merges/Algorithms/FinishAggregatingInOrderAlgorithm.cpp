@@ -40,6 +40,7 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
 
 void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 {
+    removeReplicatedFromSortingColumns(inputs, description);
     removeConstAndSparse(inputs);
     current_inputs = std::move(inputs);
     states.resize(num_inputs);
@@ -49,6 +50,7 @@ void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 
 void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num)
 {
+    removeReplicatedFromSortingColumns(input, description);
     removeConstAndSparse(input);
     if (!input.chunk.hasRows())
         return;
@@ -168,7 +170,7 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
         states[i].current_row = states[i].to_row;
 
         /// We assume that sizes in bytes of rows are almost the same.
-        accumulated_bytes += static_cast<size_t>(static_cast<double>(states[i].total_bytes) * current_rows / states[i].num_rows);
+        accumulated_bytes += static_cast<size_t>(static_cast<double>(states[i].total_bytes) * static_cast<double>(current_rows) / static_cast<double>(states[i].num_rows));
         accumulated_rows += current_rows;
 
         if (!states[i].isValid())

@@ -216,7 +216,7 @@ bool HadoopSnappyReadBuffer::nextImpl()
 
     if (decoder->result == Status::OK)
     {
-        decoder->reset();
+        (*decoder).reset();
         if (in->eof())
         {
             eof = true;

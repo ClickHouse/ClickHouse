@@ -3,6 +3,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/sortBlock.h>
@@ -184,8 +185,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes)
             {
                 if (group_by_key)
-                    group_by_block
-                        = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
+                    group_by_chunk
+                        = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false).chunk;
                 cur_block_bytes += current_memory_usage;
                 finalizeCurrentChunk(std::move(chunk), key_end);
                 if (rows_before_aggregation)
@@ -288,7 +289,7 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
 
     chassert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
-    convertToFullIfSparse(current_chunk);
+    removeSpecialColumnRepresentations(current_chunk);
     return Status::Ready;
 }
 
@@ -297,8 +298,8 @@ void AggregatingInOrderTransform::generate()
     if (cur_block_size && is_consume_finished)
     {
         if (group_by_key)
-            group_by_block
-                = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
+            group_by_chunk
+                = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false).chunk;
         else
             params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
         variants.invalidate();
@@ -321,8 +322,10 @@ void AggregatingInOrderTransform::generate()
     {
         /// Sorting is required after aggregation, for proper merging, via
         /// FinishAggregatingInOrderTransform/MergingAggregatedBucketTransform
-        sortBlock(group_by_block, sort_description);
-        to_push_chunk = convertToChunk(group_by_block);
+        auto block = params->getHeader();
+        block.setColumns(group_by_chunk.detachColumns());
+        sortBlock(block, sort_description);
+        to_push_chunk = convertToChunk(block);
     }
 
     if (!to_push_chunk.getNumRows())

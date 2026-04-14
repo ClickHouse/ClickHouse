@@ -1,7 +1,7 @@
 #pragma once
 #include <libnuraft/log_store.hxx>
-#include <mutex>
 #include <Core/Types.h>
+#include <Common/SharedMutex.h>
 #include <Coordination/Changelog.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/Keeper4LWInfo.h>
@@ -34,6 +34,10 @@ public:
 
     /// Return entries between [start, end)
     nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override;
+
+    /// Return entries between [start, end) with total size limited by batch_size_hint_in_bytes
+    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
+    log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes) override;
 
     /// Return entry at index
     nuraft::ptr<nuraft::log_entry> entry_at(uint64_t index) override;
@@ -77,7 +81,7 @@ public:
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
 private:
-    mutable std::mutex changelog_lock;
+    mutable SharedMutex changelog_lock;
     LoggerPtr log;
     Changelog changelog TSA_GUARDED_BY(changelog_lock);
 };

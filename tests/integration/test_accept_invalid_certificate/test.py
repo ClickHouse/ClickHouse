@@ -115,7 +115,12 @@ def test_strict_reject():
 def test_strict_reject_with_config():
     with pytest.raises(Exception) as err:
         execute_query_native(node1, "SELECT 1", config_accept)
-    assert "alert certificate required" in str(err.value)
+    # Accept both error messages due to race condition in SSL handshake:
+    # - "alert certificate required": TCP layer transmits Alert before close() executes
+    # - "Connection reset by peer": close() executes before TCP layer transmits Alert from send buffer
+    # Race condition: send() is async (returns after copying to kernel buffer), close() may execute
+    # before TCP layer actually sends the Alert packet, causing RST to be sent instead
+    assert "alert certificate required" in str(err.value) or "Connection reset by peer" in str(err.value)
 
 
 def test_strict_connection_reject():

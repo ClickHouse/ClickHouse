@@ -1,16 +1,25 @@
-<!DOCTYPE html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width, initial-scale=1.0"><title>praktika report</title><style>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>praktika report</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
 
         /* Default (Day Theme) */
         :root {
-            --background-color: white;
-            --text-color: #000;
-            --tile-background: #f9f9f9;
-            --info-background: #e4e4e4;
-            --footer-background: #f1f1f1;
-            --footer-text-color: #000;
+            --background-color: #FBFCFF;
+            --text-color: #151515;
+            --tile-background: #F9F9F9;
+            --info-background: #DFDFDF;
+            --footer-background: #151515;
+            --footer-text-color: #F9F9F9;
             --status-width: 300px;
-            --pending-bar-color: #f5e6a3;
-            --skipped-bar-color: #ccc;
+            --pending-bar-color: #FAFF69;
+            --skipped-bar-color: #C0C0C0;
         }
 
         .hidden {
@@ -32,31 +41,33 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
-            --header-background-color: #f4f4f4;
-            --link-color: blue;
-            --link-hover-color: darkblue;
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            letter-spacing: -0.2px;
+            --header-background-color: #F9F9F9;
+            --link-color: #2563eb;
+            --link-hover-color: #1d4ed8;
             --job-name-color: var(--text-color);
-            --file-link-color: blue;
-            --file-link-hover-color: darkblue;
-            --table-border-color: #ccc;
+            --file-link-color: #2563eb;
+            --file-link-hover-color: #1d4ed8;
+            --table-border-color: #DFDFDF;
         }
 
         body.night-theme {
-            --background-color: #1F1F1C;
-            --text-color: #dedede;
-            --tile-background: #1F1F1F;
-            --info-background: #575757;
-            --header-background-color: #1F1F1C;
-            --pending-bar-color: #595801;
-            --skipped-bar-color: #575757;
-            --table-border-color: #444;
+            --background-color: #151515;
+            --text-color: #DFDFDF;
+            --tile-background: #1D1D1D;
+            --info-background: #414141;
+            --header-background-color: #151515;
+            --pending-bar-color: #FAFF69;
+            --skipped-bar-color: #414141;
+            --table-border-color: #414141;
             --job-name-color: var(--text-color);
-            --link-color: #ffea00;
-            --link-hover-color: #ffaa00;
-            --file-link-color: #007efc;
-            --file-link-hover-color: #004d9a;
+            --link-color: #FAFF69;
+            --link-hover-color: #e6eb5e;
+            --file-link-color: #FAFF69;
+            --file-link-hover-color: #e6eb5e;
+            --footer-background: #151515;
+            --footer-text-color: #F9F9F9;
         }
 
         #status-container {
@@ -109,7 +120,7 @@
             color: var(--file-link-color);
             font-weight: bold;
             font-size: 0.7em;
-            font-family: 'Roboto Condensed', sans-serif;
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             font-stretch: ultra-condensed;
             cursor: pointer;
             display: inline-block;
@@ -120,17 +131,19 @@
             max-width: 100%;              /* make sure it doesn’t overflow parent */
         }
 
-        .file-link:hover {
+        .file-link a {
+            color: var(--file-link-color);
+            text-decoration: none;
+        }
+
+        .file-link a:hover, .file-link:hover {
             color: var(--file-link-hover-color);
             text-decoration: none;
         }
 
-        .json-key {
-            font-weight: bold;
-        }
         .external-link {
             color: var(--file-link-color);
-            font-family: 'Source Code Pro', monospace, sans-serif;
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             cursor: pointer;
             display: inline-block;
             text-decoration: none;
@@ -173,6 +186,7 @@
             overflow-wrap: break-word;
             max-width: 100%; /* Prevent overflow */
             background-color: var(--info-background);
+            font-family: 'SF Mono', 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
         }
         #info-content {
             text-align: left;
@@ -185,8 +199,8 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background-color: #1F1F1C;
-            color: white;
+            background-color: var(--footer-background);
+            color: var(--footer-text-color);
             font-size: 14px;
             display: flex;
             justify-content: space-between; /* Ensure the .left expands, and .right and .settings are aligned to the right */
@@ -194,7 +208,7 @@
         }
 
         #footer a {
-            color: white;
+            color: var(--footer-text-color);
             text-decoration: none;
         }
 
@@ -216,24 +230,41 @@
         #footer .right a::before {
             content: "#";
             margin-left: 10px;
-            color: #e0e0e0;
+            color: #606060;
         }
 
         #footer .right::before, #footer .settings::before {
             content: "|"; /* Add separator before right and settings sections */
             margin-left: 0px;
             margin-right: 10px;
-            color: #e0e0e0;
+            color: #606060;
         }
 
-        #theme-toggle, #status-filter-toggle {
+        #theme-toggle, #status-filter-toggle, #sort-toggle, #proxy-toggle {
             cursor: pointer;
-            color: white;
+            color: var(--footer-text-color);
             margin-left: 10px;
         }
 
-        #theme-toggle:hover {
-            color: #e0e0e0;
+        #theme-toggle:hover, #sort-toggle:hover, #proxy-toggle:hover {
+            color: #FAFF69;
+        }
+
+        tr.downstream-row {
+            background-color: color-mix(in srgb, var(--tile-background) 50%, #e0d8f0);
+        }
+        .night-theme tr.downstream-row {
+            background-color: #2a2820;
+        }
+
+        .downstream-info {
+            padding: 8px 16px;
+            margin: 8px 0;
+            font-size: 13px;
+            border-radius: 4px;
+            background-color: var(--info-background);
+            color: var(--text-color);
+            opacity: 0.8;
         }
 
         #footer a:hover {
@@ -262,6 +293,11 @@
 
         td.dur-column {
             text-align: right;
+            font-family: 'SF Mono', 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+        }
+
+        td.time-column {
+            font-family: 'SF Mono', 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
         }
 
         th.time-column, td.time-column {
@@ -286,6 +322,10 @@
             text-decoration: none; /* No underline */
         }
 
+        .disabled {
+            white-space: pre;
+        }
+
         .status-column span[style*="pointer"] {
             text-decoration: underline;
         }
@@ -297,45 +337,61 @@
         }
 
         .status-success {
-            color: green;
-            font-weight: bold;
+            color: #16a34a;
+            font-weight: 600;
         }
 
         .status-fail {
-            color: red;
-            font-weight: bold;
+            color: #dc2626;
+            font-weight: 600;
         }
 
         .status-pending {
-            color: #d4a017;
-            font-weight: bold;
+            color: #ca8a04;
+            font-weight: 600;
         }
 
         .status-broken {
-            color: purple;
-            font-weight: bold;
+            color: #9333ea;
+            font-weight: 600;
         }
 
         .status-run {
-            color: #0080ff;
-            font-weight: bold;
+            color: #2563eb;
+            font-weight: 600;
         }
 
         .status-error {
-            color: darkred;
-            font-weight: bold;
+            color: #b91c1c;
+            font-weight: 600;
         }
 
         .status-dropped {
-            color: rgb(78, 0, 194);
-            font-weight: bold;
+            color: #7c3aed;
+            font-weight: 600;
         }
 
         .status-other {
-            color: grey;
-            font-weight: bold;
+            color: #808080;
+            font-weight: 600;
         }
-    </style></head><body><div id=status-container></div><div id=result-container></div><button id=toggle-status-bar onclick=toggleStatusBar()>‖</button><footer id=footer><div class=left></div><div class=right></div><div class=settings><span id=status-filter-toggle></span><span id=theme-toggle>🔆️</span></div></footer><script>
+    </style>
+</head>
+<body>
+    <div id="status-container"></div>
+    <div id="result-container"></div>
+    <button id="toggle-status-bar" title="Toggle sidebar">‖</button>
+    <footer id="footer">
+        <div class="left"></div>
+        <div class="right"></div>
+        <div class="settings">
+            <span id="proxy-toggle" title="Configure downstream proxy URL">🔗</span>
+            <span id="status-filter-toggle" title="Filter by status"></span>
+            <span id="sort-toggle" title="Sort by status">🔼</span>
+            <span id="theme-toggle" title="Toggle day/night theme">🔆️</span>
+        </div>
+    </footer>
+    <script>
     // Track all interval timers for cleanup
     const activeTimers = {
         intervals: [],
@@ -396,7 +452,8 @@
         const status_ = status.toLowerCase();
 
         const isFailure =
-            status_.includes('fail') || status_.includes('error') || status_.includes('dropped');
+            (status_.includes('fail') || status_.includes('error') || status_.includes('dropped') || status_ === 'xpass')
+            && status_ !== 'xfail';
         const isWarning =
             status_.includes('pending') || status_.includes('running');
 
@@ -437,9 +494,9 @@
         localStorage.setItem('filter', newFilter);
         const toggle = document.getElementById('status-filter-toggle');
         if (toggle) {
-            const greenTick = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cGF0aCBmaWxsPSJncmVlbiIgZD0iTTAgMTEgTDcgMTggTDIwIDIgTDE4IDAgTDcgMTQgTDIgOSBaIi8+Cjwvc3ZnPgoK">`;
-            const redCross = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8bGluZSB4MT0iMiIgeTE9IjIiIHgyPSIxOCIgeTI9IjE4IiBzdHJva2U9InJlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxOCIgeDI9IjE4IiB5Mj0iMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4KCg==">`;
-            const yellowExclamationMark = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cG9seWdvbiBwb2ludHM9IjEwLDAgMCwyMCAyMCwyMCIgZmlsbD0ieWVsbG93Ii8+CiAgPHJlY3QgeD0iOSIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iNyIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSIxMCIgY3k9IjE2IiByPSIxIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4KCg==">`;
+            const greenTick = `<img alt="all" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cGF0aCBmaWxsPSJncmVlbiIgZD0iTTAgMTEgTDcgMTggTDIwIDIgTDE4IDAgTDcgMTQgTDIgOSBaIi8+Cjwvc3ZnPgoK">`;
+            const redCross = `<img alt="failures" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8bGluZSB4MT0iMiIgeTE9IjIiIHgyPSIxOCIgeTI9IjE4IiBzdHJva2U9InJlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxOCIgeDI9IjE4IiB5Mj0iMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4KCg==">`;
+            const yellowExclamationMark = `<img alt="warnings" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cG9seWdvbiBwb2ludHM9IjEwLDAgMCwyMCAyMCwyMCIgZmlsbD0ieWVsbG93Ii8+CiAgPHJlY3QgeD0iOSIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iNyIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSIxMCIgY3k9IjE2IiByPSIxIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4KCg==">`;
             toggle.innerHTML =
                 newFilter === 'failures' ? redCross :
                     newFilter === 'warnings' ? yellowExclamationMark :
@@ -473,6 +530,89 @@
 
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
     document.getElementById('status-filter-toggle').addEventListener('click', toggleStatusFilter);
+    document.getElementById('sort-toggle').addEventListener('click', toggleSortByStatus);
+    document.getElementById('toggle-status-bar').addEventListener('click', toggleStatusBar);
+    document.getElementById('proxy-toggle').addEventListener('click', toggleProxy);
+
+    function toggleProxy() {
+        const current = localStorage.getItem('privateBaseUrl') || '';
+        const value = prompt('Downstream proxy base URL (leave empty to disable):', current);
+        if (value === null) return; // cancelled
+        if (value.trim()) {
+            try {
+                new URL(value.trim());
+            } catch {
+                alert('Invalid URL. Please enter a full URL starting with https://');
+                return;
+            }
+            localStorage.setItem('privateBaseUrl', value.trim().replace(/\/+$/, ''));
+        } else {
+            localStorage.removeItem('privateBaseUrl');
+        }
+        updateProxyToggleIcon();
+        location.reload();
+    }
+
+    function updateProxyToggleIcon() {
+        const toggle = document.getElementById('proxy-toggle');
+        const hasProxy = !!localStorage.getItem('privateBaseUrl');
+        if (toggle) {
+            toggle.style.opacity = hasProxy ? '1' : '0.4';
+            toggle.title = hasProxy
+                ? 'Downstream proxy: ' + localStorage.getItem('privateBaseUrl')
+                : 'Configure downstream proxy URL';
+        }
+    }
+
+    function toggleSortByStatus() {
+        const current = localStorage.getItem('sortByStatus');
+        const newValue = current === 'true' ? 'false' : 'true';
+        localStorage.setItem('sortByStatus', newValue);
+        columnSortActive = false;
+
+        // Update the visual indicator
+        updateSortToggleIcon();
+
+        // Re-render all tables on the page
+        const tables = document.querySelectorAll('table');
+        tables.forEach(table => {
+            const tbody = table.querySelector('tbody');
+            if (tbody) {
+                // Get the original results order from a stored copy
+                const resultsData = tbody.resultsData;
+                const nestLevel = tbody.nestLevel;
+                const existingColumnsList = tbody.existingColumnsList;
+
+                if (resultsData && existingColumnsList) {
+                    populateTableRows(tbody, resultsData, nestLevel, existingColumnsList);
+                }
+            }
+        });
+    }
+
+    function updateSortToggleIcon() {
+        const toggle = document.getElementById('sort-toggle');
+        const sortEnabled = localStorage.getItem('sortByStatus') === 'true';
+        if (toggle) {
+            toggle.style.opacity = sortEnabled ? '1' : '0.5';
+            toggle.title = sortEnabled ? 'Status sorting enabled' : 'Status sorting disabled';
+        }
+    }
+
+    function getStatusPriority(status) {
+        const statusLower = (status || '').toLowerCase();
+        if (statusLower.includes('error')) return 0;
+        if (statusLower.includes('fail')) return 1;
+        if (statusLower === 'xpass') return 2;
+        if (statusLower.includes('running')) return 3;
+        if (statusLower.includes('dropped')) return 4;
+        if (statusLower.includes('pending')) return 5;
+        if (statusLower.includes('success')) return 6;
+        if (statusLower === 'ok') return 7;
+        if (statusLower === 'xfail') return 8;
+        if (statusLower.includes('skipped')) return 9;
+        return 10;
+    }
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -517,7 +657,7 @@
             const milliseconds = Math.floor((duration % 1) * 1000);
 
             const formattedSeconds = String(seconds);
-            const formattedMilliseconds = String(milliseconds).padStart(2, '0').slice(-2);
+            const formattedMilliseconds = String(milliseconds).padStart(2, 0).slice(-2);
 
             return `${formattedSeconds}.${formattedMilliseconds}`;
         }
@@ -526,6 +666,8 @@
     // Function to determine status class based on value
     function getStatusClass(status) {
         const lowerStatus = status.toLowerCase();
+        if (lowerStatus === 'xfail') return 'status-other';  // expected failure: gray (known, not alarming)
+        if (lowerStatus === 'xpass') return 'status-fail';    // unexpected pass: red
         if (lowerStatus.includes('success') || lowerStatus === 'ok') return 'status-success';
         if (lowerStatus.includes('fail')) return 'status-fail';
         if (lowerStatus.includes('pending')) return 'status-pending';
@@ -737,9 +879,7 @@
 
         const currentLabel = document.createElement("div");
         currentLabel.style.textAlign = "left";
-        currentLabel.textContent = `duration: ${formatDuration(duration)}`;
-
-        topLabelBox.appendChild(currentLabel);
+        currentLabel.textContent = `duration: ${formatDurationMs(duration)}`;
 
         topLabelBox.appendChild(currentLabel);
         chartWrapper.appendChild(topLabelBox);
@@ -769,10 +909,10 @@
         bottomLabels.style.color = "#444";
 
         const minLabel = document.createElement("div");
-        minLabel.textContent = formatDuration(minValue);
+        minLabel.textContent = formatDurationMs(minValue);
 
         const maxLabel = document.createElement("div");
-        maxLabel.textContent = formatDuration(maxValue);
+        maxLabel.textContent = formatDurationMs(maxValue);
 
         bottomLabels.appendChild(minLabel);
         bottomLabels.appendChild(maxLabel);
@@ -781,7 +921,7 @@
         // --- Final assemble
         statusContainer.appendChild(chartWrapper);
 
-        function formatDuration(ms) {
+        function formatDurationMs(ms) {
             const s = Math.floor(ms / 1000);
             const h = Math.floor(s / 3600);
             const m = Math.floor((s % 3600) / 60);
@@ -798,7 +938,7 @@
 
     function addStorageUsageChartToStatus(usage_data) {
         const statusContainer = document.getElementById("status-container");
-        
+
         // Note: We don't need the extra style element anymore as we now handle margins directly
 
         if (!usage_data || !usage_data.uploaded || !usage_data.uploaded_details) {
@@ -845,7 +985,7 @@
         nameRow.style.letterSpacing = "-0.02em"; // Slightly condensed letter spacing
         nameRow.id = "storage-usage-name";
         nameRow.textContent = "uploaded:";
-        
+
         // Second line: XX% ...padding... YYYMB
         const detailsRow = document.createElement("div");
         detailsRow.style.display = "flex";
@@ -855,32 +995,32 @@
         detailsRow.id = "storage-usage-details";
         detailsRow.style.fontSize = "0.85em";
         detailsRow.style.color = "#666";
-        
+
         // Combined size and percentage info (right-aligned)
         const sizeAndPercentEl = document.createElement("span");
         sizeAndPercentEl.id = "storage-usage-size-percent";
         sizeAndPercentEl.style.marginLeft = "auto"; // Push to the right
         sizeAndPercentEl.textContent = `${uploadedMB} MB (100%)`; // Both size and percentage
-        
+
         detailsRow.appendChild(sizeAndPercentEl);
-        
+
         infoContainer.appendChild(nameRow);
         infoContainer.appendChild(detailsRow);
         chartWrapper.appendChild(infoContainer);
 
         // Fixed dimensions for the horizontal bar chart
         const barHeight = 24; // Thick bar
-        
+
         // Bar chart container - use 100% width to fit the widget perfectly
         const chartContainer = document.createElement("div");
         chartContainer.style.height = `${barHeight}px`;
         chartContainer.style.position = "relative";
         chartContainer.style.margin = "10px 0 0 0";
         chartContainer.style.cursor = "pointer";
-        
+
         // Create bars for each entry
         const barData = [];
-        
+
         // Use percentage-based widths instead of fixed pixels
         labels.forEach((label, index) => {
             const value = values[index];
@@ -888,7 +1028,7 @@
             // Convert to percentage width with minimum visibility
             const percentWidth = Math.max(percent * 100, 0.5);
             const color = stringToColor(label);
-            
+
             const bar = document.createElement("div");
             bar.style.position = "absolute";
             bar.style.left = barData.length > 0 ? `${barData.reduce((sum, b) => sum + b.percentWidth, 0)}%` : "0";
@@ -897,14 +1037,14 @@
             bar.style.backgroundColor = color;
             bar.style.transition = "opacity 0.2s";
             bar.dataset.label = label;
-            
+
             // Create tooltip data for this bar
             const sizeMB = (value / (1024 * 1024)).toFixed(2);
             const percentValue = ((value / uploaded) * 100).toFixed(1);
             bar.dataset.tooltip = `${label}: ${sizeMB} MB (${percentValue}%)`;
-            
+
             chartContainer.appendChild(bar);
-            
+
             barData.push({
                 label,
                 element: bar,
@@ -914,7 +1054,7 @@
                 tooltip: `${label}: ${sizeMB} MB (${percentValue}%)`
             });
         });
-        
+
         chartWrapper.appendChild(chartContainer);
         statusContainer.appendChild(chartWrapper);
 
@@ -922,13 +1062,13 @@
         const updateDisplay = (name, sizeMB, percent) => {
             const nameEl = document.getElementById("storage-usage-name");
             const sizePercentEl = document.getElementById("storage-usage-size-percent");
-            
+
             if (nameEl && sizePercentEl) {
                 nameEl.textContent = name;
                 sizePercentEl.textContent = `${sizeMB} MB (${percent}%)`;
             }
         };
-        
+
         // Show the total uploaded by default
         const showTotalUploaded = () => {
             updateDisplay("uploaded:", uploadedMB, 100);
@@ -940,11 +1080,11 @@
             const percent = ((segment.value / uploaded) * 100).toFixed(1);
             updateDisplay(segment.label, sizeMB, percent);
         };
-        
+
         // Highlight bar function
         function highlightBar(hoveredLabel) {
             let hoveredSegment = null;
-            
+
             barData.forEach(bar => {
                 if (bar.label === hoveredLabel) {
                     bar.element.style.opacity = "1";
@@ -954,7 +1094,7 @@
                     bar.element.style.opacity = "0.5";
                 }
             });
-            
+
             // Show details for hovered segment
             if (hoveredSegment) {
                 showSegmentDetails(hoveredSegment);
@@ -967,21 +1107,21 @@
                 bar.element.style.opacity = "1";
                 bar.element.style.boxShadow = "none";
             });
-            
+
             // Reset to show total uploaded
             showTotalUploaded();
         }
-        
+
         // Add hover effects to the bar segments
         barData.forEach(bar => {
             bar.element.addEventListener("mouseenter", () => highlightBar(bar.label));
             bar.element.addEventListener("mouseleave", () => resetBars());
         });
-        
+
         // Reset wrapper padding to default for text, but adjust for the bar
         chartWrapper.style.padding = "10px"; // Restore the standard padding
         chartWrapper.style.paddingBottom = "10px"; // Add extra bottom padding
-        
+
         // Only adjust the chart container (bar) to have full width
         chartContainer.style.marginLeft = "-10px"; // Offset the parent padding
         chartContainer.style.marginRight = "-10px"; // Offset the parent padding
@@ -995,7 +1135,7 @@
             return;
         }
 
-        const lineWidth = 5;
+        const lineWidth = 1;
         const padding = 1;
         const totalHeight = (lineWidth + padding) * results.length;
 
@@ -1012,9 +1152,10 @@
         canvas.style.height = `${totalHeight}px`;
         canvas.style.display = "block";
         widget.appendChild(canvas);
-        
+
         // Move taskRects to outer scope so event handlers can access it
         let taskRects = [];
+        let hoveredIndex = -1;
 
         function resizeCanvas() {
             canvas.width = widget.clientWidth;
@@ -1044,6 +1185,14 @@
             const maxTime = runtimeCache.json0?.duration ?? (currentUtcTimestamp - minStartTime);
             const scaleX = canvas.width / maxTime;
 
+            // Draw highlight background for hovered row
+            if (hoveredIndex >= 0) {
+                const hy = hoveredIndex * (lineWidth + padding) - padding;
+                const isDark = document.body.classList.contains('night-theme');
+                ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)';
+                ctx.fillRect(0, hy, canvas.width, lineWidth + 2 * padding);
+            }
+
             results.forEach((task, index) => {
                 const y = index * (lineWidth + padding);
                 const height = lineWidth;
@@ -1063,7 +1212,7 @@
                     width = task.duration * scaleX;
                     color = getColorFromName(task.name);
                 }
-                
+
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, width, height);
 
@@ -1077,8 +1226,14 @@
 
             // Draw failure markers on top
             failedMarkers.forEach(({ x, y }) => {
-                ctx.font = "8px sans-serif";
-                ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
+                ctx.fillStyle = "#ff3333";
+                ctx.beginPath();
+                const s = 3;
+                ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s);
+                ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s);
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = "#ff3333";
+                ctx.stroke();
             });
         }
 
@@ -1087,11 +1242,19 @@
             const mouseY = event.clientY - rect.top;
 
             let hoveredTask = null;
-            for (let { y, height, task } of taskRects) {
+            let newHoveredIndex = -1;
+            for (let i = 0; i < taskRects.length; i++) {
+                const { y, height, task } = taskRects[i];
                 if (mouseY >= y && mouseY <= y + height) {
                     hoveredTask = task;
+                    newHoveredIndex = i;
                     break;
                 }
+            }
+
+            if (newHoveredIndex !== hoveredIndex) {
+                hoveredIndex = newHoveredIndex;
+                drawTimeline();
             }
 
             if (hoveredTask && statusWidget?.update) {
@@ -1105,6 +1268,8 @@
         });
 
         activeListeners.add(canvas, "mouseleave", () => {
+            hoveredIndex = -1;
+            drawTimeline();
             if (statusWidget?.update && originalTask) {
                 statusWidget.update(
                     originalTask.name,
@@ -1125,7 +1290,6 @@
 
         // Widget container
         const widget = document.createElement('div');
-        const color = getComputedStyle(document.body).getPropertyValue('--table-border-color').trim();
         widget.className = 'status-widget'
 
         // Helper to create a line
@@ -1140,7 +1304,7 @@
         // Make widget re-usable by external updates
         widget.update = function (name, status, start_time, duration) {
             widget.innerHTML = '';
-            
+
             // Create name line with fixed height for two lines
             const nameLine = document.createElement('div');
             nameLine.textContent = name;
@@ -1151,7 +1315,7 @@
             nameLine.style.lineHeight = "1.3em";
             nameLine.style.textAlign = "left";
             widget.appendChild(nameLine);
-            
+
             addLine(status, getStatusClass(status));
             addLine(start_time ? formatTimestamp(start_time) : "0:00:00");
             if (duration != null) {
@@ -1200,21 +1364,26 @@
                 existing_columns[column] = results.some(result => result[column]);
             });
 
+            // Build an ordered list of columns that actually exist
+            const existingColumnsList = columns.filter(column => existing_columns[column]);
+            const lastColumn = existingColumnsList[existingColumnsList.length - 1];
+
             // Create table headers based on the fixed columns
             const headerRow = document.createElement('tr');
-            existing_columns.forEach(column => {
+            existingColumnsList.forEach(column => {
                 const th = document.createElement('th');
                 th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer';
                 th.style.textDecoration = 'underline';
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, existing_columns));
+                if (column === lastColumn) th.classList.add('time-column');
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, existingColumnsList));
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
 
             // Create table rows
-            populateTableRows(tbody, results, nest_level, existing_columns);
+            populateTableRows(tbody, results, nest_level, existingColumnsList);
 
             table.appendChild(thead);
             table.appendChild(tbody);
@@ -1224,21 +1393,49 @@
         return null;
     }
 
-    function populateTableRows(tbody, results, nest_level, existing_columns) {
+    function populateTableRows(tbody, results, nest_level, existingColumnsList) {
         const currentUrl = new URL(window.location.href);
+
+        // Store the original data in the tbody for later access
+        // Make a deep copy to preserve the original order
+        if (!tbody.resultsData) {
+            tbody.resultsData = JSON.parse(JSON.stringify(results));
+        }
+        tbody.nestLevel = nest_level;
+        tbody.existingColumnsList = existingColumnsList;
+
         // Clear existing rows
         tbody.innerHTML = '';
         const filter = localStorage.getItem('filter');
+        const lastColumn = existingColumnsList[existingColumnsList.length - 1];
 
-        results.forEach((result, _index) => {
+        // Sort results by status if the feature is enabled.
+        // Skip if user clicked a column header (columnSortActive) — reset on next fresh render.
+        const sortByStatus = !columnSortActive && localStorage.getItem('sortByStatus') === 'true';
+
+        // Work with a copy so we don't mutate the original
+        let displayResults = [...results];
+        if (sortByStatus) {
+            displayResults.sort((a, b) => {
+                const statusA = a.status || '';
+                const statusB = b.status || '';
+                return getStatusPriority(statusA) - getStatusPriority(statusB);
+            });
+        }
+
+        displayResults.forEach((result, _index) => {
             const row = document.createElement('tr');
+            if (result._downstreamHref) row.classList.add('downstream-row');
             const labels = result?.ext?.labels;
             const linklabels = result?.ext?.hlabels;
 
-            existing_columns.forEach(column => {
+            existingColumnsList.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
-                    
+
+                // Make the last column the expanding one regardless of its name
+                if (column === lastColumn) td.classList.add('time-column');
+
                 if (column === 'status') {
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
@@ -1254,7 +1451,15 @@
                 } else if (column === 'name') {
                     const statusValue = result["status"] ? result["status"].toLowerCase() : "";
 
-                    if (
+                    if (result._downstreamHref) {
+                        // Downstream result: link to private json.html via proxy
+                        const link = document.createElement('a');
+                        link.href = result._downstreamHref;
+                        link.textContent = '🔗 ' + value;
+                        link.target = '_blank';
+                        td.classList.add('name-column');
+                        td.appendChild(link);
+                    } else if (
                         (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
                         (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0) ||
                             nest_level === 0)
@@ -1275,29 +1480,35 @@
                         td.appendChild(link);
                     }
 
-                    // Create a container for labels and linklabels
-                    const labelsContainer = document.createElement('span');
-                    labelsContainer.className = 'labels-container';
-                    labelsContainer.style.userSelect = 'none'; // Prevent selection
-                    labelsContainer.style.marginLeft = '4px';
+                    // Helper to apply common label styling
+                    const applyLabelStyles = (element, text) => {
+                        element.textContent = text;
+                        element.style.marginLeft = '6px';
+                        element.style.padding = '2px 8px';
+                        element.style.backgroundColor = stringToColor(text, true);
+                        element.style.color = 'white';
+                        element.style.fontSize = '12px';
+                        element.style.borderRadius = '8px';
+                        element.style.fontWeight = 'bold';
+                        element.style.display = 'inline-block';
+                        element.style.verticalAlign = 'middle';
+                    };
 
+                    // Add whitespace before labels if any exist
+                    if ((labels && labels.length > 0) || (linklabels && linklabels.length > 0)) {
+                        td.appendChild(document.createTextNode(' '));
+                    }
+
+                    // Render plain labels
                     if (Array.isArray(labels)) {
                         labels.forEach(labelStr => {
                             const label = document.createElement('span');
-                            label.textContent = labelStr;
-                            label.style.marginLeft = '6px';
-                            label.style.padding = '2px 8px';
-                            label.style.backgroundColor = stringToColor(labelStr, true);
-                            label.style.color = 'white';
-                            label.style.fontSize = '12px';
-                            label.style.borderRadius = '8px';
-                            label.style.fontWeight = 'bold';
-                            label.style.display = 'inline-block';
-                            label.style.verticalAlign = 'middle';
-                            labelsContainer.appendChild(label);
+                            applyLabelStyles(label, labelStr);
+                            td.appendChild(label);
                         });
                     }
 
+                    // Render link labels
                     if (Array.isArray(linklabels)) {
                         linklabels.forEach(item => {
                             let text, href;
@@ -1311,49 +1522,24 @@
                                 href = '';
                             }
                             if (!text) return;
+
+                            const element = href ? document.createElement('a') : document.createElement('span');
                             if (href) {
-                                const a = document.createElement('a');
-                                a.textContent = text;
-                                a.href = href;
-                                a.target = '_blank';
-                                a.rel = 'noopener noreferrer';
-                                a.style.marginLeft = '6px';
-                                a.style.padding = '2px 8px';
-                                a.style.backgroundColor = stringToColor(text, true);
-                                a.style.color = 'white';
-                                a.style.fontSize = '12px';
-                                a.style.borderRadius = '8px';
-                                a.style.fontWeight = 'bold';
-                                a.style.display = 'inline-block';
-                                labelsContainer.appendChild(a);
-                            } else {
-                                const label = document.createElement('span');
-                                label.textContent = text;
-                                label.style.marginLeft = '6px';
-                                label.style.padding = '2px 8px';
-                                label.style.backgroundColor = stringToColor(text, true);
-                                label.style.color = 'white';
-                                label.style.fontSize = '12px';
-                                label.style.borderRadius = '8px';
-                                label.style.fontWeight = 'bold';
-                                label.style.display = 'inline-block';
-                                labelsContainer.appendChild(label);
+                                element.href = href;
+                                element.target = '_blank';
+                                element.rel = 'noopener noreferrer';
                             }
+                            applyLabelStyles(element, text);
+                            td.appendChild(element);
                         });
                     }
 
-                    // Only append if there are labels
-                    if (labelsContainer.childNodes.length > 0) {
-                        td.appendChild(labelsContainer);
-                    }
-
                 } else if (column === 'start_time') {
-                    td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
 
                 } else if (column === 'duration') {
                     td.classList.add('dur-column');
-                    td.textContent = value ? formatDuration(value) : '';
+                    td.textContent = value ? formatDuration(value, true) : '';
                 }
 
                 row.appendChild(td);
@@ -1392,11 +1578,9 @@
             infoCell.classList.add('info-text');
 
             if (infoText) {
-                let content = document.createElement('div');
-                infoCell.innerHTML = '<pre></pre>';
-                // Append content securely, without interpreting HTML tags.
-                infoCell.firstChild.textContent = infoText;
-                infoCell.appendChild(content);
+                const pre = document.createElement('pre');
+                pre.textContent = infoText;
+                infoCell.appendChild(pre);
             }
 
             // Handle subResults
@@ -1438,7 +1622,10 @@
         }
     }
 
-    function sortTable(results, column, key, tbody, nest_level, existing_columns) {
+    // When true, populateTableRows skips its own sort-by-status (column header sort takes over)
+    let columnSortActive = false;
+
+    function sortTable(results, column, key, tbody, nest_level, existingColumnsList) {
         // Find the table header element for the given key
         const tableHeaders = document.querySelectorAll('th');
         let th = Array.from(tableHeaders).find(header => header.textContent === key);
@@ -1451,9 +1638,17 @@
         const ascending = th.getAttribute('data-sort-direction') === 'asc';
         th.setAttribute('data-sort-direction', ascending ? 'desc' : 'asc');
 
+        // Suppress populateTableRows auto-sort until next re-render
+        columnSortActive = true;
+
         results.sort((a, b) => {
-            if (a[column] < b[column]) return ascending ? -1 : 1;
-            if (a[column] > b[column]) return ascending ? 1 : -1;
+            let va = a[column], vb = b[column];
+            if (column === 'status') {
+                va = getStatusPriority(va);
+                vb = getStatusPriority(vb);
+            }
+            if (va < vb) return ascending ? -1 : 1;
+            if (va > vb) return ascending ? 1 : -1;
             return 0;
         });
 
@@ -1461,7 +1656,7 @@
         tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
-        populateTableRows(tbody, results, nest_level, existing_columns);
+        populateTableRows(tbody, results, nest_level, existingColumnsList);
     }
 
     async function fetchJson(path, lastModifiedTime = null, eTag = null) {
@@ -1479,18 +1674,19 @@
 
             // If the response is 304 (Not Modified), return existing metadata without fetching new data
             if (response.status === 304) {
-                return { data: null, lastModifiedTime, eTag, updated: false };
-            } else if (response.status === 403)
-                return { data: null, lastModifiedTime: null, eTag: null, updated: true };
+                return { data: null, lastModifiedTime, eTag, updated: false, status: 304 };
+            } else if (response.status === 403) {
+                return { data: null, lastModifiedTime: null, eTag: null, updated: true, status: 403 };
+            }
             // Extract headers
             const newLastModifiedTime = response.headers.get('Last-Modified');
             const newETag = response.headers.get('ETag');
             const jsonData = await response.json();
 
-            return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true };
+            return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true, status: 200 };
         } catch (error) {
             console.error('Error loading Results:', error);
-            return { data: null, lastModifiedTime: null, eTag: null, updated: true };
+            return { data: null, lastModifiedTime: null, eTag: null, updated: true, status: 0 };
         }
     }
 
@@ -1501,7 +1697,10 @@
         prLink: null,
         commitLink: null,
         runLink: null,
-        sha: null
+        sha: null,
+        downstreamResults: null,
+        downstreamSha: null,
+        downstreamError: null
     };
 
     function storeLink(link) {
@@ -1590,6 +1789,7 @@
 
     function renderFooter(nameParams) {
         const footerRight = document.querySelector('#footer .right');
+        footerRight.innerHTML = '';
         function createLinkElement(href, textContent, footer) {
             const a = document.createElement('a');
             a.href = href;
@@ -1597,10 +1797,11 @@
             a.target = '_blank';
             footer.appendChild(a);
         }
+        const result = getTargetResults(nameParams);
         if (runtimeCache.prLink) createLinkElement(runtimeCache.prLink, 'PR', footerRight);
         if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
-        if (runtimeCache.runLink) createLinkElement(runtimeCache.runLink, 'Run', footerRight);
-        const result = getTargetResults(nameParams)
+        const runLink = result?.ext?.run_url || runtimeCache.runLink;
+        if (runLink) createLinkElement(runLink, 'Run', footerRight);
         let i = 1;
         for (const name of nameParams) {
             if (name === result.name) {
@@ -1625,15 +1826,24 @@
         if (result.info) {
             const textDiv = document.createElement('div');
             textDiv.id = 'info-content';
-            textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+            const info = (result.info || '').replace(/\n/g, '<br>');
+            textDiv.innerHTML = info.replace('ERROR: ', '<span class="status-error">ERROR:</span> ');
             resultsDiv.appendChild(textDiv);
         }
 
-        const resultsData = result.results;
+        // Merge cached downstream results if available and matching current SHA
+        let resultsData = result.results;
+        const resolvedSha = (sha === 'latest' && runtimeCache.commits)
+            ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha
+            : sha;
+        if (nameParams.length === 1 && runtimeCache.downstreamResults
+                && runtimeCache.downstreamSha === resolvedSha) {
+            resultsData = [...resultsData, ...runtimeCache.downstreamResults];
+        }
         if (Array.isArray(resultsData) && resultsData.length > 0) {
             const table = createResultsTable(resultsData, i);
             if (table) {
-                resultsDiv.appendChild(table); // Appends table correctly
+                resultsDiv.appendChild(table);
             }
         }
         addDetailsWidget(runtimeCache, sha, PR)
@@ -1731,7 +1941,10 @@
         let hasNewData = false;
 
         if (!runtimeCache.commits || sha === 'latest') {
-            const { data, updated } = await fetchJson(`${baseUrl}/${suffix}/commits.json`);
+            const { data, updated, status } = await fetchJson(`${baseUrl}/${suffix}/commits.json`);
+            if (status === 403) {
+                return { error: 403, message: 'Report does not exist or expired' };
+            }
             if (updated) {
                 runtimeCache.commits = data ? data : [];
                 hasNewData = true;
@@ -1755,34 +1968,118 @@
         const results = await Promise.all(fetchTasks);
 
         if (nameParams.length > 1) {
-            const { data, updated } = results[0]; // First request result
+            const { data, updated, status } = results[0]; // First request result
+            if (status === 403) {
+                return { error: 403, message: 'Report does not exist or expired' };
+            }
             if (updated) {
                 runtimeCache.json1 = data;
                 hasNewData = true;
             }
         }
 
-        const { data, updated } = results[fetchTasks.length - 1]; // Last request result (always task0)
+        const { data, updated, status } = results[fetchTasks.length - 1]; // Last request result (always task0)
+        if (status === 403) {
+            return { error: 403, message: 'Report does not exist or expired' };
+        }
         if (updated) {
             runtimeCache.json0 = data;
             hasNewData = true;
-            data.links.forEach(storeLink);
+            if (data && data.ext) {
+                if (data.ext.change_url) storeLink(data.ext.change_url);
+                if (data.ext.run_url) storeLink(data.ext.run_url);
+            }
         }
 
         return hasNewData;
     }
 
+    // Fetch downstream (private sync) results via proxy.
+    // Returns { data: [...results], error: null } or { data: null, error: "message" }
+    async function fetchDownstreamData(sha, privateBaseUrl) {
+        // Step 1: Fetch sync metadata
+        let metaResult;
+        try {
+            metaResult = await fetchJson(`${privateBaseUrl}/sync_metadata/${sha}.json`);
+        } catch (e) {
+            return { data: null, error: 'Downstream: proxy unreachable' };
+        }
+        if (metaResult.status === 0) {
+            return { data: null, error: 'Downstream: proxy unreachable' };
+        }
+        if (metaResult.status === 403 || !metaResult.data) {
+            return { data: null, error: 'Downstream: no sync metadata for this commit' };
+        }
+
+        const { private_pr_number, private_sha } = metaResult.data;
+        if (!private_pr_number || !private_sha) {
+            return { data: null, error: 'Downstream: invalid sync metadata' };
+        }
+
+        // Step 2: Fetch private PR result
+        let resultResult;
+        try {
+            resultResult = await fetchJson(
+                `${privateBaseUrl}/PRs/${encodeURIComponent(private_pr_number)}/${encodeURIComponent(private_sha)}/result_pr.json`
+            );
+        } catch (e) {
+            return { data: null, error: 'Downstream: proxy unreachable' };
+        }
+        if (resultResult.status === 0) {
+            return { data: null, error: 'Downstream: proxy unreachable' };
+        }
+        if (resultResult.status === 403 || !resultResult.data) {
+            return { data: null, error: 'Downstream: sync PR results not available yet' };
+        }
+
+        const privateResults = resultResult.data.results || [];
+
+        // Step 3: Transform results — prefix names, add downstream href, rewrite links
+        const transformed = privateResults.map(r => {
+            const originalName = r.name;
+            const copy = Object.assign({}, r);
+            copy.name = originalName;
+            copy._downstreamHref = `${privateBaseUrl}/json.html?PR=${encodeURIComponent(private_pr_number)}&sha=${encodeURIComponent(private_sha)}&name_0=PR&name_1=${encodeURIComponent(originalName)}`;
+
+            // Rewrite links: replace origin+bucket prefix with proxy base URL.
+            // privateBaseUrl is e.g. https://proxy/bucket-name, extract /bucket-name
+            const bucketPath = new URL(privateBaseUrl).pathname;
+            if (Array.isArray(copy.links)) {
+                copy.links = copy.links.map(link => {
+                    const re = new RegExp('^https?://[^/]+' + bucketPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                    return link.replace(re, privateBaseUrl);
+                });
+            }
+            return copy;
+        });
+
+        return { data: transformed, error: null };
+    }
+
+    function showDownstreamInfo(message) {
+        const container = document.getElementById('result-container');
+        // Remove any existing downstream info bar
+        const existing = container.querySelector('.downstream-info');
+        if (existing) existing.remove();
+
+        const bar = document.createElement('div');
+        bar.className = 'downstream-info';
+        bar.textContent = message;
+        container.insertBefore(bar, container.firstChild);
+    }
+
     // Track for autorefresh toggle
     let openedInfoCnt = 0;
     let closedInfoCnt = 0;
-    
-    async function renderResultsAuto(PR, REF, sha, nameParams, base_url) {
-        let autoRefreshTimer = null; // Store the main refresh interval timer
 
+    async function renderResultsAuto(PR, REF, sha, nameParams, base_url, privateBaseUrl) {
         function clearPage() {
             // First, clean up any existing timers and event listeners
             activeTimers.clearAll();
             activeListeners.removeAll();
+
+            // Reset column sort override so toggle takes effect again
+            columnSortActive = false;
 
             // Then clear the DOM content
             document.getElementById('result-container').innerHTML = '';
@@ -1821,19 +2118,79 @@
             const statusContainer = document.getElementById('status-container');
             const scrollTop = statusContainer ? statusContainer.scrollTop : 0;
 
-            if (await fetchData(PR, REF, sha, nameParams, base_url)) {
-                // Clear timers, event listeners, and DOM before refreshing content
-                clearPage();
+            const fetchResult = await fetchData(PR, REF, sha, nameParams, base_url);
 
-                // Rebuild the page with new data
+            // Check if fetchData returned an error
+            if (fetchResult && typeof fetchResult === 'object' && fetchResult.error === 403) {
+                const resultsDiv = document.getElementById('result-container');
+                const textDiv = document.createElement('div');
+                textDiv.id = 'info-content';
+                textDiv.style.textAlign = 'center';
+                textDiv.textContent = fetchResult.message;
+                resultsDiv.appendChild(textDiv);
+                return;
+            }
+
+            // Render upstream immediately (+ cached downstream if available)
+            if (fetchResult) {
+                clearPage();
                 await renderResults(PR, sha, nameParams);
 
-                // Restore scroll position
                 if (statusContainer) {
                     statusContainer.scrollTop = scrollTop;
                 }
 
+                if (runtimeCache.downstreamError) {
+                    showDownstreamInfo(runtimeCache.downstreamError);
+                }
+
                 console.log(`Data refreshed at ${new Date().toLocaleTimeString()}`);
+            }
+
+            // Fetch downstream asynchronously. Only for PRs to main trunk.
+            // On first load this adds downstream after a brief delay.
+            // On subsequent refreshes, cached data is already merged above.
+            if (nameParams.length === 1 && nameParams[0] === 'PR' && privateBaseUrl) {
+                const resolvedSha = runtimeCache.commits
+                    ? ((sha === 'latest')
+                        ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha
+                        : sha)
+                    : sha;
+                if (resolvedSha) {
+                    fetchDownstreamData(resolvedSha, privateBaseUrl).then(result => {
+                        if (result.error) {
+                            const hadDownstream = runtimeCache.downstreamResults !== null;
+                            runtimeCache.downstreamResults = null;
+                            runtimeCache.downstreamSha = null;
+                            runtimeCache.downstreamError = result.error;
+                            // Re-render to clear stale downstream rows
+                            if (hadDownstream) {
+                                clearPage();
+                                renderResults(PR, sha, nameParams);
+                            }
+                            showDownstreamInfo(result.error);
+                        } else if (result.data && result.data.length > 0) {
+                            runtimeCache.downstreamResults = result.data;
+                            runtimeCache.downstreamSha = resolvedSha;
+                            runtimeCache.downstreamError = null;
+                            // Re-render with merged data (only if not already merged)
+                            if (!document.querySelector('.downstream-row')) {
+                                clearPage();
+                                renderResults(PR, sha, nameParams);
+                            }
+                        } else if (result.data && result.data.length === 0) {
+                            // Empty results — clear any stale cached downstream rows
+                            const hadDownstream = runtimeCache.downstreamResults !== null;
+                            runtimeCache.downstreamResults = null;
+                            runtimeCache.downstreamSha = null;
+                            runtimeCache.downstreamError = null;
+                            if (hadDownstream) {
+                                clearPage();
+                                renderResults(PR, sha, nameParams);
+                            }
+                        }
+                    });
+                }
             }
         }
 
@@ -1841,7 +2198,7 @@
         await checkForUpdatesAndRender(true);
 
         // Setup periodic refresh using our timer management
-        autoRefreshTimer = activeTimers.addInterval(setInterval(() => {
+        activeTimers.addInterval(setInterval(() => {
             checkForUpdatesAndRender(false);
         }, 30000));
 
@@ -1870,6 +2227,14 @@
         const REF = urlParams.get('REF');
         const sha = urlParams.get('sha');
         const base_url = urlParams.get('base_url');
+
+        // Proxy URL: from URL param (persisted) or localStorage
+        const proxyParam = urlParams.get('proxy');
+        if (proxyParam) {
+            localStorage.setItem('privateBaseUrl', proxyParam.replace(/\/+$/, ''));
+        }
+        const privateBaseUrl = localStorage.getItem('privateBaseUrl') || null;
+
         const nameParams = [];
         urlParams.forEach((value, key) => {
             if (key.startsWith('name_')) {
@@ -1877,7 +2242,7 @@
                 nameParams[index] = value;
             }
         });
-        await renderResultsAuto(PR, REF, sha, nameParams, base_url);
+        await renderResultsAuto(PR, REF, sha, nameParams, base_url, privateBaseUrl);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
         fetchStatistics(nameParams[0])
@@ -1888,8 +2253,14 @@
         if (savedTheme === 'night') {
             document.body.classList.add('night-theme');
         }
+        // Set sortByStatus to true by default if not set
+        if (localStorage.getItem('sortByStatus') === null) {
+            localStorage.setItem('sortByStatus', 'true');
+        }
         await init();
         toggleStatusFilter(true);
+        updateSortToggleIcon();
+        updateProxyToggleIcon();
     });
 
     function createFavicon() {
@@ -1936,4 +2307,6 @@
         link.href = faviconURL;
     }
     createFavicon();
-</script></body></html>
+    </script>
+</body>
+</html>

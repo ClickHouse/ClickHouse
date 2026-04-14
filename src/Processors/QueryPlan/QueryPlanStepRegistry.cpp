@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 
 namespace DB
@@ -45,8 +46,10 @@ void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry);
-void registerNegativeLimitStep(QueryPlanStepRegistry & registry);
+void registerFractionalLimitStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry);
+void registerFractionalOffsetStep(QueryPlanStepRegistry & registry);
+void registerNegativeLimitStep(QueryPlanStepRegistry & registry);
 void registerNegativeOffsetStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
@@ -56,6 +59,7 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
+void registerObjectFilterStep(QueryPlanStepRegistry & registry);
 
 void QueryPlanStepRegistry::registerPlanSteps()
 {
@@ -70,6 +74,8 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerArrayJoinStep(registry);
     registerLimitByStep(registry);
     registerLimitStep(registry);
+    registerFractionalLimitStep(registry);
+    registerFractionalOffsetStep(registry);
     registerNegativeLimitStep(registry);
     registerOffsetStep(registry);
     registerNegativeOffsetStep(registry);
@@ -81,6 +87,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerReadFromTableStep(registry);
     registerReadFromTableFunctionStep(registry);
     registerBuildRuntimeFilterStep(registry);
+    registerObjectFilterStep(registry);
 }
 
 }

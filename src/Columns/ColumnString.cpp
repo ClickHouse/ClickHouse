@@ -4,7 +4,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
@@ -12,6 +11,11 @@
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/Function.h>
+#    include <llvm/IR/IRBuilder.h>
+#    include <llvm/IR/Module.h>
+#endif
 
 namespace DB
 {
@@ -174,6 +178,14 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     return res;
 }
 
+void ColumnString::filter(const Filter & filt)
+{
+    if (offsets.empty())
+        return;
+
+    filterArraysImplInPlace<UInt8>(chars, offsets, filt);
+}
+
 void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
 {
     auto & offsets_data = getOffsets();
@@ -227,7 +239,7 @@ void ColumnString::rollback(const ColumnCheckpoint & checkpoint)
     chars.resize_assume_reserved(assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested->size);
 }
 
-void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     if (empty())
         return;
@@ -238,11 +250,12 @@ void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, c
     else if (sizes.size() != rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
 
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     if (is_null)
     {
         for (size_t i = 0; i < rows; ++i)
         {
-            size_t string_size = sizeAt(i);
+            size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
             sizes[i] += 1 + !is_null[i] * (sizeof(string_size) + string_size);
         }
     }
@@ -250,108 +263,86 @@ void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, c
     {
         for (size_t i = 0; i < rows; ++i)
         {
-            size_t string_size = sizeAt(i);
+            size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
             sizes[i] += sizeof(string_size) + string_size;
         }
     }
 }
 
-
-StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::optional<size_t> ColumnString::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    size_t string_size = sizeAt(n);
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    return byteSizeAt(n) + serialize_string_with_zero_byte;
+}
+
+std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+{
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+
+    size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
     size_t offset = offsetAt(n);
 
-    StringRef res;
-    res.size = sizeof(string_size) + string_size;
-    char * pos = arena.allocContinue(res.size, begin);
+    auto result_size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(result_size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
-    memcpy(pos + sizeof(string_size), &chars[offset], string_size);
-    res.data = pos;
-
-    return res;
+    memcpy(pos + sizeof(string_size), &chars[offset], string_size - serialize_string_with_zero_byte);
+    if (serialize_string_with_zero_byte)
+        *(pos + sizeof(string_size) + string_size - 1) = 0;
+    return {pos, result_size};
 }
 
-StringRef ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    /// Serialize string values with 0 byte at the end for compatibility
-    /// with old versions where we stored 0 byte at the end of each string value.
-    size_t string_size_with_zero_byte = sizeAt(n) + 1;
-    size_t offset = offsetAt(n);
-
-    StringRef res;
-    res.size = sizeof(string_size_with_zero_byte) + string_size_with_zero_byte;
-    char * pos = arena.allocContinue(res.size, begin);
-    memcpy(pos, &string_size_with_zero_byte, sizeof(string_size_with_zero_byte));
-    memcpy(pos + sizeof(string_size_with_zero_byte), &chars[offset], string_size_with_zero_byte - 1);
-    /// Add 0 byte at the end.
-    *(pos + sizeof(string_size_with_zero_byte) + string_size_with_zero_byte - 1) = 0;
-    res.data = pos;
-
-    return res;
-}
-
-
-ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const
-{
-    size_t string_size = sizeAt(n);
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
     size_t offset = offsetAt(n);
 
     memcpy(memory, &string_size, sizeof(string_size));
     memory += sizeof(string_size);
-    memcpy(memory, &chars[offset], string_size);
+    memcpy(memory, &chars[offset], string_size - serialize_string_with_zero_byte);
+    if (serialize_string_with_zero_byte)
+        *(memory + string_size - 1) = 0;
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(std::vector<char *> & memories) const
+void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     for (size_t i = 0; i < memories.size(); ++i)
     {
-        size_t string_size = sizeAt(i);
+        size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
         size_t offset = offsetAt(i);
 
         memcpy(memories[i], &string_size, sizeof(string_size));
         memories[i] += sizeof(string_size);
-        memcpy(memories[i], &chars[offset], string_size);
+        memcpy(memories[i], &chars[offset], string_size - serialize_string_with_zero_byte);
+        if (serialize_string_with_zero_byte)
+            *(memories[i] + string_size - 1) = 0;
         memories[i] += string_size;
     }
 }
 
-const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
+void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    const size_t string_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size);
+    size_t string_size;
+    readBinaryLittleEndian<size_t>(string_size, in);
 
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + string_size;
+    const size_t new_size = old_size + string_size - serialize_string_with_zero_byte;
     chars.resize(new_size);
-    memcpy(chars.data() + old_size, pos, string_size);
+    in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), string_size - serialize_string_with_zero_byte);
+    in.ignore(serialize_string_with_zero_byte);
 
     offsets.push_back(new_size);
-    return pos + string_size;
 }
 
-const char * ColumnString::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnString::skipSerializedInArena(ReadBuffer & in) const
 {
-    /// Serialized value contains string values with 0 byte at the end for compatibility.
-    const size_t string_size_with_zero_byte = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size_with_zero_byte);
-
-    const size_t old_size = chars.size();
-    const size_t new_size = old_size + string_size_with_zero_byte - 1;
-    chars.resize(new_size);
-    memcpy(chars.data() + old_size, pos, string_size_with_zero_byte - 1);
-
-    offsets.push_back(new_size);
-    return pos + string_size_with_zero_byte;
-}
-
-const char * ColumnString::skipSerializedInArena(const char * pos) const
-{
-    const size_t string_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size);
-    return pos + string_size;
+    size_t string_size;
+    readBinaryLittleEndian<size_t>(string_size, in);
+    in.ignore(string_size);
 }
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
@@ -374,9 +365,9 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     size_t new_chars_size = 0;
     for (size_t i = 0; i < limit; ++i)
         new_chars_size += sizeAt(indexes[i]);
-    res_chars.resize(new_chars_size);
+    res_chars.resize_exact(new_chars_size);
 
-    res_offsets.resize(limit);
+    res_offsets.resize_exact(limit);
 
     Offset current_new_offset = 0;
 
@@ -530,7 +521,7 @@ size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & perm
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        auto value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -544,7 +535,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     auto res = ColumnString::create();
 
-    if (0 == col_size)
+    if (col_size == 0 || replicate_offsets.back() == 0)
         return res;
 
     Offsets & res_offsets = res->offsets;
@@ -591,7 +582,7 @@ size_t ColumnString::capacity() const
     return offsets.capacity();
 }
 
-void ColumnString::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     size_t new_size = size();
     size_t new_chars_size = chars.size();
@@ -612,22 +603,20 @@ void ColumnString::shrinkToFit()
     offsets.shrink_to_fit();
 }
 
-void ColumnString::getExtremes(Field & min, Field & max) const
+void ColumnString::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     min = String();
     max = String();
 
-    size_t col_size = size();
-
-    if (col_size == 0)
+    if (start >= end)
         return;
 
-    size_t min_idx = 0;
-    size_t max_idx = 0;
+    size_t min_idx = start;
+    size_t max_idx = start;
 
     ComparatorBase cmp_op(*this);
 
-    for (size_t i = 1; i < col_size; ++i)
+    for (size_t i = start + 1; i < end; ++i)
     {
         if (cmp_op.compare(i, min_idx) < 0)
             min_idx = i;
@@ -705,6 +694,63 @@ ColumnPtr ColumnString::compress(bool force_compression) const
         });
 }
 
+#if USE_EMBEDDED_COMPILER
+bool ColumnString::isComparatorCompilable() const
+{
+    return true;
+}
+
+llvm::Value * ColumnString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
+{
+    llvm::Value * lhs_chars_ptr = b.CreateExtractValue(lhs, {0});
+    llvm::Value * lhs_offset_ptr = b.CreateExtractValue(lhs, {1});
+    llvm::Value * lhs_index = b.CreateExtractValue(lhs, {2});
+
+    llvm::Value * rhs_chars_ptr = b.CreateExtractValue(rhs, {0});
+    llvm::Value * rhs_offset_ptr = b.CreateExtractValue(rhs, {1});
+    llvm::Value * rhs_index = b.CreateExtractValue(rhs, {2});
+
+    auto * size_type = b.getInt64Ty();
+
+    llvm::Value * const_one = llvm::ConstantInt::get(size_type, 1);
+
+    auto load_offset = [&](llvm::Value * offset_array, llvm::Value * index)
+    {
+        /// Not inbounds: for row 0 the index is -1 (wrapped unsigned), accessing
+        /// the PaddedPODArray padding element before the start of the array.
+        auto * element_ptr = b.CreateGEP(size_type, offset_array, index);
+        return b.CreateLoad(size_type, element_ptr);
+    };
+    auto * lhs_prev_index = b.CreateSub(lhs_index, const_one);
+    auto * lhs_current_start_offset = load_offset(lhs_offset_ptr, lhs_prev_index);
+    auto * lhs_current_end_offset = load_offset(lhs_offset_ptr, lhs_index);
+    auto * lhs_current_size = b.CreateSub(lhs_current_end_offset, lhs_current_start_offset);
+    auto * lhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), lhs_chars_ptr, lhs_current_start_offset);
+
+    auto * rhs_prev_index = b.CreateSub(rhs_index, const_one);
+    auto * rhs_current_start_offset = load_offset(rhs_offset_ptr, rhs_prev_index);
+    auto * rhs_current_end_offset = load_offset(rhs_offset_ptr, rhs_index);
+    auto * rhs_current_size = b.CreateSub(rhs_current_end_offset, rhs_current_start_offset);
+    auto * rhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), rhs_chars_ptr, rhs_current_start_offset);
+
+    // Call memcmpSmallAllowOverflow15, same as in ColumnString::compareAt
+    llvm::Module * module = b.GetInsertBlock()->getModule();
+    llvm::FunctionType * memcmp_func_type = llvm::FunctionType::get(
+        b.getInt32Ty(),
+        {b.getInt8Ty()->getPointerTo(), b.getInt64Ty(), b.getInt8Ty()->getPointerTo(), b.getInt64Ty()},
+        false
+    );
+
+    llvm::Function * memcmp_func = llvm::dyn_cast<llvm::Function>(
+        module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee()
+    );
+
+    auto * compare_result = b.CreateCall(memcmp_func, {lhs_current_ptr, lhs_current_size, rhs_current_ptr, rhs_current_size});
+
+    /// memcmpSmallAllowOverflow15 returns -1/0/1, so truncating i32 to i8 is safe
+    return b.CreateTrunc(compare_result, b.getInt8Ty());
+}
+#endif
 
 int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const
 {
@@ -741,6 +787,14 @@ void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
     /// This is for compatibility
     hash.update(UInt8(0));
+}
+
+void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    size_t chars_begin = offsetAt(begin);
+    size_t chars_end = offsetAt(end);
+    hash.update(reinterpret_cast<const char *>(&chars[chars_begin]), chars_end - chars_begin);
+    hash.update(reinterpret_cast<const char *>(&offsets[begin]), (end - begin) * sizeof(offsets[0]));
 }
 
 void ColumnString::updateHashFast(SipHash & hash) const

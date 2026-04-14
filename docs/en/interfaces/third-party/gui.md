@@ -44,6 +44,23 @@ Features:
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
 
+### DataStoria {#datastoria}
+
+[DataStoria](https://github.com/FrankChen021/datastoria) is an AI-powered web console application that manages multiple ClickHouse clusters in one place.
+
+Features:
+
+- **AI-Powered Intelligence**: Use natural language to explore data, optimize and fix SQL queries, and visualize your data.
+- **Official ClickHouse Agent Skills Integration**: Leverage [official best practices](https://github.com/ClickHouse/agent-skills) to ask AI for database optimizations and suggestions.
+- **Smart Error Diagnostics**: Pinpoint syntax errors instantly with precise line and column highlighting, and get AI-powered fix suggestions with one click.
+- **System Table Inspection**: Dive deep into `system.query_log`, `system.query_views_log`, `system.zookeeper`, `system.ddl_distributed_queue`, `system.part_log`, and `system.processes` with a powerful visualization dashboard and filters to quickly understand your cluster.
+- **One-Click Explain**: Instantly understand query execution plans with visual AST and pipeline views.
+- **Dependency Graph**: Visualize table relationships and trace data flows through Materialized Views, Distributed tables, and external systems.
+- **Cluster Monitoring**: Monitor all nodes with real-time metrics, merge operations, replication status, query performance, and more.
+- **Privacy & Security**: All SQL queries run directly from your browser to your ClickHouse server, ensuring complete privacy.
+
+[DataStoria documentation](https://docs.datastoria.app).
+
 ### DataPup {#datapup}
 
 [DataPup](https://github.com/DataPupOrg/DataPup) is a modern, AI-assisted, cross-platform database client with native ClickHouse support.
@@ -56,6 +73,22 @@ Features:
 - Advanced query result filtering and exploration
 - Cross-platform support (macOS, Windows, Linux)
 - Fast and responsive performance
+- Open-source and MIT licensed
+
+### Dory {#dory}
+
+[Dory](https://github.com/dorylab/dory) AI-native SQL workspace with first-class ClickHouse support, AI built-in.
+
+Features:
+
+- AI Copilot for SQL generation, explanation, and debugging
+- Manage and query multiple ClickHouse clusters from a unified workspace
+- Schema-aware SQL autocomplete and multi-tab query workspace
+- Interactive query result exploration with filtering and visualization
+- AI-powered table summaries for understanding datasets
+- Direct ClickHouse connections with SSH tunnel support
+- Modern developer-friendly interface with light, dark, and theme support
+- Cross-platform desktop app (macOS, Windows, Linux), and Docker support
 - Open-source and MIT licensed
 
 ### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
@@ -318,6 +351,43 @@ Features:
 - No extra agents or components required on the ClickHouse side.
 
 [Telescope Source Code](https://github.com/iamtelescope/telescope) · [Live Demo](https://demo.iamtelescope.net)
+
+### ClickLens {#clicklens}
+
+[ClickLens](https://ntk148v.github.io/clicklens/) is a modern, powerful, and user-friendly web interface for managing and monitoring ClickHouse databases. It provides a comprehensive suite of tools for developers, analysts, and administrators to interact with their ClickHouse clusters efficiently. ClickHouse is an incredible analytical database, but managing it via CLI or basic tools can be challenging. ClickLens bridges the gap by offering:
+
+- Discover - Flexible, Kibana-like data exploration for any table
+- SQL Console - Write, execute, and analyze queries with syntax highlighting and streaming results
+- Real-time Monitoring - Keep an eye on your cluster's health, query performance, and resource usage
+- Schema Explorer - Navigate databases, tables, columns, parts, and more
+- Access Control - Manage users and roles directly from the UI
+- Native RBAC - Your UI permissions are derived directly from your ClickHouse grants
+
+[ClickLens Source Code](https://github.com/ntk148v/clicklens)
+
+### CHouse UI {#chouse-ui}
+
+[CHouse UI](https://chouse-ui.com) is an open-source ClickHouse web interface built specifically for **teams** and **secure data access**. Unlike traditional clients that require direct database credentials, CHouse UI implements a powerful **Role-Based Access Control (RBAC)** layer, allowing administrators to grant granular permissions without exposing underlying secrets.
+
+Key differentiators include:
+
+- **Enterprise-Grade Security** - Server-side credential encryption, detailed audit logging, and access rules.
+- **Team Collaboration** - Define custom roles (e.g., specific table access for Analysts) and share queries securely.
+- **AI-Powered Insights** - Integrated LLM support for query optimization and visual explanation.
+- **complete Toolkit** - Features a robust SQL editor, monitoring dashboard, schema explorer, and seamless data import/export.
+
+[CHouse UI Source Code](https://github.com/daun-gatal/chouse-ui)
+
+### clickhouse-flow {#clickhouse-flow}
+[clickhouse-flow](https://github.com/MikeAmputer/clickhouse-flow) is an open-source tool for visualizing data flows and dependencies between ClickHouse tables, views, and materialized views.
+
+Features:
+
+- Automatically builds a schema graph from ClickHouse metadata.
+- Visualizes data flows through materialized views.
+- Interactive UI for exploring schema structure.
+- Export diagrams as PDF or SVG for documentation and sharing.
+- Docker-based deployment for quick setup in development environments.
 
 ## Commercial {#commercial}
 

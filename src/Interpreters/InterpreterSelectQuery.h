@@ -123,8 +123,6 @@ public:
 
     RowPolicyFilterPtr getRowPolicyFilter() const;
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
-
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
@@ -134,6 +132,8 @@ public:
     {
         UInt64 limit_length{0};
         UInt64 limit_offset{0};
+        Float64 fractional_limit{0};
+        Float64 fractional_offset{0};
         bool is_limit_length_negative{false};
         bool is_limit_offset_negative{false};
     };

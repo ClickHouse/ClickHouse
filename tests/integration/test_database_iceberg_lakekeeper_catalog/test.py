@@ -20,15 +20,18 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.test_tools import TSV, csv_compare
 
-BASE_URL_LOCAL = "http://localhost:8181/catalog"
 BASE_URL = "http://lakekeeper:8181/catalog"
 CATALOG_NAME = "demo"
 WAREHOUSE_NAME = "demo"
 
+
+def get_lakekeeper_local_url(cluster):
+    return f"http://localhost:{cluster.iceberg_rest_catalog_port}"
+
 DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\n(\n    `id` Nullable(Float64),\n    `data` Nullable(String)\n)\nENGINE = Iceberg('http://minio:9000/warehouse-rest/data/', 'minio', '[HIDDEN]')\n"
 
 
-def create_warehouse(minio_ip):
+def create_warehouse(cluster, minio_ip):
     minio_endpoint = f"http://{minio_ip}:9000"
 
     warehouse_data = {
@@ -55,7 +58,7 @@ def create_warehouse(minio_ip):
 
     try:
         response = requests.post(
-            "http://localhost:8181/management/v1/warehouse",
+            f"{get_lakekeeper_local_url(cluster)}/management/v1/warehouse",
             headers={"Content-Type": "application/json"},
             json=warehouse_data,
             timeout=30
@@ -79,7 +82,7 @@ def load_catalog_impl(started_cluster):
     return RestCatalog(
         name="my_catalog",
         warehouse=WAREHOUSE_NAME,
-        uri=BASE_URL_LOCAL,
+        uri=f"{get_lakekeeper_local_url(started_cluster)}/catalog",
         token="dummy",
         **{
             "s3.endpoint": s3_endpoint,
@@ -109,7 +112,7 @@ def started_cluster():
         time.sleep(15)
 
         minio_ip = cluster.get_instance_ip('minio')
-        create_warehouse(minio_ip)
+        create_warehouse(cluster, minio_ip)
 
         yield cluster
 

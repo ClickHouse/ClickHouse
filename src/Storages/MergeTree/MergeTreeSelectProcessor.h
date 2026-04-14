@@ -24,6 +24,8 @@ struct ChunkAndProgress
     /// Explicitly indicate that we have read all data.
     /// This is needed to occasionally return empty chunk to indicate the progress while the rows are filtered out in PREWHERE.
     bool is_finished = false;
+    /// Mark ranges that were read in this call (used for per-block virtual row generation).
+    MarkRanges read_mark_ranges;
 };
 
 class ParallelReadingExtension
@@ -35,10 +37,9 @@ public:
         size_t number_of_current_replica_,
         size_t total_nodes_count_);
 
-    void sendInitialRequest(CoordinationMode mode, const RangesInDataParts & ranges, size_t mark_segment_size) const;
+    void sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const;
 
-    std::optional<ParallelReadResponse>
-    sendReadRequest(CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const;
+    std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const;
 
     size_t getTotalNodesCount() const { return total_nodes_count; }
     size_t getNumberOfCurrentReplica() const { return number_of_current_replica; }
@@ -53,6 +54,7 @@ private:
 };
 
 using RangesByIndex = std::unordered_map<size_t, RangesInDataPart>;
+using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
 
@@ -64,11 +66,14 @@ struct MutableAtomicSizeT
 
 using PartRemainingMarks = std::unordered_map<size_t, MutableAtomicSizeT>;
 
-/// Provides shared context needed to build filtering indexes (e.g., skip indexes) during data reads.
+/// Provides shared context needed to build filtering indexes (e.g., skip indexes or projection indexes) during data reads.
 struct MergeTreeIndexBuildContext
 {
     /// For each part, stores all ranges need to be read.
     const RangesByIndex read_ranges;
+
+    /// For each part, stores a set of read ranges grouped by projection.
+    const ProjectionRangesByIndex projection_read_ranges;
 
     /// Thread-safe shared pool for reading and building index filters. Must not be null (enforced in constructor).
     const MergeTreeIndexReadResultPoolPtr index_reader_pool;
@@ -79,13 +84,17 @@ struct MergeTreeIndexBuildContext
 
     MergeTreeIndexBuildContext(
         RangesByIndex read_ranges_,
-        MergeTreeIndexReadResultPoolPtr index_reader_,
+        ProjectionRangesByIndex projection_read_ranges_,
+        MergeTreeIndexReadResultPoolPtr index_reader_pool_,
         PartRemainingMarks part_remaining_marks_);
 
     MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
+struct LazyMaterializingRows;
+using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
 class MergeTreeSelectProcessor : private boost::noncopyable
@@ -96,22 +105,27 @@ public:
         MergeTreeSelectAlgorithmPtr algorithm_,
         const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
-        const LazilyReadInfoPtr & lazily_read_info_,
         const IndexReadTasks & index_read_tasks_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
-        MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {});
+        MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
 
     String getName() const;
 
     static Block transformHeader(
         Block block,
-        const LazilyReadInfoPtr & lazily_read_info,
         const FilterDAGInfoPtr & row_level_filter,
         const PrewhereInfoPtr & prewhere_info);
 
     Block getHeader() const { return result_header; }
 
+    /// Reads a single MergeTreeReadTask in a stateless manner.
+    /// Can be called concurrently and is used, for example, by SingleProjectionIndexReader.
+    ChunkAndProgress readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const;
+
+    /// Reads using the standard task-based algorithm, managing task state internally.
+    /// Not thread-safe: must not be called concurrently on the same MergeTreeSelectProcessor instance.
     ChunkAndProgress read();
 
     void cancel() noexcept;
@@ -128,13 +142,15 @@ public:
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
+    /// Enable per-block virtual row generation for read-in-order optimization.
+    /// When set, after each block read, a virtual row carrying the next mark's PK boundary
+    /// is emitted so that MergingSortedTransform can reprioritize sources.
+    void setVirtualRowConversions(ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_);
+
     void onFinish() const;
 
 private:
-    static void injectLazilyReadColumns(size_t rows, Block & block, size_t part_index, const LazilyReadInfoPtr & lazily_read_info);
-
-    /// Sets up range readers corresponding to data readers
-    void initializeReadersChain();
+    friend class SingleProjectionIndexReader;
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
@@ -162,10 +178,19 @@ private:
     /// Shared context used for building indexes during query execution.
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context;
 
+    LazyMaterializingRowsPtr lazy_materializing_rows;
+
+    /// For per-block virtual row generation (read-in-order optimization).
+    ExpressionActionsPtr virtual_row_conversions;
+    /// Precomputed header with PK column names/types; cloned and filled from index per block.
+    Block pk_block_header;
+    bool read_in_reverse_order = false;
+    std::optional<ChunkAndProgress> pending_virtual_row;
+
+    ChunkAndProgress buildVirtualRowFromIndex(const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const;
+
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};
 };
-
-using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
 }

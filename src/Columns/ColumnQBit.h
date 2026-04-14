@@ -6,9 +6,6 @@
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
-#include <base/StringRef.h>
-
-
 namespace DB
 {
 
@@ -86,9 +83,9 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
-    StringRef getDataAt(size_t n) const override { return tuple->getDataAt(n); }
+    std::string_view getDataAt(size_t n) const override { return tuple->getDataAt(n); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }
     void insert(const Field & x) override { tuple->insert(x); }
     bool tryInsert(const Field & x) override { return tuple->tryInsert(x); }
@@ -105,35 +102,43 @@ public:
 #endif
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t, size_t, const IColumn &, int) const override
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif
     {
-        return 0;
+        const auto & rhs = assert_cast<const ColumnQBit &>(rhs_);
+        return tuple->compareAt(n, m, rhs.getTupleColumn(), nan_direction_hint);
     }
 
     void insertDefault() override { tuple->insertDefault(); }
     void popBack(size_t n) override { tuple->popBack(n); }
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
-        return tuple->serializeValueIntoArena(n, arena, begin);
+        return tuple->serializeValueIntoArena(n, arena, begin, settings);
     }
-    char * serializeValueIntoMemory(size_t n, char * memory) const override { return tuple->serializeValueIntoMemory(n, memory); }
-    const char * deserializeAndInsertFromArena(const char * pos) override { return tuple->deserializeAndInsertFromArena(pos); }
-    const char * skipSerializedInArena(const char * pos) const override { return tuple->skipSerializedInArena(pos); }
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override
+    {
+        return tuple->serializeValueIntoMemory(n, memory, settings);
+    }
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
+    {
+        tuple->deserializeAndInsertFromArena(in, settings);
+    }
+    void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
     WeakHash32 getWeakHash32() const override { return tuple->getWeakHash32(); }
 
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr compress(bool force_compression) const override;
 
-    void getExtremes(Field & min, Field & max) const override { tuple->getExtremes(min, max); }
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override { tuple->getExtremes(min, max, start, end); }
     void getPermutation(
         PermutationSortDirection direction,
         PermutationSortStability stability,
@@ -156,7 +161,7 @@ public:
     }
 
     void reserve(size_t n) override { tuple->reserve(n); }
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override { tuple->shrinkToFit(); }
     void ensureOwnership() override { tuple->ensureOwnership(); }
     void protect() override { tuple->protect(); }

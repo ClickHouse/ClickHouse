@@ -1,4 +1,3 @@
-
 #include "config.h"
 #if USE_AVRO
 
@@ -18,7 +17,7 @@
 #include <Core/Settings.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
@@ -32,6 +31,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -40,10 +40,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Interpreters/IcebergMetadataLog.h>
 
 
 #include <Common/ProfileEvents.h>
@@ -56,8 +55,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int LOGICAL_ERROR;
-extern const int BAD_ARGUMENTS;
 }
 
 namespace Setting
@@ -67,15 +64,13 @@ extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 
 namespace Iceberg
 {
-Iceberg::ManifestFilePtr getManifestFile(
+Iceberg::ManifestFileCacheableInfo getManifestFile(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
-    const String & filename,
-    Int64 inherited_sequence_number,
-    Int64 inherited_snapshot_id)
+    const IcebergPathFromMetadata & filename,
+    size_t bytes_size)
 {
     auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
@@ -84,7 +79,7 @@ Iceberg::ManifestFilePtr getManifestFile(
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
-        RelativePathWithMetadata manifest_object_info(filename);
+        RelativePathWithMetadata manifest_object_info(persistent_table_components.path_resolver.resolve(filename));
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
@@ -92,42 +87,63 @@ Iceberg::ManifestFilePtr getManifestFile(
             read_settings.enable_filesystem_cache = false;
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
-        Iceberg::AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
+        auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
+            std::move(buffer), filename, getFormatSettings(local_context));
 
-        return std::make_shared<Iceberg::ManifestFileContent>(
-            manifest_file_deserializer,
-            filename,
-            persistent_table_components.format_version,
-            configuration->getPathForRead().path,
-            *persistent_table_components.schema_processor,
-            inherited_sequence_number,
-            inherited_snapshot_id,
-            persistent_table_components.table_location,
-            local_context,
-            filename);
+        return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), bytes_size};
     };
 
-    if (use_iceberg_metadata_cache)
+    if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
     {
         auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
-            IcebergMetadataFilesCache::getKey(configuration, filename), create_fn);
+            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
         return manifest_file;
     }
     return create_fn();
 }
 
-ManifestFileCacheKeys getManifestList(
+Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesHandle(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationWeakPtr configuration,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
-    const String & filename,
+    LoggerPtr log,
+    const ManifestFileCacheKey & cache_key,
+    Int32 table_snapshot_schema_id)
+{
+    auto cacheable_info = getManifestFile(
+        object_storage,
+        persistent_table_components,
+        local_context,
+        log,
+        cache_key.manifest_file_path,
+        static_cast<size_t>(cache_key.manifest_file_byte_size));
+
+    auto iterator = Iceberg::ManifestFileIterator::create(
+        cacheable_info.deserializer,
+        cache_key.manifest_file_path,
+        persistent_table_components.format_version,
+        persistent_table_components.path_resolver,
+        *persistent_table_components.schema_processor,
+        cache_key.added_sequence_number,
+        cache_key.added_snapshot_id,
+        local_context,
+        nullptr,
+        table_snapshot_schema_id);
+
+    while (iterator->next())
+    {
+    }
+
+    return iterator->getFilesWithoutDeletedHandle();
+}
+
+ManifestFileCacheKeys getManifestList(
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr local_context,
+    const IcebergPathFromMetadata & filename,
     LoggerPtr log)
 {
-    auto configuration_ptr = configuration.lock();
-    if (configuration_ptr == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
-
     IcebergMetadataLogLevel log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
     bool use_iceberg_metadata_cache
@@ -135,7 +151,7 @@ ManifestFileCacheKeys getManifestList(
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
-        StorageObjectStorage::ObjectInfo object_info(filename);
+        RelativePathWithMetadata object_info(persistent_table_components.path_resolver.resolve(filename));
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
@@ -151,17 +167,15 @@ ManifestFileCacheKeys getManifestList(
             local_context,
             manifest_list_deserializer.getMetadataContent(),
             DB::IcebergMetadataLogLevel::ManifestListMetadata,
-            configuration_ptr->getRawPath().path,
+            persistent_table_components.path_resolver.getTableRoot(),
             filename,
             std::nullopt,
             std::nullopt);
 
         for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
         {
-            const std::string file_path
-                = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
-            const auto manifest_file_name = getProperFilePathFromMetadataInfo(
-                file_path, configuration_ptr->getPathForRead().path, persistent_table_components.table_location);
+            const IcebergPathFromMetadata manifest_file_name = IcebergPathFromMetadata::deserialize(
+                manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>());
             Int64 added_sequence_number = 0;
             auto added_snapshot_id = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id);
             if (added_snapshot_id.isNull())
@@ -172,6 +186,16 @@ ManifestFileCacheKeys getManifestList(
                     f_added_snapshot_id);
 
             ManifestFileContentType content_type = ManifestFileContentType::DATA;
+            Int64 manifest_length
+                = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_length, TypeIndex::Int64).safeGet<Int64>();
+            if (manifest_length < 0)
+            {
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Manifest list entry at index {} has negative value for field '{}', but it is required",
+                    i,
+                    f_manifest_length);
+            }
             if (persistent_table_components.format_version > 1)
             {
                 added_sequence_number
@@ -180,13 +204,13 @@ ManifestFileCacheKeys getManifestList(
                     manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
             }
             manifest_file_cache_keys.emplace_back(
-                manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
+                manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
 
             insertRowToLogTable(
                 local_context,
                 manifest_list_deserializer.getContent(i),
                 DB::IcebergMetadataLogLevel::ManifestListEntry,
-                configuration_ptr->getRawPath().path,
+                persistent_table_components.path_resolver.getTableRoot(),
                 filename,
                 i,
                 std::nullopt);
@@ -198,58 +222,14 @@ ManifestFileCacheKeys getManifestList(
     };
 
     ManifestFileCacheKeys manifest_file_cache_keys;
-    if (use_iceberg_metadata_cache)
+    if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
-            IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
+            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;
 }
 
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
-{
-    Poco::JSON::Object::Ptr schema;
-    if (!metadata_object->has(f_current_schema_id))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_current_schema_id);
-    auto current_schema_id = metadata_object->getValue<int>(f_current_schema_id);
-    if (!metadata_object->has(f_schemas))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schemas);
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
-    if (schemas->size() == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is empty", f_schemas);
-    for (uint32_t i = 0; i != schemas->size(); ++i)
-    {
-        auto current_schema = schemas->getObject(i);
-        if (!current_schema->has(f_schema_id))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
-        }
-        if (current_schema->getValue<int>(f_schema_id) == current_schema_id)
-        {
-            schema = current_schema;
-        }
-    }
-
-    if (!schema)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, R"(There is no schema with "{}" that matches "{}" in metadata)", f_schema_id, f_current_schema_id);
-    if (schema->getValue<int>(f_schema_id) != current_schema_id)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, R"(Field "{}" of the schema doesn't match "{}" in metadata)", f_schema_id, f_current_schema_id);
-    return {schema, current_schema_id};
-}
-
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object)
-{
-    if (!metadata_object->has(f_schema))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schema);
-    Poco::JSON::Object::Ptr schema = metadata_object->getObject(f_schema);
-    if (!metadata_object->has(f_schema_id))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
-    auto current_schema_id = schema->getValue<int>(f_schema_id);
-    return {schema, current_schema_id};
-}
 }
 }
 

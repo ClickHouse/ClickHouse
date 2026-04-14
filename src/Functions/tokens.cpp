@@ -1,21 +1,24 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Common/Exception.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
+#include <Interpreters/TokenizerFactory.h>
+#include <ranges>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -23,80 +26,77 @@ namespace
 
 constexpr size_t arg_value = 0;
 constexpr size_t arg_tokenizer = 1;
-constexpr size_t arg_ngrams = 2;
-constexpr size_t arg_separators = 2;
 
-std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view name)
+enum class TokensMode : uint8_t
 {
-    const auto tokenizer_arg = arguments.size() < 2 ? DefaultTokenExtractor::getExternalName()
-                                                        : arguments[arg_tokenizer].column->getDataAt(0).toView();
+    Plain,
+    LikePattern
+};
 
-    if (tokenizer_arg == DefaultTokenExtractor::getExternalName())
+struct PlainTokensTraits
+{
+    static constexpr String name = "tokens";
+    static constexpr TokensMode mode = TokensMode::Plain;
+};
+
+struct LikePatternTokensTraits
+{
+    static constexpr String name = "tokensForLikePattern";
+    static constexpr TokensMode mode = TokensMode::LikePattern;
+};
+
+std::unique_ptr<ITokenizer> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
+{
+    const auto tokenizer_str = arguments.size() < 2 || !arguments[arg_tokenizer].column
+        ? SplitByNonAlphaTokenizer::getExternalName()
+        : arguments[arg_tokenizer].column->getDataAt(0);
+
+    if (arguments.size() <= 2)
+        return TokenizerFactory::instance().get(tokenizer_str);
+
+    FieldVector params;
+    for (size_t i = 2; i < arguments.size(); ++i)
     {
-        return std::make_unique<DefaultTokenExtractor>();
-    }
-    if (tokenizer_arg == SplitTokenExtractor::getExternalName())
-    {
-        std::vector<String> separators;
-        if (arguments.size() < 3)
+        const auto & col = arguments[i].column;
+        if (!col)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid argument of function {}", function_name);
+
+        WhichDataType which_type(arguments[i].type);
+        if (which_type.isUInt())
         {
-            separators = {" "};
+            params.push_back(col->getUInt(0));
         }
         else
         {
-            const ColumnArray * col_separators = checkAndGetColumn<ColumnArray>(arguments[arg_separators].column.get());
-            const ColumnArray * col_separators_const = checkAndGetColumnConstData<ColumnArray>(arguments[arg_separators].column.get());
+            const ColumnArray * col_separators = checkAndGetColumn<ColumnArray>(col.get());
+            const ColumnArray * col_separators_const = checkAndGetColumnConstData<ColumnArray>(col.get());
 
-            if (!col_separators_const && !col_separators)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "3rd argument of function {} should be Array(String), got: {}", name, arguments[arg_separators].column->getFamilyName());
+            if (!col_separators && !col_separators_const)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Argument {} of function {} should be Array(String), got: {}",
+                    i + 1 /*1-based*/,
+                    function_name,
+                    col->getFamilyName());
 
             if (col_separators_const)
                 col_separators = col_separators_const;
 
-            Field separator_field = (*col_separators)[0];
-            const Array & separator_array = separator_field.safeGet<Array>();
-
-            for (const auto & separator : separator_array)
-                separators.emplace_back(separator.safeGet<String>());
+            params.push_back((*col_separators)[0]);
         }
-
-        return std::make_unique<SplitTokenExtractor>(separators);
-    }
-    if (tokenizer_arg == NoOpTokenExtractor::getExternalName())
-    {
-        return std::make_unique<NoOpTokenExtractor>();
-    }
-    if (tokenizer_arg == NgramTokenExtractor::getExternalName())
-    {
-        auto ngrams = (arguments.size() < 3) ? 3 : arguments[arg_ngrams].column->getUInt(0);
-        if (ngrams < 2 || ngrams > 8)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function {} should be between 2 and 8, got: {}", name, ngrams);
-        return std::make_unique<NgramTokenExtractor>(ngrams);
-    }
-    if (tokenizer_arg == SparseGramTokenExtractor::getExternalName())
-    {
-        auto min_length = arguments.size() < 3 ? 3
-            : arguments[2].column->getUInt(0);
-        auto max_length = arguments.size() < 4 ? 100
-            : arguments[3].column->getUInt(0);
-        auto min_cutoff_length = arguments.size() < 5 ? std::nullopt
-            : std::optional(arguments[4].column->getUInt(0));
-
-        return std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
 
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Function '{}' supports only tokenizers 'splitByNonAlpha', 'ngrams', 'splitByString', 'array', and 'sparseGrams'", name);
+    return TokenizerFactory::instance().get(tokenizer_str, params);
 }
 
+template <typename TokensTraits>
 class ExecutableFunctionTokens : public IExecutableFunction
 {
 public:
-    static constexpr auto name = "tokens";
+    static constexpr auto name = TokensTraits::name;
 
-    explicit ExecutableFunctionTokens(std::shared_ptr<const ITokenExtractor> token_extractor_)
-        : token_extractor(std::move(token_extractor_))
+    explicit ExecutableFunctionTokens(std::shared_ptr<const ITokenizer> tokenizer_)
+        : tokenizer(std::move(tokenizer_))
     {
     }
 
@@ -112,18 +112,39 @@ public:
         if (input_rows_count == 0)
             return ColumnArray::create(std::move(col_result), std::move(col_offsets));
 
-        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            executeImpl(*token_extractor, *column_string, *col_offsets, input_rows_count, *col_result);
-        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            executeImpl(*token_extractor, *column_fixed_string, *col_offsets, input_rows_count, *col_result);
+        if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
+        {
+            /// The sparse gram tokenizer stores an internal state which modified during the execution.
+            /// This leads to an error while executing this function multi-threaded because that state is not protected.
+            /// To avoid this case, a clone of the sparse gram tokenizer will be used.
+            auto sparse_grams_tokenizer = tokenizer->clone();
+            executeWithTokenizer(*sparse_grams_tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+        }
+        else
+        {
+            executeWithTokenizer(*tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+        }
 
         return ColumnArray::create(std::move(col_result), std::move(col_offsets));
     }
 
 private:
+    void executeWithTokenizer(
+        const ITokenizer & tokenizer_,
+        ColumnPtr col_input,
+        ColumnArray::ColumnOffsets & col_offsets,
+        size_t input_rows_count,
+        ColumnString & col_result) const
+    {
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            executeImpl(tokenizer_, *column_string, col_offsets, input_rows_count, col_result);
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            executeImpl(tokenizer_, *column_fixed_string, col_offsets, input_rows_count, col_result);
+    }
+
     template <typename StringColumnType>
     void executeImpl(
-        const ITokenExtractor & extractor,
+        const ITokenizer & tokenizer_,
         const StringColumnType & column_input,
         ColumnArray::ColumnOffsets & column_offsets_input,
         size_t input_rows_count,
@@ -135,29 +156,46 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view input = column_input.getDataAt(i).toView();
+            std::string_view input = column_input.getDataAt(i);
 
-            forEachTokenPadded(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
+            if constexpr (TokensTraits::mode == TokensMode::LikePattern)
             {
-                column_result.insertData(token_start, token_len);
-                ++tokens_count;
-                return false;
-            });
+                size_t cur = 0;
+                const char * data = input.data();
+                size_t length = input.size();
+                String token;
+
+                while (cur < length && tokenizer_.nextInStringLike(data, length, cur, token))
+                {
+                    column_result.insertData(token.data(), token.size());
+                    ++tokens_count;
+                }
+            }
+            else
+            {
+                forEachToken(tokenizer_, input.data(), input.size(), [&](const char * token_start, size_t token_len)
+                {
+                    column_result.insertData(token_start, token_len);
+                    ++tokens_count;
+                    return false;
+                });
+            }
 
             offsets_data[i] = tokens_count;
         }
     }
 
-    std::shared_ptr<const ITokenExtractor> token_extractor;
+    std::shared_ptr<const ITokenizer> tokenizer;
 };
 
+template <typename TokensTraits>
 class FunctionBaseTokens : public IFunctionBase
 {
 public:
-    static constexpr auto name = "tokens";
+    static constexpr auto name = TokensTraits::name;
 
-    FunctionBaseTokens(std::shared_ptr<const ITokenExtractor> token_extractor_, DataTypes argument_types_, DataTypePtr result_type_)
-        : token_extractor(std::move(token_extractor_))
+    FunctionBaseTokens(std::shared_ptr<const ITokenizer> tokenizer_, DataTypes argument_types_, DataTypePtr result_type_)
+        : tokenizer(std::move(tokenizer_))
         , argument_types(std::move(argument_types_))
         , result_type(std::move(result_type_))
     {
@@ -170,24 +208,25 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionTokens>(token_extractor);
+        return std::make_unique<ExecutableFunctionTokens<TokensTraits>>(tokenizer);
     }
 
 private:
-    std::shared_ptr<const ITokenExtractor> token_extractor;
+    std::shared_ptr<const ITokenizer> tokenizer;
     DataTypes argument_types;
     DataTypePtr result_type;
 };
 
+template <typename TokensTraits>
 class FunctionTokensOverloadResolver : public IFunctionOverloadResolver
 {
 public:
-    static constexpr auto name = "tokens";
+    static constexpr auto name = TokensTraits::name;
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
 
     static FunctionOverloadResolverPtr create(ContextPtr)
     {
@@ -203,29 +242,28 @@ public:
 
         if (arguments.size() > 1)
         {
-            optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String");
+            optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
             validateFunctionArguments(name, {arguments[arg_value], arguments[arg_tokenizer]}, mandatory_args, optional_args);
 
             if (arguments.size() == 3)
             {
-                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
+                const std::string tokenizer{arguments[arg_tokenizer].column->getDataAt(0)};
 
-                if (tokenizer == NgramTokenExtractor::getExternalName())
+                if (tokenizer == NgramsTokenizer::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
-                else if (tokenizer == SplitTokenExtractor::getExternalName())
+                else if (tokenizer == SplitByStringTokenizer::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
             }
-
-            if (arguments.size() == 4 || arguments.size() == 5)
+            else if (arguments.size() == 4 || arguments.size() == 5)
             {
-                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
+                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0);
 
-                if (tokenizer == SparseGramTokenExtractor::getExternalName())
+                if (tokenizer == SparseGramsTokenizer::getExternalName())
                 {
-                    optional_args.emplace_back("min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
-                    optional_args.emplace_back("max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
+                    optional_args.emplace_back("min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                    optional_args.emplace_back("max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                     if (arguments.size() == 5)
-                        optional_args.emplace_back("min_cutoff_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
+                        optional_args.emplace_back("min_cutoff_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 }
             }
         }
@@ -236,9 +274,19 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        auto token_extractor = createTokenizer(arguments, getName());
+        auto tokenizer = createTokenizer(arguments, getName());
+
+        if constexpr (TokensTraits::mode == TokensMode::LikePattern)
+        {
+            if (!tokenizer->supportsStringLike())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Tokenizer '{}' does not support LIKE pattern tokenization",
+                    tokenizer->getTokenizerExternalName());
+        }
+
         DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
-        return std::make_shared<FunctionBaseTokens>(std::move(token_extractor), std::move(argument_types), return_type);
+        return std::make_shared<FunctionBaseTokens<TokensTraits>>(std::move(tokenizer), std::move(argument_types), return_type);
     }
 };
 
@@ -248,18 +296,36 @@ REGISTER_FUNCTION(Tokens)
 {
     FunctionDocumentation::Description description = R"(
 Splits a string into tokens using the given tokenizer.
-The default tokenizer uses non-alphanumeric ASCII characters as separators.
 
-In case of the `split` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
+Available tokenizers:
+- `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha)).
+- `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/sql-reference/functions/splitting-merging-functions.md/#splitByString)). The separators can be specified using an optional parameter, for example, `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. Note that each string can consist of multiple characters (`', '` in the example). The default separator list, if not specified explicitly, is a single whitespace `[' ']`.
+- `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to UAX #29). ASCII alphanumeric characters and underscores form tokens with connectors (`:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters become single-character tokens.
+- `ngrams(N)` splits strings into equally large `N`-grams (also see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)). The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokens(value, 'ngrams', 3)`. The default ngram size, if not specified explicitly, is 3.
+- `sparseGrams(min_length, max_length, min_cutoff_length)` splits strings into variable-length n-grams of at least `min_length` and at most `max_length` (inclusive) characters (also see function [sparseGrams](/sql-reference/functions/string-functions#sparseGrams)). Unless specified explicitly, `min_length` and `max_length` default to 3 and 100. If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are returned. Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text. For example, `tokens(value, 'sparseGrams', 3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
+- `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
+
+In case of the `splitByString` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
 To do so, pass the separators in order of descending length.
 For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
 )";
-    FunctionDocumentation::Syntax syntax = "tokens(value[, tokenizer[, ngrams[, separators]]])";
+    FunctionDocumentation::Syntax syntax = R"(
+tokens(value) -- 'splitByNonAlpha' tokenizer
+tokens(value, 'splitByNonAlpha')
+tokens(value, 'splitByString'[, separators])
+tokens(value, 'asciiCJK')
+tokens(value, 'ngrams'[, n])
+tokens(value, 'sparseGrams'[, min_length, max_length[, min_cutoff_length]])
+tokens(value, 'array')
+)";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, and `no_op`. Optional, if not set explicitly, defaults to `default`.", {"const String"}},
-        {"ngrams", "Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
-        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}}
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"n", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
+        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
+        {"min_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum gram length, defaults to 3.", {"const UInt8"}},
+        {"max_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the maximum gram length, defaults to 100.", {"const UInt8"}},
+        {"min_cutoff_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum cutoff length.", {"const UInt8"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
     FunctionDocumentation::Examples examples = {
@@ -272,7 +338,7 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     },
     {
         "Ngram tokenizer",
-        "SELECT tokens('abc def', 'ngram', 3) AS tokens;",
+        "SELECT tokens('abc def', 'ngrams', 3) AS tokens;",
         R"(
 ['abc','bc ','c d',' de','def']
         )"
@@ -280,8 +346,40 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTokensOverloadResolver>(documentation);
+    factory.registerFunction<FunctionTokensOverloadResolver<PlainTokensTraits>>(documentation);
+
+    {
+        FunctionDocumentation::Description description_like = R"(
+Splits a LIKE pattern string into tokens using the specified tokenizer.
+
+Unlike the `tokens` function, this function is aware of LIKE pattern semantics
+(such as leading and trailing wildcard characters) and applies tokenizer-specific
+rules to extract meaningful tokens for pattern matching.
+
+It supports the same argument sets as the `tokens` function; additional
+arguments after `tokenizer` are interpreted according to the selected
+tokenizer (for example, `n` for `ngrams`, `separators` for `splitByString`,
+and `min_length` / `max_length` [/ `min_cutoff_length`] for `sparseGrams`).
+
+This function is primarily intended for debugging and testing purposes,
+and is used internally to analyze tokenization behavior for LIKE patterns.
+)";
+        FunctionDocumentation::Syntax syntax_like = "tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])";
+        FunctionDocumentation::Examples examples_like = {
+            {
+                "Default tokenizer",
+                R"(SELECT tokensForLikePattern('%test1,test2,test3%') AS tokens;)",
+                R"(
+                    ['test2']
+                    )"
+            }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in_like = {26, 3};
+        FunctionDocumentation documentation_like = {description_like, syntax_like, arguments, {}, returned_value, examples_like, introduced_in_like, category};
+
+        factory.registerFunction<FunctionTokensOverloadResolver<LikePatternTokensTraits>>(documentation_like);
+    }
 }
 }

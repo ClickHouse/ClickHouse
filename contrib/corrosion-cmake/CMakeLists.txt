@@ -20,6 +20,8 @@ macro(set_rust_target)
             set(Rust_CARGO_TARGET "x86_64-unknown-freebsd" CACHE INTERNAL "Rust config")
         elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-riscv64")
             set(Rust_CARGO_TARGET "riscv64gc-unknown-linux-gnu" CACHE INTERNAL "Rust config")
+        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-loongarch64")
+            set(Rust_CARGO_TARGET "loongarch64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         else()
             message(FATAL_ERROR "Unknown rust target for toolchain ${CMAKE_TOOLCHAIN_FILE}")
         endif()
@@ -35,7 +37,7 @@ endmacro()
 
 # Keep in sync with toolchain in docker images
 # (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
-set(Rust_TOOLCHAIN "nightly-2025-07-07")
+set(Rust_TOOLCHAIN "nightly-2026-03-22")
 
 macro(find_rust)
     set_rust_target()
@@ -99,7 +101,7 @@ if (USE_MUSL)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
 endif ()
 
-if(CCACHE_EXECUTABLE MATCHES "/chcache$")
+if(CCACHE_EXECUTABLE MATCHES "/chcache$" OR CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
     set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
 else()
@@ -146,11 +148,20 @@ else()
     list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()
 
+# Use v0 symbol mangling for shorter symbol names.
+# The legacy mangling produces extremely long symbols (up to 165 KB) from deeply nested
+# generic types in parser combinator libraries like chumsky (used by prqlc).
+# v0 mangling uses backreference compression for repeated type paths.
+list(APPEND RUSTFLAGS "-C" "symbol-mangling-version=v0")
+
+# Suppress warnings
 list(APPEND RUSTFLAGS
-    # Suppress warnings in delta-kernel-rs
+    # delta-kernel-rs
     "-Adead_code"
-    # Suppress warnings in skim
+    # skim
     "-Amismatched_lifetime_syntaxes"
+    # wasmtime
+    "-Aunused_parens -Aunused_imports"
 )
 
 list(JOIN RUSTFLAGS " " RUSTFLAGS)
@@ -161,6 +172,17 @@ message(STATUS "RUSTFLAGS: ${RUSTFLAGS}")
 message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
 set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
+
+# Sanitizer instrumentation combined with opt-level=3 and the default codegen-units=16
+# causes LLVM to use too much memory while compiling large crates like cranelift-codegen
+# and polyglot-sql (with all-dialects). Set opt-level and codegen-units via the Cargo
+# profile so that there is no conflict with the default profile flags.
+if (NOT SANITIZE STREQUAL "")
+    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 0
+codegen-units = 4")
+else()
+    set(RUST_RELEASE_PROFILE_EXTRA "")
+endif()
 
 # We now prepare a custom config.toml with all the flags and add it to cargo via flags
 configure_file("config.toml.in" "config.toml" @ONLY)
@@ -223,5 +245,10 @@ function(clickhouse_config_crate_flags target_name)
     #
     #   [1]: https://github.com/rust-lang/cc-rs/blob/7666d4f4f36d3bcacce9ab72fc6538fcc0ea1716/src/lib.rs#L762-L775
     corrosion_set_env_vars(${target_name} "CXXSTDLIB=cxx")
+    # Even with --offline it is still possible that some commands from build.rs
+    # will try to download, force them not to with CARGO_NET_OFFLINE=true
+    #
+    # Refs: https://github.com/rust-lang/cargo/issues/15099#issuecomment-2732847355
+    corrosion_set_env_vars(${target_name} "CARGO_NET_OFFLINE=true")
     corrosion_link_libraries(${target_name} cxx)
 endfunction()

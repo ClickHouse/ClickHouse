@@ -148,7 +148,7 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
         String timespan_suffix(ptr + number_len, ptr + text.size());
 
         trim(timespan_suffix);
-        if (timespan_suffixes.find(timespan_suffix) == timespan_suffixes.end())
+        if (!timespan_suffixes.contains(timespan_suffix))
             return false;
 
         time_span = std::stod(String(ptr, ptr + number_len));

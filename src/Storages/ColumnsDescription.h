@@ -11,6 +11,8 @@
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
 
+#include <Parsers/IAST.h>
+
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -37,6 +39,13 @@ enum class VirtualsKind : UInt8
     All = Ephemeral | Persistent,
 };
 
+enum class VirtualsMaterializationPlace : UInt8
+{
+    Reader = 1,
+    Plan = 2,
+    All = Reader | Plan,
+};
+
 struct GetColumnsOptions
 {
     enum Kind : UInt8
@@ -57,26 +66,29 @@ struct GetColumnsOptions
     GetColumnsOptions & withSubcolumns(bool value = true)
     {
         with_subcolumns = value;
+        with_dynamic_subcolumns = value;
         return *this;
     }
 
-    GetColumnsOptions & withVirtuals(VirtualsKind value = VirtualsKind::All)
+    GetColumnsOptions & withRegularSubcolumns(bool value = true)
+    {
+        with_subcolumns = value;
+        return *this;
+    }
+
+    GetColumnsOptions & withVirtuals(VirtualsKind value, VirtualsMaterializationPlace place)
     {
         virtuals_kind = value;
-        return *this;
-    }
-
-    GetColumnsOptions & withExtendedObjects(bool value = true)
-    {
-        with_extended_objects = value;
+        virtuals_place = place;
         return *this;
     }
 
     Kind kind;
     VirtualsKind virtuals_kind = VirtualsKind::None;
+    VirtualsMaterializationPlace virtuals_place = VirtualsMaterializationPlace::All;
 
     bool with_subcolumns = false;
-    bool with_extended_objects = false;
+    bool with_dynamic_subcolumns = false;
 };
 
 /// Description of a single table column (in CREATE TABLE for example).
@@ -117,7 +129,7 @@ public:
 
     static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
 
-    explicit ColumnsDescription(NamesAndTypesList ordinary);
+    explicit ColumnsDescription(NamesAndTypesList ordinary, bool with_subcolumns = true);
 
     ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
 
@@ -164,7 +176,7 @@ public:
 
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;
-    bool hasSubcolumn(const String & column_name) const;
+    bool hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
     const ColumnDescription * tryGet(const String & column_name) const;
 
@@ -266,6 +278,8 @@ private:
 
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
     void removeSubcolumns(const String & name_in_storage);
+
+    std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const;
 };
 
 class ASTColumnDeclaration;

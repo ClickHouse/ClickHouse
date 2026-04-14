@@ -8,8 +8,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
@@ -17,6 +17,7 @@
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ErrnoException.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Poco/Net/NetException.h>
 
@@ -51,6 +52,7 @@ namespace ErrorCodes
     extern const int BROKEN_PROJECTION;
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
 }
 
 
@@ -109,7 +111,8 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::SOCKET_TIMEOUT
             || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
             || e.code() == ErrorCodes::ABORTED
-            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM;
+            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM
+            || e.code() == ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK;
     }
     catch (const std::filesystem::filesystem_error & e)
     {
@@ -252,7 +255,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                     return;
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
 
                 if (!stream_name)
                     throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
@@ -366,6 +369,18 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         projections_on_disk.erase(projection_file);
     }
 
+    /// Handle unknown projections: on disk and in checksums but not in the
+    /// part's projection list (e.g. a projection was dropped while the part
+    /// was detached, then re-attached).  Remove them from checksums_txt so
+    /// that the checkEqual below does not fail, and mark the part as having
+    /// a broken projection so the caller can handle it gracefully.
+    if (!projections_on_disk.empty())
+    {
+        is_broken_projection = true;
+        for (const auto & projection_file : projections_on_disk)
+            checksums_txt.remove(projection_file);
+    }
+
     if (throw_on_broken_projection)
     {
         if (!broken_projections_message.empty())
@@ -373,8 +388,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
         }
 
-        /// This one is actually not broken, just redundant files on disk which
-        /// MergeTree will never use.
         if (require_checksums && !projections_on_disk.empty())
         {
             throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
@@ -422,7 +435,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             {
                 auto remote_paths = data_part_storage.getRemotePaths(file_name);
                 for (const auto & remote_path : remote_paths)
-                    cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
+                    cache.removePathIfExists(remote_path, FileCache::getCommonOrigin().user_id);
             }
         }
 
@@ -432,7 +445,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
         read_settings.enable_filesystem_cache_log = false;
         read_settings.enable_filesystem_read_prefetches_log = false;
         read_settings.page_cache = nullptr;
-        read_settings.load_marks_asynchronously = false;
         read_settings.remote_fs_prefetch = false;
         read_settings.page_cache_inject_eviction = false;
         read_settings.use_page_cache_for_disks_without_file_cache = false;

@@ -184,6 +184,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_cte)
         buffer << ", is_cte: " << is_cte;
 
+    if (is_materialized)
+        buffer << ", is_materialized: " << is_materialized;
+
     if (is_recursive_with)
         buffer << ", is_recursive_with: " << is_recursive_with;
 
@@ -338,7 +341,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
         for (const auto & change : settings_changes)
-            buffer << fmt::format(" {}={}", change.name, toString(change.value));
+            buffer << fmt::format(" {}={}", change.name, fieldToString(change.value));
     }
 }
 
@@ -347,7 +350,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
     return is_subquery == rhs_typed.is_subquery &&
-        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name)) &&
+        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_materialized == rhs_typed.is_materialized)) &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -394,6 +397,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(projection_alias);
     }
 
+    state.update(is_materialized);
     state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
@@ -424,6 +428,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 
     result_query_node->is_subquery = is_subquery;
     result_query_node->is_cte = is_cte;
+    result_query_node->is_materialized = is_materialized;
     result_query_node->is_recursive_with = is_recursive_with;
     result_query_node->is_distinct = is_distinct;
     result_query_node->is_limit_with_ties = is_limit_with_ties;
@@ -444,7 +449,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 
 ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto select_query = std::make_shared<ASTSelectQuery>();
+    auto select_query = make_intrusive<ASTSelectQuery>();
     select_query->recursive_with = is_recursive_with;
     select_query->distinct = is_distinct;
     select_query->limit_with_ties = is_limit_with_ties;
@@ -459,7 +464,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (hasWith())
     {
         const auto & with = getWith();
-        auto expression_list_ast = std::make_shared<ASTExpressionList>();
+        auto expression_list_ast = make_intrusive<ASTExpressionList>();
         expression_list_ast->children.reserve(with.getNodes().size());
 
         for (const auto & with_node : with)
@@ -482,10 +487,11 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             if (with_node_ast_subquery)
                 with_node_ast_subquery->cte_name = "";
 
-            auto with_element_ast = std::make_shared<ASTWithElement>();
+            auto with_element_ast = make_intrusive<ASTWithElement>();
             with_element_ast->name = with_node_cte_name;
             with_element_ast->subquery = std::move(with_node_ast);
             with_element_ast->children.push_back(with_element_ast->subquery);
+            with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
 
             expression_list_ast->children.back() = std::move(with_element_ast);
         }
@@ -512,7 +518,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_ast));
 
-    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
     addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree(), options);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
@@ -557,16 +563,16 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (hasSettingsChanges())
     {
-        auto settings_query = std::make_shared<ASTSetQuery>();
+        auto settings_query = make_intrusive<ASTSetQuery>();
         settings_query->changes = settings_changes;
         settings_query->is_standalone = false;
         select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     }
 
-    auto result_select_query = std::make_shared<ASTSelectWithUnionQuery>();
+    auto result_select_query = make_intrusive<ASTSelectWithUnionQuery>();
     result_select_query->union_mode = SelectUnionMode::UNION_DEFAULT;
 
-    auto list_of_selects = std::make_shared<ASTExpressionList>();
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
     list_of_selects->children.push_back(std::move(select_query));
 
     result_select_query->children.push_back(std::move(list_of_selects));
@@ -574,7 +580,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (is_subquery)
     {
-        auto subquery = std::make_shared<ASTSubquery>(std::move(result_select_query));
+        auto subquery = make_intrusive<ASTSubquery>(std::move(result_select_query));
         if (options.set_subquery_cte_name)
             subquery->cte_name = cte_name;
         return subquery;

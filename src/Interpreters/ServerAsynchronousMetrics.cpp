@@ -3,8 +3,8 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -15,6 +15,9 @@
 #include <IO/MMappedFileCache.h>
 #include <Common/PageCache.h>
 #include <Common/quoteString.h>
+#include <Common/HTTPConnectionPool.h>
+#include <Common/TCPSocketMemInfo.h>
+
 
 #include "config.h"
 #if USE_AWS_S3
@@ -50,6 +53,93 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 
 }
 
+#if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
+
+double percentile(const std::vector<uint32_t> & sorted, double p)
+{
+    size_t n = sorted.size();
+    size_t idx = static_cast<size_t>(std::ceil(p * static_cast<double>(n))) - 1;
+    idx = std::min(idx, n - 1);
+    return static_cast<double>(sorted[idx]);
+}
+
+/// Emit p50/p75/p90/p95 of kernel TCP buffer memory for one connection pool group.
+/// Looks up rmem/wmem from the netlink dump by inode.
+void emitTCPBufferPercentiles(
+    const std::vector<uint64_t> & inodes,
+    const char * group_name,
+    const std::unordered_map<uint64_t, TCPSocketMemInfo> & meminfo_by_inode,
+    AsynchronousMetricValues & new_values)
+{
+    std::vector<uint32_t> rmem_values;
+    std::vector<uint32_t> wmem_values;
+    rmem_values.reserve(inodes.size());
+    wmem_values.reserve(inodes.size());
+
+    for (uint64_t inode : inodes)
+    {
+        if (auto it = meminfo_by_inode.find(inode); it != meminfo_by_inode.end())
+        {
+            rmem_values.push_back(it->second.rmem);
+            wmem_values.push_back(it->second.wmem);
+        }
+    }
+
+    if (rmem_values.empty())
+        return;
+
+    std::sort(rmem_values.begin(), rmem_values.end());
+    std::sort(wmem_values.begin(), wmem_values.end());
+
+    static constexpr std::array<std::pair<const char *, double>, 4> quantiles = {{
+        {"p50", 0.5}, {"p75", 0.75}, {"p90", 0.9}, {"p95", 0.95}
+    }};
+
+    for (auto [suffix, p] : quantiles)
+    {
+        new_values[fmt::format("HTTPConnectionPool{}TCPRcvBufBytes_{}", group_name, suffix)]
+            = {percentile(rmem_values, p),
+               "Kernel TCP receive buffer memory (sk_rmem_alloc) for HTTP connection pool sockets."};
+        new_values[fmt::format("HTTPConnectionPool{}TCPSndBufBytes_{}", group_name, suffix)]
+            = {percentile(wmem_values, p),
+               "Kernel TCP transmit buffer memory (sk_wmem_alloc) for HTTP connection pool sockets."};
+    }
+
+    uint64_t rmem_total = 0;
+    for (uint32_t v : rmem_values)
+        rmem_total += v;
+    uint64_t wmem_total = 0;
+    for (uint32_t v : wmem_values)
+        wmem_total += v;
+
+    new_values[fmt::format("HTTPConnectionPool{}TCPRcvBufTotalBytes", group_name)]
+        = {static_cast<double>(rmem_total),
+           "Total kernel TCP receive buffer memory (sk_rmem_alloc) across all HTTP connection pool sockets."};
+    new_values[fmt::format("HTTPConnectionPool{}TCPSndBufTotalBytes", group_name)]
+        = {static_cast<double>(wmem_total),
+           "Total kernel TCP transmit buffer memory (sk_wmem_alloc) across all HTTP connection pool sockets."};
+}
+
+/// Emit p50/p75/p90/p95 metrics for kernel TCP buffer memory of HTTP connection pool sockets.
+/// Queries sock_diag netlink to get per-socket rmem/wmem, then joins with pool inodes.
+void updateHTTPConnectionPoolTCPBufferMetrics(
+    const HTTPConnectionPools::PoolSocketInodes & pool_inodes,
+    AsynchronousMetricValues & new_values)
+{
+    if (pool_inodes.empty())
+        return;
+
+    auto meminfo_by_inode = getTCPSocketMemInfoByInode();
+    if (meminfo_by_inode.empty())
+        return;
+
+    emitTCPBufferPercentiles(pool_inodes.disk, "Disk", meminfo_by_inode, new_values);
+    emitTCPBufferPercentiles(pool_inodes.storage, "Storage", meminfo_by_inode, new_values);
+    emitTCPBufferPercentiles(pool_inodes.http, "HTTP", meminfo_by_inode, new_values);
+}
+
+#endif
+
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
     unsigned update_period_seconds,
@@ -74,12 +164,11 @@ ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
 void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
     {
-        auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
         size_t max_bytes = 0;
         size_t total_files = 0;
 
-        for (const auto & [_, cache_data] : caches)
+        for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
             max_bytes += cache_data->cache->getMaxCacheSize();
@@ -368,12 +457,26 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
     }
 
+    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
+
+    {
+        Float64 max_merge_elapsed = 0;
+        for (const auto & merge : getContext()->getMergeList().get())
+            max_merge_elapsed = std::max(merge.elapsed, max_merge_elapsed);
+        new_values["LongestRunningMerge"]
+            = {max_merge_elapsed, "Elapsed time in seconds of the longest currently running background merge."};
+    }
+
 #if USE_NURAFT
     {
         auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();
         if (keeper_dispatcher)
             updateKeeperInformation(*keeper_dispatcher, new_values);
     }
+#endif
+
+#if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
+    updateHTTPConnectionPoolTCPBufferMetrics(HTTPConnectionPools::instance().getSocketInodes(), new_values);
 #endif
 
     if (update_heavy_metrics)
@@ -456,9 +559,9 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     {
         heavy_metric_previous_update_time = update_time;
         if (first_run)
-            heavy_update_interval = heavy_metric_update_period.count();
+            heavy_update_interval = static_cast<double>(heavy_metric_update_period.count());
         else
-            heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
+            heavy_update_interval = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count()) / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
         updateMutationAndDetachedPartsStats();
@@ -468,9 +571,9 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
         /// Normally heavy metrics don't delay the rest of the metrics calculation
         /// otherwise log the warning message
         auto log_level = std::make_pair(DB::LogsLevel::trace, Poco::Message::PRIO_TRACE);
-        if (watch.elapsedSeconds() > (update_period.count() / 2.))
+        if (watch.elapsedSeconds() > (static_cast<double>(update_period.count()) / 2.))
             log_level = std::make_pair(DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG);
-        else if (watch.elapsedSeconds() > (update_period.count() / 4. * 3))
+        else if (watch.elapsedSeconds() > (static_cast<double>(update_period.count()) / 4. * 3))
             log_level = std::make_pair(DB::LogsLevel::warning, Poco::Message::PRIO_WARNING);
         LOG_IMPL(log, log_level.first, log_level.second,
                  "Update heavy metrics. "

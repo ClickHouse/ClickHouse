@@ -49,16 +49,6 @@ namespace ProfileEvents
     extern const Event DiskAzureWriteRequestsErrors;
     extern const Event DiskAzureWriteRequestsThrottling;
     extern const Event DiskAzureWriteRequestsRedirects;
-
-    extern const Event AzureGetRequestThrottlerCount;
-    extern const Event AzureGetRequestThrottlerSleepMicroseconds;
-    extern const Event AzurePutRequestThrottlerCount;
-    extern const Event AzurePutRequestThrottlerSleepMicroseconds;
-
-    extern const Event DiskAzureGetRequestThrottlerCount;
-    extern const Event DiskAzureGetRequestThrottlerSleepMicroseconds;
-    extern const Event DiskAzurePutRequestThrottlerCount;
-    extern const Event DiskAzurePutRequestThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -245,8 +235,7 @@ PocoAzureHTTPClient::PocoAzureHTTPClient(const PocoAzureHTTPClientConfiguration 
     , http_max_field_name_size(client_configuration.http_max_field_name_size)
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , for_disk_azure(client_configuration.for_disk_azure)
-    , get_request_throttler(client_configuration.get_request_throttler)
-    , put_request_throttler(client_configuration.put_request_throttler)
+    , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {}
 
@@ -358,37 +347,10 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         }
 
         if (method == "GET" || method == "HEAD")
-        {
-            if (get_request_throttler)
-            {
-                UInt64 sleep_ns = get_request_throttler->throttle(1);
-                UInt64 sleep_us = sleep_ns / 1000UL;
-                ProfileEvents::increment(ProfileEvents::AzureGetRequestThrottlerCount);
-                ProfileEvents::increment(ProfileEvents::AzureGetRequestThrottlerSleepMicroseconds, sleep_us);
-
-                if (for_disk_azure)
-                {
-                    ProfileEvents::increment(ProfileEvents::DiskAzureGetRequestThrottlerCount);
-                    ProfileEvents::increment(ProfileEvents::DiskAzureGetRequestThrottlerSleepMicroseconds, sleep_us);
-                }
-            }
-        }
-        else if (method == "PUT" || method == "POST" || method == "DELETE" || method == "PATCH")
-        {
-            if (put_request_throttler)
-            {
-                UInt64 sleep_ns = put_request_throttler->throttle(1);
-                UInt64 sleep_us = sleep_ns / 1000UL;
-                ProfileEvents::increment(ProfileEvents::AzurePutRequestThrottlerCount);
-                ProfileEvents::increment(ProfileEvents::AzurePutRequestThrottlerSleepMicroseconds, sleep_us);
-
-                if (for_disk_azure)
-                {
-                    ProfileEvents::increment(ProfileEvents::DiskAzurePutRequestThrottlerCount);
-                    ProfileEvents::increment(ProfileEvents::DiskAzurePutRequestThrottlerSleepMicroseconds, sleep_us);
-                }
-            }
-        }
+            request_throttler.throttleHTTPGet();
+        else if (method == "PUT" || method == "POST" || method == "PATCH")
+            // Note that DELETE is free on Azure and thus we don't throttle it
+            request_throttler.throttleHTTPPut();
 
         Poco::URI uri;
         uri.setScheme(url.GetScheme());

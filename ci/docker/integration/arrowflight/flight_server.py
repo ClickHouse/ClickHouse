@@ -58,9 +58,15 @@ class FlightServer(fl.FlightServerBase):
         return fl.FlightDescriptor.for_command("Action executed")
 
     def get_flight_info(self, context, descriptor):
-        path_0 = descriptor.path[0].decode()
-        dataset = json.loads(path_0)["dataset"]
-        endpoints = [pa.flight.FlightEndpoint(dataset, [self._location])]
+        descriptor_ok = (descriptor.descriptor_type == fl.DescriptorType.PATH) and (
+            len(descriptor.path) == 1
+        )
+        if not descriptor_ok:
+            raise fl.FlightServerError(
+                f"Descriptor {descriptor} is not supported. Only single-component path descriptors are supported"
+            )
+        ticket = descriptor.path[0]
+        endpoints = [pa.flight.FlightEndpoint(ticket, [self._location])]
         return fl.FlightInfo(self._schema, descriptor, endpoints)
 
 

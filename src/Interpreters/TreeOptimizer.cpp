@@ -60,7 +60,6 @@ namespace Setting
     extern const SettingsBool optimize_redundant_functions_in_order_by;
     extern const SettingsBool optimize_rewrite_array_exists_to_has;
     extern const SettingsBool optimize_or_like_chain;
-    extern const SettingsBool optimize_injective_functions_in_group_by;
 }
 
 namespace ErrorCodes
@@ -98,8 +97,8 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 {
     /// Since ASTLiteral is different from ASTIdentifier, so we can use a special constant String Literal for this,
     /// and do not need to worry about it conflict with the name of the column in the table.
-    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>("__unused_group_by_column"));
+    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, make_intrusive<ASTExpressionList>());
+    select_query->groupBy()->children.emplace_back(make_intrusive<ASTLiteral>("__unused_group_by_column"));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
@@ -133,12 +132,6 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
     {
         if (const auto * function = group_exprs[i]->as<ASTFunction>())
         {
-            if (!settings[Setting::optimize_injective_functions_in_group_by])
-            {
-                ++i;
-                continue;
-            }
-
             /// assert function is injective
             if (possibly_injective_function_names.contains(function->name))
             {
@@ -492,7 +485,7 @@ bool convertQueryToCNF(ASTSelectQuery * select_query)
 {
     if (select_query->where())
     {
-        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where());
+        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where().get());
         if (!cnf_form)
             return false;
 
@@ -522,7 +515,7 @@ void optimizeUsing(const ASTSelectQuery * select_query)
     for (const auto & expression : expression_list)
     {
         auto expression_name = expression->getAliasOrColumnName();
-        if (expressions_names.find(expression_name) == expressions_names.end())
+        if (!expressions_names.contains(expression_name))
         {
             uniq_expressions_list.push_back(expression);
             expressions_names.insert(expression_name);

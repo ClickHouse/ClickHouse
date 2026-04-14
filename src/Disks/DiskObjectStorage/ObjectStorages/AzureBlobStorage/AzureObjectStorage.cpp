@@ -1,0 +1,589 @@
+#include <exception>
+#include <optional>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/setThreadName.h>
+#include <Common/Exception.h>
+#include <Common/BlobStorageLogWriter.h>
+#include <Common/Stopwatch.h>
+
+#if USE_AZURE_BLOB_STORAGE
+
+#include <Common/getRandomASCIIString.h>
+#include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
+#include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
+
+
+#include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
+#include <Interpreters/Context.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageAzureThreads;
+    extern const Metric ObjectStorageAzureThreadsActive;
+    extern const Metric ObjectStorageAzureThreadsScheduled;
+}
+
+namespace ProfileEvents
+{
+    extern const Event AzureListObjects;
+    extern const Event DiskAzureListObjects;
+    extern const Event AzureDeleteObjects;
+    extern const Event DiskAzureDeleteObjects;
+    extern const Event AzureGetProperties;
+    extern const Event DiskAzureGetProperties;
+    extern const Event AzureCopyObject;
+    extern const Event DiskAzureCopyObject;
+}
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int UNSUPPORTED_METHOD;
+}
+
+namespace
+{
+
+class AzureIteratorAsync final : public IObjectStorageIteratorAsync
+{
+public:
+    AzureIteratorAsync(
+        const std::string & path_prefix,
+        std::shared_ptr<const AzureBlobStorage::ContainerClient> client_,
+        size_t max_list_size)
+        : IObjectStorageIteratorAsync(
+            CurrentMetrics::ObjectStorageAzureThreads,
+            CurrentMetrics::ObjectStorageAzureThreadsActive,
+            CurrentMetrics::ObjectStorageAzureThreadsScheduled,
+            ThreadName::AZURE_LIST_POOL)
+        , client(client_)
+    {
+        options.Prefix = path_prefix;
+        options.PageSizeHint = static_cast<int>(max_list_size);
+    }
+
+    ~AzureIteratorAsync() override
+    {
+        if (!deactivated)
+            deactivate();
+    }
+
+private:
+    bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
+    {
+        ProfileEvents::increment(ProfileEvents::AzureListObjects);
+        if (client->IsClientForDisk())
+            ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
+
+        chassert(batch.empty());
+        auto blob_list_response = client->ListBlobs(options);
+        auto blobs_list = blob_list_response.Blobs;
+        batch.reserve(blobs_list.size());
+
+        for (const auto & blob : blobs_list)
+        {
+            batch.emplace_back(std::make_shared<RelativePathWithMetadata>(
+                blob.Name,
+                ObjectMetadata{
+                    .size_bytes = static_cast<uint64_t>(blob.BlobSize),
+                    .last_modified = Poco::Timestamp::fromEpochTime(
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
+                    .etag = blob.Details.ETag.ToString(),
+                    .tags = {},
+                    .attributes = {},
+                }));
+        }
+
+        if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
+            return false;
+
+        options.ContinuationToken = blob_list_response.NextPageToken;
+        return true;
+    }
+
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
+    Azure::Storage::Blobs::ListBlobsOptions options;
+};
+
+}
+
+
+AzureObjectStorage::AzureObjectStorage(
+    const String & name_,
+    AzureBlobStorage::AuthMethod auth_method_,
+    ClientPtr && client_,
+    SettingsPtr && settings_,
+    const AzureBlobStorage::ConnectionParams & connection_params_,
+    const String & object_namespace_,
+    const String & description_,
+    const String & common_key_prefix_)
+    : name(name_)
+    , auth_method(std::move(auth_method_))
+    , client(std::move(client_))
+    , settings(std::move(settings_))
+    , object_namespace(object_namespace_)
+    , description(description_)
+    , common_key_prefix(common_key_prefix_)
+    , connection_params(connection_params_)
+    , log(getLogger("AzureObjectStorage"))
+{
+}
+
+ObjectStorageKeyGeneratorPtr AzureObjectStorage::createKeyGenerator() const
+{
+    return createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
+}
+
+bool AzureObjectStorage::exists(const StoredObject & object) const
+{
+    auto client_ptr = client.get();
+
+    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
+    if (client_ptr->IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
+
+    try
+    {
+        auto blob_client = client_ptr->GetBlobClient(object.remote_path);
+        blob_client.GetProperties();
+        return true;
+    }
+    catch (const Azure::Storage::StorageException & e)
+    {
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+            return false;
+        throw;
+    }
+}
+
+ObjectStorageIteratorPtr AzureObjectStorage::iterate(
+    const std::string & path_prefix,
+    size_t max_keys,
+    bool,
+    const std::optional<std::string> &) const
+{
+    /// start_after is ignored; the resume-from-key optimization is only used for S3 for now.
+    auto settings_ptr = settings.get();
+    auto client_ptr = client.get();
+
+    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, max_keys ? max_keys : settings_ptr->list_object_keys_size);
+}
+
+void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
+{
+    auto client_ptr = client.get();
+
+    Azure::Storage::Blobs::ListBlobsOptions options;
+    options.Prefix = path;
+    if (max_keys)
+        options.PageSizeHint = max_keys;
+    else
+        options.PageSizeHint = settings.get()->list_object_keys_size;
+
+    for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
+    {
+        ProfileEvents::increment(ProfileEvents::AzureListObjects);
+        if (client_ptr->IsClientForDisk())
+            ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
+
+        const auto & blobs_list = blob_list_response.Blobs;
+
+        for (const auto & blob : blobs_list)
+        {
+            children.emplace_back(std::make_shared<RelativePathWithMetadata>(
+                blob.Name,
+                ObjectMetadata{
+                    .size_bytes = static_cast<uint64_t>(blob.BlobSize),
+                    .last_modified = Poco::Timestamp::fromEpochTime(
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
+                    .etag = blob.Details.ETag.ToString(),
+                    .tags = {},
+                    .attributes = {},
+                }));
+        }
+
+        if (max_keys && children.size() >= max_keys)
+            break;
+    }
+}
+
+std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    std::optional<size_t>) const
+{
+    auto settings_ptr = settings.get();
+
+    return std::make_unique<ReadBufferFromAzureBlobStorage>(
+        client.get(),
+        object.remote_path,
+        patchSettings(read_settings),
+        settings_ptr->max_single_read_retries,
+        settings_ptr->max_single_download_retries,
+        read_settings.remote_read_buffer_use_external_buffer,
+        read_settings.remote_read_buffer_restrict_seek,
+        /* read_until_position */0);
+}
+
+SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    size_t max_size_bytes,
+    std::optional<size_t> read_hint) const
+{
+    auto buffer = readObject(object, read_settings, read_hint);
+    SmallObjectDataWithMetadata result;
+    WriteBufferFromString out(result.data);
+    copyDataMaxBytes(*buffer, out, max_size_bytes);
+    out.finalize();
+
+    result.metadata = dynamic_cast<ReadBufferFromAzureBlobStorage *>(buffer.get())->getObjectMetadataFromTheLastRequest();
+    return result;
+}
+
+
+/// Open the file for write and return WriteBufferFromFileBase object.
+std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NOLINT
+    const StoredObject & object,
+    WriteMode mode,
+    std::optional<ObjectAttributes>,
+    size_t buf_size,
+    const WriteSettings & write_settings)
+{
+    if (mode != WriteMode::Rewrite)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Azure storage doesn't support append");
+
+    LOG_TEST(log, "Writing file: {}", object.remote_path);
+
+    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
+    if (write_settings.azure_allow_parallel_part_upload)
+        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
+
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object.local_path;
+
+    return std::make_unique<WriteBufferFromAzureBlobStorage>(
+        client.get(),
+        object.remote_path,
+        write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
+        patchSettings(write_settings),
+        settings.get(),
+        connection_params.getContainer(),
+        std::move(blob_storage_log),
+        std::move(scheduler));
+}
+
+void AzureObjectStorage::removeObjectImpl(
+    const StoredObject & object,
+    const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
+    bool if_exists,
+    BlobStorageLogWriterPtr blob_storage_log)
+{
+    ProfileEvents::increment(ProfileEvents::AzureDeleteObjects);
+    if (client_ptr->IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects);
+
+    const auto & path = object.remote_path;
+    LOG_TEST(log, "Removing single object: {}", path);
+
+    Stopwatch watch;
+    Int32 error_code = 0;
+    String error_message;
+    bool success = false;
+    try
+    {
+        auto delete_info = client_ptr->GetBlobClient(path).Delete();
+        success = delete_info.Value.Deleted;
+        if (!if_exists && !delete_info.Value.Deleted)
+            throw Exception(
+                ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
+                path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
+    }
+    catch (const Azure::Storage::StorageException & e)
+    {
+        error_code = static_cast<Int32>(e.StatusCode);
+        error_message = e.Message;
+
+        if (!if_exists)
+        {
+            if (blob_storage_log)
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Delete,
+                    /* bucket */ connection_params.getContainer(),
+                    /* remote_path */ path,
+                    object.local_path,
+                    object.bytes_size,
+                    watch.elapsedMicroseconds(),
+                    error_code,
+                    error_message);
+            throw;
+        }
+
+        /// If object doesn't exist.
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+        {
+            auto elapsed = watch.elapsedMicroseconds();
+            if (blob_storage_log)
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Delete,
+                    /* bucket */ connection_params.getContainer(),
+                    /* remote_path */ path,
+                    object.local_path,
+                    object.bytes_size,
+                    elapsed,
+                    error_code,
+                    error_message);
+            return;
+        }
+
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        throw;
+    }
+    auto elapsed = watch.elapsedMicroseconds();
+
+    if (blob_storage_log)
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Delete,
+            /* bucket */ connection_params.getContainer(),
+            /* remote_path */ path,
+            object.local_path,
+            object.bytes_size,
+            elapsed,
+            success ? 0 : error_code,
+            success ? "" : error_message);
+}
+
+void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
+{
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
+    removeObjectImpl(object, client.get(), true, std::move(blob_storage_log));
+}
+
+void AzureObjectStorage::removeObjectsBatchIfExists(
+    const StoredObjects & objects,
+    const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
+    BlobStorageLogWriterPtr blob_storage_log)
+{
+    /// https://github.com/Azure/azure-sdk-for-python/issues/22821#issuecomment-1024753986
+    static constexpr size_t AZURE_BATCH_MAX_SUBREQUESTS = 256;
+
+    const String & container = connection_params.getContainer();
+    const bool is_disk = client_ptr->IsClientForDisk();
+    const auto add_log_entry = [&](const StoredObject & object, size_t elapsed_mu, int32_t error_code = 0, const std::string & error_message = "")
+    {
+        if (!blob_storage_log)
+            return;
+
+        try
+        {
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Delete,
+                container, object.remote_path, object.local_path, object.bytes_size,
+                elapsed_mu, error_code, error_message);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    };
+
+    StoredObjectsSpan rest_objects = objects;
+    while (!rest_objects.empty())
+    {
+        auto object_batch = rest_objects.first(std::min(rest_objects.size(), AZURE_BATCH_MAX_SUBREQUESTS));
+        SCOPE_EXIT({ rest_objects = rest_objects.last(rest_objects.size() - object_batch.size()); });
+
+        Stopwatch watch;
+        AzureBlobStorage::BlobContainerBatch requests = client_ptr->CreateBatch();
+        std::vector<AzureBlobStorage::DeleteBlobResultDeferredResponse> responses;
+        for (const auto & object : object_batch)
+            responses.push_back(requests.DeleteBlob(client_ptr->GetBlobPath(object.remote_path)));
+
+        client_ptr->SubmitBatch(requests);
+
+        ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
+        if (is_disk)
+            ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects, object_batch.size());
+
+        size_t avg_elapsed_us = watch.elapsedMicroseconds() / object_batch.size();
+        std::exception_ptr throw_at_end;
+        for (const auto [object, deferred_response] : std::views::zip(object_batch, responses))
+        {
+            try
+            {
+                deferred_response.GetResponse();
+                add_log_entry(object, avg_elapsed_us);
+            }
+            catch (const Azure::Storage::StorageException & e)
+            {
+                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                {
+                    add_log_entry(object, avg_elapsed_us);
+                }
+                else
+                {
+                    add_log_entry(object, avg_elapsed_us, static_cast<Int32>(e.StatusCode), e.Message);
+
+                    if (!throw_at_end)
+                        throw_at_end = std::current_exception();
+
+                    continue;
+                }
+            }
+        }
+
+        if (throw_at_end)
+            std::rethrow_exception(throw_at_end);
+    }
+}
+
+void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+{
+    if (objects.empty())
+        return;
+
+    auto client_ptr = client.get();
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
+
+    removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log);
+}
+
+static void setAzureBlobTag(
+    const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
+    const Strings & blob_names,
+    const String & tag_key,
+    const String & tag_value)
+{
+    auto log = getLogger("setAzureBlobTag");
+    for (const auto & blob_name : blob_names)
+    {
+        auto blob_client = client_ptr->GetBlobClient(blob_name);
+        auto get_response = blob_client.GetTags();
+        auto & tags = get_response.Value;
+        const auto tag_iter = tags.find(tag_key);
+        if (tag_iter != tags.end() && tag_iter->second == tag_value)
+        {
+            LOG_TRACE(log, "Azure blob {} skipped as it already had the tag {}={}", blob_name, tag_key, tag_value);
+            continue;
+        }
+
+        tags[tag_key] = tag_value;
+        blob_client.SetTags(tags);
+        LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
+    }
+}
+
+void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
+{
+    auto client_ptr = client.get();
+    Strings blob_names = collectRemotePaths(objects);
+    setAzureBlobTag(client_ptr, blob_names, tag_key, tag_value);
+}
+
+ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
+{
+    auto client_ptr = client.get();
+    auto blob_client = client_ptr->GetBlobClient(path);
+    auto properties = blob_client.GetProperties().Value;
+
+    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
+    if (client_ptr->IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
+
+    ObjectMetadata result;
+    result.size_bytes = properties.BlobSize;
+    if (!properties.Metadata.empty())
+    {
+        result.attributes.emplace();
+        for (const auto & [key, value] : properties.Metadata)
+            result.attributes[key] = value;
+    }
+    result.last_modified = static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch().count();
+    return result;
+}
+
+std::optional<ObjectMetadata> AzureObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
+try
+{
+    return getObjectMetadata(path, with_tags);
+}
+catch (const Azure::Storage::StorageException & e)
+{
+    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+        return {};
+    throw;
+}
+
+void AzureObjectStorage::copyObject( /// NOLINT
+    const StoredObject & object_from,
+    const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings &,
+    std::optional<ObjectAttributes> object_to_attributes)
+{
+    auto settings_ptr = settings.get();
+    auto client_ptr = client.get();
+    auto object_metadata = getObjectMetadata(object_from.remote_path, false);
+
+    ProfileEvents::increment(ProfileEvents::AzureCopyObject);
+    if (client_ptr->IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
+    LOG_TRACE(log, "AzureObjectStorage::copyObject of size {}", object_metadata.size_bytes);
+
+    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
+
+    copyAzureBlobStorageFile(
+        client_ptr,
+        client_ptr,
+        connection_params.getContainer(),
+        object_from.remote_path,
+        0,
+        object_metadata.size_bytes,
+        connection_params.getContainer(),
+        object_to.remote_path,
+        settings_ptr,
+        read_settings,
+        object_to_attributes,
+        scheduler);
+}
+
+void AzureObjectStorage::applyNewSettings(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr context,
+    const ApplyNewSettingsOptions & options)
+{
+    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
+    settings.set(std::move(new_settings));
+
+    if (!options.allow_client_change)
+        return;
+
+    bool is_client_for_disk = client.get()->IsClientForDisk();
+
+    AzureBlobStorage::ConnectionParams params;
+    params.endpoint = AzureBlobStorage::processEndpoint(config, config_prefix);
+    params.auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix);
+    params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk);
+
+    auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
+    client.set(std::move(new_client));
+}
+
+}
+
+#endif

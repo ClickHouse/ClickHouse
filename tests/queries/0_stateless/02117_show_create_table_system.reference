@@ -53,6 +53,7 @@ CREATE TABLE system.clusters
     `estimated_recovery_time` UInt32,
     `database_shard_name` String,
     `database_replica_name` String,
+    `is_shared_catalog_cluster` UInt8,
     `is_active` Nullable(UInt8),
     `unsynced_after_recovery` Nullable(UInt8),
     `replication_lag` Nullable(UInt32),
@@ -92,6 +93,7 @@ CREATE TABLE system.columns
     `numeric_scale` Nullable(UInt64),
     `datetime_precision` Nullable(UInt64),
     `serialization_hint` Nullable(String),
+    `statistics` String,
     `column` String ALIAS name
 )
 ENGINE = SystemColumns
@@ -118,6 +120,7 @@ CREATE TABLE system.data_skipping_indices
     `type` String,
     `type_full` String,
     `expr` String,
+    `creation` Enum8('Explicit' = 0, 'Implicit' = 1),
     `granularity` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,
@@ -428,8 +431,10 @@ CREATE TABLE system.mutations
     `create_time` DateTime,
     `block_numbers.partition_id` Array(String),
     `block_numbers.number` Array(Int64),
+    `parts_in_progress_names` Array(String),
     `parts_to_do_names` Array(String),
     `parts_to_do` Int64,
+    `parts_postpone_reasons` Map(String, String),
     `is_done` UInt8,
     `is_killed` UInt8,
     `latest_failed_part` String,
@@ -485,6 +490,7 @@ CREATE TABLE system.parts
     `active` UInt8,
     `marks` UInt64,
     `rows` UInt64,
+    `files` UInt64,
     `bytes_on_disk` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,
@@ -600,8 +606,8 @@ CREATE TABLE system.parts_columns
     `column_ttl_min` Nullable(DateTime),
     `column_ttl_max` Nullable(DateTime),
     `statistics` Array(String),
-    `estimates.min` Nullable(Float64),
-    `estimates.max` Nullable(Float64),
+    `estimates.min` Nullable(String),
+    `estimates.max` Nullable(String),
     `estimates.cardinality` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
@@ -658,9 +664,11 @@ CREATE TABLE system.processes
     `normalized_query_hash` UInt64,
     `query_kind` String,
     `thread_ids` Array(UInt64),
-    `ProfileEvents` Map(String, UInt64),
-    `Settings` Map(String, String),
+    `peak_threads_usage` UInt64,
+    `ProfileEvents` Map(LowCardinality(String), UInt64),
+    `Settings` Map(LowCardinality(String), LowCardinality(String)),
     `current_database` String,
+    `is_internal` UInt8,
     `ProfileEvents.Names` Array(String) ALIAS mapKeys(ProfileEvents),
     `ProfileEvents.Values` Array(UInt64) ALIAS mapValues(ProfileEvents),
     `Settings.Names` Array(String) ALIAS mapKeys(Settings),
@@ -807,7 +815,8 @@ CREATE TABLE system.quota_limits
     `max_read_bytes` Nullable(UInt64),
     `max_execution_time` Nullable(Float64),
     `max_written_bytes` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64)
+    `max_failed_sequential_authentications` Nullable(UInt64),
+    `max_queries_per_normalized_hash` Nullable(UInt64)
 )
 ENGINE = SystemQuotaLimits
 COMMENT 'Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to specific quota.'
@@ -839,7 +848,9 @@ CREATE TABLE system.quota_usage
     `written_bytes` Nullable(UInt64),
     `max_written_bytes` Nullable(UInt64),
     `failed_sequential_authentications` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64)
+    `max_failed_sequential_authentications` Nullable(UInt64),
+    `queries_per_normalized_hash` Nullable(UInt64),
+    `max_queries_per_normalized_hash` Nullable(UInt64)
 )
 ENGINE = SystemQuotaUsage
 COMMENT 'Contains quota usage by the current user: how much is used and how much is left.'
@@ -848,7 +859,7 @@ CREATE TABLE system.quotas
     `name` String,
     `id` UUID,
     `storage` String,
-    `keys` Array(Enum8('user_name' = 1, 'ip_address' = 2, 'forwarded_ip_address' = 3, 'client_key' = 4)),
+    `keys` Array(Enum8('user_name' = 1, 'ip_address' = 2, 'forwarded_ip_address' = 3, 'client_key' = 4, 'normalized_query_hash' = 7)),
     `durations` Array(UInt32),
     `apply_to_all` UInt8,
     `apply_to_list` Array(String),
@@ -885,7 +896,9 @@ CREATE TABLE system.quotas_usage
     `written_bytes` Nullable(UInt64),
     `max_written_bytes` Nullable(UInt64),
     `failed_sequential_authentications` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64)
+    `max_failed_sequential_authentications` Nullable(UInt64),
+    `queries_per_normalized_hash` Nullable(UInt64),
+    `max_queries_per_normalized_hash` Nullable(UInt64)
 )
 ENGINE = SystemQuotasUsage
 COMMENT 'Contains quota usage by all users.'
@@ -893,6 +906,7 @@ CREATE TABLE system.replicas
 (
     `database` String,
     `table` String,
+    `uuid` UUID,
     `engine` String,
     `is_leader` UInt8,
     `can_become_leader` UInt8,
@@ -1154,6 +1168,7 @@ CREATE TABLE system.tables
     `active_on_fly_data_mutations` UInt64,
     `active_on_fly_alter_mutations` UInt64,
     `active_on_fly_metadata_mutations` UInt64,
+    `columns_descriptions_cache_size` UInt64,
     `lifetime_rows` Nullable(UInt64),
     `lifetime_bytes` Nullable(UInt64),
     `comment` String,
@@ -1189,6 +1204,7 @@ CREATE TABLE system.users
     `storage` String,
     `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10, 'scram_sha256_password' = 11, 'no_authentication' = 12)),
     `auth_params` Array(String),
+    `valid_until` Array(DateTime),
     `host_ip` Array(String),
     `host_names` Array(String),
     `host_names_regexp` Array(String),

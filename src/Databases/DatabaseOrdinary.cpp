@@ -13,7 +13,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -29,17 +29,13 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
+#include <Common/AsyncLoader.h>
 #include <Interpreters/TransactionLog.h>
-
-#include <boost/algorithm/string/replace.hpp>
 
 namespace fs = std::filesystem;
 
@@ -77,6 +73,7 @@ namespace ErrorCodes
 
 namespace DatabaseMetadataDiskSetting
 {
+extern const DatabaseMetadataDiskSettingsBool lazy_load_tables;
 extern const DatabaseMetadataDiskSettingsString disk;
 }
 
@@ -88,7 +85,7 @@ DatabaseOrdinary::DatabaseOrdinary(
     : DatabaseOrdinary(
           name_,
           metadata_path_,
-          std::filesystem::path("data") / escapeForFileName(name_) / "",
+          DatabaseCatalog::getDataDirPath(name_) / "",
           "DatabaseOrdinary (" + name_ + ")",
           context_,
           database_metadata_disk_settings_)
@@ -126,6 +123,7 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
     info.table_id = table_id;
     info.expand_special_macros_only = false;
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::checkReplicaPathExists");
     const auto & server_settings = local_context->getServerSettings();
     String replica_path = server_settings[ServerSetting::default_replica_path];
     String zookeeper_path = local_context->getMacros()->expand(replica_path, info);
@@ -140,8 +138,8 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
 {
     auto * storage = create_query.storage;
-    auto args = std::make_shared<ASTExpressionList>();
-    auto engine = std::make_shared<ASTFunction>();
+    auto args = make_intrusive<ASTExpressionList>();
+    auto engine = make_intrusive<ASTFunction>();
     String engine_name;
 
     if (replicated)
@@ -150,8 +148,8 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
         String replica_path = server_settings[ServerSetting::default_replica_path];
         String replica_name = server_settings[ServerSetting::default_replica_name];
 
-        args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
-        args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
+        args->children.push_back(make_intrusive<ASTLiteral>(replica_path));
+        args->children.push_back(make_intrusive<ASTLiteral>(replica_name));
 
         /// Add old engine's arguments
         if (storage->engine->arguments)
@@ -177,6 +175,7 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     /// Set new engine for the old query
     engine->name = engine_name;
     engine->arguments = args;
+    engine->setNoEmptyArgs(true);
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
@@ -260,6 +259,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
     auto process_metadata = [&metadata, is_startup, local_context, db_disk, this](const String & file_name)
     {
+        auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::loadTablesMetadata");
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
         fs::path full_path = path / file_path;
@@ -357,6 +357,12 @@ void DatabaseOrdinary::loadTableFromMetadata(
     assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
+    if (shouldLazyLoad(query, mode))
+    {
+        loadTableLazy(local_context, name, ast, mode);
+        return;
+    }
+
     LOG_TRACE(log, "Loading table {}", name.getFullName());
 
     constexpr size_t max_tries = 3;
@@ -400,6 +406,71 @@ void DatabaseOrdinary::loadTableFromMetadata(
             throw;
         }
     }
+}
+
+bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const
+{
+    if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
+        return false;
+
+    if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
+        || query.isParameterizedView() || query.is_window_view)
+        return false;
+
+    /// Already handled by `StorageTableFunctionProxy`.
+    if (query.as_table_function)
+        return false;
+
+    if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
+        return false;
+
+    return true;
+}
+
+void DatabaseOrdinary::loadTableLazy(
+    ContextMutablePtr local_context,
+    const QualifiedTableName & name,
+    const ASTPtr & ast,
+    LoadingStrictnessLevel mode)
+{
+    const auto & query = ast->as<const ASTCreateQuery &>();
+
+    LOG_TRACE(log, "Lazy-loading table {}", name.getFullName());
+
+    ColumnsDescription columns;
+    if (query.columns_list && query.columns_list->columns)
+        columns = InterpreterCreateQuery::getColumnsDescription(
+            *query.columns_list->columns, local_context, mode);
+
+    StorageID table_id(name.database, query.getTable(), query.uuid);
+    String table_data_path = getTableDataPath(query);
+
+    auto get_nested = [query_str = ast->formatWithSecretsMultiLine(),
+                        db_name = name.database,
+                        table_data_path,
+                        global_context = local_context->getGlobalContext(),
+                        mode]() -> StoragePtr
+    {
+        auto load_context = Context::createCopy(global_context);
+        ParserCreateQuery parser;
+        ASTPtr parsed_ast = parseQuery(
+            parser,
+            query_str.data(),
+            query_str.data() + query_str.size(),
+            "lazy load",
+            0,
+            load_context->getSettingsRef()[Setting::max_parser_depth],
+            load_context->getSettingsRef()[Setting::max_parser_backtracks]);
+        const auto & create_query = parsed_ast->as<const ASTCreateQuery &>();
+        auto [_, table] = createTableFromAST(
+            create_query, db_name, table_data_path, load_context, mode);
+        return table;
+    };
+
+    auto proxy = std::make_shared<StorageTableProxy>(
+        table_id, std::move(get_nested), std::move(columns));
+
+    attachTable(local_context, query.getTable(), proxy, table_data_path);
 }
 
 LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
@@ -629,6 +700,7 @@ Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::alterTable");
     auto db_disk = getDisk();
     waitDatabaseStarted();
 

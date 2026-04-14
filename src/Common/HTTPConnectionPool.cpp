@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProxyConfiguration.h>
+#include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
 #include <Common/Scheduler/ResourceGuard.h>
@@ -23,7 +24,10 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Timespan.h>
 
+#include <sys/stat.h>
+
 #include <queue>
+#include <unordered_map>
 
 #include "config.h"
 
@@ -92,6 +96,7 @@ namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
+    extern const int HTTP_CONNECTION_LIMIT_REACHED;
 }
 
 
@@ -171,6 +176,12 @@ public:
         mute_warning_until = 0;
     }
 
+    HTTPConnectionPools::Limits getLimits() const
+    {
+        std::lock_guard lock(mutex);
+        return limits;
+    }
+
     bool isSoftLimitReached() const
     {
         std::lock_guard lock(mutex);
@@ -183,11 +194,18 @@ public:
         return total_connections_in_group >= limits.store_limit;
     }
 
-    void atConnectionCreate()
+    void atConnectionCreate(Poco::Net::HTTPClientSession * session, std::string host, UInt16 port)
     {
         std::lock_guard lock(mutex);
 
+        if (isHardLimitReached())
+            throw Exception(
+                ErrorCodes::HTTP_CONNECTION_LIMIT_REACHED,
+                "Cannot create new connection to {}:{}, hard limit {} for connections in group {} is reached",
+                host, port, limits.hard_limit, getType());
+
         ++total_connections_in_group;
+        live_connections.emplace(session, 0);
 
         if (total_connections_in_group >= limits.warning_limit && total_connections_in_group >= mute_warning_until)
         {
@@ -197,11 +215,19 @@ public:
         }
     }
 
-    void atConnectionDestroy()
+    void updateSocketInode(Poco::Net::HTTPClientSession * session, uint64_t inode) noexcept
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = live_connections.find(session); it != live_connections.end())
+            it->second = inode;
+    }
+
+    void atConnectionDestroy(Poco::Net::HTTPClientSession * session) noexcept
     {
         std::lock_guard lock(mutex);
 
         --total_connections_in_group;
+        live_connections.erase(session);
 
         const size_t gap = 20;
         const size_t reduced_warning_limit = limits.warning_limit > gap ? limits.warning_limit - gap : 1;
@@ -216,7 +242,27 @@ public:
 
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const { return metrics; }
 
+    /// Return cached socket inodes of all tracked connections.
+    /// Inodes are updated by PooledConnection after each connect/reconnect.
+    std::vector<uint64_t> getSocketInodes() const
+    {
+        std::lock_guard lock(mutex);
+        std::vector<uint64_t> inodes;
+        inodes.reserve(live_connections.size());
+        for (const auto & [_, inode] : live_connections)
+        {
+            if (inode != 0)
+                inodes.push_back(inode);
+        }
+        return inodes;
+    }
+
 private:
+    bool isHardLimitReached() const TSA_REQUIRES(mutex)
+    {
+        return limits.hard_limit > 0 && total_connections_in_group >= limits.hard_limit;
+    }
+
     const HTTPConnectionGroupType type;
     const IHTTPConnectionPoolForEndpoint::Metrics metrics;
 
@@ -226,6 +272,7 @@ private:
     HTTPConnectionPools::Limits limits TSA_GUARDED_BY(mutex) = HTTPConnectionPools::Limits();
     size_t total_connections_in_group TSA_GUARDED_BY(mutex) = 0;
     size_t mute_warning_until TSA_GUARDED_BY(mutex) = 0;
+    std::unordered_map<Poco::Net::HTTPClientSession *, uint64_t> live_connections TSA_GUARDED_BY(mutex);
 };
 
 
@@ -339,6 +386,7 @@ private:
                 Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
+            notifySocketInode();
         }
 
         String getTarget() const
@@ -403,7 +451,7 @@ private:
                 Session::setSendThrottler(throttler);
 
             std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
-            result.exceptions(std::ios::badbit);
+            chassert(result.exceptions() & std::ios::badbit);
 
             request_stream = &result;
             request_stream_completed = false;
@@ -417,7 +465,7 @@ private:
         std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
         {
             std::istream & result = Session::receiveResponse(response);
-            result.exceptions(std::ios::badbit);
+            chassert(result.exceptions() & std::ios::badbit);
 
             response_stream = &result;
             response_stream_completed = false;
@@ -438,45 +486,40 @@ private:
 
         ~PooledConnection() override
         {
-            try
+            if (bool(response_stream))
             {
-                if (bool(response_stream))
+                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
                 {
-                    if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
-                    {
-                        response_stream_completed = fixed_steam->isComplete();
-                    }
-                    else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
-                    {
-                        response_stream_completed = chunked_steam->isComplete();
-                    }
-                    else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
-                    {
-                        response_stream_completed = http_stream->isComplete();
-                    }
-                    else
-                    {
-                        response_stream_completed = false;
-                    }
+                    response_stream_completed = fixed_steam->isComplete();
                 }
-                response_stream = nullptr;
-                Session::setSendDataHooks();
-                Session::setReceiveDataHooks();
-                Session::setSendThrottler();
-                Session::setReceiveThrottler();
-
-                group->atConnectionDestroy();
-
-                if (!isExpired)
-                    if (auto lock = pool.lock())
-                        lock->atConnectionDestroy(*this);
-
-                CurrentMetrics::sub(metrics.active_count);
+                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
+                {
+                    response_stream_completed = chunked_steam->isComplete();
+                }
+                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
+                {
+                    response_stream_completed = http_stream->isComplete();
+                }
+                else
+                {
+                    response_stream_completed = false;
+                }
             }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
+            /// Unregister from live_connections first, before tearing down session internals,
+            /// so that the async metrics thread cannot dereference a partially-destructed session.
+            group->atConnectionDestroy(this);
+
+            response_stream = nullptr;
+            Session::setSendDataHooks();
+            Session::setReceiveDataHooks();
+            Session::setSendThrottler();
+            Session::setReceiveThrottler();
+
+            if (!isExpired)
+                if (auto lock = pool.lock())
+                    lock->atConnectionDestroy(*this);
+
+            CurrentMetrics::sub(metrics.active_count);
         }
 
     private:
@@ -493,8 +536,10 @@ private:
             , group(group_)
             , metrics(std::move(metrics_))
         {
+            // atConnectionCreate can throw. If it does, this object's constructor fails and its destructor won't be called,
+            // so we must call atConnectionCreate before incrementing active_count to avoid leaking the metric increment.
+            group->atConnectionCreate(this, Session::getHost(), Session::getPort());
             CurrentMetrics::add(metrics.active_count);
-            group->atConnectionCreate();
         }
 
         template <class... Args>
@@ -510,9 +555,28 @@ private:
             return std::make_shared<make_shared_enabler>(std::forward<Args>(args)...);
         }
 
+        /// Notify the connection group about the current socket inode.
+        /// Called after connect/reconnect so the async metrics thread can map sockets to netlink data.
+        void notifySocketInode()
+        {
+            try
+            {
+                auto fd = Session::socket().impl()->sockfd();
+                if (fd < 0)
+                    return;
+                struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init)
+                if (fstat(fd, &st) == 0)
+                    group->updateSocketInode(this, st.st_ino);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: socket may not be connected yet
+            {
+            }
+        }
+
         void doConnect(UInt64 * connect_time)
         {
             Session::reconnect(connect_time);
+            notifySocketInode();
         }
 
         bool isCompleted() const
@@ -586,10 +650,23 @@ public:
 
             wipeExpiredImpl(expired_connections);
 
-            if (!stored_connections.empty())
+            while (!stored_connections.empty())
             {
                 auto it = stored_connections.top();
                 stored_connections.pop();
+
+                /// Check if the server has already closed this connection (sent FIN/RST).
+                /// This catches the case where the server's actual keep-alive timeout is shorter
+                /// than what the pool assumes (e.g. S3 closes idle connections after ~5s while our
+                /// pool may assume 30s).
+                if (isStale(*it))
+                {
+                    it->markAsExpired();
+                    expired_connections.push_back(it);
+                    ProfileEvents::increment(getMetrics().expired, 1);
+                    CurrentMetrics::sub(getMetrics().stored_count, 1);
+                    continue;
+                }
 
                 setTimeouts(*it, timeouts);
 
@@ -668,6 +745,23 @@ private:
         return connection->isKeepAliveExpired(0.8);
     }
 
+    /// Detect connections that have been silently closed by the remote end.
+    /// An idle keep-alive connection should have no data pending in the socket.
+    /// If poll(SELECT_READ, 0) returns true on such a connection, it means the
+    /// server has sent a FIN (or RST), so the next request on this connection
+    /// would fail with "No message received" (NoMessageException).
+    static bool isStale(Session & connection)
+    {
+        try
+        {
+            return connection.socket().poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ);
+        }
+        catch (Poco::IOException &)
+        {
+            return true;
+        }
+    }
+
 
     ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
@@ -693,7 +787,7 @@ private:
         {
             address.setFail();
             ProfileEvents::increment(getMetrics().errors);
-            connection->reset();
+            (*connection).reset();
             throw;
         }
 
@@ -701,7 +795,7 @@ private:
         return connection;
     }
 
-    void atConnectionDestroy(PooledConnection & connection)
+    void atConnectionDestroy(PooledConnection & connection) noexcept
     {
         if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
         {
@@ -716,17 +810,26 @@ private:
             return;
         }
 
-        auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-        connection_to_store->assign(connection);
-
+        try
         {
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
-            std::lock_guard lock(mutex);
-            stored_connections.push(connection_to_store);
-        }
+            auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+            connection_to_store->assign(connection);
+            connection_to_store->notifySocketInode();
 
-        CurrentMetrics::add(getMetrics().stored_count, 1);
-        ProfileEvents::increment(getMetrics().preserved, 1);
+            {
+                MemoryTrackerSwitcher switcher{&total_memory_tracker};
+                std::lock_guard lock(mutex);
+                stored_connections.push(connection_to_store);
+            }
+
+            CurrentMetrics::add(getMetrics().stored_count, 1);
+            ProfileEvents::increment(getMetrics().preserved, 1);
+        }
+        catch (...)
+        {
+            ProfileEvents::increment(getMetrics().reset, 1);
+            tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
+        }
     }
 
 
@@ -860,6 +963,17 @@ public:
         endpoints_pool.clear();
     }
 
+    HTTPConnectionPools::PoolSocketInodes getSocketInodes()
+    {
+        /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
+        /// The groups are created once in the constructor and never replaced.
+        return {
+            .disk = disk_group->getSocketInodes(),
+            .storage = storage_group->getSocketInodes(),
+            .http = http_group->getSocketInodes()
+        };
+    }
+
 protected:
     ConnectionGroup::Ptr & getGroup(HTTPConnectionGroupType type)
     {
@@ -958,4 +1072,10 @@ HTTPConnectionPools::getPool(HTTPConnectionGroupType type, const Poco::URI & uri
 {
     return impl->getPool(type, uri, proxy_configuration);
 }
+
+HTTPConnectionPools::PoolSocketInodes HTTPConnectionPools::getSocketInodes()
+{
+    return impl->getSocketInodes();
+}
+
 }

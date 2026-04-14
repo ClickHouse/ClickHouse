@@ -1,8 +1,10 @@
 #pragma once
 
+#include <string>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeCleanupThread.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -15,6 +17,7 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
+#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 
 #include <Disks/StoragePolicy.h>
@@ -49,6 +52,7 @@ public:
         std::unique_ptr<MergeTreeSettings> settings_);
 
     void startup() override;
+    void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;
 
     ~StorageMergeTree() override;
@@ -57,7 +61,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsTransactions() const override { return true; }
+    bool supportsTransactions() const override { return support_transaction; }
 
     void read(
         QueryPlan & query_plan,
@@ -126,19 +130,15 @@ private:
     std::mutex mutation_wait_mutex;
     std::condition_variable mutation_wait_event;
 
-    MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
+    MergeTreeCleanupThread cleanup_thread;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
     /// For block numbers.
     SimpleIncrement increment;
 
-    /// For clearOldParts
-    AtomicStopwatch time_after_previous_cleanup_parts;
-    /// For clearOldTemporaryDirectories.
-    AtomicStopwatch time_after_previous_cleanup_temporary_directories;
     /// For clearOldBrokenDetachedParts
     AtomicStopwatch time_after_previous_cleanup_broken_detached_parts;
 
@@ -150,6 +150,12 @@ private:
     /// Parts that currently participate in merge or mutation.
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
+
+    /// currently mutating parts with future version
+    std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
+
+    /// current parts postpone reasons
+    std::map<std::string, std::string> current_parts_postpone_reasons;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
@@ -175,6 +181,8 @@ private:
     std::mutex mutation_prepared_sets_cache_mutex;
     std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
     PlainLightweightUpdatesSync lightweight_updates_sync;
+
+    const bool support_transaction;
 
     void loadMutations();
 
@@ -258,8 +266,8 @@ private:
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
-    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
-    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
+    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr context);
+    PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) override;
@@ -302,6 +310,7 @@ private:
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
     friend class MutatePlainMergeTreeTask;
+    friend class MergeTreeCleanupThread;
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {

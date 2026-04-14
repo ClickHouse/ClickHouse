@@ -3,6 +3,8 @@
 #define CURL_DISABLE_TFTP
 #define CURL_DISABLE_LDAP
 #define CURL_DISABLE_SMB
+#define CURL_DISABLE_POP3
+#define CURL_DISABLE_SMTP
 #define CURL_EXTERN_SYMBOL __attribute__ ((__visibility__ ("default")))
 
 #define SIZEOF_SHORT 2
@@ -48,6 +50,7 @@
 #define HAVE_SELECT_H
 #define HAVE_SETJMP_H
 #define HAVE_SETJMP_H
+#define HAVE_STDINT_H
 #define HAVE_UNISTD_H
 #define HAVE_POLL_H
 #define HAVE_PTHREAD_H

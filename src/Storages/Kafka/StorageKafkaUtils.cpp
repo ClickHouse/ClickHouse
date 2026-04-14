@@ -79,6 +79,7 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
+    extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
     extern const KafkaSettingsUInt64 kafka_skip_broken_messages;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
@@ -104,7 +105,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
@@ -218,6 +219,14 @@ void registerStorageKafka(StorageFactory & factory)
         if ((*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].changed && (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].value < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_poll_max_batch_size can not be lower than 1");
+        }
+
+        constexpr size_t MAX_SKIP_BYTES = 255;
+        if ((*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value > MAX_SKIP_BYTES)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                           "kafka_schema_registry_skip_bytes value {} must be between 0 and {}",
+                           (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value, MAX_SKIP_BYTES);
         }
         NamesAndTypesList supported_columns;
         for (const auto & column : args.columns)
@@ -529,46 +538,29 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
     return result;
 }
 
-bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
+bool checkDependencies(const StorageID & table_id, const ContextPtr & context)
 {
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
-        return false;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
-        if (!view)
-            return false;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-    }
-
-    return true;
+    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, context).empty();
 }
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;
 
-    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "");
-    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "");
-    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "");
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
     }
 
     return desc;

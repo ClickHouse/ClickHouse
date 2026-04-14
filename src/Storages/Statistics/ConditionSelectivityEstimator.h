@@ -26,6 +26,8 @@ struct RelationProfile
 
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
@@ -37,9 +39,9 @@ class ConditionSelectivityEstimator : public WithContext
 public:
     explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
 
-    RelationProfile estimateRelationProfile(const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
-    RelationProfile estimateRelationProfile(const ActionsDAG::Node * node) const;
-    RelationProfile estimateRelationProfile(const RPNBuilderTreeNode & node) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile() const;
 
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
@@ -68,10 +70,10 @@ public:
         /// we use 'not ranges' to estimate condition a != 1 and a != 2 better.
         ColumnRanges column_not_ranges;
         bool finalized = false;
-        Float64 selectivity;
+        Float64 selectivity = 0;
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
-        void finalize(const ColumnEstimators & column_estimators_);
+        void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);
     };
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
@@ -86,8 +88,8 @@ private:
         UInt64 estimateCardinality() const;
     };
 
-    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn) const;
-    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const;
+    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
+    bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
@@ -107,7 +109,7 @@ class ConditionSelectivityEstimatorBuilder
 {
 public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
-    void addStatistics(ColumnStatisticsPtr column_stats);
+    void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
     void markDataPart(const DataPartPtr & data_part);
     ConditionSelectivityEstimatorPtr getEstimator() const;

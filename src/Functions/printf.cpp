@@ -30,7 +30,6 @@ namespace
 class FunctionPrintf : public IFunction
 {
 private:
-    ContextPtr context;
     FunctionOverloadResolverPtr function_concat;
 
     struct Instruction
@@ -104,7 +103,7 @@ private:
             size_t curr_offset = 0;
             for (size_t i = 0; i < concrete_column->size(); ++i)
             {
-                auto a = concrete_column->getDataAt(i).toView();
+                auto a = concrete_column->getDataAt(i);
                 s = fmt::sprintf(format, a);
 
                 res_chars.resize(curr_offset + s.size());
@@ -157,8 +156,9 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionPrintf>(context); }
 
-    explicit FunctionPrintf(ContextPtr context_)
-        : context(context_), function_concat(FunctionFactory::instance().get("concat", context)) { }
+    explicit FunctionPrintf(ContextPtr context)
+        : function_concat(FunctionFactory::instance().get("concat", context))
+    {}
 
     String getName() const override { return name; }
 
@@ -169,35 +169,19 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 1",
-                getName(),
-                arguments.size());
-
-        /// First pattern argument must have string type
-        if (!isString(arguments[0]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument type of function {} is {}, but String type is expected",
-                getName(),
-                arguments[0]->getName());
-
-        for (size_t i = 1; i < arguments.size(); ++i)
+        auto is_native_number_or_string = [](const IDataType & type)
         {
-            if (!isNativeNumber(arguments[i]) && !isStringOrFixedString(arguments[i]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The {}-th argument type of function {} is {}, but native numeric or string type is expected",
-                    i + 1,
-                    getName(),
-                    arguments[i]->getName());
-        }
+            return isNativeNumber(type) || isStringOrFixedString(type);
+        };
+
+        FunctionArgumentDescriptors mandatory_args{{"format", &isString, nullptr, "String"}};
+        FunctionArgumentDescriptor variadic_args{"sub", is_native_number_or_string, nullptr, "Native number or String"};
+
+        validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
+
         return std::make_shared<DataTypeString>();
     }
 
@@ -205,10 +189,18 @@ public:
     {
         const ColumnPtr & c0 = arguments[0].column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
-        if (!c0_const_string)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be constant string", getName());
 
-        String format = c0_const_string->getValue<String>();
+        /// Fast path: constant format string (original behavior)
+        if (c0_const_string)
+            return executeConstFormat(c0_const_string->getValue<String>(), arguments, input_rows_count);
+
+        /// Slow path: dynamic (per-row) format string
+        return executeDynamicFormat(arguments, input_rows_count);
+    }
+
+private:
+    ColumnPtr executeConstFormat(const String & format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    {
         auto instructions = buildInstructions(format, arguments, input_rows_count);
 
         ColumnsWithTypeAndName concat_args(instructions.size());
@@ -219,7 +211,7 @@ public:
             {
                 concat_args[i] = instruction.execute();
             }
-            catch (const fmt::v11::format_error & e)
+            catch (const fmt::v12::format_error & e)
             {
                 if (instruction.is_literal)
                     throw Exception(
@@ -242,9 +234,175 @@ public:
         return res;
     }
 
-private:
+    /// Call fmt::sprintf on a single format specifier segment with the scalar value
+    /// extracted from the argument column at the given row.
+    template <typename T>
+    static bool trySprintfNumber(std::string_view spec, const IColumn & col, size_t row, String & out)
+    {
+        const auto * concrete = checkAndGetColumn<ColumnVector<T>>(&col);
+        if (!concrete)
+            return false;
+        out = fmt::sprintf(spec, static_cast<NearestFieldType<T>>(concrete->getData()[row]));
+        return true;
+    }
+
+    static String sprintfOneArg(std::string_view spec, const ColumnWithTypeAndName & arg, size_t row)
+    {
+        const IColumn * col = arg.column.get();
+        size_t actual_row = row;
+
+        /// Unwrap ColumnConst
+        if (const auto * const_col = checkAndGetColumn<ColumnConst>(col))
+        {
+            col = &const_col->getDataColumn();
+            actual_row = 0;
+        }
+
+        String result;
+        WhichDataType which(arg.type);
+        if (which.isNativeNumber()
+            && (trySprintfNumber<UInt8>(spec, *col, actual_row, result)
+                || trySprintfNumber<UInt16>(spec, *col, actual_row, result)
+                || trySprintfNumber<UInt32>(spec, *col, actual_row, result)
+                || trySprintfNumber<UInt64>(spec, *col, actual_row, result)
+                || trySprintfNumber<Int8>(spec, *col, actual_row, result)
+                || trySprintfNumber<Int16>(spec, *col, actual_row, result)
+                || trySprintfNumber<Int32>(spec, *col, actual_row, result)
+                || trySprintfNumber<Int64>(spec, *col, actual_row, result)
+                || trySprintfNumber<Float32>(spec, *col, actual_row, result)
+                || trySprintfNumber<Float64>(spec, *col, actual_row, result)))
+        {
+            return result;
+        }
+
+        if (which.isStringOrFixedString())
+        {
+            auto val = col->getDataAt(actual_row);
+            return fmt::sprintf(spec, val);
+        }
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "The argument type of function {} is {}, but native numeric or string type is expected",
+            FunctionPrintf::name,
+            arg.type->getName());
+    }
+
+    /// Per-row format string execution: invoke fmt::sprintf directly per segment,
+    /// avoiding the buildInstructions/concat pipeline overhead.
+    ColumnPtr executeDynamicFormat(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    {
+        const auto * format_col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+        if (!format_col)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a String column", getName());
+
+        auto result_col = ColumnString::create();
+        auto & result_chars = result_col->getChars();
+        auto & result_offsets = result_col->getOffsets();
+        result_offsets.resize(input_rows_count);
+
+        String row_result;
+        size_t curr_offset = 0;
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            std::string_view format = format_col->getDataAt(row);
+            row_result.clear();
+
+            try
+            {
+                /// Walk the format string, splitting at each unescaped '%' specifier.
+                /// For each segment, either append the literal (via fmt::sprintf to handle %%)
+                /// or format one argument with fmt::sprintf directly.
+                ///
+                /// arg_idx mirrors the indexing in buildInstructions: it starts at 0
+                /// and every segment (both literal and specifier) advances it by 1.
+                /// arguments[0] is the format string column — the first segment
+                /// "consumes" it (literals ignore the value, specifiers skip it via
+                /// the is_first ++arg_idx).
+                const char * begin = format.data();
+                const char * end = begin + format.size();
+                const char * curr = begin;
+                size_t arg_idx = 0;
+
+                while (curr < end)
+                {
+                    const char * seg_start = curr;
+                    bool is_first = (curr == begin);
+                    bool is_literal = false;
+
+                    if (is_first)
+                    {
+                        if (*curr != '%')
+                            is_literal = true;
+                        else if (curr + 1 < end && *(curr + 1) == '%')
+                            is_literal = true;
+                        else
+                            ++arg_idx; /// First segment is a format specifier — skip format arg
+                    }
+
+                    if (!is_literal)
+                        ++curr;
+
+                    while (curr < end)
+                    {
+                        if (*curr != '%')
+                            ++curr;
+                        else if (curr + 1 < end && *(curr + 1) == '%')
+                            curr += 2;
+                        else
+                            break;
+                    }
+
+                    std::string_view segment(seg_start, curr - seg_start);
+
+                    if (segment.size() > 1 && segment[0] == '%' && segment[1] != '%')
+                    {
+                        /// Format specifier segment — sprintf with the corresponding argument
+                        if (arg_idx >= arguments.size())
+                            throw Exception(
+                                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Number of arguments for function {} doesn't match: passed {}, but format is {}",
+                                getName(), arguments.size(), format);
+                        row_result += sprintfOneArg(segment, arguments[arg_idx], row);
+                    }
+                    else
+                    {
+                        /// Literal segment — use fmt::sprintf to handle %% escaping
+                        row_result += fmt::sprintf(segment);
+                    }
+
+                    /// Every segment consumes one argument slot, matching buildInstructions
+                    ++arg_idx;
+                }
+
+                /// Check that all arguments were consumed
+                if (arg_idx != arguments.size())
+                    throw Exception(
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Number of arguments for function {} doesn't match: passed {}, but format is {}",
+                        getName(), arguments.size(), format);
+            }
+            catch (const fmt::v12::format_error & e)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Bad format '{}' in function {} at row {}, reason: {}",
+                    format, getName(), row, e.what());
+            }
+
+            result_chars.resize(curr_offset + row_result.size());
+            if (!row_result.empty())
+                memcpy(&result_chars[curr_offset], row_result.data(), row_result.size());
+            curr_offset += row_result.size();
+            result_offsets[row] = curr_offset;
+        }
+
+        return result_col;
+    }
+
     std::vector<Instruction>
-    buildInstructions(const String & format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    buildInstructions(std::string_view format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         std::vector<Instruction> instructions;
         instructions.reserve(arguments.size());
@@ -256,7 +414,7 @@ private:
             instr.format = std::string_view(begin, end - begin);
 
             size_t size = end - begin;
-            if (size > 1 && begin[0] == '%' and begin[1] != '%')
+            if (size > 1 && begin[0] == '%' && begin[1] != '%')
             {
                 instr.is_literal = false;
                 instr.input = arg;
@@ -346,6 +504,7 @@ The `printf` function formats the given string with the values (strings, integer
 The format string can contain format specifiers starting with `%` character.
 Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output.
 Literal `%` character can be escaped by `%%`.
+The format string can be either a constant or a column expression, allowing different format patterns per row.
 )";
     FunctionDocumentation::Syntax syntax = "printf(format[, sub1, sub2, ...])";
     FunctionDocumentation::Arguments arguments = {
@@ -366,7 +525,7 @@ Literal `%` character can be escaped by `%%`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPrintf>(documentation);
 }

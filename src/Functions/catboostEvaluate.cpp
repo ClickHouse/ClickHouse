@@ -36,7 +36,7 @@ private:
 public:
     static constexpr auto name = "catboostEvaluate";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCatBoostEvaluate>(context_); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCatBoostEvaluate>(context_->getGlobalContext()); }
 
     explicit FunctionCatBoostEvaluate(ContextPtr context_) : WithContext(context_) {}
     String getName() const override { return name; }
@@ -224,7 +224,7 @@ See [Training and applying models](https://catboost.ai/docs/features/training.ht
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCatBoostEvaluate>(documentation);
 }

@@ -1,4 +1,5 @@
 #include <base/getFQDNOrHostName.h>
+#include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/logger_useful.h>
@@ -70,8 +71,8 @@ ColumnsDescription QueryMetricLogElement::getColumnsDescription()
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
     {
         auto name = fmt::format("ProfileEvent_{}", ProfileEvents::getName(ProfileEvents::Event(i)));
-        const auto * comment = ProfileEvents::getDocumentation(ProfileEvents::Event(i));
-        result.add({std::move(name), std::make_shared<DataTypeUInt64>(), comment});
+        std::string_view comment = ProfileEvents::getDocumentation(ProfileEvents::Event(i));
+        result.add({std::move(name), std::make_shared<DataTypeUInt64>(), std::string(comment)});
     }
 
     return result;
@@ -152,7 +153,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, U
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
-    info.task = context->getSchedulePool().createTask("QueryMetricLog", [this, &process_list, query_id] {
+    info.task = context->getSchedulePool().createTask(StorageID::createEmpty(), "QueryMetricLog", [this, &process_list, query_id] {
         collectMetric(process_list, query_id);
     });
 

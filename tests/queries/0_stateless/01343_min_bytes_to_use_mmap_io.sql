@@ -1,6 +1,6 @@
 -- Tags: no-object-storage
 DROP TABLE IF EXISTS test_01343;
-CREATE TABLE test_01343 (x String) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, prewarm_mark_cache = 0, serialization_info_version = 'default';
+CREATE TABLE test_01343 (x String) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, prewarm_mark_cache = 0, serialization_info_version = 'basic';
 INSERT INTO test_01343 VALUES ('Hello, world');
 
 SET local_filesystem_read_method = 'mmap', min_bytes_to_use_mmap_io = 1;

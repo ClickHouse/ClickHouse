@@ -1,11 +1,9 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Processors/Transforms/CheckConstraintsTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
@@ -63,7 +61,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Constraint {} does not return a value of type UInt8",
                     backQuote(constraint_ptr->name));
 
-            auto result_column = res_column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+            auto result_column = res_column.column->convertToFullIfNeeded();
 
             if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*result_column))
             {

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
-#include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpersArena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -25,7 +25,7 @@ struct AggregateFunctionDistinctSingleNumericData
     Set history;
 
     /// Returns true if the value did not exist in the history before
-    bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena *)
+    bool add(const IColumn ** __restrict columns, size_t /* columns_num */, size_t row_num, Arena *)
     {
         const auto & vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
         const T value = vec[row_num];
@@ -59,7 +59,7 @@ struct AggregateFunctionDistinctSingleNumericData
 struct AggregateFunctionDistinctGenericData
 {
     /// When creating, the hash table must be small.
-    using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash, 4>;
+    using Set = HashSetWithSavedHashWithStackMemory<std::string_view, StringViewHash, 4>;
     using Self = AggregateFunctionDistinctGenericData;
 
     Set history;
@@ -113,12 +113,12 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
     bool add(const IColumn ** columns, size_t columns_num, size_t row_num, Arena * arena)
     {
         const char * begin = nullptr;
-        StringRef value(begin, 0);
+        std::string_view value;
         for (size_t i = 0; i < columns_num; ++i)
         {
-            auto cur_ref = columns[i]->serializeAggregationStateValueIntoArena(row_num, *arena, begin);
-            value.data = cur_ref.data - value.size;
-            value.size += cur_ref.size;
+            auto settings = IColumn::SerializationSettings::createForAggregationState();
+            auto cur_ref = columns[i]->serializeValueIntoArena(row_num, *arena, begin, &settings);
+            value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
         }
 
         Set::LookupResult it;
@@ -138,9 +138,11 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
                 Set::LookupResult it;
                 bool inserted;
                 history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
-                const char * pos = it->getValue().data;
+                ReadBufferFromString in(it->getValue());
+                /// Multiple columns are serialized one by one
+                auto settings = IColumn::SerializationSettings::createForAggregationState();
                 for (auto & column : argument_columns)
-                    pos = column->deserializeAndInsertAggregationStateValueFromArena(pos);
+                    column->deserializeAndInsertFromArena(in, &settings);
             }
         }
     }
@@ -300,6 +302,27 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & /*properties*/) const override
+    {
+        /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
+        /// which changed the default null adapter for Tuple-returning functions:
+        ///   - single-arg: from `<false, false>` to `<true, true>` (flag byte added to serialization).
+        ///   - multi-arg: from `<false, true>` to `<true, true>` (flag byte was already present).
+        /// Only single-arg functions are affected because the multi-arg (variadic) Null combinator
+        /// always serialized the flag byte unconditionally, so its serialization format did not change.
+        /// Currently, the only single-arg Tuple-returning aggregate function is `sumCount`.
+        /// We hardcode the check for `sumCount` rather than matching all single-arg Tuple-returning
+        /// functions, so that future functions with the same shape get the correct new behavior
+        /// (`<true, true>`) by default and are not silently forced into the legacy adapter.
+        if (nested_func->getName() == "sumCount")
+            return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
+        return nullptr;
+    }
 };
 
 }

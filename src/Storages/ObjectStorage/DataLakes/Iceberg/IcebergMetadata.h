@@ -8,7 +8,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -43,14 +43,18 @@ public:
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration_,
-        const ContextPtr & context_,
-        IcebergMetadataFilesCachePtr cache_ptr);
+        StorageObjectStorageConfigurationPtr configuration_,
+        Iceberg::PersistentTableComponents && persistent_components_,
+        ContextPtr context_);
+
+    ~IcebergMetadata() override;
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const override;
+    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const override;
+    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot &, ContextPtr local_context) const override;
+    bool shouldReloadSchemaForConsistency(ContextPtr local_context) const override;
 
     bool operator==(const IDataLakeMetadata & /*other*/) const override { return false; }
 
@@ -60,6 +64,7 @@ public:
         const ContextPtr & local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
+        ASTPtr order_by,
         bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
@@ -73,7 +78,9 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
     static Int32 parseTableSchema(
-        const Poco::JSON::Object::Ptr & metadata_object, Iceberg::IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
+        const Poco::JSON::Object::Ptr & metadata_object,
+        Iceberg::IcebergSchemaProcessor & schema_processor,
+        LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
@@ -81,9 +88,12 @@ public:
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
+    static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
+    static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
+    bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
@@ -93,7 +103,7 @@ public:
         SharedHeader sample_block,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
@@ -102,7 +112,9 @@ public:
 
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
     bool supportsDelete() const override { return true; }
-    void mutate(const MutationCommands & commands,
+    void mutate(
+        const MutationCommands & commands,
+        StorageObjectStorageConfigurationPtr configuration,
         ContextPtr context,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,
@@ -112,9 +124,18 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands) override;
 
     void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
-    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override;
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
+
+    Pipe executeCommand(
+        const String & command_name,
+        const ASTPtr & args,
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        ContextPtr context,
+        const StorageID & storage_id) override;
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -126,9 +147,12 @@ public:
     void drop(ContextPtr context) override;
 
 private:
-    Iceberg::PersistentTableComponents initializePersistentTableComponents(
+    static Iceberg::PersistentTableComponents initializePersistentTableComponents(
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
         IcebergMetadataFilesCachePtr cache_ptr,
-        ContextPtr context_);
+        ContextPtr context_,
+        LoggerPtr log);
 
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
@@ -140,15 +164,18 @@ private:
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context) const;
-    StorageObjectStorageConfigurationPtr getConfiguration() const;
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
 
-
-    const ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationWeakPtr configuration;
     LoggerPtr log;
-    DB::Iceberg::PersistentTableComponents persistent_components;
+    const ObjectStoragePtr object_storage;
+    const DB::Iceberg::PersistentTableComponents persistent_components;
+    const DataLakeStorageSettings & data_lake_settings;
+    const String write_format;
+    BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
+
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
+
+    void backgroundMetadataPrefetcherThread();
 };
 }
 

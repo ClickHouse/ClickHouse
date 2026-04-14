@@ -80,7 +80,50 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## Mixed-type Intervals {#mixed-type-intervals}
+
+Intervals of mixed type, e.g. multiple hours and multiple minutes, can be created using `INTERVAL 'value' <from_kind> TO <to_kind>` syntax.
+The result is a tuple of two or more intervals.
+
+Supported combinations:
+
+| Syntax | String format | Example |
+|---|---|---|
+| `YEAR TO MONTH` | `Y-M` | `INTERVAL '2-6' YEAR TO MONTH` |
+| `DAY TO HOUR` | `D H` | `INTERVAL '5 12' DAY TO HOUR` |
+| `DAY TO MINUTE` | `D H:M` | `INTERVAL '5 12:30' DAY TO MINUTE` |
+| `DAY TO SECOND` | `D H:M:S` | `INTERVAL '5 12:30:45' DAY TO SECOND` |
+| `HOUR TO MINUTE` | `H:M` | `INTERVAL '1:30' HOUR TO MINUTE` |
+| `HOUR TO SECOND` | `H:M:S` | `INTERVAL '1:30:45' HOUR TO SECOND` |
+| `MINUTE TO SECOND` | `M:S` | `INTERVAL '5:30' MINUTE TO SECOND` |
+
+Non-leading fields are validated per the SQL standard: `MONTH` 0-11, `HOUR` 0-23, `MINUTE` 0-59, `SECOND` 0-59.
+
+```sql
+SELECT INTERVAL '1:30' HOUR TO MINUTE;
+```
+
+```text
+┌─(toIntervalHour(1), toIntervalMinute(30))─┐
+│ (1,30)                                     │
+└────────────────────────────────────────────┘
+```
+
+An optional leading `+` or `-` sign applies to all components:
+
+```sql
+SELECT INTERVAL '+1:30' HOUR TO MINUTE;
+-- this is equivalent to:
+-- SELECT INTERVAL '1:30' HOUR TO MINUTE;
+```
+
+```text
+┌─(toIntervalHour(1), toIntervalMinute(30))─┐
+│ (1,30)                                     │
+└────────────────────────────────────────────┘
+```
+
 ## See Also {#see-also}
 
 - [INTERVAL](/sql-reference/operators#interval) operator
-- [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions
+- [toInterval](/sql-reference/functions/type-conversion-functions#toIntervalYear) type conversion functions

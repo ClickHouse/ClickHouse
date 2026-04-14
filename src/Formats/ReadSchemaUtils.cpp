@@ -7,8 +7,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Port.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -168,10 +170,7 @@ try
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema from cache was returned, but format name is unknown");
 
                     if (mode == SchemaInferenceMode::DEFAULT)
-                    {
-                        read_buffer_iterator.setResultingSchema(*iterator_data.cached_columns);
                         return {*iterator_data.cached_columns, *format_name};
-                    }
 
                     schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFilePath());
                     continue;
@@ -260,12 +259,13 @@ try
                     if (num_rows)
                         read_buffer_iterator.setNumRowsToLastFile(*num_rows);
 
+                    if (!names_and_types.empty())
+                        read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
+
                     /// In default mode, we finish when schema is inferred successfully from any file.
                     if (mode == SchemaInferenceMode::DEFAULT)
                         break;
 
-                    if (!names_and_types.empty())
-                        read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
                     schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
                 }
                 catch (...)
@@ -346,7 +346,7 @@ try
 
                         break;
                     }
-                    catch (...)
+                    catch (const std::exception &)
                     {
                         /// We failed to infer the schema for this format.
                         /// Recreate read buffer or rollback to the beginning of the data
@@ -383,7 +383,7 @@ try
                             if (!tmp_names_and_types.empty())
                                 format_to_schema[formats_set_to_detect[i]] = tmp_names_and_types;
                         }
-                        catch (...) // NOLINT(bugprone-empty-catch)
+                        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
                         {
                             /// Try next format.
                         }
@@ -418,6 +418,9 @@ try
                         read_buffer_iterator.setFormatName(*format_name);
                 }
 
+                if (format_name)
+                    read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
+
                 if (mode == SchemaInferenceMode::UNION)
                 {
                     /// For UNION mode we need to know the schema of each file,
@@ -426,7 +429,6 @@ try
                     if (!format_name)
                         throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
 
-                    read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
                     schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
                 }
 
@@ -437,6 +439,14 @@ try
 
         if (!format_name)
             throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
+
+        if (!format_factory.checkIfFormatHasSchemaReader(*format_name))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "{} file format doesn't support schema inference. You must specify the structure manually",
+                *format_name);
+        }
 
         /// We need some stateless methods of ISchemaReader, but during reading schema we
         /// could not even create a schema reader (for example when we got schema from cache).
@@ -517,7 +527,7 @@ try
         if (!stateless_schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
         {
             auto storage = DatabaseCatalog::instance().getTable(insertion_table, context);
-            auto metadata = storage->getInMemoryMetadataPtr();
+            auto metadata = storage->getInMemoryMetadataPtr(context, false);
             auto names_in_storage = metadata->getColumns().getNamesOfPhysical();
             auto ordered_list = getOrderedColumnsList(names_and_types, names_in_storage);
             if (ordered_list)
@@ -529,10 +539,7 @@ try
             std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
             names_and_types.end());
 
-        auto columns = ColumnsDescription(names_and_types);
-        if (mode == SchemaInferenceMode::DEFAULT)
-            read_buffer_iterator.setResultingSchema(columns);
-        return {columns, *format_name};
+        return {ColumnsDescription(names_and_types), *format_name};
     }
 
     throw Exception(
