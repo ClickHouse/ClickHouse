@@ -19,7 +19,6 @@
 #include <fmt/format.h>
 
 #include <openssl/evp.h>
-#include <openssl/engine.h>
 
 #include <string_view>
 #include <functional>

@@ -27,8 +27,8 @@ extern "C" {
  *
  * These macros express version number MAJOR.MINOR.PATCH exactly
  */
-# define OPENSSL_VERSION_MAJOR  3
-# define OPENSSL_VERSION_MINOR  5
+# define OPENSSL_VERSION_MAJOR  4
+# define OPENSSL_VERSION_MINOR  0
 # define OPENSSL_VERSION_PATCH  0
 
 /*
@@ -39,7 +39,7 @@ extern "C" {
  */
 
 /* Could be: #define OPENSSL_VERSION_PRE_RELEASE "-alpha.1" */
-# define OPENSSL_VERSION_PRE_RELEASE ""
+# define OPENSSL_VERSION_PRE_RELEASE "-beta1"
 /* Could be: #define OPENSSL_VERSION_BUILD_METADATA "+fips" */
 /* Could be: #define OPENSSL_VERSION_BUILD_METADATA "+vendor.1" */
 # define OPENSSL_VERSION_BUILD_METADATA ""
@@ -57,7 +57,7 @@ extern "C" {
  * be related to the API version expressed with the macros above.
  * This is defined in free form.
  */
-# define OPENSSL_SHLIB_VERSION 3
+# define OPENSSL_SHLIB_VERSION 4
 
 /*
  * SECTION 2: USEFUL MACROS
@@ -74,33 +74,28 @@ extern "C" {
  * longer variant with OPENSSL_VERSION_PRE_RELEASE_STR and
  * OPENSSL_VERSION_BUILD_METADATA_STR appended.
  */
-# define OPENSSL_VERSION_STR "3.5.0"
-# define OPENSSL_FULL_VERSION_STR "3.5.0"
+# define OPENSSL_VERSION_STR "4.0.0"
+# define OPENSSL_FULL_VERSION_STR "4.0.0-beta1"
 
 /*
  * SECTION 3: ADDITIONAL METADATA
  *
  * These strings are defined separately to allow them to be parsable.
  */
-# define OPENSSL_RELEASE_DATE "8 Apr 2025"
+# define OPENSSL_RELEASE_DATE "24 Mar 2026"
 
 /*
  * SECTION 4: BACKWARD COMPATIBILITY
  */
 
-# define OPENSSL_VERSION_TEXT "OpenSSL 3.5.0 8 Apr 2025"
+# define OPENSSL_VERSION_TEXT "OpenSSL 4.0.0-beta1 24 Mar 2026"
 
-/* Synthesize OPENSSL_VERSION_NUMBER with the layout 0xMNN00PPSL */
-# ifdef OPENSSL_VERSION_PRE_RELEASE
-#  define _OPENSSL_VERSION_PRE_RELEASE 0x0L
-# else
-#  define _OPENSSL_VERSION_PRE_RELEASE 0xfL
-# endif
+/* Synthesize OPENSSL_VERSION_NUMBER with the layout 0xMNN00PP0L */
 # define OPENSSL_VERSION_NUMBER          \
     ( (OPENSSL_VERSION_MAJOR<<28)        \
       |(OPENSSL_VERSION_MINOR<<20)       \
       |(OPENSSL_VERSION_PATCH<<4)        \
-      |_OPENSSL_VERSION_PRE_RELEASE )
+      |0x0L )
 
 # ifdef  __cplusplus
 }
