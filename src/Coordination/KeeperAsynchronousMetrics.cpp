@@ -6,6 +6,7 @@
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/AsynchronousMetricLog.h>
 
 namespace DB
 {
@@ -142,6 +143,13 @@ void KeeperAsynchronousMetrics::updateImpl(TimePoint /*update_time*/, TimePoint 
             updateKeeperInformation(*keeper_dispatcher, new_values);
     }
 #endif
+}
+
+
+void KeeperAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
+{
+    if (auto asynchronous_metric_log = context->getAsynchronousMetricLog())
+        asynchronous_metric_log->addValues(new_values);
 }
 
 }
