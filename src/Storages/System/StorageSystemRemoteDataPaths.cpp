@@ -9,8 +9,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/ISource.h>

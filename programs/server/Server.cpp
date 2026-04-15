@@ -61,7 +61,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Server/CustomHandlers/CustomHandlersFactory.h>
 #include <Server/waitServersToFinish.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
@@ -124,7 +124,7 @@
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/KeeperHTTPHandlerFactory.h>
-#include <Server/ArrowFlightHandler.h>
+#include <Server/ArrowFlight/ArrowFlightServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <filesystem>
@@ -3499,7 +3499,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "Arrow Flight compatibility protocol: " + address.toString(),
-                    std::unique_ptr<IGRPCServer>(new ArrowFlightHandler(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, makeSocketAddress(listen_host, port, &logger()))),
                     true);
             });
         }
