@@ -23,6 +23,12 @@ node = cluster.add_instance(
 )
 base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
 
+# Sentinel for table engine/function entries that may succeed or fail depending
+# on external service availability (e.g. DeltaLake eagerly reads S3 metadata
+# during CREATE TABLE; if MinIO is slow the query times out). The test only
+# cares about credential masking in query logs, not CREATE TABLE success.
+MAYBE_ERROR = "MAYBE_ERROR"
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -265,7 +271,7 @@ def test_create_table():
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
         f"S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_STORAGE"),
+        (f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", MAYBE_ERROR if has_delta_lake else "UNKNOWN_STORAGE"),
         f"S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV') settings mode = 'ordered'",
@@ -325,7 +331,14 @@ def test_create_table():
     test_cases = [make_test_case(i) for i in range(len(table_engines))]
 
     for table_name, query, error in test_cases:
-        if error:
+        if error == MAYBE_ERROR:
+            # DeltaLake eagerly reads S3 metadata during CREATE TABLE.
+            # May succeed or fail depending on MinIO responsiveness.
+            try:
+                node.query(query)
+            except Exception:
+                pass
+        elif error:
             assert error in node.query_and_get_error(query)
         else:
             node.query(query)
@@ -524,7 +537,7 @@ def test_table_functions():
         f"remoteSecure(named_collection_6, addresses_expr = '127.{{2..11}}', database = 'default', table = 'remote_table', user = 'remote_user', password = '{password}')",
         f"s3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV')",
         f"s3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
+        (f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", MAYBE_ERROR if has_delta_lake else "UNKNOWN_FUNCTION"),
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_2.csv', 'CSV', 'none', 'auto')",
@@ -538,7 +551,7 @@ def test_table_functions():
         f"gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
-        f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')" if has_delta_lake else (f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')", "UNKNOWN_FUNCTION"),
+        (f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')", MAYBE_ERROR if has_delta_lake else "UNKNOWN_FUNCTION"),
         f"hudi('http://minio1:9001/root/data/test7.csv', 'minio', '{password}')",
         f"arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '{password}')",
         f"arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
@@ -570,7 +583,14 @@ def test_table_functions():
     test_cases = [make_test_case(i) for i in range(len(table_functions))]
 
     for table_name, query, error in test_cases:
-        if error:
+        if error == MAYBE_ERROR:
+            # DeltaLake eagerly reads S3 metadata during CREATE TABLE.
+            # May succeed or fail depending on MinIO responsiveness.
+            try:
+                node.query(query)
+            except Exception:
+                pass
+        elif error:
             assert error in node.query_and_get_error(query)
         else:
             node.query(query)
