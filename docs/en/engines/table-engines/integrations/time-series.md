@@ -35,10 +35,14 @@ Input the command `set allow_experimental_time_series_table = 1`.
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [SETTINGS var1=value1, ...]
-[DATA db.data_table_name | DATA ENGINE data_table_engine(arguments)]
-[TAGS db.tags_table_name | TAGS ENGINE tags_table_engine(arguments)]
-[METRICS db.metrics_table_name | METRICS ENGINE metrics_table_engine(arguments)]
+[SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
+[TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
+[METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
 ```
+
+:::note
+The keyword `SAMPLES` has an alias `DATA` which is kept for backwards compatibility.
+:::
 
 ## Usage {#usage}
 
@@ -52,23 +56,77 @@ Then this table can be used with the following protocols (a port must be assigne
 - [prometheus remote-write](/interfaces/prometheus#remote-write)
 - [prometheus remote-read](/interfaces/prometheus#remote-read)
 
+### Outer columns {#outer-columns}
+
+Columns of a TimeSeries table are generated automatically. These are outer columns, they store no data, they just provide interface for SELECT/INSERT. Actual data is stored in [target tables](#target-tables). Here is the list of the outer columns:
+
+| Name | Type | Description |
+|---|---|---|
+| `metric_name` | `String` | The name of the metric |
+| `tags` | `Map(String, String)` | Map of tags (labels) for the time series |
+| `time_series` | `Array(Tuple(timestamp_type, scalar_type))` | Array of (timestamp, value) pairs for a time series |
+| `metric_family` | `String` | The name of the metric family (for metrics metadata) |
+| `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
+| `unit` | `String` | The unit of the metric |
+| `help` | `String` | The description of the metric |
+
+Example:
+
+```sql
+INSERT INTO my_table (metric_name, tags, time_series) VALUES
+    ('cpu_usage', {'job': 'node_exporter', 'instance': 'host1:9100'},
+     [(toDateTime64('2024-01-01 00:00:00', 3), 0.5), (toDateTime64('2024-01-01 00:01:00', 3), 0.7)])
+```
+
+`metric_name` is allowed to be empty on insertion, that means the metric name is specified in `tags` under `__name__`, for example:
+
+```sql
+INSERT INTO my_table (tags, time_series) VALUES
+    ({'__name__': 'cpu_usage', 'job': 'test'},
+     [(toDateTime64('2024-01-01 00:00:00', 3), 0.5)])
+```
+
+To insert metrics metadata, insert into the `metric_family`, `type`, `unit`, and `help` columns:
+
+```sql
+INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit, help) VALUES
+    ('http_requests_total', {'method': 'GET'}, [(now64(), 100.0)],
+     'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
+```
+
+### Specifying outer columns {#specifying-outer-columns}
+
+Outer columns can be listed explicitly in a `CREATE TABLE` statement. They are not stored verbatim: ClickHouse uses their types to fill in any [settings](#settings) that were not explicitly provided, and then regenerates the outer columns from the resolved settings. For example, declaring `timestamp DateTime64(6)` in the column list is equivalent to setting `timestamp_type = 'DateTime64(6)'`, so the following two statements produce identical tables:
+
+```sql
+CREATE TABLE my_table (timestamp DateTime64(6)) ENGINE=TimeSeries
+```
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries SETTINGS timestamp_type='DateTime64(6)'
+```
+
+Similarly, `value Float32` sets `scalar_type = 'Float32'`, and `id UInt64` sets `id_type = 'UInt64'`. Specifying a `DEFAULT` expression on the `id` column sets `id_generator`.
+
 ## Target tables {#target-tables}
 
 A `TimeSeries` table doesn't have its own data, everything is stored in its target tables.
 This is similar to how a [materialized view](../../../sql-reference/statements/create/view#materialized-view) works,
 with the difference that a materialized view has one target table
-whereas a `TimeSeries` table has three target tables named [data](#data-table), [tags](#tags-table), and [metrics](#metrics-table).
+whereas a `TimeSeries` table has three target tables named [samples](#samples-table), [tags](#tags-table), and [metrics](#metrics-table).
 
 The target tables can be either specified explicitly in the `CREATE TABLE` query
 or the `TimeSeries` table engine can generate inner target tables automatically.
 
+Rows inserted into a `TimeSeries` table are transformed, split into blocks, and inserted in these three target tables.
+
 The target tables are the following:
 
-### Data table {#data-table}
+### Samples table {#samples-table}
 
-The _data_ table contains time series associated with some identifier.
+The _samples_ table contains time series associated with some identifier.
 
-The _data_ table must have columns:
+The _samples_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
@@ -84,7 +142,7 @@ The _tags_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `id` | [x] | `UUID` | any (must match the type of `id` in the [data](#data-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
+| `id` | [x] | `UUID` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
 | `metric_name` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The name of a metric |
 | `<tag_value_column>` | [ ] | `String` | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))` | The value of a specific tag, the tag's name and the name of a corresponding column are specified in the [tags_to_columns](#settings) setting |
 | `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of tags excluding the tag `__name__` containing the name of a metric and excluding tags with names enumerated in the [tags_to_columns](#settings) setting |
@@ -101,12 +159,9 @@ The _metrics_ table must have columns:
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
 | `metric_family_name` | [x] | `String` | `String` or `LowCardinality(String)` | The name of a metric family |
-| `type` | [x] | `String` | `String` or `LowCardinality(String)` | The type of a metric family, one of "counter", "gauge", "summary", "stateset", "histogram", "gaugehistogram" |
-| `unit` | [x] | `String` | `String` or `LowCardinality(String)` | The unit used in a metric |
+| `type` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The type of a metric family, one of "counter", "gauge", "summary", "stateset", "histogram", "gaugehistogram" |
+| `unit` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The unit used in a metric |
 | `help` | [x] | `String` | `String` or `LowCardinality(String)` | The description of a metric |
-
-Any row inserted into a `TimeSeries` table will be in fact stored in those three target tables.
-A `TimeSeries` table contains all those columns from the [data](#data-table), [tags](#tags-table), [metrics](#metrics-table) tables.
 
 ## Creation {#creation}
 
@@ -122,40 +177,51 @@ will actually create the following table (you can see that by executing `SHOW CR
 ```sql
 CREATE TABLE my_table
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
-    `timestamp` DateTime64(3),
-    `value` Float64,
-    `metric_name` LowCardinality(String),
-    `tags` Map(LowCardinality(String), String),
-    `all_tags` Map(String, String),
-    `min_time` Nullable(DateTime64(3)),
-    `max_time` Nullable(DateTime64(3)),
-    `metric_family_name` String,
+    `metric_name` String,
+    `tags` Map(String, String),
+    `time_series` Array(Tuple(DateTime64(3), Float64)),
+    `metric_family` String,
     `type` String,
     `unit` String,
     `help` String
 )
 ENGINE = TimeSeries
-DATA ENGINE = MergeTree ORDER BY (id, timestamp)
-DATA INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
-TAGS ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
-TAGS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
-METRICS ENGINE = ReplacingMergeTree ORDER BY metric_family_name
-METRICS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+SAMPLES INNER COLUMNS
+(
+    `id` UUID,
+    `timestamp` DateTime64(3),
+    `value` Float64
+)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+TAGS INNER COLUMNS
+(
+    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `metric_name` LowCardinality(String),
+    `tags` Map(LowCardinality(String), String),
+    `all_tags` Map(String, String) EPHEMERAL,
+    `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+)
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+METRICS INNER COLUMNS
+(
+    `metric_family_name` String,
+    `type` LowCardinality(String),
+    `unit` LowCardinality(String),
+    `help` String
+)
+METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-So the columns were generated automatically and also there are three inner UUIDs in this statement -
-one per each inner target table that was created.
-(Inner UUIDs are not shown normally until setting
-[show_table_uuid_in_table_create_query_if_not_nil](../../../operations/settings/settings#show_table_uuid_in_table_create_query_if_not_nil)
-is set.)
+So the columns were generated automatically and also there are three inner target tables with their own column definitions
+stored in the `INNER COLUMNS` clauses.
 
-Inner target tables have names like `.inner_id.data.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+Inner target tables have names like `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-and each target table has columns which is a subset of the columns of the main `TimeSeries` table:
+and each target table has its own set of columns:
 
 ```sql
-CREATE TABLE default.`.inner_id.data.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` UUID,
     `timestamp` DateTime64(3),
@@ -184,8 +250,8 @@ ORDER BY (metric_name, id)
 CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `metric_family_name` String,
-    `type` String,
-    `unit` String,
+    `type` LowCardinality(String),
+    `unit` LowCardinality(String),
     `help` String
 )
 ENGINE = ReplacingMergeTree
@@ -194,41 +260,32 @@ ORDER BY metric_family_name
 
 ## Adjusting types of columns {#adjusting-column-types}
 
-You can adjust the types of almost any column of the inner target tables by specifying them explicitly
-while defining the main table. For example,
+You can adjust the types of columns in the inner target tables using settings:
 
 ```sql
-CREATE TABLE my_table
-(
-    timestamp DateTime64(6)
-) ENGINE=TimeSeries
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS timestamp_type='DateTime64(6)', scalar_type='Float32'
 ```
 
-will make the inner [data](#data-table) table store timestamp in microseconds instead of milliseconds:
+This will make the inner [samples](#samples-table) table store timestamps in microseconds and values as `Float32`.
+
+To customize columns of inner tables more, for example to specify codecs, use the `INNER COLUMNS` clause:
 
 ```sql
-CREATE TABLE default.`.inner_id.data.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-(
-    `id` UUID,
-    `timestamp` DateTime64(6),
-    `value` Float64
-)
-ENGINE = MergeTree
-ORDER BY (id, timestamp)
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS timestamp_type = 'DateTime64(3)'
+SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
+
 ```
 
 ## The `id` column {#id-column}
 
 The `id` column contains identifiers, every identifier is calculated for a combination of a metric name and tags.
-The DEFAULT expression for the `id` column is an expression which will be used to calculate such identifiers.
-Both the type of the `id` column and that expression can be adjusted by specifying them explicitly:
+The type and the expression used to generate identifiers can be customized using the `id_type` and `id_generator` settings:
 
 ```sql
-CREATE TABLE my_table
-(
-  id UInt64 DEFAULT sipHash64(metric_name, all_tags)
-)
-ENGINE=TimeSeries
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS id_type='UInt64', id_generator='sipHash64(metric_name, all_tags)'
 ```
 
 ## The `tags` and `all_tags` columns {#tags-and-all-tags}
@@ -243,32 +300,15 @@ ENGINE = TimeSeries
 SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 ```
 
-This statement will add columns:
-
-```sql
-`instance` String,
-`job` String
-```
-
-to the definition of both `my_table` and its inner [tags](#tags-table) target table. In this case the `tags` column will not contain tags `instance` and `job`,
+This statement will add columns `instance` and `job` to the inner [tags](#tags-table) target table.
+In this case the `tags` column will not contain tags `instance` and `job`,
 but the `all_tags` column will contain them. The `all_tags` column is ephemeral and its only purpose to be used in the DEFAULT expression
 for the `id` column.
-
-The types of columns can be adjusted by specifying them explicitly:
-
-```sql
-CREATE TABLE my_table (
-  instance LowCardinality(String),
-  job LowCardinality(Nullable(String))
-)
-ENGINE=TimeSeries
-SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
-```
 
 ## Table engines of inner target tables {#inner-table-engines}
 
 By default inner target tables use the following table engines:
-- the [data](#data-table) table uses [MergeTree](../mergetree-family/mergetree);
+- the [samples](#samples-table) table uses [MergeTree](../mergetree-family/mergetree);
 - the [tags](#tags-table) table uses [AggregatingMergeTree](../mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates, and also because it's required to do aggregation for columns `min_time` and `max_time`;
 - the [metrics](#metrics-table) table uses [ReplacingMergeTree](../mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
@@ -278,7 +318,7 @@ Other table engines also can be used for inner target tables if it's specified s
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-DATA ENGINE=ReplicatedMergeTree
+SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
@@ -288,7 +328,7 @@ METRICS ENGINE=ReplicatedReplacingMergeTree
 It's possible to make a `TimeSeries` table use a manually created table:
 
 ```sql
-CREATE TABLE data_for_my_table
+CREATE TABLE samples_for_my_table
 (
     `id` UUID,
     `timestamp` DateTime64(3),
@@ -301,7 +341,20 @@ CREATE TABLE tags_for_my_table ...
 
 CREATE TABLE metrics_for_my_table ...
 
-CREATE TABLE my_table ENGINE=TimeSeries DATA data_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
+CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
+```
+
+## Altering settings {#altering-settings}
+
+Settings of a `TimeSeries` table can be changed after creation:
+
+```sql
+ALTER TABLE my_table MODIFY SETTING id_generator='murmurHash3_128(metric_name, all_tags)';
+```
+
+It's also possible to alter data types (but this won't recreate or alter inner tables):
+```sql
+ALTER TABLE my_table MODIFY SETTING scalar_type='Float32';
 ```
 
 ## Settings {#settings}
@@ -310,6 +363,10 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 
 | Name | Type | Default | Description |
 |---|---|---|---|
+| `timestamp_type` | DataType | `DateTime64(3)` | Data type used to represent timestamps. Supported types: `DateTime64(X)`, `DateTime`, `UInt32`. Can also be set by specifying the type of the `timestamp` column explicitly |
+| `scalar_type` | DataType | `Float64` | Data type used to represent scalar values. Supported types: `Float32` or `Float64`. Can also be set by specifying the type of the `value` column explicitly |
+| `id_type` | DataType | `UUID` | Data type used to represent identifiers (fingerprints) of time series. Supported types: `UUID`, `UInt64`, `UInt128`, `FixedString(16)`. Can also be set by specifying the type of the `id` column explicitly |
+| `id_generator` | Expression | depends on `id_type` | Expression used to generate identifiers of time series from their tags. For the default `id_type = UUID` the default expression is `reinterpretAsUUID(sipHash128(metric_name, all_tags))`. Can also be set by specifying the `DEFAULT` expression of the `id` column explicitly |
 | `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
 | `use_all_tags_column_to_generate_id` | Bool | true | When generating an expression to calculate an identifier of a time series, this flag enables using the `all_tags` column in that calculation |
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
@@ -319,6 +376,6 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 # Functions {#functions}
 
 Here is a list of functions supporting a `TimeSeries` table as an argument:
-- [timeSeriesData](../../../sql-reference/table-functions/timeSeriesData.md)
+- [timeSeriesSamples](../../../sql-reference/table-functions/timeSeriesSamples.md)
 - [timeSeriesTags](../../../sql-reference/table-functions/timeSeriesTags.md)
 - [timeSeriesMetrics](../../../sql-reference/table-functions/timeSeriesMetrics.md)
