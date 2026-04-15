@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -116,24 +117,12 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
 
         case AccessEntityType::MASKING_POLICY:
         {
-            origin = "masking_policies";
-            expr = "name";
-
-            if (!query.short_name.empty())
-                filter = "short_name = " + quoteString(query.short_name);
-
-            if (query.database_and_table_name)
-            {
-                const String & database = query.database_and_table_name->first;
-                const String & table_name = query.database_and_table_name->second;
-                if (!database.empty())
-                    filter += String{filter.empty() ? "" : " AND "} + "database = " + quoteString(database);
-                if (!table_name.empty())
-                    filter += String{filter.empty() ? "" : " AND "} + "table = " + quoteString(table_name);
-                if (!database.empty() && !table_name.empty())
-                    expr = "short_name";
-            }
-            break;
+            /// Match the SHOW CREATE MASKING POLICY path (InterpreterShowCreateAccessEntityQuery.cpp:345)
+            /// and the CREATE path (InterpreterCreateMaskingPolicyQuery.cpp:25): masking policies are
+            /// Cloud-only, so OSS builds must surface a clear SUPPORT_IS_DISABLED error rather than
+            /// rewrite the query against a non-existent system.masking_policies table (which yields a
+            /// confusing UNKNOWN_TABLE).
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Masking Policies are available only in ClickHouse Cloud");
         }
 
         case AccessEntityType::MAX:
