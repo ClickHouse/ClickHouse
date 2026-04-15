@@ -241,10 +241,12 @@ void fillDataWithDataTypeFamilies(MutableColumns & res_columns)
 
 void fillDataWithMergeTreeSettings(MutableColumns & res_columns, const ContextPtr & context)
 {
+    /// MergeTreeSettings and ReplicatedMergeTreeSettings expose the same set of setting
+    /// names — the only difference is per-setting default values — so dumping both into
+    /// system.completions used to produce 329 duplicate (word, context, belongs) rows.
+    /// One dump is sufficient for completion purposes.
     const auto & merge_tree_settings = context->getMergeTreeSettings();
-    const auto & replicated_merge_tree_settings = context->getReplicatedMergeTreeSettings();
     merge_tree_settings.dumpToSystemCompletionsColumns(res_columns);
-    replicated_merge_tree_settings.dumpToSystemCompletionsColumns(res_columns);
 }
 
 void fillDataWithSettings(MutableColumns & res_columns, const ContextPtr & context)
