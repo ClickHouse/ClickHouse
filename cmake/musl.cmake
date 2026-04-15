@@ -38,7 +38,9 @@ target_link_libraries(global-libs INTERFACE musl)
 # 5. Kernel headers from glibc sysroot (linux/, asm/, asm-generic/)
 
 target_include_directories(global-libs SYSTEM BEFORE INTERFACE
-    # Generated headers - HIGHEST PRIORITY
+    # Override headers (e.g. stub execinfo.h) - HIGHEST PRIORITY
+    "${ClickHouse_SOURCE_DIR}/contrib/musl-cmake/include-override"
+    # Generated headers
     "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/include"
     # Architecture-specific headers
     "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}"

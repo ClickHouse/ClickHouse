@@ -206,6 +206,7 @@ set(MUSL_SOURCES_BASE_COMMON
     "${MUSL_SOURCE_DIR}/src/dirent/seekdir.c"
     "${MUSL_SOURCE_DIR}/src/dirent/telldir.c"
     "${MUSL_SOURCE_DIR}/src/dirent/versionsort.c"
+    "${MUSL_SOURCE_DIR}/src/dirent/posix_getdents.c"
     "${MUSL_SOURCE_DIR}/src/env/__environ.c"
     "${MUSL_SOURCE_DIR}/src/env/__init_tls.c"
     "${MUSL_SOURCE_DIR}/src/env/__libc_start_main.c"
@@ -329,6 +330,7 @@ set(MUSL_SOURCES_BASE_COMMON
     "${MUSL_SOURCE_DIR}/src/linux/readahead.c"
     "${MUSL_SOURCE_DIR}/src/linux/reboot.c"
     "${MUSL_SOURCE_DIR}/src/linux/remap_file_pages.c"
+    "${MUSL_SOURCE_DIR}/src/linux/renameat2.c"
     "${MUSL_SOURCE_DIR}/src/linux/sbrk.c"
     "${MUSL_SOURCE_DIR}/src/linux/sendfile.c"
     "${MUSL_SOURCE_DIR}/src/linux/setfsgid.c"
@@ -1161,6 +1163,7 @@ set(MUSL_SOURCES_BASE_COMMON
     "${MUSL_SOURCE_DIR}/src/termios/cfgetospeed.c"
     "${MUSL_SOURCE_DIR}/src/termios/cfmakeraw.c"
     "${MUSL_SOURCE_DIR}/src/termios/cfsetospeed.c"
+    "${MUSL_SOURCE_DIR}/src/termios/cfsetspeed.c"
     "${MUSL_SOURCE_DIR}/src/termios/tcdrain.c"
     "${MUSL_SOURCE_DIR}/src/termios/tcflow.c"
     "${MUSL_SOURCE_DIR}/src/termios/tcflush.c"
@@ -1305,6 +1308,7 @@ set(MUSL_SOURCES_BASE_COMMON
     "${MUSL_SOURCE_DIR}/src/time/__secs_to_tm.c"
     "${MUSL_SOURCE_DIR}/src/time/__tm_to_secs.c"
     "${MUSL_SOURCE_DIR}/src/time/__tz.c"
+    "${MUSL_SOURCE_DIR}/src/time/__utc.c"
     "${MUSL_SOURCE_DIR}/src/time/__year_to_secs.c"
     "${MUSL_SOURCE_DIR}/src/time/asctime.c"
     "${MUSL_SOURCE_DIR}/src/time/asctime_r.c"
@@ -1502,6 +1506,7 @@ elseif (ARCH_AARCH64)
     "${MUSL_SOURCE_DIR}/src/thread/syscall_cp.c"
     )
     set(MUSL_ARCH_C_SOURCES
+    "${MUSL_SOURCE_DIR}/src/thread/aarch64/__set_thread_area.c"
     )
     set(MUSL_ARCH_ASM_SOURCES
     "${MUSL_SOURCE_DIR}/src/fenv/aarch64/fenv.s"
@@ -1514,7 +1519,6 @@ elseif (ARCH_AARCH64)
     "${MUSL_SOURCE_DIR}/src/signal/aarch64/sigsetjmp.s"
     "${MUSL_SOURCE_DIR}/src/string/aarch64/memcpy.S"
     "${MUSL_SOURCE_DIR}/src/string/aarch64/memset.S"
-    "${MUSL_SOURCE_DIR}/src/thread/aarch64/__set_thread_area.s"
     "${MUSL_SOURCE_DIR}/src/thread/aarch64/__unmapself.s"
     "${MUSL_SOURCE_DIR}/src/thread/aarch64/clone.s"
     "${MUSL_SOURCE_DIR}/src/thread/aarch64/syscall_cp.s"
@@ -1825,7 +1829,10 @@ target_include_directories(musl BEFORE PRIVATE
 
 # Public includes for external code that links to musl
 # These provide bits/*.h headers to dependents
+# include-override comes first to provide stub headers (e.g. execinfo.h)
+# that musl does not have but some consumers expect
 target_include_directories(musl SYSTEM PUBLIC
+    "${MUSL_OVERRIDE_DIR}"
     "${MUSL_GENERATED_DIR}"
     "${MUSL_SOURCE_DIR}/include"
     "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
