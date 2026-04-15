@@ -50,6 +50,17 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 
 MergeTreeReaderStream::~MergeTreeReaderStream() = default;
 
+void MergeTreeReaderStream::resetForNewRanges(const MarkRanges & new_ranges)
+{
+    all_mark_ranges = new_ranges;
+    initialized = false;
+    last_right_offset.reset();
+    data_buffer = nullptr;
+    plain_file_buffer = nullptr;
+    compressed_data_buffer = nullptr;
+    read_buffer_holder.reset();
+}
+
 void MergeTreeReaderStream::loadMarks()
 {
     if (!marks_getter)
@@ -101,6 +112,17 @@ void MergeTreeReaderStream::init()
                     ? marks_getter->getMark(mark + 1, 0).offset_in_compressed_file
                     : getRightOffset(range.end);
                 reading_ranges.push_back({begin, end});
+
+                if (mark + 1 >= range.end)
+                {
+                    LOG_DEBUG(getLogger("MergeTreeReaderStream"),
+                        "reading_ranges: last granule mark={} begin={} end={} (getRightOffset({})={})"
+                        " mark0_col0=[{},{}] num_cols={}",
+                        mark, begin, end, range.end, getRightOffset(range.end),
+                        marks_getter->getMark(mark, 0).offset_in_compressed_file,
+                        marks_getter->getMark(mark, 0).offset_in_decompressed_block,
+                        marks_loader->getNumColumns());
+                }
             }
         }
     }
@@ -173,6 +195,11 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
     loadMarks();
 
     const auto & mark = marks_getter->getMark(row_index, column_position);
+
+    LOG_DEBUG(getLogger("MergeTreeReaderStream"),
+        "seekToMarkAndColumn: file={} row={} col={} offset_compressed={} offset_decompressed={}",
+        path_prefix + data_file_extension, row_index, column_position,
+        mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
 
     try
     {

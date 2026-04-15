@@ -53,6 +53,11 @@ public:
     void adjustRightMark(size_t right_mark);
     ReadBuffer * getDataBuffer();
 
+    /// Reset the stream for new mark ranges.  Drops the initialized
+    /// buffer so that the next `init()` recomputes `reading_ranges`
+    /// and opens a fresh RRM connection for the new byte range.
+    void resetForNewRanges(const MarkRanges & new_ranges);
+
 private:
     /// Returns offset in file up to which it's needed to read file to read all rows up to @right_mark mark.
     virtual size_t getRightOffset(size_t right_mark) = 0;
@@ -63,7 +68,7 @@ private:
 
     const ReadBufferFromFileBase::ProfileCallback profile_callback;
     const clockid_t clock_type;
-    const MarkRanges all_mark_ranges;
+    MarkRanges all_mark_ranges;
 
     const DataPartStoragePtr data_part_storage;
     const std::string path_prefix;

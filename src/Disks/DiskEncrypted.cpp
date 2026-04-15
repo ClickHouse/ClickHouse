@@ -439,7 +439,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     /// so the fetched byte range covers both the header and the data.
     ReadSettings patched_settings = settings;
     if (patched_settings.read_scope)
+    {
         patched_settings.read_scope = patched_settings.read_scope->withEncryptionHeader(FileEncryption::Header::kSize);
+        LOG_DEBUG(getLogger("DiskEncrypted"), "readFile: path={} set enc_header={} scope=[{}]",
+            path, FileEncryption::Header::kSize, patched_settings.read_scope->toString());
+    }
 
     auto buffer = delegate->readFile(wrapped_path, patched_settings, read_hint);
     if (buffer->eof())

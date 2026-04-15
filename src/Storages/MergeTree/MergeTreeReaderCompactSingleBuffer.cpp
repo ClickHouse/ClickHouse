@@ -118,6 +118,14 @@ catch (...)
     throw;
 }
 
+void MergeTreeReaderCompactSingleBuffer::updateAllMarkRanges(const MarkRanges & ranges)
+{
+    IMergeTreeReader::updateAllMarkRanges(ranges);
+    if (stream)
+        stream->resetForNewRanges(ranges);
+    initialized = false;
+}
+
 void MergeTreeReaderCompactSingleBuffer::init()
 try
 {

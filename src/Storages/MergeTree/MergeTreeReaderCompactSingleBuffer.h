@@ -24,6 +24,8 @@ public:
                     bool continue_reading, size_t max_rows_to_read,
                     size_t rows_offset, Columns & res_columns) override;
 
+    void updateAllMarkRanges(const MarkRanges & ranges) override;
+
 private:
     MergeTreeReaderStream & getStream(const NameAndTypePair &) override { return *stream; }
     void init();
