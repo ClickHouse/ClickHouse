@@ -200,6 +200,7 @@ class JobConfigs:
         result_name_for_cidb="Darwin tests",
         allow_merge_on_failure=True,
         post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run*",
         ],
     ).parametrize(
