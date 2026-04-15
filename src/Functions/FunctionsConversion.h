@@ -671,7 +671,14 @@ struct ToTime64TransformSigned
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(from, 0, scale_multiplier);
+        /// For Saturate / Ignore overflow modes the value still has to be clamped to the
+        /// representable Time64 range. Otherwise two casts can produce Time64 values that
+        /// render identically as e.g. '999:59:59.000' but compare as different because the
+        /// underlying decimal stores the raw, unclamped input.
+        const auto clamped = std::max<Int64>(
+            std::min<Int64>(static_cast<Int64>(from), MAX_TIME_TIMESTAMP),
+            -static_cast<Int64>(MAX_TIME_TIMESTAMP));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
     }
 };
 
@@ -694,8 +701,12 @@ struct ToTime64TransformFloat
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         } // need to reconsider this
 
-        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
+        /// Time64 has a much narrower representable range than DateTime64; clamping to the
+        /// DateTime64 bounds let casts pass values up to ~MAX_DATETIME64_TIMESTAMP through to
+        /// the underlying decimal, producing Time64 values that display correctly but
+        /// compare as different from the saturated maximum.
+        from = std::max(from, static_cast<FromType>(-static_cast<Int64>(MAX_TIME_TIMESTAMP)));
+        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
