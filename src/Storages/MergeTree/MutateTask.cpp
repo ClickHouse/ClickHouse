@@ -627,37 +627,37 @@ getColumnsForNewDataPart(
         }
     }
 
+    SerializationInfo::Settings source_part_serialization_settings = SerializationInfo::Settings
+    {
+        (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        false,
+        serialization_infos.getSettings().version,
+        serialization_infos.getSettings().string_serialization_version,
+        serialization_infos.getSettings().nullable_serialization_version,
+        serialization_infos.getSettings().map_serialization_version,
+        serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
+    };
+    SerializationInfo::Settings storage_serialization_settings = SerializationInfo::Settings
+    {
+        (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        false,
+        (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::map_serialization_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+    };
+
     SerializationInfo::Settings settings;
+
     /// If mutations doesn't affect all columns we must use serialization info settings from source part,
     /// because data files of some columns might be copied without actual serialization, so changes in serialization
     /// settings will not be applied for them (for example, new serialization versions for data types).
     if (!affects_all_columns)
-    {
-        settings = SerializationInfo::Settings
-        {
-            (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-            false,
-            serialization_infos.getSettings().version,
-            serialization_infos.getSettings().string_serialization_version,
-            serialization_infos.getSettings().nullable_serialization_version,
-            serialization_infos.getSettings().map_serialization_version,
-            serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
-        };
-    }
+        settings = source_part_serialization_settings;
     /// Otherwise use fresh settings from storage.
     else
-    {
-        settings = SerializationInfo::Settings
-        {
-            (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-            false,
-            (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::map_serialization_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
-        };
-    }
+        settings = storage_serialization_settings;
 
     SerializationInfoByName new_serialization_infos(settings);
     for (const auto & [name, old_info] : serialization_infos)
@@ -693,6 +693,23 @@ getColumnsForNewDataPart(
 
         new_info = old_info->createWithType(*old_type, *new_type, settings);
         new_serialization_infos.emplace(new_name, std::move(new_info));
+    }
+
+    /// Column mutations preserve source part serialization settings even when they differ from storage defaults,
+    /// and in this case mutated columns are explicitly added to serialization infos to prevent storage serialization
+    /// inheritance
+    bool materialize_updated_column_serialization_infos = !affects_all_columns
+        && source_part_serialization_settings != storage_serialization_settings;
+
+    if (materialize_updated_column_serialization_infos)
+    {
+        for (const auto & column : updated_header.getNamesAndTypesList())
+        {
+            if (!storage_columns_set.contains(column.name) || removed_columns.contains(column.name) || new_serialization_infos.contains(column.name))
+                continue;
+
+            new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(settings));
+        }
     }
 
     /// In compact parts we read all columns, because they all stored in a single file
