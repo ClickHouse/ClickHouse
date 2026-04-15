@@ -234,6 +234,8 @@ private:
         ///  required y in data pipeline
         void extendNames(Names &) const;
 
+        FilterDAGInfoPtr createFilterDAGInfo() const;
+
         /// Use storage facilities to filter data
         ///  optimization
         ///  does not guarantee accuracy, but reduces number of rows

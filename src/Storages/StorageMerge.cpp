@@ -704,6 +704,20 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             auto modified_query_info
                 = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
 
+            auto child_row_level_filter = row_policy_data_opt ? row_policy_data_opt->createFilterDAGInfo() : nullptr;
+
+            /// Apply all row-level filters during the child read, but keep the combined filter column
+            /// until we leave the child plan. this needed to not drop intermediate filter state that a
+            /// later policy still needs while ensuring the temporary filter column is not exposed
+            /// above the `Merge` table
+            auto inherited_row_level_filter = FilterDAGInfo::combineConjunction(modified_query_info.row_level_filter, child_row_level_filter);
+            bool remove_inherited_row_level_filter = inherited_row_level_filter != nullptr;
+            if (inherited_row_level_filter)
+            {
+                modified_query_info.row_level_filter = inherited_row_level_filter;
+                modified_query_info.row_level_filter->do_remove_column = false;
+            }
+
             if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 auto storage_columns = storage_metadata_snapshot->getColumns();
@@ -772,7 +786,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 table,
                 column_names_to_read,
                 is_smallest_column_requested,
-                row_policy_data_opt,
+                std::nullopt,
                 modified_context,
                 current_streams);
 
@@ -780,9 +794,19 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             if (child.plan.isInitialized())
             {
+                if (remove_inherited_row_level_filter)
+                {
+                    auto filter_step = std::make_unique<FilterStep>(
+                        child.plan.getCurrentHeader(),
+                        ActionsDAG(child.plan.getCurrentHeader()->getNamesAndTypesList()),
+                        inherited_row_level_filter->column_name,
+                        true);
+                    child.plan.addStep(std::move(filter_step));
+                }
+
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
+                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, std::nullopt, context, child, is_smallest_column_requested);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1253,6 +1277,17 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
     {
         std::copy(added_names.begin(), added_names.end(), std::back_inserter(names));
     }
+}
+
+FilterDAGInfoPtr ReadFromMerge::RowPolicyData::createFilterDAGInfo() const
+{
+    auto filter_info = std::make_shared<FilterDAGInfo>();
+    filter_info->actions = actions_dag.clone();
+    filter_info->column_name = filter_column_name;
+    filter_info->do_remove_column = true;
+    filter_info->projectInputs();
+
+    return filter_info;
 }
 
 void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step) const

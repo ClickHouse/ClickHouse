@@ -3,6 +3,9 @@
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <ranges>
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -48,6 +51,63 @@ PrewhereInfo PrewhereInfo::clone() const
     prewhere_info.need_filter = need_filter;
 
     return prewhere_info;
+}
+
+FilterDAGInfo FilterDAGInfo::clone() const
+{
+    FilterDAGInfo filter_dag_info;
+
+    filter_dag_info.actions = actions.clone();
+    filter_dag_info.column_name = column_name;
+    filter_dag_info.do_remove_column = do_remove_column;
+
+    return filter_dag_info;
+}
+
+FilterDAGInfoPtr FilterDAGInfo::clonePtr(const FilterDAGInfoPtr & filter_info, bool do_remove_column)
+{
+    auto result = filter_info ? std::make_shared<FilterDAGInfo>(filter_info->clone()) : nullptr;
+    if (result)
+        result->do_remove_column = do_remove_column;
+    return result;
+}
+
+FilterDAGInfoPtr FilterDAGInfo::combineConjunction(const FilterDAGInfoPtr & left_filter_info, const FilterDAGInfoPtr & right_filter_info)
+{
+    if (!left_filter_info)
+        return clonePtr(right_filter_info, true);
+
+    if (!right_filter_info)
+        return clonePtr(left_filter_info, true);
+
+    auto merged_actions = ActionsDAG::merge(left_filter_info->actions.clone(), right_filter_info->actions.clone());
+    const auto * left_filter_node = &merged_actions.findInOutputs(left_filter_info->column_name);
+    const auto * right_filter_node = &merged_actions.findInOutputs(right_filter_info->column_name);
+
+    auto combined_actions = ActionsDAG::buildFilterActionsDAG({left_filter_node, right_filter_node}, {}, true);
+    chassert(combined_actions);
+
+    auto combined_filter_info = std::make_shared<FilterDAGInfo>();
+    combined_filter_info->actions = std::move(*combined_actions);
+    combined_filter_info->column_name = combined_filter_info->actions.getOutputs().front()->result_name;
+    combined_filter_info->do_remove_column = true;
+    combined_filter_info->projectInputs();
+
+    return combined_filter_info;
+}
+
+void FilterDAGInfo::projectInputs()
+{
+    auto & outputs = actions.getOutputs();
+    auto existing_outputs = std::ranges::to<std::unordered_set>(outputs);
+
+    for (const auto * node : actions.getInputs())
+    {
+        if (existing_outputs.contains(node))
+            continue;
+
+        outputs.push_back(node);
+    }
 }
 
 void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const

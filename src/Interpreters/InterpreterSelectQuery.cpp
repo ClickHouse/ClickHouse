@@ -298,9 +298,7 @@ try
 
     filter_info->column_name = expr_list->children.at(0)->getColumnName();
     filter_info->actions.removeUnusedActions(NameSet{filter_info->column_name});
-
-    for (const auto * node : filter_info->actions.getInputs())
-        filter_info->actions.getOutputs().push_back(node);
+    filter_info->projectInputs();
 
     auto required_columns_from_filter = filter_info->actions.getRequiredColumns();
 
