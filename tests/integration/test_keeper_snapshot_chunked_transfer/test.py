@@ -210,6 +210,8 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
 
     node_lagging.start_clickhouse(20)
     keeper_utils.wait_until_connected(cluster, node_lagging)
+    lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
+    lagging_zk.sync(prefix)  # wait until all committed entries (including snapshot) are applied
 
     if is_remote:
         remaining = list(started_cluster.minio_client.list_objects(
@@ -225,7 +227,6 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
         ), f"tmp file was not removed on startup: {tmp_snapshot_path}"
 
     leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
-    lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
     verify_test_tree(leader_zk, lagging_zk, prefix)
     assert_receiving_snapshot_logged(node_lagging, recovery_time, nodes["disk_type"])
     cleanup_test_tree(cluster, node_leader, prefix)

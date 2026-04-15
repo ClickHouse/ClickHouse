@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemStoragePolicies.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>

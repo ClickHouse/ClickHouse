@@ -38,8 +38,7 @@ def _GH_Auth():
     from .gh_auth import GHAuth
 
     try:
-        if not Shell.check(f"gh auth status", verbose=True):
-            GHAuth.auth_from_settings()
+        GHAuth.auth_from_settings()
         _GH_authenticated = True
         return True
     except Exception as e:
@@ -185,9 +184,9 @@ class Runner:
         if job.requires and not _is_praktika_job(job.name):
             print("Download required artifacts")
             required_artifacts = []
-            # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
-            #  this artifact is created to replace legacy build_report and maintain seamless transition to praktika
-            #  once there is no need for this "hacky" artifact report - second condition in "if" can be removed
+            job_names_with_provides = {
+                j.name for j in workflow.jobs if j.provides
+            }
             for requires_artifact_name in job.requires:
                 for artifact in workflow.artifacts:
                     if (
@@ -195,14 +194,11 @@ class Runner:
                         and artifact.type == Artifact.Type.S3
                     ):
                         required_artifacts.append(artifact)
+                        break
                 else:
-                    if (
-                        requires_artifact_name
-                        in [job.name for job in workflow.jobs if job.provides]
-                        and Settings.ENABLE_ARTIFACTS_REPORT
-                    ):
+                    if requires_artifact_name in job_names_with_provides:
                         print(
-                            f"Artifact report for [{requires_artifact_name}] will be uploaded"
+                            f"Artifact report for [{requires_artifact_name}] will be downloaded"
                         )
                         required_artifacts.append(
                             Artifact.Config(
@@ -247,10 +243,6 @@ class Runner:
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
-                        # Job report (phony artifact) is required only for a few jobs, introduced for seamless migration from legacy CI.
-                        # Copying it may fail if the dependency job was skipped due to a user's workflow filter hook.
-                        # We choose to ignore these errors, but a better solution would be to remove these types of artifacts or implement a consistent way of working with them. TODO.
-                        no_strict=artifact.is_phony(),
                     )
 
                     if artifact.compress_zst:
@@ -652,10 +644,10 @@ class Runner:
                             info_errors.append(error)
                             result.set_status(Result.Status.ERROR)
                             is_ok = False
-                if Settings.ENABLE_ARTIFACTS_REPORT and artifact_links:
+                if artifact_links:
                     artifact_report = {"build_urls": artifact_links}
                     print(
-                        f"Artifact report enabled and will be uploaded: [{artifact_report}]"
+                        f"Artifact report will be uploaded: [{artifact_report}]"
                     )
                     artifact_report_file = f"{Settings.TEMP_DIR}/artifact_report_{Utils.normalize_string(env.JOB_NAME)}.json"
                     with open(artifact_report_file, "w", encoding="utf-8") as f:

@@ -1,4 +1,5 @@
 #include <Planner/Planner.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>

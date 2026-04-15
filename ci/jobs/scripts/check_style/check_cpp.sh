@@ -376,7 +376,7 @@ join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | sed 's:.*/::'  | sort -u) <(
 # 14: Abbreviation checks and error message style
 {
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
-xargs < "$STYLE_TMPDIR/all_excluded" rg 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|TcpExtListenOverflows' &&
+xargs < "$STYLE_TMPDIR/all_excluded" rg 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|TcpExtListenOverflows' &&
     echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 xargs < "$STYLE_TMPDIR/all_excluded" grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
