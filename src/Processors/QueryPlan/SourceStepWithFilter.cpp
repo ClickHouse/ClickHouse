@@ -93,7 +93,10 @@ void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
 void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     query_info.prewhere_info = prewhere_info_value;
-    output_header = std::make_shared<const Block>(applyPrewhereActions(*output_header, query_info.row_level_filter, query_info.prewhere_info));
+    output_header = std::make_shared<const Block>(applyPrewhereActions(
+        storage_snapshot->getSampleBlockForColumns(required_source_columns),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
 }
 
 void SourceStepWithFilter::describeActions(FormatSettings & format_settings) const
