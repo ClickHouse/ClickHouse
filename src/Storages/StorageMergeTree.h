@@ -22,6 +22,7 @@
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
+#include <Storages/MergeTree/MergeTreeTableVectorIndex.h>
 
 
 namespace DB
@@ -124,7 +125,34 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+    // Phase 1B: Table-Level Vector Index Support
+    /// Register a table-level vector index for this table
+    /// Called during table creation/alteration when ADD INDEX with type='vector_similarity'
+    void registerTableVectorIndex(
+        const String & index_name,
+        const TableVectorIndexConfig & config);
+    
+    /// Get all registered table-level vector indexes for this table
+    /// Thread-safe: uses shared_lock on table_vector_indexes_mutex
+    std::map<String, MergeTreeTableVectorIndexPtr> getTableVectorIndexes() const;
+    
+    /// Get a specific table-level vector index by name
+    /// Returns nullptr if not found
+    MergeTreeTableVectorIndexPtr getTableVectorIndex(const String & index_name) const;
+    
+    /// Unregister a table-level vector index (called on DROP INDEX)
+    void unregisterTableVectorIndex(const String & index_name);
+    
+    /// Called by merge/mutation tasks to update index metadata
+    void updateTableVectorIndexMetadata(
+        const String & index_name,
+        const PartVectorIndexMetadata & metadata);
+
 private:
+    // Phase 1B: Table-level vector indexes
+    std::map<String, MergeTreeTableVectorIndexPtr> table_vector_indexes;
+    mutable std::shared_mutex table_vector_indexes_mutex;
+
 
     /// Mutex and condvar for synchronous mutations wait
     std::mutex mutation_wait_mutex;

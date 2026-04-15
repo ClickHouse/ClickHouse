@@ -758,6 +758,10 @@ if (TARGET ch_contrib::usearch)
     target_link_libraries(dbms PUBLIC ch_contrib::usearch)
 endif()
 
+if (TARGET ch_rust::diskann)
+    target_link_libraries(dbms PUBLIC ch_rust::diskann)
+endif()
+
 if (TARGET ch_contrib::prometheus_protobufs)
     target_link_libraries(dbms PUBLIC ch_contrib::prometheus_protobufs)
 endif()
@@ -765,6 +769,11 @@ endif()
 if (TARGET ch_rust::skim)
     target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
     target_link_libraries(dbms PUBLIC ch_rust::skim)
+endif()
+
+if (TARGET ch_rust::diskann)
+    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::diskann,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(dbms PUBLIC ch_rust::diskann)
 endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
@@ -844,6 +853,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_rust::delta_kernel_rs)
         target_link_libraries(unit_tests_dbms PRIVATE ch_rust::delta_kernel_rs)
+    endif ()
+
+    if (TARGET ch_rust::diskann)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_rust::diskann)
     endif ()
 
     if (TARGET ch_contrib::azure_sdk)

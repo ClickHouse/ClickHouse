@@ -3192,3 +3192,53 @@ CommittingBlocksSet StorageMergeTree::getCommittingBlocks() const
     return committing_blocks;
 }
 }
+
+// Phase 1B: Table-Level Vector Index Support Implementation
+
+void StorageMergeTree::registerTableVectorIndex(
+    const String & index_name,
+    const TableVectorIndexConfig & config)
+{
+    std::unique_lock lock(table_vector_indexes_mutex);
+    auto index = std::make_shared<MergeTreeTableVectorIndex>(config);
+    table_vector_indexes[index_name] = index;
+    LOG_INFO(log, "Registered table-level vector index: {} on column {}", index_name, config.column_name);
+}
+
+std::map<String, MergeTreeTableVectorIndexPtr> StorageMergeTree::getTableVectorIndexes() const
+{
+    std::shared_lock lock(table_vector_indexes_mutex);
+    return table_vector_indexes;
+}
+
+MergeTreeTableVectorIndexPtr StorageMergeTree::getTableVectorIndex(const String & index_name) const
+{
+    std::shared_lock lock(table_vector_indexes_mutex);
+    auto it = table_vector_indexes.find(index_name);
+    if (it != table_vector_indexes.end())
+        return it->second;
+    return nullptr;
+}
+
+void StorageMergeTree::unregisterTableVectorIndex(const String & index_name)
+{
+    std::unique_lock lock(table_vector_indexes_mutex);
+    size_t erased = table_vector_indexes.erase(index_name);
+    if (erased > 0)
+        LOG_INFO(log, "Unregistered table-level vector index: {}", index_name);
+}
+
+void StorageMergeTree::updateTableVectorIndexMetadata(
+    const String & index_name,
+    const PartVectorIndexMetadata & metadata)
+{
+    std::shared_lock lock(table_vector_indexes_mutex);
+    auto it = table_vector_indexes.find(index_name);
+    if (it != table_vector_indexes.end())
+    {
+        it->second->updatePartMetadata(metadata.part_name, metadata);
+        LOG_DEBUG(log, "Updated table-level vector index metadata for {} in part {}", 
+                  index_name, metadata.part_name);
+    }
+}
+

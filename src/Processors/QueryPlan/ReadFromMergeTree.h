@@ -348,6 +348,19 @@ public:
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
     std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
+    // Phase 1C: Table-Level Vector Index - Part Filtering
+    /// Set candidate parts filtered by table-level vector indexes
+    void setFilteredParts(std::vector<String> && part_names_)
+    {
+        filtered_parts = std::move(part_names_);
+    }
+    
+    /// Get the filtered parts set by table-level vector index optimization
+    const std::optional<std::vector<String>> & getFilteredParts() const
+    {
+        return filtered_parts;
+    }
+
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
     void disableMergeTreePartsSnapshotRemoval() { enable_remove_parts_from_snapshot_optimization = false; }
@@ -395,6 +408,9 @@ public:
     void deferFiltersAfterFinalIfNeeded();
 
 private:
+    // Phase 1C: Filtered parts from table-level vector indexes
+    std::optional<std::vector<String>> filtered_parts;
+
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 

@@ -1,0 +1,11 @@
+[package]
+edition = "2021"
+name = "_ch_rust_diskann_clickhouse"
+version = "0.1.0"
+
+[dependencies]
+bincode = "1"
+serde = { version = "1", features = ["derive"] }
+
+[lib]
+crate-type = ["staticlib", "lib"]

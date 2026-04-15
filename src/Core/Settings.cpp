@@ -7342,6 +7342,25 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
     DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
 Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'.
 )", 0, vector_search_postfilter_multiplier) \
+    DECLARE(Bool, use_table_level_vector_indexes, true, R"(
+Enable table-level vector indexes for vector search optimization. When enabled, queries with ORDER BY distance functions can use pre-built vector indexes to accelerate neighbor discovery.
+Phase 1B feature flag. If disabled, falls back to full table scan.
+)", 0) \
+    DECLARE(Float, table_vector_index_candidate_multiplier, 2.0, R"(
+Tuning parameter for table-level vector index candidate selection. The number of candidates returned from the index is multiplied by this factor.
+Higher values = more thorough search (may include more candidates), slower query.
+Lower values = faster query, may miss some neighbors.
+)", 0.1, 10.0) \
+    DECLARE(String, table_vector_index_part_selection, "metadata", R"(
+Strategy for selecting candidate parts when using table-level vector indexes. Options:
+- 'metadata' - Use metadata-based centroid distance (Phase 1C, default)
+- 'global' - Use hierarchical HNSW graph (Phase 2, future)
+)", 0) \
+    DECLARE(UInt64, table_vector_index_representatives_per_part, 100, R"(
+Number of vector representatives sampled per part for building table-level vector index metadata.
+Higher values = more accurate metadata, more memory.
+Lower values = faster index build, less accurate.
+)", 1, 10000) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \

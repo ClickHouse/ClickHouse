@@ -390,3 +390,6 @@
 [submodule "contrib/zmij"]
 	path = contrib/zmij
 	url = https://github.com/vitaut/zmij.git
+[submodule "contrib/diskann"]
+	path = contrib/diskann
+	url = https://github.com/microsoft/DiskANN.git
