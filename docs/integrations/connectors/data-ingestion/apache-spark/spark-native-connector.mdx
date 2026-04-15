@@ -1685,6 +1685,9 @@ Use `spark.clickhouse.read.settings` to apply ClickHouse server settings to read
 
 To scope the settings to a single read, set the config, force the action, then unset:
 
+<Tabs groupId="language">
+<TabItem value="python" label="Python" default>
+
 ```python
 spark.conf.set("spark.clickhouse.read.settings", "max_execution_time=300,max_memory_usage=10000000000")
 
@@ -1700,7 +1703,49 @@ result = spark.read \
 spark.conf.unset("spark.clickhouse.read.settings")
 ```
 
+</TabItem>
+<TabItem value="scala" label="Scala">
+
+```scala
+spark.conf.set("spark.clickhouse.read.settings", "max_execution_time=300,max_memory_usage=10000000000")
+
+// Force the action before unsetting — Spark reads are lazy
+val result = spark.read
+  .format("clickhouse")
+  .option("host", "your-host")
+  .option("database", "default")
+  .option("table", "my_table")
+  .load()
+  .collect()
+
+spark.conf.unset("spark.clickhouse.read.settings")
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java
+spark.conf().set("spark.clickhouse.read.settings", "max_execution_time=300,max_memory_usage=10000000000");
+
+// Force the action before unsetting — Spark reads are lazy
+Row[] result = spark.read()
+    .format("clickhouse")
+    .option("host", "your-host")
+    .option("database", "default")
+    .option("table", "my_table")
+    .load()
+    .collect();
+
+spark.conf().unset("spark.clickhouse.read.settings");
+```
+
+</TabItem>
+</Tabs>
+
 For write-side settings (e.g. per-write batch size), pass `spark.clickhouse.write.*` options directly on the writer:
+
+<Tabs groupId="language">
+<TabItem value="python" label="Python" default>
 
 ```python
 df.write \
@@ -1713,6 +1758,39 @@ df.write \
     .mode("append") \
     .save()
 ```
+
+</TabItem>
+<TabItem value="scala" label="Scala">
+
+```scala
+df.write
+  .format("clickhouse")
+  .option("host", "your-host")
+  .option("database", "default")
+  .option("table", "my_table")
+  .option("spark.clickhouse.write.batchSize", "50000")
+  .option("spark.clickhouse.write.format", "arrow")
+  .mode("append")
+  .save()
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java
+df.write()
+    .format("clickhouse")
+    .option("host", "your-host")
+    .option("database", "default")
+    .option("table", "my_table")
+    .option("spark.clickhouse.write.batchSize", "50000")
+    .option("spark.clickhouse.write.format", "arrow")
+    .mode("append")
+    .save();
+```
+
+</TabItem>
+</Tabs>
 
 ### Common settings {#query-settings-common}
 
@@ -1728,6 +1806,65 @@ df.write \
 :::note
 To apply ClickHouse server settings only to read requests (not writes), use `spark.clickhouse.read.settings` set via `spark.conf.set(...)` instead of catalog-level `option.clickhouse_setting_*` entries. Catalog properties apply to all operations for the lifetime of the catalog and cannot be scoped to reads only.
 :::
+
+## Timeout configuration {#timeout-configuration}
+
+Timeouts in the Spark connector operate at three independent layers. Misdiagnosing which layer is responsible for a timeout is the most common source of confusion.
+
+### Connector-internal timeouts {#timeout-connector}
+
+The connector enforces its own timeouts that are independent of any Spark or ClickHouse setting:
+
+| Behavior | Value | Configurable |
+|---|---|---|
+| Query timeout | **60 seconds** | No — hard-coded in the connector |
+| Insert timeout | **None** | No — inserts run until the network drops the connection |
+
+The 60-second query cap is enforced by the connector regardless of `max_execution_time` or any other server setting. If a read query takes longer than 60 seconds end-to-end, the connector will abort it. There is no `spark.clickhouse.*` setting to override this value.
+
+Inserts have no connector-level timeout. This means a stalled or very slow insert will hang until a network device terminates the connection — which can produce a **"Broken pipe"** error (see [Connection resets on AWS PrivateLink or NLB](#troubleshooting-connection-resets) below).
+
+### Java client connection timeouts {#timeout-java-client}
+
+These are passed through to the underlying ClickHouse Java client using the `option.<key>` prefix on catalog properties. They control the TCP/HTTP connection lifecycle.
+
+| Catalog property | Default | Unit | What it controls |
+|---|---|---|---|
+| `option.socket_timeout` | `0` (unlimited) | ms | Deadline for each TCP read/write operation. `0` means no deadline — the call blocks indefinitely if the server stops responding. |
+| `option.connection_timeout` | not set | ms | Time allowed to establish a new TCP connection to ClickHouse. |
+| `option.connection_ttl` | `-1` (unlimited) | ms | Maximum lifetime of a pooled connection. After this time, the connection is retired and not reused. **Set this below the idle timeout of any network appliance between Spark and ClickHouse** (e.g., `300000` for AWS NLB). |
+| `option.http_keep_alive_timeout` | server default | ms | Overrides the HTTP keep-alive timeout. Set to `0` to disable keep-alive on network paths with aggressive idle-connection cutoffs. |
+
+### ClickHouse server-side timeouts {#timeout-server}
+
+These are ClickHouse query settings sent with each request. They instruct the ClickHouse server to enforce a limit, independent of what the connector or TCP layer does.
+
+| Catalog property | Default | Unit | What it controls |
+|---|---|---|---|
+| `option.clickhouse_setting_max_execution_time` | `0` (unlimited) | seconds | Server-side hard cap on query execution time. Useful for preventing runaway reads from consuming server resources, but **does not override the connector's 60-second query timeout**. |
+| `option.clickhouse_setting_session_timeout` | `60` | seconds | HTTP session lifetime on the server. |
+
+### Common timeout scenarios {#timeout-scenarios}
+
+**Long-running reads (>60 seconds)**
+
+The connector's hard-coded 60-second query timeout will abort reads that take longer, even if the server could complete them. There is no configuration knob to extend or disable this cap. The only workaround is to reduce the amount of data returned by a single query so each read completes within 60 seconds:
+
+- Add `WHERE` predicates to filter rows before they reach Spark.
+- Use partition pruning so the connector issues one query per partition rather than one large scan.
+
+**Insert "Broken pipe" or "Connection reset" errors**
+
+Typically caused by a network appliance (AWS NLB, PrivateLink, corporate proxy) silently dropping idle connections. The connector's connection pool holds connections open between operations; if the appliance's idle timeout (350 seconds for AWS NLB) expires, the connection is dropped at the network level without notification. The connector then tries to reuse a dead connection and gets a broken pipe.
+
+```text
+spark.sql.catalog.clickhouse.option.connection_ttl         300000
+spark.sql.catalog.clickhouse.option.socket_timeout         300000
+spark.sql.catalog.clickhouse.option.http_keep_alive_timeout  0
+```
+
+Setting `connection_ttl` below the appliance's idle timeout forces the connector to retire connections proactively. See [Connection resets on AWS PrivateLink or NLB](#troubleshooting-connection-resets) for full details.
+
 
 ## Performance tuning {#performance-tuning}
 
@@ -1802,6 +1939,31 @@ If you also have `spark.clickhouse.write.distributed.convertLocal=true`, ignorin
 **Fix**:
 ```python
 spark.catalog.refreshTable("clickhouse.database.table_name")
+```
+
+---
+
+### Connection resets on AWS PrivateLink or NLB {#troubleshooting-connection-resets}
+
+**Symptom**: Reads or writes intermittently fail with `Broken pipe`, `Connection reset by peer`, or `java.io.IOException: Connection closed` — particularly on longer-running jobs or after a period of inactivity.
+
+**Cause**: AWS Network Load Balancers (NLB) and PrivateLink silently drop TCP connections that have been idle for **350 seconds**. The connector's connection pool keeps HTTP connections alive between operations. When the NLB drops a pooled connection, neither the connector nor ClickHouse is notified. The next operation that picks up that connection fails immediately.
+
+Inserts are especially vulnerable: there is no connector-level insert timeout, so a slow or large insert can stall mid-flight when the underlying connection is cut.
+
+**Fix**: Retire pooled connections before the NLB does by setting `connection_ttl` below 350 seconds. Also set `socket_timeout` to bound individual operations and disable HTTP keep-alive to prevent stale connections from persisting in the pool:
+
+```text
+spark.sql.catalog.clickhouse.option.connection_ttl           300000
+spark.sql.catalog.clickhouse.option.socket_timeout           300000
+spark.sql.catalog.clickhouse.option.http_keep_alive_timeout  0
+```
+
+For very large inserts that are genuinely expected to take several minutes, switch to async inserts so the server acknowledges receipt quickly and the connector is not waiting on a long-lived open connection:
+
+```text
+spark.sql.catalog.clickhouse.option.clickhouse_setting_async_insert             1
+spark.sql.catalog.clickhouse.option.clickhouse_setting_wait_for_async_insert    1
 ```
 
 ---
