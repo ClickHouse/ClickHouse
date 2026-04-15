@@ -251,7 +251,6 @@ class JobConfigs:
             provides=[
                 ArtifactNames.CH_AMD_ASAN_UBSAN,
                 ArtifactNames.DEB_AMD_ASAN_UBSAN,
-                ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
@@ -260,7 +259,6 @@ class JobConfigs:
             provides=[
                 ArtifactNames.CH_AMD_TSAN,
                 ArtifactNames.DEB_AMD_TSAN,
-                ArtifactNames.UNITTEST_AMD_TSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
@@ -269,7 +267,6 @@ class JobConfigs:
             provides=[
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.DEB_AMD_MSAN,
-                ArtifactNames.UNITTEST_AMD_MSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
@@ -288,6 +285,7 @@ class JobConfigs:
             provides=[
                 ArtifactNames.CH_ARM_ASAN_UBSAN,
                 ArtifactNames.DEB_ARM_ASAN_UBSAN,
+                ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
@@ -296,12 +294,17 @@ class JobConfigs:
             provides=[
                 ArtifactNames.CH_ARM_TSAN,
                 ArtifactNames.DEB_ARM_TSAN,
+                ArtifactNames.UNITTEST_ARM_TSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_MSAN,
-            provides=[ArtifactNames.CH_ARM_MSAN, ArtifactNames.DEB_ARM_MSAN],
+            provides=[
+                ArtifactNames.CH_ARM_MSAN,
+                ArtifactNames.DEB_ARM_MSAN,
+                ArtifactNames.UNITTEST_ARM_MSAN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -734,19 +737,19 @@ class JobConfigs:
     )
     unittest_jobs = common_unit_test_job_config.parametrize(
         Job.ParamSet(
-            parameter="asan_ubsan",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
+            parameter="arm_asan_ubsan",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
-            parameter="tsan",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_TSAN],
+            parameter="arm_tsan",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.UNITTEST_ARM_TSAN],
         ),
         Job.ParamSet(
-            parameter="msan",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_MSAN],
+            parameter="arm_msan",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.UNITTEST_ARM_MSAN],
         ),
     )
     stress_test_jobs = common_stress_job_config.parametrize(

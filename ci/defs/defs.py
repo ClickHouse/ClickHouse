@@ -418,9 +418,9 @@ class ArtifactNames:
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
     FAST_TEST = "FAST_TEST"
-    UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
-    UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
-    UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
+    UNITTEST_ARM_ASAN_UBSAN = "UNITTEST_ARM_ASAN_UBSAN"
+    UNITTEST_ARM_TSAN = "UNITTEST_ARM_TSAN"
+    UNITTEST_ARM_MSAN = "UNITTEST_ARM_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
@@ -590,9 +590,9 @@ class ArtifactConfigs:
         compress_zst=True,
     ).parametrize(
         names=[
-            ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
-            ArtifactNames.UNITTEST_AMD_TSAN,
-            ArtifactNames.UNITTEST_AMD_MSAN,
+            ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
+            ArtifactNames.UNITTEST_ARM_TSAN,
+            ArtifactNames.UNITTEST_ARM_MSAN,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]
     )
