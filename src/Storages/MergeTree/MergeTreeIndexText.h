@@ -12,8 +12,10 @@
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
+#include <absl/container/inlined_vector.h>
 #include <base/types.h>
 
+#include <span>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -84,55 +86,38 @@ struct MergeTreeIndexTextParams
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
 
-/// A struct for building a posting list with optimization for infrequent tokens.
-/// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
-/// It avoids allocations of Roaring Bitmap for infrequent tokens without increasing the memory usage.
+/// A struct for building a posting list during INSERT.
+/// Uses absl::InlinedVector to store the first few row_ids inline (avoiding heap allocation
+/// for infrequent tokens) and spills to the heap when the posting list grows.
+/// Values are always added in non-descending order, with duplicates skipped.
+/// Roaring bitmaps are only materialized at serialization time via `toPostingList`.
 struct PostingListBuilder
 {
-public:
-    using PostingListsHolder = std::list<PostingList>;
+    /// Matches the previous max_small_size. The InlinedVector stores up to this many
+    /// elements inline (on the stack), avoiding heap allocations for rare tokens.
+    static constexpr size_t inlined_capacity = 6;
 
-    /// sizeof(PostingListWithContext) == 24 bytes.
-    /// Use small container of the same size to reuse this memory.
-    static constexpr size_t max_small_size = 6;
-    using SmallContainer = std::array<UInt32, max_small_size>;
+    /// Appends a row_id. Values must arrive in non-descending order. Duplicates are skipped.
+    void add(UInt32 value);
 
-    PostingListBuilder() : small_size(0) {}
-    explicit PostingListBuilder(PostingList * posting_list);
+    size_t size() const { return values.size(); }
+    bool isEmpty() const { return values.empty(); }
+    UInt32 minimum() const { return values.front(); }
+    UInt32 maximum() const { return values.back(); }
 
-    /// Adds a value to small array or to the large Roaring Bitmap.
-    /// If small array is converted to Roaring Bitmap after adding a value,
-    /// posting list is created in the postings_holder and reference to it is saved.
-    void add(UInt32 value, PostingListsHolder & postings_holder);
+    /// Returns a span over all stored row_ids (both inline and heap-allocated).
+    std::span<const UInt32> getValues() const { return {values.data(), values.size()}; }
 
-    size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
-    bool isEmpty() const { return size() == 0; }
-    bool isSmall() const { return small_size < max_small_size; }
-    bool isLarge() const { return !isSmall(); }
-    UInt32 minimum() const { return isSmall() ? small[0] : large.postings->minimum(); }
-    UInt32 maximum() const { return isSmall() ? small[small_size - 1] : large.postings->maximum(); }
+    /// Materializes a roaring bitmap from the stored values.
+    /// Only called at serialization time for paths that need roaring internals.
+    PostingList toPostingList() const;
 
-    SmallContainer & getSmall() { return small; }
-    const SmallContainer & getSmall() const { return small; }
-    PostingList & getLarge() const { return *large.postings; }
+    /// Returns heap-allocated memory (bytes) used by the vector beyond the inline buffer.
+    size_t getSizeInBytes() const;
 
-private:
-    struct PostingListWithContext
-    {
-        PostingList * postings;
-        roaring::BulkContext context;
-    };
-
-    union
-    {
-        SmallContainer small;
-        PostingListWithContext large;
-    };
-
-    UInt8 small_size;
+    absl::InlinedVector<UInt32, 6> values;
 };
 
-/// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
 using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
 struct TokenPostingsInfo;
@@ -156,7 +141,6 @@ struct PostingsSerialization
     };
 
     void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
     void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec; }
@@ -363,7 +347,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         PostingListCodecPtr posting_list_codec_,
         SortedTokensAndPostings && tokens_and_postings_,
         TokenToPostingsBuilderMap && tokens_map_,
-        std::list<PostingList> && posting_lists_,
         std::unique_ptr<Arena> && arena_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
@@ -381,8 +364,8 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     /// Pointers to tokens and posting lists in the granule.
     SortedTokensAndPostings tokens_and_postings;
     /// tokens_and_postings has references to data held in the fields below.
+    /// Posting list data lives inside PostingListBuilder::values within the hash map cells.
     TokenToPostingsBuilderMap tokens_map;
-    std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
 };
@@ -413,10 +396,8 @@ struct MergeTreeIndexTextGranuleBuilder
     bool is_empty = true;
     UInt64 current_row = 0;
     UInt64 num_processed_tokens = 0;
-    /// Pointers to posting lists for each token.
+    /// Token → PostingListBuilder map. Posting list data lives in PostingListBuilder::values.
     TokenToPostingsBuilderMap tokens_map;
-    /// Holder of posting lists. std::list is used to preserve the stability of pointers to posting lists.
-    std::list<PostingList> posting_lists;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
 };

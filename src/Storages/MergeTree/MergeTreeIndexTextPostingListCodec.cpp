@@ -213,13 +213,11 @@ void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings)
     impl.decode(in, postings);
 }
 
-void PostingListCodecBitpacking::encode(
-        const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
+void PostingListCodecBitpacking::encode(std::span<const UInt32> row_ids, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
 {
     PostingListCodecBitpackingImpl impl(max_rowids_in_segment);
-    std::vector<uint32_t> rowids;
-    rowids.resize(postings.cardinality());
-    postings.toUint32Array(rowids.data());
+    /// Need a mutable copy because impl.insert(span) uses std::adjacent_difference in-place.
+    std::vector<uint32_t> rowids(row_ids.begin(), row_ids.end());
 
     std::span<uint32_t> rowids_view(rowids.data(), rowids.size());
     while (rowids_view.size() >= BLOCK_SIZE)
@@ -231,7 +229,7 @@ void PostingListCodecBitpacking::encode(
 
     if (!rowids_view.empty())
     {
-        for (auto rowid: rowids_view)
+        for (auto rowid : rowids_view)
             impl.insert(rowid);
     }
     impl.encode(out, info);

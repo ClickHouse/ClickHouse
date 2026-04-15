@@ -5,6 +5,8 @@
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
 
+#include <span>
+
 #include <roaring/roaring.hh>
 
 namespace DB
@@ -35,9 +37,10 @@ public:
 
     Type getType() const { return type; }
 
-    /// Splits the posting list into posting_list_block_size-large blocks and encodes each block separately.
+    /// Encodes posting list from a pre-sorted array of row_ids.
+    /// Splits into posting_list_block_size-large blocks and encodes each block separately.
     /// Also collects per-segment metadata into info and returns it to the caller (TokenPostingsInfo).
-    virtual void encode(const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
+    virtual void encode(std::span<const UInt32> row_ids, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
 
     /// Reads an encoded posting list, decodes it, and returns a posting list.
     virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;

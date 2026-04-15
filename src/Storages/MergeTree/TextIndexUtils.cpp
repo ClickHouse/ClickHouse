@@ -312,29 +312,29 @@ std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source
     return postings;
 }
 
-PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, PostingListPtr posting_list)
+void MergeTextIndexesTask::adjustPartOffsets(size_t source_num, std::span<UInt32> row_ids)
 {
     if (!merged_part_offsets)
-        return posting_list;
+        return;
 
-    std::vector<UInt32> offsets(posting_list->cardinality());
-    posting_list->toUint32Array(offsets.data());
     size_t part_index = segments[source_num].part_index;
-
-    for (auto & offset : offsets)
-        offset = static_cast<UInt32>((*merged_part_offsets)[part_index, offset]);
-
-    return std::make_shared<PostingList>(offsets.size(), offsets.data());
+    for (auto & row_id : row_ids)
+        row_id = static_cast<UInt32>((*merged_part_offsets)[part_index, row_id]);
 }
 
 void MergeTextIndexesTask::flushPostingList()
 {
+    std::sort(output_postings.begin(), output_postings.end());
+    output_postings.erase(std::unique(output_postings.begin(), output_postings.end()), output_postings.end());
+
+    PostingListBuilder builder;
+    builder.values.assign(output_postings.begin(), output_postings.end());
+
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-    PostingListBuilder builder(&output_postings);
     auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
 
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-        token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
+        token_info.embedded_postings = std::make_shared<PostingList>(builder.toPostingList());
 
     output_infos.push_back(token_info);
     output_postings.clear();
@@ -417,7 +417,7 @@ bool MergeTextIndexesTask::executeStep()
 
         if (isNewToken(current))
         {
-            if (!output_postings.isEmpty())
+            if (!output_postings.empty())
                 flushPostingList();
 
             if (output_tokens->size() >= params.dictionary_block_size)
@@ -428,10 +428,14 @@ bool MergeTextIndexesTask::executeStep()
 
         auto read_postings = readPostingLists(current->order);
 
-        for (auto & posting : read_postings)
+        for (const auto & posting : read_postings)
         {
-            posting = adjustPartOffsets(current->order, posting);
-            output_postings |= *posting;
+            size_t old_size = output_postings.size();
+            size_t cardinality = posting->cardinality();
+            output_postings.resize(old_size + cardinality);
+            posting->toUint32Array(output_postings.data() + old_size);
+            std::span<UInt32> appended(output_postings.data() + old_size, cardinality);
+            adjustPartOffsets(current->order, appended);
         }
 
         if (!current->isLast())
@@ -450,7 +454,7 @@ bool MergeTextIndexesTask::executeStep()
 
 void MergeTextIndexesTask::finalize()
 {
-    if (!output_postings.isEmpty())
+    if (!output_postings.empty())
         flushPostingList();
 
     if (!output_tokens->empty())

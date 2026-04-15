@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
+#include <span>
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
@@ -100,7 +101,7 @@ private:
     /// Reads the next posting lists for the next token in the given source index.
     std::vector<PostingListPtr> readPostingLists(size_t source_num);
     /// Adjusts row numbers in the postings list according to merged part offsets.
-    PostingListPtr adjustPartOffsets(size_t source_num, PostingListPtr posting_list);
+    void adjustPartOffsets(size_t source_num, std::span<UInt32> row_ids);
 
     void flushPostingList();
     void flushDictionaryBlock();
@@ -129,8 +130,9 @@ private:
     MutableColumnPtr output_tokens;
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
-    /// Postings accumulated for the current token.
-    PostingList output_postings;
+    /// Row_ids accumulated for the current token across all source parts.
+    /// Sorted and deduplicated before serialization.
+    std::vector<UInt32> output_postings;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
