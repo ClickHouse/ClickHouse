@@ -82,9 +82,11 @@ static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & o
         if (!indexes)
             indexes = convertOffsetsToIndexes(offsets);
         column = ColumnReplicated::create(column, indexes);
-        return;
     }
-    column = column->replicate(offsets);
+    else
+    {
+        column = column->replicate(offsets);
+    }
 }
 
 static void appendRightColumns(

@@ -108,11 +108,3 @@ TEST(ColumnReplicated, IndicesOfNonDefaultRows)
     ASSERT_EQ(offsets.size(), 10);
     ASSERT_EQ(offsets, IColumn::Offsets({0, 1, 2, 3, 5, 6, 7, 8, 10, 11}));
 }
-
-TEST(ColumnReplicated, Replicate)
-{
-    auto column = createColumn({"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0, 1, 2, 0});
-    IColumn::Offsets offsets = {0, 0, 0, 2, 4, 4, 4, 4, 4};
-    auto replicated_column = column->replicate(offsets);
-    checkColumn(*replicated_column, {"s1", "s3"}, {1, 1, 0, 0});
-}

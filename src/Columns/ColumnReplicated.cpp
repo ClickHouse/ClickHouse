@@ -760,7 +760,7 @@ void optimizeReplicatedColumnsLayout(Columns & columns)
     /// Step 2: Compact remaining ColumnReplicated columns.
     ColumnPtr shared_src_index;
     Columns nested_columns;
-    std::vector<size_t> positions;
+    std::vector<size_t> positions; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     auto compact = [&]
     {

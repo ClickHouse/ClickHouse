@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnIndex.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
