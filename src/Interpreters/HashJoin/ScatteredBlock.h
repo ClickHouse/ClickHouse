@@ -301,7 +301,13 @@ struct ScatteredBlock : private boost::noncopyable
         transformColumnsWithSharedIndex(
             columns,
             [&](const ColumnPtr & index) { return index->index(selector.getIndexes(), /*limit*/ 0); },
-            [&](ColumnPtr & col) { col = ColumnReplicated::create(col, indexes_col); }
+            [&](ColumnPtr & col)
+            {
+                if (col->isConst())
+                    col = col->index(selector.getIndexes(), /*limit*/ 0);
+                else
+                    col = ColumnReplicated::create(col, indexes_col);
+            }
         );
         block.setColumns(columns);
         selector = Selector(block.rows());
@@ -317,10 +323,10 @@ struct ScatteredBlock : private boost::noncopyable
         {
             const auto range = selector.getRange();
             auto columns = block.getColumns();
-            transformColumnsWithSharedIndex(                                                                                                                                                                                                                                            
+            transformColumnsWithSharedIndex(
                 columns,
-                [&](const ColumnPtr & index) { return index->cut(range.first, range.second - range.first); },                                                                                                                                                                           
-                [&](ColumnPtr & col) { col = col->cut(range.first, range.second - range.first); });                                                                                                                                                                                     
+                [&](const ColumnPtr & index) { return index->cut(range.first, range.second - range.first); },
+                [&](ColumnPtr & col) { col = col->cut(range.first, range.second - range.first); });
             block.setColumns(columns);
             selector = Selector(block.rows());
             return;

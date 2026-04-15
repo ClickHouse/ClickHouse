@@ -75,34 +75,9 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
     return right_column;
 }
 
-static bool isGrowingReplication(const IColumn::Offsets & offsets)
+static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes, bool force_lazy_replication)
 {
-    return offsets.back() > offsets.size();
-}
-
-static void convertIneligibleReplicatedColumnsToFull(Columns & columns)
-{
-    for (auto & col : columns)
-    {
-        if (!col->isReplicated())
-            continue;
-        const auto & replicated = typeid_cast<const ColumnReplicated &>(*col);
-        if (!isColumnEligibleForLazyReplication(replicated.getNestedColumn()))
-            col = replicated.convertToFullColumnIfReplicated();
-    }
-}
-
-static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes, bool lazy_columns_indexing)
-{
-    auto replicate_lazily = [&]
-    {
-        if (isColumnEligibleForLazyReplication(column))
-            return lazy_columns_indexing || isLazyReplicationMemoryEfficient(column, offsets.back());
-
-        return lazy_columns_indexing && !isGrowingReplication(offsets);
-    };
-
-    if (replicate_lazily())
+    if (force_lazy_replication || isLazyReplicationUseful(column))
     {
         if (!indexes)
             indexes = convertOffsetsToIndexes(offsets);
@@ -123,13 +98,15 @@ static void appendRightColumns(
     size_t existing_columns = block.columns();
     const auto & table_join = properties.table_join;
 
-    /// Avoid lazy replication that grow the output size on ineligible columns (e.g. small types)
+    /// Avoid lazy replication that grow the output size on not useful columns (e.g. small types)
     /// because it can be much slower than eager replication.
-    if (!offsets.empty() && isGrowingReplication(offsets))
+    bool is_replication_growing = !offsets.empty() && offsets.back() > offsets.size();
+    if (is_replication_growing)
     {
-        auto columns_to_replicate = block.getColumns();
-        convertIneligibleReplicatedColumnsToFull(columns_to_replicate);
-        block.setColumns(columns_to_replicate);
+        auto cols = block.getColumns();
+        for (auto & col : cols)
+            col = convertToFullColumnIfReplicationNotUseful(col, /*with_size_check=*/ false);
+        block.setColumns(cols);
     }
 
     std::set<size_t> block_columns_to_erase;
@@ -190,11 +167,12 @@ static void appendRightColumns(
             for (size_t pos : right_keys_to_replicate)
                 positions.push_back(pos);
 
+            bool force_lazy_replication = properties.enable_lazy_columns_indexing && !is_replication_growing;
             ColumnPtr indexes;
             transformColumnsWithSharedIndex(
                 columns_to_replicate,
                 [&](const ColumnPtr & index) { return index->replicate(offsets); },
-                [&](ColumnPtr & col) { replicateColumnLazily(col, offsets, indexes, properties.enable_lazy_columns_indexing); },
+                [&](ColumnPtr & col) { replicateColumnLazily(col, offsets, indexes, force_lazy_replication); },
                 positions);
         }
         else
@@ -314,7 +292,7 @@ Block HashJoinResult::generateBlock(
     {
         auto cols = block.getColumns();
         for (auto & col : cols)
-            col = col->convertToFullColumnIfReplicationNotUseful(ColumnReplicated::DEFAULT_MAX_EXPANSION_RATIO_FOR_MATERIALIZATION);
+            col = convertToFullColumnIfReplicationNotUseful(col);
         block.setColumns(cols);
     }
 

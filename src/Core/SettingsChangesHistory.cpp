@@ -55,7 +55,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"query_plan_optimize_join_lazy_indexing", false, true, "Added new setting to use query plan for lazy join indexing optimisation"},
-            {"query_plan_max_limit_for_join_lazy_indexing", 10000, 10000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimisation. If zero, there is no limit"},
+            {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimisation. If zero, there is no limit"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

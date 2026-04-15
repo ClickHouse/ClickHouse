@@ -3,6 +3,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/WeakHash.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -126,14 +127,6 @@ std::string_view ColumnReplicated::getDataAt(size_t n) const
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
     return nested_column->index(*indexes.getIndexes(), 0);
-}
-
-ColumnPtr ColumnReplicated::convertToFullColumnIfReplicationNotUseful(double max_expansion_ratio) const
-{
-    if (!isLazyReplicationUseful(nested_column, size(), max_expansion_ratio))
-        return convertToFullColumnIfReplicated();
-
-    return getPtr();
 }
 
 void ColumnReplicated::insertData(const char * pos, size_t length)
@@ -705,41 +698,9 @@ ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets)
     return convertOffsetsToIndexesImpl<UInt64>(offsets);
 }
 
-bool isColumnEligibleForLazyReplication(const ColumnPtr & column)
+bool isLazyReplicationUseful(const ColumnPtr & column)
 {
     return !column->isConst() && !column->isReplicated() && !column->lowCardinality() && (!column->isFixedAndContiguous() || column->sizeOfValueIfFixed() > 8);
-}
-
-bool isLazyReplicationMemoryEfficient(const ColumnPtr & column,
-    size_t replicated_rows,
-    double max_expansion_ratio)
-{
-    size_t input_rows = column->size();
-    if (input_rows == 0)
-        return false;
-
-    size_t index_element_size;
-    if (input_rows <= std::numeric_limits<UInt8>::max())
-        index_element_size = sizeof(UInt8);
-    else if (input_rows <= std::numeric_limits<UInt16>::max())
-        index_element_size = sizeof(UInt16);
-    else if (input_rows <= std::numeric_limits<UInt32>::max())
-        index_element_size = sizeof(UInt32);
-    else
-        index_element_size = sizeof(UInt64);
-
-    double avg_row_bytes = static_cast<double>(column->allocatedBytes()) / static_cast<double>(input_rows);
-    size_t estimated_materialized = static_cast<size_t>(static_cast<double>(replicated_rows) * avg_row_bytes);
-    size_t estimated_replicated = column->allocatedBytes() + replicated_rows * index_element_size;
-
-    return estimated_materialized > static_cast<size_t>(static_cast<double>(estimated_replicated) * max_expansion_ratio);
-}
-
-bool isLazyReplicationUseful(const ColumnPtr & column,
-    size_t replicated_rows,
-    double max_expansion_ratio)
-{
-    return isColumnEligibleForLazyReplication(column) && isLazyReplicationMemoryEfficient(column, replicated_rows, max_expansion_ratio);
 }
 
 void transformColumnsWithSharedIndex(
@@ -777,11 +738,24 @@ void transformColumnsWithSharedIndex(
             transform(pos);
 }
 
-void optimizeReplicatedColumnsLayout(Columns & columns, double max_unused_ratio, double max_expansion_ratio)
+ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check)
 {
-    /// Step 1: Materialize columns where replication provides little benefit.
+    if (!column->isReplicated())
+        return column;
+
+    const auto & replicated = typeid_cast<const ColumnReplicated &>(*column);
+    /// Materialize if the type doesn't benefit from lazy replication, or if nested data isn't smaller than output.
+    if (!isLazyReplicationUseful(replicated.getNestedColumn()) || (with_size_check && replicated.getNestedColumn()->size() >= replicated.size()))
+        return replicated.convertToFullColumnIfReplicated();
+
+    return column;
+}
+
+void optimizeReplicatedColumnsLayout(Columns & columns)
+{
+    /// Step 1: Materialize columns where replication provides no benefit.
     for (auto & col : columns)
-        col = col->convertToFullColumnIfReplicationNotUseful(max_expansion_ratio);
+        col = convertToFullColumnIfReplicationNotUseful(col);
 
     /// Step 2: Compact remaining ColumnReplicated columns.
     ColumnPtr shared_src_index;
@@ -794,7 +768,7 @@ void optimizeReplicatedColumnsLayout(Columns & columns, double max_unused_ratio,
             return;
 
         ColumnIndex column_index(shared_src_index);
-        auto result = column_index.buildCompactIndexedColumns(nested_columns, max_unused_ratio);
+        auto result = column_index.buildCompactIndexedColumns(nested_columns);
 
         if (result.compact_indexes.get() != shared_src_index.get())
         {

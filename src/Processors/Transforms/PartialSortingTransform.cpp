@@ -120,8 +120,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
     for (const auto & col_desc : description)
     {
         auto & column_entry = block.getByName(col_desc.column_name);
-        column_entry.column = column_entry.column->convertToFullColumnIfReplicationNotUseful(
-            ColumnReplicated::DEFAULT_MAX_EXPANSION_RATIO_FOR_MATERIALIZATION);
+        column_entry.column = convertToFullColumnIfReplicationNotUseful(column_entry.column);
     }
 
     /** If we've saved columns from previously blocks we could filter all rows from current block

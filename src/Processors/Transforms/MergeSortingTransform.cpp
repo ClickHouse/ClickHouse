@@ -197,7 +197,7 @@ void MergeSortingTransform::consume(Chunk chunk)
     removeConstColumns(chunk);
 
     /// Optimize replicated columns memory layout before accumulating: materialize when
-    /// duplication is low, otherwise compact to release unreferenced nested data.
+    /// replication is not useful, otherwise compact to release unreferenced nested data.
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
     optimizeReplicatedColumnsLayout(columns);

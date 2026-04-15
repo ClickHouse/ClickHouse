@@ -133,11 +133,6 @@ public:
     /// If column is ColumnReplicated, transforms it to full column.
     [[nodiscard]] virtual Ptr convertToFullColumnIfReplicated() const { return getPtr(); }
 
-    /// If column is ColumnReplicated and materializing would not significantly expand the data
-    /// (estimated materialized size <= current allocated size * max_expansion_ratio), materializes it.
-    /// Otherwise returns the column unchanged.
-    [[nodiscard]] virtual Ptr convertToFullColumnIfReplicationNotUseful(double /*max_expansion_ratio*/) const { return getPtr(); }
-
     [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
     {
         Ptr converted = convertToFullColumnIfConst()

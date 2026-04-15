@@ -8,6 +8,14 @@
 namespace DB::QueryPlanOptimizations
 {
 
+/// Hash join produces probe side columns by filtering or replicating the input columns.
+/// Materializing these columns can be wasted if they are immedtiatly droped or filtered/replicated
+/// by a follow up join.
+///
+/// This optimization tells the join to produce `ColumnReplicated` (input column + index) instead if one
+/// of the following cases is detected:
+/// - The join sits below a LimitStep or SortingStep with a small limit.
+/// - The join sits on the probe side of an immediately following join.
 void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & settings)
 {
     auto * limit_step = typeid_cast<LimitStep *>(node.step.get());

@@ -26,9 +26,6 @@ private:
     ColumnReplicated(const ColumnReplicated &) = default;
 
 public:
-    static constexpr auto DEFAULT_MAX_UNUSED_RATIO_FOR_COMPACTION = 0.5;
-    static constexpr auto DEFAULT_MAX_EXPANSION_RATIO_FOR_MATERIALIZATION = 1.25;
-
     using Base = COWHelper<IColumnHelper<ColumnReplicated>, ColumnReplicated>;
 
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & indexes_)
@@ -82,7 +79,6 @@ public:
     std::string_view getDataAt(size_t n) const override;
 
     ColumnPtr convertToFullColumnIfReplicated() const override;
-    ColumnPtr convertToFullColumnIfReplicationNotUseful(double max_expansion_ratio) const override;
 
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
@@ -227,25 +223,19 @@ ColumnPtr recursiveRemoveReplicated(const ColumnPtr & column);
 ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.
-bool isColumnEligibleForLazyReplication(const ColumnPtr & column);
-bool isLazyReplicationMemoryEfficient(
-    const ColumnPtr & column,
-    size_t replicated_rows,
-    double max_expansion_ratio = ColumnReplicated::DEFAULT_MAX_EXPANSION_RATIO_FOR_MATERIALIZATION);
-bool isLazyReplicationUseful(const ColumnPtr & column,
-    size_t replicated_rows,
-    double max_expansion_ratio = ColumnReplicated::DEFAULT_MAX_EXPANSION_RATIO_FOR_MATERIALIZATION);
+bool isLazyReplicationUseful(const ColumnPtr & column);
 /// Apply transformation on replicated columns with shared index only once.
 void transformColumnsWithSharedIndex(
     Columns & columns,
     std::function<ColumnPtr(const ColumnPtr &)> index_transform,
     std::function<void(ColumnPtr &)> non_replicated_transform,
     std::span<size_t> positions = {});
-/// Optimizes ColumnReplicated columns memory layout:
-/// 1. Materializes columns where replication provides little benefit.
+/// Materializes ColumnReplicated where lazy replication is not useful:
+/// - `isLazyReplicationUseful` returns false.
+/// - index size <= nested data size, when size check is enabled.
+ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check = true);
+/// Optimize ColumnReplicated columns memory layout:
+/// 1. Materializes columns where replication provides no benefit.
 /// 2. Compacts remaining ColumnReplicated columns by removing unreferenced nested rows.
-void optimizeReplicatedColumnsLayout(
-    Columns & columns,
-    double max_unused_ratio = ColumnReplicated::DEFAULT_MAX_UNUSED_RATIO_FOR_COMPACTION,
-    double max_expansion_ratio = ColumnReplicated::DEFAULT_MAX_EXPANSION_RATIO_FOR_MATERIALIZATION);
+void optimizeReplicatedColumnsLayout(Columns & columns);
 }
