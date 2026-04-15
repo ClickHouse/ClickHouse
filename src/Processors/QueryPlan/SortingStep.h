@@ -122,7 +122,7 @@ public:
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
+    bool isSerializable() const override { return partition_by_description.empty(); }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 

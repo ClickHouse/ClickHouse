@@ -619,8 +619,8 @@ void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) c
 
 void SortingStep::serialize(Serialization & ctx) const
 {
-    if (type != Type::Full)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of SortingStep is implemented only for Full sorting");
+    /// All sorting types are serialized as Full sorting.
+    /// The remote side will apply its own read-in-order optimization based on its local part layout.
 
     /// Do not serialize type here; Later we can use different names if needed.\
 
