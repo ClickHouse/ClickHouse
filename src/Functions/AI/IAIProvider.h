@@ -22,8 +22,13 @@ struct AIRequest
     /// The per-row input text — this is the actual content to process.
     String user_message;
 
-    /// Optional JSON schema to constrain the response format (structured output).
-    /// Pre-parsed once per query in FunctionBaseAI, shared across all rows.
+    /// Optional pre-parsed JSON schema that constrains the model to return structured output.
+    /// Parsed once per query in FunctionBaseAI::buildResponseFormat, shared across all rows.
+    /// For OpenAI, sent as the `response_format` field — enforced via constrained decoding:
+    ///   {"type": "json_schema", "json_schema": {"name": "result", "schema": {"type": "object", "properties": {...}}}}
+    ///   https://platform.openai.com/docs/guides/structured-outputs
+    /// For Anthropic, approximated via a tool-use pattern (see AnthropicProvider):
+    ///   https://docs.anthropic.com/en/docs/build-with-claude/tool-use
     Poco::JSON::Object::Ptr response_format;
 
     /// Model identifier as specified in the named collection (e.g. "gpt-4o-mini", "claude-sonnet-4-20250514").
@@ -37,10 +42,7 @@ struct AIRequest
     UInt64 max_tokens = 0;
 };
 
-/** Response from a single AI chat completion request.
-  *
-  * Returned by IAIProvider::call after parsing the provider's HTTP response.
-  */
+/// Response from a single AI chat completion request. Returned by IAIProvider::call after parsing the provider's HTTP response.
 struct AIResponse
 {
     /// The generated text content from the model.
@@ -74,8 +76,6 @@ public:
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
-/// Factory function that creates the appropriate provider based on the name
-/// from the named collection ("openai", "anthropic", "huggingface", "tei").
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
 
 }
