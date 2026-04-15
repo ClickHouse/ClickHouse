@@ -190,7 +190,13 @@ bool PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
         }
         else
         {
-            int64_t now = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            /// `history_window` is std::chrono::milliseconds, so `now` must be measured in
+            /// the same unit. Previously this divided microseconds by milliseconds, making
+            /// each bucket 1000x narrower than intended — with a default 1000 ms window and
+            /// MemoryWorker calling every ~50 ms, every call landed in a brand-new bucket
+            /// and reset peak_memory_buckets to {0, 0}, effectively disabling the smoothing
+            /// window entirely.
+            int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
             int64_t bucket = now / history_window.count();
             if (bucket > cur_bucket + 1)
                 peak_memory_buckets = {0, 0};
