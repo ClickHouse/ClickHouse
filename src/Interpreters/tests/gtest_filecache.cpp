@@ -1490,7 +1490,7 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
 
     auto read_and_check = [&](const std::string & file, const FileCacheKey & key, const std::string & expect_result)
     {
-        auto read_buffer_creator = [&]()
+        auto read_buffer_creator = [&](const ReadSettings & /* settings */)
         {
             return createReadBufferFromFileBase(file, read_settings, std::nullopt, std::nullopt);
         };
