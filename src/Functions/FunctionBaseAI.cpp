@@ -121,7 +121,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 max_retries = settings[Setting::ai_function_max_retries].value;
     UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
 
-    auto quota = std::make_shared<AIQuotaTracker>(
+    AIQuotaTracker quota(
         settings[Setting::ai_function_max_input_tokens_per_query].value,
         settings[Setting::ai_function_max_output_tokens_per_query].value,
         settings[Setting::ai_function_max_api_calls_per_query].value,
@@ -145,7 +145,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        if (text_col->isNullAt(i) || quota->isQuotaExceeded())
+        if (text_col->isNullAt(i) || quota.isQuotaExceeded())
         {
             result_col->insertDefault();
             ++rows_skipped;
@@ -154,7 +154,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         String user_message = sanitizeTextForAI(buildUserMessage(arguments, i));
 
-        if (!quota->checkBeforeDispatch(user_message.size() + system_prompt.size()))
+        if (!quota.checkBeforeDispatch(user_message.size() + system_prompt.size()))
         {
             result_col->insertDefault();
             ++rows_skipped;
@@ -178,7 +178,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
                 auto ai_response = provider->call(ai_request, timeouts);
 
-                quota->recordResponse(ai_response.input_tokens, ai_response.output_tokens);
+                quota.recordResponse(ai_response.input_tokens, ai_response.output_tokens);
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
                 ++total_api_calls;
@@ -195,7 +195,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                     continue;
                 }
 
-                if (quota->handleRowError())
+                if (quota.handleRowError())
                     break;
 
                 throw;

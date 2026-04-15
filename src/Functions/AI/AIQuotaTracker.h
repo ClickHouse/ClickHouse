@@ -2,13 +2,9 @@
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
-#include <atomic>
 
 namespace DB
 {
-
-
-static constexpr auto MEMORY_ORDER = std::memory_order_relaxed;
 
 class AIQuotaTracker
 {
@@ -32,14 +28,8 @@ public:
     void recordResponse(UInt64 in_tokens, UInt64 out_tokens);
 
     bool handleRowError();
-    bool isQuotaExceeded() const { return quota_exceeded.load(MEMORY_ORDER); }
+    bool isQuotaExceeded() const { return quota_exceeded; }
     bool throwsOnError() const { return throw_on_error; }
-
-    std::atomic<UInt64> input_tokens{0};
-    std::atomic<UInt64> output_tokens{0};
-    std::atomic<UInt64> api_calls{0};
-    std::atomic<UInt64> rows_processed{0};
-    std::atomic<UInt64> rows_skipped{0};
 
 private:
     const UInt64 max_input_tokens;
@@ -47,9 +37,12 @@ private:
     const UInt64 max_api_calls;
     const bool throw_on_quota_exceeded;
     const bool throw_on_error;
-    std::atomic<bool> quota_exceeded{false};
-};
+    bool quota_exceeded = false;
 
-using AIQuotaTrackerPtr = std::shared_ptr<AIQuotaTracker>;
+    UInt64 input_tokens = 0;
+    UInt64 output_tokens = 0;
+    UInt64 api_calls = 0;
+    UInt64 rows_skipped = 0;
+};
 
 }
