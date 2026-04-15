@@ -52,6 +52,8 @@ namespace ProfileEvents
     extern const Event KeeperCommitWaitElapsedMicroseconds;
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
+    extern const Event KeeperReadBatchCount;
+    extern const Event KeeperReadBatchTotalRequests;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
     extern const Event KeeperStaleRequestsSkipped;
     extern const Event KeeperLiveSessionsLockWaitMicroseconds;
@@ -76,6 +78,8 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
+    extern const CoordinationSettingsUInt64 max_read_batch_bytes_size;
+    extern const CoordinationSettingsUInt64 max_read_batch_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
@@ -166,14 +170,17 @@ void KeeperDispatcher::requestThread()
     /// to send errors to the client.
     KeeperRequestsForSessions prev_batch;
 
+    /// When draining reads we may pop a non-read request; save it for the next iteration.
+    std::optional<KeeperRequestForSession> pending_request;
+
     const auto & shutdown_called = keeper_context->isShutdownCalled();
 
     while (!shutdown_called)
     {
-        const auto handle_opentelemetery_spans = [this](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+        const auto handle_opentelemetry_spans = [this](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
         {
-            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                request->spans.dispatcher_requests_queue,
+            request->spans.maybeFinalize(
+                KeeperSpan::DispatcherRequestsQueue,
                 [&]
                 {
                     return std::vector<OpenTelemetry::SpanAttribute>{
@@ -191,6 +198,8 @@ void KeeperDispatcher::requestThread()
         uint64_t operation_timeout_ms = dynamic_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
         uint64_t max_batch_bytes_size = dynamic_settings[CoordinationSetting::max_requests_batch_bytes_size];
         size_t max_batch_size = dynamic_settings[CoordinationSetting::max_requests_batch_size];
+        size_t max_read_batch_size = dynamic_settings[CoordinationSetting::max_read_batch_size];
+        size_t max_read_batch_bytes_size = dynamic_settings[CoordinationSetting::max_read_batch_bytes_size];
         bool quorum_reads = dynamic_settings[CoordinationSetting::quorum_reads];
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
@@ -202,254 +211,308 @@ void KeeperDispatcher::requestThread()
         /// Also there is a special reconfig request also being a separator.
         try
         {
-            if (requests_queue->tryPop(request, operation_timeout_ms))
+            if (pending_request)
+            {
+                request = std::move(*pending_request);
+                pending_request.reset();
+            }
+            else if (requests_queue->tryPop(request, operation_timeout_ms))
             {
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
-                if (shutdown_called)
-                    break;
+            }
+            else
+            {
+                continue;
+            }
 
-                /// Skip stale requests for sessions that are no longer live.
-                /// Close must pass through RAFT (ephemeral cleanup, watch cleanup, etc.).
-                /// SessionID uses internal IDs (session_id = -1), ignore it just to be safe.
-                auto is_stale_session_request = [&](const KeeperRequestForSession & req) -> bool
+            if (shutdown_called)
+                break;
+
+            /// Skip stale requests for sessions that are no longer live.
+            /// Close must pass through RAFT (ephemeral cleanup, watch cleanup, etc.).
+            /// SessionID uses internal IDs (session_id = -1), ignore it just to be safe.
+            int64_t last_checked_session_id = -1;
+            bool last_checked_session_live = true;
+            auto is_stale_session_request = [&](const KeeperRequestForSession & req) -> bool
+            {
+                if (req.request->getOpNum() != Coordination::OpNum::Close
+                    && req.request->getOpNum() != Coordination::OpNum::SessionID)
                 {
-                    if (req.request->getOpNum() != Coordination::OpNum::Close
-                        && req.request->getOpNum() != Coordination::OpNum::SessionID)
+                    /// Small optimization: if we check the same session id multiple times in a row,
+                    /// do the lookup once and cache the result.
+                    if (req.session_id != last_checked_session_id)
                     {
                         ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-                        if (!live_sessions.contains(req.session_id))
-                        {
-                            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-
-                            /// Finalize the dispatcher_requests_queue span that was initialized
-                            /// when the request was enqueued. Without this the span leaks because
-                            /// handle_opentelemetery_spans (which normally finalizes it) is skipped.
-                            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                                req.request->spans.dispatcher_requests_queue,
-                                [&]
-                                {
-                                    return std::vector<OpenTelemetry::SpanAttribute>{
-                                        {"keeper.operation", Coordination::opNumToString(req.request->getOpNum())},
-                                        {"keeper.session_id", req.session_id},
-                                        {"keeper.xid", req.request->xid},
-                                        {"keeper.stale", true},
-                                    };
-                                },
-                                OpenTelemetry::SpanStatus::ERROR,
-                                "Session is no longer live");
-
-                            return true;
-                        }
+                        last_checked_session_id = req.session_id;
+                        last_checked_session_live = live_sessions.contains(last_checked_session_id);
                     }
+                    if (!last_checked_session_live)
+                    {
+                        ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
+
+                        /// Finalize the dispatcher_requests_queue span that was initialized
+                        /// when the request was enqueued. Without this the span leaks because
+                        /// handle_opentelemetry_spans (which normally finalizes it) is skipped.
+                        req.request->spans.maybeFinalize(
+                            KeeperSpan::DispatcherRequestsQueue,
+                            [&]
+                            {
+                                return std::vector<OpenTelemetry::SpanAttribute>{
+                                    {"keeper.operation", Coordination::opNumToString(req.request->getOpNum())},
+                                    {"keeper.session_id", req.session_id},
+                                    {"keeper.xid", req.request->xid},
+                                    {"keeper.stale", true},
+                                };
+                            },
+                            OpenTelemetry::SpanStatus::ERROR,
+                            "Session is no longer live");
+
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            if (is_stale_session_request(request))
+                continue;
+
+            handle_opentelemetry_spans(request.request, request.session_id);
+
+            Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
+            if (server_config->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
+            {
+                ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
+                LOG_WARNING(
+                    log,
+                    "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
+                    "is {}",
+                    ReadableSize(mem_soft_limit),
+                    ReadableSize(total_memory_tracker.get()),
+                    ReadableSize(total_memory_tracker.getRSS()),
+                    request.request->getOpNum());
+                addErrorResponses({request}, Coordination::Error::ZOUTOFMEMORY, /*may_have_dependent_reads=*/ false);
+                continue;
+            }
+
+            KeeperRequestsForSessions current_batch;
+            size_t current_batch_bytes_size = 0;
+            KeeperRequestsForSessions read_batch;
+
+            bool has_reconfig_request = false;
+
+            /// If new request is not read request or reconfig request we must process it through quorum.
+            /// Otherwise we will process it locally.
+            if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
+                has_reconfig_request = true;
+            else if (quorum_reads || !request.request->isReadRequest())
+            {
+                current_batch_bytes_size += request.request->bytesSize();
+                current_batch.emplace_back(request);
+                size_t reads_count = 0;
+                size_t reads_bytes_size = 0;
+
+                const auto try_get_request = [&]
+                {
+                    /// Trying to get batch requests as fast as possible
+                    if (requests_queue->tryPop(request))
+                    {
+                        CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
+
+                        /// Skip stale requests for sessions that are no longer live during batch assembly.
+                        if (is_stale_session_request(request))
+                            return true; // consumed, keep draining
+
+                        handle_opentelemetry_spans(request.request, request.session_id);
+
+                        /// Don't append read request into batch, we have to process them separately
+                        if (!quorum_reads && request.request->isReadRequest())
+                        {
+                            const auto & last_request = current_batch.back();
+                            request.request->spans.maybeInitialize(KeeperSpan::ReadWaitForWrite, request.request->tracing_context.get());
+                            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
+                            reads_count += 1;
+                            reads_bytes_size += request.request->bytesSize();
+                            read_request_queue[{last_request.session_id, last_request.request->xid}].push_back(request);
+                        }
+                        else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
+                        {
+                            has_reconfig_request = true;
+                            return false;
+                        }
+                        else
+                        {
+                            current_batch_bytes_size += request.request->bytesSize();
+                            current_batch.emplace_back(request);
+                        }
+
+                        return true;
+                    }
+
                     return false;
                 };
 
-                if (is_stale_session_request(request))
-                    continue;
+                while (!shutdown_called && current_batch.size() < max_batch_size && !has_reconfig_request
+                        && current_batch_bytes_size < max_batch_bytes_size
+                        && reads_count < max_read_batch_size && reads_bytes_size < max_read_batch_bytes_size
+                        && try_get_request())
+                    ;
 
-                handle_opentelemetery_spans(request.request, request.session_id);
-
-                Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
-                if (server_config->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
+                const auto prev_result_done = [&]
                 {
-                    ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
-                    LOG_WARNING(
-                        log,
-                        "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
-                        "is {}",
-                        ReadableSize(mem_soft_limit),
-                        ReadableSize(total_memory_tracker.get()),
-                        ReadableSize(total_memory_tracker.getRSS()),
-                        request.request->getOpNum());
-                    addErrorResponses({request}, Coordination::Error::ZOUTOFMEMORY, /*may_have_dependent_reads=*/ false);
-                    continue;
+                    return !prev_result || prev_result->has_result();
+                };
+
+                /// Waiting until previous append will be successful, or batch is big enough
+                while (!shutdown_called && !has_reconfig_request &&
+                        !prev_result_done() && current_batch.size() <= max_batch_size
+                        && current_batch_bytes_size < max_batch_bytes_size)
+                {
+                    try_get_request();
                 }
+            }
+            else
+            {
+                /// Read request with no pending writes — batch consecutive reads.
+                size_t reads_bytes_size = request.request->bytesSize();
+                read_batch.push_back(request);
 
-                KeeperRequestsForSessions current_batch;
-                size_t current_batch_bytes_size = 0;
-
-                bool has_read_request = false;
-                bool has_reconfig_request = false;
-
-                /// If new request is not read request or reconfig request we must process it through quorum.
-                /// Otherwise we will process it locally.
-                if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
-                    has_reconfig_request = true;
-                else if (quorum_reads || !request.request->isReadRequest())
+                KeeperRequestForSession next;
+                while (!shutdown_called
+                       && read_batch.size() < max_read_batch_size && reads_bytes_size < max_read_batch_bytes_size
+                       && requests_queue->tryPop(next))
                 {
-                    current_batch_bytes_size += request.request->bytesSize();
-                    current_batch.emplace_back(request);
+                    CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
 
-                    const auto try_get_request = [&]
+                    if (is_stale_session_request(next))
+                        continue;
+
+                    handle_opentelemetry_spans(next.request, next.session_id);
+
+                    if (next.request->isReadRequest())
                     {
-                        /// Trying to get batch requests as fast as possible
-                        if (requests_queue->tryPop(request))
-                        {
-                            CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
-
-                            /// Skip stale requests for sessions that are no longer live during batch assembly.
-                            if (is_stale_session_request(request))
-                                return true; // consumed, keep draining
-
-                            handle_opentelemetery_spans(request.request, request.session_id);
-
-                            /// Don't append read request into batch, we have to process them separately
-                            if (!quorum_reads && request.request->isReadRequest())
-                            {
-                                const auto & last_request = current_batch.back();
-                                ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
-                                ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
-                                read_request_queue[{last_request.session_id, last_request.request->xid}].push_back(request);
-                            }
-                            else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
-                            {
-                                has_reconfig_request = true;
-                                return false;
-                            }
-                            else
-                            {
-                                current_batch_bytes_size += request.request->bytesSize();
-                                current_batch.emplace_back(request);
-                            }
-
-                            return true;
-                        }
-
-                        return false;
-                    };
-
-                    while (!shutdown_called && current_batch.size() < max_batch_size && !has_reconfig_request
-                           && current_batch_bytes_size < max_batch_bytes_size && try_get_request())
-                        ;
-
-                    const auto prev_result_done = [&]
-                    {
-                        return !prev_result || prev_result->has_result();
-                    };
-
-                    /// Waiting until previous append will be successful, or batch is big enough
-                    while (!shutdown_called && !has_reconfig_request &&
-                           !prev_result_done() && current_batch.size() <= max_batch_size
-                           && current_batch_bytes_size < max_batch_bytes_size)
-                    {
-                        try_get_request();
-                    }
-                }
-                else
-                    has_read_request = true;
-
-                if (shutdown_called)
-                    break;
-
-                bool execute_requests_after_write = has_read_request || has_reconfig_request;
-
-                nuraft::ptr<nuraft::buffer> result_buf = nullptr;
-                /// Forcefully process all previous pending requests
-                if (prev_result)
-                    result_buf
-                        = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
-
-                /// Process collected write requests batch
-                if (!current_batch.empty())
-                {
-                    if (current_batch.size() == max_batch_size)
-                        ProfileEvents::increment(ProfileEvents::KeeperBatchMaxCount, 1);
-
-                    if (current_batch_bytes_size == max_batch_bytes_size)
-                        ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
-
-                    LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
-
-                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, current_batch.size());
-                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, current_batch_bytes_size);
-
-                    auto result = server->putRequestBatch(current_batch);
-
-                    if (!result)
-                    {
-                        addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
-                        current_batch.clear();
-                        current_batch_bytes_size = 0;
-                    }
-
-                    prev_batch = std::move(current_batch);
-                    prev_result = result;
-                }
-
-                /// If we will execute read or reconfig next, we have to process result now
-                if (execute_requests_after_write)
-                {
-                    Stopwatch watch;
-                    SCOPE_EXIT(ProfileEvents::increment(ProfileEvents::KeeperCommitWaitElapsedMicroseconds, watch.elapsedMicroseconds()));
-                    if (prev_result)
-                        result_buf = forceWaitAndProcessResult(
-                            prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
-
-                    /// In case of older version or disabled async replication, result buf will be set to value of `commit` function
-                    /// which always returns nullptr
-                    /// in that case we don't have to do manual wait because are already sure that the batch was committed when we get
-                    /// the result back
-                    /// otherwise, we need to manually wait until the batch is committed.
-                    /// TODO: there are a few problems:
-                    ///  * There can be multiple forceWaitAndProcessResult calls for different
-                    ///    batches between waitCommittedUpto calls.
-                    ///    In such case, the addErrorResponses below would apply only to the
-                    ///    latest of those batches, but they may all be failed.
-                    ///  * Of those multiple forceWaitAndProcessResult calls, it's possible that an
-                    ///    earlier one succeeds but a later one fails. Then we won't call
-                    ///    waitCommittedUpto on the log_idx from the earlier batch, so a subsequent
-                    ///    read may happen before that write is committed, violating
-                    ///    read-after-write consistency.
-                    ///  * With async replication, it's possible for requests to fail even after
-                    ///    their forceWaitAndProcessResult call succeeds, if the leader died after
-                    ///    accepting the requests for processing (and returning log_idx) but before
-                    ///    sending them to a majority of followers. In such case we'll never send
-                    ///    a response to the client for those requests. And we may execute
-                    ///    subsequent requests from the same session and send responses for those,
-                    ///    violating ordering of responses.
-                    if (result_buf)
-                    {
-                        nuraft::buffer_serializer bs(result_buf);
-                        auto log_idx = bs.get_u64();
-
-                        /// if timeout happened set error responses for the requests
-                        if (!keeper_context->waitCommittedUpto(log_idx, operation_timeout_ms))
-                            addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
-
-                        if (shutdown_called)
-                            return;
-                    }
-
-                    prev_batch.clear();
-                }
-
-                if (has_reconfig_request)
-                    server->getKeeperStateMachine()->reconfigure(request);
-
-                /// Read request always goes after write batch (last request)
-                if (has_read_request)
-                {
-                    bool is_live;
-                    {
-                        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-                        is_live = live_sessions.contains(request.session_id);
-                    }
-                    if (is_live)
-                    {
-                        if (server->isLeaderAlive())
-                            server->putLocalReadRequest({request});
-                        else
-                            addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
+                        reads_bytes_size += next.request->bytesSize();
+                        read_batch.push_back(std::move(next));
                     }
                     else
                     {
-                        /// The session is no longer live (e.g. a Close was committed
-                        /// in the preceding write batch or the session was cleaned up).
-                        /// The dispatcher_requests_queue span was already finalized
-                        /// at handle_opentelemetery_spans above.
-                        ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-                        LOG_TRACE(log, "Dropping stale read request for non-live session {}, xid {}", request.session_id, request.request->xid);
+                        /// Non-read request — save for next iteration.
+                        pending_request = std::move(next);
+                        break;
                     }
+                }
+            }
+
+            if (shutdown_called)
+                break;
+
+            bool execute_requests_after_write = !read_batch.empty() || has_reconfig_request;
+
+            nuraft::ptr<nuraft::buffer> result_buf = nullptr;
+            /// Forcefully process all previous pending requests
+            if (prev_result)
+                result_buf
+                    = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
+
+            /// Process collected write requests batch
+            if (!current_batch.empty())
+            {
+                if (current_batch.size() >= max_batch_size)
+                    ProfileEvents::increment(ProfileEvents::KeeperBatchMaxCount, 1);
+                else if (current_batch_bytes_size >= max_batch_bytes_size)
+                    ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
+
+                LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
+
+                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, current_batch.size());
+                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, current_batch_bytes_size);
+
+                auto result = server->putRequestBatch(current_batch);
+
+                if (!result)
+                {
+                    addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
+                    current_batch.clear();
+                    current_batch_bytes_size = 0;
+                }
+
+                prev_batch = std::move(current_batch);
+                prev_result = result;
+            }
+
+            /// If we will execute read or reconfig next, we have to process result now
+            if (execute_requests_after_write)
+            {
+                Stopwatch watch;
+                SCOPE_EXIT(ProfileEvents::increment(ProfileEvents::KeeperCommitWaitElapsedMicroseconds, watch.elapsedMicroseconds()));
+                if (prev_result)
+                    result_buf = forceWaitAndProcessResult(
+                        prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
+
+                /// In case of older version or disabled async replication, result buf will be set to value of `commit` function
+                /// which always returns nullptr
+                /// in that case we don't have to do manual wait because are already sure that the batch was committed when we get
+                /// the result back
+                /// otherwise, we need to manually wait until the batch is committed
+                /// TODO: there are a few problems:
+                ///  * There can be multiple forceWaitAndProcessResult calls for different
+                ///    batches between waitCommittedUpto calls.
+                ///    In such case, the addErrorResponses below would apply only to the
+                ///    latest of those batches, but they may all be failed.
+                ///  * Of those multiple forceWaitAndProcessResult calls, it's possible that an
+                ///    earlier one succeeds but a later one fails. Then we won't call
+                ///    waitCommittedUpto on the log_idx from the earlier batch, so a subsequent
+                ///    read may happen before that write is committed, violating
+                ///    read-after-write consistency.
+                ///  * With async replication, it's possible for requests to fail even after
+                ///    their forceWaitAndProcessResult call succeeds, if the leader died after
+                ///    accepting the requests for processing (and returning log_idx) but before
+                ///    sending them to a majority of followers. In such case we'll never send
+                ///    a response to the client for those requests. And we may execute
+                ///    subsequent requests from the same session and send responses for those,
+                ///    violating ordering of responses.
+                if (result_buf)
+                {
+                    nuraft::buffer_serializer bs(result_buf);
+                    auto log_idx = bs.get_u64();
+
+                    /// if timeout happened set error responses for the requests
+                    if (!keeper_context->waitCommittedUpto(log_idx, operation_timeout_ms))
+                        addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
+
+                    if (shutdown_called)
+                        return;
+                }
+
+                prev_batch.clear();
+            }
+
+            if (has_reconfig_request)
+                server->getKeeperStateMachine()->reconfigure(request);
+
+            /// Dispatch batched read requests
+            if (!read_batch.empty())
+            {
+                if (server->isLeaderAlive())
+                {
+                    ProfileEvents::increment(ProfileEvents::KeeperReadBatchCount);
+                    ProfileEvents::increment(ProfileEvents::KeeperReadBatchTotalRequests, read_batch.size());
+
+                    using namespace std::chrono;
+                    auto now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+                    for (auto & r : read_batch)
+                        r.time = now_ms;
+
+                    /// (Note: it might make sense to re-check is_stale_session_request here, in
+                    ///  case waitCommittedUpto took a while and some sessions expired.
+                    ///  But hopefully waitCommittedUpto doesn't take very long even when the
+                    ///  servers are overloaded - requests would pile up in KeeperDispatcher
+                    ///  queues but would still move quickly through raft.)
+
+                    server->putLocalReadRequests(read_batch);
+                }
+                else
+                {
+                    addErrorResponses(read_batch, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
                 }
             }
         }
@@ -490,8 +553,8 @@ void KeeperDispatcher::responseThread()
 
             if (response_was_sent && response_for_session.request)
             {
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    response_for_session.request->spans.dispatcher_responses_queue,
+                response_for_session.request->spans.maybeFinalize(
+                    KeeperSpan::DispatcherResponsesQueue,
                     [&]
                     {
                         return std::vector<OpenTelemetry::SpanAttribute>{
@@ -611,7 +674,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (keeper_context->isShutdownCalled())
         return false;
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
@@ -624,37 +687,6 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
     }
     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
-    return true;
-}
-
-bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
-{
-    {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-        if (!live_sessions.contains(session_id))
-        {
-            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-            return false;
-        }
-    }
-
-    {
-        /// If session was already disconnected than we will ignore requests
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
-        if (!session_to_response_callback.contains(session_id))
-            return false;
-    }
-
-    KeeperRequestForSession request_info;
-    request_info.request = request;
-    using namespace std::chrono;
-    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    request_info.session_id = session_id;
-
-    if (keeper_context->isShutdownCalled())
-        return false;
-
-    server->putLocalReadRequest(request_info);
     return true;
 }
 
@@ -697,19 +729,26 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                 }
             }
 
-            /// Dispatch reads outside the lock — putLocalReadRequest and addErrorResponses
-            /// push to thread-safe queues, so no lock is needed here.
-            for (const auto & read_request : pending_reads)
+            /// Bulk filter stale sessions under one lock acquisition.
+            /// (We already checked staleness before adding to `pending_reads` in the first place.
+            ///  This re-checking is only useful if raft commit latency gets very high, which I'm
+            ///  not sure happens in practice even under too much load.)
             {
-                /// Skip reads whose session is no longer live
+                ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+                int64_t last_checked_session_id = -1;
+                bool last_checked_session_live = true;
+                std::erase_if(pending_reads, [&](const KeeperRequestForSession & read_request)
                 {
-                    ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-                    if (!live_sessions.contains(read_request.session_id))
+                    if (read_request.session_id != last_checked_session_id)
+                    {
+                        last_checked_session_id = read_request.session_id;
+                        last_checked_session_live = live_sessions.contains(last_checked_session_id);
+                    }
+                    if (!last_checked_session_live)
                     {
                         ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-
-                        ZooKeeperOpentelemetrySpans::maybeFinalize(
-                            read_request.request->spans.read_wait_for_write,
+                        read_request.request->spans.maybeFinalize(
+                            KeeperSpan::ReadWaitForWrite,
                             [&]
                             {
                                 return std::vector<OpenTelemetry::SpanAttribute>{
@@ -721,29 +760,45 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                             },
                             OpenTelemetry::SpanStatus::ERROR,
                             "Session is no longer live");
-
-                        continue;
+                        return true;
                     }
-                }
+                    return false;
+                });
+            }
 
-                if (!server->isLeaderAlive())
+            /// Finalize wait-for-write spans and dispatch batch.
+            if (!pending_reads.empty())
+            {
+                for (auto & read_request : pending_reads)
                 {
-                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
-                    continue;
+                    read_request.request->spans.maybeFinalize(
+                        KeeperSpan::ReadWaitForWrite,
+                        [&]
+                        {
+                            return std::vector<OpenTelemetry::SpanAttribute>{
+                                {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
+                                {"keeper.session_id", read_request.session_id},
+                                {"keeper.xid", read_request.request->xid},
+                            };
+                        });
                 }
 
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    read_request.request->spans.read_wait_for_write,
-                    [&]
-                    {
-                        return std::vector<OpenTelemetry::SpanAttribute>{
-                            {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                            {"keeper.session_id", read_request.session_id},
-                            {"keeper.xid", read_request.request->xid},
-                        };
-                    });
+                if (server->isLeaderAlive())
+                {
+                    ProfileEvents::increment(ProfileEvents::KeeperReadBatchCount);
+                    ProfileEvents::increment(ProfileEvents::KeeperReadBatchTotalRequests, pending_reads.size());
 
-                server->putLocalReadRequest(read_request);
+                    using namespace std::chrono;
+                    auto now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+                    for (auto & r : pending_reads)
+                        r.time = now_ms;
+
+                    server->putLocalReadRequests(pending_reads);
+                }
+                else
+                {
+                    addErrorResponses(pending_reads, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
+                }
             }
 
             /// When Close commits, remove the session from `live_sessions` so that
@@ -966,7 +1021,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
 
-                    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+                    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
                     using namespace std::chrono;
                     KeeperRequestForSession request_info
@@ -1159,7 +1214,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         };
     }
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
     /// Push new session request to queue
     if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))

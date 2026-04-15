@@ -987,18 +987,35 @@ class Result(MetaClasses.Serializable):
     def to_event(self, info: "Info"):
         result_dict = Result.to_dict(self)
 
-        def _prune_result_info(result):
+        def _prune_result_for_feed(result):
+            """Strip result down to fields used by the Slack feed.
+
+            The feed only needs ``name`` and ``status`` from each sub-result,
+            plus ``report_url`` from the top-level ``ext``.  Everything else
+            (links, storage_usage, files, assets, nested results, …) is dead
+            weight that bloats the per-user JSON on S3.
+            """
             if not isinstance(result, dict):
                 return
-            result.pop("info", None)
+
+            for key in ("info", "start_time", "duration", "files", "assets", "links"):
+                result.pop(key, None)
 
             results = result.get("results")
-            if not isinstance(results, list):
-                return
-            for r in results:
-                _prune_result_info(r)
+            if isinstance(results, list):
+                result["results"] = [
+                    {"name": r.get("name", ""), "status": r.get("status", "")}
+                    for r in results
+                    if isinstance(r, dict)
+                ]
 
-        _prune_result_info(result_dict)
+            # Keep only report_url from ext
+            ext = result.get("ext")
+            if isinstance(ext, dict):
+                report_url = ext.get("report_url", "")
+                result["ext"] = {"report_url": report_url} if report_url else {}
+
+        _prune_result_for_feed(result_dict)
 
         return Event(
             type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
