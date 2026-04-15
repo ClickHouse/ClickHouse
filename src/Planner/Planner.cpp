@@ -525,7 +525,7 @@ ALWAYS_INLINE void addExpressionStep(
     const char (&step_description)[size],
     UsefulSets & useful_sets)
 {
-    const auto & current_header = query_plan.getCurrentHeader();
+    auto current_header = query_plan.getCurrentHeader();
     NameSet input_columns_set;
     for (const auto & column : current_header->getColumnsWithTypeAndName())
         input_columns_set.insert(column.name);
