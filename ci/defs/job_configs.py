@@ -525,16 +525,11 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
-        Job.ParamSet(
-            parameter="amd_binary, flaky check",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_BINARY],
-        ),
     )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
-            runs_on=RunnerLabels.ARM_MEDIUM,
+            runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
     )
@@ -1237,7 +1232,8 @@ class JobConfigs:
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
-        requires=[JobNames.STYLE_CHECK, ArtifactNames.CH_ARM_BINARY],
+        requires=[ArtifactNames.CH_ARM_BINARY],
+        run_after=[JobNames.STYLE_CHECK],
     )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
@@ -1266,7 +1262,6 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
-        needs_jobs_from_requires=True,
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     docker_keeper = Job.Config(
@@ -1281,7 +1276,6 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
-        needs_jobs_from_requires=True,
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     sqlancer_master_jobs = Job.Config(

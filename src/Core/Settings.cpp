@@ -5100,6 +5100,14 @@ Possible values:
 - 0 - disabled
 - 1 - enabled
 )", 0) \
+    DECLARE(Bool, asterisk_include_virtual_columns, false, R"(
+Include virtual columns for wildcard query (`SELECT *`).
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+)", 0) \
     DECLARE(Bool, optimize_skip_merged_partitions, false, R"(
 Enables or disables optimization for [OPTIMIZE TABLE ... FINAL](../../sql-reference/statements/optimize.md) query if there is only one part with level > 0 and it doesn't have expired TTL.
 

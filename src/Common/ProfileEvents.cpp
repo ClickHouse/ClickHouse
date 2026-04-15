@@ -193,7 +193,7 @@
     M(AzureReadRequestsErrors, "Number of Azure read request errors.", ValueType::Number) \
     M(AzureReadRequestsThrottling, "Number of Azure read requests throttled.", ValueType::Number) \
     M(AzureReadRequestsRedirects, "Number of Azure read request redirects.", ValueType::Number) \
-    M(AzureWriteMicroseconds, "Total time spent waiting for Azure read requests.", ValueType::Microseconds) \
+    M(AzureWriteMicroseconds, "Total time spent waiting for Azure write requests.", ValueType::Microseconds) \
     M(AzureWriteRequestsCount, "Number of Azure write requests.", ValueType::Number) \
     M(AzureWriteRequestsErrors, "Number of Azure write request errors.", ValueType::Number) \
     M(AzureWriteRequestsThrottling, "Number of Azure write requests throttled.", ValueType::Number) \
@@ -302,6 +302,7 @@
     M(ZooKeeperInit, "Number of times connection with ZooKeeper has been established.", ValueType::Number) \
     M(ZooKeeperTransactions, "Number of ZooKeeper operations, which include both read and write operations as well as multi-transactions.", ValueType::Number) \
     M(ZooKeeperList, "Number of 'list' (getChildren) requests to ZooKeeper.", ValueType::Number) \
+    M(ZooKeeperListRecursive, "Number of 'listRecursive' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperCreate, "Number of 'create' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperRemove, "Number of 'remove' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperExists, "Number of 'exists' requests to ZooKeeper.", ValueType::Number) \
@@ -985,6 +986,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperMultiReadRequest, "Number of multi read requests", ValueType::Number) \
     M(KeeperGetRequest, "Number of get requests", ValueType::Number) \
     M(KeeperListRequest, "Number of list requests", ValueType::Number) \
+    M(KeeperListRecursiveRequest, "Number of get children recursive requests", ValueType::Number) \
     M(KeeperExistsRequest, "Number of exists requests", ValueType::Number) \
     M(KeeperSetWatchesRequest, "Number of set watches requests", ValueType::Number) \
     M(KeeperAddWatchRequest, "Number of add watches requests", ValueType::Number) \

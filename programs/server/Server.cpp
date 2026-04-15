@@ -123,7 +123,7 @@
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/KeeperHTTPHandlerFactory.h>
-#include <Server/ArrowFlightHandler.h>
+#include <Server/ArrowFlight/ArrowFlightServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <filesystem>
@@ -3495,7 +3495,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "Arrow Flight compatibility protocol: " + address.toString(),
-                    std::unique_ptr<IGRPCServer>(new ArrowFlightHandler(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, makeSocketAddress(listen_host, port, &logger()))),
                     true);
             });
         }

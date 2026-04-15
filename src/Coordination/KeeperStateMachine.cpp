@@ -562,7 +562,7 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
         return { session_id, std::move(res) };
     };
 
-    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, /*is_local=*/ true, /*is_reconfig=*/ true))
+    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, /*is_local=*/ true, /*should_lock_storage=*/ true))
         return bad_request(ZNOAUTH);
 
     KeeperDispatcher & dispatcher = *keeper_context->getDispatcher();
