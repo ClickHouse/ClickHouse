@@ -131,6 +131,13 @@ public:
     {
         if (max_sample_size != b.max_sample_size)
             throw Poco::Exception("Cannot merge ReservoirSamplerDeterministic's with different max sample size");
+
+        // There will be an aliasing issue if we merge the same object with itself. I.e. we will insert from `b.samples` into `a.samples`,
+        // but both refer to the same array. It might happen in case of multiplying an aggregate function state by a numeric constant.
+        // ATST, it seems that self-merging cannot improve accuracy, so there is no point to do it anyway.
+        if (this == &b)
+            return;
+
         sorted = false;
 
         if (skip_degree < b.skip_degree)
