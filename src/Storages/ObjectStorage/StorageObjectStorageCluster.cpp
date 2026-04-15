@@ -535,7 +535,7 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     setInMemoryMetadata(new_metadata);
 
     if (pure_storage)
-        pure_storage->updateExternalDynamicMetadataIfExists(query_context);
+        pure_storage->setInMemoryMetadata(IStorageCluster::getInMemoryMetadata());
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
