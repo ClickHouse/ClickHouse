@@ -938,11 +938,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
             auto read_buffer_creator = [
                 path = object_info.getPath(),
-                nested_buffer_read_settings = modified_read_settings.withNestedBuffer(/* seekable */false),
                 object_size,
-                object_storage](ReadScopePtr /* adjusted_scope */)
+                object_storage](const ReadSettings & read_settings_)
             {
-                return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
+                return object_storage->readObject(StoredObject(path, "", object_size), read_settings_);
             };
 
             impl = std::make_unique<CachedOnDiskReadBufferFromFile>(

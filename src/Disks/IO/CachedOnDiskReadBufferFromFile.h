@@ -25,8 +25,8 @@ class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
     /// Factory that creates the underlying object-storage read buffer.
-    /// Receives an optional adjusted ReadScope with cache_pre_padding_bytes filled.
-    using ImplementationBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(ReadScopePtr adjusted_scope)>;
+    /// Receives ReadSettings so the caller can patch read_scope with cache_pre_padding_bytes.
+    using ImplementationBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(const ReadSettings &)>;
 
     CachedOnDiskReadBufferFromFile(
         const String & source_file_path_,

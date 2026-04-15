@@ -216,7 +216,7 @@ std::optional<size_t> CachedOnDiskReadBufferFromFile::tryGetFileSize()
     if (file_size.has_value())
         return file_size;
 
-    file_size = info.implementation_buffer_creator(nullptr)->tryGetFileSize();
+    file_size = info.implementation_buffer_creator(info.settings)->tryGetFileSize();
     return file_size;
 }
 
@@ -401,7 +401,10 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 
             if (!remote_fs_segment_reader)
             {
-                auto impl = info.implementation_buffer_creator(info.adjusted_read_scope);
+                auto adjusted_settings = info.settings;
+                if (info.adjusted_read_scope)
+                    adjusted_settings.read_scope = info.adjusted_read_scope;
+                auto impl = info.implementation_buffer_creator(adjusted_settings);
                 if (impl->supportsRightBoundedReads())
                     remote_fs_segment_reader = std::move(impl);
                 else
@@ -427,7 +430,12 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
             if (reader && offset == reader->getFileOffsetOfBufferEnd())
                 info.remote_file_reader = reader;
             else
-                info.remote_file_reader = info.implementation_buffer_creator(info.adjusted_read_scope);
+            {
+                auto adjusted_settings = info.settings;
+                if (info.adjusted_read_scope)
+                    adjusted_settings.read_scope = info.adjusted_read_scope;
+                info.remote_file_reader = info.implementation_buffer_creator(adjusted_settings);
+            }
 
             return info.remote_file_reader;
         }
