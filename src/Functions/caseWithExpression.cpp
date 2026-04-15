@@ -175,12 +175,18 @@ public:
 
             /// Check whether `transform` can handle these types.
             /// `transform` casts WHEN values to the expression type; if WHEN values are Nullable
-            /// but the expression is non-Nullable, the cast will fail on NULLs.
+            /// but the expression is non-Nullable, the cast will fail on NULLs. In addition,
+            /// `transform` matches with `==` semantics — NULL != NULL — so even when the
+            /// expression is itself Nullable, a CASE branch like `WHEN NULL THEN ...` would
+            /// silently fall through to ELSE under transform. CASE WHEN semantics treat
+            /// NULL = NULL as true (it is the explicit `IS NULL` form), so we must avoid
+            /// transform whenever any WHEN value can be NULL and fall back to the generic
+            /// caseWithExpression path which preserves the correct NULL-matching semantics.
             auto src_supertype = tryGetLeastSupertype(src_array_types);
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
 
             bool can_use_transform = src_supertype && dst_supertype
-                && !(src_supertype->isNullable() && !args.front().type->isNullable());
+                && !src_supertype->isNullable();
 
             if (can_use_transform)
             {
