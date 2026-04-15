@@ -2441,11 +2441,16 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         values.swap(new_values);
 
         // These methods look at Asynchronous metrics and add,update or remove warnings
-        // which later get inserted into the system.warnings table:
-        processWarningForMutationStats(new_values);
+        // which later get inserted into the system.warnings table.
+        // Note: after the swap above, `values` holds the freshly computed metrics
+        // and `new_values` holds the previous cycle's data, so we must read from
+        // `values` here — passing `new_values` would feed the warning logic the
+        // stale snapshot and lag system.warnings by one async metrics cycle (and
+        // emit no warnings at all on the very first cycle).
+        processWarningForMutationStats(values);
         // server resource overload warnings
-        processWarningForMemoryOverload(new_values);
-        processWarningForCPUOverload(new_values);
+        processWarningForMemoryOverload(values);
+        processWarningForCPUOverload(values);
     }
 }
 
