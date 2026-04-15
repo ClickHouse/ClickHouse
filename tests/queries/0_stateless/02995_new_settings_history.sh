@@ -40,7 +40,7 @@ $CLICKHOUSE_LOCAL --query "
     ),
     old_antalya_settings AS
     (
-        SELECT * FROM file('${CUR_DIR}/02995_settings_25_8_16_20001_antalya.tsv', 'TSV', 'name String, default String')
+        SELECT * FROM file('${CUR_DIR}/02995_settings_26_1_6_20001_antalya.tsv', 'TSV', 'name String, default String')
     ),
     old_merge_tree_settings AS
     (
@@ -64,11 +64,7 @@ $CLICKHOUSE_LOCAL --query "
         )) AND (name NOT IN (
             SELECT arrayJoin(tupleElement(changes, 'name'))
             FROM system.settings_changes
-<<<<<<< HEAD
-            WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 > 26 OR (splitByChar('.', version)[1]::UInt64 == 26 AND splitByChar('.', version)[2]::UInt64 > 2)
-=======
-            WHERE type = 'Session' AND (splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 12) OR position(version, 'altinityantalya') > 0)
->>>>>>> 93656d86e9b (fix antalya for settingschangeshistory)
+            WHERE type = 'Session' AND (splitByChar('.', version)[1]::UInt64 > 26 OR (splitByChar('.', version)[1]::UInt64 == 26 AND splitByChar('.', version)[2]::UInt64 > 2) OR position(version, 'altinityantalya') > 0)
         ))
         UNION ALL
         (
@@ -80,11 +76,7 @@ $CLICKHOUSE_LOCAL --query "
             )) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-<<<<<<< HEAD
-                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 > 26 OR (splitByChar('.', version)[1]::UInt64 == 26 AND splitByChar('.', version)[2]::UInt64 > 2)
-=======
-                WHERE type = 'MergeTree' AND (splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 12) OR position(version, 'altinityantalya') > 0)
->>>>>>> 93656d86e9b (fix antalya for settingschangeshistory)
+                WHERE type = 'MergeTree' AND (splitByChar('.', version)[1]::UInt64 > 26 OR (splitByChar('.', version)[1]::UInt64 == 26 AND splitByChar('.', version)[2]::UInt64 > 2) OR position(version, 'altinityantalya') > 0)
             ))
         )
         UNION ALL
@@ -95,11 +87,7 @@ $CLICKHOUSE_LOCAL --query "
             WHERE (new_settings.default != old_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-<<<<<<< HEAD
-                WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 > 26 OR (splitByChar('.', version)[1]::UInt64 == 26 AND splitByChar('.', version)[2]::UInt64 > 2)
-=======
-                WHERE type = 'Session' AND (splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 12) OR position(version, 'altinityantalya') > 0)
->>>>>>> 93656d86e9b (fix antalya for settingschangeshistory)
+                WHERE type = 'Session' AND (splitByChar('.', version)[1]::UInt64 > 26 OR (splitByChar('.', version)[1]::UInt64 == 26 AND splitByChar('.', version)[2]::UInt64 > 2) OR position(version, 'altinityantalya') > 0)
             )) AND ${IGNORE_SETTINGS_FOR_SANITIZERS}
         )
         UNION ALL
@@ -110,11 +98,7 @@ $CLICKHOUSE_LOCAL --query "
             WHERE (new_merge_tree_settings.default != old_merge_tree_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-<<<<<<< HEAD
-                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 > 26 OR (splitByChar('.', version)[1]::UInt64 == 26 AND splitByChar('.', version)[2]::UInt64 > 2)
-=======
-                WHERE type = 'MergeTree' AND (splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 12) OR position(version, 'altinityantalya') > 0)
->>>>>>> 93656d86e9b (fix antalya for settingschangeshistory)
+                WHERE type = 'MergeTree' AND (splitByChar('.', version)[1]::UInt64 > 26 OR (splitByChar('.', version)[1]::UInt64 == 26 AND splitByChar('.', version)[2]::UInt64 > 2) OR position(version, 'altinityantalya') > 0)
             )) AND ${IGNORED_MERGETREE_SETTINGS_FOR_CLOUD}
         )
         UNION ALL
