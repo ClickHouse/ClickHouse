@@ -178,8 +178,26 @@ SELECT count() FROM (SELECT aiGenerateContent('ai_test', x, 'system', 0.5) AS re
 SELECT '-- Temperature: zero';
 SELECT count() FROM (SELECT aiGenerateContent('ai_test', x, 'system', toFloat32(0.0)) AS result FROM _03300_input);
 
+SELECT '-- Temperature: integer literal';
+SELECT count() FROM (SELECT aiGenerateContent('ai_test', x, 'system', 1) AS result FROM _03300_input);
+
 SELECT '-- Temperature without system prompt';
 SELECT aiGenerateContent('ai_test', x, toFloat32(0.5)) FROM _03300_input; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- Temperature without system prompt (integer)';
+SELECT aiGenerateContent('ai_test', x, 1) FROM _03300_input; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- Non-constant system prompt';
+SELECT aiGenerateContent('ai_test', x, x) FROM _03300_input; -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- Non-constant temperature';
+SELECT aiGenerateContent('ai_test', x, 'system', toFloat32(number)) FROM (SELECT x, 0 AS number FROM _03300_input); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- Wrong type for system prompt (number instead of string)';
+SELECT aiGenerateContent('ai_test', x, 42) FROM _03300_input; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- Wrong type for temperature (string instead of number)';
+SELECT aiGenerateContent('ai_test', x, 'system', 'hot') FROM _03300_input; -- { serverError BAD_ARGUMENTS }
 
 -- =============================================================================
 -- 13. Setting types and defaults

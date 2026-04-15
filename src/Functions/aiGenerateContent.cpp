@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -38,10 +39,27 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires 2-4 arguments: collection, prompt[, system_prompt[, temperature]]", name);
 
-        /// Temperature (float) requires system_prompt (string) before it
-        if (arguments.size() > FIRST_DATA_ARG_INDEX + 1 && isFloat(arguments[FIRST_DATA_ARG_INDEX + 1].type))
+        /// Temperature (number) requires system_prompt (string) before it
+        if (arguments.size() > FIRST_DATA_ARG_INDEX + 1 && isNumber(arguments[FIRST_DATA_ARG_INDEX + 1].type))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires a system_prompt argument (String) before temperature (Float)", name);
+                "Function {} requires a system_prompt argument (String) before temperature", name);
+
+        /// system_prompt must be constant String type — it applies uniformly to all rows
+        if (arguments.size() > FIRST_DATA_ARG_INDEX + 1)
+        {
+            auto system_prompt_index = FIRST_DATA_ARG_INDEX + 1;
+            auto is_string = isString(arguments[system_prompt_index].type);
+            if (!is_string || !arguments[system_prompt_index].column || !isColumnConst(*arguments[system_prompt_index].column))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires system_prompt to be a constant String", name);
+        }
+
+        /// temperature must be a constant number
+        if (arguments.size() > FIRST_DATA_ARG_INDEX + 2)
+        {
+            auto temp_index = FIRST_DATA_ARG_INDEX + 2;
+            if (!isNumber(arguments[temp_index].type) || !arguments[temp_index].column || !isColumnConst(*arguments[temp_index].column))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires temperature to be a constant number", name);
+        }
 
         return std::make_shared<DataTypeString>();
     }
