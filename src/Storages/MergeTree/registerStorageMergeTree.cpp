@@ -700,7 +700,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
         FunctionNameNormalizer::visit(partition_key.get());
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            columns, partition_key, minmax_columns, metadata.primary_key, context));
+            columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
 
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
@@ -777,7 +777,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
+                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -849,7 +849,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
         FunctionNameNormalizer::visit(partition_key.get());
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            columns, partition_key, minmax_columns, metadata.primary_key, context));
+            columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
