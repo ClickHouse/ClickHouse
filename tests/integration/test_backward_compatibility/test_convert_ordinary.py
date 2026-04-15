@@ -74,9 +74,12 @@ def check_convert_system_db_to_atomic():
         == node.query("SELECT name FROM system.databases ORDER BY name")
     )
 
-    errors_count = node.count_in_log("<Error>")
-    assert "0\n" == errors_count or (
-        "1\n" == errors_count
+    errors_count = int(node.count_in_log("<Error>"))
+    # Error, specific for Altinity CI
+    trash_errors_count = int(node.count_in_log("<Error> CgroupsReader: Cannot find 'kernel' in '/sys/fs/cgroup/memory.stat'"))
+    errors_count = errors_count - trash_errors_count
+    assert 0 == errors_count or (
+        1 == errors_count
         and "1\n" == node.count_in_log("Can't receive Netlink response")
     )
     assert "0\n" == node.count_in_log("<Warning> Database")
