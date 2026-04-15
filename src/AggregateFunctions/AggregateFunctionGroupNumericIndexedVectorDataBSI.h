@@ -1967,7 +1967,8 @@ public:
      *   - prefer_one = true  : at each bit, prefer choosing 1 if it keeps `candidates` non-empty
      *                          (used for unsigned max, or signed non-negative max, etc.)
      *   - prefer_one = false : at each bit, prefer choosing 0 if it keeps `candidates` non-empty
-     *                          (used for unsigned min, or signed negative "closest to zero" max, etc.)
+     *                          (used for unsigned min, or for picking the most-negative value
+     *                           among all-negative signed candidates).
      */
     UInt64 greedyAccumulateBits(Roaring & candidates, Int64 start_bit, bool prefer_one) const
     {
@@ -2082,7 +2083,7 @@ public:
                 Roaring neg;
                 neg.rb_or(*getDataArrayAt(sign_bit));
                 UInt64 scaled = (1ULL << sign_bit); // 置符号位
-                scaled |= greedyAccumulateBits(neg, sign_bit - 1, /*prefer_one=*/false);
+                scaled |= greedyAccumulateBits(neg, sign_bit - 1, /*prefer_one=*/true);
                 return materializeValueSigned(scaled);
             }
         }

@@ -25,3 +25,8 @@ UINT64 — boundary 0/MAX-1/MAX, empty, errors
 0
 1844674407370955161
 0
+All-negative signed vectors — getMax picks least-negative, getMin picks most-negative
+-1	-8
+-1	-128
+-2147483648	-2147483648
+-1.125	-8.5

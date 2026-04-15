@@ -209,4 +209,57 @@ SELECT arrayJoin([
     , numericIndexedVectorGetMinValue(v1) AS min_vec1
     , numericIndexedVectorGetMaxValue(v2) AS max_vec2
     , numericIndexedVectorGetMinValue(v2) AS min_vec2
-])
+]);
+
+DROP TABLE IF EXISTS uin_value_details_u32_u64;
+
+
+SELECT 'All-negative signed vectors — getMax picks least-negative, getMin picks most-negative';
+
+-- Reviewer's exact case: Int32 {-8, -3, -1}
+DROP TABLE IF EXISTS uin_value_details_allneg_i32;
+CREATE TABLE uin_value_details_allneg_i32 (uin UInt32, value Int32) ENGINE = MergeTree ORDER BY uin;
+INSERT INTO uin_value_details_allneg_i32 VALUES (1, -1), (2, -3), (3, -8);
+WITH
+(
+    SELECT groupNumericIndexedVectorState(uin, value)
+    FROM uin_value_details_allneg_i32
+) AS vec
+SELECT numericIndexedVectorGetMaxValue(vec) AS mx, numericIndexedVectorGetMinValue(vec) AS mn;
+DROP TABLE uin_value_details_allneg_i32;
+
+-- Small-type stress: Int8 all-negative including INT8_MIN
+DROP TABLE IF EXISTS uin_value_details_allneg_i8;
+CREATE TABLE uin_value_details_allneg_i8 (uin UInt32, value Int8) ENGINE = MergeTree ORDER BY uin;
+INSERT INTO uin_value_details_allneg_i8 VALUES (1, toInt8(-1)), (2, toInt8(-2)), (3, toInt8(-100)), (4, toInt8(-128));
+WITH
+(
+    SELECT groupNumericIndexedVectorState(uin, value)
+    FROM uin_value_details_allneg_i8
+) AS vec
+SELECT numericIndexedVectorGetMaxValue(vec) AS mx, numericIndexedVectorGetMinValue(vec) AS mn;
+DROP TABLE uin_value_details_allneg_i8;
+
+-- Boundary: single-entry INT32_MIN (max == min == INT32_MIN)
+DROP TABLE IF EXISTS uin_value_details_allneg_i32_min;
+CREATE TABLE uin_value_details_allneg_i32_min (uin UInt32, value Int32) ENGINE = MergeTree ORDER BY uin;
+INSERT INTO uin_value_details_allneg_i32_min VALUES (1, toInt32(-2147483648));
+WITH
+(
+    SELECT groupNumericIndexedVectorState(uin, value)
+    FROM uin_value_details_allneg_i32_min
+) AS vec
+SELECT numericIndexedVectorGetMaxValue(vec) AS mx, numericIndexedVectorGetMinValue(vec) AS mn;
+DROP TABLE uin_value_details_allneg_i32_min;
+
+-- Fractional path: Float64 all-negative (exactly representable in fixed-point)
+DROP TABLE IF EXISTS uin_value_details_allneg_f64;
+CREATE TABLE uin_value_details_allneg_f64 (uin UInt32, value Float64) ENGINE = MergeTree ORDER BY uin;
+INSERT INTO uin_value_details_allneg_f64 VALUES (1, -1.125), (2, -3.25), (3, -8.5);
+WITH
+(
+    SELECT groupNumericIndexedVectorState(uin, value)
+    FROM uin_value_details_allneg_f64
+) AS vec
+SELECT numericIndexedVectorGetMaxValue(vec) AS mx, numericIndexedVectorGetMinValue(vec) AS mn;
+DROP TABLE uin_value_details_allneg_f64;
