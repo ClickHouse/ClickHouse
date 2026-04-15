@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas
+-- Tags: long, no-tsan, no-asan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas
 -- no sanitizers -- memory consumption is unpredicatable with sanitizers
 
 drop table if exists t;
