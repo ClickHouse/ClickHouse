@@ -123,6 +123,34 @@ static bool isInNames(const std::string & column_name, const Names & names)
     return is_in_partition_key != names.end();
 }
 
+/// Like isInNames, but also checks ancestor prefixes for flattened tuple sub-columns.
+static bool isColumnOrAncestorInNames(
+    const String & column_name, const Names & names, const NameSet & original_columns, bool allow_tuple_element_aggregation)
+{
+    if (isInNames(column_name, names))
+        return true;
+
+    /// Ancestor prefix lookup is only needed for flattened sub-columns produced by
+    /// `flattenTupleRecursive`. Skip it when the feature is disabled or when the column
+    /// exists in the original (un-flattened) header.
+    if (!allow_tuple_element_aggregation || original_columns.contains(column_name))
+        return false;
+
+    /// Walk up the hierarchy by stripping the last dot-separated component each time.
+    /// For "a.b.c.d" we check "a.b.c", then "a.b", then "a".
+    std::string_view prefix = column_name;
+    while (true)
+    {
+        auto pos = prefix.find_last_of('.');
+        if (pos == std::string_view::npos || pos == 0)
+            break;
+        prefix = prefix.substr(0, pos);
+        if (isInNames(std::string(prefix), names))
+            return true;
+    }
+    return false;
+}
+
 using Row = std::vector<Field>;
 
 /// Returns true if merge result is not empty
@@ -238,7 +266,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
 static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
-    const Names & column_names_to_sum_raw,
+    const Names & column_names_to_sum,
     const Names & partition_and_sorting_required_columns,
     const String & sum_function_name,
     const String & sum_function_map_name,
@@ -248,12 +276,11 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
 {
     SummingSortedAlgorithm::ColumnsDefinition def;
     def.allow_tuple_element_aggregation = allow_tuple_element_aggregation;
-
-    auto [header_flatten, column_names_to_sum] = allow_tuple_element_aggregation
-        ? Nested::flattenTupleAndNameRecursive(header, column_names_to_sum_raw)
-        : std::pair{header, column_names_to_sum_raw};
+    auto header_flatten = allow_tuple_element_aggregation ? Nested::flattenTupleRecursive(header) : header;
     def.column_names = header_flatten.getNames();
     size_t num_columns = header_flatten.columns();
+
+    NameSet original_column_names = header.getNameSet();
 
     /// name of nested structure -> the column numbers that refer to it.
     std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
@@ -275,7 +302,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             /// if nested table name ends with `Map` it is a possible candidate for special handling
             if (map_name == column.name || !endsWith(map_name, "Map"))
             {
-                if (!column_names_to_sum.empty() && !isInNames(column.name, column_names_to_sum))
+                if (!column_names_to_sum.empty()
+                    && !isColumnOrAncestorInNames(column.name, column_names_to_sum, original_column_names, allow_tuple_element_aggregation))
                 {
                     def.column_numbers_not_to_aggregate.push_back(i);
                 }
@@ -360,13 +388,15 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             }
 
             /// Are they inside the sorting key or partition key? Check both to ignore columns with order expression.
-            if (isInSortingKey(description, column.name) || isInNames(column.name, partition_and_sorting_required_columns))
+            if (isInSortingKey(description, column.name)
+                || isColumnOrAncestorInNames(column.name, partition_and_sorting_required_columns, original_column_names, allow_tuple_element_aggregation))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
             }
 
-            if (column_names_to_sum.empty() || isInNames(column.name, column_names_to_sum))
+            if (column_names_to_sum.empty()
+                || isColumnOrAncestorInNames(column.name, column_names_to_sum, original_column_names, allow_tuple_element_aggregation))
             {
                 // Create aggregator to sum this column
                 SummingSortedAlgorithm::AggregateDescription desc;
@@ -418,7 +448,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         auto column_num_it = map.second.begin();
         for (; column_num_it != map.second.end(); ++column_num_it)
             if (isInSortingKey(description, header_flatten.safeGetByPosition(*column_num_it).name)
-                || isInNames(header_flatten.safeGetByPosition(*column_num_it).name, partition_and_sorting_required_columns))
+                || isColumnOrAncestorInNames(header_flatten.safeGetByPosition(*column_num_it).name, partition_and_sorting_required_columns, original_column_names, allow_tuple_element_aggregation))
                 break;
         if (column_num_it != map.second.end())
         {

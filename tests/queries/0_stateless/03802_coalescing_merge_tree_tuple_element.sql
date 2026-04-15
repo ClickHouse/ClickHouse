@@ -1,10 +1,9 @@
 DROP TABLE IF EXISTS test_coalescing_basic;
-DROP TABLE IF EXISTS test_coalescing_nested_tuple;
-DROP TABLE IF EXISTS test_coalescing_tuple_before_sort_key;
-DROP TABLE IF EXISTS test_coalescing_explicit_col_nested;
-DROP TABLE IF EXISTS test_coalescing_explicit_col_mixed;
+DROP TABLE IF EXISTS test_coalescing_nested_before_key;
+DROP TABLE IF EXISTS test_coalescing_explicit_col;
+DROP TABLE IF EXISTS test_coalescing_tuple_partition;
 
--- Test 1: CoalescingMergeTree - Basic Tuple
+-- Test 1: CoalescingMergeTree - Basic Tuple with Nullable fields
 SELECT '=== Test 1: CoalescingMergeTree Basic Tuple ===';
 
 CREATE TABLE test_coalescing_basic (
@@ -17,11 +16,10 @@ CREATE TABLE test_coalescing_basic (
 ) ENGINE = CoalescingMergeTree() ORDER BY id
 SETTINGS allow_tuple_element_aggregation = 1;
 
--- Insert data with NULLs to test coalescing behavior
 INSERT INTO test_coalescing_basic VALUES (1, (100, 50, 'first'));
 INSERT INTO test_coalescing_basic VALUES (2, (200, 80, 'second'));
-INSERT INTO test_coalescing_basic VALUES (1, (NULL, 60, 'updated'));  -- sum_val is NULL, should keep 100
-INSERT INTO test_coalescing_basic VALUES (2, (250, NULL, NULL));       -- max_val and str_val are NULL
+INSERT INTO test_coalescing_basic VALUES (1, (NULL, 60, 'updated'));
+INSERT INTO test_coalescing_basic VALUES (2, (250, NULL, NULL));
 
 SELECT 'Coalescing Basic - with FINAL:';
 SELECT id, metrics FROM test_coalescing_basic FINAL ORDER BY id;
@@ -33,11 +31,11 @@ SELECT id, metrics FROM test_coalescing_basic ORDER BY id;
 
 DROP TABLE test_coalescing_basic;
 
--- Test 2: CoalescingMergeTree - Nested Tuple
-SELECT '=== Test 2: CoalescingMergeTree Nested Tuple ===';
+-- Test 2: Nested Tuple placed before sorting key column
+-- Covers: nested tuple coalescing + column index shift when tuple precedes sort key
+SELECT '=== Test 2: Nested Tuple before sorting key ===';
 
-CREATE TABLE test_coalescing_nested_tuple (
-    id UInt32,
+CREATE TABLE test_coalescing_nested_before_key (
     data Tuple(
         val Nullable(UInt64),
         nested Tuple(
@@ -46,111 +44,82 @@ CREATE TABLE test_coalescing_nested_tuple (
                 deep_val Nullable(UInt64)
             )
         )
-    )
-) ENGINE = CoalescingMergeTree() ORDER BY id
-SETTINGS allow_tuple_element_aggregation = 1;
-
-INSERT INTO test_coalescing_nested_tuple VALUES (1, (100, (200, (300))));
-INSERT INTO test_coalescing_nested_tuple VALUES (2, (150, (250, (350))));
-INSERT INTO test_coalescing_nested_tuple VALUES (1, (NULL, (210, (NULL))));  -- val and deep_val are NULL
-INSERT INTO test_coalescing_nested_tuple VALUES (2, (160, (NULL, (360))));   -- inner_val is NULL
-
-SELECT 'Coalescing Nested Tuple - with FINAL:';
-SELECT id, data FROM test_coalescing_nested_tuple FINAL ORDER BY id;
-
-OPTIMIZE TABLE test_coalescing_nested_tuple FINAL;
-
-SELECT 'Coalescing Nested Tuple - after OPTIMIZE:';
-SELECT id, data FROM test_coalescing_nested_tuple ORDER BY id;
-
-DROP TABLE test_coalescing_nested_tuple;
-
--- Test 3: Tuple column before sorting key column (removeReplicatedFromSortingColumns bug)
--- When tuple columns precede the sort key in schema, flattening shifts column indices.
-SELECT '=== Test 3: CoalescingMergeTree Tuple before sorting key ===';
-
-CREATE TABLE test_coalescing_tuple_before_sort_key (
-    data Tuple(
-        val Nullable(UInt64),
-        nested Tuple(
-            inner_val Nullable(UInt64)
-        )
     ),
     id UInt32
 ) ENGINE = CoalescingMergeTree() ORDER BY id
 SETTINGS allow_tuple_element_aggregation = 1;
 
-INSERT INTO test_coalescing_tuple_before_sort_key VALUES ((100, (200)), 1), ((150, (250)), 2);
-INSERT INTO test_coalescing_tuple_before_sort_key VALUES ((NULL, (210)), 1), ((160, (NULL)), 2);
+INSERT INTO test_coalescing_nested_before_key VALUES ((100, (200, (300))), 1), ((150, (250, (350))), 2);
+INSERT INTO test_coalescing_nested_before_key VALUES ((NULL, (210, (NULL))), 1), ((160, (NULL, (360))), 2);
 
-SELECT 'Tuple before sort key - with FINAL:';
-SELECT id, data FROM test_coalescing_tuple_before_sort_key FINAL ORDER BY id;
+SELECT 'Nested before key - with FINAL:';
+SELECT id, data FROM test_coalescing_nested_before_key FINAL ORDER BY id;
 
-OPTIMIZE TABLE test_coalescing_tuple_before_sort_key FINAL;
+OPTIMIZE TABLE test_coalescing_nested_before_key FINAL;
 
-SELECT 'Tuple before sort key - after OPTIMIZE:';
-SELECT id, data FROM test_coalescing_tuple_before_sort_key ORDER BY id;
+SELECT 'Nested before key - after OPTIMIZE:';
+SELECT id, data FROM test_coalescing_nested_before_key ORDER BY id;
 
-DROP TABLE test_coalescing_tuple_before_sort_key;
+DROP TABLE test_coalescing_nested_before_key;
 
--- Test 4: CoalescingMergeTree(data) - explicit column_names_to_sum with nested Tuple
--- Only the specified Tuple column should be coalesced; other Tuple columns and plain
--- columns should keep the first value (not coalesced).
-SELECT '=== Test 4: Explicit column_names_to_sum with nested Tuple ===';
+-- Test 3: Explicit column_names_to_sum - only specified Tuple is coalesced
+-- Covers: nested tuple in explicit list + unspecified tuple/plain columns keep first value
+SELECT '=== Test 3: Explicit column_names_to_sum ===';
 
-CREATE TABLE test_coalescing_explicit_col_nested (
+CREATE TABLE test_coalescing_explicit_col (
     key UInt32,
-    data Tuple(
+    coalesced Tuple(
         x Nullable(UInt64),
         inner Tuple(
             y Nullable(UInt64),
             z Nullable(UInt64)
         )
     ),
-    other_tuple Tuple(m Nullable(UInt64), n Nullable(UInt64)),
-    plain_val UInt64
-) ENGINE = CoalescingMergeTree(data) ORDER BY key
-SETTINGS allow_tuple_element_aggregation = 1;
-
-INSERT INTO test_coalescing_explicit_col_nested VALUES (1, (10, (20, 30)), (100, 200), 1000);
-INSERT INTO test_coalescing_explicit_col_nested VALUES (1, (NULL, (50, NULL)), (300, 400), 2000);
-INSERT INTO test_coalescing_explicit_col_nested VALUES (2, (5, (6, 7)), (50, 60), 500);
-INSERT INTO test_coalescing_explicit_col_nested VALUES (2, (8, (NULL, 10)), (70, 80), 600);
-
-SELECT 'Explicit nested col - with FINAL:';
-SELECT key, data, other_tuple, plain_val FROM test_coalescing_explicit_col_nested FINAL ORDER BY key;
-
-OPTIMIZE TABLE test_coalescing_explicit_col_nested FINAL;
-
-SELECT 'Explicit nested col - after OPTIMIZE:';
-SELECT key, data, other_tuple, plain_val FROM test_coalescing_explicit_col_nested ORDER BY key;
-
-DROP TABLE test_coalescing_explicit_col_nested;
-
--- Test 5: CoalescingMergeTree(coalesced) - only specified Tuple is coalesced, another is not
--- When column_names_to_sum is specified, other Tuple columns must NOT be coalesced
--- even though allow_tuple_element_aggregation is enabled.
-SELECT '=== Test 5: Explicit column_names_to_sum - only specified Tuple is coalesced ===';
-
-CREATE TABLE test_coalescing_explicit_col_mixed (
-    key UInt32,
-    coalesced Tuple(a Nullable(UInt64), b Nullable(UInt64)),
     not_coalesced Tuple(c Nullable(UInt64), d Nullable(UInt64)),
     plain_val UInt64
 ) ENGINE = CoalescingMergeTree(coalesced) ORDER BY key
 SETTINGS allow_tuple_element_aggregation = 1;
 
-INSERT INTO test_coalescing_explicit_col_mixed VALUES (1, (10, 20), (100, 200), 1000);
-INSERT INTO test_coalescing_explicit_col_mixed VALUES (1, (NULL, 40), (300, NULL), 2000);
-INSERT INTO test_coalescing_explicit_col_mixed VALUES (2, (5, 6), (50, 60), 500);
-INSERT INTO test_coalescing_explicit_col_mixed VALUES (2, (7, NULL), (NULL, 80), 600);
+INSERT INTO test_coalescing_explicit_col VALUES (1, (10, (20, 30)), (100, 200), 1000);
+INSERT INTO test_coalescing_explicit_col VALUES (1, (NULL, (50, NULL)), (300, NULL), 2000);
+INSERT INTO test_coalescing_explicit_col VALUES (2, (5, (6, 7)), (50, 60), 500);
+INSERT INTO test_coalescing_explicit_col VALUES (2, (8, (NULL, 10)), (NULL, 80), 600);
 
-SELECT 'Explicit mixed - with FINAL:';
-SELECT key, coalesced, not_coalesced, plain_val FROM test_coalescing_explicit_col_mixed FINAL ORDER BY key;
+SELECT 'Explicit col - with FINAL:';
+SELECT key, coalesced, not_coalesced, plain_val FROM test_coalescing_explicit_col FINAL ORDER BY key;
 
-OPTIMIZE TABLE test_coalescing_explicit_col_mixed FINAL;
+OPTIMIZE TABLE test_coalescing_explicit_col FINAL;
 
-SELECT 'Explicit mixed - after OPTIMIZE (not_coalesced keeps first value):';
-SELECT key, coalesced, not_coalesced, plain_val FROM test_coalescing_explicit_col_mixed ORDER BY key;
+SELECT 'Explicit col - after OPTIMIZE:';
+SELECT key, coalesced, not_coalesced, plain_val FROM test_coalescing_explicit_col ORDER BY key;
 
-DROP TABLE test_coalescing_explicit_col_mixed;
+DROP TABLE test_coalescing_explicit_col;
+
+-- Test 4: Tuple column used as partition key must NOT be coalesced
+-- pk is a nested Tuple used as PARTITION BY; two rows share the same pk so they
+-- land in the same partition and get merged.  After merge the non-key Tuple `val`
+-- must be coalesced normally while the engine must not crash or mishandle the
+-- partition-key Tuple (it is silently skipped during coalescing).
+SELECT '=== Test 4: Nested Tuple in partition key ===';
+
+CREATE TABLE test_coalescing_tuple_partition (
+    id UInt32,
+    pk Tuple(a UInt32, inner Tuple(z UInt32)),
+    val Tuple(m Nullable(UInt64), n Nullable(UInt64))
+) ENGINE = CoalescingMergeTree()
+PARTITION BY pk
+ORDER BY id
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO test_coalescing_tuple_partition VALUES (1, (10, (20)), (100, NULL));
+INSERT INTO test_coalescing_tuple_partition VALUES (1, (10, (20)), (NULL, 400));
+
+SELECT 'Nested Tuple partition key - with FINAL:';
+SELECT id, pk, val FROM test_coalescing_tuple_partition FINAL ORDER BY id;
+
+OPTIMIZE TABLE test_coalescing_tuple_partition FINAL;
+
+SELECT 'Nested Tuple partition key - after OPTIMIZE:';
+SELECT id, pk, val FROM test_coalescing_tuple_partition ORDER BY id;
+
+DROP TABLE test_coalescing_tuple_partition;

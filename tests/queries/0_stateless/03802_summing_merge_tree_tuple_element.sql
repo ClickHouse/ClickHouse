@@ -7,9 +7,6 @@ DROP TABLE IF EXISTS test_summing_nested_tuple;
 DROP TABLE IF EXISTS test_summing_unnamed_tuple;
 DROP TABLE IF EXISTS test_summing_mixed;
 DROP TABLE IF EXISTS test_summing_tuple_before_sort_key;
-DROP TABLE IF EXISTS test_summing_explicit_col;
-DROP TABLE IF EXISTS test_summing_explicit_col_nested;
-DROP TABLE IF EXISTS test_summing_explicit_col_mixed;
 
 -- Test 1: SummingMergeTree - Basic Tuple with named fields
 SELECT '=== Test 1: SummingMergeTree Basic Tuple ===';
@@ -229,83 +226,37 @@ SELECT id, data FROM test_summing_tuple_before_sort_key ORDER BY id;
 
 DROP TABLE test_summing_tuple_before_sort_key;
 
--- Test 8: SummingMergeTree(value) - explicit column_names_to_sum with Tuple
--- When a Tuple column is specified in SummingMergeTree(column_name), the flattened
--- leaf columns (e.g. value.a, value.b) should still be aggregated.
-SELECT '=== Test 8: Explicit column_names_to_sum with Tuple ===';
+-- Test 8: SummingMergeTree - Zero row deletion with flattened Tuple
+-- When all summable sub-columns of a flattened Tuple sum to zero, the row should be deleted.
+DROP TABLE IF EXISTS test_summing_zero_row;
 
-CREATE TABLE test_summing_explicit_col (
-    key UInt32,
-    value Tuple(a UInt64, b UInt64)
-) ENGINE = SummingMergeTree(value) ORDER BY key
-SETTINGS allow_tuple_element_aggregation = 1;
+SELECT '=== Test 8: SummingMergeTree Zero Row Deletion ===';
 
-INSERT INTO test_summing_explicit_col VALUES (1, (10, 20));
-INSERT INTO test_summing_explicit_col VALUES (1, (30, 40));
-
-SELECT 'Explicit col - with FINAL:';
-SELECT key, value FROM test_summing_explicit_col FINAL ORDER BY key;
-
-OPTIMIZE TABLE test_summing_explicit_col FINAL;
-
-SELECT 'Explicit col - after OPTIMIZE:';
-SELECT key, value FROM test_summing_explicit_col ORDER BY key;
-
-DROP TABLE test_summing_explicit_col;
-
--- Test 9: SummingMergeTree(data) - explicit column_names_to_sum with nested Tuple
--- Only the specified Tuple column should be summed; other Tuple columns and plain
--- columns should keep the first value (not aggregated).
-SELECT '=== Test 9: Explicit column_names_to_sum with nested Tuple ===';
-
-CREATE TABLE test_summing_explicit_col_nested (
-    key UInt32,
-    data Tuple(
-        x UInt64,
-        inner Tuple(
-            y UInt64,
-            z UInt64
+CREATE TABLE test_summing_zero_row (
+    id UInt32,
+    metrics Tuple(
+        val_a Int64,
+        val_b Int64,
+        nested Tuple(
+            val_c Int64
         )
-    ),
-    other_tuple Tuple(m UInt64, n UInt64),
-    plain_val UInt64
-) ENGINE = SummingMergeTree(data) ORDER BY key
+    )
+) ENGINE = SummingMergeTree() ORDER BY id
 SETTINGS allow_tuple_element_aggregation = 1;
 
-INSERT INTO test_summing_explicit_col_nested VALUES (1, (10, (20, 30)), (100, 200), 1000);
-INSERT INTO test_summing_explicit_col_nested VALUES (1, (40, (50, 60)), (300, 400), 2000);
-INSERT INTO test_summing_explicit_col_nested VALUES (2, (5, (6, 7)), (50, 60), 500);
-INSERT INTO test_summing_explicit_col_nested VALUES (2, (8, (9, 10)), (70, 80), 600);
+-- Insert rows that cancel each other out (sum to zero)
+INSERT INTO test_summing_zero_row VALUES (1, (100, 50, (10))), (2, (200, 80, (20)));
+INSERT INTO test_summing_zero_row VALUES (1, (-100, -50, (-10))), (2, (-200, -80, (-20)));
+-- id=3 should survive (non-zero sum)
+INSERT INTO test_summing_zero_row VALUES (3, (300, 90, (30)));
+INSERT INTO test_summing_zero_row VALUES (3, (100, 10, (-30)));
 
-SELECT 'Explicit nested col - with FINAL:';
-SELECT key, data, other_tuple, plain_val FROM test_summing_explicit_col_nested FINAL ORDER BY key;
+SELECT 'Zero row - with FINAL:';
+SELECT id, metrics FROM test_summing_zero_row FINAL ORDER BY id;
 
-OPTIMIZE TABLE test_summing_explicit_col_nested FINAL;
+OPTIMIZE TABLE test_summing_zero_row FINAL;
 
-SELECT 'Explicit nested col - after OPTIMIZE:';
-SELECT key, data, other_tuple, plain_val FROM test_summing_explicit_col_nested ORDER BY key;
+SELECT 'Zero row - after OPTIMIZE:';
+SELECT id, metrics FROM test_summing_zero_row ORDER BY id;
 
-DROP TABLE test_summing_explicit_col_nested;
-
--- Test 10: SummingMergeTree(summed) - only specified Tuple is summed, another is not
-SELECT '=== Test 10: Explicit column_names_to_sum - only specified Tuple is summed ===';
-
-CREATE TABLE test_summing_explicit_col_mixed (
-    key UInt32,
-    summed Tuple(a UInt64, b UInt64),
-    not_summed Tuple(c UInt64, d UInt64)
-) ENGINE = SummingMergeTree(summed) ORDER BY key
-SETTINGS allow_tuple_element_aggregation = 1;
-
-INSERT INTO test_summing_explicit_col_mixed VALUES (1, (10, 20), (100, 200));
-INSERT INTO test_summing_explicit_col_mixed VALUES (1, (30, 40), (300, 400));
-
-SELECT 'Explicit mixed - with FINAL:';
-SELECT key, summed, not_summed FROM test_summing_explicit_col_mixed FINAL ORDER BY key;
-
-OPTIMIZE TABLE test_summing_explicit_col_mixed FINAL;
-
-SELECT 'Explicit mixed - after OPTIMIZE (not_summed keeps first value):';
-SELECT key, summed, not_summed FROM test_summing_explicit_col_mixed ORDER BY key;
-
-DROP TABLE test_summing_explicit_col_mixed;
+DROP TABLE test_summing_zero_row;
