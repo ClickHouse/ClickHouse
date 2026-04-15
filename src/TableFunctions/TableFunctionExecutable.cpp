@@ -16,6 +16,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <boost/program_options/parsers.hpp>
+#include <boost/tokenizer.hpp>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -122,7 +123,25 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
-    auto script_name_with_arguments = boost::program_options::split_unix(script_name_with_arguments_value);
+    std::vector<std::string> script_name_with_arguments;
+    try
+    {
+        script_name_with_arguments = boost::program_options::split_unix(script_name_with_arguments_value);
+    }
+    catch (const boost::escaped_list_error & e)
+    {
+        /// boost::program_options::split_unix is stricter than the previous boost::split-based
+        /// implementation about backslash escapes — any backslash that is not followed by a
+        /// space, quote, or another backslash now throws escaped_list_error('unknown escape
+        /// sequence'). Convert that into a BAD_ARGUMENTS so the user sees a useful error and
+        /// not a STD_EXCEPTION traceback.
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Failed to split script name and arguments {}: {}. "
+            "Backslashes must escape a space, quote, or another backslash.",
+            script_name_with_arguments_value,
+            e.what());
+    }
     if (script_name_with_arguments.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Script name cannot be empty");
 
