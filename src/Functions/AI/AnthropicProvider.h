@@ -22,8 +22,6 @@ class AnthropicProvider : public IAIProvider
 public:
     AnthropicProvider(const String & endpoint_, const String & api_key_, const String & api_version_);
 
-    String providerName() const override { return "anthropic"; }
-
     AIResponse call(const AIRequest & request, const ConnectionTimeouts & timeouts) override;
 
 private:

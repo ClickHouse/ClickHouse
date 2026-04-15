@@ -31,8 +31,6 @@ class IAIProvider
 public:
     virtual ~IAIProvider() = default;
 
-    virtual String providerName() const = 0;
-
     virtual AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) = 0;
 };
 
