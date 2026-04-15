@@ -92,16 +92,17 @@ class CacheRunnerHooks:
             dependent_jobs = {}
 
             for job_name, job_digest in eligible_jobs.items():
-                # Check if this digest is a prefix of any other digest
-                has_prefix = False
+                # Check if this job's digest starts with any other job's digest
+                # (meaning it depends on that other job)
+                is_dependent = False
                 for other_digest in eligible_jobs.values():
-                    if other_digest != job_digest and other_digest.startswith(
-                        job_digest + "-"
+                    if other_digest != job_digest and job_digest.startswith(
+                        other_digest + "-"
                     ):
-                        has_prefix = True
+                        is_dependent = True
                         break
 
-                if not has_prefix:
+                if not is_dependent:
                     root_jobs[job_name] = job_digest
                 else:
                     dependent_jobs[job_name] = job_digest

@@ -9,6 +9,10 @@
 
     <asynchronous_metrics_keeper_metrics_only>true</asynchronous_metrics_keeper_metrics_only>
 
+    <default_system_log_flush_policy>
+        <skip_alias_columns>true</skip_alias_columns>
+    </default_system_log_flush_policy>
+
     <asynchronous_metric_log>
         <database>system</database>
         <table>asynchronous_metric_log</table>
