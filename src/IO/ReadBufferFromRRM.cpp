@@ -75,7 +75,7 @@ bool ReadBufferFromRRM::nextImpl()
     char * data_begin = prefetched_data.m_data + data_offset;
     size_t remaining = prefetched_data.m_size - data_offset;
 
-    if (internal_buffer.size() == 0)
+    if (internal_buffer.empty())
     {
         /// Standalone mode: no external buffer provided, point directly at prefetched data.
         internal_buffer = Buffer(data_begin, data_begin + remaining);
