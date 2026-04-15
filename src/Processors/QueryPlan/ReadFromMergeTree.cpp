@@ -1296,10 +1296,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .total_query_nodes = total_query_nodes,
     };
 
-    const bool is_local_plan_initiator = isParallelReplicasLocalPlanForInitiator();
-    const bool is_local_plan_follower = isParallelReplicasLocalPlanForFollower();
+    /// In-order split support requires the analyzer. Without it, fall back to old behavior.
+    const bool analyzer_enabled = context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    const bool is_local_plan_initiator = analyzer_enabled && isParallelReplicasLocalPlanForInitiator();
+    const bool is_local_plan_follower = analyzer_enabled && isParallelReplicasLocalPlanForFollower();
     /// Splitting is needed for the initiator (genuine range splitting), followers (to determine
-    /// num_splits), and non-parallel-replicas (local parallelism). Skip for local_plan=0.
+    /// num_splits), and non-parallel-replicas (local parallelism). Skip for local_plan=0 or old analyzer.
     const bool need_split = is_local_plan_initiator || is_local_plan_follower || !is_parallel_reading_from_replicas;
 
     /// For non-initiator replicas with local plan, keep a copy of all parts before splitting.
