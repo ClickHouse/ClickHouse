@@ -5,6 +5,7 @@
 
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <utility>
 #include <filesystem>
@@ -106,6 +107,10 @@ void MergeTreeReaderStream::init()
 
     auto scope = ReadScope::create(
         data_part_storage->getRelativePath(), all_mark_ranges, settings.read_phase, std::move(reading_ranges));
+
+    LOG_DEBUG(getLogger("MergeTreeReaderStream"),
+        "init: file={} file_size={} marks_count={} scope=[{}]",
+        file_name, file_size, marks_count, scope->toString());
 
     /// Initialize the objects that shall be used to perform read operations.
     if (!settings.is_compressed)

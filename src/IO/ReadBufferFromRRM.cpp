@@ -72,7 +72,11 @@ bool ReadBufferFromRRM::nextImpl()
     waitPrefetch();
 
     if (data_offset >= prefetched_data.m_size)
+    {
+        LOG_DEBUG(log, "nextImpl: EOF object={} data_offset={} prefetched_size={} range=[{}, {})",
+            object_key, data_offset, prefetched_data.m_size, range_begin, range_begin + range_size);
         return false;
+    }
 
     char * data_begin = prefetched_data.m_data + data_offset;
     size_t remaining = prefetched_data.m_size - data_offset;
@@ -154,18 +158,41 @@ off_t ReadBufferFromRRM::getPosition()
     return static_cast<off_t>(range_begin + data_offset - available());
 }
 
+std::optional<size_t> ReadBufferFromRRM::tryGetFileSize()
+{
+    LOG_DEBUG(log, "tryGetFileSize: object={} returning range_size={}", object_key, range_size);
+    return range_size;
+}
+
+size_t ReadBufferFromRRM::getFileOffsetOfBufferEnd() const
+{
+    size_t result = range_begin + data_offset;
+    LOG_DEBUG(log, "getFileOffsetOfBufferEnd: object={} range_begin={} data_offset={} result={}",
+        object_key, range_begin, data_offset, result);
+    return result;
+}
+
 void ReadBufferFromRRM::validateSeekPosition(size_t absolute_pos) const
 {
     if (!scope || scope->reading_ranges.empty())
         return;
 
+    size_t enc_header = scope->encryption_header_bytes;
+
+    /// The encryption header region [0, enc_header) is always valid.
+    if (enc_header > 0 && absolute_pos < enc_header)
+        return;
+
+    /// reading_ranges are in plaintext coordinates; seeks from the
+    /// encrypted reader arrive shifted by enc_header.
     for (size_t i = 0; i < scope->reading_ranges.size(); ++i)
     {
         const auto & rr = scope->reading_ranges[i];
         size_t padding = (i < scope->cache_pre_padding_bytes.size()) ? scope->cache_pre_padding_bytes[i] : 0;
-        size_t padded_begin = rr.begin - padding;
+        size_t padded_begin = rr.begin - padding + enc_header;
+        size_t range_end = rr.end + enc_header;
 
-        if (absolute_pos >= padded_begin && absolute_pos < rr.end)
+        if (absolute_pos >= padded_begin && absolute_pos < range_end)
             return;
     }
 

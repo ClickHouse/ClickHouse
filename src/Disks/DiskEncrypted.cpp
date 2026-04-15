@@ -2,6 +2,7 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <Storages/MergeTree/RemoteReadingManager.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <IO/FileEncryptionCommon.h>
@@ -433,7 +434,14 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
         read_hint = *read_hint + FileEncryption::Header::kSize;
 
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, read_hint);
+
+    /// If RRM scope is present, inform it about the encryption header
+    /// so the fetched byte range covers both the header and the data.
+    ReadSettings patched_settings = settings;
+    if (patched_settings.read_scope)
+        patched_settings.read_scope = patched_settings.read_scope->withEncryptionHeader(FileEncryption::Header::kSize);
+
+    auto buffer = delegate->readFile(wrapped_path, patched_settings, read_hint);
     if (buffer->eof())
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().

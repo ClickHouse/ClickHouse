@@ -35,12 +35,14 @@ ReadScope::ReadScope(String part_id_, MarkRanges mark_ranges_, Phase phase_,
 ReadScope::ReadScope(String part_id_, MarkRanges mark_ranges_, Phase phase_,
                      std::vector<ByteRange> reading_ranges_,
                      std::vector<size_t> cache_pre_padding_bytes_,
-                     ThreadGroupPtr thread_group_)
+                     ThreadGroupPtr thread_group_,
+                     size_t encryption_header_bytes_)
     : part_id(std::move(part_id_))
     , mark_ranges(std::move(mark_ranges_))
     , phase(phase_)
     , reading_ranges(std::move(reading_ranges_))
     , cache_pre_padding_bytes(std::move(cache_pre_padding_bytes_))
+    , encryption_header_bytes(encryption_header_bytes_)
     , thread_group(std::move(thread_group_))
 {
 }
@@ -76,6 +78,8 @@ String ReadScope::toString() const
             total += r.end - r.begin;
         return total;
     }());
+    if (encryption_header_bytes)
+        result += " enc_header=" + std::to_string(encryption_header_bytes);
     return result;
 }
 
@@ -101,7 +105,16 @@ std::shared_ptr<const ReadScope> ReadScope::adjustForObject(size_t object_start_
         size_t clamped_end = std::min(r.end, object_end);
         adjusted.push_back({clamped_begin - object_start_offset, clamped_end - object_start_offset});
     }
-    return ReadScopePtr(new ReadScope(part_id, mark_ranges, phase, std::move(adjusted), {}, thread_group));
+    return std::make_shared<ReadScope>(part_id, mark_ranges, phase, std::move(adjusted), std::vector<size_t>{}, thread_group);
+}
+
+std::shared_ptr<const ReadScope> ReadScope::withEncryptionHeader(size_t header_bytes) const
+{
+    if (header_bytes == 0)
+        return shared_from_this();
+
+    return std::make_shared<ReadScope>(
+        part_id, mark_ranges, phase, reading_ranges, cache_pre_padding_bytes, thread_group, header_bytes);
 }
 
 RemoteReadingManager & RemoteReadingManager::instance()
@@ -144,11 +157,17 @@ std::unique_ptr<ReadBufferFromFileBase> RemoteReadingManager::createObjectReadBu
 
     size_t first_padding = scope.cache_pre_padding_bytes.empty() ? 0 : scope.cache_pre_padding_bytes.front();
     size_t range_begin = scope.reading_ranges.front().begin - first_padding;
-    size_t range_end = scope.reading_ranges.back().end;
+    size_t range_end = scope.reading_ranges.back().end + scope.encryption_header_bytes;
+
+    /// When the object has an encryption header, always fetch from offset 0
+    /// so that `DiskEncrypted::readFile` can read the header before wrapping.
+    if (scope.encryption_header_bytes > 0)
+        range_begin = 0;
     size_t range_size = range_end - range_begin;
 
-    LOG_DEBUG(log, "createObjectReadBuffer: blob={} range=[{}, {}) size={} scope=[{}]",
-        object.remote_path, range_begin, range_end, range_size, scope.toString());
+    LOG_DEBUG(log, "createObjectReadBuffer: blob={} object_bytes_size={} range=[{}, {}) size={} enc_header={} scope=[{}]",
+        object.remote_path, object.bytes_size, range_begin, range_end, range_size,
+        scope.encryption_header_bytes, scope.toString());
 
     /// Launch async prefetch via ThreadFromGlobalPool (not std::async) so that
     /// the worker thread has a proper ThreadStatus, which ThreadGroupSwitcher requires.

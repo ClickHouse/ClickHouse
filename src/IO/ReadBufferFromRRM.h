@@ -36,9 +36,9 @@ public:
 
     String getFileName() const override { return object_key; }
 
-    std::optional<size_t> tryGetFileSize() override { return range_size; }
+    std::optional<size_t> tryGetFileSize() override;
 
-    size_t getFileOffsetOfBufferEnd() const override { return range_begin + data_offset; }
+    size_t getFileOffsetOfBufferEnd() const override;
 
     bool supportsRightBoundedReads() const override { return true; }
 

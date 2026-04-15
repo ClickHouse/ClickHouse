@@ -82,6 +82,14 @@ struct ReadScope : public std::enable_shared_from_this<ReadScope>
     /// This data is not coordinated — it doesn't participate in column group lockstep.
     std::vector<size_t> cache_pre_padding_bytes;
 
+    /// Size of the encryption header prepended to the remote object.
+    /// When non-zero, the remote object is `encryption_header_bytes` larger
+    /// than the logical file: object = [header | encrypted_data].
+    /// `reading_ranges` stay in plaintext coordinates; RRM extends the
+    /// fetched byte range to include the header.
+    /// Set by `DiskEncrypted` via `withEncryptionHeader`.
+    size_t encryption_header_bytes = 0;
+
     /// Thread group of the query that created this scope.
     /// Captured at scope creation time so that async prefetch threads
     /// can attach to the originating query's context.
@@ -100,17 +108,24 @@ struct ReadScope : public std::enable_shared_from_this<ReadScope>
     /// dropped; ranges that straddle an object boundary are clamped.
     std::shared_ptr<const ReadScope> adjustForObject(size_t object_start_offset, size_t object_size) const;
 
+    /// Return a scope with `encryption_header_bytes` set.
+    /// Called by `DiskEncrypted` to inform RRM that the remote object
+    /// has a header prepended before the encrypted data.
+    std::shared_ptr<const ReadScope> withEncryptionHeader(size_t header_bytes) const;
+
+    /// Explicit thread group and optional encryption header.
+    /// Public so that `withEncryptionHeader` / `adjustForObject` can use `make_shared`.
+    ReadScope(String part_id_, MarkRanges mark_ranges_, Phase phase_,
+              std::vector<ByteRange> reading_ranges_,
+              std::vector<size_t> cache_pre_padding_bytes_,
+              ThreadGroupPtr thread_group_,
+              size_t encryption_header_bytes_ = 0);
+
 private:
     /// Captures `CurrentThread::getGroup` — used by `create`.
     ReadScope(String part_id_, MarkRanges mark_ranges_, Phase phase_,
               std::vector<ByteRange> reading_ranges_,
               std::vector<size_t> cache_pre_padding_bytes_);
-
-    /// Explicit thread group — used by `adjustForObject` to preserve the original query's group.
-    ReadScope(String part_id_, MarkRanges mark_ranges_, Phase phase_,
-              std::vector<ByteRange> reading_ranges_,
-              std::vector<size_t> cache_pre_padding_bytes_,
-              ThreadGroupPtr thread_group_);
 };
 
 using ReadScopePtr = std::shared_ptr<const ReadScope>;
