@@ -42,11 +42,11 @@ public:
     std::atomic<UInt64> rows_skipped{0};
 
 private:
-    UInt64 max_input_tokens;
-    UInt64 max_output_tokens;
-    UInt64 max_api_calls;
-    String on_quota_exceeded;
-    String on_error;
+    const UInt64 max_input_tokens;
+    const UInt64 max_output_tokens;
+    const UInt64 max_api_calls;
+    const String on_quota_exceeded;
+    const String on_error;
     std::atomic<bool> quota_exceeded{false};
 };
 

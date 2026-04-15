@@ -64,7 +64,7 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_request.model);
     root->set("temperature", ai_request.temperature);
-    root->set("max_tokens", static_cast<Int64>(ai_request.max_tokens));
+    root->set("max_tokens", static_cast<Int64>(ai_request.max_tokens)); /// Poco doesn't have UInt type
 
     Poco::JSON::Array::Ptr messages = new Poco::JSON::Array;
 
