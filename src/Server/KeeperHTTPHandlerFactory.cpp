@@ -25,6 +25,7 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
+#include <Coordination/CoordinationSettings.h>
 
 namespace DB
 {
@@ -33,6 +34,11 @@ namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+}
+
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 max_request_size;
 }
 
 KeeperHTTPRequestHandlerFactory::KeeperHTTPRequestHandlerFactory(const std::string & name_) : log(getLogger(name_)), name(name_)
@@ -115,8 +121,10 @@ void addStorageHandlersToFactory(
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     std::shared_ptr<KeeperHTTPClient> keeper_client)
 {
-    auto creator = [keeper_client, keeper_context = keeper_dispatcher->getKeeperContext()]() -> std::unique_ptr<KeeperHTTPStorageHandler>
-    { return std::make_unique<KeeperHTTPStorageHandler>(keeper_client, keeper_context); };
+    auto max_request_size = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::max_request_size];
+
+    auto creator = [keeper_client, max_request_size]() -> std::unique_ptr<KeeperHTTPStorageHandler>
+    { return std::make_unique<KeeperHTTPStorageHandler>(keeper_client, max_request_size); };
 
     auto storage_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPStorageHandler>>(std::move(creator));
     storage_handler->attachNonStrictPath("/api/v1/storage");
@@ -134,19 +142,14 @@ std::shared_ptr<KeeperHTTPClient> createKeeperClient(
         server.config().getUInt("keeper_server.http_control.storage.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS)
         * Poco::Timespan::MILLISECONDS);
 
-    /// Client is created lazily on first use to avoid blocking server startup
-    /// with synchronous Keeper session creation, which requires Raft consensus
-    /// and can time out if the leader is not yet fully available.
-    auto client_factory = [keeper_dispatcher, session_timeout]() -> std::shared_ptr<zkutil::ZooKeeper>
-    {
-        return zkutil::ZooKeeper::createFromImpl(
-            [keeper_dispatcher, session_timeout]()
-            {
-                return std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, session_timeout);
-            });
-    };
+    /// Factory lambda allows ZooKeeper to create new sessions on reconnection
+    auto zk_client = zkutil::ZooKeeper::create_from_impl(
+        [keeper_dispatcher, session_timeout]()
+        {
+            return std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, session_timeout);
+        });
 
-    return std::make_shared<KeeperHTTPClient>(std::move(client_factory));
+    return std::make_shared<KeeperHTTPClient>(std::move(zk_client));
 }
 
 void addDefaultHandlersToFactory(
@@ -299,7 +302,7 @@ try
         uri = Poco::URI(request.getURI());
         uri.getPathSegments(uri_segments);
     }
-    catch (const std::exception &)
+    catch (...)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Could not parse request path.");
         *response.send() << "Could not parse request path.\n";

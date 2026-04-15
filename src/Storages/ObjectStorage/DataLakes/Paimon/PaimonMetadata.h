@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <vector>
+#include <Core/Block.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>

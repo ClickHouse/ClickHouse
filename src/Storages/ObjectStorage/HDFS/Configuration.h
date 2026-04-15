@@ -61,7 +61,6 @@ public:
     /// only by directory.
     /// Therefore in the below methods we use supports_partial_prefix=false.
     Path getRawPath() const override { return path; }
-    void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return url; }
 
     const Paths & getPaths() const override { return paths; }
@@ -76,7 +75,7 @@ public:
 
     void check(ContextPtr context) override;
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) override;
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;

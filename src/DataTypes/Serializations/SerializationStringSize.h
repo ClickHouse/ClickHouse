@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 
@@ -10,15 +9,8 @@ namespace DB
 /// Enables the `.size` subcolumn for string columns.
 class SerializationStringSize final : public SerializationNumber<UInt64>
 {
-private:
-    explicit SerializationStringSize(MergeTreeStringSerializationVersion version_);
-
 public:
-    static UInt128 getHash(MergeTreeStringSerializationVersion version_);
-
-    static SerializationPtr create(MergeTreeStringSerializationVersion version_);
-
-    size_t allocatedBytes() const override;
+    explicit SerializationStringSize(MergeTreeStringSerializationVersion version_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -42,7 +34,7 @@ private:
     MergeTreeStringSerializationVersion version;
 
     /// Helper to access base string serialization logic.
-    SerializationPtr serialization_string;
+    SerializationString serialization_string;
 
     /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
     void deserializeBinaryBulkWithSizeStream(

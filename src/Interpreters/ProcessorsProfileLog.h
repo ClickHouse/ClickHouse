@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Processors/IProcessor.h>
 #include <Storages/ColumnsDescription.h>

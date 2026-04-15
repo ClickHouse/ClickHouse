@@ -61,7 +61,6 @@ public:
     std::string getEngineName() const override { return "Local"; }
 
     Path getRawPath() const override { return path; }
-    void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return path.path; }
 
     const Paths & getPaths() const override { return paths; }
@@ -75,7 +74,7 @@ public:
     String getDataSourceDescription() const override { return ""; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) override
+    ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly) override
     {
         return std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings(disk_name, "/", readonly));
     }

@@ -1,6 +1,5 @@
--- Tags: no-parallel, no-release
+-- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
--- Tag release: Checks fields in system.query_condition_cache which are not available in release builds
 
 -- Tests system table 'system.query_condition_cache'
 

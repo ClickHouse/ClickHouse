@@ -1,7 +1,6 @@
 import pytest
 import requests
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 import time
 
 cluster = ClickHouseCluster(__file__)
@@ -33,12 +32,5 @@ def test_prometheus_keeper_metrics_only(start_cluster):
     )
     assert prometheus_handler_response.status_code == 200
     assert "ClickHouseAsyncMetrics_KeeperIsStandalone" in prometheus_handler_response.text
+    assert "keeper_server_queue_duration_milliseconds" in prometheus_handler_response.text
     assert "PolygonDictionaryThreads" not in prometheus_handler_response.text
-
-
-def test_asynchronous_metric_log(start_cluster):
-    assert_eq_with_retry(
-        node,
-        "SELECT count() > 0 FROM system.asynchronous_metric_log WHERE metric = 'KeeperIsLeader'",
-        "1",
-    )

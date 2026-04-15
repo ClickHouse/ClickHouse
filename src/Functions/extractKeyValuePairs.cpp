@@ -26,9 +26,10 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
+template <typename Name, bool WITH_ESCAPING>
 class ExtractKeyValuePairs : public IFunction
 {
-    KeyValuePairExtractorBuilder getBuilder(const ArgumentExtractor::ParsedArguments & parsed_arguments) const
+    auto getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments) const
     {
         auto builder = KeyValuePairExtractorBuilder();
 
@@ -67,7 +68,14 @@ class ExtractKeyValuePairs : public IFunction
             builder.withUnexpectedQuotingCharacterStrategy(unexpected_quoting_character_strategy.value());
         }
 
-        return builder;
+        if constexpr (WITH_ESCAPING)
+        {
+            return builder.buildWithEscaping();
+        }
+        else
+        {
+            return builder.buildWithoutEscaping();
+        }
     }
 
     ColumnPtr extract(ColumnPtr data_column, auto & extractor, size_t input_rows_count) const
@@ -99,38 +107,29 @@ class ExtractKeyValuePairs : public IFunction
     }
 
 public:
-    ExtractKeyValuePairs(ContextPtr context, const char * name_, bool with_escaping_)
+    explicit ExtractKeyValuePairs(ContextPtr context)
         : extract_key_value_pairs_max_pairs_per_row(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row])
-        , function_name(name_)
-        , with_escaping(with_escaping_)
     {}
+
+    static constexpr auto name = Name::name;
 
     String getName() const override
     {
-        return function_name;
+        return name;
     }
 
-    static FunctionPtr create(ContextPtr context, const char * name, bool with_escaping)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<ExtractKeyValuePairs>(context, name, with_escaping);
+        return std::make_shared<ExtractKeyValuePairs>(context);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto parsed_arguments = ArgumentExtractor::extract(arguments);
 
-        auto builder = getBuilder(parsed_arguments);
+        auto extractor = getExtractor(parsed_arguments);
 
-        if (with_escaping)
-        {
-            auto extractor = builder.buildWithEscaping();
-            return extract(parsed_arguments.data_column, extractor, input_rows_count);
-        }
-        else
-        {
-            auto extractor = builder.buildWithoutEscaping();
-            return extract(parsed_arguments.data_column, extractor, input_rows_count);
-        }
+        return extract(parsed_arguments.data_column, extractor, input_rows_count);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
@@ -160,13 +159,21 @@ public:
 
 private:
     const UInt64 extract_key_value_pairs_max_pairs_per_row;
-    const char * function_name;
-    bool with_escaping;
+};
+
+struct NameExtractKeyValuePairs
+{
+    static constexpr auto name = "extractKeyValuePairs";
+};
+
+struct NameExtractKeyValuePairsWithEscaping
+{
+    static constexpr auto name = "extractKeyValuePairsWithEscaping";
 };
 
 REGISTER_FUNCTION(ExtractKeyValuePairs)
 {
-    factory.registerFunction("extractKeyValuePairs", [](ContextPtr ctx){ return ExtractKeyValuePairs::create(ctx, "extractKeyValuePairs", false); },
+    factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairs, false>>(
         FunctionDocumentation{
             .description=R"(Extracts key-value pairs from any string. The string does not need to be 100% structured in a key value pair format;
 
@@ -299,13 +306,11 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             │ {'age':'a\\x0A\\n\\0'} │
             └───────────────────────┘
             ```)",
-            .syntax = "extractKeyValuePairs(input)",
-            .introduced_in = {23, 4},
             .category = FunctionDocumentation::Category::Map
         }
     );
 
-    factory.registerFunction("extractKeyValuePairsWithEscaping", [](ContextPtr ctx){ return ExtractKeyValuePairs::create(ctx, "extractKeyValuePairsWithEscaping", true); },
+    factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairsWithEscaping, true>>(
         FunctionDocumentation{
             .description=R"(Same as `extractKeyValuePairs` but with escaping support.
 
@@ -332,13 +337,11 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             │ {'age':'a\n\n\0'} │
             └──────────────────┘
             ```)",
-            .syntax = "extractKeyValuePairsWithEscaping(input)",
-            .introduced_in = {23, 4},
             .category = FunctionDocumentation::Category::Map
         }
     );
-    factory.registerAlias("str_to_map", "extractKeyValuePairs", FunctionFactory::Case::Insensitive);
-    factory.registerAlias("mapFromString", "extractKeyValuePairs");
+    factory.registerAlias("str_to_map", NameExtractKeyValuePairs::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("mapFromString", NameExtractKeyValuePairs::name);
 }
 
 }

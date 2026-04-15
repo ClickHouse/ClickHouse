@@ -118,7 +118,7 @@ struct DDLTaskBase
 
     bool is_initial_query = false;
     bool is_circular_replicated = false;
-    bool execute_on_single_replica = false;
+    bool execute_on_leader = false;
 
     Coordination::Requests ops;
     ExecutionStatus execution_status;

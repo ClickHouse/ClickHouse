@@ -124,17 +124,14 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   *   which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
   */
 
+template <bool is_pr>
 class FunctionArrayAUC : public IFunction
 {
 public:
-    FunctionArrayAUC(const char * name_, bool is_pr_) : function_name(name_), is_pr(is_pr_) {}
+    static constexpr auto name = is_pr ? "arrayAUCPR" : "arrayROCAUC";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC<is_pr>>(); }
 
-    static FunctionPtr create(const char * name, bool is_pr)
-    {
-        return std::make_shared<FunctionArrayAUC>(name, is_pr);
-    }
-
-    String getName() const override { return function_name; }
+    String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
@@ -308,10 +305,8 @@ public:
         return col_res;
     }
 private:
-    const char * function_name;
-    const bool is_pr;
-    const size_t array_partial_offsets_arg_index = is_pr ? 2 : 3;
-    const size_t array_partial_offsets_size = is_pr ? 3 : 4;
+    static constexpr size_t array_partial_offsets_arg_index = is_pr ? 2 : 3;
+    static constexpr size_t array_partial_offsets_size = is_pr ? 3 : 4;
 
     static bool isConstBoolColumn(ColumnWithTypeAndName argument)
     {
@@ -324,9 +319,9 @@ private:
         return true;
     }
 
-    Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp) const
+    static Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp)
     {
-        if (is_pr)
+        if constexpr (is_pr)
             /// PR curve plots Precision x Recall
             ///
             /// Precision = TP / (TP + FP)
@@ -367,9 +362,9 @@ private:
             return static_cast<Float64>(curr_fp - prev_fp) * static_cast<Float64>(curr_tp + prev_tp) / 2.0;
     }
 
-    Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels) const
+    static Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels)
     {
-        if (is_pr)
+        if constexpr (is_pr)
             /// To simplify the calculations, previously we calculated the AUC for the Precision x TP curve.
             /// This scales back to Precision x Recall by dividing the area by (TP + FN).
             return area / static_cast<Float64>(total_positive_labels);
@@ -379,7 +374,7 @@ private:
             return area / static_cast<Float64>(total_positive_labels) / static_cast<Float64>(total_negative_labels);
     }
 
-    Float64 apply(
+    static Float64 apply(
         const IColumn & scores,
         const IColumn & labels,
         ColumnArray::Offset current_offset,
@@ -388,7 +383,7 @@ private:
         size_t higher_partitions_tp = 0,
         size_t higher_partitions_fp = 0,
         size_t total_positives = 0,
-        size_t total_negatives = 0) const
+        size_t total_negatives = 0)
     {
         struct ScoreLabel
         {
@@ -460,14 +455,14 @@ private:
         return area;
     }
 
-    void vector(
+    static void vector(
         const IColumn & scores,
         const IColumn & labels,
         const ColumnArray::Offsets & offsets,
         PaddedPODArray<Float64> & result,
         size_t input_rows_count,
         bool scale,
-        const ColumnArray * partial_auc_offsets) const
+        const ColumnArray * partial_auc_offsets)
     {
         result.resize(input_rows_count);
 
@@ -532,7 +527,7 @@ For example:
     FunctionDocumentation::Category category_roc = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_roc = {description_roc, syntax_roc, arguments_roc, {}, returned_value_roc, examples_roc, introduced_in_roc, category_roc};
 
-    factory.registerFunction("arrayROCAUC", [](ContextPtr){ return FunctionArrayAUC::create("arrayROCAUC", false); }, documentation_roc);
+    factory.registerFunction<FunctionArrayAUC<false>>(documentation_roc);
     factory.registerAlias("arrayAUC", "arrayROCAUC"); /// Backward compatibility, also ROC AUC is often shorted to just AUC
 
     /// PR AUC
@@ -572,7 +567,7 @@ For example:
     FunctionDocumentation::Category category_pr = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_pr = {description_pr, syntax_pr, arguments_pr, {}, returned_value_pr, examples_pr, introduced_in_pr, category_pr};
 
-    factory.registerFunction("arrayAUCPR", [](ContextPtr){ return FunctionArrayAUC::create("arrayAUCPR", true); }, documentation_pr);
+    factory.registerFunction<FunctionArrayAUC<true>>(documentation_pr);
     factory.registerAlias("arrayPRAUC", "arrayAUCPR");
 }
 

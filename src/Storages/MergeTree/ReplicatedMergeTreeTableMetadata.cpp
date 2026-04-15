@@ -431,7 +431,7 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
         is_equal = false;
     }
 
-    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, nullptr, context).toString();
+    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
     if (projections != parsed_zk_projections)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections, strict_check, logger);
@@ -565,7 +565,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
 
         if (projections_changed)
-            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, &new_metadata.partition_key, context);
+            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, context);
 
         if (ttl_table_changed)
         {
@@ -613,26 +613,9 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
     if (!skip_indices_changed) /// otherwise already updated
     {
-        /// Remove implicitly created indices and recalculate explicit ones
-        IndicesDescription new_indices;
         for (auto & index : new_metadata.secondary_indices)
-        {
-            if (!index.isImplicitlyCreated())
-            {
-                index.recalculateWithNewColumns(new_metadata.columns, context);
-                new_indices.push_back(index);
-            }
-        }
-        new_metadata.secondary_indices = std::move(new_indices);
+            index.recalculateWithNewColumns(new_metadata.columns, context);
     }
-
-    /// Regenerate implicit indices for the new columns regardless of whether indices were explicitly changed.
-    /// Implicit indices are not stored in ZooKeeper, so they must be recreated locally based on the current
-    /// columns and table settings.
-    /// Note: addImplicitIndicesForColumn checks for existing minmax indices on each column and won't create
-    /// duplicates if an explicit index already exists.
-    for (const auto & column : new_metadata.columns)
-        new_metadata.addImplicitIndicesForColumn(column, context);
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
@@ -642,7 +625,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     {
         ProjectionsDescription recalculated_projections;
         for (const auto & projection : new_metadata.projections)
-            recalculated_projections.add(ProjectionDescription::getProjectionFromAST(projection.definition_ast, new_metadata.columns, &new_metadata.partition_key, context));
+            recalculated_projections.add(ProjectionDescription::getProjectionFromAST(projection.definition_ast, new_metadata.columns, context));
         new_metadata.projections = std::move(recalculated_projections);
     }
 
