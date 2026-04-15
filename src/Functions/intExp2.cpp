@@ -43,14 +43,14 @@ struct IntExp2Impl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
-
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
-    {
-        if (!arg->getType()->isIntegerTy())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IntExp2Impl expected an integral type");
-        return b.CreateShl(llvm::ConstantInt::get(arg->getType(), 1), arg);
-    }
+    /// JIT-compiled path is intentionally disabled: a naive `b.CreateShl(1, arg)`
+    /// has no bounds check for `arg < 0` or `arg >= 64`, while the scalar
+    /// `intExp2(int)` clamps those cases to `0` and `UINT64_MAX` respectively.
+    /// Keeping the JIT path enabled with the unbounded shift produced silently
+    /// wrong results (e.g. `intExp2(64) = 0`) under
+    /// `compile_expressions=1`. Match `intExp10` and fall back to the
+    /// interpreted apply() until a bounds-checked LLVM IR sequence lands.
+    static constexpr bool compilable = false;
 #endif
 };
 
