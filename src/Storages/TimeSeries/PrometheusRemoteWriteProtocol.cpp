@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
@@ -248,6 +249,15 @@ namespace
         }
     }
 
+    /// Returns true if a column contains DateTime64 or Nullable(DateTime64).
+    bool isDateTime64Column(const IColumn & column)
+    {
+        const auto * ptr = &column;
+        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(ptr))
+            ptr = &nullable_column->getNestedColumn();
+        return typeid_cast<const ColumnDecimal<DateTime64> *>(ptr) != nullptr;
+    }
+
     /// Fills tag columns for the "tags" table by iterating over the time series.
     /// Optional output columns (out_all_tags_*) are skipped when null.
     void fillTagsColumns(
@@ -283,30 +293,70 @@ namespace
         }
     }
 
-    /// Fills the min_time and max_time columns for the "tags" table by iterating over the time series.
-    void fillMinTimeAndMaxTimeColumn(
+    /// Fills the min_time column for the "tags" table by iterating over the time series.
+    /// T is the timestamp type: either DateTime64 (sub-second precision) or UInt32 (second precision).
+    template <typename T>
+    void fillMinTimeColumnImpl(
         const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
-        UInt32 min_time_scale, IColumn & out_min_time_column,
-        UInt32 max_time_scale, IColumn & out_max_time_column)
+        UInt32 scale, IColumn & out_column)
     {
         for (size_t i = 0; i != static_cast<size_t>(time_series.size()); ++i)
         {
             const auto & element = time_series[static_cast<int>(i)];
             if (!element.samples_size())
-            {
-                out_min_time_column.insertDefault();
-                out_max_time_column.insertDefault();
-            }
+                out_column.insertDefault();
+            else if constexpr (is_decimal<T>)
+                out_column.insert(DecimalUtils::convertTo<T>(scale, DateTime64{findMinTime(element.samples())}, 3));
             else
-            {
-                out_min_time_column.insert(DecimalUtils::convertTo<DateTime64>(min_time_scale, DateTime64{findMinTime(element.samples())}, 3));
-                out_max_time_column.insert(DecimalUtils::convertTo<DateTime64>(max_time_scale, DateTime64{findMaxTime(element.samples())}, 3));
-            }
+                out_column.insert(DecimalUtils::convertTo<T>(DateTime64{findMinTime(element.samples())}, 3));
         }
     }
 
+    /// Fills the min_time column for the "tags" table by iterating over the time series.
+    void fillMinTimeColumn(
+        const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+        UInt32 scale, IColumn & out_column)
+    {
+        if (isDateTime64Column(out_column))
+            fillMinTimeColumnImpl<DateTime64>(time_series, scale, out_column);
+        else
+            fillMinTimeColumnImpl<UInt32>(time_series, scale, out_column);
+    }
+
+    /// Fills the max_time column for the "tags" table by iterating over the time series.
+    /// T is the timestamp type: either DateTime64 (sub-second precision) or UInt32 (second precision).
+    template <typename T>
+    void fillMaxTimeColumnImpl(
+        const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+        UInt32 scale, IColumn & out_column)
+    {
+        for (size_t i = 0; i != static_cast<size_t>(time_series.size()); ++i)
+        {
+            const auto & element = time_series[static_cast<int>(i)];
+            if (!element.samples_size())
+                out_column.insertDefault();
+            else if constexpr (is_decimal<T>)
+                out_column.insert(DecimalUtils::convertTo<T>(scale, DateTime64{findMaxTime(element.samples())}, 3));
+            else
+                out_column.insert(DecimalUtils::convertTo<T>(DateTime64{findMaxTime(element.samples())}, 3));
+        }
+    }
+
+    /// Fills the max_time column for the "tags" table by iterating over the time series.
+    void fillMaxTimeColumn(
+        const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+        UInt32 scale, IColumn & out_column)
+    {
+        if (isDateTime64Column(out_column))
+            fillMaxTimeColumnImpl<DateTime64>(time_series, scale, out_column);
+        else
+            fillMaxTimeColumnImpl<UInt32>(time_series, scale, out_column);
+    }
+
     /// Fills the id, timestamp, and value columns for the "samples" table by iterating over the time series.
-    void fillSamplesColumns(
+    /// T is the timestamp type: either DateTime64 (sub-second precision) or UInt32 (second precision).
+    template <typename T>
+    void fillSamplesColumnsImpl(
         const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
         const IColumn & id_column_in_tags_table,
         IColumn & out_id_column,
@@ -322,10 +372,27 @@ namespace
             out_id_column.insertManyFrom(id_column_in_tags_table, i, element.samples_size());
             for (const auto & sample : element.samples())
             {
-                out_timestamp_column.insert(DecimalUtils::convertTo<DateTime64>(timestamp_scale, DateTime64{sample.timestamp()}, 3));
+                if constexpr (is_decimal<T>)
+                    out_timestamp_column.insert(DecimalUtils::convertTo<T>(timestamp_scale, DateTime64{sample.timestamp()}, 3));
+                else
+                    out_timestamp_column.insert(DecimalUtils::convertTo<T>(DateTime64{sample.timestamp()}, 3));
                 out_value_column.insert(sample.value());
             }
         }
+    }
+
+    /// Fills the id, timestamp, and value columns for the "samples" table by iterating over the time series.
+    void fillSamplesColumns(
+        const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+        const IColumn & id_column_in_tags_table,
+        IColumn & out_id_column,
+        UInt32 timestamp_scale, IColumn & out_timestamp_column,
+        IColumn & out_value_column)
+    {
+        if (isDateTime64Column(out_timestamp_column))
+            fillSamplesColumnsImpl<DateTime64>(time_series, id_column_in_tags_table, out_id_column, timestamp_scale, out_timestamp_column, out_value_column);
+        else
+            fillSamplesColumnsImpl<UInt32>(time_series, id_column_in_tags_table, out_id_column, timestamp_scale, out_timestamp_column, out_value_column);
     }
 
     /// Fills the metric_family_name, type, unit, and help columns for the "metrics" table.
@@ -455,12 +522,10 @@ namespace
 
         /// Fill min_time and max_time columns.
         if (min_time_column)
-        {
-            fillMinTimeAndMaxTimeColumn(
-                time_series,
-                min_time_scale, *min_time_column,
-                max_time_scale, *max_time_column);
-        }
+            fillMinTimeColumn(time_series, min_time_scale, *min_time_column);
+
+        if (max_time_column)
+            fillMaxTimeColumn(time_series, max_time_scale, *max_time_column);
 
         /// Build tags block.
         Block tags_block;
