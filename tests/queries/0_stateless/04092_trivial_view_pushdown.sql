@@ -118,6 +118,30 @@ FROM (EXPLAIN SELECT * FROM 04092_view_rand_where);
 
 DROP VIEW 04092_view_rand_where;
 
+-- -----------------------------------------------------------------------
+-- Test 5: Column transformers on asterisks suppress the optimization.
+-- APPLY/REPLACE/EXCEPT on * or t.* can carry aggregate, window, or
+-- non-deterministic expressions and must not be treated as trivial.
+-- -----------------------------------------------------------------------
+
+-- SELECT * APPLY(rand()) suppresses pushdown.
+CREATE VIEW 04092_view_asterisk_apply AS
+    SELECT * APPLY(rand()) FROM 04092_dist_replacing;
+
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
+FROM (EXPLAIN SELECT * FROM 04092_view_asterisk_apply);
+
+DROP VIEW 04092_view_asterisk_apply;
+
+-- SELECT * EXCEPT(val) suppresses pushdown.
+CREATE VIEW 04092_view_asterisk_except AS
+    SELECT * EXCEPT(val) FROM 04092_dist_replacing;
+
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
+FROM (EXPLAIN SELECT * FROM 04092_view_asterisk_except);
+
+DROP VIEW 04092_view_asterisk_except;
+
 DROP VIEW 04092_view_replacing;
 DROP TABLE 04092_dist_replacing;
 DROP TABLE 04092_local_replacing;

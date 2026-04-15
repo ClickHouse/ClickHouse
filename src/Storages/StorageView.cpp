@@ -25,12 +25,11 @@
 
 #include <Common/CurrentThread.h>
 
-#include <Analyzer/TableNode.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Common/typeid_cast.h>
 
@@ -266,8 +265,18 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     }
     for (const auto & expr : select_expr_list->children)
     {
-        if (expr->as<ASTAsterisk>())
+        if (const auto * asterisk = expr->as<ASTAsterisk>())
         {
+            /// Column transformers (APPLY/REPLACE/EXCEPT) can carry aggregate, window, or
+            /// non-deterministic expressions, making the view non-trivial.
+            if (asterisk->transformers)
+                return nullptr;
+            continue;
+        }
+        if (const auto * qualified_asterisk = expr->as<ASTQualifiedAsterisk>())
+        {
+            if (qualified_asterisk->transformers)
+                return nullptr;
             continue;
         }
         if (hasSubqueryOrWindow(expr) || hasAggregate(expr) || hasNonDeterministicFunction(expr, context))

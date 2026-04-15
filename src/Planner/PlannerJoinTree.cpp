@@ -32,7 +32,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
-#include <Storages/StorageView.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -1417,7 +1416,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             updated_context = mutable_context;
                         }
 
-                        effective_storage->read(
                         effective_storage->read(
                             query_plan,
                             columns_names,

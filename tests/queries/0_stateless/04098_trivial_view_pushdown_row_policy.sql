@@ -3,7 +3,7 @@
 -- id=2: hidden by view policy, id=3: by dist policy.
 -- id=1, id=4 and id=5 must always be visible.
 --
--- Tags: distributed, no-parallel
+-- Tags: distributed
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
@@ -24,7 +24,7 @@ ENGINE = Distributed(test_shard_localhost, currentDatabase(), 04098_local);
 
 CREATE VIEW 04098_view AS SELECT id, val FROM 04098_dist;
 
--- Aliased view: dist policy references original column `id`, view policy references alias `v`.
+-- Aliased view: the view produces a computed alias `v` (= val * 2).
 CREATE VIEW 04098_view_alias AS SELECT id, val * 2 AS v FROM 04098_dist;
 
 INSERT INTO 04098_dist VALUES (1, 100), (2, 200), (3, 300), (4, 400), (5, 500);
@@ -40,8 +40,9 @@ CREATE ROW POLICY 04098_policy_dist  ON 04098_dist  USING id != 3 TO ALL;
 SET optimize_trivial_view_pushdown_to_distributed = 1;
 SELECT id, val FROM 04098_view ORDER BY id;
 
--- Aliased view: same policy enforcement with column aliases.
-CREATE ROW POLICY 04098_policy_view_alias ON 04098_view_alias USING id != 2 TO ALL;
+-- Policy references the computed alias `v` directly; the analyzer must expand it to `val * 2`.
+-- This hides id=2 (val=200 → v=400) just as `id != 2` would, keeping the reference output identical.
+CREATE ROW POLICY 04098_policy_view_alias ON 04098_view_alias USING v != 400 TO ALL;
 SELECT id, v FROM 04098_view_alias ORDER BY id;
 DROP ROW POLICY 04098_policy_view_alias ON 04098_view_alias;
 
