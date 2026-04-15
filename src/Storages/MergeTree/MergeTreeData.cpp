@@ -2697,6 +2697,10 @@ try
 catch (...)
 {
     tryLogCurrentException(log, "Failed to refresh parts");
+    /// A transient error (e.g. temporary disk unavailability or network hiccup) must not
+    /// permanently disable the background refresh task; otherwise the readonly table is
+    /// stale until the server restarts. Mirror refreshStatistics's catch-block reschedule.
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
