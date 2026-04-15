@@ -1,13 +1,4 @@
-set(SQL_CONSOLE_SOURCE_DIR_DEFAULT "${ClickHouse_SOURCE_DIR}/contrib/sql-console/apps/web/dist-embedded")
-set(SQL_CONSOLE_SOURCE_DIR "${SQL_CONSOLE_SOURCE_DIR_DEFAULT}" CACHE PATH "Path to built SQL Console assets directory")
-
- if (NOT EXISTS "${SQL_CONSOLE_SOURCE_DIR}")
-    message(FATAL_ERROR
-        "SQL Console assets not found at ${SQL_CONSOLE_SOURCE_DIR}. "
-        "Build the standalone bundle with `EMBEDDED_BASE_PATH=/sql-console/` and pass "
-        "`-DSQL_CONSOLE_SOURCE_DIR=/absolute/path/to/dist-embedded`, "
-        "or place the built assets in `contrib/sql-console/apps/web/dist-embedded`.")
-endif()
+set(SQL_CONSOLE_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/sql-console/dist-standalone")
 
 set(SQL_CONSOLE_DIR "${CMAKE_CURRENT_BINARY_DIR}/sql_console_compressed")
 file(MAKE_DIRECTORY "${SQL_CONSOLE_DIR}")

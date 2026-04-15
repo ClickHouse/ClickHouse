@@ -1,11 +1,19 @@
 # CMake script to generate embedded SQL Console resources to be served by the
-# `SQLConsoleUIRequestHandler`. C++ cannot natively embed directories with
-# unknown file names, so we must use CMake.
+# SQLConsoleUIRequestHandler. C++ cannot natively embed directories with unknown
+# file names, so we must use CMake.
 #
-# Expected variables (passed via `-D`):
-#   `SQL_CONSOLE_SOURCE_DIR` - Source directory with uncompressed files.
-#   `SQL_CONSOLE_DIR` - Build directory for gzipped files.
-#   `GENERATED_FILE` - Output path for generated header.
+# To change the version of sql-console, simply
+#   1. `cd contrib/sql-console`
+#   2. `git checkout <version>`
+#
+# This script scans the contrib/sql-console/dist-standalone directory, gzips all files,
+# and generates C++ code with #embed directives for all files.
+# The built assets are served at the /ui HTTP endpoint.
+#
+# Expected variables (passed via -D):
+#   SQL_CONSOLE_SOURCE_DIR - Source directory with uncompressed files
+#   SQL_CONSOLE_DIR - Build directory for gzipped files
+#   GENERATED_FILE - Output path for generated header
 
 cmake_minimum_required(VERSION 3.25)
 
@@ -30,17 +38,11 @@ endif()
 set(index_html "${SQL_CONSOLE_SOURCE_DIR}/index.html")
 if(EXISTS "${index_html}")
     file(READ "${index_html}" index_html_content LIMIT 65536)
-    if(NOT index_html_content MATCHES "/sql-console/")
+    if(NOT index_html_content MATCHES "/ui/")
         message(FATAL_ERROR
-            "SQL Console assets must be built with base path `/sql-console/`. "
-            "Rebuild the standalone bundle with `EMBEDDED_BASE_PATH=/sql-console/`.")
+            "SQL Console assets must be built with base path `/ui/`. "
+            "Rebuild the standalone bundle with `STANDALONE_BASE_PATH=/ui/`.")
     endif()
-endif()
-
-if(EXISTS "${SQL_CONSOLE_SOURCE_DIR}/sql-console/monacoeditorwork")
-    message(FATAL_ERROR
-        "SQL Console assets use the legacy nested `sql-console/monacoeditorwork` layout. "
-        "Rebuild the standalone bundle and use the resulting `dist-embedded` directory.")
 endif()
 
 # Create gzipped directory if it doesn't exist

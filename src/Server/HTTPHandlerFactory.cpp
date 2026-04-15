@@ -380,9 +380,9 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addHandler(clickstack_handler);
 
     auto sql_console_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<SQLConsoleUIRequestHandler>>(server);
-    sql_console_handler->attachNonStrictPath("/sql-console");
+    sql_console_handler->attachNonStrictPath("/ui");
     sql_console_handler->allowGetAndHeadRequest();
-    factory.addPathToHints("/sql-console");
+    factory.addPathToHints("/ui");
     factory.addHandler(sql_console_handler);
 
 #if USE_SSL

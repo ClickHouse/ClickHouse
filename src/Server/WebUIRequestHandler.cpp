@@ -205,8 +205,8 @@ void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTP
 std::string SQLConsoleUIRequestHandler::getResourcePath(const std::string & uri) const
 {
     std::string_view path = uri;
-    if (path.starts_with("/sql-console"))
-        path.remove_prefix(12); // length of "/sql-console"
+    if (path.starts_with("/ui"))
+        path.remove_prefix(3); // length of "/ui"
 
     if (!path.empty() && path[0] == '/')
         path.remove_prefix(1);
