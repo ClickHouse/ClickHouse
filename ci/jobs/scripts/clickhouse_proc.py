@@ -38,6 +38,19 @@ CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
 CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
+def collect_and_encrypt_cores(directory, key_path: str, aes_key_path: str = None) -> List[str]:
+    if aes_key_path is None:
+        aes_key_path = str(Path(directory) / "aes.key")
+    encrypted = []
+    for core in sorted(Path(directory).glob("core.*"))[:3]:
+        if not core.name.endswith(".zst") and not core.name.endswith(".enc"):
+            zst_path = Utils.compress_zst(core)
+            encrypted.append(Utils.encrypt(str(zst_path), key_path, aes_key_path))
+    if encrypted and Path(f"{aes_key_path}.rsa").exists():
+        encrypted.append(f"{aes_key_path}.rsa")
+    return encrypted
+
+
 class ClickHouseProc:
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
@@ -206,24 +219,24 @@ class ClickHouseProc:
     @staticmethod
     def enable_thread_fuzzer_config():
         # For flaky check we also enable thread fuzzer
-        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "10000"
-        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.05"
-        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
+        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
+        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "0.5"
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "0.5"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "0.5"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "0.5"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.0005"
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.0005"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.0005"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.0005"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.001"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "1000"
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "1000"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "1000"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "1000"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
 
     @staticmethod
     def set_memory_ratio(ratio):
@@ -775,15 +788,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
             try:
                 process.wait(timeout=timeout)
+                reader_thread.join()
+                return process.returncode == 0
             except subprocess.TimeoutExpired:
-                print(f"ERROR: fast test timed out after {timeout}s, killing process group")
+                print(
+                    f"ERROR: fast test timed out after {timeout}s, killing process group"
+                )
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.wait()
                 reader_thread.join()
                 return False
-
-            reader_thread.join()
-            return process.returncode == 0
+            finally:
+                # Kill any test processes that survived clickhouse-test's own cleanup
+                # (e.g. if it was killed with SIGKILL before its signal handlers ran).
+                # clickhouse-test writes the group pid file itself on startup; --cleanup
+                # reads it and kills all orphaned test process groups.
+                _clickhouse_test = Path(__file__).resolve().parent.parent.parent.parent / "tests" / "clickhouse-test"
+                subprocess.run([sys.executable, str(_clickhouse_test), "--cleanup"], check=False)
 
     def terminate(self, force=False):
         if self.minio_proc:
@@ -860,8 +881,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
-                if Path(f"{self.aes_key}.rsa").exists():
-                    res.append(f"{self.aes_key}.rsa")
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -886,11 +905,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
-        cores = list(p_temp_dir.glob("run_r*/core.*"))[:3]
-        return [
-            Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/ci/defs/public.pem", self.aes_key)
-            for f in cores
-        ]
+        result = []
+        for run_dir in sorted(p_temp_dir.glob("run_r*")):
+            result.extend(
+                collect_and_encrypt_cores(
+                    run_dir, f"{repo_dir}/ci/defs/public.pem", self.aes_key
+                )
+            )
+        return result
 
     @classmethod
     def _get_logs_archive_coordination(cls):

@@ -67,7 +67,7 @@
 #endif
 
 #if CLICKHOUSE_CLOUD
-    #include <Interpreters/Cache/FileCacheFactory.h>
+    #include <Interpreters/FileCache/FileCacheFactory.h>
     #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
     #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
     #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -2906,7 +2906,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         {
             for (const auto & column : global_ctx->merging_columns)
             {
-                if (virtuals.tryGet(column.name, VirtualsKind::Persistent))
+                if (virtuals.tryGet(column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
                     continue;
 
                 global_ctx->deduplicate_by_columns.emplace_back(column.name);
