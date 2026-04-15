@@ -24,6 +24,12 @@ static const auto highRangeSetting
 static const auto highRangeNonZeroSetting
     = CHSetting(highRangeNonZero, {"1", "2", "4", "8", "32", "64", "1024", "2048", "4096", "16384"}, false);
 
+/// Valid values: 0 (disabled) or >= 1024
+static const auto indexGranularityBytesSetting = CHSetting(
+    [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextBool() ? 0 : (rg.nextBool() ? 1024 : 10485760)); },
+    {"0", "1024", "2048", "10485760"},
+    false);
+
 static const auto rowsRangeSetting
     = CHSetting(rowsRange, {"0", "1", "2", "4", "8", "32", "64", "1024", "2048", "4096", "16384", "'10M'"}, false);
 
@@ -161,8 +167,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"force_read_through_cache_for_merges", trueOrFalseSetting},
     {"fsync_after_insert", trueOrFalseSetting},
     {"fsync_part_directory", trueOrFalseSetting},
-    {"index_granularity", highRangeSetting},
-    {"index_granularity_bytes", bytesRangeSetting},
+    {"index_granularity", highRangeNonZeroSetting},
+    {"index_granularity_bytes", indexGranularityBytesSetting},
     {"lightweight_mutation_projection_mode",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -624,6 +630,9 @@ std::unordered_map<String, CHSetting> backupSettings
        {"s3_storage_class", CHSetting([](RandomGenerator &, FuzzConfig &) { return "'STANDARD'"; }, {}, false)},
        {"structure_only", trueOrFalseSettingNoOracle},
        {"write_access_entities_dependents", trueOrFalseSettingNoOracle}};
+
+std::unordered_map<String, CHSetting> projectionSettings
+    = {{"index_granularity", highRangeNonZeroSetting}, {"index_granularity_bytes", indexGranularityBytesSetting}};
 
 static std::unordered_map<String, CHSetting> flatLayoutSettings
     = {{"INITIAL_ARRAY_SIZE", CHSetting(bytesRange, {}, false)}, {"MAX_ARRAY_SIZE", CHSetting(bytesRange, {}, false)}};

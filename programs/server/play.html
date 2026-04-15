@@ -29,7 +29,6 @@
     Also, it can provide visual indication that credentials are correct.
 
     Nice to have:
-    - display totals
     - show/hide the editor
     - check for readonly
     - query caching
@@ -66,6 +65,7 @@
             --menu-toggle-color: #000;
 
             --progress-color: #0C4;
+            --table-size-bar-color: #FFF;
 
             --selection-color: #FFF;
             --selection-background-color: #456;
@@ -97,6 +97,7 @@
             --menu-toggle-color: #FF0;
 
             --progress-color: #FF0;
+            --table-size-bar-color: #104050;
 
             --selection-color: #000;
             --selection-background-color: #FF8;
@@ -183,6 +184,13 @@
         #databases
         {
             grid-area: contents;
+            max-width: 25em;
+            overflow: hidden;
+        }
+
+        .tables:not(:empty)
+        {
+            margin-bottom: 1em;
         }
 
         #github-icon
@@ -240,11 +248,6 @@
             color: var(--misc-text-color);
         }
 
-        .tables
-        {
-            padding-left: 1rem;
-        }
-
         .current
         {
             font-weight: bold;
@@ -252,40 +255,63 @@
 
         .table
         {
-            background-position: bottom;
-            background-size: 100% 2px;
             background-repeat: no-repeat;
+        }
+
+        .table button
+        {
+            display: inline-block;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+
+        .table-icon
+        {
+            width: 1em;
+            height: 1em;
+            vertical-align: -0.1em;
+            margin-right: 0.25em;
+            flex-shrink: 0;
+            opacity: 0.5;
         }
 
         .table-addendum
         {
             position: absolute;
             z-index: 999;
-            display: none;
             white-space: pre;
             transform: translate(0.25rem, calc(-50% + 0.5em));
             color: var(--element-background-color);
-            background: var(--text-color);
-            border: 1px solid var(--border-color);
+            background: color-mix(in srgb, var(--text-color) 50%, var(--background-color));
+            backdrop-filter: blur(4px);
             border-radius: 0.5rem;
             padding: 0.25rem;
             margin-left: 0.25rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0s 0.1s;
         }
 
         .table-addendum::before {
             content: " ";
             position: absolute;
             top: 50%;
-            transform: translate(-110%, -50%);
+            transform: translate(calc(-100% - 0.2rem), -50%);
             line-height: 0;
             border-width: 0.5rem;
             border-style: solid;
-            border-color: transparent var(--text-color) transparent transparent;
+            border-color: transparent color-mix(in srgb, var(--text-color) 50%, var(--background-color)) transparent transparent;
         }
 
-        .table:hover .table-addendum
+        .table button:hover + .table-addendum,
+        .table .table-addendum:hover
         {
-            display: inline-block;
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 0s 0.1s;
         }
 
         .table-addendum-elem
@@ -639,6 +665,7 @@
             line-height: 0.75;
             position: sticky;
             left: 0;
+            z-index: -1; /* Below the expanded selected cell */
         }
 
         #url_status
@@ -913,6 +940,11 @@ class QueryResultElement extends HTMLElement
         this.attachShadow({ mode: 'open' });
         this.shadowRoot.innerHTML = `
             <style>
+                *
+                {
+                    box-sizing: border-box;
+                }
+
                 :host
                 {
                     display: block;
@@ -977,13 +1009,19 @@ class QueryResultElement extends HTMLElement
                 td
                 {
                     background-color: var(--element-background-color);
-                    max-width: 50vw;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    padding: 0.25rem 0.5rem;
+                    max-width: 40vw;
+                    padding: 0; /* Padding is on .cell-content instead */
                     border: 1px solid var(--border-color);
                     white-space: pre;
                     vertical-align: top;
+                }
+
+                /* Inner div limits cell height to 3 lines; expands on selection */
+                .cell-content
+                {
+                    padding: 0.25rem 0.5rem;
+                    max-height: 3lh;
+                    overflow: hidden;
                 }
 
                 td u
@@ -1020,13 +1058,17 @@ class QueryResultElement extends HTMLElement
                     user-select: none;
                     left: 0;
                     top: -1px;
-                    transform: translateY(-100%);
                     font-size: 75%;
                     font-weight: normal;
                     color: var(--misc-text-color);
                     background: var(--element-background-color);
                     max-height: 5em;
                     white-space: pre;
+                }
+
+                thead .type-hint
+                {
+                    transform: translateY(-100%);
                 }
 
                 th:hover .type-hint
@@ -1051,12 +1093,20 @@ class QueryResultElement extends HTMLElement
                     background-color: var(--border-color-selected);
                 }
 
-                tr:hover
+                /* Apply hover/selection filter per-cell, excluding the active cell,
+                   because filter on tr would create a stacking context trapping it. */
+                tr:hover td:not(.td-selected)
                 {
                     filter: var(--table-hover-filter);
                 }
 
                 .tr-selected
+                {
+                    position: relative;
+                    z-index: 1; /* Above hovered rows */
+                }
+
+                .tr-selected td:not(.td-selected)
                 {
                     filter: var(--table-hover-filter);
                 }
@@ -1069,12 +1119,68 @@ class QueryResultElement extends HTMLElement
                     display: none;
                 }
 
+                .cell-copy
+                {
+                    display: none;
+                    position: absolute;
+                    bottom: 100%;
+                    right: -1px;
+                    padding: 0.25rem;
+                    width: fit-content;
+                    cursor: pointer;
+                    filter: invert(1);
+                    background-color: var(--element-background-color);
+                    z-index: 1;
+                }
+
+                /* First row after a sticky header: place to the side to avoid overlap */
+                thead + tbody tr:first-child .cell-copy
+                {
+                    bottom: auto;
+                    left: 100%;
+                    top: -1px;
+                }
+
+                thead + tbody tr:first-child td:last-child .cell-copy
+                {
+                    left: auto;
+                    right: 100%;
+                }
+
+                .cell-copy svg
+                {
+                    width: 1em;
+                    height: 1em;
+                    vertical-align: middle;
+                }
+
+                .td-selected .cell-copy
+                {
+                    display: block;
+                }
+
+                /* Selected cell stacks above all other cells */
                 .td-selected
                 {
+                    position: relative;
+                    z-index: 10;
+                }
+
+                /* Expand the inner div on top of the table without reflowing it */
+                .td-selected .cell-content
+                {
+                    position: absolute;
+                    top: -1px;
+                    left: -1px;
+                    width: calc(100% + 2px); /* Compensate for collapsed border (1px each side) */
+                    min-height: calc(100% + 2px);
+                    max-height: 50vh;
                     white-space: pre-wrap;
-                    max-width: none;
-                    outline: 2px solid var(--border-color-selected);
-                    outline-offset: -2px;
+                    word-break: break-all;
+                    overflow-y: auto;
+                    scrollbar-width: thin;
+                    filter: invert(1);
+                    background-color: var(--element-background-color);
                 }
 
                 td.empty-result
@@ -1087,8 +1193,18 @@ class QueryResultElement extends HTMLElement
                 {
                     width: 1%;
                     text-align: right;
+                    padding: 0.25rem 0.5rem;
                     background-color: var(--table-header-color);
                     color: var(--misc-text-color);
+                }
+
+                tfoot td
+                {
+                    font-weight: bold;
+                    background-color: var(--table-header-color);
+                    position: sticky;
+                    bottom: -0.5rem;
+                    border: 1px solid var(--border-color);
                 }
 
                 div.empty-result
@@ -1182,6 +1298,7 @@ class QueryResultElement extends HTMLElement
         this._explain_graph = '';
         this._column_is_number = {};
         this._extremes = {};
+        this._totals = null;
         this._header = {};
         this._current_selected_cell = null;
         this._uplot = null;
@@ -1193,6 +1310,11 @@ class QueryResultElement extends HTMLElement
         this.setAttribute('tabindex', '0');
         this.style.outline = 'none';
         this.addEventListener('keydown', (e) => this._handleKeyDown(e));
+
+        /* Clicking on non-data areas (e.g. table header) deactivates the selected cell */
+        this.shadowRoot.addEventListener('click', (e) => {
+            if (!e.target.closest('td') || e.target.closest('.row-number')) this.clearSelection();
+        });
 
         new ResizeObserver(() => this._resizeChart()).observe(this._chart);
     }
@@ -1227,6 +1349,7 @@ class QueryResultElement extends HTMLElement
         this._dataDiv.classList.remove('fixed');
 
         this._extremes = {};
+        this._totals = null;
         this._header = {};
         this._row_idx = 0;
         this._elapsed_ns = 0;
@@ -1238,8 +1361,11 @@ class QueryResultElement extends HTMLElement
 
     clearSelection()
     {
-        this._current_selected_cell?.classList.remove('td-selected');
-        this._current_selected_cell?.parentElement.classList.remove('tr-selected');
+        if (this._current_selected_cell)
+        {
+            this._current_selected_cell.classList.remove('td-selected');
+            this._current_selected_cell.parentElement.classList.remove('tr-selected');
+        }
         this._current_selected_cell = null;
     }
 
@@ -1251,6 +1377,9 @@ class QueryResultElement extends HTMLElement
     _renderCell(name, value)
     {
         let td = document.createElement('td');
+        let div = document.createElement('div');
+        div.className = 'cell-content'; /* Height-limited container; expands absolutely when selected */
+
         let is_null = (value === null);
         let is_link = false;
 
@@ -1289,15 +1418,37 @@ class QueryResultElement extends HTMLElement
             if (text.length >= 5 && text.match(/^[\d]{5,}$/))
             {
                 let i = 0;
-                td.innerHTML = text.split('').reverse().map(c => {
+                div.innerHTML = text.split('').reverse().map(c => {
                     if (i > 0 && i % 3 == 0) { c = `<u>${c}<\/u>`; }; ++i; return c;
                 }).reverse().join('');
+                td.appendChild(div);
+                this._appendCopyButton(td, text, value);
                 return td;
             }
         }
 
-        td.appendChild(node);
+        div.appendChild(node);
+        td.appendChild(div);
+        this._appendCopyButton(td, text, value);
         return td;
+    }
+
+    _appendCopyButton(td, text, value)
+    {
+        if (value === null || value === '' || value === 0 || value === '0') return;
+
+        let btn = document.createElement('span');
+        btn.className = 'cell-copy';
+        btn.title = 'Copy to clipboard';
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            if (navigator.clipboard && navigator.clipboard.writeText)
+            {
+                navigator.clipboard.writeText(text);
+            }
+        };
+        td.appendChild(btn);
     }
 
     appendHeader(meta)
@@ -1368,12 +1519,15 @@ class QueryResultElement extends HTMLElement
             const td = this._renderCell(column.name, row[column.name]);
 
             td.onclick = () => {
-                this._current_selected_cell?.classList.remove('td-selected');
-                this._current_selected_cell?.parentElement.classList.remove('tr-selected');
+                if (this._current_selected_cell)
+                {
+                    this._current_selected_cell.classList.remove('td-selected');
+                    this._current_selected_cell.parentElement.classList.remove('tr-selected');
+                }
                 this._current_selected_cell = td;
-                this._current_selected_cell.classList.add('td-selected');
-                this._current_selected_cell.parentElement.classList.add('tr-selected');
-                this._current_selected_cell.scrollIntoView({ block: 'nearest' });
+                td.classList.add('td-selected');
+                td.parentElement.classList.add('tr-selected');
+                (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
                 this.focus();
             };
 
@@ -1414,6 +1568,7 @@ class QueryResultElement extends HTMLElement
                 for (let row of table.rows)
                 {
                     let cell = row.cells[col_idx];
+                    let div = cell.querySelector('.cell-content') || cell; /* Apply bars to the inner div */
                     let value = +cell.innerText;
 
                     if (!double_sided)
@@ -1422,7 +1577,7 @@ class QueryResultElement extends HTMLElement
                         {
                             const ratio = value / this._extremes.max[name];
 
-                            cell.style.cssText = `
+                            div.style.cssText = `
                                 background-size: 100% 50%;
                                 background-position: center;
                                 background-repeat: no-repeat;
@@ -1437,7 +1592,7 @@ class QueryResultElement extends HTMLElement
                         {
                             const ratio = value / this._extremes.max[name];
 
-                            cell.style.cssText = `
+                            div.style.cssText = `
                                 background-size: 100% 50%;
                                 background-position: center;
                                 background-repeat: no-repeat;
@@ -1450,7 +1605,7 @@ class QueryResultElement extends HTMLElement
                         {
                             const ratio = value / this._extremes.min[name];
 
-                            cell.style.cssText = `
+                            div.style.cssText = `
                                 background-size: 100% 50%;
                                 background-position: center;
                                 background-repeat: no-repeat;
@@ -1465,9 +1620,33 @@ class QueryResultElement extends HTMLElement
         }
     }
 
+    renderTotals()
+    {
+        if (!this._totals) return;
+
+        let table = this._dataTable;
+        let tfoot = document.createElement('tfoot');
+        let tr = document.createElement('tr');
+
+        let td = document.createElement('td');
+        td.className = 'row-number';
+        td.appendChild(document.createTextNode('\u03A3'));
+        tr.appendChild(td);
+
+        for (const column of this._header)
+        {
+            const td = this._renderCell(column.name, this._totals[column.name]);
+            tr.appendChild(td);
+        }
+
+        tfoot.appendChild(tr);
+        table.appendChild(tfoot);
+    }
+
     transposeIfNeeded()
     {
         let table = this._dataTable;
+        if (this._totals) return;
         if (Object.keys(this._header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
 
         let heads = table.tHead.childNodes;
@@ -1520,12 +1699,27 @@ class QueryResultElement extends HTMLElement
             columnWidths.push(header.offsetWidth);
         });
 
+        /* Freeze row heights so that absolutely-positioned cell content
+           does not cause reflow. Read all heights first, then write,
+           to avoid layout thrashing. */
+        let rowHeights = [];
+        for (let row of table.rows)
+        {
+            rowHeights.push(row.offsetHeight);
+        }
+
         table.classList.add('fixed');
         this._dataDiv.classList.add('fixed');
 
         headers.forEach((header, index) => {
             header.style.width = `${columnWidths[index]}px`;
         });
+
+        let i = 0;
+        for (let row of table.rows)
+        {
+            row.style.height = `${rowHeights[i++]}px`;
+        }
     }
 
     _appendHeaderResizer(header)
@@ -1622,6 +1816,11 @@ class QueryResultElement extends HTMLElement
                 return this.appendRow(json.row, fragment);
             }
         }
+        else if (json.totals)
+        {
+            this._totals = json.totals;
+            return true;
+        }
         else if (json.min)
         {
             this._extremes['min'] = json.min;
@@ -1670,7 +1869,7 @@ class QueryResultElement extends HTMLElement
         cell.parentElement.classList.remove('tr-selected');
         new_cell.classList.add('td-selected');
         new_cell.parentElement.classList.add('tr-selected');
-        new_cell.scrollIntoView({ block: 'nearest' });
+        (new_cell.querySelector('.cell-content') || new_cell).scrollIntoView({ block: 'nearest' });
         this._current_selected_cell = new_cell;
     }
 
@@ -2097,6 +2296,124 @@ async function loadDatabases(server_address, user, password) {
     }
 }
 
+function makeSVG(viewBox, ...paths)
+{
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', viewBox);
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.classList.add('table-icon');
+    for (const d of paths)
+    {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        svg.appendChild(path);
+    }
+    return svg;
+}
+
+function getTableIcon(engine)
+{
+    const e = engine.replace(/^Replicated|^Shared/, '');
+
+    /// Aggregating/Summing - sigma
+    if (/^(Summing|Aggregating)MergeTree/.test(e))
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M18 4 H6',     // top bar
+            'M6 4 L16 12',  // upper diagonal
+            'M16 12 L6 20', // lower diagonal
+            'M6 20 H18'     // bottom bar
+        );
+        return svg;
+    }
+
+    /// Memory - microchip
+    if (e === 'Memory')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M6 6 h12 v12 h-12 z',  // chip body
+            'M9 6 v-2', 'M12 6 v-2', 'M15 6 v-2',    // top pins
+            'M9 18 v2', 'M12 18 v2', 'M15 18 v2',     // bottom pins
+            'M6 10 h-2', 'M6 14 h-2',                  // left pins
+            'M18 10 h2', 'M18 14 h2'                   // right pins
+        );
+        return svg;
+    }
+
+    /// View - eye
+    if (e === 'View')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 12 C5 5, 19 5, 23 12 C19 19, 5 19, 1 12 Z',  // eye outline
+            'M12 9 a3 3 0 1 0 0 6 a3 3 0 1 0 0 -6'             // pupil
+        );
+        return svg;
+    }
+
+    /// MaterializedView - eye over table
+    if (e === 'MaterializedView')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 8 C5 2, 19 2, 23 8 C19 14, 5 14, 1 8 Z',  // eye
+            'M12 5.5 a2.5 2.5 0 1 0 0 5 a2.5 2.5 0 1 0 0 -5', // pupil
+            'M4 17 h16', 'M4 21 h16'                        // table lines
+        );
+        return svg;
+    }
+
+    /// Merge - three overlaid tables
+    if (e === 'Merge')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M8 8 h14 v14 h-14 z', 'M8 12 h14',     // back table (bottom-right)
+            'M5 5 h14 v14 h-14 z', 'M5 9 h14',      // middle table
+            'M2 2 h14 v14 h-14 z', 'M2 6 h14'       // front table (top-left)
+        );
+        svg.setAttribute('fill', 'var(--element-background-color)');
+        return svg;
+    }
+
+    /// Distributed - fanout
+    if (e === 'Distributed')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M2 9.5 h6 v5 h-6 z',     // source box
+            'M16 1 h6 v5 h-6 z',      // target top
+            'M16 9.5 h6 v5 h-6 z',    // target middle
+            'M16 18 h6 v5 h-6 z',     // target bottom
+            'M8 12 L16 3.5',          // arrow top
+            'M8 12 L16 12',           // arrow middle
+            'M8 12 L16 20.5'          // arrow bottom
+        );
+        return svg;
+    }
+
+    /// StorageProxy - arrow between two boxes
+    if (e === 'Proxy')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 7 h6 v10 h-6 z',    // left box
+            'M17 7 h6 v10 h-6 z',   // right box
+            'M7 12 h10',            // arrow line
+            'M14 9 l3 3 l-3 3'     // arrowhead
+        );
+        return svg;
+    }
+
+    /// Default MergeTree family - table
+    const svg = makeSVG('0 0 24 24',
+        'M3 4 h18 v16 h-18 z',  // border
+        'M3 9 h18',             // header line
+        'M3 14 h18',            // middle line
+        'M10 9 v11'             // column divider
+    );
+    return svg;
+}
+
 let load_tables_request_num = 0;
 async function loadTables(server_address, user, password, database, container) {
     ++load_tables_request_num;
@@ -2117,20 +2434,21 @@ async function loadTables(server_address, user, password, database, container) {
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
 
-    // Use natural order for table names
-    json.data.sort((a, b) => a.table.localeCompare(b.table, undefined, { numeric: true }));
+    // Use natural order for table names; .inner tables go last
+    json.data.sort((a, b) => a.table.startsWith('.inner') - b.table.startsWith('.inner')
+        || a.table.localeCompare(b.table, undefined, { numeric: true }));
 
     for (let elem of json.data) {
         let table = document.createElement('div');
         table.className = 'table';
         let table_link = document.createElement('button');
-        table_link.append(elem.table);
+        table_link.append(getTableIcon(elem.engine), elem.table);
 
         if (max_total_bytes && +elem.total_bytes) {
             const percent = Number(100 * +elem.total_bytes / max_total_bytes).toFixed(2);
             table.style.backgroundImage = `linear-gradient(to right,
-                var(--progress-color) 0%,
-                var(--progress-color) ${percent}%,
+                var(--table-size-bar-color) 0%,
+                var(--table-size-bar-color) ${percent}%,
                 transparent ${percent}%)`;
         }
 
@@ -2434,7 +2752,9 @@ async function postImpl(posted_request_num, query)
         await resultEl.renderGraph();
     } else {
         if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
+        if (is_table) resultEl.renderTotals();
         if (is_table) resultEl.transposeIfNeeded();
+        if (is_table) resultEl._changeTableLayout();
     }
 
     progressEl.finish();
@@ -2556,7 +2876,9 @@ async function restoreFromHistory(state) {
         await resultEl.renderGraph();
     } else {
         if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
+        if (is_table) resultEl.renderTotals();
         if (is_table) resultEl.transposeIfNeeded();
+        if (is_table) resultEl._changeTableLayout();
     }
 
     progressEl.finish();
@@ -2753,9 +3075,12 @@ function formatReadableRows(rows) {
     return formatReadable(rows, 2, units);
 }
 
-document.getElementById('query').addEventListener('focus', e => {
+/* Clicking outside data cells deactivates the selected cell */
+document.addEventListener('click', e => {
+    if (e.target.closest('query-result')) return;
     resultEl.clearSelection();
 });
+
 
 function appendTextareaResizer() {
     const queryDiv = document.getElementById('query_div');
