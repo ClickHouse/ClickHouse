@@ -352,9 +352,8 @@ public:
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }
 
-    /// Whether all GROUP BY keys are numbers, strings, or fixed strings (after removing
-    /// Nullable and LowCardinality).
-    static bool allKeysAreNumbersOrStrings(const Block & header, const Names & keys);
+    /// Select the aggregation method based on the number and types of keys.
+    static AggregatedDataVariants::Type chooseAggregationMethod(const Block & header, const Names & keys, size_t keys_size);
 
 private:
 
@@ -422,8 +421,8 @@ private:
       */
     void compileAggregateFunctionsIfNeeded();
 
-    /** Select the aggregation method based on the number and types of keys. */
-    AggregatedDataVariants::Type chooseAggregationMethod(const Block & header);
+    /** Select the aggregation method and compute key_sizes for the Aggregator. */
+    AggregatedDataVariants::Type setupAggregationMethod(const Block & header);
 
     /** Create states of aggregate functions for one key.
       */

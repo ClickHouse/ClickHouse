@@ -299,6 +299,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// and we can aggregate each shard independently without merge phase.
     /// We try to use the same hash function sharding and for aggregation so that we can reuse the hash values.
     /// Fast for high cardinality keys, but has overhead of sharding and is not optimal for low cardinality keys.
+    /// Check what aggregation method would be chosen for these keys so we can reject
+    /// methods incompatible with sharded aggregation. The scatter step pre-serializes
+    /// keys and reuses them during aggregation, which requires prealloc serialized
+    /// methods — they call `collectSerializedValueSizes` to compute row sizes upfront.
+    /// Non-prealloc types (Array, Tuple, Map) lack cheap upfront size computation, so they are not supported for now.
+    const auto aggregation_method = Aggregator::chooseAggregationMethod(pipeline.getHeader(), params.keys, params.keys_size);
+
     const bool use_sharded_aggregation = optimize_aggregation_by_sharding
         /// We may want to use this even in the case of `num_streams = 1`
         /// If `num_streams = 1`, then one stream can be split into N shards and processed in parallel.
@@ -321,10 +328,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 && !WhichDataType(removeNullable(pipeline.getHeader().getByName(params.keys[0]).type)).isInt8()
                 && !pipeline.getHeader().getByName(params.keys[0]).type->lowCardinality()))
         /// The scatter pre-serializes keys and reuses them during aggregation, which requires
-        /// prealloc serialized methods. Prealloc is chosen when all keys are numbers, strings,
-        /// or fixed strings. Other types (Array, Tuple, Map, etc.) fall back to non-prealloc
-        /// serialized methods which are not yet supported by sharded aggregation.
-        && Aggregator::allKeysAreNumbersOrStrings(pipeline.getHeader(), params.keys);
+        /// prealloc serialized methods. Non-prealloc serialized methods (used for Array, Tuple,
+        /// Map, or large Nullable numeric keys like Nullable(UInt256)) are not supported.
+        && aggregation_method != AggregatedDataVariants::Type::serialized
+        && aggregation_method != AggregatedDataVariants::Type::nullable_serialized;
 
     if (use_sharded_aggregation)
     {

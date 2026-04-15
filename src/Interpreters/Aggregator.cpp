@@ -648,7 +648,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             is_simple_count = true;
     }
 
-    method_chosen = chooseAggregationMethod(header_);
+    method_chosen = setupAggregationMethod(header_);
 
     /// TODO(ab): HashMethodSingleLowCardinalityColumn uses a hardcoded internal cache,
     /// which interferes with inline aggregation (e.g. for COUNT). This needs to be
@@ -756,34 +756,19 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
 
 #endif
 
-bool Aggregator::allKeysAreNumbersOrStrings(const Block & header, const Names & keys)
-{
-    for (const auto & key : keys)
-    {
-        auto type = header.getByName(key).type;
-        if (type->lowCardinality())
-            type = removeLowCardinality(type);
-        if (type->isNullable())
-            type = removeNullable(type);
-        if (!type->isValueRepresentedByNumber() && !isString(type) && !isFixedString(type))
-            return false;
-    }
-    return true;
-}
-
-AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & header)
+AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & header, const Names & keys, size_t keys_size)
 {
     /// If no keys. All aggregating to single row.
-    if (params.keys_size == 0)
+    if (keys_size == 0)
         return AggregatedDataVariants::Type::without_key;
 
     /// Check if at least one of the specified keys is nullable.
     DataTypes types_removed_nullable;
-    types_removed_nullable.reserve(params.keys.size());
+    types_removed_nullable.reserve(keys.size());
     bool has_nullable_key = false;
     bool has_low_cardinality = false;
 
-    for (const auto & key : params.keys)
+    for (const auto & key : keys)
     {
         DataTypePtr type = header.getByName(key).type;
 
@@ -809,26 +794,33 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
     size_t keys_bytes = 0;
     size_t num_fixed_contiguous_keys = 0;
 
-    key_sizes.resize(params.keys_size);
-    for (size_t j = 0; j < params.keys_size; ++j)
+    for (size_t j = 0; j < keys_size; ++j)
     {
         if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
         {
             if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             {
                 ++num_fixed_contiguous_keys;
-                key_sizes[j] = types_removed_nullable[j]->getSizeOfValueInMemory();
-                keys_bytes += key_sizes[j];
+                keys_bytes += types_removed_nullable[j]->getSizeOfValueInMemory();
             }
         }
     }
 
-    const bool all_keys_are_numbers_or_strings = allKeysAreNumbersOrStrings(header, params.keys);
+    bool all_keys_are_numbers_or_strings = true;
+    for (size_t j = 0; j < keys_size; ++j)
+    {
+        if (!types_removed_nullable[j]->isValueRepresentedByNumber() && !isString(types_removed_nullable[j])
+            && !isFixedString(types_removed_nullable[j]))
+        {
+            all_keys_are_numbers_or_strings = false;
+            break;
+        }
+    }
 
     if (has_nullable_key)
     {
         /// Optimization for one key
-        if (params.keys_size == 1 && !has_low_cardinality)
+        if (keys_size == 1 && !has_low_cardinality)
         {
             if (types_removed_nullable[0]->isValueRepresentedByNumber())
             {
@@ -852,7 +844,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
             }
         }
 
-        if (params.keys_size == num_fixed_contiguous_keys && !has_low_cardinality)
+        if (keys_size == num_fixed_contiguous_keys && !has_low_cardinality)
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
@@ -862,7 +854,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
                 return AggregatedDataVariants::Type::nullable_keys256;
         }
 
-        if (has_low_cardinality && params.keys_size == 1)
+        if (has_low_cardinality && keys_size == 1)
         {
             if (types_removed_nullable[0]->isValueRepresentedByNumber())
             {
@@ -883,7 +875,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
                 return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
         }
 
-        if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
+        if (keys_size > 1 && all_keys_are_numbers_or_strings)
             return AggregatedDataVariants::Type::nullable_prealloc_serialized;
 
         /// Fallback case.
@@ -893,7 +885,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
     /// No key has been found to be nullable.
 
     /// Single numeric key.
-    if (params.keys_size == 1 && types_removed_nullable[0]->isValueRepresentedByNumber())
+    if (keys_size == 1 && types_removed_nullable[0]->isValueRepresentedByNumber())
     {
         size_t size_of_field = types_removed_nullable[0]->getSizeOfValueInMemory();
 
@@ -929,7 +921,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
     }
 
-    if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
+    if (keys_size == 1 && isFixedString(types_removed_nullable[0]))
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
@@ -937,7 +929,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
     }
 
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
-    if (params.keys_size == num_fixed_contiguous_keys)
+    if (keys_size == num_fixed_contiguous_keys)
     {
         if (has_low_cardinality)
         {
@@ -960,17 +952,40 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const Block & h
     }
 
     /// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.
-    if (params.keys_size == 1 && isString(types_removed_nullable[0]))
+    if (keys_size == 1 && isString(types_removed_nullable[0]))
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_string;
         return AggregatedDataVariants::Type::key_string;
     }
 
-    if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
+    if (keys_size > 1 && all_keys_are_numbers_or_strings)
         return AggregatedDataVariants::Type::prealloc_serialized;
 
     return AggregatedDataVariants::Type::serialized;
+}
+
+AggregatedDataVariants::Type Aggregator::setupAggregationMethod(const Block & header)
+{
+    auto type = chooseAggregationMethod(header, params.keys, params.keys_size);
+
+    /// Compute key_sizes needed by the Aggregator for packed-key methods.
+    key_sizes.resize(params.keys_size);
+    for (size_t j = 0; j < params.keys_size; ++j)
+    {
+        DataTypePtr col_type = header.getByName(params.keys[j]).type;
+        if (col_type->lowCardinality())
+            col_type = removeLowCardinality(col_type);
+        if (col_type->isNullable())
+            col_type = removeNullable(col_type);
+        if (col_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+        {
+            if (col_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                key_sizes[j] = col_type->getSizeOfValueInMemory();
+        }
+    }
+
+    return type;
 }
 
 template <bool skip_compiled_aggregate_functions>
@@ -1930,12 +1945,13 @@ static void serializeAndHashForShardingImpl(
     else
     {
         /// Sharded aggregation requires prealloc serialized methods which compute `row_sizes`
-        /// upfront. Non-prealloc methods should be excluded by the `allKeysAreNumbersOrStrings`
+        /// upfront. Non-prealloc methods should be excluded by the `chooseAggregationMethod`
         /// check in `AggregatingStep`.
         if (state.row_sizes.empty() && row_count > 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
                 "Sharded aggregation requires prealloc serialized methods, but row_sizes is empty. "
-                "Non-prealloc methods should be excluded by the allKeysAreNumbersOrStrings check in AggregatingStep");
+                "Sharded aggregation should be avoided for non-prealloc methods should be in AggregatingStep");
 
         /// Non-batch fallback: serialize into SerializedKeyBuffer once.
         size_t total_size = 0;
