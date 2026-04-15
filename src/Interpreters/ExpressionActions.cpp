@@ -634,7 +634,7 @@ static void replicateColumnsLazily(ColumnsWithTypeAndName & columns, const IColu
     {
         if (column.column)
         {
-            if (isLazyReplicationUseful(column.column))
+            if (isLazyReplicationUseful(column.column, offsets.back()))
                 column.column = ColumnReplicated::create(column.column, indexes);
             else
                 column.column = column.column->replicate(offsets);

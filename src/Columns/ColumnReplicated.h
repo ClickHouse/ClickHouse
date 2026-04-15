@@ -227,9 +227,13 @@ ColumnPtr recursiveRemoveReplicated(const ColumnPtr & column);
 ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.
-bool isLazyReplicationUseful(
+bool isColumnEligibleForLazyReplication(const ColumnPtr & column);
+bool isLazyReplicationMemoryEfficient(
     const ColumnPtr & column,
-    std::optional<size_t> replicated_rows = std::nullopt,
+    size_t replicated_rows,
+    double max_expansion_ratio = ColumnReplicated::DEFAULT_MAX_EXPANSION_RATIO_FOR_MATERIALIZATION);
+bool isLazyReplicationUseful(const ColumnPtr & column,
+    size_t replicated_rows,
     double max_expansion_ratio = ColumnReplicated::DEFAULT_MAX_EXPANSION_RATIO_FOR_MATERIALIZATION);
 /// Apply transformation on replicated columns with shared index only once.
 void transformColumnsWithSharedIndex(

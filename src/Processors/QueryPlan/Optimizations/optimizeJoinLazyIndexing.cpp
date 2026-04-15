@@ -8,26 +8,6 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// Counts probe-side input columns which could benefit from delaying the application of the join result index.
-/// Mirrors `ColumnReplicated::isReplicationUseful`.
-static size_t countColumnsUsefulForLazyIndexing(const QueryPlan::Node * node)
-{
-    const auto & header = *node->step->getOutputHeader();
-
-    size_t count = 0;
-    for (const auto & col : header)
-    {
-        const auto & type = col.type;
-        if (type->lowCardinality())
-            continue;
-        if (type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() && type->haveMaximumSizeOfValue()
-            && type->getMaximumSizeOfValueInMemory() <= 8)
-            continue;
-        ++count;
-    }
-    return count;
-}
-
 void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & settings)
 {
     auto * limit_step = typeid_cast<LimitStep *>(node.step.get());
@@ -43,7 +23,7 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes
             return;
     }
 
-    static constexpr size_t MIN_PROBE_COLUMNS = 1;
+    static constexpr size_t MIN_PROBE_COLUMNS = 3;
 
     if (node.children.empty())
         return;
@@ -55,8 +35,8 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes
         auto * child_join_step = typeid_cast<JoinStep *>(child->step.get());
         if (child_join_step)
         {
-            size_t useful = !child->children.empty() ? countColumnsUsefulForLazyIndexing(child->children.front()) : 0;
-            if (useful >= MIN_PROBE_COLUMNS)
+            size_t probe_columns = !child->children.empty() ? child->children.front()->step->getOutputHeader()->columns() : 0;
+            if (probe_columns >= MIN_PROBE_COLUMNS)
                 child_join_step->getJoin()->setEnableLazyColumnsIndexing(true);
             break;
         }

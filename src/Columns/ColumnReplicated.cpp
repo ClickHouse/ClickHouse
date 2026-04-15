@@ -705,27 +705,41 @@ ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets)
     return convertOffsetsToIndexesImpl<UInt64>(offsets);
 }
 
-bool isLazyReplicationUseful(const ColumnPtr & column, std::optional<size_t> replicated_rows, double max_expansion_ratio)
+bool isColumnEligibleForLazyReplication(const ColumnPtr & column)
 {
-    if (column->isConst() || column->isReplicated() || column->lowCardinality()
-        || (column->isFixedAndContiguous() && column->sizeOfValueIfFixed() <= 8))
+    return !column->isConst() && !column->isReplicated() && !column->lowCardinality() && (!column->isFixedAndContiguous() || column->sizeOfValueIfFixed() > 8);
+}
+
+bool isLazyReplicationMemoryEfficient(const ColumnPtr & column,
+    size_t replicated_rows,
+    double max_expansion_ratio)
+{
+    size_t input_rows = column->size();
+    if (input_rows == 0)
         return false;
 
-    if (replicated_rows)
-    {
-        size_t input_rows = column->size();
-        if (input_rows == 0)
-            return false;
+    size_t index_element_size;
+    if (input_rows <= std::numeric_limits<UInt8>::max())
+        index_element_size = sizeof(UInt8);
+    else if (input_rows <= std::numeric_limits<UInt16>::max())
+        index_element_size = sizeof(UInt16);
+    else if (input_rows <= std::numeric_limits<UInt32>::max())
+        index_element_size = sizeof(UInt32);
+    else
+        index_element_size = sizeof(UInt64);
 
-        double avg_row_bytes = static_cast<double>(column->allocatedBytes()) / static_cast<double>(input_rows);
-        size_t estimated_materialized = static_cast<size_t>(static_cast<double>(*replicated_rows) * avg_row_bytes);
-        size_t estimated_replicated = column->allocatedBytes() + *replicated_rows * sizeof(UInt64);
+    double avg_row_bytes = static_cast<double>(column->allocatedBytes()) / static_cast<double>(input_rows);
+    size_t estimated_materialized = static_cast<size_t>(static_cast<double>(replicated_rows) * avg_row_bytes);
+    size_t estimated_replicated = column->allocatedBytes() + replicated_rows * index_element_size;
 
-        if (estimated_materialized <= static_cast<size_t>(static_cast<double>(estimated_replicated) * max_expansion_ratio))
-            return false;
-    }
+    return estimated_materialized > static_cast<size_t>(static_cast<double>(estimated_replicated) * max_expansion_ratio);
+}
 
-    return true;
+bool isLazyReplicationUseful(const ColumnPtr & column,
+    size_t replicated_rows,
+    double max_expansion_ratio)
+{
+    return isColumnEligibleForLazyReplication(column) && isLazyReplicationMemoryEfficient(column, replicated_rows, max_expansion_ratio);
 }
 
 void transformColumnsWithSharedIndex(

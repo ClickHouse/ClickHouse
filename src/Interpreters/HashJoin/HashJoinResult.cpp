@@ -75,19 +75,41 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
     return right_column;
 }
 
+static bool isGrowingReplication(const IColumn::Offsets & offsets)
+{
+    return offsets.back() > offsets.size();
+}
+
+static void convertIneligibleReplicatedColumnsToFull(Columns & columns)
+{
+    for (auto & col : columns)
+    {
+        if (!col->isReplicated())
+            continue;
+        const auto & replicated = typeid_cast<const ColumnReplicated &>(*col);
+        if (!isColumnEligibleForLazyReplication(replicated.getNestedColumn()))
+            col = replicated.convertToFullColumnIfReplicated();
+    }
+}
+
 static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes, bool lazy_columns_indexing)
 {
-    std::optional<size_t> replicated_rows = lazy_columns_indexing || offsets.empty() ? std::nullopt : std::optional{offsets.back()};
-    if (isLazyReplicationUseful(column, replicated_rows))
+    auto replicate_lazily = [&]
+    {
+        if (isColumnEligibleForLazyReplication(column))
+            return lazy_columns_indexing || isLazyReplicationMemoryEfficient(column, offsets.back());
+
+        return lazy_columns_indexing && !isGrowingReplication(offsets);
+    };
+
+    if (replicate_lazily())
     {
         if (!indexes)
             indexes = convertOffsetsToIndexes(offsets);
         column = ColumnReplicated::create(column, indexes);
+        return;
     }
-    else
-    {
-        column = column->replicate(offsets);
-    }
+    column = column->replicate(offsets);
 }
 
 static void appendRightColumns(
@@ -100,6 +122,15 @@ static void appendRightColumns(
 {
     size_t existing_columns = block.columns();
     const auto & table_join = properties.table_join;
+
+    /// Avoid lazy replication that grow the output size on ineligible columns (e.g. small types)
+    /// because it can be much slower than eager replication.
+    if (!offsets.empty() && isGrowingReplication(offsets))
+    {
+        auto columns_to_replicate = block.getColumns();
+        convertIneligibleReplicatedColumnsToFull(columns_to_replicate);
+        block.setColumns(columns_to_replicate);
+    }
 
     std::set<size_t> block_columns_to_erase;
     if (HashJoin::canRemoveColumnsFromLeftBlock(table_join))

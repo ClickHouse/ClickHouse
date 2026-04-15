@@ -301,13 +301,8 @@ struct ScatteredBlock : private boost::noncopyable
         transformColumnsWithSharedIndex(
             columns,
             [&](const ColumnPtr & index) { return index->index(selector.getIndexes(), /*limit*/ 0); },
-            [&](ColumnPtr & col) 
-            {
-                if (isLazyReplicationUseful(col))
-                    col = ColumnReplicated::create(col, indexes_col);
-                else
-                    col = col->index(selector.getIndexes(), /*limit*/ 0);
-            });
+            [&](ColumnPtr & col) { col = ColumnReplicated::create(col, indexes_col); }
+        );
         block.setColumns(columns);
         selector = Selector(block.rows());
     }
