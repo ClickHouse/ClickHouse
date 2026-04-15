@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+SET allow_experimental_correlated_subqueries = 1;
 SET group_by_use_nulls = 1;
 
 SELECT intDiv(bitNot((SELECT bitNot(number))), 65536)
