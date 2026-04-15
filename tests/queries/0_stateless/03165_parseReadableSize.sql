@@ -79,6 +79,8 @@ SELECT parseReadableSize('1 B leftovers'); -- { serverError UNEXPECTED_DATA_AFTE
 SELECT parseReadableSize('-1 KiB'); -- { serverError BAD_ARGUMENTS }
 -- Invalid input - Input too large to fit in UInt64
 SELECT parseReadableSize('1000 EiB'); -- { serverError BAD_ARGUMENTS }
+-- Invalid input - Boundary: 16 EiB is exactly 2^64 bytes, doesn't fit in UInt64
+SELECT parseReadableSize('16 EiB'); -- { serverError BAD_ARGUMENTS }
 -- Invalid input - Hexadecimal is not supported
 SELECT parseReadableSize('0xa123 KiB'); -- { serverError CANNOT_PARSE_TEXT }
 -- Invalid input - NaN is not supported, with or without sign and with different capitalizations
