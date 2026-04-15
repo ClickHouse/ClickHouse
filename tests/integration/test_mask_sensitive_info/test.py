@@ -3,6 +3,7 @@ import re
 import string
 
 import pytest
+import uuid
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -248,6 +249,8 @@ def test_create_table():
     azure_account_name = "devstoreaccount1"
     azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
+    table_suffix = uuid.uuid4().hex
+
     table_engines = [
         f"MySQL('mysql80:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
         f"PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '{password}')",
@@ -321,7 +324,7 @@ def test_create_table():
     ]
 
     def make_test_case(i):
-        table_name = f"table{i}"
+        table_name = f"table{i}_{table_suffix}"
         table_engine = table_engines[i]
         error = None
         if isinstance(table_engine, tuple):
@@ -340,18 +343,18 @@ def test_create_table():
 
     for toggle, secret in enumerate(["[HIDDEN]", password]):
         assert (
-            node.query(f"SHOW CREATE TABLE table0 {show_secrets}={toggle}")
-            == "CREATE TABLE default.table0\\n(\\n    `x` Int32\\n)\\n"
+            node.query(f"SHOW CREATE TABLE table0_{table_suffix} {show_secrets}={toggle}")
+            == f"CREATE TABLE default.table0_{table_suffix}\\n(\\n    `x` Int32\\n)\\n"
             "ENGINE = MySQL(\\'mysql80:3306\\', \\'mysql_db\\', "
             f"\\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')\n"
         )
 
         assert node.query(
-            f"SELECT create_table_query, engine_full FROM system.tables WHERE name = 'table0' {show_secrets}={toggle}"
+            f"SELECT create_table_query, engine_full FROM system.tables WHERE name = 'table0_{table_suffix}' {show_secrets}={toggle}"
         ) == TSV(
             [
                 [
-                    "CREATE TABLE default.table0 (`x` Int32) ENGINE = MySQL(\\'mysql80:3306\\', \\'mysql_db\\', "
+                    f"CREATE TABLE default.table0_{table_suffix} (`x` Int32) ENGINE = MySQL(\\'mysql80:3306\\', \\'mysql_db\\', "
                     f"\\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')",
                     f"MySQL(\\'mysql80:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')",
                 ],
@@ -361,7 +364,7 @@ def test_create_table():
     create_table_statement_counter = 0
     def generate_create_table_numbered(tail):
         nonlocal create_table_statement_counter
-        result = f"CREATE TABLE table{create_table_statement_counter} {tail}"
+        result = f"CREATE TABLE table{create_table_statement_counter}_{table_suffix} {tail}"
         create_table_statement_counter += 1
         return result
 
