@@ -35,25 +35,18 @@ class CacheRunnerHooks:
                 # assign the job digest also to the artifacts it provides
                 for artifact in job.provides:
                     artifact_digest_map[artifact] = digest
+                # TODO: remove together with artifact_report_ hack
+                artifact_digest_map[job.name] = digest
         for job in workflow.jobs:
             digests_combined_list = []
             if job.requires and job.digest_config:
-                # include digests of hard dependencies (artifacts and job names)
-                for req_name in job.requires:
-                    if req_name in artifact_digest_map:
-                        digests_combined_list.append(artifact_digest_map[req_name])
-                    elif req_name in job_digest_map:
-                        digests_combined_list.append(job_digest_map[req_name])
+                # include digest of required artifact to the job digest, so that they affect job state
+                for artifact_name in job.requires:
+                    if artifact_name in artifact_digest_map:
+                        digests_combined_list.append(artifact_digest_map[artifact_name])
             digests_combined_list.append(job_digest_map[job.name])
-            # Deduplicate tokens to shrink the key when multiple deps
-            # share the same file digest (e.g. amd/arm release builds)
-            seen = set()
-            unique_tokens = []
-            for token in "-".join(digests_combined_list).split("-"):
-                if token not in seen:
-                    seen.add(token)
-                    unique_tokens.append(token)
-            workflow_config.digest_jobs[job.name] = "-".join(unique_tokens)
+            final_digest = "-".join(digests_combined_list)
+            workflow_config.digest_jobs[job.name] = final_digest
 
         assert (
             workflow_config.digest_jobs
@@ -71,83 +64,23 @@ class CacheRunnerHooks:
             return None
 
         # implement algorithm to skip dependee jobs if dependency is not in the cache
-        # Step 1: Separate jobs into two groups based on digest prefix relationships
+        # Step 1: Fetch records concurrently
         fetched_records = []
         if os.environ.get("DISABLE_CI_CACHE", "0") == "1":
             print("NOTE: CI Cache disabled via GH Variable DISABLE_CI_CACHE=1")
         else:
-            # Filter eligible jobs (exclude null digests and filtered jobs)
-            eligible_jobs = {
-                job_name: job_digest
-                for job_name, job_digest in workflow_config.digest_jobs.items()
-                if job_digest != cache.digest.get_null_digest()
-                and job_name not in workflow_config.filtered_jobs
-            }
-
-            # Group 1: Jobs whose digest is NOT a prefix of any other digest
-            # (these are independent or leaf jobs)
-            root_jobs = {}
-            # Group 2: Jobs whose digest starts with a digest from Group 1
-            # (these are dependent jobs)
-            dependent_jobs = {}
-
-            for job_name, job_digest in eligible_jobs.items():
-                # Check if this digest is a prefix of any other digest
-                has_prefix = False
-                for other_digest in eligible_jobs.values():
-                    if other_digest != job_digest and other_digest.startswith(
-                        job_digest + "-"
-                    ):
-                        has_prefix = True
-                        break
-
-                if not has_prefix:
-                    root_jobs[job_name] = job_digest
-                else:
-                    dependent_jobs[job_name] = job_digest
-
-            print(
-                f"Cache fetch: {len(root_jobs)} root jobs, {len(dependent_jobs)} dependent jobs"
-            )
-
-            # Step 2: Fetch records for root jobs
-            successfully_fetched_digests = set()
             with ThreadPoolExecutor(max_workers=200) as executor:
                 futures = {
                     executor.submit(fetch_record, job_name, job_digest, cache): job_name
-                    for job_name, job_digest in root_jobs.items()
+                    for job_name, job_digest in workflow_config.digest_jobs.items()
+                    if job_digest != cache.digest.get_null_digest()  # not being cached
+                    and job_name
+                    not in workflow_config.filtered_jobs  # skipped by user's hook
                 }
 
                 for future in futures:
                     result = future.result()
-                    if result:
-                        job_name, record = result
-                        fetched_records.append(result)
-                        successfully_fetched_digests.add(root_jobs[job_name])
-
-            # Step 3: Filter dependent jobs - only fetch if their prefix was successfully fetched
-            filtered_dependent_jobs = {}
-            for job_name, job_digest in dependent_jobs.items():
-                # Check if any successfully fetched digest is a prefix of this digest
-                for fetched_digest in successfully_fetched_digests:
-                    if job_digest.startswith(fetched_digest + "-"):
-                        filtered_dependent_jobs[job_name] = job_digest
-                        break
-
-            print(
-                f"Cache fetch: {len(filtered_dependent_jobs)}/{len(dependent_jobs)} dependent jobs have cached prefixes"
-            )
-
-            # Step 4: Fetch records for filtered dependent jobs
-            with ThreadPoolExecutor(max_workers=200) as executor:
-                futures = {
-                    executor.submit(fetch_record, job_name, job_digest, cache): job_name
-                    for job_name, job_digest in filtered_dependent_jobs.items()
-                }
-
-                for future in futures:
-                    result = future.result()
-                    if result:
+                    if result:  # If a record was found, add it to the fetched list
                         fetched_records.append(result)
 
         env = _Environment.get()
@@ -186,11 +119,10 @@ class CacheRunnerHooks:
                         workflow_config.cache_artifacts[artifact_name] = (
                             workflow_config.cache_jobs[job.name]
                         )
-                    # Also cache the artifact report by job name so that
-                    # downstream jobs requiring this job by name can reuse it
-                    workflow_config.cache_artifacts[job.name] = (
-                        workflow_config.cache_jobs[job.name]
-                    )
+                    if Settings.ENABLE_ARTIFACTS_REPORT:
+                        workflow_config.cache_artifacts[job.name] = (
+                            workflow_config.cache_jobs[job.name]
+                        )
 
         print(
             "Dump WorkflowConfig to fs, the next hooks in this job might want to see it"
@@ -206,7 +138,7 @@ class CacheRunnerHooks:
             # SPECIAL handling
             return path_prefixes
         env = _Environment.get()
-        runtime_config = RunConfig.from_workflow_data()
+        runtime_config = RunConfig.from_fs(_workflow.name)
         required_artifacts = []
         if _required_artifacts:
             required_artifacts = _required_artifacts
@@ -233,7 +165,7 @@ class CacheRunnerHooks:
             return
         if job.digest_config:
             # cache is enabled, and it's a job that supposed to be cached (has defined digest config)
-            workflow_runtime = RunConfig.from_workflow_data()
+            workflow_runtime = RunConfig.from_fs(workflow.name)
             job_digest = workflow_runtime.digest_jobs[job.name]
             # if_not_exist=workflow.is_event_pull_request() - to not overwrite record from "push" workflow, as it can reuse only from push, "pull_request" - from both
             Cache.push_success_record(

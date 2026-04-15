@@ -159,7 +159,6 @@ MultipartInputStream::MultipartInputStream(std::istream& istr, const std::string
 	MultipartIOS(istr, boundary),
 	std::istream(&_buf)
 {
-	poco_ios_init(&_buf);
 }
 
 
