@@ -297,7 +297,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// Sharded aggregation: pre-partition rows by hash(key) % N before aggregation.
     /// As a result, same key from different rows will always go to the same shard
     /// and we can aggregate each shard independently without merge phase.
-    /// We try to use the same hash function sharding and for aggregation so that we can reuse the hash values.
+    /// We try to use the same hash function for sharding and aggregation so that we can reuse the hash values.
     /// Fast for high cardinality keys, but has overhead of sharding and is not optimal for low cardinality keys.
     /// Check what aggregation method would be chosen for these keys so we can reject
     /// methods incompatible with sharded aggregation. The scatter step pre-serializes
