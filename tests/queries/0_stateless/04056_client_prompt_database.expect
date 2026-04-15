@@ -42,7 +42,7 @@ expect eof
 # syncDefaultDatabase() fires SELECT currentDatabase() after the handshake and writes
 # the result into default_database, so the prompt reflects the server-side default.
 spawn bash -c "source $basedir/../shell_config.sh ; opts=\$(echo \"\$CLICKHOUSE_CLIENT_EXPECT_OPT\" | sed 's/--database=\[^ \]*//g') ; \$CLICKHOUSE_CLIENT_BINARY \$opts --prompt '{database}' --history_file=$history_file"
-expect -re "\n\[a-z_\]+ :) $"
+expect -re "\ndefault :) $"
 
 send -- "\4"
 expect eof
