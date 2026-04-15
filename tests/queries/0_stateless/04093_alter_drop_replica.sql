@@ -73,8 +73,8 @@ SELECT
     name,
     host = '127.0.0.3',
     port = '9001',
-    (secure = '1' OR lowerUTF8(secure) = 'true'),
-    (compression = '1' OR lowerUTF8(compression) = 'true'),
+    (toString(secure) IN ('1', 'true', 'True', 'TRUE')),
+    (toString(compression) IN ('1', 'true', 'True', 'TRUE')),
     priority = '3'
 FROM system.replicas_collection
 WHERE name = 'nc_replica_for_type_mix';
