@@ -195,11 +195,11 @@ WHERE name IN (
     'ai_request_timeout_sec',
     'ai_max_retries',
     'ai_retry_initial_delay_ms',
-    'ai_on_error',
+    'ai_throw_on_error',
     'ai_max_input_tokens_per_query',
     'ai_max_output_tokens_per_query',
     'ai_max_api_calls_per_query',
-    'ai_on_quota_exceeded'
+    'ai_throw_on_quota_exceeded'
 )
 ORDER BY name;
 

@@ -9,11 +9,6 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
-static bool isGracefulQuotaMode(const String & mode)
-{
-    return mode == "default";
-}
-
 bool AIQuotaTracker::checkBeforeDispatch(size_t estimated_text_bytes)
 {
     if (quota_exceeded.load(MEMORY_ORDER))
@@ -27,7 +22,7 @@ bool AIQuotaTracker::checkBeforeDispatch(size_t estimated_text_bytes)
         UInt64 current = input_tokens.load(MEMORY_ORDER);
         if (current + estimated_tokens > max_input_tokens)
         {
-            if (!isGracefulQuotaMode(on_quota_exceeded))
+            if (throw_on_quota_exceeded)
                 throw Exception(
                     ErrorCodes::LIMIT_EXCEEDED,
                     "Estimated input tokens for next API call ({}) would exceed limit: {} tokens used, maximum: {}. "
@@ -44,7 +39,7 @@ bool AIQuotaTracker::checkBeforeDispatch(size_t estimated_text_bytes)
     /// We cannot know output tokens in advance, so this quota is only enforced retroactively
     if (max_output_tokens > 0 && output_tokens.load(MEMORY_ORDER) > max_output_tokens)
     {
-        if (!isGracefulQuotaMode(on_quota_exceeded))
+        if (throw_on_quota_exceeded)
             throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                 "Limit for AI output tokens exceeded: {} tokens generated, maximum: {}. "
                 "This is controlled by the 'ai_max_output_tokens_per_query' setting",
@@ -59,7 +54,7 @@ bool AIQuotaTracker::checkBeforeDispatch(size_t estimated_text_bytes)
         if (prev + 1 > max_api_calls)
         {
             api_calls.fetch_sub(1, MEMORY_ORDER);
-            if (!isGracefulQuotaMode(on_quota_exceeded))
+            if (throw_on_quota_exceeded)
                 throw Exception(
                     ErrorCodes::LIMIT_EXCEEDED,
                     "Limit for AI API calls will be exceeded by next API call: {} calls made, maximum: {}. "
@@ -83,7 +78,7 @@ void AIQuotaTracker::recordResponse(UInt64 in_tokens, UInt64 out_tokens)
 
 bool AIQuotaTracker::handleRowError()
 {
-    if (on_error == "default")
+    if (!throw_on_error)
     {
         rows_skipped.fetch_add(1, MEMORY_ORDER);
         return true;

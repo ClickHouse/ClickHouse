@@ -69,11 +69,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_request_timeout_sec", 60, 60, "New setting"},
             {"ai_max_retries", 3, 3, "New setting"},
             {"ai_retry_initial_delay_ms", 1000, 1000, "New setting"},
-            {"ai_on_error", "throw", "throw", "New setting"},
+            {"ai_throw_on_error", true, true, "New setting"},
             {"ai_max_input_tokens_per_query", 1000000, 1000000, "New setting"},
             {"ai_max_output_tokens_per_query", 500000, 500000, "New setting"},
             {"ai_max_api_calls_per_query", 0, 0, "New setting"},
-            {"ai_on_quota_exceeded", "throw", "throw", "New setting"},
+            {"ai_throw_on_quota_exceeded", true, true, "New setting"},
+            {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
+            {"enable_materialized_cte", false, false, "New setting"},
+            {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

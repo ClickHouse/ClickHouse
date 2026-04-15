@@ -7892,8 +7892,8 @@ Maximum number of retry attempts for transient errors per individual API request
     DECLARE(UInt64, ai_retry_initial_delay_ms, 1000, R"(
 Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
 )", EXPERIMENTAL) \
-    DECLARE(String, ai_on_error, "throw", R"(
-Behavior when an AI function call fails permanently after exhausting all retries. Possible values: 'throw' (default) aborts the query with an exception; 'default' returns the default value for the column type (empty string for String) and continues processing.
+    DECLARE(Bool, ai_throw_on_error, true, R"(
+If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_max_input_tokens_per_query, 1000000, R"(
 Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Set to 0 to disable.
@@ -7904,8 +7904,8 @@ Maximum total output (completion) tokens across all AI function API calls in a s
     DECLARE(UInt64, ai_max_api_calls_per_query, 0, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
 )", EXPERIMENTAL) \
-    DECLARE(String, ai_on_quota_exceeded, "throw", R"(
-Behavior when an AI function quota limit (`ai_max_input_tokens_per_query`, `ai_max_output_tokens_per_query`, or `ai_max_api_calls_per_query`) is exceeded. Possible values: 'throw' (default) aborts the query with an exception; 'default' stops making API calls and returns the default value for the column type (empty string for String) for remaining rows.
+    DECLARE(Bool, ai_throw_on_quota_exceeded, true, R"(
+If true (default), exceeding an AI function quota limit (`ai_max_input_tokens_per_query`, `ai_max_output_tokens_per_query`, or `ai_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \

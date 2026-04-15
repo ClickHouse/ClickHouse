@@ -15,12 +15,12 @@ class AIQuotaTracker
 public:
     AIQuotaTracker(
         UInt64 max_input_tokens_, UInt64 max_output_tokens_,
-        UInt64 max_api_calls_, const String & on_quota_exceeded_, const String & on_error_)
+        UInt64 max_api_calls_, bool throw_on_quota_exceeded_, bool throw_on_error_)
         : max_input_tokens(max_input_tokens_)
         , max_output_tokens(max_output_tokens_)
         , max_api_calls(max_api_calls_)
-        , on_quota_exceeded(on_quota_exceeded_)
-        , on_error(on_error_)
+        , throw_on_quota_exceeded(throw_on_quota_exceeded_)
+        , throw_on_error(throw_on_error_)
     {}
 
     /// Check if we have already exceeded a quota, or if we are about to exceed the API calls, estimated input tokens quota.
@@ -33,7 +33,7 @@ public:
 
     bool handleRowError();
     bool isQuotaExceeded() const { return quota_exceeded.load(MEMORY_ORDER); }
-    String onError() const { return on_error; }
+    bool throwsOnError() const { return throw_on_error; }
 
     std::atomic<UInt64> input_tokens{0};
     std::atomic<UInt64> output_tokens{0};
@@ -45,8 +45,8 @@ private:
     const UInt64 max_input_tokens;
     const UInt64 max_output_tokens;
     const UInt64 max_api_calls;
-    const String on_quota_exceeded;
-    const String on_error;
+    const bool throw_on_quota_exceeded;
+    const bool throw_on_error;
     std::atomic<bool> quota_exceeded{false};
 };
 

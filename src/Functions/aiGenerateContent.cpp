@@ -91,9 +91,9 @@ The first argument is a named collection that specifies the provider, model, end
         .arguments
         = {{"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
            {"prompt", "The user prompt or question to send to the model.", {"String"}},
-           {"system_prompt", "Optional system-level instruction that guides the model's behavior (e.g. persona, output format).", {"String"}},
+           {"system_prompt", "Optional constant system-level instruction that guides the model's behavior (e.g. persona, output format), sent along with each prompt.", {"String"}},
            {"temperature", "Sampling temperature controlling randomness. Default: `0.7`.", {"Float64"}}},
-        .returned_value = {"The generated text response, or the default value for the column type (empty string) if the request failed and `ai_on_error` is set to `'default'`.", {"String"}},
+        .returned_value = {"The generated text response, or the default value for the column type (empty string) if the request failed and `ai_throw_on_error` is disabled.", {"String"}},
         .examples
         = {{"Simple question", "SELECT aiGenerateContent('ai_credentials', 'What is 2 + 2? Reply with just the number.')", "4"},
            {"With system prompt", "SELECT aiGenerateContent('ai_credentials', 'Explain ClickHouse', 'You are a database expert. Be concise.')", ""},
