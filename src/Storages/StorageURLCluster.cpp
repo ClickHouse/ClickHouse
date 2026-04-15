@@ -1,24 +1,17 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Common/HTTPHeaderFilter.h>
-#include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
-#include <Processors/Sources/RemoteSource.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageURLCluster.h>
 #include <Storages/VirtualColumnUtils.h>

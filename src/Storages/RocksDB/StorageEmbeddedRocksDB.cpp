@@ -265,7 +265,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
         fs::create_directories(rocksdb_dir);
     }
 
-    const auto sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+    const auto sample_block = getInMemoryMetadataPtr(context_, false)->getSampleBlock();
     primary_key_pos.reserve(primary_keys.size());
     primary_key_types.reserve(primary_keys.size());
     std::vector<bool> is_pk(sample_block.columns());
@@ -319,7 +319,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 
     chassert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto physical_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
@@ -926,13 +926,13 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
         wb.finalize();
     }
 
-    auto block = getBySerializedKeys(raw_keys, &null_map, getInMemoryMetadataPtr()->getSampleBlock());
+    auto block = getBySerializedKeys(raw_keys, &null_map, getInMemoryMetadataPtr(getContext(), false)->getSampleBlock());
     return Chunk(block.getColumns(), block.rows());
 }
 
 Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
 {
-    return getInMemoryMetadataPtr()->getSampleBlock();
+    return getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
 }
 
 Block StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map, const Block & sample_block) const
@@ -1013,7 +1013,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
 void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder)
 {
     IStorage::alter(params, query_context, holder);
-    auto new_metadata = getInMemoryMetadataPtr();
+    auto new_metadata = getInMemoryMetadataPtr(query_context, false);
     if (new_metadata->settings_changes)
     {
         const auto & settings_changes = new_metadata->settings_changes->as<const ASTSetQuery &>();

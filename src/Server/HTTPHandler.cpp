@@ -965,8 +965,12 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
-    if (http_response_headers_override.has_value())
+    if (!common_headers.empty())
+    {
+        if (!http_response_headers_override.has_value())
+            http_response_headers_override.emplace();
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
+    }
 
     auto creator = [&server, query_param_name, http_response_headers_override, connection_config]() -> std::unique_ptr<DynamicQueryHandler>
     { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override); };
@@ -1031,8 +1035,12 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     }
 
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
-    if (http_response_headers_override.has_value())
+    if (!common_headers.empty())
+    {
+        if (!http_response_headers_override.has_value())
+            http_response_headers_override.emplace();
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
+    }
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 

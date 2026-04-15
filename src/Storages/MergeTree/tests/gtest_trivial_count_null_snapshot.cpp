@@ -78,7 +78,7 @@ TEST(SupportsTrivialCountOptimization, NullMutationsSnapshot)
         MergeTreeData::MergingParams{},
         std::move(storage_settings));
 
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
     /// Case 1: Null StorageSnapshot entirely (already handled by existing code before our fix).
     {
