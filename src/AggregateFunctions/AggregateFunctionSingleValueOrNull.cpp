@@ -237,6 +237,6 @@ SELECT singleValueOrNull(x) FROM test;
     FunctionDocumentation::Category category_singleValueOrNull = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_singleValueOrNull = {description_singleValueOrNull, syntax_singleValueOrNull, arguments_singleValueOrNull, parameters_singleValueOrNull, returned_value_singleValueOrNull, examples_singleValueOrNull, introduced_in_singleValueOrNull, category_singleValueOrNull};
 
-    factory.registerFunction("singleValueOrNull", {createAggregateFunctionSingleValueOrNull, {}, documentation_singleValueOrNull});
+    factory.registerFunction("singleValueOrNull", {createAggregateFunctionSingleValueOrNull, documentation_singleValueOrNull});
 }
 }

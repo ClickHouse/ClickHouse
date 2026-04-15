@@ -1,4 +1,6 @@
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -33,7 +35,7 @@ struct TextIndexReadInfo
 {
     const MergeTreeIndexWithCondition * index;
     bool is_materialized;
-    bool is_fully_materialied;
+    bool is_fully_materialized;
 };
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
@@ -171,7 +173,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         {
             .index = &index,
             .is_materialized = num_materialized_parts > 0,
-            .is_fully_materialied = num_materialized_parts == unique_parts.size()
+            .is_fully_materialized = num_materialized_parts == unique_parts.size()
         };
     }
 }
@@ -287,6 +289,17 @@ public:
 
         /// Cache for added input nodes for each virtual column.
         std::unordered_map<String, const ActionsDAG::Node *> virtual_column_to_node;
+
+        /// Pre-populate the cache with any text-index virtual column inputs that are already present in this DAG from a previous
+        /// optimization pass. This prevents them from being re-added to `added_columns` when the same DAG is processed again.
+        ///
+        /// See: https://github.com/ClickHouse/ClickHouse/issues/101913#issuecomment-4198784580
+        for (const auto * input : actions_dag.getInputs())
+        {
+            if (input->result_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
+                virtual_column_to_node.emplace(input->result_name, input);
+        }
+
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
         auto nodes_ptrs = actions_dag.getNodesPointers();
 
@@ -560,7 +573,7 @@ private:
                 else if (condition.search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
 
-                VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral);
+                VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader);
                 virtual_column.default_desc.kind = ColumnDefaultKind::Default;
                 virtual_column.default_desc.expression = std::move(default_expression);
 
@@ -596,6 +609,11 @@ private:
         /// It can happen when the original function returns Nullable or LowCardinality type and replacement doesn't.
         if (!function_node.result_type->equals(*replacement.node->result_type))
             replacement.node = &actions_dag.addCast(*replacement.node, function_node.result_type, "", context);
+
+        /// Preserve the original column name so that downstream steps (e.g. ExpressionStep for SELECT)
+        /// that reference the predicate by its original name can still find it in the block.
+        if (replacement.node->result_name != function_node.result_name)
+            replacement.node = &actions_dag.addAlias(*replacement.node, function_node.result_name);
     }
 };
 
@@ -623,7 +641,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     /// Log partially materialized text indexes
     for (const auto & [index_name, info] : text_index_read_infos)
     {
-        if (!info.is_fully_materialied)
+        if (!info.is_fully_materialized)
             LOG_DEBUG(logger, "Text index '{}' is not fully materialized. In some parts, direct read from text index cannot be used.", index_name);
     }
 

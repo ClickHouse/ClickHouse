@@ -110,7 +110,10 @@ struct ZkNodeCache
           */
         if (!exists)
         {
-            auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent);
+            /// For intermediate nodes that are created as parents (not explicitly changed by the user),
+            /// use ignore_if_exists to handle concurrent creation by other sessions.
+            bool ignore_if_exists = !changed;
+            auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent, ignore_if_exists);
             requests.push_back(request);
         }
         else if (changed)
@@ -150,6 +153,7 @@ public:
 
     void consume(Chunk & chunk) override
     {
+        auto component_guard = Coordination::setCurrentComponent("ZooKeeperSink::consume");
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
         ColumnPtr name_column = block.getByName("name").column;
@@ -200,6 +204,7 @@ public:
 
     void onFinish() override
     {
+        auto component_guard = Coordination::setCurrentComponent("ZooKeeperSink::onFinish");
         for (auto & [zookeeper_name, cache] : caches)
         {
             Coordination::Requests requests;
@@ -280,14 +285,23 @@ private:
 
 
 StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
-        : IStorage(table_id_)
+        : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(getColumnsDescription());
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 }
 
-void StorageSystemZooKeeper::read(
+VirtualColumnsDescription StorageSystemZooKeeper::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemZooKeeper::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -297,7 +311,7 @@ void StorageSystemZooKeeper::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(storage_snapshot->virtual_columns->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList());
     auto read_step = std::make_unique<ReadFromSystemZooKeeper>(
         column_names,
         query_info,
@@ -600,6 +614,7 @@ void ReadFromSystemZooKeeper::applyFilters(ActionDAGNodes added_filter_nodes)
 
 Chunk SystemZooKeeperSource::generate()
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemZooKeeperSource::generate");
     if (name.empty())
     {
         chassert(0); // In fact, it must always have a default value.

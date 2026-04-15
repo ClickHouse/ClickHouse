@@ -144,9 +144,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_keyword(" FROM TABLE ");
             print_database_table();
         }
-        else if (!replica_zk_path.empty())
+        else if (!full_replica_zk_path.empty())
         {
-            print_keyword(" FROM ZKPATH ") << quoteString(replica_zk_path);
+            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
         }
         else if (database)
         {
@@ -212,6 +212,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            ostr << ' ';
+            print_database_table();
+            ostr << " PATH " << quoteString(queue_path);
+            break;
+        }
         case Type::RESTART_REPLICA:
         case Type::RESTORE_REPLICA:
         case Type::SYNC_REPLICA:
@@ -261,6 +268,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
+        case Type::WAIT_BLOBS_CLEANUP:
         case Type::CLEAR_DISK_METADATA_CACHE:
         {
             if (table)
@@ -379,7 +387,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::UNLOCK_SNAPSHOT:
         {
-            ostr << quoteString(backup_name);
+            ostr << " " << quoteString(backup_name);
             if (backup_source)
             {
                 print_keyword(" FROM ");
@@ -431,6 +439,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     }
                 }
             }
+            break;
+        }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ostr << ' ';
+            ostr << quoteString(coverage_test_name);
             break;
         }
         case Type::ENABLE_FAILPOINT:
@@ -590,13 +604,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_UNCOMPRESSED_CACHE:
         case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
         case Type::CLEAR_TEXT_INDEX_CACHES:
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:

@@ -21,7 +21,6 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 
-#include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
@@ -111,6 +110,12 @@ template <is_decimal T>
 void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n].value);
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
 template <is_decimal T>
@@ -324,11 +329,10 @@ size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permu
 }
 
 template <is_decimal T>
-DataTypePtr ColumnDecimal<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
+void ColumnDecimal<T>::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
 {
     if (options.notFull(name_buf))
         name_buf << FieldVisitorToString()(data[n], scale);
-    return FieldToDataType()(data[n], scale);
 }
 
 template <is_decimal T>

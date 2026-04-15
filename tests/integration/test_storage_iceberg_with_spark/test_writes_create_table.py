@@ -20,7 +20,7 @@ def test_writes_create_table(started_cluster_iceberg_with_spark, format_version,
     with pytest.raises(Exception):
         create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x String)", format_version)
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x String)", format_version, "", True)    
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x String)", format_version, "", True)
 
     assert '`x` String' in instance.query(f"SHOW CREATE TABLE {TABLE_NAME}")
 
@@ -54,18 +54,18 @@ def test_writes_create_table_order_by(started_cluster_iceberg_with_spark, format
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int32, y String)", order_by="(x)", format_version=format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'abc'), (4, 'bc'), (2, 'd');", settings={"allow_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '1\n2\n4\n'
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'abc'), (8, 'bc'), (4, 'd');", settings={"allow_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '1\n4\n8\n'
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int32, y String)", order_by="(identity(x))", format_version=format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'abc'), (4, 'bc'), (2, 'd');", settings={"allow_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '1\n2\n4\n'
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'abc'), (8, 'bc'), (4, 'd');", settings={"allow_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '1\n4\n8\n'
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int32, y String)", order_by="(icebergBucket(16, x))", format_version=format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'abc'), (4, 'bc'), (2, 'd');", settings={"allow_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '1\n2\n4\n'
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'abc'), (8, 'bc'), (4, 'd');", settings={"allow_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '1\n4\n8\n'
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x UInt32, y String)", order_by="(icebergTruncate(16, x))", format_version=format_version)
@@ -171,14 +171,14 @@ def test_order_by_bad_arguments_ast_parsing(
         format_version=format_version,
         order_by=order_by,
     )
-    
+
     error = instance.query_and_get_error(query)
     assert (
         "Code: 36" in error or "BAD_ARGUMENTS" in error
     ), f"Expected BAD_ARGUMENTS error (Code: 36), got: {error}"
     assert (
-        "Invalid iceberg sort order" in error 
-        or "Unsupported function" in error 
+        "Invalid iceberg sort order" in error
+        or "Unsupported function" in error
         or "expected a column identifier" in error.lower()
         or "expected (integer_literal, column_identifier)" in error.lower()
         or "expected 1 or 2 arguments" in error.lower()
@@ -210,7 +210,7 @@ def test_order_by_bad_arguments_wrong_count(
         format_version=format_version,
         order_by=order_by,
     )
-    
+
     error = instance.query_and_get_error(query)
     assert (
         "Code: 42" in error or "NUMBER_OF_ARGUMENTS_DOESNT_MATCH" in error
@@ -242,7 +242,7 @@ def test_order_by_bad_arguments_wrong_type(
         format_version=format_version,
         order_by=order_by,
     )
-    
+
     error = instance.query_and_get_error(query)
     assert (
         "Code: 43" in error or "ILLEGAL_TYPE_OF_ARGUMENT" in error

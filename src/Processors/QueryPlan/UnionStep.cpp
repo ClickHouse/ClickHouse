@@ -55,11 +55,11 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
 
     for (auto & cur_pipeline : pipelines)
     {
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-        assertCompatibleHeader(cur_pipeline->getHeader(), *getOutputHeader(), "UnionStep");
-#endif
         /// Headers for union must be equal.
         /// But, just in case, convert it to the same header if not.
+        /// This can happen when PREWHERE optimization adds extra pass-through columns
+        /// to ReadFromMergeTree output that are not consumed by the expression DAG above,
+        /// causing plan headers and pipeline headers to diverge.
         if (!blocksHaveEqualStructure(cur_pipeline->getHeader(), *getOutputHeader()))
         {
             QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
@@ -78,6 +78,10 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
             auto added_processors = collector.detachProcessors();
             processors.insert(processors.end(), added_processors.begin(), added_processors.end());
         }
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        assertCompatibleHeader(cur_pipeline->getHeader(), *getOutputHeader(), "UnionStep");
+#endif
     }
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);

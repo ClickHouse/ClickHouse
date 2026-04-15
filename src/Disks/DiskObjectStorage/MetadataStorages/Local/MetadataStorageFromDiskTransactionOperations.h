@@ -60,6 +60,12 @@ private:
     IDisk & disk;
 
     std::optional<std::string> prev_data;
+
+    // True once execute() has confirmed the file exists on disk.
+    // Used by undo() to distinguish "file was created by this operation"
+    // (safe to delete on undo) from "file already existed, execute() failed
+    // before overwriting it" (must NOT delete — the file is unchanged).
+    bool file_existed = false;
 };
 
 struct UnlinkFileOperation final : public IMetadataOperation

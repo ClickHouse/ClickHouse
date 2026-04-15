@@ -68,10 +68,20 @@ RoleCache::~RoleCache() = default;
 std::shared_ptr<const EnabledRoles>
 RoleCache::getEnabledRoles(const std::vector<UUID> & roles, const std::vector<UUID> & roles_with_admin_option)
 {
+    auto role_set = boost::container::flat_set<UUID>(roles.begin(), roles.end());
+    auto role_with_admin_option_set = boost::container::flat_set<UUID>(roles_with_admin_option.begin(), roles_with_admin_option.end());
+
+    return getEnabledRoles(std::move(role_set), std::move(role_with_admin_option_set));
+}
+
+
+std::shared_ptr<const EnabledRoles>
+RoleCache::getEnabledRoles(boost::container::flat_set<UUID> roles, boost::container::flat_set<UUID> roles_with_admin_option)
+{
     std::lock_guard lock{mutex};
     EnabledRoles::Params params;
-    params.current_roles.insert(roles.begin(), roles.end());
-    params.current_roles_with_admin_option.insert(roles_with_admin_option.begin(), roles_with_admin_option.end());
+    params.current_roles = std::move(roles);
+    params.current_roles_with_admin_option = std::move(roles_with_admin_option);
     auto it = enabled_roles_by_params.find(params);
     if (it != enabled_roles_by_params.end())
     {

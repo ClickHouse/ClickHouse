@@ -21,6 +21,7 @@
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -116,7 +117,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (columns.projections)
     {
         for (const auto & child : columns.projections->children)
-            ProjectionDescription::getProjectionFromAST(child, columns_desc, context);
+            ProjectionDescription::getProjectionFromAST(child, columns_desc, nullptr, context);
     }
     if (!new_query.storage)
         return;
@@ -233,10 +234,10 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 
 
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
-    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error)
+    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context)
 {
     auto table_id = storage->getStorageID();
-    auto metadata_ptr = storage->getInMemoryMetadataPtr();
+    auto metadata_ptr = storage->getInMemoryMetadataPtr(context, false);
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
@@ -344,6 +345,7 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
     if (!command.comment)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseWithAltersOnDiskBase::alterDatabaseComment");
     std::lock_guard lock{mutex};
 
     const String old_comment = comment;

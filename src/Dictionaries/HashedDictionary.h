@@ -3,6 +3,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
@@ -204,7 +205,9 @@ private:
             CollectionsHolder<IPv4>,
             CollectionsHolder<IPv6>,
             CollectionsHolder<std::string_view>,
-            CollectionsHolder<Array>>
+            CollectionsHolder<Array>,
+            CollectionsHolder<Map>,
+            CollectionsHolder<Object>>
             containers;
     };
 
@@ -332,7 +335,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         if (container.empty())
             return;
 
-        if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
+        if (!pool.trySchedule([&container, thread_group = getCurrentThreadGroup()]
             {
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_DTOR);
 
@@ -435,6 +438,45 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     [&](size_t) { out->insertDefault(); },
                     default_mask);
             }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType, false>(
+                    attribute,
+                    extractor,
+                    [&](const size_t, const Map & value) { out->insert(value); },
+                    [&](size_t) { out->insertDefault(); },
+                    default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+                if (is_attribute_nullable)
+                {
+                    getItemsShortCircuitImpl<ValueType, true>(
+                        attribute,
+                        extractor,
+                        [&](size_t row, const Object & value)
+                        {
+                            (*vec_null_map_to)[row] = false;
+                            out->insert(value);
+                        },
+                        [&](size_t row)
+                        {
+                            (*vec_null_map_to)[row] = true;
+                            out->insertDefault();
+                        },
+                        default_mask);
+                }
+                else
+                    getItemsShortCircuitImpl<ValueType, false>(
+                        attribute,
+                        extractor,
+                        [&](const size_t, const Object & value) { out->insert(value); },
+                        [&](size_t) { out->insertDefault(); },
+                        default_mask);
+            }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
@@ -500,6 +542,36 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     extractor,
                     [&](const size_t, const Array & value, bool) { out->insert(value); },
                     default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    extractor,
+                    [&](const size_t, const Map & value, bool) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+                if (is_attribute_nullable)
+                    getItemsImpl<ValueType, true>(
+                        attribute,
+                        extractor,
+                        [&](size_t row, const Object & value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out->insert(value);
+                        },
+                        default_value_extractor);
+                else
+                    getItemsImpl<ValueType, false>(
+                        attribute,
+                        extractor,
+                        [&](const size_t, const Object & value, bool) { out->insert(value); },
+                        default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {

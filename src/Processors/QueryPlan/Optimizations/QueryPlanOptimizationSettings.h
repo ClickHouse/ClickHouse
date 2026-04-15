@@ -20,7 +20,7 @@ class QueryPlan;
 
 struct QueryPlanOptimizationSettings
 {
-    explicit QueryPlanOptimizationSettings(
+    QueryPlanOptimizationSettings(
         const Settings & from,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
@@ -71,6 +71,11 @@ struct QueryPlanOptimizationSettings
     std::optional<bool> join_swap_table;
     /// Maximum number of tables in query graph to reorder
     UInt64 query_plan_optimize_join_order_limit;
+    /// When non-zero, randomize statistics for join reordering using this value as seed
+    UInt64 query_plan_optimize_join_order_randomize = 0;
+
+    /// Infer transitive equi-join predicates (e.g., A.x=B.x AND B.x=C.x implies A.x=C.x)
+    bool enable_join_transitive_predicates = false;
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;
@@ -85,6 +90,7 @@ struct QueryPlanOptimizationSettings
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
+    bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
 
     bool make_distributed_plan = false;
@@ -96,6 +102,7 @@ struct QueryPlanOptimizationSettings
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
+    bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
 
     /// ------------------------------------------------------
 
@@ -163,9 +170,9 @@ struct QueryPlanOptimizationSettings
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
-    bool parallel_replicas_enabled;
-    size_t max_parallel_replicas;
+    size_t max_parallel_replicas = 1;
     size_t automatic_parallel_replicas_mode;
+    size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
 
     bool query_plan_optimize_primary_key = true;

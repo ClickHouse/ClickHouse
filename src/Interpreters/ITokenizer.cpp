@@ -85,6 +85,16 @@ bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t 
     return false;
 }
 
+void NgramsTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool, bool) const
+{
+    stringToBloomFilter(data, length, bloom_filter);
+}
+
+void NgramsTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool, bool) const
+{
+    stringToTokens(data, length, tokens);
+}
+
 bool SplitByNonAlphaTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
 {
     token_start = pos;
@@ -110,97 +120,6 @@ bool SplitByNonAlphaTokenizer::nextInString(const char * data, size_t length, si
     return token_length > 0;
 }
 
-bool SplitByNonAlphaTokenizer::nextInStringPadded(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
-{
-    token_start = pos;
-    token_length = 0;
-
-    while (pos < length)
-    {
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
-        // NOTE: we assume that `data` string is padded from the right with 15 bytes.
-        const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + pos));
-        const size_t haystack_length = 16;
-
-#if defined(__SSE4_2__)
-        // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
-        const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
-                '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
-        // Every bit represents if `haystack` character is in the ranges (1) or not (0)
-        const unsigned result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
-#else
-        // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
-        const auto number_begin =      _mm_set1_epi8('0' - 1);
-        const auto number_end =        _mm_set1_epi8('9' + 1);
-        const auto alpha_lower_begin = _mm_set1_epi8('a' - 1);
-        const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
-        const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
-        const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
-        const auto zero =              _mm_set1_epi8(0);
-
-        // every bit represents if `haystack` character `c` satisfies condition:
-        // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
-        // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
-        const unsigned result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
-                _mm_cmplt_epi8(haystack, zero),
-                _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
-                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
-                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
-#endif
-        if (result_bitmask == 0)
-        {
-            if (token_length != 0)
-                // end of token started on previous haystack
-                return true;
-
-            pos += haystack_length;
-            continue;
-        }
-
-        const auto token_start_pos_in_current_haystack = std::countr_zero(result_bitmask);
-        if (token_length == 0)
-            // new token
-            token_start = pos + token_start_pos_in_current_haystack;
-        else if (token_start_pos_in_current_haystack != 0)
-            // end of token starting in one of previous haystacks
-            return true;
-
-        const auto token_bytes_in_current_haystack = std::countr_zero(~(result_bitmask >> token_start_pos_in_current_haystack));
-        token_length += token_bytes_in_current_haystack;
-
-        pos += token_start_pos_in_current_haystack + token_bytes_in_current_haystack;
-        if (token_start_pos_in_current_haystack + token_bytes_in_current_haystack == haystack_length)
-            // check if there are leftovers in next `haystack`
-            continue;
-
-        break;
-#else
-        if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
-        {
-            /// Finish current token if any
-            if (token_length > 0)
-                return true;
-            token_start = ++pos;
-        }
-        else
-        {
-            /// Note that UTF-8 sequence is completely consisted of non-ASCII bytes.
-            ++pos;
-            ++token_length;
-        }
-#endif
-    }
-
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER)
-    // Could happen only if string is not padded with zeros, and we accidentally hopped over the end of data.
-    if (token_start > length)
-        return false;
-    token_length = std::min(length - token_start, token_length);
-#endif
-
-    return token_length > 0;
-}
-
 bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const
 {
     token.clear();
@@ -210,6 +129,7 @@ bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length
     {
         if (!escaped && (data[pos] == '%' || data[pos] == '_'))
         {
+            /// Unescaped wildcard: invalidates current token
             token.clear();
             bad_token = true;
             ++pos;
@@ -221,8 +141,12 @@ bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length
         }
         else if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
         {
+            /// Non-alphanumeric ASCII is a separator (including escaped \_ and \%)
             if (!bad_token && !token.empty())
+            {
+                ++pos; /// consume separator before returning
                 return true;
+            }
 
             token.clear();
             bad_token = false;
@@ -245,40 +169,46 @@ bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length
     return !bad_token && !token.empty();
 }
 
-void SplitByNonAlphaTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
-{
-    size_t cur = 0;
-    size_t token_start = 0;
-    size_t token_len = 0;
-
-    while (cur < length && nextInString(data, length, cur, token_start, token_len))
-    {
-        /// In order to avoid filter updates with incomplete tokens, first token is ignored unless substring is prefix,
-        /// and last token is ignored, unless substring is suffix. See comment below for example
-        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
-            bloom_filter.add(data + token_start, token_len);
-    }
-}
-
-void SplitByNonAlphaTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
-{
-    size_t cur = 0;
-    size_t token_start = 0;
-    size_t token_len = 0;
-
-    while (cur < length && nextInString(data, length, cur, token_start, token_len))
-    {
-        /// In order to avoid adding incomplete tokens, first token is ignored unless substring is prefix and last token is ignored, unless substring is suffix.
-        /// Ex: If we want to match row "Service is not ready", and substring is "Serv" or "eady", we don't want to add either
-        /// of these substrings as tokens since they will not match any of the real tokens. However if our token string is
-        /// "Service " or " not ", we want to add these full tokens to our tokens vector.
-        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
-            tokens.push_back({data + token_start, token_len});
-    }
-}
-
 namespace
 {
+
+/// Shared implementation of `substringToBloomFilter` for word-boundary tokenizers
+/// (`SplitByNonAlphaTokenizer`, `AsciiCJKTokenizer`).
+///
+/// In order to avoid filter updates with incomplete tokens, the first token is
+/// ignored unless the substring is a prefix, and the last token is ignored unless
+/// the substring is a suffix.
+/// Ex: If we want to match row "Service is not ready", and substring is "Serv"
+/// or "eady", we don't want to add either of these substrings as tokens since
+/// they will not match any of the real tokens. However if our token string is
+/// "Service " or " not ", we want to add these full tokens to our bloom filter.
+template <typename Tokenizer>
+void wordBoundarySubstringToBloomFilter(
+    const Tokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix)
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && tokenizer.nextInString(data, length, cur, token_start, token_len))
+        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
+            bloom_filter.add(data + token_start, token_len);
+}
+
+/// Shared implementation of `substringToTokens` for word-boundary tokenizers.
+/// Same boundary-filtering logic as `wordBoundarySubstringToBloomFilter`.
+template <typename Tokenizer>
+void wordBoundarySubstringToTokens(
+    const Tokenizer & tokenizer, const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix)
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && tokenizer.nextInString(data, length, cur, token_start, token_len))
+        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
+            tokens.push_back({data + token_start, token_len});
+}
 
 bool startsWithSeparator(const char * data, size_t length, size_t pos, const std::vector<String> & separators, std::string & matched_sep)
 {
@@ -294,6 +224,18 @@ bool startsWithSeparator(const char * data, size_t length, size_t pos, const std
     return false;
 }
 
+}
+
+void SplitByNonAlphaTokenizer::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
+}
+
+void SplitByNonAlphaTokenizer::substringToTokens(
+    const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
 bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
@@ -328,6 +270,16 @@ bool SplitByStringTokenizer::nextInStringLike(const char * /*data*/, size_t /*le
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
 
+void SplitByStringTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByStringTokenizer::substringToBloomFilter is not implemented");
+}
+
+void SplitByStringTokenizer::substringToTokens(const char *, size_t, std::vector<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByStringTokenizer::substringToTokens is not implemented");
+}
+
 String SplitByStringTokenizer::getDescription() const
 {
     String result = fmt::format("{}([", getName());
@@ -357,6 +309,16 @@ bool ArrayTokenizer::nextInString(const char * /*data*/, size_t length, size_t &
 bool ArrayTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::nextInStringLike is not implemented");
+}
+
+void ArrayTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToBloomFilter is not implemented");
+}
+
+void ArrayTokenizer::substringToTokens(const char *, size_t, std::vector<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
 }
 
 SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
@@ -442,6 +404,16 @@ bool SparseGramsTokenizer::nextInStringLike(const char * data, size_t length, si
     }
 }
 
+void SparseGramsTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool /*is_prefix*/, bool /*is_suffix*/) const
+{
+    stringToBloomFilter(data, length, bloom_filter);
+}
+
+void SparseGramsTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool /*is_prefix*/, bool /*is_suffix*/) const
+{
+    stringToTokens(data, length, tokens);
+}
+
 std::vector<String> SparseGramsTokenizer::compactTokens(const std::vector<String> & tokens) const
 {
     std::unordered_set<String> result;
@@ -480,6 +452,286 @@ String SparseGramsTokenizer::getDescription() const
     if (min_cutoff_length.has_value())
         result += fmt::format(", {}", *min_cutoff_length);
     return result + ")";
+}
+
+void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter)
+{
+    forEachToken(
+        tokenizer,
+        data,
+        length,
+        [&](const char * token_start, size_t token_length)
+        {
+            bloom_filter.add(token_start, token_length);
+            return false;
+        });
+}
+
+bool AsciiCJKTokenizer::nextInString(
+    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    token_length = 0;
+    while (pos < length)
+    {
+        token_start = pos;
+        char c = data[pos];
+
+        /// 1. ASCII fast path
+
+        if (isAlphaNumericASCII(c) || c == '_')
+        {
+            size_t token_alnum_count = 0;
+            token_length = 0;
+
+            while (pos < length)
+            {
+                char cur = data[pos];
+
+                /// 1a. ASCII letter or digit
+                if (isAlphaNumericASCII(cur))
+                {
+                    ++pos;
+                    ++token_length;
+                    ++token_alnum_count;
+                    continue;
+                }
+
+                /// 1b. Underscore
+                if (cur == '_')
+                {
+                    ++pos;
+                    ++token_length;
+                    continue;
+                }
+
+                /// Check if next character exists
+                if (pos + 1 >= length)
+                    break;
+
+                char next_c = data[pos + 1];
+                char prev_c = pos > 0 ? data[pos - 1] : '\0';
+
+                /// 1c. Colon: connects letters only
+                if (cur == ':' && isAlphaASCII(prev_c) && isAlphaASCII(next_c))
+                {
+                    ++pos;
+                    ++token_length;
+                    continue;
+                }
+
+                /// 1d. Dot or single quote: connects letter-letter or digit-digit
+                if ((cur == '.' || cur == '\'') &&
+                    ((isAlphaASCII(prev_c) && isAlphaASCII(next_c)) ||
+                     (isNumericASCII(prev_c) && isNumericASCII(next_c))))
+                {
+                    ++pos;
+                    ++token_length;
+                    continue;
+                }
+
+                /// Token ends
+                break;
+            }
+
+            /// Token must contain at least one alphanumeric character
+            if (token_alnum_count > 0)
+            {
+                return true;
+            }
+
+            /// Invalid token (underscore only), continue searching
+            token_length = 0;
+            continue;
+        }
+
+        /// 2. ASCII non-alphanumeric: skip
+
+        if (isASCII(c))
+        {
+            ++pos;
+            continue;
+        }
+
+        /// 3. Unicode character handling
+
+        size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
+
+        /// Truncated UTF-8 sequence at end of buffer
+        if (pos + char_len > length)
+        {
+            pos = length;
+            return false;
+        }
+
+        token_start = pos;
+        token_length = char_len;
+        pos += char_len;
+
+        return true;
+    }
+
+    return false;
+}
+
+bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
+{
+    token.clear();
+    size_t token_start;
+    std::optional<size_t> last_glob_pos;
+    bool escaped = false; /// Whether current char is an escaped char
+    while (pos < length)
+    {
+        token_start = pos;
+        char c = data[pos];
+
+        if (c == '\\' && !escaped)
+        {
+            if (pos + 1 >= length)
+                break;
+            ++pos;
+            c = data[pos];
+            escaped = true;
+        }
+
+        /// ASCII alphanumeric or escaped underscore
+        if (isAlphaNumericASCII(c) || (c == '_' && escaped))
+        {
+            size_t token_alnum_count = 0;
+            token.clear();
+
+            while (pos < length)
+            {
+                char cur = data[pos];
+                if (cur == '\\' && !escaped)
+                {
+                    if (pos + 1 >= length)
+                        break;
+                    ++pos;
+                    cur = data[pos];
+                    escaped = true;
+                }
+
+                /// 1a. ASCII letter or digit
+                if (isAlphaNumericASCII(cur))
+                {
+                    ++pos;
+                    escaped = false;
+                    token.push_back(cur);
+                    ++token_alnum_count;
+                    continue;
+                }
+
+                /// 1b. Underscore
+                if (cur == '_' && escaped)
+                {
+                    ++pos;
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// Wildcard
+                if (cur == '_' || (cur == '%' && !escaped))
+                {
+                    last_glob_pos = pos;
+                    ++pos;
+                    break;
+                }
+
+                /// Check if next character exists
+                if (pos + 1 >= length)
+                    break;
+
+                char next_c = data[pos + 1];
+                if (next_c == '\\')
+                {
+                    if (pos + 2 >= length)
+                        break;
+                    next_c = data[pos + 2];
+                }
+                char prev_c = token.empty() ? '\0' : token.back();
+
+                /// 1c. Colon: connects letters only
+                if (cur == ':' && isAlphaASCII(prev_c) && isAlphaASCII(next_c))
+                {
+                    ++pos;
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// 1d. Dot or single quote: connects letter-letter or digit-digit
+                if ((cur == '.' || cur == '\'') &&
+                    ((isAlphaASCII(prev_c) && isAlphaASCII(next_c)) ||
+                     (isNumericASCII(prev_c) && isNumericASCII(next_c))))
+                {
+                    ++pos;
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// Token ends
+                break;
+            }
+
+            /// Token must contain at least one alphanumeric character. Tokens adjacent to unescaped wildcards are
+            /// discarded, since their boundaries are ambiguous.
+            if (token_alnum_count > 0 && (!last_glob_pos || (*last_glob_pos + 1 != pos && *last_glob_pos + 1 != token_start)))
+            {
+                /// If we consumed a backslash but the escaped char didn't continue the token, back up so the next call
+                /// re-parses `\X` with proper escape context.
+                if (escaped)
+                    --pos;
+
+                return true;
+            }
+
+            /// Invalid token, continue searching
+            continue;
+        }
+
+        /// Skip ASCII non-alphanumeric
+        if (isASCII(c))
+        {
+            if (!escaped && (c == '_' || c == '%'))
+                last_glob_pos = pos;
+
+            ++pos;
+            escaped = false;
+            continue;
+        }
+
+        /// Unicode character
+        size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
+
+        /// Truncated UTF-8 sequence at end of buffer
+        if (pos + char_len > length)
+        {
+            pos = length;
+            escaped = false;
+            continue;
+        }
+
+        token = {data + pos, char_len};
+
+        pos += char_len;
+        return true;
+    }
+
+    return false;
+}
+
+void AsciiCJKTokenizer::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
+}
+
+void AsciiCJKTokenizer::substringToTokens(
+    const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
 }

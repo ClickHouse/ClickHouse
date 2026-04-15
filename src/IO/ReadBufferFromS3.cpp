@@ -400,6 +400,11 @@ size_t ReadBufferFromS3::getObjectSizeFromS3() const
     return S3::getObjectSize(*client_ptr, bucket, key, version_id);
 }
 
+std::optional<size_t> ReadBufferFromS3::getRemoteFileSize() const
+{
+    return getObjectSizeFromS3();
+}
+
 off_t ReadBufferFromS3::getPosition()
 {
     return offset - available();

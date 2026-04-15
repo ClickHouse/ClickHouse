@@ -2,7 +2,9 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IPartitionStrategy.h>
@@ -14,6 +16,13 @@ namespace DB
 class Block;
 class Chunk;
 class NamesAndTypesList;
+
+class ExpressionActions;
+class IMergeTreeDataPart;
+using DataPartsVector = std::vector<std::shared_ptr<const IMergeTreeDataPart>>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 namespace VirtualColumnUtils
 {
@@ -125,21 +134,48 @@ void filterByPathOrFile(
 struct VirtualsForFileLikeStorage
 {
     const String & path;
+    const StorageID & storage_id;
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
     const String * etag { nullptr };
     const std::map<String, String> * tags { nullptr };
     std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
+    /// Original file path as stored in Iceberg metadata (before resolution to storage path).
+    /// Used by Iceberg position deletes to reference data files in the metadata path format.
+    const String * iceberg_metadata_file_path { nullptr };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context);
 
+/// Returns true if the requested virtual columns contain columns that depend on
+/// per-row information (e.g. _row_number). Such columns are incompatible with
+/// the "need only count" optimization that skips actual row parsing.
+bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns);
+
 /// Find hive partitioning part inside path
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g
 std::string_view findHivePartitioningInPath(const String & path);
+
+/// Filter data parts by part_name using a precomputed filter expression.
+/// Returns all parts if virtual_columns_filter is null.
+DataPartsVector filterDataPartsWithExpression(
+    const DataPartsVector & data_parts,
+    const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
+
+/// Filter out common virtual column names (marked with is_common) from the given list.
+Names filterVirtualColumns(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsDescriptionPtr & virtual_columns,
+    const VirtualsKind & kind_to_filter,
+    const VirtualsMaterializationPlace & place_to_filter);
+
+/// Splits requested column names into physical and virtual.
+/// Returns {physical_names, virtual_names}. Always includes at least one physical column.
+std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
 }
 

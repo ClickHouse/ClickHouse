@@ -475,8 +475,6 @@ void KeeperTCPHandler::runImpl()
         compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
-    max_request_size = static_cast<UInt64>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
-
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
@@ -512,6 +510,17 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
+
+            if (keeper_dispatcher->isShuttingDown())
+            {
+                LOG_DEBUG(log, "Server shutting down, closing session #{}", session_id);
+                break;
+            }
+
+            /// Restart the stopwatch after poll() returns so that the time spent
+            /// waiting inside poll() (which can be up to session_timeout, e.g. 10s
+            /// between heartbeats) is not attributed to the next operation.
+            logging_stopwatch.restart();
             if (result.has_requests && !close_received)
             {
                 if (in->eof())
@@ -566,7 +575,7 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response, request_with_response.request);
                 packageSent();
 
-                const auto maybe_finalize_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+                const auto maybe_finalize_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
                 {
                     if (!request)
                         return;
@@ -592,11 +601,11 @@ void KeeperTCPHandler::runImpl()
                 }
                 catch (...)
                 {
-                    maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+                    maybe_finalize_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
                     throw;
                 }
 
-                maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
+                maybe_finalize_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
 
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
@@ -715,6 +724,8 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 {
     const UInt64 receive_start_time = ZooKeeperOpentelemetrySpans::now();
 
+    const size_t max_request_size = static_cast<size_t>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
+
     std::optional<LimitReadBuffer> limited_buffer_holder;
     /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size
     /// (this should be done on per-request basis)
@@ -827,10 +838,18 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
                 request->toString(/*short_format=*/true));
         }
 
-        conn_stats.updateLatency(elapsed_ms);
+        uint64_t subrequest_count = 1;
+        if (request)
+        {
+            auto op_num = request->getOpNum();
+            if (op_num == Coordination::OpNum::Multi || op_num == Coordination::OpNum::MultiRead)
+                subrequest_count = static_cast<const Coordination::ZooKeeperMultiRequest &>(*request).requests.size();
+        }
+
+        conn_stats.updateLatency(elapsed_ms, subrequest_count);
 
         operations.erase(response->xid);
-        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms);
+        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms, subrequest_count);
 
         last_op.set(std::make_unique<LastOp>(LastOp{
             .name = Coordination::toString(response->getOpNum()),
