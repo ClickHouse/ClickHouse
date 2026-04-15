@@ -197,15 +197,37 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         Shuffle,            /// Partition data by aggregation keys and do aggregation in disjoint buckets, then just unite the results
     } strategy = PartialAggregation;
 
-    /// TODO: choose Shuffle strategy if the aggregation result is too big and splitting it into disjoint buckets is profitable
-    /// Otherwise it is better to do partial aggregation, gather and merge.
-    /// Also, shuffling can only be done if aggregation keys are not empty.
-    if (optimization_settings.distributed_plan_force_shuffle_aggregation && !aggregation_keys.empty())
-        strategy = Shuffle;
+    /// Choose Shuffle when the estimated number of groups is high.
+    if (!aggregation_keys.empty())
+    {
+        auto input_stats = estimateReadRowsCount(*source);
+
+        /// Use max NDV among GROUP BY keys as a lower-bound estimate for groups.
+        std::optional<UInt64> estimated_groups;
+        for (const auto & key : aggregation_keys)
+        {
+            auto it = input_stats.column_stats.find(key);
+            if (it != input_stats.column_stats.end() && it->second.num_distinct_values > 0)
+                estimated_groups = std::max(estimated_groups.value_or(0), it->second.num_distinct_values);
+        }
+
+        /// Fall back to input row count as an upper bound when NDV is unavailable.
+        if (!estimated_groups && input_stats.estimated_rows)
+            estimated_groups = input_stats.estimated_rows;
+
+        if (estimated_groups && *estimated_groups > optimization_settings.distributed_plan_max_rows_to_broadcast)
+            strategy = Shuffle;
+        else if (!estimated_groups)
+            /// No stats at all - default to Shuffle to be safe.
+            strategy = Shuffle;
+    }
 
     /// Fallback to Shuffle strategy for the cases when partial aggregation is not supported
     const bool can_use_partial_aggregation = !aggregating_step->inOrder() && !aggregating_step->explicitSortingRequired();
     if (!can_use_partial_aggregation)
+        strategy = Shuffle;
+
+    if (optimization_settings.distributed_plan_force_shuffle_aggregation && !aggregation_keys.empty())
         strategy = Shuffle;
 
     if (strategy == PartialAggregation)
