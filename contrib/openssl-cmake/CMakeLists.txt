@@ -1418,7 +1418,6 @@ add_definitions(-DSTATIC_LEGACY)
 
 target_include_directories(crypto
     SYSTEM PUBLIC "common/include"
-    SYSTEM PUBLIC "${PLATFORM_DIRECTORY}/include"
     PRIVATE "${PLATFORM_DIRECTORY}/include_private")
 
 target_include_directories(crypto
@@ -1442,9 +1441,8 @@ add_library(OpenSSL::Crypto ALIAS crypto)
 add_library(OpenSSL::SSL ALIAS ssl)
 
 if(OPENSSL_AUX_BUILD_FOR_CROSS_COMPILATION)
-    install(DIRECTORY "${PLATFORM_DIRECTORY}/include" DESTINATION "${CMAKE_BINARY_DIR}")
-    install(DIRECTORY "${OPENSSL_SOURCE_DIR}/include" DESTINATION "${CMAKE_BINARY_DIR}")
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/common/include" DESTINATION "${CMAKE_BINARY_DIR}")
+    install(DIRECTORY "${OPENSSL_SOURCE_DIR}/include" DESTINATION "${CMAKE_BINARY_DIR}")
 else()
     install(FILES openssl.conf fipsmodule.conf DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)
 endif()
