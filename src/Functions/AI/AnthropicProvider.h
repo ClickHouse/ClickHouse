@@ -5,6 +5,18 @@
 namespace DB
 {
 
+/** Anthropic Messages API
+  * https://platform.claude.com/docs/en/api/messages
+  *
+  * Request:
+  *   POST /v1/messages
+  *   {"model": "claude-sonnet-4-20250514", "system": "Be concise", "messages": [{"role": "user", "content": "Hello"}],
+  *    "temperature": 0.7, "max_tokens": 1024}
+  *
+  * Response:
+  *   {"content": [{"type": "text", "text": "Hi!"}], "stop_reason": "end_turn",
+  *    "usage": {"input_tokens": 10, "output_tokens": 2}}
+  */
 class AnthropicProvider : public IAIProvider
 {
 public:
