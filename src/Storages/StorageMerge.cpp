@@ -707,7 +707,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             auto child_row_level_filter = row_policy_data_opt ? row_policy_data_opt->createFilterDAGInfo() : nullptr;
 
             /// Apply all row-level filters during the child read, but keep the combined filter column
-            /// until we leave the child plan. this needed to not drop intermediate filter state that a
+            /// until we leave the child plan. this is needed to not drop intermediate filter state that a
             /// later policy still needs while ensuring the temporary filter column is not exposed
             /// above the `Merge` table
             auto inherited_row_level_filter = FilterDAGInfo::combineConjunction(modified_query_info.row_level_filter, child_row_level_filter);
