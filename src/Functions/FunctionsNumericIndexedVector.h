@@ -502,7 +502,7 @@ public:
         WhichDataType which(type0->getArgumentsDataTypes()[1]->getTypeId());
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
-        return std::make_shared<DataTypeNumber<TYPE>>();
+        return std::make_shared<DataTypeNumber<TYPE>>(); /// NOLINT(bugprone-macro-parentheses)
         FOR_BASIC_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
         throw Exception(
@@ -574,7 +574,7 @@ public:
         WhichDataType which(type0->getArgumentsDataTypes()[1]->getTypeId());
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
-        return std::make_shared<DataTypeNumber<TYPE>>(); /// NOLINT
+        return std::make_shared<DataTypeNumber<TYPE>>(); /// NOLINT(bugprone-macro-parentheses)
         FOR_BASIC_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
         throw Exception(
