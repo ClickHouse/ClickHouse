@@ -37,13 +37,15 @@ ReadBufferFromRRM::ReadBufferFromRRM(
     size_t range_begin_,
     size_t range_size_,
     std::future<Memory<>> prefetch_future_,
-    ThreadGroupPtr thread_group_)
+    ThreadGroupPtr thread_group_,
+    ReadScopePtr scope_)
     : ReadBufferFromFileBase(0 /* buf_size — will be set after prefetch */, nullptr, 0)
     , object_key(std::move(object_key_))
     , range_begin(range_begin_)
     , range_size(range_size_)
     , prefetch_future(std::move(prefetch_future_))
     , thread_group(std::move(thread_group_))
+    , scope(std::move(scope_))
 {
 }
 
@@ -125,6 +127,8 @@ off_t ReadBufferFromRRM::seek(off_t off, int whence)
             absolute_pos, range_begin, range_begin + prefetched_data.m_size);
     }
 
+    validateSeekPosition(static_cast<size_t>(absolute_pos));
+
     size_t local_target = static_cast<size_t>(absolute_pos) - range_begin;
 
     /// If target is within the current working_buffer, just reposition.
@@ -148,6 +152,26 @@ off_t ReadBufferFromRRM::getPosition()
         return static_cast<off_t>(range_begin);
 
     return static_cast<off_t>(range_begin + data_offset - available());
+}
+
+void ReadBufferFromRRM::validateSeekPosition(size_t absolute_pos) const
+{
+    if (!scope || scope->reading_ranges.empty())
+        return;
+
+    for (size_t i = 0; i < scope->reading_ranges.size(); ++i)
+    {
+        const auto & rr = scope->reading_ranges[i];
+        size_t padding = (i < scope->cache_pre_padding_bytes.size()) ? scope->cache_pre_padding_bytes[i] : 0;
+        size_t padded_begin = rr.begin - padding;
+
+        if (absolute_pos >= padded_begin && absolute_pos < rr.end)
+            return;
+    }
+
+    throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
+        "Seek to {} does not match any reading_range or cache_pre_padding in scope [{}]",
+        absolute_pos, scope->toString());
 }
 
 }

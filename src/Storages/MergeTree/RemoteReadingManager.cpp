@@ -214,7 +214,8 @@ std::unique_ptr<ReadBufferFromFileBase> RemoteReadingManager::createObjectReadBu
         }).detach();
 
     return std::make_unique<ReadBufferFromRRM>(
-        object.remote_path, range_begin, range_size, std::move(future), scope.thread_group);
+        object.remote_path, range_begin, range_size, std::move(future), scope.thread_group,
+        scope.shared_from_this());
 }
 
 }

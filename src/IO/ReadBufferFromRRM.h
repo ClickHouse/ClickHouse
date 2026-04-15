@@ -25,7 +25,8 @@ public:
         size_t range_begin_,
         size_t range_size_,
         std::future<Memory<>> prefetch_future_,
-        ThreadGroupPtr thread_group_);
+        ThreadGroupPtr thread_group_,
+        ReadScopePtr scope_ = nullptr);
 
     ~ReadBufferFromRRM() override;
 
@@ -47,6 +48,11 @@ private:
     /// Block until prefetch completes, set up `internal_buffer` / `working_buffer`.
     void waitPrefetch();
 
+    /// Check that an absolute seek position falls within one of the
+    /// reading_ranges (extended by cache_pre_padding_bytes).
+    /// Logs a warning if the position doesn't match any range.
+    void validateSeekPosition(size_t absolute_pos) const;
+
     String object_key;
     size_t range_begin;  /// Absolute offset in the remote object.
     size_t range_size;
@@ -61,6 +67,9 @@ private:
     /// Query's thread group — attached when the buffer does work,
     /// so that log messages and metrics are attributed to the right query.
     ThreadGroupPtr thread_group;
+
+    /// Scope with reading_ranges and cache_pre_padding_bytes for seek validation.
+    ReadScopePtr scope;
 
     LoggerPtr log = getLogger("ReadBufferFromRRM");
 };
