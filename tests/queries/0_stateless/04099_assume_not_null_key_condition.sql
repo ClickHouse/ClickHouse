@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
 
