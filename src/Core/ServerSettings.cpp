@@ -1448,7 +1448,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```
     )", 0) \
     DECLARE(Int32, oom_score, getDefaultOomScore(), R"(On Linux systems this can control the behavior of OOM killer.)", 0) \
-    DECLARE(Bool, oom_canary_enable, true, R"(
+    DECLARE(Bool, oom_canary_enable, false, R"(
     Enable the OOM canary: a sacrificial child process that attracts the Linux OOM killer
     before the main ClickHouse server process, giving the server a chance to shed load.
     )", 0) \

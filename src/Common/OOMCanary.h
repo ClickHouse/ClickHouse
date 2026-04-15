@@ -13,7 +13,8 @@ namespace DB
 /// OOM Canary: a sacrificial child process that attracts the OOM killer
 /// before the main ClickHouse server process.
 ///
-/// The canary is a `fork`-ed child that allocates, touches, and mlock()-s
+/// The canary is a child process (created via raw `clone` syscall to avoid
+/// jemalloc `pthread_atfork` deadlocks) that allocates, touches, and `mlock`-s
 /// a configurable amount of memory. Its `oom_score_adj` is set to 1000
 /// (the maximum), so the kernel OOM killer will target it first.
 ///
@@ -58,10 +59,10 @@ private:
     /// Returns the child pid, or -1 on failure.
     pid_t spawnCanary(size_t size_bytes);
 
-    /// The child process main function (runs after `fork`).
+    /// The child process main function (runs after `clone`).
     /// Only uses async-signal-safe functions/syscalls.
-    /// `page_size` and `max_fd` must be obtained before `fork`.
-    [[noreturn]] static void childMain(size_t size_bytes, int64_t page_size, int max_fd);
+    /// `page_size` and `max_fd` must be obtained before `clone`.
+    [[noreturn]] static void childMain(size_t size_bytes, int64_t page_size, int max_fd, pid_t parent_pid);
 
     /// Monitor thread function: waitpid loop, response, optional relaunch.
     void monitorThread();

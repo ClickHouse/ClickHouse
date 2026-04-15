@@ -19,6 +19,7 @@
 #    include <unistd.h>
 #    include <fcntl.h>
 #    include <sys/syscall.h>
+#    include <sys/prctl.h>
 #    include <cerrno>
 #    include <cstring>
 #endif
@@ -124,8 +125,10 @@ bool OOMCanary::isRunning() const
 
 pid_t OOMCanary::spawnCanary(size_t size_bytes)
 {
-    /// Get child parameters before `fork`, because the child must stay in the
+    /// Get child parameters before `clone`, because the child must stay in the
     /// async-signal-safe subset until it either `exec`s or calls `_exit`.
+    pid_t parent_pid = ::getpid();
+
     int64_t page_size = ::sysconf(_SC_PAGESIZE);
     if (page_size <= 0)
         page_size = 4096;
@@ -134,18 +137,23 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
     if (max_fd < 0 || max_fd > 65536)
         max_fd = 65536;
 
-    pid_t pid = ::fork();
+    /// Use raw clone() syscall instead of fork() to avoid jemalloc's
+    /// pthread_atfork handler, which tries to lock all arena mutexes and
+    /// can deadlock in a heavily multi-threaded server process.
+    /// The child only uses async-signal-safe functions, so it does not
+    /// need jemalloc state to be consistent.
+    pid_t pid = static_cast<pid_t>(::syscall(__NR_clone, SIGCHLD, nullptr));
 
     if (pid < 0)
     {
-        LOG_WARNING(log, "fork() failed for OOM canary: {}", errnoToString());
+        LOG_WARNING(log, "clone() failed for OOM canary: {}", errnoToString());
         return -1;
     }
 
     if (pid == 0)
     {
         /// Child process: only async-signal-safe operations from here
-        childMain(size_bytes, page_size, max_fd);
+        childMain(size_bytes, page_size, max_fd, parent_pid);
         /// childMain is [[noreturn]]
     }
 
@@ -153,8 +161,21 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
     return pid;
 }
 
-[[noreturn]] void OOMCanary::childMain(size_t size_bytes, int64_t page_size, int max_fd)
+[[noreturn]] void OOMCanary::childMain(size_t size_bytes, int64_t page_size, int max_fd, pid_t parent_pid)
 {
+    /// Ask the kernel to send `SIGKILL` when the parent process exits,
+    /// preventing this child from becoming an orphan.
+    if (::prctl(PR_SET_PDEATHSIG, SIGKILL) != 0)
+        ::_exit(1);
+
+    /// Close the race between `clone` and `PR_SET_PDEATHSIG`: if the parent
+    /// has already exited, the notification will never be delivered, so exit
+    /// immediately instead of leaving an orphaned canary behind.
+    /// Compare against the original parent pid instead of checking for `1`,
+    /// because the child may be reparented to a subreaper.
+    if (::getppid() != parent_pid)
+        ::_exit(1);
+
     /// Close all inherited file descriptors (3..max_fd)
     /// Prefer close_range syscall (Linux 5.9+) for efficiency,
     /// as the inherited fd limit can be very large.
@@ -295,7 +316,7 @@ void OOMCanary::monitorThread()
                 }
                 else
                 {
-                    LOG_WARNING(log, "Failed to relaunch OOM canary (memory pressure too high for fork), giving up");
+                    LOG_WARNING(log, "Failed to relaunch OOM canary, giving up");
                     break;
                 }
             }
