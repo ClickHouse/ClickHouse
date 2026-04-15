@@ -16,13 +16,14 @@ AI functions can return unpredictable inputs. The result will highly depend on t
 
 All functions are sharing a common infrastructure that provides:
 
-- **Quota enforcement**: Per-query limits on tokens ([`ai_max_input_tokens_per_query`](/operations/settings/settings#ai_max_input_tokens_per_query), [`ai_max_output_tokens_per_query`](/operations/settings/settings#ai_max_output_tokens_per_query)) and API calls ([`ai_max_api_calls_per_query`](/operations/settings/settings#ai_max_api_calls_per_query)).
-- **Retry with backoff**: Transient failures are retried ([`ai_max_retries`](/operations/settings/settings#ai_max_retries)) with exponential backoff ([`ai_retry_initial_delay_ms`](/operations/settings/settings#ai_retry_initial_delay_ms)).
+- **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/operations/settings/settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/operations/settings/settings#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/operations/settings/settings#ai_function_max_api_calls_per_query)).
+- **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/operations/settings/settings#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/operations/settings/settings#ai_function_retry_initial_delay_ms)).
 
 ## Configuration {#configuration}
 
 AI functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection.
 
+Example statement to create a named collection with provider credentials:
 ```sql
 CREATE NAMED COLLECTION ai_credentials AS
     provider = 'openai',

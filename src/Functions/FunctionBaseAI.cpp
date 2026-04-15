@@ -25,14 +25,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_ai_functions;
-    extern const SettingsUInt64 ai_request_timeout_sec;
-    extern const SettingsUInt64 ai_max_retries;
-    extern const SettingsUInt64 ai_retry_initial_delay_ms;
-    extern const SettingsBool ai_throw_on_error;
-    extern const SettingsUInt64 ai_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_max_api_calls_per_query;
-    extern const SettingsBool ai_throw_on_quota_exceeded;
+    extern const SettingsUInt64 ai_function_request_timeout_sec;
+    extern const SettingsUInt64 ai_function_max_retries;
+    extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
+    extern const SettingsBool ai_function_throw_on_error;
+    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
+    extern const SettingsBool ai_function_throw_on_quota_exceeded;
 }
 
 namespace ErrorCodes
@@ -117,16 +117,16 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     float temperature = resolveTemperature(arguments, config);
 
     const auto & settings = getContext()->getSettingsRef();
-    UInt64 timeout_sec = settings[Setting::ai_request_timeout_sec].value;
-    UInt64 max_retries = settings[Setting::ai_max_retries].value;
-    UInt64 retry_delay_ms = settings[Setting::ai_retry_initial_delay_ms].value;
+    UInt64 timeout_sec = settings[Setting::ai_function_request_timeout_sec].value;
+    UInt64 max_retries = settings[Setting::ai_function_max_retries].value;
+    UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
 
     auto quota = std::make_shared<AIQuotaTracker>(
-        settings[Setting::ai_max_input_tokens_per_query].value,
-        settings[Setting::ai_max_output_tokens_per_query].value,
-        settings[Setting::ai_max_api_calls_per_query].value,
-        settings[Setting::ai_throw_on_quota_exceeded].value,
-        settings[Setting::ai_throw_on_error].value);
+        settings[Setting::ai_function_max_input_tokens_per_query].value,
+        settings[Setting::ai_function_max_output_tokens_per_query].value,
+        settings[Setting::ai_function_max_api_calls_per_query].value,
+        settings[Setting::ai_function_throw_on_quota_exceeded].value,
+        settings[Setting::ai_function_throw_on_error].value);
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);

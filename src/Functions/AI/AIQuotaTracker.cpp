@@ -26,7 +26,7 @@ bool AIQuotaTracker::checkBeforeDispatch(size_t estimated_text_bytes)
                 throw Exception(
                     ErrorCodes::LIMIT_EXCEEDED,
                     "Estimated input tokens for next API call ({}) would exceed limit: {} tokens used, maximum: {}. "
-                    "This is controlled by the 'ai_max_input_tokens_per_query' setting",
+                    "This is controlled by the 'ai_function_max_input_tokens_per_query' setting",
                     estimated_tokens,
                     current,
                     max_input_tokens);
@@ -42,7 +42,7 @@ bool AIQuotaTracker::checkBeforeDispatch(size_t estimated_text_bytes)
         if (throw_on_quota_exceeded)
             throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                 "Limit for AI output tokens exceeded: {} tokens generated, maximum: {}. "
-                "This is controlled by the 'ai_max_output_tokens_per_query' setting",
+                "This is controlled by the 'ai_function_max_output_tokens_per_query' setting",
                 output_tokens.load(MEMORY_ORDER), max_output_tokens);
         quota_exceeded.store(true, MEMORY_ORDER);
         return false;
@@ -58,7 +58,7 @@ bool AIQuotaTracker::checkBeforeDispatch(size_t estimated_text_bytes)
                 throw Exception(
                     ErrorCodes::LIMIT_EXCEEDED,
                     "Limit for AI API calls will be exceeded by next API call: {} calls made, maximum: {}. "
-                    "This is controlled by the 'ai_max_api_calls_per_query' setting",
+                    "This is controlled by the 'ai_function_max_api_calls_per_query' setting",
                     prev,
                     max_api_calls);
 

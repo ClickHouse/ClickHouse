@@ -7881,31 +7881,31 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     /* ####################################################### */ \
     /* AI function settings */ \
     DECLARE(Bool, allow_experimental_ai_functions, false, R"(
-Enable experimental AI functions (`aiGenerateContent`). These functions make external HTTP calls to AI providers.
+Enable experimental AI functions (e.g. `aiGenerateContent`). These functions make external HTTP calls to AI providers.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_request_timeout_sec, 60, R"(
-Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_max_retries`.
+    DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
+Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_max_retries, 0, R"(
-Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_retry_initial_delay_ms`.
+    DECLARE(UInt64, ai_function_max_retries, 0, R"(
+Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_retry_initial_delay_ms, 1000, R"(
+    DECLARE(UInt64, ai_function_retry_initial_delay_ms, 1000, R"(
 Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, ai_throw_on_error, true, R"(
+    DECLARE(Bool, ai_function_throw_on_error, true, R"(
 If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_max_input_tokens_per_query, 1000000, R"(
+    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
 Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Set to 0 to disable.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_max_output_tokens_per_query, 500000, R"(
+    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
 Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Set to 0 to disable.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_max_api_calls_per_query, 0, R"(
+    DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, ai_throw_on_quota_exceeded, true, R"(
-If true (default), exceeding an AI function quota limit (`ai_max_input_tokens_per_query`, `ai_max_output_tokens_per_query`, or `ai_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
+    DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
+If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
