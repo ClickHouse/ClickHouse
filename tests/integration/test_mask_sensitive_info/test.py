@@ -132,9 +132,13 @@ def test_create_alter_user():
     node.query("DROP USER u1, u2")
 
 
-def check_secrets_for_tables(test_cases, password):
+def check_secrets_for_tables(test_cases, password, created_tables=None):
+    if created_tables is None:
+        created_tables = set()
     for table_name, query, error in test_cases:
-        if (not error) and (password in query):
+        # Check tables that were created without error, or MAYBE_ERROR tables
+        # that actually succeeded (tracked in created_tables).
+        if ((not error) or (table_name in created_tables)) and (password in query):
             assert password in node.query(
                 f"SHOW CREATE TABLE {table_name} {show_secrets}=1"
             )
@@ -330,12 +334,17 @@ def test_create_table():
     # Generate test cases as a list of tuples (table_name, query, error).
     test_cases = [make_test_case(i) for i in range(len(table_engines))]
 
+    # Track MAYBE_ERROR tables that were actually created (DeltaLake may
+    # succeed or fail depending on MinIO responsiveness).
+    created_tables = set()
+
     for table_name, query, error in test_cases:
         if error == MAYBE_ERROR:
             # DeltaLake eagerly reads S3 metadata during CREATE TABLE.
             # May succeed or fail depending on MinIO responsiveness.
             try:
                 node.query(query)
+                created_tables.add(table_name)
             except Exception:
                 pass
         elif error:
@@ -432,10 +441,10 @@ def test_create_table():
         must_not_contain=[password],
     )
 
-    check_secrets_for_tables(test_cases, password)
+    check_secrets_for_tables(test_cases, password, created_tables)
 
     for table_name, query, error in test_cases:
-        if not error:
+        if (not error) or (table_name in created_tables):
             node.query(f"DROP TABLE {table_name}")
 
 
@@ -582,12 +591,17 @@ def test_table_functions():
     # Generate test cases as a list of tuples (table_name, query, error).
     test_cases = [make_test_case(i) for i in range(len(table_functions))]
 
+    # Track MAYBE_ERROR tables that were actually created (DeltaLake may
+    # succeed or fail depending on MinIO responsiveness).
+    created_tables = set()
+
     for table_name, query, error in test_cases:
         if error == MAYBE_ERROR:
             # DeltaLake eagerly reads S3 metadata during CREATE TABLE.
             # May succeed or fail depending on MinIO responsiveness.
             try:
                 node.query(query)
+                created_tables.add(table_name)
             except Exception:
                 pass
         elif error:
@@ -682,23 +696,29 @@ def test_table_functions():
         must_not_contain=[password],
     )
 
-    check_secrets_for_tables(test_cases, password)
+    check_secrets_for_tables(test_cases, password, created_tables)
 
     for table_name, query, error in test_cases:
-        if not error:
+        if (not error) or (table_name in created_tables):
             node.query(f"DROP TABLE {table_name}")
 
     # Check EXPLAIN QUERY TREE
     secrets = [password, azure_account_key]
     for toggle in range(2):
         for table_function in table_functions:
-            # Skip entries that are tuples (have expected errors, e.g. DeltaLake under MSan)
+            # For tuple entries: skip real errors (e.g. UNKNOWN_FUNCTION under
+            # MSan), but include MAYBE_ERROR entries (DeltaLake available) since
+            # EXPLAIN QUERY TREE run_passes=0 only builds the parse tree and
+            # does not connect to S3.
+            func_str = table_function
             if isinstance(table_function, tuple):
-                continue
+                func_str, expected_error = table_function
+                if expected_error != MAYBE_ERROR:
+                    continue
             # check only table functions containing secrets
-            if any(word in table_function for word in secrets):
+            if any(word in func_str for word in secrets):
                 output = node.query(
-                    f"EXPLAIN QUERY TREE run_passes=0 SELECT * FROM {table_function} {show_secrets}={toggle}"
+                    f"EXPLAIN QUERY TREE run_passes=0 SELECT * FROM {func_str} {show_secrets}={toggle}"
                 )
                 is_secret_present = any(word in output for word in secrets)
                 if toggle:
