@@ -1,3 +1,4 @@
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -86,7 +87,7 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 MergeTreeData::ProjectionPartsVector
 StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
-    if (data->getInMemoryMetadataPtr()->projections.empty())
+    if (data->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->projections.empty())
         return {};
 
     using State = MergeTreeData::DataPartState;

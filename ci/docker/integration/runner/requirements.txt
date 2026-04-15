@@ -79,7 +79,7 @@ pyiceberg[sql-sqlite]==0.11.1
 pymongo==4.16.0
 pyspark==3.5.5
 pyspnego==0.12.1
-pytest==9.0.2
+pytest==9.0.3
 pytest-order==1.3.0
 pytest-random-order==1.2.0
 pytest-repeat==0.9.4

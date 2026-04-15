@@ -762,7 +762,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
     const ContextPtr & modified_context)
 {
     LOG_TEST(log, "Polling consumer");
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
     Block non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized());
     auto virtual_header = getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 

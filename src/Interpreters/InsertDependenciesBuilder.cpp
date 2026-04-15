@@ -1087,7 +1087,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     }
 
     chassert(storage);
-    auto metadata = storage->getInMemoryMetadataPtr();
+    auto metadata = storage->getInMemoryMetadataPtr(init_context, false);
 
     storages[current] = storage;
     metadata_snapshots[current] = metadata;

@@ -1,4 +1,5 @@
 #include <memory>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/copyData.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/StorageKeeperMap.h>
@@ -1463,7 +1464,7 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Nam
 Chunk StorageKeeperMap::getBySerializedKeys(
     const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const
 {
-    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+    Block sample_block = getInMemoryMetadataPtr(local_context, false)->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
     MutableColumnPtr version_column = nullptr;
 
@@ -1541,7 +1542,7 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
 Block StorageKeeperMap::getSampleBlock(const Names &) const
 {
-    auto metadata = getInMemoryMetadataPtr();
+    auto metadata = getInMemoryMetadataPtr(getContext(), false);
     return metadata->getSampleBlock();
 }
 
@@ -1581,7 +1582,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     chassert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, local_context);
 
