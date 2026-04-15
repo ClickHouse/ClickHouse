@@ -23,3 +23,6 @@ INSERT INTO test_single_key_no_prealloc VALUES ([1,2]), ([3]), ([1,2]);
 SELECT 'Single Array key';
 SELECT a, count() FROM test_single_key_no_prealloc GROUP BY a ORDER BY a;
 DROP TABLE test_single_key_no_prealloc;
+
+SELECT 'Nullable(UInt256) key (too large for nullable_keys256, falls back to nullable_serialized)';
+SELECT toNullable(toUInt256(number)) AS k, count() FROM numbers(5) GROUP BY k ORDER BY k;
