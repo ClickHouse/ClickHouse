@@ -373,6 +373,9 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             pk_positions.emplace(cond.min_position_in_primary_key);
         }
 
+        if (cond.node.getDAGNode())
+            cond.can_throw = ActionsDAG::subtreeCanThrow(cond.node.getDAGNode());
+
         res.emplace_back(std::move(cond));
     }
 }
@@ -466,17 +469,22 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     };
 
     /// Move condition and all other conditions depend on the same set of columns.
-    auto move_condition = [&](Conditions::iterator cond_it)
+    auto move_condition = [&](Conditions::iterator cond_it, Conditions::iterator & it_begin, Conditions::iterator & it_end)
     {
+        if (cond_it == it_begin)
+            ++it_begin;
+
         move_to_prewhere_conditions(cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
         total_number_of_moved_columns += cond_it->table_columns.size();
 
         /// Move all other viable conditions that depend on the same set of columns.
-        for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
+        for (auto jt = it_begin; jt != it_end;)
         {
             if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
             {
+                if (it_begin == jt) ++it_begin;
+                
                 move_to_prewhere_conditions(jt++);
             }
             else
@@ -487,36 +495,47 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     };
 
     /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
-    while (!where_conditions.empty())
+    bool moved_enough = false;
+    for (auto it = where_conditions.begin(); !moved_enough && it != where_conditions.end();)
     {
-        /// Move the best condition to PREWHERE if it is viable.
-        auto it = std::min_element(where_conditions.begin(), where_conditions.end());
+        auto it_begin = it;
+        auto it_end = it;
 
-        if (!it->viable)
-            break;
+        /// Find the next throwing condition
+        while (++it_end != where_conditions.end())
+             if (it_end->can_throw) break;
 
-        if (!where_optimizer_context.move_all_conditions_to_prewhere)
+        while (it_begin != it_end)
         {
-            bool moved_enough = false;
-            if (total_size_of_queried_columns > 0)
-            {
-                /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
-                moved_enough = total_size_of_moved_conditions > 0
-                    && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
-            }
-            else
-            {
-                /// Otherwise, use number of moved columns as a fallback.
-                /// It can happen, if table has only compact parts. 25% ratio is just a guess.
-                moved_enough = total_number_of_moved_columns > 0
-                    && (total_number_of_moved_columns + it->table_columns.size()) * 4 > queried_columns.size();
-            }
+            /// Move the best condition to PREWHERE if it is viable.
+            auto it_min = std::min_element(it_begin, it_end);
 
-            if (moved_enough)
+            if (!it_min->viable)
                 break;
-        }
 
-        move_condition(it);
+            if (!where_optimizer_context.move_all_conditions_to_prewhere)
+            {
+                if (total_size_of_queried_columns > 0)
+                {
+                    /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
+                    moved_enough = total_size_of_moved_conditions > 0
+                        && (total_size_of_moved_conditions + it_min->columns_size) * 10 > total_size_of_queried_columns;
+                }
+                else
+                {
+                    /// Otherwise, use number of moved columns as a fallback.
+                    /// It can happen, if table has only compact parts. 25% ratio is just a guess.
+                    moved_enough = total_number_of_moved_columns > 0
+                        && (total_number_of_moved_columns + it_min->table_columns.size()) * 4 > queried_columns.size();
+                }
+
+                if (moved_enough)
+                    break;
+            }
+
+            move_condition(it_min, it_begin, it_end);
+        }
+        it = it_end;
     }
 
     /// Nothing was moved.

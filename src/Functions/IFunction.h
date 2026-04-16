@@ -318,10 +318,15 @@ public:
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
+    /** If function can throw an exception based on the data values it processes at runtime
+      * return true, otherwise return false.
+    */
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return false; }
+
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
-        bool is_monotonic = false;   /// Is the function monotonous (non-decreasing or non-increasing).
+        bool is_monotonic = false;   /// Is the I monotonous (non-decreasing or non-increasing).
         bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
         bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
@@ -565,6 +570,7 @@ public:
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return false; }
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }

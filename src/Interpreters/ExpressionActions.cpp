@@ -136,7 +136,7 @@ static ActionsDAGReverseInfo getActionsDAGReverseInfo(const std::list<ActionsDAG
     return result_info;
 }
 
-static DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDAG::NodeRawConstPtrs & nodes)
+static DataTypesWithConstInfo (const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     DataTypesWithConstInfo types;
     types.reserve(nodes.size());

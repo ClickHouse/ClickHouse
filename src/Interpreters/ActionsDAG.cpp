@@ -2625,13 +2625,16 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
         const ActionsDAG::Node * node = nullptr;
         size_t next_child_to_visit = 0;
         size_t num_allowed_children = 0;
+        bool subtree_can_throw = false;
     };
 
     std::stack<Frame> stack;
     std::unordered_set<const ActionsDAG::Node *> visited_nodes;
-
+    std::unordered_map<const ActionsDAG::Node *, bool> node_can_throw;
     stack.push({.node = predicate});
     visited_nodes.insert(predicate);
+    /// Tells if the whole prefix of predicates so far is in the allowed set.
+    bool all_prefix_in_allowed = true;
     while (!stack.empty())
     {
         auto & cur = stack.top();
@@ -2648,6 +2651,9 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
                 break;
             }
 
+            if (node_can_throw[child])
+                cur.subtree_can_throw = true;
+
             if (allowed_nodes.contains(child))
                 ++cur.num_allowed_children;
             ++cur.next_child_to_visit;
@@ -2655,6 +2661,9 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
 
         if (cur.next_child_to_visit == cur.node->children.size())
         {
+            bool can_throw = cur.subtree_can_throw || ActionsDAG::nodeCanThrow(cur.node);
+            node_can_throw[cur.node] = can_throw;
+
             if (cur.num_allowed_children == cur.node->children.size())
             {
                 bool is_deprecated_function = !allow_non_deterministic_functions
@@ -2669,7 +2678,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
 
             if (predicates.contains(cur.node))
             {
-                if (allowed_nodes.contains(cur.node))
+                if (allowed_nodes.contains(cur.node) && (!can_throw || all_prefix_in_allowed))
                 {
                     if (allowed.insert(cur.node).second)
                         conjunction.allowed.push_back(cur.node);
@@ -2677,6 +2686,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
                 }
                 else
                 {
+                    all_prefix_in_allowed = false;
                     if (rejected.insert(cur.node).second)
                         conjunction.rejected.push_back(cur.node);
                 }
@@ -2952,6 +2962,10 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     for (const auto * both_streams_push_down_allowed_conjunction_node : both_streams_push_down_conjunctions.allowed)
     {
+        // Skip synthesized throwing predicates -- they have no guards on the target side
+        if (subtreeCanThrow(both_streams_push_down_allowed_conjunction_node))
+            continue;
+        
         if (!left_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
             left_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
 
@@ -3327,6 +3341,34 @@ bool ActionsDAG::isSortingPreserved(
     }
 
     return true;
+}
+
+bool ActionsDAG::nodeCanThrow(const ActionsDAG::Node * node)
+{
+    if (node->type != ActionType::FUNCTION)
+        return false;
+
+    DataTypesWithConstInfo args_data_types;
+    args_data_types.reserve(node->children.size());
+
+    for (const auto & child : node->children)
+    {
+        bool is_const = child->column && isColumnConst(*child->column);
+        args_data_types.push_back({child->result_type, is_const });
+    }
+    return node->function_base->canThrow(args_data_types);
+}
+
+bool ActionsDAG::subtreeCanThrow(const ActionsDAG::Node *node)
+{
+    if (nodeCanThrow(node))
+        return true;
+    for (const auto & child : node->children)
+    {
+        if (subtreeCanThrow(child))
+            return true;
+    }
+    return false;
 }
 
 namespace

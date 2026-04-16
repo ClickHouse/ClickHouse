@@ -535,6 +535,10 @@ public:
      *   - remove_filter: whether the filter column should be removed from original DAG after evaluation
      */
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+    
+    static bool nodeCanThrow(const Node * node);
+
+    static bool subtreeCanThrow(const Node * node);
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
