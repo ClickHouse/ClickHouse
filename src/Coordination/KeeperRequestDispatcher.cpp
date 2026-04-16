@@ -211,8 +211,8 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
             if (!last_checked_session_live)
             {
                 ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    read_request.request->spans.read_wait_for_write,
+                read_request.request->spans.maybeFinalize(
+                    KeeperSpan::ReadWaitForWrite,
                     [&]
                     {
                         return std::vector<OpenTelemetry::SpanAttribute>{
@@ -235,8 +235,8 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
     {
         for (auto & read_request : pending_reads)
         {
-            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                read_request.request->spans.read_wait_for_write,
+            read_request.request->spans.maybeFinalize(
+                KeeperSpan::ReadWaitForWrite,
                 [&]
                 {
                     return std::vector<OpenTelemetry::SpanAttribute>{
@@ -297,8 +297,8 @@ void KeeperRequestDispatcher::requestThread()
     {
         const auto handle_opentelemetry_spans = [this](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
         {
-            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                request->spans.dispatcher_requests_queue,
+            request->spans.maybeFinalize(
+                KeeperSpan::DispatcherRequestsQueue,
                 [&]
                 {
                     return std::vector<OpenTelemetry::SpanAttribute>{
@@ -371,8 +371,8 @@ void KeeperRequestDispatcher::requestThread()
                         /// Finalize the dispatcher_requests_queue span that was initialized
                         /// when the request was enqueued. Without this the span leaks because
                         /// handle_opentelemetry_spans (which normally finalizes it) is skipped.
-                        ZooKeeperOpentelemetrySpans::maybeFinalize(
-                            req.request->spans.dispatcher_requests_queue,
+                        req.request->spans.maybeFinalize(
+                            KeeperSpan::DispatcherRequestsQueue,
                             [&]
                             {
                                 return std::vector<OpenTelemetry::SpanAttribute>{
@@ -446,7 +446,7 @@ void KeeperRequestDispatcher::requestThread()
                         if (!quorum_reads && request.request->isReadRequest())
                         {
                             const auto & last_request = current_batch.back();
-                            ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
+                            request.request->spans.maybeInitialize(KeeperSpan::ReadWaitForWrite, request.request->tracing_context.get());
                             ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
                             reads_count += 1;
                             reads_bytes_size += request.request->bytesSize();
@@ -671,8 +671,8 @@ void KeeperRequestDispatcher::responseThread()
 
             if (response_was_sent && response_for_session.request)
             {
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    response_for_session.request->spans.dispatcher_responses_queue,
+                response_for_session.request->spans.maybeFinalize(
+                    KeeperSpan::DispatcherResponsesQueue,
                     [&]
                     {
                         return std::vector<OpenTelemetry::SpanAttribute>{
@@ -753,7 +753,7 @@ bool KeeperRequestDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
     if (keeper_context->isShutdownCalled())
         return false;
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
     if (!requests_queue->tryPush(std::move(request_info), keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
     {

@@ -259,7 +259,7 @@ bool KeeperRequestDispatcher2::putRequest(const Coordination::ZooKeeperRequestPt
     if (keeper_context->isShutdownCalled())
         return false;
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
     int64_t max_request_queue_bytes = int64_t(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_bytes_size]);
     auto try_push = [&]
@@ -308,8 +308,8 @@ bool KeeperRequestDispatcher2::tryPopRequest(KeeperRequestForSession & request)
         requests_queue_bytes.fetch_sub(int64_t(getRequestBytesCost(*request.request)));
         CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
 
-        ZooKeeperOpentelemetrySpans::maybeFinalize(
-            request.request->spans.dispatcher_requests_queue,
+        request.request->spans.maybeFinalize(
+            KeeperSpan::DispatcherRequestsQueue,
             [&]
             {
                 return std::vector<OpenTelemetry::SpanAttribute>{
@@ -998,8 +998,8 @@ void KeeperRequestDispatcher2::responseThread()
 
             if (response_was_sent && response_for_session.request)
             {
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    response_for_session.request->spans.dispatcher_responses_queue,
+                response_for_session.request->spans.maybeFinalize(
+                    KeeperSpan::DispatcherResponsesQueue,
                     [&]
                     {
                         return std::vector<OpenTelemetry::SpanAttribute>{
