@@ -9,7 +9,7 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Hash join produces probe side columns by filtering or replicating the input columns.
-/// Materializing these columns can be wasted if they are immedtiatly dropped or filtered/replicated
+/// Materializing these columns can be wasted if they are immediately dropped or filtered/replicated
 /// by a follow up join.
 ///
 /// This optimization tells the join to produce `ColumnReplicated` (input column + index) instead if one
