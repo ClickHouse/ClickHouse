@@ -2,6 +2,9 @@
 -- Tests for ALTER TABLE and mutations on MergeTreeQueue engine.
 
 set enable_analyzer = 1;
+set query_plan_optimize_prewhere = 1;
+set optimize_move_to_prewhere = 1;
+set insert_keeper_fault_injection_probability = 0;
 set alter_sync = 2;
 set mutations_sync = 2;
 

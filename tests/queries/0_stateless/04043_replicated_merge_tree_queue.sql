@@ -3,6 +3,8 @@
 -- and monotonically allocated regardless of which replica receives the insert.
 
 set enable_analyzer = 1;
+set query_plan_optimize_prewhere = 1;
+set optimize_move_to_prewhere = 1;
 set insert_keeper_fault_injection_probability = 0;
 
 drop table if exists rmtq1 sync;

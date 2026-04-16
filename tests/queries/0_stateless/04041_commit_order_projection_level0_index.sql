@@ -4,6 +4,10 @@
 -- written incorrectly during insert (corrected at read time).
 
 set enable_analyzer = 1;
+set query_plan_optimize_prewhere = 1;
+set optimize_move_to_prewhere = 1;
+set insert_keeper_fault_injection_probability = 0;
+set optimize_use_projections = 1;
 
 drop table if exists mt_level0_idx sync;
 
