@@ -701,6 +701,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 row_policy_data_opt->extendNames(real_column_names);
             }
 
+            auto modified_query_info
+                = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
+
             RowPolicyDataOpt no_row_policy_data_opt;
             const RowPolicyDataOpt * effective_row_policy_data_opt = &row_policy_data_opt;
 
