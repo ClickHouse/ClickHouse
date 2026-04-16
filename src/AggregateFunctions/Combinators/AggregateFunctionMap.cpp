@@ -152,7 +152,7 @@ public:
             const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
             if (map_type)
                 return map_type->getKeyType();
-            else if (nested->getName().startsWith("count"))
+            else if (nested->getName().starts_with("count"))
                 return types.back();
 
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
