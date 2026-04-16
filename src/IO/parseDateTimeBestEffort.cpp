@@ -562,6 +562,9 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (!has_time)
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected point symbol");
 
+                if (fractional && fractional->digits)
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: fractional part is duplicated");
+
                 ++in.position();
                 num_digits = readDigits(digits, sizeof(digits), in);
                 if (fractional)
