@@ -1,5 +1,6 @@
 from abc import abstractmethod
 import json
+import os
 import pathlib
 import random
 import sys
@@ -20,15 +21,23 @@ from integration.helpers.config_cluster import (
 
 class Generator:
     def __init__(
-        self, binary: pathlib.Path, config: pathlib.Path, _suffix: Optional[str]
+        self,
+        binary: pathlib.Path,
+        config: pathlib.Path,
+        tmpdir: pathlib.Path,
+        _suffix: Optional[str],
     ):
         self.binary: pathlib.Path = binary
         self.config: pathlib.Path = config
         if _suffix is not None:
-            self.temp = tempfile.NamedTemporaryFile(suffix=_suffix)
+            self.temp = tempfile.NamedTemporaryFile(dir=tmpdir, suffix=_suffix)
 
     @abstractmethod
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
+        pass
+
+    @abstractmethod
+    def validate_exit_code(self, exit_code: int) -> bool:
         pass
 
     def run_generator(self, server: ClickHouseInstance, logger, args) -> CommandRequest:
@@ -46,12 +55,17 @@ class Generator:
 
 class BuzzHouseGenerator(Generator):
     def __init__(self, args, cluster, catalog_server, server_settings):
-        super().__init__(args.client_binary, args.client_config, ".json")
+        super().__init__(
+            args.client_binary, args.client_config, args.tmp_files_dir, ".json"
+        )
 
-        tree = ET.parse(server_settings)
-        root = tree.getroot()
-        if root.tag != "clickhouse":
-            raise Exception("<clickhouse> element not found")
+        if server_settings is None:
+            root = ET.Element("clickhouse")
+        else:
+            tree = ET.parse(server_settings)
+            root = tree.getroot()
+            if root.tag != "clickhouse":
+                raise Exception("<clickhouse> element not found")
 
         # Load configuration
         buzz_config = {}
@@ -92,7 +106,7 @@ class BuzzHouseGenerator(Generator):
             }
         if args.with_postgresql:
             buzz_config["postgresql"] = {
-                "query_log_file": "/tmp/postgresql.sql",
+                "query_log_file": os.path.join(args.tmp_files_dir, "postgresql.sql"),
                 "database": "test",
                 "server_hostname": cluster.postgres_ip,
                 "client_hostname": cluster.postgres_ip,
@@ -102,7 +116,7 @@ class BuzzHouseGenerator(Generator):
             }
         if args.with_mysql:
             buzz_config["mysql"] = {
-                "query_log_file": "/tmp/mysql.sql",
+                "query_log_file": os.path.join(args.tmp_files_dir, "mysql.sql"),
                 "database": "test",
                 "server_hostname": cluster.mysql8_ip,
                 "client_hostname": cluster.mysql8_ip,
@@ -111,12 +125,14 @@ class BuzzHouseGenerator(Generator):
                 "password": mysql_pass,
             }
         if args.with_sqlite:
-            buzz_config["sqlite"] = {"query_log_file": "/tmp/sqlite.sql"}
+            buzz_config["sqlite"] = {
+                "query_log_file": os.path.join(args.tmp_files_dir, "sqlite.sql")
+            }
         if args.with_mongodb:
             import urllib
 
             buzz_config["mongodb"] = {
-                "query_log_file": "/tmp/mongodb.doc",
+                "query_log_file": os.path.join(args.tmp_files_dir, "mongodb.doc"),
                 "database": "test",
                 "server_hostname": cluster.mongo_host,
                 "port": cluster.mongo_port,
@@ -214,3 +230,6 @@ class BuzzHouseGenerator(Generator):
             "--max_memory_usage_in_client=1000000000",
             f"--buzz-house-config={self.temp.name}",
         ]
+
+    def validate_exit_code(self, exit_code: int) -> bool:
+        return exit_code in (0, 137, 143)

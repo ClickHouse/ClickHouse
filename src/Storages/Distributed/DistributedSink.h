@@ -1,12 +1,12 @@
 #pragma once
 
+#include <Client/ConnectionPool.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
-#include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
 #include <atomic>

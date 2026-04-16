@@ -66,7 +66,7 @@ void TableFunctionMergeTreeProjection::parseArguments(const ASTPtr & ast_functio
 ColumnsDescription TableFunctionMergeTreeProjection::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
     if (!metadata_snapshot->getProjections().has(projection_name))
         throw Exception(
@@ -86,7 +86,7 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     bool /* is_insert_query */) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
     ProjectionDescriptionRawPtr projection = &metadata_snapshot->getProjections().get(projection_name);
 
     StorageID storage_id(getDatabaseName(), table_name);
@@ -100,15 +100,13 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeProjection>(
-    {
-        .documentation =
         {
             .description = "Reading directly from MergeTree projection",
             .examples = {{"mergeTreeProjection", "SELECT * FROM mergeTreeProjection(currentDatabase(), mt_table, proj_name)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = true,
-    });
+        {.allow_readonly = true}
+    );
 }
 
 }

@@ -6,6 +6,7 @@
 
 #    include <base/types.h>
 
+#    include <aws/core/auth/AWSCredentials.h>
 #    include <aws/core/utils/threading/ReaderWriterLock.h>
 #    include <aws/core/http/HttpRequest.h>
 #    include <aws/core/endpoint/AWSEndpoint.h>

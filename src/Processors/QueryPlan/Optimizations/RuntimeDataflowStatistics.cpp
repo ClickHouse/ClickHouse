@@ -171,28 +171,30 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggregator & aggregator, const Block & block)
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
+    const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types)
 {
     Stopwatch watch;
+
+    const auto & columns = chunk.getColumns();
 
     auto get_key_column_sizes = [&](bool compress)
     {
         size_t sample_bytes = 0;
         size_t compressed_bytes = 0;
-        for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
+        for (size_t i = 0; i < keys_positions.size(); ++i)
         {
-            const auto & key_column_name = aggregator.getParams().keys[i];
-            const auto & column = block.getByName(key_column_name);
+            const auto & col = columns[keys_positions[i]];
             if (compress)
             {
-                auto [sample, compressed] = estimateCompressedColumnSize(column);
+                auto [sample, compressed] = estimateCompressedColumnSize({col, key_types[i], ""});
                 sample_bytes += sample;
                 compressed_bytes += compressed;
             }
             else
             {
-                sample_bytes += column.column->byteSize();
-                compressed_bytes += column.column->byteSize();
+                sample_bytes += col->byteSize();
+                compressed_bytes += col->byteSize();
             }
         }
         return std::make_pair(sample_bytes, compressed_bytes);
@@ -202,7 +204,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
     auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationKeys];
-    if (shouldSampleBlock(statistics, block.rows()))
+    if (shouldSampleBlock(statistics, chunk.getNumRows()))
         std::tie(sample_bytes, compressed_bytes) = get_key_column_sizes(/*compressed=*/true);
 
     std::lock_guard lock(statistics.mutex);
@@ -219,7 +221,8 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & input_columns,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
-    size_t read_bytes)
+    size_t read_bytes,
+    std::optional<bool> & should_continue_sampling)
 {
     Stopwatch watch;
 
@@ -252,8 +255,11 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
         }
         else
         {
+            if (!should_continue_sampling.has_value())
+                should_continue_sampling = shouldSampleBlock(statistics, input_columns[0].column->size());
+
             // We don't have individual column size info, likely because it is a compact part. Let's try to estimate it.
-            if (shouldSampleBlock(statistics, input_columns[0].column->size()))
+            if (*should_continue_sampling)
             {
                 for (const auto & column : input_columns)
                 {

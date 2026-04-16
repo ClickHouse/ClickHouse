@@ -78,6 +78,7 @@ def started_cluster():
                 "configs/access.xml",
                 "configs/users.xml",
                 "configs/s3_retry.xml",
+                "configs/sync_insert.xml",
             ],
         )
         cluster.add_instance(
@@ -88,13 +89,20 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
             ],
-            user_configs=["configs/access.xml"],
+            user_configs=[
+                "configs/access.xml",
+                "configs/sync_insert.xml",
+            ],
         )
         cluster.add_instance(
             "s3_max_redirects",
             with_minio=True,
             main_configs=["configs/defaultS3.xml"],
-            user_configs=["configs/s3_max_redirects.xml", "configs/s3_retry.xml"],
+            user_configs=[
+                "configs/s3_max_redirects.xml",
+                "configs/s3_retry.xml",
+                "configs/sync_insert.xml",
+            ],
         )
         cluster.add_instance(
             "s3_non_default",
@@ -108,6 +116,7 @@ def started_cluster():
                 "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
             },
             main_configs=["configs/use_environment_credentials.xml"],
+            user_configs=["configs/sync_insert.xml"],
         )
         cluster.add_instance(
             "dummy2",
@@ -126,6 +135,7 @@ def started_cluster():
                 "configs/users.xml",
                 "configs/s3_retry.xml",
                 "configs/process_archives_as_whole_with_cluster.xml",
+                "configs/sync_insert.xml",
             ],
         )
         cluster.add_instance(
@@ -147,6 +157,7 @@ def started_cluster():
                 "configs/access.xml",
                 "configs/users.xml",
                 "configs/s3_retry.xml",
+                "configs/sync_insert.xml",
             ],
         )
 
@@ -873,6 +884,7 @@ def run_s3_mocks(started_cluster):
             ("unstable_server.py", "resolver", "8081"),
             ("echo.py", "resolver", "8082"),
             ("no_list_objects.py", "resolver", "8083"),
+            ("gcs_transcode_mock.py", "resolver", "8084"),
         ],
     )
 
@@ -1862,7 +1874,7 @@ def test_schema_inference_cache(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     def test(storage_name):
-        instance.query("system drop schema cache")
+        instance.query("system clear schema cache")
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache0.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
         )
@@ -1990,19 +2002,19 @@ def test_schema_inference_cache(started_cluster):
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
         check_cache_hits(instance, files, storage_name, started_cluster, bucket)
 
-        instance.query(f"system drop schema cache for {storage_name}")
+        instance.query(f"system clear schema cache for {storage_name}")
         check_cache(instance, [])
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
         check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
 
-        instance.query("system drop schema cache")
+        instance.query("system clear schema cache")
         check_cache(instance, [])
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
         check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
 
-        instance.query("system drop schema cache")
+        instance.query("system clear schema cache")
 
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache0.csv') select * from numbers(100) settings s3_truncate_on_insert=1"
@@ -2075,7 +2087,7 @@ def test_schema_inference_cache(started_cluster):
             instance, "test_cache{0,1}.csv", storage_name, started_cluster, bucket, 2
         )
 
-        instance.query(f"system drop schema cache for {storage_name}")
+        instance.query(f"system clear schema cache for {storage_name}")
         check_cache(instance, [])
 
         res = run_count_query(
@@ -2086,7 +2098,7 @@ def test_schema_inference_cache(started_cluster):
             instance, "test_cache{0,1}.csv", storage_name, started_cluster, bucket, 2
         )
 
-        instance.query(f"system drop schema cache for {storage_name}")
+        instance.query(f"system clear schema cache for {storage_name}")
         check_cache(instance, [])
 
         instance.query(
@@ -2401,7 +2413,7 @@ def test_union_schema_inference_mode(started_cluster):
     )
 
     for engine in ["s3", "url"]:
-        instance.query("system drop schema cache for s3")
+        instance.query("system clear schema cache for s3")
 
         result = instance.query(
             f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}{{1,2,3}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
@@ -2421,7 +2433,7 @@ def test_union_schema_inference_mode(started_cluster):
         )
         assert result == "1\t\\N\t\\N\n" "\\N\t2\t\\N\n" "\\N\t\\N\t2\n"
 
-        instance.query(f"system drop schema cache for {engine}")
+        instance.query(f"system clear schema cache for {engine}")
         result = instance.query(
             f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}2.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
         )
@@ -2487,7 +2499,7 @@ def test_s3_format_detection(started_cluster):
 
         assert result == expected_result
 
-        instance.query(f"system drop schema cache for {engine}")
+        instance.query(f"system clear schema cache for {engine}")
 
         result = instance.query(
             f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_format_detection{{0,1}}', auto, 'x UInt64, y String')"
@@ -2567,7 +2579,7 @@ def test_filesystem_cache(started_cluster):
         )
     )
 
-    instance.query("SYSTEM DROP SCHEMA CACHE")
+    instance.query("SYSTEM CLEAR SCHEMA CACHE")
 
     query_id = f"{table_name}-{uuid.uuid4()}"
     instance.query(
@@ -2631,7 +2643,7 @@ def test_page_cache(started_cluster):
     assert 0 < int(misses)
     assert 0 < int(gets)
 
-    instance.query("SYSTEM DROP SCHEMA CACHE")
+    instance.query("SYSTEM CLEAR SCHEMA CACHE")
 
     query_id = f"{table_name}-{uuid.uuid4()}"
     assert "100\n" == instance.query(
@@ -3225,3 +3237,21 @@ def test_schema_inference_cache_multi_path(started_cluster):
     assert "1\ta\n2\tb\n" == instance.query(
         f"SELECT * FROM url('{s3_path_prefix}/test1.parquet')"
     )
+
+
+def test_gcs_decompressive_transcoding(started_cluster):
+    """Mock at resolver:8084 omits Content-Length on HEAD and GET
+    Without the fix, s3() would silently return 0 rows"""
+    instance = started_cluster.instances["dummy"]
+
+    result = instance.query(
+        "SELECT count() FROM s3("
+        "'http://resolver:8084/bucket/data.jsonl', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == "3"
+
+    result = instance.query(
+        "SELECT * FROM s3("
+        "'http://resolver:8084/bucket/data.jsonl', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'

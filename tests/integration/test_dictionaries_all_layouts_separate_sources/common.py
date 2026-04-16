@@ -191,7 +191,7 @@ class BaseLayoutTester:
 
     def cleanup(self):
         shutil.rmtree(self.get_dict_directory(), ignore_errors=True)
-        os.makedirs(self.get_dict_directory())
+        os.makedirs(self.get_dict_directory(), exist_ok=True)
 
     def list_dictionaries(self):
         dictionaries = []
@@ -201,6 +201,7 @@ class BaseLayoutTester:
         return dictionaries
 
     def create_dictionaries(self, source_):
+        os.makedirs(self.get_dict_directory(), exist_ok=True)
         for layout in self.layouts:
             if source_.compatible_with_layout(Layout(layout)):
                 self.layout_to_dictionary[layout] = self.get_dict(

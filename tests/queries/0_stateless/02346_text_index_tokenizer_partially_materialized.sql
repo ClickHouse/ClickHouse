@@ -1,6 +1,5 @@
---- This test verifies that tokenizer is properly passed to supported functions when a text index is partially materialized.
+--- Verifies that tokenizer is properly passed to supported functions when a text index is partially materialized.
 
-SET enable_full_text_index = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
@@ -27,7 +26,7 @@ SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'hello') SETTINGS use_skip_indexes_on_data_read = 1
 )
-WHERE explain LIKE '%Filter column%';
+WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'hello');
 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'world');
@@ -60,7 +59,7 @@ SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab_partially WHERE hasAnyToken(text, 'hello') SETTINGS use_skip_indexes_on_data_read = 1
 )
-WHERE explain LIKE '%Filter column%';
+WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab_partially WHERE hasAnyToken(text, 'hello');
 SELECT count() FROM tab_partially WHERE hasAnyToken(text, 'world');

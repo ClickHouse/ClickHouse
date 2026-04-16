@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -377,6 +378,47 @@ std::optional<WindowAnalysisResult> analyzeWindow(
         }
     }
 
+    /// When `group_by_use_nulls = 1` with CUBE/ROLLUP/GROUPING SETS, GROUP BY keys become Nullable
+    /// in the data flowing into window functions. But the aggregate function was created during analysis
+    /// with the original (non-nullable) argument types. We need to re-create the aggregate function
+    /// with the actual (nullable) argument types so that the Null combinator is properly applied.
+    for (auto & window_description : window_descriptions)
+    {
+        for (auto & window_function : window_description.window_functions)
+        {
+            bool types_changed = false;
+            DataTypes actual_argument_types;
+            actual_argument_types.reserve(window_function.argument_names.size());
+
+            for (size_t i = 0; i < window_function.argument_names.size(); ++i)
+            {
+                const auto * dag_node = before_window_actions->dag.tryFindInOutputs(window_function.argument_names[i]);
+                if (dag_node && !window_function.argument_types[i]->equals(*dag_node->result_type))
+                {
+                    actual_argument_types.push_back(dag_node->result_type);
+                    types_changed = true;
+                }
+                else
+                {
+                    actual_argument_types.push_back(window_function.argument_types[i]);
+                }
+            }
+
+            if (types_changed)
+            {
+                AggregateFunctionProperties properties;
+                auto new_function = AggregateFunctionFactory::instance().get(
+                    window_function.aggregate_function->getName(),
+                    NullsAction::EMPTY,
+                    actual_argument_types,
+                    window_function.function_parameters,
+                    properties);
+                window_function.aggregate_function = std::move(new_function);
+                window_function.argument_types = std::move(actual_argument_types);
+            }
+        }
+    }
+
     ColumnsWithTypeAndName window_functions_additional_columns;
 
     for (auto & window_description : window_descriptions)
@@ -706,9 +748,17 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
           * Example: SELECT 1 FROM remote('127.0.0.{2,3}', system.one) ORDER BY dummy LIMIT 1 BY 1;
           * In this example, LIMIT BY actions does not need `dummy` column, but we must preserve it, because
           * otherwise coordinator does not find it in block.
+          *
+          * Similarly, when ORDER BY has WITH FILL, we must preserve the ORDER BY columns because
+          * the filling step added later requires them in the block header.
+          *
+          * Example: SELECT 1 ORDER BY toDateTime(0) WITH FILL LIMIT 1 BY 1;
           */
         NameSet required_output_nodes_names;
-        if (sort_analysis_result_optional.has_value() && planner_query_processing_info.isFirstStage() && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)
+        if (sort_analysis_result_optional.has_value()
+            && (sort_analysis_result_optional->has_with_fill
+                || (planner_query_processing_info.isFirstStage()
+                    && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)))
         {
             const auto & before_order_by_actions = sort_analysis_result_optional->before_order_by_actions;
             for (const auto & output_node : before_order_by_actions->dag.getOutputs())

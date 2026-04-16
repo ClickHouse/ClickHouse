@@ -2,6 +2,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Common/CurrentThread.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
@@ -236,10 +237,12 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
 
         /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
         /// of an exception
-        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed]()
+        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed, current_component = Coordination::getCurrentComponent()]()
         {
             if (failed)
                 return;
+
+            auto component_guard = Coordination::setCurrentComponent(current_component);
             try
             {
                 const auto & name = backup_entries[i].first;

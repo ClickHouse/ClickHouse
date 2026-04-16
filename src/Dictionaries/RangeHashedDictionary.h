@@ -5,8 +5,6 @@
 #include <variant>
 #include <optional>
 
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
 #include <Core/Block_fwd.h>
 #include <Core/callOnTypeIndex.h>
 #include <Common/ArenaUtils.h>
@@ -25,7 +23,6 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime64.h>
@@ -151,7 +148,7 @@ private:
         HashMapWithSavedHash<std::string_view, IntervalMap<RangeStorageType>, DefaultHash<std::string_view>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
+    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>;
 
     struct Attribute final
     {
@@ -182,10 +179,12 @@ private:
             AttributeContainerType<IPv4>,
             AttributeContainerType<IPv6>,
             AttributeContainerType<std::string_view>,
-            AttributeContainerType<Array>>
+            AttributeContainerType<Array>,
+            AttributeContainerType<Map>,
+            AttributeContainerType<Object>>
             container;
 
-        std::optional<std::vector<bool>> is_value_nullable;
+        std::optional<VectorWithMemoryTracking<bool>> is_value_nullable;
     };
 
     template <typename RangeStorageType>
@@ -279,7 +278,7 @@ private:
     const RangeHashedDictionaryConfiguration configuration;
     BlockPtr update_field_loaded_block;
 
-    std::vector<Attribute> attributes;
+    VectorWithMemoryTracking<Attribute> attributes;
     KeyAttribute key_attribute;
 
     size_t bytes_allocated = 0;
@@ -389,6 +388,40 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                 {
                     out->insert(value);
                 });
+        }
+        else if constexpr (std::is_same_v<ValueType, Map>)
+        {
+            auto * out = column.get();
+
+            getItemsInternalImpl<ValueType, false>(
+                attribute,
+                key_to_index,
+                [&](size_t, const Map & value, bool)
+                {
+                    out->insert(value);
+                });
+        }
+        else if constexpr (std::is_same_v<ValueType, Object>)
+        {
+            auto * out = column.get();
+
+            if (is_attribute_nullable)
+                getItemsInternalImpl<ValueType, true>(
+                    attribute,
+                    key_to_index,
+                    [&](size_t row, const Object & value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out->insert(value);
+                    });
+            else
+                getItemsInternalImpl<ValueType, false>(
+                    attribute,
+                    key_to_index,
+                    [&](size_t, const Object & value, bool)
+                    {
+                        out->insert(value);
+                    });
         }
         else if constexpr (std::is_same_v<ValueType, std::string_view>)
         {
@@ -628,10 +661,10 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 template <DictionaryKeyType dictionary_key_type>
 typename RangeHashedDictionary<dictionary_key_type>::Attribute RangeHashedDictionary<dictionary_key_type>::createAttribute(const DictionaryAttribute & dictionary_attribute)
 {
-    std::optional<std::vector<bool>> is_value_nullable;
+    std::optional<VectorWithMemoryTracking<bool>> is_value_nullable;
 
     if (dictionary_attribute.is_nullable)
-        is_value_nullable.emplace(std::vector<bool>());
+        is_value_nullable.emplace(VectorWithMemoryTracking<bool>());
 
     Attribute attribute{dictionary_attribute.underlying_type, {}, std::move(is_value_nullable)};
 

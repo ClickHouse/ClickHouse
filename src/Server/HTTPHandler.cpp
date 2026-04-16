@@ -185,7 +185,7 @@ void HTTPHandler::processQuery(
     HTMLForm & params,
     HTTPServerResponse & response,
     Output & used_output,
-    CurrentThread::QueryScope & query_scope,
+    QueryScope & query_scope,
     const ProfileEvents::Event & write_event)
 {
     using namespace Poco::Net;
@@ -304,7 +304,7 @@ void HTTPHandler::processQuery(
 
     /// Initialize query scope, once query_id is initialized.
     /// (To track as much allocations as possible)
-    query_scope = CurrentThread::QueryScope::create(context);
+    query_scope = QueryScope::create(context);
 
     const auto & settings = context->getSettingsRef();
 
@@ -685,7 +685,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
-    CurrentThread::QueryScope query_scope;
+    QueryScope query_scope;
 
     Output used_output;
 
@@ -965,8 +965,12 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
-    if (http_response_headers_override.has_value())
+    if (!common_headers.empty())
+    {
+        if (!http_response_headers_override.has_value())
+            http_response_headers_override.emplace();
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
+    }
 
     auto creator = [&server, query_param_name, http_response_headers_override, connection_config]() -> std::unique_ptr<DynamicQueryHandler>
     { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override); };
@@ -1031,8 +1035,12 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     }
 
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
-    if (http_response_headers_override.has_value())
+    if (!common_headers.empty())
+    {
+        if (!http_response_headers_override.has_value())
+            http_response_headers_override.emplace();
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
+    }
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 

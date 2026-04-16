@@ -42,3 +42,17 @@ DROP TABLE tab2;
 
 SELECT 'Test weird SELECT/EXCEPT/SELECT statement:';
 SELECT 1,2,3 EXCEPT SELECT 1,2,3;
+
+SELECT 'Testing complex tuple expressions with indexes:';
+CREATE TABLE tab (c1 Tuple(int, int));
+INSERT INTO tab VALUES (tuple(1,1));
+SELECT (tab.*).2 FROM tab;
+DROP TABLE tab;
+
+WITH (((1,1),1),1) AS t1 SELECT t1.1.1.1;
+
+CREATE ROW POLICY p0 ON t0 USING (1 AS a); -- { clientError SYNTAX_ERROR }
+ALTER ROW POLICY p0 ON t0 USING (1 AS a); -- { clientError SYNTAX_ERROR }
+
+CREATE ROW POLICY p0 ON t0 WITH CHECK (1 AS a); -- { clientError SYNTAX_ERROR }
+ALTER ROW POLICY p0 ON t0 WITH CHECK (1 AS a); -- { clientError SYNTAX_ERROR }

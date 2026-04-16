@@ -7,7 +7,6 @@
 #include <Interpreters/IJoin.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Interpreters/TableJoin.h>
 #include <atomic>
@@ -66,6 +65,12 @@ public:
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+
+    bool supportParallelNonJoinedBlocksProcessing() const override;
+
+    IBlocksStreamPtr getNonJoinedBlocks(
+        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
+        size_t stream_idx, size_t num_streams) const override;
 
     bool isCloneSupported() const override
     {

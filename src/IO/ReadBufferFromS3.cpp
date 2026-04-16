@@ -334,9 +334,9 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     {
         throw Exception(
             ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-            "Seek is allowed only before first read attempt from the buffer (current offset: "
-            "{}, new offset: {}, reading until position: {}, available: {})",
-            getPosition(), offset_, read_until_position.load(), available());
+            "Seek is allowed only before first read attempt from the buffer (current position: "
+            "{}, offset: {}, new offset: {}, reading until position: {}, available: {})",
+            getPosition(), offset.load(), offset_, read_until_position.load(), available());
     }
 
     if (whence != SEEK_SET)
@@ -398,6 +398,11 @@ std::optional<size_t> ReadBufferFromS3::tryGetFileSize()
 size_t ReadBufferFromS3::getObjectSizeFromS3() const
 {
     return S3::getObjectSize(*client_ptr, bucket, key, version_id);
+}
+
+std::optional<size_t> ReadBufferFromS3::getRemoteFileSize() const
+{
+    return getObjectSizeFromS3();
 }
 
 off_t ReadBufferFromS3::getPosition()

@@ -251,6 +251,13 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name, Cont
         std::string timezone = context_->getSettingsRef()[Setting::iceberg_timezone_for_timestamptz];
         return std::make_shared<DataTypeDateTime64>(6, timezone);
     }
+    if (type_name == f_timestamp_ns)
+        return std::make_shared<DataTypeDateTime64>(9);
+    if (type_name == f_timestamptz_ns)
+    {
+        std::string timezone = context_->getSettingsRef()[Setting::iceberg_timezone_for_timestamptz];
+        return std::make_shared<DataTypeDateTime64>(9, timezone);
+    }
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
     if (type_name == f_uuid)

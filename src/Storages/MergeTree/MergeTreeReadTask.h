@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -71,8 +72,13 @@ struct IndexReadTask
     bool is_final = false;
 };
 
-using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
-using IndexReadColumns = std::unordered_map<String, VirtualColumnsDescription>;
+/// Ordered map to ensure deterministic iteration order.
+/// `IndexReadTasks` may be copied (e.g. into `MergeTreeReadPoolBase`) and then
+/// iterated independently in `getPrewhereActions` / `getReadTaskColumns`.
+/// `std::unordered_map` does not guarantee the same iteration order after copy,
+/// which leads to mismatched prewhere readers and actions.
+using IndexReadTasks = std::map<String, IndexReadTask>;
+using IndexReadColumns = std::map<String, VirtualColumnsDescription>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -212,6 +218,9 @@ public:
         const ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
+    using DataflowCacheUpdateCallback
+        = std::function<void(const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling)>;
+
     UInt64 estimateNumRows() const;
 
     /// Shared information required for reading.
@@ -239,6 +248,7 @@ private:
     MergeTreeBlockSizePredictorPtr size_predictor;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    DataflowCacheUpdateCallback dataflow_cache_update_cb;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

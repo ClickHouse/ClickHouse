@@ -23,7 +23,10 @@ bool ParquetMetadataCacheKey::operator==(const ParquetMetadataCacheKey & other) 
 
 size_t ParquetMetadataCacheKeyHash::operator()(const ParquetMetadataCacheKey & key) const
 {
-    return std::hash<String>{}(key.file_path + key.etag);
+    size_t hash = 0;
+    boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.file_path.data(), key.file_path.size()));
+    boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.etag.data(), key.etag.size()));
+    return hash;
 }
 
 ParquetMetadataCacheCell::ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_)
@@ -33,7 +36,64 @@ ParquetMetadataCacheCell::ParquetMetadataCacheCell(parquet::format::FileMetaData
 }
 size_t ParquetMetadataCacheCell::calculateMemorySize() const
 {
-    return sizeof(metadata) + metadata.schema.size() * 100;
+    size_t total_size = sizeof(metadata);
+
+    // SchemaElements parquet::format::SchemaElement
+    for (const parquet::format::SchemaElement & element : metadata.schema)
+    {
+        total_size += sizeof(element);
+        total_size += element.name.capacity();
+    }
+
+    // RowGroups parquet::format::RowGroup
+    for (const parquet::format::RowGroup & row_group : metadata.row_groups)
+    {
+        total_size += sizeof(row_group);
+        total_size += row_group.sorting_columns.capacity() * sizeof(parquet::format::SortingColumn);
+        for (const parquet::format::ColumnChunk & column_chunk : row_group.columns)
+        {
+            total_size += sizeof(column_chunk);
+
+            total_size += column_chunk.file_path.capacity();
+            total_size += column_chunk.encrypted_column_metadata.capacity();
+
+            // ColumnMetaData parquet::format::ColumnMetaData
+            for (const auto & path : column_chunk.meta_data.path_in_schema)
+                total_size += path.capacity();
+
+            for (const auto & kv : column_chunk.meta_data.key_value_metadata)
+                total_size += kv.key.capacity() + kv.value.capacity();
+
+            total_size += column_chunk.meta_data.encodings.capacity() * sizeof(parquet::format::Encoding::type);
+            total_size += column_chunk.meta_data.encoding_stats.capacity() * sizeof(parquet::format::PageEncodingStats);
+            total_size += column_chunk.meta_data.geospatial_statistics.geospatial_types.capacity() * sizeof(int32_t);
+
+            total_size += column_chunk.meta_data.statistics.min_value.capacity();
+            total_size += column_chunk.meta_data.statistics.max_value.capacity();
+            total_size += column_chunk.meta_data.statistics.min.capacity();
+            total_size += column_chunk.meta_data.statistics.max.capacity();
+
+            total_size += column_chunk.meta_data.size_statistics.repetition_level_histogram.capacity() * sizeof(int64_t);
+            total_size += column_chunk.meta_data.size_statistics.definition_level_histogram.capacity() * sizeof(int64_t);
+        }
+    }
+
+    // KeyValueMetadata parquet::format::KeyValueMetadata
+    for (const auto & kv : metadata.key_value_metadata)
+        total_size += kv.key.capacity() + kv.value.capacity();
+
+    // ColumnOrder parquet::format::ColumnOrders
+    for (const auto & order : metadata.column_orders)
+        total_size += sizeof(order);
+
+    // Top-level fields
+    total_size += metadata.created_by.capacity();
+    total_size += metadata.footer_signing_key_metadata.capacity();
+
+    /// String fields for metadata.encryption_algorithm.* generally are either very small
+    /// within SSO limits or are empty in the case where we don't use encryption at all
+    /// so I'm skipping accounting for them as they'll fall within our SIZE_IN_MEMORY_OVERHEAD
+    return total_size;
 }
 
 size_t ParquetMetadataCacheWeightFunction::operator()(const ParquetMetadataCacheCell & cell) const

@@ -126,7 +126,8 @@ private:
         bool is_remote_fs,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        const std::optional<RelativePathWithMetadata> & metadata)>;
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
+        const ContextPtr & context)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
         WriteBuffer & buf,
@@ -197,7 +198,7 @@ private:
         const Block & sample,
         const ContextPtr & context,
         UInt64 max_block_size,
-        const std::optional<RelativePathWithMetadata> & metadata,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
@@ -235,14 +236,14 @@ public:
         const std::optional<UInt64> & min_block_size_rows = std::nullopt,
         const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
-    /// overload for passing metadata from object storage
+    /// much the same as getInput but allows for passing metadata from object storage
     InputFormatPtr getInputWithMetadata(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
         const ContextPtr & context,
         UInt64 max_block_size,
-        const std::optional<RelativePathWithMetadata> & metadata,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
         FormatParserSharedResourcesPtr parser_shared_resources = nullptr,
         FormatFilterInfoPtr format_filter_info = nullptr,

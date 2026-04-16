@@ -19,7 +19,16 @@ node = cluster.add_instance(
 
 
 def start_zookeeper():
-    node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"])
+    for attempt in range(3):
+        try:
+            node.exec_in_container(
+                ["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"]
+            )
+            return
+        except Exception:
+            if attempt == 2:
+                raise
+            time.sleep(2)
 
 
 def stop_zookeeper():
@@ -255,7 +264,7 @@ def compare_states(zk1, zk2, path="/", exclude_paths=[]):
         assert set(first_children) ^ set(second_children) == set(["keeper"])
     else:
         assert first_children == second_children, (
-            "Childrens are not equal on path " + path
+            "Children are not equal on path " + path
         )
 
     for children in first_children:
@@ -368,7 +377,7 @@ def test_simple_crud_requests(started_cluster, create_snapshots):
 
     first_children = list(sorted(genuine_connection.get_children("/test_sequential")))
     second_children = list(sorted(fake_connection.get_children("/test_sequential")))
-    assert first_children == second_children, "Childrens are not equal on path " + path
+    assert first_children == second_children, "Children are not equal on path " + path
 
     genuine_connection.stop()
     genuine_connection.close()

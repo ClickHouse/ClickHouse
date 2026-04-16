@@ -323,12 +323,13 @@ To disable `error_log` setting, you should create the following file `/etc/click
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
-List of prefixes for [custom settings](/operations/settings/query-level#custom_settings). The prefixes must be separated with commas.
+List of prefixes used for [custom settings](/operations/settings/query-level#custom_settings).
+Multiple prefixes should be separated by commas.
 
 **Example**
 
 ```xml
-<custom_settings_prefixes>custom_</custom_settings_prefixes>
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
 ```
 
 **See Also**
@@ -371,7 +372,7 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-- "[Dictionaries](../../sql-reference/dictionaries/index.md)".
+- "[Dictionaries](../../sql-reference/statements/create/dictionary/overview.md)".
 
 **Example**
 
@@ -610,7 +611,7 @@ A username and a password used to connect to other servers during [replication](
 
 :::note
 - By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
-- `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
+- `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/client.md#configuration_files).
 - These credentials are common for replication via `HTTP` and `HTTPS`.
 :::
 
@@ -1898,6 +1899,8 @@ The following settings can be configured by sub-tags:
 | `fallback_session_lifetime.max` (optional) | Maximum limit for the lifetime of a zookeeper session to the fallback node when primary is unavailable (load-balancing). Set in seconds. Default: 6 hours.                                                                                                                                                                                                                                                                                                                                                              |
 | `identity` (optional)                      | User and password required by ZooKeeper to access requested znodes.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `use_compression` (optional)               | Enables compression in Keeper protocol if set to true.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `use_xid_64` (optional)                    | Enables 64-bit transaction IDs. Set to `true` to enable extended transaction ID format. Default: `false`.                                                                                                                                                                                                                                                                                                                                                |
+| `pass_opentelemetry_tracing_context` (optional) | Enables propagation of OpenTelemetry tracing context to Keeper requests. When enabled, tracing spans will be created for Keeper operations, allowing distributed tracing across ClickHouse and Keeper. See [Tracing ClickHouse Keeper Requests](/operations/opentelemetry#tracing-clickhouse-keeper-requests) for more details. Default: `false`.                                                                                                                                      |
 
 There is also the `zookeeper_load_balancing` setting (optional) which lets you select the algorithm for ZooKeeper node selection:
 
@@ -1930,6 +1933,10 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
     <identity>user:password</identity>
     <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
+    <!-- Optional. Enable 64-bit transaction IDs. -->
+    <use_xid_64>false</use_xid_64>
+    <!-- Optional. Enable OpenTelemetry tracing context propagation. -->
+    <pass_opentelemetry_tracing_context>false</pass_opentelemetry_tracing_context>
 </zookeeper>
 ```
 

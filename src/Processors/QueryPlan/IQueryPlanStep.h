@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <string_view>
 #include <variant>
 
 namespace DB
@@ -31,6 +31,14 @@ struct ExplainPlanOptions;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+
+namespace QueryPlanFormat
+{
+    std::string_view trimColumnIdentifier(std::string_view name);
+    void formatOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
+    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
+}
+
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -81,10 +89,14 @@ public:
     struct FormatSettings
     {
         WriteBuffer & out;
+        std::string header_prefix;
+        std::string detail_prefix;
         size_t offset = 0;
-        const size_t indent = 2;
+        const size_t base_indent = 2;
         const char indent_char = ' ';
         const bool write_header = false;
+        bool compact = false;
+        bool pretty = false;
     };
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
@@ -99,8 +111,11 @@ public:
     virtual void describeProjections(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeProjections(FormatSettings & /*settings*/) const {}
 
-    /// Get description of the distributed plan. Shown in with options `distributed = 1
+    /// Get description of the distributed plan. Shown with option `distributed = 1`.
     virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) {}
+
+    /// Get description of the distributed pipeline. Shown with option `distributed = 1` in EXPLAIN PIPELINE.
+    virtual void describeDistributedPipeline(FormatSettings & /*settings*/, bool /*distributed*/) {}
 
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
