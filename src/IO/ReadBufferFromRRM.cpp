@@ -71,6 +71,15 @@ bool ReadBufferFromRRM::nextImpl()
 {
     waitPrefetch();
 
+    /// Honour the upper bound set by the cache layer.
+    size_t absolute_offset = range_begin + data_offset;
+    if (read_until_position && absolute_offset >= *read_until_position)
+    {
+        LOG_DEBUG(log, "nextImpl: bounded EOF object={} abs_offset={} read_until={}",
+            object_key, absolute_offset, *read_until_position);
+        return false;
+    }
+
     if (data_offset >= prefetched_data.m_size)
     {
         LOG_DEBUG(log, "nextImpl: EOF object={} data_offset={} prefetched_size={} range=[{}, {})",
@@ -81,12 +90,16 @@ bool ReadBufferFromRRM::nextImpl()
     char * data_begin = prefetched_data.m_data + data_offset;
     size_t remaining = prefetched_data.m_size - data_offset;
 
+    /// Clip to the upper bound.
+    if (read_until_position && absolute_offset + remaining > *read_until_position)
+        remaining = *read_until_position - absolute_offset;
+
     if (internal_buffer.empty())
     {
         /// Standalone mode: no external buffer provided, point directly at prefetched data.
         internal_buffer = Buffer(data_begin, data_begin + remaining);
         working_buffer = internal_buffer;
-        data_offset = prefetched_data.m_size;
+        data_offset += remaining;
     }
     else
     {
@@ -103,6 +116,16 @@ bool ReadBufferFromRRM::nextImpl()
         hexDump(working_buffer.begin(), working_buffer.size()));
 
     return true;
+}
+
+void ReadBufferFromRRM::setReadUntilPosition(size_t position)
+{
+    read_until_position = position;
+}
+
+void ReadBufferFromRRM::setReadUntilEnd()
+{
+    read_until_position.reset();
 }
 
 off_t ReadBufferFromRRM::seek(off_t off, int whence)

@@ -42,6 +42,9 @@ public:
 
     bool supportsRightBoundedReads() const override { return true; }
 
+    void setReadUntilPosition(size_t position) override;
+    void setReadUntilEnd() override;
+
 private:
     bool nextImpl() override;
 
@@ -70,6 +73,10 @@ private:
 
     /// Scope with reading_ranges and cache_pre_padding_bytes for seek validation.
     ReadScopePtr scope;
+
+    /// Upper bound set by the cache layer via `setReadUntilPosition`.
+    /// `nextImpl` will not serve data at or beyond this absolute offset.
+    std::optional<size_t> read_until_position;
 
     LoggerPtr log = getLogger("ReadBufferFromRRM");
 };
