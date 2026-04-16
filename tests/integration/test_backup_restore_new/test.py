@@ -2408,9 +2408,10 @@ def test_structure_only_restores_access_entities_and_udfs():
     assert instance.query("EXISTS test.table") == "1\n"
     assert instance.query("SELECT count() FROM test.table") == "100\n"
 
-    # Access entities were NOT restored
+    # Access entities and UDFs were NOT restored
     assert instance.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
     assert instance.query("SELECT count() FROM system.roles WHERE name = 'r1'") == "0\n"
     assert instance.query("SELECT count() FROM system.settings_profiles WHERE name = 'prof1'") == "0\n"
     assert instance.query("SELECT count() FROM system.row_policies WHERE short_name = 'rowpol1'") == "0\n"
     assert instance.query("SELECT count() FROM system.quotas WHERE name = 'q1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.functions WHERE name = 'linear_equation'") == "0\n"
