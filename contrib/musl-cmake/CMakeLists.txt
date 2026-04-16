@@ -1797,30 +1797,33 @@ add_dependencies(musl musl-headers)
 # ============================================================================
 
 # CRITICAL: For building musl itself, the include order MUST be:
-#   1. include-override      - Wrapper headers that force correct includes
-#   2. arch/${MUSL_ARCH}     - arch-specific headers
-#   3. arch/generic          - generic arch fallbacks
-#   4. src/include           - internal overrides (features.h with 'hidden' macro)
-#   5. src/internal          - internal headers
-#   6. generated dir         - bits/alltypes.h, bits/syscall.h
-#   7. build dir             - version.h
-#
-# The problem: sigaction.c includes "ksigaction.h" with quotes. On x86_64,
-# arch/x86_64/ksigaction.h defines `__restore` as an alias to `__restore_rt`,
-# while src/internal/ksigaction.h declares them as separate symbols.
-#
-# CMake deduplication issue: If arch dirs are in both PRIVATE and PUBLIC,
-# CMake keeps only one copy. To work around this, we use an override header
-# in include-override/ that explicitly includes the correct arch-specific file.
+#   1. arch/${MUSL_ARCH}     - arch-specific headers (e.g. x86_64/ksigaction.h)
+#   2. arch/generic          - generic arch fallbacks
+#   3. src/include           - internal overrides (features.h with 'hidden' macro)
+#   4. src/internal          - internal headers (generic ksigaction.h etc.)
+#   5. generated dir         - bits/alltypes.h, bits/syscall.h
+#   6. build dir             - version.h
+#   7. include-override      - stub headers for external consumers (execinfo.h)
 
-# Override directory with wrapper headers - comes FIRST
+# Override directory with stub headers for consumers (execinfo.h)
 set(MUSL_OVERRIDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include-override")
 
-# Private includes for building musl
+# Private includes for building musl.
+# Use -iquote for arch-specific header directories so they win over
+# src/internal for quote-includes like `#include "ksigaction.h"`. On x86_64,
+# arch/x86_64/ksigaction.h defines `__restore` as an alias to `__restore_rt`
+# (provided by arch-specific restore.s); the generic src/internal/ksigaction.h
+# declares them as separate symbols and would leave `__restore` undefined.
+# CMake deduplicates include_directories, so paths also present in SYSTEM
+# PUBLIC below would become `-isystem` and lose to `-I src/internal`.
+# `-iquote` is searched before `-I` for quote-includes and bypasses
+# include_directories deduplication entirely.
+target_compile_options(musl BEFORE PRIVATE
+    "-iquote" "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
+    "-iquote" "${MUSL_SOURCE_DIR}/arch/generic"
+    "-iquote" "${MUSL_GENERATED_DIR}"
+)
 target_include_directories(musl BEFORE PRIVATE
-    "${MUSL_OVERRIDE_DIR}"
-    "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
-    "${MUSL_SOURCE_DIR}/arch/generic"
     "${MUSL_SOURCE_DIR}/src/include"
     "${MUSL_SOURCE_DIR}/src/internal"
     "${MUSL_GENERATED_DIR}"
