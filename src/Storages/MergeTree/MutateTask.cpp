@@ -601,7 +601,7 @@ getColumnsForNewDataPart(
         }
     }
 
-    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
+    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
 
     for (const auto & [name, type] : persistent_virtuals)
     {
@@ -1633,9 +1633,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                     continue;
 
                 projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-                squashed_chunk = Squashing::squash(
-                    projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}),
-                    projection_squashes[i].getHeader());
+                projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
+                squashed_chunk = Squashing::squash(projection_squashes[i].generate(), projection_squashes[i].getHeader());
             }
 
             if (squashed_chunk)
@@ -2787,7 +2786,7 @@ bool MutateTask::prepare()
     for (const auto & name : updated_columns_in_patches)
     {
         GetColumnsOptions options = GetColumnsOptions::AllPhysical;
-        auto column = ctx->storage_snapshot->tryGetColumn(options.withVirtuals(VirtualsKind::Persistent), name);
+        auto column = ctx->storage_snapshot->tryGetColumn(options.withVirtuals(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader), name);
 
         /// Skip updated column if it was dropped from the table.
         if (!column)

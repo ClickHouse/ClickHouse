@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import datetime
+import errno
 import io
 import json
 import os
@@ -111,11 +112,8 @@ class Result(MetaClasses.Serializable):
                 "WARNING: No results and no status provided - setting status to error"
             )
             status = Result.Status.ERROR
-        # if not name:
-        #     name = _Environment.get().JOB_NAME
-        #     if not name:
-        #         print("ERROR: Failed to guess the .name")
-        #         raise
+        if not name:
+            name = _Environment.get().JOB_NAME
         start_time = None
         duration = None
         if not stopwatch:
@@ -229,9 +227,27 @@ class Result(MetaClasses.Serializable):
     def is_dropped(self):
         return self.status in (Result.Status.DROPPED,)
 
+    def _dump_if_persisted(self) -> "Result":
+        """Dump only if a result file already exists on disk.
+
+        Setters use this so that job-level results (already dumped by `complete_job`
+        or `copy_result_to_s3`) are kept up-to-date, while sub-results (tasks) never
+        create their own files — avoiding `OSError: File name too long` when a result
+        name is derived from a long error message.
+        """
+        try:
+            exists = Path(self.file_name()).is_file()
+        except OSError as e:
+            if e.errno == errno.ENAMETOOLONG:
+                return self
+            raise
+        if exists:
+            self.dump()
+        return self
+
     def set_status(self, status) -> "Result":
         self.status = status
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def set_success(self) -> "Result":
@@ -245,7 +261,7 @@ class Result(MetaClasses.Serializable):
 
     def set_results(self, results: List["Result"]) -> "Result":
         self.results = results
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def set_files(self, files, strict=True) -> "Result":
@@ -265,7 +281,7 @@ class Result(MetaClasses.Serializable):
                 )
                 files.remove(file)
         self.files += files
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def set_on_error_hook(self, hook: str) -> "Result":
@@ -296,12 +312,12 @@ class Result(MetaClasses.Serializable):
         if self.info:
             self.info += "\n"
         self.info += info
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def set_link(self, link) -> "Result":
         self.links.append(link)
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def _add_job_summary_to_info(self):
@@ -318,26 +334,7 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def file_name_static(cls, name):
-        if not name:
-            return cls.experimental_file_name_static()
-        else:
-            return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
-
-    @classmethod
-    def experimental_file_name_static(cls):
-        return f"{Settings.TEMP_DIR}/result_job.json"
-
-    @classmethod
-    def experimental_from_fs(cls, name):
-        # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
-        Shell.check(
-            f"cp {cls.experimental_file_name_static()} {cls.file_name_static(name)}",
-            verbose=True,
-        )
-        result = Result.from_fs(name)
-        result.name = name
-        result.dump()
-        return result
+        return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
 
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
@@ -990,18 +987,35 @@ class Result(MetaClasses.Serializable):
     def to_event(self, info: "Info"):
         result_dict = Result.to_dict(self)
 
-        def _prune_result_info(result):
+        def _prune_result_for_feed(result):
+            """Strip result down to fields used by the Slack feed.
+
+            The feed only needs ``name`` and ``status`` from each sub-result,
+            plus ``report_url`` from the top-level ``ext``.  Everything else
+            (links, storage_usage, files, assets, nested results, …) is dead
+            weight that bloats the per-user JSON on S3.
+            """
             if not isinstance(result, dict):
                 return
-            result.pop("info", None)
+
+            for key in ("info", "start_time", "duration", "files", "assets", "links"):
+                result.pop(key, None)
 
             results = result.get("results")
-            if not isinstance(results, list):
-                return
-            for r in results:
-                _prune_result_info(r)
+            if isinstance(results, list):
+                result["results"] = [
+                    {"name": r.get("name", ""), "status": r.get("status", "")}
+                    for r in results
+                    if isinstance(r, dict)
+                ]
 
-        _prune_result_info(result_dict)
+            # Keep only report_url from ext
+            ext = result.get("ext")
+            if isinstance(ext, dict):
+                report_url = ext.get("report_url", "")
+                result["ext"] = {"report_url": report_url} if report_url else {}
+
+        _prune_result_for_feed(result_dict)
 
         return Event(
             type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
@@ -1060,7 +1074,7 @@ class _ResultS3:
         result.dump()
         env = _Environment.get()
         result_file_path = result.file_name()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
         if clean:
             S3.delete(s3_path)
         # gzip is supported by most browsers
@@ -1085,14 +1099,14 @@ class _ResultS3:
     def copy_result_from_s3(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{file_name}"
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{file_name}"
         S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path)
 
     @classmethod
     def copy_result_from_s3_with_version(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}"
         s3_file = f"{s3_path}/{file_name}"
 
         return S3.copy_file_from_s3_with_version(s3_path=s3_file, local_path=local_path)
@@ -1102,7 +1116,7 @@ class _ResultS3:
         result.dump()
         filename = Path(result.file_name()).name
         env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/"
         s3_file = f"{s3_path}{filename}"
 
         return S3.copy_file_to_s3_with_version(
@@ -1179,7 +1193,7 @@ class _ResultS3:
             if asset_paths:
                 common_root = os.path.commonpath([p.parent for p in asset_paths])
                 env = _Environment.get()
-                base_s3_prefix = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{s3_subprefix}".replace(
+                base_s3_prefix = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{s3_subprefix}".replace(
                     "//", "/"
                 )
 

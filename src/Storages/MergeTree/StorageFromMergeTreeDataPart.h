@@ -27,7 +27,7 @@ public:
         , storage(part_->storage)
         , partition_id(part_->info.getPartitionId())
     {
-        setInMemoryMetadata(storage.getInMemoryMetadata());
+        setInMemoryMetadata(*storage.getInMemoryMetadataPtr(storage.getContext(), false));
         setVirtuals(*storage.getVirtualsPtr());
     }
 
@@ -37,7 +37,7 @@ public:
         ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
-        setInMemoryMetadata(storage.getInMemoryMetadata());
+        setInMemoryMetadata(*storage.getInMemoryMetadataPtr(storage.getContext(), false));
         setVirtuals(*storage.getVirtualsPtr());
     }
 

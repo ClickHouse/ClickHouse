@@ -226,6 +226,94 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
+template <typename ArrowView>
+static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    auto internal_type = std::make_shared<DataTypeString>();
+    auto internal_column = internal_type->createColumn();
+    auto & column_str = assert_cast<ColumnString &>(*internal_column);
+    auto & column_chars = column_str.getChars();
+    auto & column_offsets = column_str.getOffsets();
+
+    if (arrow_column->length() == 0)
+        return {std::move(internal_column), std::move(internal_type), column_name};
+
+    size_t total_bytes_size = 0;
+
+    for (const auto & arrow_chunk : arrow_column->chunks())
+    {
+        const auto & arrow_view_chunk = assert_cast<ArrowView &>(*arrow_chunk);
+        int64_t chunk_length = arrow_view_chunk.length();
+
+        if (arrow_view_chunk.null_count() == 0)
+        {
+            for (int64_t i = 0; i < chunk_length; ++i)
+                total_bytes_size += arrow_view_chunk.GetView(i).length();
+        }
+        else
+        {
+            for (int64_t i = 0; i < chunk_length; ++i)
+            {
+                if (arrow_view_chunk.IsValid(i))
+                    total_bytes_size += arrow_view_chunk.GetView(i).length();
+            }
+        }
+    }
+
+    column_chars.resize(total_bytes_size);
+    column_offsets.resize(arrow_column->length());
+
+    UInt8 * chars_dest = column_chars.data();
+    ColumnString::Offset * offsets_dest = column_offsets.data();
+    ColumnString::Offset current_offset = 0;
+
+    const UInt8 dummy_byte = 0;
+
+    for (const auto & arrow_chunk : arrow_column->chunks())
+    {
+        const auto & arrow_view_chunk = assert_cast<ArrowView &>(*arrow_chunk);
+        int64_t chunk_length = arrow_view_chunk.length();
+
+        if (arrow_view_chunk.null_count() == 0)
+        {
+            for (int64_t i = 0; i < chunk_length; ++i)
+            {
+                const auto & view = arrow_view_chunk.GetView(i);
+                size_t len = view.length();
+
+                const UInt8 * src = len > 0 ? reinterpret_cast<const UInt8 *>(view.data()) : &dummy_byte;
+
+                std::memcpy(chars_dest, src, len);
+                chars_dest += len;
+
+                current_offset += len;
+                *offsets_dest++ = current_offset;
+            }
+        }
+        else
+        {
+            for (int64_t i = 0; i < chunk_length; ++i)
+            {
+                if (arrow_view_chunk.IsValid(i))
+                {
+                    const auto & view = arrow_view_chunk.GetView(i);
+                    size_t len = view.length();
+
+                    const UInt8 * src = len > 0 ? reinterpret_cast<const UInt8 *>(view.data()) : &dummy_byte;
+
+                    std::memcpy(chars_dest, src, len);
+                    chars_dest += len;
+                    current_offset += len;
+                }
+
+                *offsets_dest++ = current_offset;
+            }
+        }
+    }
+
+    return {std::move(internal_column), std::move(internal_type), column_name};
+}
+
 template <typename ArrowArray>
 static ColumnWithTypeAndName readColumnWithJSONData(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
@@ -1523,8 +1611,15 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             /// Preserve interval semantics on round-trip from ClickHouse -> Arrow -> ClickHouse.
             return readColumnWithDurationData(arrow_column, column_name);
         }
+        case arrow::Type::BINARY_VIEW:
+        {
+            return readColumnWithViewData<arrow::BinaryViewArray>(arrow_column, column_name);
+        }
+        case arrow::Type::STRING_VIEW:
+        {
+            return readColumnWithViewData<arrow::StringViewArray>(arrow_column, column_name);
+        }
             // TODO: read JSON as a string?
-            // TODO: read UUID as a string?
         case arrow::Type::NA:
         {
             if (settings.allow_arrow_null_type)

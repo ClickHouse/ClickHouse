@@ -100,6 +100,7 @@ static struct InitFiu
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
+    ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
@@ -116,6 +117,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
+    PAUSEABLE_ONCE(keeper_save_snapshot_pause_mid_transfer) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
     REGULAR(database_replicated_delay_recovery) \
@@ -160,6 +162,7 @@ static struct InitFiu
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
+    REGULAR(check_database_datalake_negative) \
     REGULAR(restart_replica_fail_after_detach) \
     REGULAR(database_replicated_force_metadata_digest_check) \
     PAUSEABLE(truncate_database_tables_pause) \
@@ -169,7 +172,8 @@ static struct InitFiu
     REGULAR(patch_parts_reverse_column_order) \
     PAUSEABLE_ONCE(column_ids_pause_after_metadata_alter) \
     ONCE(column_ids_throw_before_mapping_persist) \
-    ONCE(column_ids_throw_after_mapping_persist)
+    ONCE(column_ids_throw_after_mapping_persist) \
+    REGULAR(wide_part_writer_fail_in_add_streams)
 
 namespace FailPoints
 {

@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <DataTypes/DataTypesNumber.h>
 #include <csignal>
 #include <filesystem>
+#include <utility>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -21,8 +23,8 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -54,12 +56,14 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
+#include <Common/CoverageCollection.h>
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
@@ -881,6 +885,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_DISTRIBUTED:
             flushDistributed(query);
             break;
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+            flushObjectStorageQueue(query);
+            break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
             break;
@@ -1040,6 +1047,41 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM);
             resetCoverage();
+            break;
+        }
+        case Type::SET_COVERAGE_TEST:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM);
+            LOG_INFO(getLogger("InterpreterSystemQuery"),
+                "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
+#if WITH_COVERAGE_DEPTH
+            {
+                /// Register (or re-register) the flush callback so coverage data is
+                /// resolved and inserted into system.coverage_log when the previous
+                /// test's counters are flushed.  We re-register on each call so the
+                /// captured global context stays fresh after server restart scenarios,
+                /// and so that the callback is available even on the very first call.
+                ContextPtr global_ctx = getContext()->getGlobalContext();
+                registerCoverageFlushCallback(
+                    [global_ctx](std::string_view prev_test,
+                                 const std::vector<CovCounter> & name_refs,
+                                 const std::vector<IndirectCallEntry> & indirect_calls)
+                    {
+                        LOG_INFO(getLogger("CoverageCollection"),
+                            "Flushing coverage for test '{}': {} covered counters, {} indirect calls",
+                            prev_test, name_refs.size(), indirect_calls.size());
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+                        DB::collectAndInsertCoverage(prev_test, name_refs, indirect_calls, global_ctx);
+#else
+                        (void)prev_test;
+                        (void)name_refs;
+                        (void)indirect_calls;
+                        (void)global_ctx;
+#endif
+                    });
+            }
+#endif
+            setCoverageTest(query.coverage_test_name);
             break;
         }
         case Type::LOAD_PRIMARY_KEY: {
@@ -2112,6 +2154,23 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
 
+void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
+{
+    auto context = getContext();
+    context->checkAccess(AccessType::SYSTEM_FLUSH_OBJECT_STORAGE_QUEUE, table_id);
+
+    if (query.queue_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PATH must be specified for SYSTEM FLUSH OBJECT STORAGE QUEUE");
+
+    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto * queue = dynamic_cast<StorageObjectStorageQueue *>(table.get());
+    if (!queue)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
+
+    queue->waitForPathToBeProcessed(query.queue_path, context);
+}
+
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
@@ -2456,6 +2515,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_OBJECT_STORAGE_QUEUE, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::FLUSH_LOGS:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
@@ -2540,6 +2604,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
+        case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::RESET_DDL_WORKER:
         case Type::END: break;
