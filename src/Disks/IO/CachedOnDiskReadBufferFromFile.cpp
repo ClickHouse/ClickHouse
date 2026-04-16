@@ -122,7 +122,13 @@ void CachedOnDiskReadBufferFromFile::ReadInfo::computeAdjustedReadScope()
 
                 if (!tracking_segment)
                 {
-                    projected_write_offset = seg->getCurrentWriteOffset();
+                    /// Segment write offsets are in object (on-disk) coordinates.
+                    /// reading_ranges are in plaintext coordinates.
+                    /// For encrypted storage the object has an encryption header
+                    /// prepended, so subtract it to align coordinate spaces.
+                    size_t wo = seg->getCurrentWriteOffset();
+                    size_t enc = original.encryption_header_bytes;
+                    projected_write_offset = (wo >= enc) ? (wo - enc) : 0;
                     tracking_segment = true;
                 }
 
@@ -155,12 +161,14 @@ void CachedOnDiskReadBufferFromFile::ReadInfo::computeAdjustedReadScope()
     if (!has_padding)
         return;
 
-    adjusted_read_scope = ReadScope::create(
+    adjusted_read_scope = std::make_shared<ReadScope>(
         original.part_id,
         original.mark_ranges,
         original.phase,
         original.reading_ranges,
-        std::move(padding));
+        std::move(padding),
+        original.thread_group,
+        original.encryption_header_bytes);
 }
 
 CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
@@ -398,6 +406,16 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
             */
 
             auto remote_fs_segment_reader = file_segment.getRemoteFileReader();
+
+            /// When read_scope is set, the implementation buffer is scoped to
+            /// specific mark ranges and cannot be reused by a different downloader
+            /// that has a different scope.  Discard the stale reader so that a
+            /// fresh, properly-scoped buffer is created below.
+            if (remote_fs_segment_reader && info.settings.read_scope)
+            {
+                file_segment.resetRemoteFileReader();
+                remote_fs_segment_reader.reset();
+            }
 
             if (!remote_fs_segment_reader)
             {

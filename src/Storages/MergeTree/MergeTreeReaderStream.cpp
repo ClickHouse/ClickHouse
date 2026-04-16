@@ -125,6 +125,15 @@ void MergeTreeReaderStream::init()
                 }
             }
         }
+
+        /// Some serializations (e.g. LowCardinality) store prefix data
+        /// before the first granule.  `deserializeBinaryBulkStatePrefix`
+        /// reads this prefix regardless of which marks are requested.
+        /// Always prepend [0, mark0_offset) so the scope covers it.
+        /// For columns without prefix data mark0_offset is 0, producing
+        /// an empty range [0, 0) that RRM skips.
+        reading_ranges.insert(reading_ranges.begin(),
+            {0, marks_getter->getMark(0, 0).offset_in_compressed_file});
     }
 
     auto scope = ReadScope::create(

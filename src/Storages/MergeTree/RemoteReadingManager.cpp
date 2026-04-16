@@ -105,7 +105,7 @@ std::shared_ptr<const ReadScope> ReadScope::adjustForObject(size_t object_start_
         size_t clamped_end = std::min(r.end, object_end);
         adjusted.push_back({clamped_begin - object_start_offset, clamped_end - object_start_offset});
     }
-    return std::make_shared<ReadScope>(part_id, mark_ranges, phase, std::move(adjusted), std::vector<size_t>{}, thread_group);
+    return std::make_shared<ReadScope>(part_id, mark_ranges, phase, std::move(adjusted), std::vector<size_t>{}, thread_group, encryption_header_bytes);
 }
 
 std::shared_ptr<const ReadScope> ReadScope::withEncryptionHeader(size_t header_bytes) const
@@ -155,9 +155,22 @@ std::unique_ptr<ReadBufferFromFileBase> RemoteReadingManager::createObjectReadBu
         return nullptr;
     }
 
-    size_t first_padding = scope.cache_pre_padding_bytes.empty() ? 0 : scope.cache_pre_padding_bytes.front();
-    size_t range_begin = scope.reading_ranges.front().begin - first_padding;
+    /// Find the first non-empty reading range.  The prefix range [0, 0)
+    /// (for columns without prefix data) is empty and must be skipped.
+    size_t first_nonempty = 0;
+    while (first_nonempty < scope.reading_ranges.size()
+           && scope.reading_ranges[first_nonempty].begin == scope.reading_ranges[first_nonempty].end)
+        ++first_nonempty;
+
+    size_t first_padding = (first_nonempty < scope.cache_pre_padding_bytes.size())
+        ? scope.cache_pre_padding_bytes[first_nonempty] : 0;
+    size_t range_begin = scope.reading_ranges[first_nonempty].begin - first_padding;
     size_t range_end = scope.reading_ranges.back().end + scope.encryption_header_bytes;
+
+    /// If there is a non-empty prefix range before the first granule range,
+    /// extend the fetch to cover it (e.g. LowCardinality shared dictionary).
+    if (first_nonempty > 0 && scope.reading_ranges.front().end > 0)
+        range_begin = std::min(range_begin, scope.reading_ranges.front().begin);
 
     /// When the object has an encryption header, always fetch from offset 0
     /// so that `DiskEncrypted::readFile` can read the header before wrapping.

@@ -197,8 +197,12 @@ void ReadBufferFromRRM::validateSeekPosition(size_t absolute_pos) const
     }
 
     throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
-        "Seek to {} does not match any reading_range or cache_pre_padding in scope [{}]",
-        absolute_pos, scope->toString());
+        "Seek to {} does not match any reading_range or cache_pre_padding in scope [{}]"
+        " enc_header={} last_range=[{}, {})",
+        absolute_pos, scope->toString(),
+        enc_header,
+        scope->reading_ranges.empty() ? 0 : scope->reading_ranges.back().begin,
+        scope->reading_ranges.empty() ? 0 : scope->reading_ranges.back().end);
 }
 
 }
