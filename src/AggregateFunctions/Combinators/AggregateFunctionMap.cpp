@@ -1,8 +1,8 @@
-#include <absl/container/flat_hash_map.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Helpers.h>
+#include <Core/CompareHelper.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
@@ -17,7 +17,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -48,7 +47,7 @@ template <typename KeyType>
 struct AggregateFunctionMapCombinatorData
 {
     using SearchType = KeyType;
-    UnorderedMapWithMemoryTracking<KeyType, AggregateDataPtr> merged_maps;
+    UnorderedMapWithMemoryTracking<KeyType, AggregateDataPtr, std::hash<KeyType>, CompareHelperEqual<KeyType>> merged_maps;
 
     static void writeKey(KeyType key, WriteBuffer & buf) { writeBinaryLittleEndian(key, buf); }
     static void readKey(KeyType & key, ReadBuffer & buf) { readBinaryLittleEndian(key, buf); }
