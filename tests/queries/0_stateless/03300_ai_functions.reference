@@ -3,6 +3,7 @@
 aiGenerateContent
 -- aiGenerateContent: too few arguments
 -- aiGenerateContent: too many arguments
+-- Named collection missing provider
 -- Named collection missing endpoint
 -- Named collection missing model
 -- Named collection missing api_key

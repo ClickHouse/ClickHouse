@@ -36,7 +36,7 @@ CREATE NAMED COLLECTION ai_credentials AS
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `provider` | String | `'openai'` | Model provider. Supported: `'openai'`, `'anthropic'`. |
+| `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. |
 | `endpoint` | String | — | API endpoint URL. |
 | `model` | String | — | Model name (e.g. `'gpt-4o-mini'`, `'text-embedding-3-small'`). |
 | `api_key` | String | — | Authentication key for the provider. |

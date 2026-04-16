@@ -77,16 +77,18 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument to AI function must be a named collection (constant String)");
 
     String collection_name = col_const->getValue<String>();
-    const auto & nc = NamedCollectionFactory::instance().get(collection_name);
+    const auto & named_collection = NamedCollectionFactory::instance().get(collection_name);
 
-    config.provider = nc->getOrDefault<String>("provider", DEFAULT_AI_PROVIDER);
-    config.endpoint = nc->getOrDefault<String>("endpoint", "");
-    config.model = nc->getOrDefault<String>("model", "");
-    config.api_key = nc->getOrDefault<String>("api_key", "");
-    config.api_version = nc->getOrDefault<String>("api_version", "");
-    config.max_tokens = nc->getOrDefault<UInt64>("max_tokens", DEFAULT_AI_MAX_TOKENS);
+    config.provider = named_collection->getOrDefault<String>("provider", "");
+    config.endpoint = named_collection->getOrDefault<String>("endpoint", "");
+    config.model = named_collection->getOrDefault<String>("model", "");
+    config.api_key = named_collection->getOrDefault<String>("api_key", "");
+    config.api_version = named_collection->getOrDefault<String>("api_version", "");
+    config.max_tokens = named_collection->getOrDefault<UInt64>("max_tokens", DEFAULT_AI_MAX_TOKENS);
     config.temperature = defaultTemperature();
 
+    if (config.provider.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", collection_name);
     if (config.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", collection_name);
     if (config.model.empty())

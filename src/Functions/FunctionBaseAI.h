@@ -9,9 +9,8 @@
 namespace DB
 {
 
-static constexpr auto DEFAULT_AI_PROVIDER = "openai";
 static constexpr UInt64 DEFAULT_AI_MAX_TOKENS = 1024;
-static constexpr size_t FIRST_DATA_ARG_INDEX = 1;
+static constexpr size_t FIRST_DATA_ARG_INDEX = 1; /// 0-th argument is the provider credentials (named collection)
 
 class FunctionBaseAI : public IFunction
 {

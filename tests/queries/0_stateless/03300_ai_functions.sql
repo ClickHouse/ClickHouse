@@ -40,6 +40,17 @@ SELECT aiGenerateContent('a', 'b', 'c', 0.7, 'x'); -- { serverError NUMBER_OF_AR
 -- 3. Named collection: missing required fields
 -- =============================================================================
 
+DROP NAMED COLLECTION IF EXISTS ai_no_provider;
+CREATE NAMED COLLECTION ai_no_provider AS
+    endpoint = 'http://localhost:1/v1/chat/completions',
+    model = 'test-model',
+    api_key = 'fake-key';
+
+SELECT '-- Named collection missing provider';
+SELECT aiGenerateContent('ai_no_provider', x) FROM _03300_input; -- { serverError BAD_ARGUMENTS }
+
+DROP NAMED COLLECTION ai_no_provider;
+
 DROP NAMED COLLECTION IF EXISTS ai_no_endpoint;
 CREATE NAMED COLLECTION ai_no_endpoint AS
     provider = 'openai',

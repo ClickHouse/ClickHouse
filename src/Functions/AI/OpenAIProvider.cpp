@@ -44,7 +44,10 @@ String extractProviderError(const String & response_body, int status_code)
             }
         }
     }
-    catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort JSON parsing
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
     size_t max_len = 256;
     return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
         response_body.substr(0, std::min(response_body.size(), max_len)));
