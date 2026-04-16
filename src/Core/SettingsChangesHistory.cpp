@@ -65,6 +65,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
+            {"iceberg_timezone_for_timestamptz", "UTC", "UTC", "New setting."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -121,7 +122,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_statistics_cache", false, true, "Enable statistics cache"},
             {"apply_row_policy_after_final", false, true, "Enabling apply_row_policy_after_final by default, as if was in 25.8 before #87303"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
-            {"iceberg_timezone_for_timestamptz", "UTC", "UTC", "New setting."},
             {"input_format_connection_handling", false, false, "New setting to allow parsing and processing remaining data in the buffer if the connection closes unexpectedly"},
             {"input_format_max_block_wait_ms", 0, 0, "New setting to limit maximum wait time in milliseconds before a block is emitted by input format"},
             {"allow_insert_into_iceberg", false, false, "Insert into iceberg was moved to Beta"},

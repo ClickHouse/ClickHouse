@@ -665,12 +665,12 @@ def test_timestamps(started_cluster):
                       SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
                       SETTINGS iceberg_timezone_for_timestamptz=''
                       """) == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
-    # If session timezone is used, `timestamptz` does not changed, 'UTC' by default
+    # If session timezone is used, `timestamptz` does not change, 'UTC' by default
     assert node.query(f"""
                       SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
                       SETTINGS session_timezone='Asia/Istanbul'
                       """) == "2024-01-01 15:00:00.000000\t2024-01-01 12:00:00.000000\n"
-    # Setiing `iceberg_timezone_for_timestamptz` does not affect `timestamp` column
+    # Setting `iceberg_timezone_for_timestamptz` does not affect `timestamp` column
     assert node.query(f"""
                       SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
                       SETTINGS session_timezone='Asia/Istanbul', iceberg_timezone_for_timestamptz='Europe/Berlin'
