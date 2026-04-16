@@ -807,7 +807,17 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
 
-    pipeline.setNumThreads(max_threads);
+    // Pipeline thread count drives ConcurrencyControl::allocate(1, max).
+    //
+    // When materialized views are involved, downstream view queries may need up to max_threads
+    // of parallelism — so the pipeline requests max_threads and CC grants on demand. When there
+    // are no views (simple single-chain INSERT), the pipeline has no way to consume more than
+    // max_insert_threads threads; asking for max_threads would make CC reserve slots that are
+    // never acquired and starve other queries (the #88339 regression).
+    //
+    // isViewsInvolved checks both init_table being a view and the presence of dependent views,
+    // which is the correct gate even if the destination itself is a Null-engine MV trigger.
+    pipeline.setNumThreads(insert_dependencies->isViewsInvolved() ? max_threads : max_insert_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)

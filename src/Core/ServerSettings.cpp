@@ -846,6 +846,13 @@ namespace
     :::
     )", 0) \
     DECLARE(UInt64, concurrent_threads_soft_limit_ratio_to_cores, 0, "Same as [`concurrent_threads_soft_limit_num`](#concurrent_threads_soft_limit_num), but with ratio to cores.", 0) \
+    DECLARE(Bool, concurrent_threads_lazy_allocation, true, R"(
+When true (default), ConcurrencyControl uses lazy slot allocation: a query is granted its minimum slots plus at most one extra slot at allocation time, with the rest granted on-demand as threads actually acquire them. This avoids situations where a query reserves many CPU slots it never uses (starving other queries).
+
+When false, the server falls back to the pre-#88339 eager allocation behavior — grant everything that fits in available capacity immediately. This is intended as an emergency rollback lever only: use it if a specific workload regresses on the lazy strategy.
+
+Takes effect for new allocations only; existing queries are unaffected.
+    )", 0) \
     DECLARE(String, concurrent_threads_scheduler, "max_min_fair", R"(
 The policy on how to perform a scheduling of CPU slots specified by `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`. Algorithm used to govern how limited number of CPU slots are distributed among concurrent queries. Scheduler may be changed at runtime without server restart.
 
@@ -1758,6 +1765,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"concurrent_threads_soft_limit_num", {std::to_string(context->getConcurrentThreadsSoftLimitNum()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_soft_limit_ratio_to_cores", {std::to_string(context->getConcurrentThreadsSoftLimitRatioToCores()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_scheduler", {context->getConcurrentThreadsScheduler(), ChangeableWithoutRestart::Yes}},
+            {"concurrent_threads_lazy_allocation", {context->getConcurrentThreadsLazyAllocation() ? "true" : "false", ChangeableWithoutRestart::Yes}},
 
             {"background_buffer_flush_schedule_pool_size",
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundBufferFlushSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},

@@ -533,6 +533,7 @@ struct ContextSharedPart : boost::noncopyable
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
+    bool concurrent_threads_lazy_allocation TSA_GUARDED_BY(mutex) = true;
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
@@ -2337,7 +2338,13 @@ String Context::getConcurrentThreadsScheduler() const
     return shared->concurrent_threads_scheduler;
 }
 
-std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler)
+bool Context::getConcurrentThreadsLazyAllocation() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->concurrent_threads_lazy_allocation;
+}
+
+std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler, bool lazy_allocation)
 {
     std::lock_guard lock(shared->mutex);
 
@@ -2347,6 +2354,10 @@ std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UIn
         shared->concurrent_threads_scheduler = scheduler;
     else
         LOG_ERROR(shared->log, "Invalid value '{}' is set for the server setting 'concurrent_threads_scheduler'. Scheduler was not changed.", scheduler);
+
+    // Emergency revert lever for lazy slot allocation.
+    ConcurrencyControl::instance().setLazyAllocation(lazy_allocation);
+    shared->concurrent_threads_lazy_allocation = lazy_allocation;
 
     // Set the limit
     SlotCount concurrent_threads_soft_limit = UnlimitedSlots;

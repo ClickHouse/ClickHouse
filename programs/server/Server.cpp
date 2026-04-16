@@ -219,6 +219,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_num;
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_ratio_to_cores;
     extern const ServerSettingsString concurrent_threads_scheduler;
+    extern const ServerSettingsBool concurrent_threads_lazy_allocation;
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
@@ -2313,7 +2314,8 @@ try
             auto [concurrent_threads_soft_limit, concurrency_control_scheduler] = global_context->setConcurrentThreadsSoftLimit(
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores],
-                new_server_settings[ServerSetting::concurrent_threads_scheduler]);
+                new_server_settings[ServerSetting::concurrent_threads_scheduler],
+                new_server_settings[ServerSetting::concurrent_threads_lazy_allocation]);
             LOG_INFO(log, "ConcurrencyControl limit is set to {} CPU slots with '{}' scheduler",
                 concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit),
                 concurrency_control_scheduler);

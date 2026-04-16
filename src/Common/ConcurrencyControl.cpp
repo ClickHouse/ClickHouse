@@ -79,8 +79,16 @@ ConcurrencyControlRoundRobinScheduler::Allocation::~Allocation()
         if (granted.compare_exchange_strong(value, value - 1))
         {
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
-            std::unique_lock lock{mutex};
-            return AcquiredSlotPtr(new Slot(shared_from_this(), last_slot_id++)); // can't use std::make_shared due to private ctor
+            AcquiredSlotPtr result;
+            {
+                std::unique_lock lock{mutex};
+                result = AcquiredSlotPtr(new Slot(shared_from_this(), last_slot_id++)); // can't use std::make_shared due to private ctor
+            }
+            // Trigger lazy scheduling: a granted slot was consumed, so the scheduler
+            // may grant the next one. Must be called after releasing allocation mutex
+            // to respect lock ordering (state.mutex -> allocation.mutex).
+            parent.notifyAcquired();
+            return result;
         }
     }
     return {}; // avoid unnecessary locking
@@ -116,6 +124,7 @@ ConcurrencyControlRoundRobinScheduler::ConcurrencyControlRoundRobinScheduler(Con
     : parent(parent_)
     , state(state_)
     , cur_waiter(waiters.end())
+    , cur_demander(demanders.end())
 {
 }
 
@@ -125,10 +134,48 @@ ConcurrencyControlRoundRobinScheduler::~ConcurrencyControlRoundRobinScheduler()
         abort();
 }
 
+void ConcurrencyControlRoundRobinScheduler::addDemanderLocked(Allocation * allocation)
+{
+    if (allocation->in_demanders)
+        return;
+    allocation->demander_iter = demanders.insert(cur_demander, allocation);
+    allocation->in_demanders = true;
+    state.total_demanders.fetch_add(1, std::memory_order_relaxed);
+}
+
+void ConcurrencyControlRoundRobinScheduler::removeDemanderLocked(Allocation * allocation)
+{
+    if (!allocation->in_demanders)
+        return;
+    if (cur_demander == allocation->demander_iter)
+        cur_demander = demanders.erase(allocation->demander_iter);
+    else
+        demanders.erase(allocation->demander_iter);
+    allocation->in_demanders = false;
+    state.total_demanders.fetch_sub(1, std::memory_order_relaxed);
+}
+
 SlotAllocationPtr ConcurrencyControlRoundRobinScheduler::allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max)
 {
-    // Try allocate slots up to requested `max` (as availability allows)
-    SlotCount granted = std::max(min, std::min(max, state.available(lock)));
+    // Lazy allocation: grant `min` slots unconditionally (oversubscription allowed),
+    // plus at most 1 additional slot from available capacity for ramp-up bootstrap.
+    // The +1 only fires if there's real capacity beyond the min oversubscription,
+    // otherwise the min slots already consume all (or more than all) available capacity.
+    // Remaining slots are granted one-at-a-time via lazy schedule() as they are actually acquired.
+    //
+    // Emergency revert (state.lazy_allocation=false): restore pre-#88339 eager behavior —
+    // grant up to `max` slots immediately from available capacity.
+    SlotCount granted;
+    if (state.lazy_allocation.load(std::memory_order_relaxed))
+    {
+        granted = min;
+        if (granted < max && state.available(lock) > min)
+            granted += 1;
+    }
+    else
+    {
+        granted = std::max(min, std::min(max, state.available(lock)));
+    }
     state.cur_concurrency += granted;
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsGranted, min);
 
@@ -137,8 +184,11 @@ SlotAllocationPtr ConcurrencyControlRoundRobinScheduler::allocate(std::unique_lo
     {
         ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsDelayed, max - granted);
         ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
-        return SlotAllocationPtr(new Allocation(*this, max, granted,
+        auto alloc = SlotAllocationPtr(new Allocation(*this, max, granted,
             waiters.insert(cur_waiter, nullptr /* pointer is set by Allocation ctor */)));
+        // New allocation defaults to has_more_demand == true; register it in demanders.
+        addDemanderLocked(static_cast<Allocation *>(alloc.get()));
+        return alloc;
     }
     else
     {
@@ -156,6 +206,7 @@ void ConcurrencyControlRoundRobinScheduler::free(Allocation * allocation)
     auto [amount, waiter] = allocation->cancel();
 
     state.cur_concurrency -= amount;
+    removeDemanderLocked(allocation);
     if (waiter)
     {
         if (cur_waiter == *waiter)
@@ -163,29 +214,173 @@ void ConcurrencyControlRoundRobinScheduler::free(Allocation * allocation)
         else
             waiters.erase(*waiter);
     }
-    parent.schedule(lock);
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
 }
 
 void ConcurrencyControlRoundRobinScheduler::release(SlotCount amount)
 {
     std::unique_lock lock{state.mutex};
     state.cur_concurrency -= amount;
-    parent.schedule(lock);
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
 }
 
-// Round-robin scheduling of available slots among waiting allocations
-void ConcurrencyControlRoundRobinScheduler::schedule(std::unique_lock<std::mutex> &)
+// Round-robin scheduling of available slots among waiting allocations.
+// Bulk mode (lazy_grant=false): distributes ALL available capacity fairly (setMaxConcurrency).
+// Lazy multi (lazy_grant=true, single_grant=false): skip waiters with pending grants OR no demand,
+//   grant multiple (used by release/free to redistribute freed capacity).
+// Lazy single (lazy_grant=true, single_grant=true): skip pending or no-demand, grant at most 1
+//   (used by notifyAcquired for demand-driven ramp-up).
+void ConcurrencyControlRoundRobinScheduler::schedule(std::unique_lock<std::mutex> &, bool lazy_grant, bool single_grant)
 {
-    while (!waiters.empty() && state.cur_concurrency < state.max_concurrency)
+    if (lazy_grant)
     {
-        state.cur_concurrency++;
-        if (cur_waiter == waiters.end())
-            cur_waiter = waiters.begin();
-        Allocation * allocation = *cur_waiter;
-        if (allocation->grant())
-            ++cur_waiter;
+        // Iterate the `demanders` list — a subset of `waiters` containing only allocations with
+        // has_more_demand == true. This makes the lazy hot path scale with the number of actively
+        // demanding queries, not the total number of waiters (addresses reviewer perf concern).
+        //
+        // TODO: when a demander sits with granted > 0 for a long time (pipeline acquired but
+        // hasn't called tryAcquire again), every release/notifyAcquired round walks past it
+        // before finding a grantable demander. Worst case is O(demanders) per acquire under
+        // persistent stuck-demander. If this becomes a hot path, split into "ready" (granted==0)
+        // and "pending" (granted>0) sub-lists so only the ready list is scanned.
+        size_t skipped = 0;
+        while (!demanders.empty() && state.cur_concurrency < state.max_concurrency)
+        {
+            if (cur_demander == demanders.end())
+                cur_demander = demanders.begin();
+            Allocation * allocation = *cur_demander;
+
+            // Skip only on pending grants; no-demand allocations aren't in this list at all.
+            if (allocation->granted.load(std::memory_order_relaxed) > 0)
+            {
+                ++cur_demander;
+                if (++skipped > demanders.size())
+                    break; // Every demander has a pending grant
+                continue;
+            }
+
+            skipped = 0;
+            state.cur_concurrency++;
+            bool still_waiter = allocation->grant();
+            ++cur_demander;
+            if (!still_waiter)
+            {
+                // Allocation reached its limit — remove from both demanders and waiters lists.
+                removeDemanderLocked(allocation);
+                if (cur_waiter == allocation->waiter)
+                    cur_waiter = waiters.erase(allocation->waiter);
+                else
+                    waiters.erase(allocation->waiter);
+            }
+            if (single_grant)
+                return;
+        }
+    }
+    else
+    {
+        // Bulk mode: original eager distribution. Iterates the full waiters list.
+        while (!waiters.empty() && state.cur_concurrency < state.max_concurrency)
+        {
+            state.cur_concurrency++;
+            if (cur_waiter == waiters.end())
+                cur_waiter = waiters.begin();
+            Allocation * allocation = *cur_waiter;
+            bool still_waiter = allocation->grant();
+            if (still_waiter)
+            {
+                ++cur_waiter;
+            }
+            else
+            {
+                // Remove from demanders too (if present) since no longer a waiter.
+                removeDemanderLocked(allocation);
+                cur_waiter = waiters.erase(cur_waiter);
+            }
+        }
+    }
+}
+
+void ConcurrencyControlRoundRobinScheduler::notifyAcquired()
+{
+    // Fast path: if no demanders anywhere, no one to grant to — skip the state.mutex acquisition.
+    // A racing addDemanderLocked ordering is fine: we'd just miss one schedule round, and the
+    // next notifyAcquired (another tryAcquire) or notifyDemand would pick it up.
+    if (state.total_demanders.load(std::memory_order_relaxed) == 0)
+        return;
+    std::unique_lock lock{state.mutex};
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ true);
+}
+
+void ConcurrencyControlRoundRobinScheduler::notifyDemand()
+{
+    std::unique_lock lock{state.mutex};
+    // Lazy multi: a waiter just gained demand; try to grant slots (to any waiter with demand and no pending)
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
+}
+
+// Return pending (granted but not acquired) slots to the pool. Called from setMoreDemand(false).
+// Atomically decrements cur_concurrency, removes the allocation from demanders, and restores
+// the allocation's grant budget by decrementing `allocated` — reclaimed slots must not count
+// against the allocation's lifetime limit, otherwise repeated demand flapping would ratchet down
+// the query's attainable parallelism.
+//
+// If the allocation was saturated (allocated == limit → not in waiters), re-insert into waiters
+// so future schedule rounds can grant to it again. The demanders list is NOT restored because
+// reclaim is triggered by setMoreDemand(false); a subsequent setMoreDemand(true) will re-add.
+void ConcurrencyControlRoundRobinScheduler::reclaim(Allocation * allocation, SlotCount amount)
+{
+    std::unique_lock lock{state.mutex};
+    state.cur_concurrency -= amount;
+    removeDemanderLocked(allocation);
+
+    {
+        // Hold allocation.mutex across the allocated decrement AND the waiter iterator
+        // assignment: cancel() (invoked later from ~Allocation/free) also reads these fields
+        // under allocation.mutex, so both must be serialized. waiters.insert operates on
+        // state.mutex-protected data, which we hold; interleaving alock under lock is fine.
+        std::unique_lock alock{allocation->mutex};
+        bool was_waiter = allocation->allocated < allocation->limit;
+        allocation->allocated -= amount;
+
+        if (!was_waiter && allocation->allocated < allocation->limit)
+            allocation->waiter = waiters.insert(cur_waiter, allocation);
+    }
+
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
+}
+
+// MUST NOT be called while holding state.mutex — both branches take it internally.
+// Repeat calls with the same value are idempotent (the exchange returns the same value).
+void ConcurrencyControlRoundRobinScheduler::Allocation::setMoreDemand(bool value)
+{
+    bool prev = has_more_demand.exchange(value, std::memory_order_acq_rel);
+    if (!value && prev)
+    {
+        // true -> false: reclaim any pending (granted but not acquired) slots so they don't
+        // sit idle in cur_concurrency blocking other queries. reclaim() also removes the
+        // allocation from the demanders list. If there's nothing to reclaim, we still need
+        // to remove from demanders so the lazy schedule skips this allocation.
+        SlotCount to_reclaim = granted.exchange(0, std::memory_order_acq_rel);
+        if (to_reclaim > 0)
+        {
+            parent.reclaim(this, to_reclaim);
+        }
         else
-            cur_waiter = waiters.erase(cur_waiter); // last required slot has just been granted -- stop waiting
+        {
+            std::unique_lock lock{parent.state.mutex};
+            parent.removeDemanderLocked(this);
+        }
+    }
+    else if (value && !prev)
+    {
+        // false -> true: add to demanders (only if still a waiter) and trigger scheduling.
+        // The demanders ⊆ waiters invariant forbids adding a non-waiter allocation; that
+        // happens if the allocation got all its slots at allocate time (not inserted into
+        // waiters) or reached its limit mid-life.
+        std::unique_lock lock{parent.state.mutex};
+        if (allocated < limit)
+            parent.addDemanderLocked(this);
+        parent.parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
     }
 }
 
@@ -233,8 +428,14 @@ ConcurrencyControlFairRoundRobinScheduler::Allocation::~Allocation()
         if (noncompeting.compare_exchange_strong(value, value - 1))
         {
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquiredNonCompeting, 1);
-            std::unique_lock lock{mutex};
-            return AcquiredSlotPtr(new Slot(shared_from_this(), false, last_slot_id++)); // can't use std::make_shared due to private ctor
+            AcquiredSlotPtr result;
+            {
+                std::unique_lock lock{mutex};
+                result = AcquiredSlotPtr(new Slot(shared_from_this(), false, last_slot_id++)); // can't use std::make_shared due to private ctor
+            }
+            // Trigger lazy schedule so the first competing slot can be granted
+            parent.notifyAcquired();
+            return result;
         }
     }
 
@@ -245,8 +446,13 @@ ConcurrencyControlFairRoundRobinScheduler::Allocation::~Allocation()
         if (granted.compare_exchange_strong(value, value - 1))
         {
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
-            std::unique_lock lock{mutex};
-            return AcquiredSlotPtr(new Slot(shared_from_this(), true, last_slot_id++)); // can't use std::make_shared due to private ctor
+            AcquiredSlotPtr result;
+            {
+                std::unique_lock lock{mutex};
+                result = AcquiredSlotPtr(new Slot(shared_from_this(), true, last_slot_id++)); // can't use std::make_shared due to private ctor
+            }
+            parent.notifyAcquired();
+            return result;
         }
     }
 
@@ -283,7 +489,29 @@ ConcurrencyControlFairRoundRobinScheduler::ConcurrencyControlFairRoundRobinSched
     : parent(parent_)
     , state(state_)
     , cur_waiter(waiters.end())
+    , cur_demander(demanders.end())
 {
+}
+
+void ConcurrencyControlFairRoundRobinScheduler::addDemanderLocked(Allocation * allocation)
+{
+    if (allocation->in_demanders)
+        return;
+    allocation->demander_iter = demanders.insert(cur_demander, allocation);
+    allocation->in_demanders = true;
+    state.total_demanders.fetch_add(1, std::memory_order_relaxed);
+}
+
+void ConcurrencyControlFairRoundRobinScheduler::removeDemanderLocked(Allocation * allocation)
+{
+    if (!allocation->in_demanders)
+        return;
+    if (cur_demander == allocation->demander_iter)
+        cur_demander = demanders.erase(allocation->demander_iter);
+    else
+        demanders.erase(allocation->demander_iter);
+    allocation->in_demanders = false;
+    state.total_demanders.fetch_sub(1, std::memory_order_relaxed);
 }
 
 ConcurrencyControlFairRoundRobinScheduler::~ConcurrencyControlFairRoundRobinScheduler()
@@ -294,10 +522,14 @@ ConcurrencyControlFairRoundRobinScheduler::~ConcurrencyControlFairRoundRobinSche
 
 SlotAllocationPtr ConcurrencyControlFairRoundRobinScheduler::allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max)
 {
-    // Try allocate slots up to requested `max - min` (as availability allows).
     // Do not count `min` slots towards the limit. They are NOT considered as taking part in competition.
+    // Lazy allocation: grant at most 1 competing slot from available capacity for ramp-up bootstrap.
+    // Eager path (state.lazy_allocation=false) restores the pre-#88339 behavior — used as an
+    // emergency rollback lever only.
     SlotCount limit = max - min;
-    SlotCount granted = std::min(limit, state.available(lock));
+    SlotCount granted = state.lazy_allocation.load(std::memory_order_relaxed)
+        ? std::min(std::min(SlotCount(1), limit), state.available(lock))
+        : std::min(limit, state.available(lock));
     state.cur_concurrency += granted;
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsGranted, min);
 
@@ -306,8 +538,10 @@ SlotAllocationPtr ConcurrencyControlFairRoundRobinScheduler::allocate(std::uniqu
     {
         ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsDelayed, limit - granted);
         ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
-        return SlotAllocationPtr(new Allocation(*this, min, max, granted,
+        auto alloc = SlotAllocationPtr(new Allocation(*this, min, max, granted,
             waiters.insert(cur_waiter, nullptr /* pointer is set by Allocation ctor */)));
+        addDemanderLocked(static_cast<Allocation *>(alloc.get()));
+        return alloc;
     }
     else
     {
@@ -325,6 +559,7 @@ void ConcurrencyControlFairRoundRobinScheduler::free(Allocation * allocation)
     auto [amount, waiter] = allocation->cancel();
 
     state.cur_concurrency -= amount;
+    removeDemanderLocked(allocation);
     if (waiter)
     {
         if (cur_waiter == *waiter)
@@ -332,29 +567,133 @@ void ConcurrencyControlFairRoundRobinScheduler::free(Allocation * allocation)
         else
             waiters.erase(*waiter);
     }
-    parent.schedule(lock);
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
 }
 
 void ConcurrencyControlFairRoundRobinScheduler::release(SlotCount amount)
 {
     std::unique_lock lock{state.mutex};
     state.cur_concurrency -= amount;
-    parent.schedule(lock);
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
 }
 
-// Round-robin scheduling of available slots among waiting allocations
-void ConcurrencyControlFairRoundRobinScheduler::schedule(std::unique_lock<std::mutex> &)
+// Round-robin scheduling — tri-mode (see RoundRobinScheduler for semantics)
+void ConcurrencyControlFairRoundRobinScheduler::schedule(std::unique_lock<std::mutex> &, bool lazy_grant, bool single_grant)
 {
-    while (!waiters.empty() && state.cur_concurrency < state.max_concurrency)
+    if (lazy_grant)
     {
-        state.cur_concurrency++;
-        if (cur_waiter == waiters.end())
-            cur_waiter = waiters.begin();
-        Allocation * allocation = *cur_waiter;
-        if (allocation->grant())
-            ++cur_waiter;
+        // Iterate the `demanders` subset rather than full `waiters` — O(demanders), not O(waiters).
+        size_t skipped = 0;
+        while (!demanders.empty() && state.cur_concurrency < state.max_concurrency)
+        {
+            if (cur_demander == demanders.end())
+                cur_demander = demanders.begin();
+            Allocation * allocation = *cur_demander;
+
+            if (allocation->granted.load(std::memory_order_relaxed) > 0)
+            {
+                ++cur_demander;
+                if (++skipped > demanders.size())
+                    break;
+                continue;
+            }
+
+            skipped = 0;
+            state.cur_concurrency++;
+            bool still_waiter = allocation->grant();
+            ++cur_demander;
+            if (!still_waiter)
+            {
+                removeDemanderLocked(allocation);
+                if (cur_waiter == allocation->waiter)
+                    cur_waiter = waiters.erase(allocation->waiter);
+                else
+                    waiters.erase(allocation->waiter);
+            }
+            if (single_grant)
+                return;
+        }
+    }
+    else
+    {
+        while (!waiters.empty() && state.cur_concurrency < state.max_concurrency)
+        {
+            state.cur_concurrency++;
+            if (cur_waiter == waiters.end())
+                cur_waiter = waiters.begin();
+            Allocation * allocation = *cur_waiter;
+            bool still_waiter = allocation->grant();
+            if (still_waiter)
+            {
+                ++cur_waiter;
+            }
+            else
+            {
+                removeDemanderLocked(allocation);
+                cur_waiter = waiters.erase(cur_waiter);
+            }
+        }
+    }
+}
+
+void ConcurrencyControlFairRoundRobinScheduler::notifyAcquired()
+{
+    if (state.total_demanders.load(std::memory_order_relaxed) == 0)
+        return;
+    std::unique_lock lock{state.mutex};
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ true);
+}
+
+void ConcurrencyControlFairRoundRobinScheduler::notifyDemand()
+{
+    std::unique_lock lock{state.mutex};
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
+}
+
+// See ConcurrencyControlRoundRobinScheduler::reclaim for the contract: decrement `allocated`
+// (not `released`), re-add to waiters if the allocation was previously saturated.
+void ConcurrencyControlFairRoundRobinScheduler::reclaim(Allocation * allocation, SlotCount amount)
+{
+    std::unique_lock lock{state.mutex};
+    state.cur_concurrency -= amount;
+    removeDemanderLocked(allocation);
+
+    {
+        std::unique_lock alock{allocation->mutex};
+        bool was_waiter = allocation->allocated < allocation->limit;
+        allocation->allocated -= amount;
+
+        if (!was_waiter && allocation->allocated < allocation->limit)
+            allocation->waiter = waiters.insert(cur_waiter, allocation);
+    }
+
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
+}
+
+// See ConcurrencyControlRoundRobinScheduler::Allocation::setMoreDemand for contract.
+void ConcurrencyControlFairRoundRobinScheduler::Allocation::setMoreDemand(bool value)
+{
+    bool prev = has_more_demand.exchange(value, std::memory_order_acq_rel);
+    if (!value && prev)
+    {
+        SlotCount to_reclaim = granted.exchange(0, std::memory_order_acq_rel);
+        if (to_reclaim > 0)
+        {
+            parent.reclaim(this, to_reclaim);
+        }
         else
-            cur_waiter = waiters.erase(cur_waiter); // last required slot has just been granted -- stop waiting
+        {
+            std::unique_lock lock{parent.state.mutex};
+            parent.removeDemanderLocked(this);
+        }
+    }
+    else if (value && !prev)
+    {
+        // Only add to demanders if still a waiter (preserves demanders ⊆ waiters invariant).
+        std::unique_lock lock{parent.state.mutex};
+        if (allocated < limit)
+            parent.addDemanderLocked(this);
+        parent.parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
     }
 }
 
@@ -409,8 +748,14 @@ ConcurrencyControlMaxMinFairScheduler::Allocation::~Allocation()
         if (noncompeting.compare_exchange_strong(value, value - 1))
         {
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquiredNonCompeting, 1);
-            std::unique_lock lock{mutex};
-            return AcquiredSlotPtr(new Slot(shared_from_this(), false, last_slot_id++)); // can't use std::make_shared due to private ctor
+            AcquiredSlotPtr result;
+            {
+                std::unique_lock lock{mutex};
+                result = AcquiredSlotPtr(new Slot(shared_from_this(), false, last_slot_id++)); // can't use std::make_shared due to private ctor
+            }
+            // Targeted grant: give this allocation 1 more competing slot if available
+            parent.notifyAcquired();
+            return result;
         }
     }
 
@@ -421,8 +766,13 @@ ConcurrencyControlMaxMinFairScheduler::Allocation::~Allocation()
         if (granted.compare_exchange_strong(value, value - 1))
         {
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
-            std::unique_lock lock{mutex};
-            return AcquiredSlotPtr(new Slot(shared_from_this(), true, last_slot_id++)); // can't use std::make_shared due to private ctor
+            AcquiredSlotPtr result;
+            {
+                std::unique_lock lock{mutex};
+                result = AcquiredSlotPtr(new Slot(shared_from_this(), true, last_slot_id++)); // can't use std::make_shared due to private ctor
+            }
+            parent.notifyAcquired();
+            return result;
         }
     }
 
@@ -467,12 +817,34 @@ ConcurrencyControlMaxMinFairScheduler::~ConcurrencyControlMaxMinFairScheduler()
         abort();
 }
 
+void ConcurrencyControlMaxMinFairScheduler::addDemanderLocked(Allocation * allocation)
+{
+    if (!allocation->demanders_hook.is_linked())
+    {
+        demanders.insert(*allocation);
+        state.total_demanders.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+void ConcurrencyControlMaxMinFairScheduler::removeDemanderLocked(Allocation * allocation)
+{
+    if (allocation->demanders_hook.is_linked())
+    {
+        demanders.erase(demanders.iterator_to(*allocation));
+        state.total_demanders.fetch_sub(1, std::memory_order_relaxed);
+    }
+}
+
 SlotAllocationPtr ConcurrencyControlMaxMinFairScheduler::allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max)
 {
-    // Try allocate slots up to requested `max - min` (as availability allows).
     // Do not count `min` slots towards the limit. They are NOT considered as taking part in competition.
+    // Lazy allocation: grant at most 1 competing slot from available capacity for ramp-up bootstrap.
+    // Eager path (state.lazy_allocation=false) restores the pre-#88339 behavior — used as an
+    // emergency rollback lever only.
     SlotCount limit = max - min;
-    SlotCount granted = std::min(limit, state.available(lock));
+    SlotCount granted = state.lazy_allocation.load(std::memory_order_relaxed)
+        ? std::min(std::min(SlotCount(1), limit), state.available(lock))
+        : std::min(limit, state.available(lock));
     state.cur_concurrency += granted;
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsGranted, min);
 
@@ -486,7 +858,10 @@ SlotAllocationPtr ConcurrencyControlMaxMinFairScheduler::allocate(std::unique_lo
         ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
         // Insert into waiters set (sorted by allocated count, then by sequence number)
         // The hook's is_linked() will return true after insertion
-        waiters.insert(*static_cast<Allocation*>(allocation.get()));
+        auto * a = static_cast<Allocation*>(allocation.get());
+        waiters.insert(*a);
+        // New allocation defaults to has_more_demand == true; register it in demanders.
+        addDemanderLocked(a);
     }
 
     return allocation;
@@ -502,39 +877,202 @@ void ConcurrencyControlMaxMinFairScheduler::free(Allocation * allocation)
     auto [amount, is_waiting] = allocation->cancel();
 
     state.cur_concurrency -= amount;
+    removeDemanderLocked(allocation);
     if (is_waiting)
         waiters.erase(waiters.iterator_to(*allocation));
-    parent.schedule(lock);
+    // Lazy multi: skip waiters with pending grants (min-level only in MMF) to avoid
+    // piling additional grants onto allocations that haven't consumed their existing ones.
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
 }
 
 void ConcurrencyControlMaxMinFairScheduler::release(SlotCount amount)
 {
     std::unique_lock lock{state.mutex};
     state.cur_concurrency -= amount;
-    parent.schedule(lock);
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
 }
 
-// Max-min fair scheduling of available slots among waiting allocations
-// Always grant to the allocation with the minimum number of currently allocated slots
-void ConcurrencyControlMaxMinFairScheduler::schedule(std::unique_lock<std::mutex> &)
+// Max-min fair scheduling — tri-mode.
+// Bulk mode: original eager distribution (setMaxConcurrency — all capacity must be distributed).
+// Lazy mode: iterate the `demanders` set (subset of waiters with has_more_demand==true).
+//   At the minimum allocation level among demanders, find one with granted==0 and grant.
+//
+//   IMPORTANT: lazy schedule MUST NOT descend past min_level. Walking to higher-allocated
+//   demanders would violate max-min fairness: an allocation that already has more slots than
+//   its peers would receive yet another slot while a lower-allocated peer at min_level is
+//   temporarily pending. The min_level stop keeps the scheduler fair on every single grant.
+//   If every min_level demander has a pending grant, we deliberately stall this round and let
+//   the next notifyAcquired call (which happens when one of them actually consumes its slot)
+//   reschedule. Do NOT "simplify" this by removing the min_level guard.
+//
+//   Iterating demanders (not all waiters) makes the hot path scale with actively demanding
+//   queries, not the full waiter list.
+void ConcurrencyControlMaxMinFairScheduler::schedule(std::unique_lock<std::mutex> &, bool lazy_grant, bool single_grant)
 {
-    while (!waiters.empty() && state.cur_concurrency < state.max_concurrency)
+    if (lazy_grant)
     {
-        state.cur_concurrency++;
-
-        // Get the allocation with minimum allocated count (first element in the sorted set)
-        auto it = waiters.begin();
-        Allocation & allocation = *it;
-
-        // Remove from set before granting (as allocated count will change)
-        waiters.erase(it);
-
-        if (allocation.grant())
+        while (state.cur_concurrency < state.max_concurrency && !demanders.empty())
         {
-            // Still needs more slots - reinsert with updated allocated count
-            waiters.insert(allocation);
+            // Demanders are sorted by (allocated, sequence_number) just like waiters.
+            // The first element is the minimum-allocated demander.
+            auto it = demanders.begin();
+            SlotCount min_level = it->allocated;
+
+            // At min_level, find a demander with no pending grant.
+            // Do NOT descend past min_level — preserves max-min fairness among actual demanders.
+            bool granted_one = false;
+            while (it != demanders.end() && it->allocated == min_level)
+            {
+                if (it->granted.load(std::memory_order_relaxed) == 0)
+                {
+                    state.cur_concurrency++;
+                    Allocation & allocation = *it;
+                    // Pre-emptively remove from both sets; `grant()` mutates `allocated`, which
+                    // is the sort key for both intrusive sets — mutating it while linked would
+                    // corrupt container ordering. Re-insert after grant() if still a waiter.
+                    // Route through removeDemanderLocked so `total_demanders` stays consistent.
+                    removeDemanderLocked(&allocation);
+                    waiters.erase(waiters.iterator_to(allocation));
+                    chassert(!allocation.waiters_hook.is_linked());
+                    chassert(!allocation.demanders_hook.is_linked());
+                    SlotCount allocated_before = allocation.allocated;
+                    bool still_waiter = allocation.grant();
+                    chassert(allocation.allocated == allocated_before + 1);
+                    if (still_waiter)
+                    {
+                        waiters.insert(allocation);
+                        // Re-insert into demanders only if has_more_demand is still true.
+                        // A concurrent setMoreDemand(false) could have flipped it; the atomic
+                        // exchange there will remove from demanders via removeDemanderLocked.
+                        // We check the flag here for consistency.
+                        if (allocation.has_more_demand.load(std::memory_order_relaxed))
+                            addDemanderLocked(&allocation);
+                    }
+                    granted_one = true;
+                    break;
+                }
+                ++it;
+            }
+            if (!granted_one)
+                return; // All min-level demanders have pending grants; wait for notifyAcquired.
+            if (single_grant)
+                return;
+            // Loop: next iteration re-evaluates min_level (may have changed after re-insert)
         }
-        // When not reinserted, the hook remains unlinked (is_linked() returns false)
+    }
+    else
+    {
+        // Bulk mode: original eager distribution over all waiters.
+        // Must erase from both waiters AND demanders before grant() mutates `allocated`
+        // (the sort key for both intrusive sets) — leaving the allocation linked while
+        // its key changes would corrupt container ordering.
+        //
+        // cur_concurrency++ happens before grant(). This is safe because we hold state.mutex
+        // across the whole iteration and grant() is infallible (it only increments counters
+        // under allocation.mutex; cannot throw, cannot abort). If future edits make grant()
+        // fallible, move the increment after grant() succeeds.
+        while (!waiters.empty() && state.cur_concurrency < state.max_concurrency)
+        {
+            state.cur_concurrency++;
+
+            auto it = waiters.begin();
+            Allocation & allocation = *it;
+
+            bool was_demander = allocation.demanders_hook.is_linked();
+            if (was_demander)
+                removeDemanderLocked(&allocation);
+            waiters.erase(it);
+            chassert(!allocation.waiters_hook.is_linked());
+            chassert(!allocation.demanders_hook.is_linked());
+
+            SlotCount allocated_before = allocation.allocated;
+            bool still_waiter = allocation.grant();
+            chassert(allocation.allocated == allocated_before + 1);
+            if (still_waiter)
+            {
+                waiters.insert(allocation);
+                // Re-insert into demanders iff it was there AND demand is still set.
+                // A concurrent setMoreDemand(false) can't race here because we hold state.mutex,
+                // but the atomic has_more_demand could theoretically be stale — in that case the
+                // scheduler may briefly consider this allocation, which is harmless (next lazy
+                // schedule iteration will observe the updated flag via removeDemanderLocked).
+                if (was_demander && allocation.has_more_demand.load(std::memory_order_relaxed))
+                    addDemanderLocked(&allocation);
+            }
+            // If !still_waiter: allocation is no longer a waiter, and we already removed it
+            // from demanders above. Nothing to do.
+        }
+    }
+}
+
+void ConcurrencyControlMaxMinFairScheduler::notifyAcquired()
+{
+    if (state.total_demanders.load(std::memory_order_relaxed) == 0)
+        return;
+    std::unique_lock lock{state.mutex};
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ true);
+}
+
+void ConcurrencyControlMaxMinFairScheduler::notifyDemand()
+{
+    std::unique_lock lock{state.mutex};
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
+}
+
+void ConcurrencyControlMaxMinFairScheduler::reclaim(Allocation * allocation, SlotCount amount)
+{
+    std::unique_lock lock{state.mutex};
+    state.cur_concurrency -= amount;
+
+    // MMF orders waiters by `allocated`. For fairness, reclaimed slots must not continue
+    // counting against the allocation — decrement `allocated` and re-position the waiter
+    // so subsequent schedule() calls give this allocation its fair share.
+    // Also remove from demanders (reclaim is triggered by setMoreDemand(false)).
+    removeDemanderLocked(allocation);
+
+    bool was_in_set = allocation->waiters_hook.is_linked();
+    if (was_in_set)
+        waiters.erase(waiters.iterator_to(*allocation));
+
+    {
+        std::unique_lock alock{allocation->mutex};
+        allocation->allocated -= amount;
+    }
+
+    // Re-insert with the updated `allocated` (places it correctly in the sort order).
+    // Also covers the case where the allocation was previously saturated (allocated == limit,
+    // not in set) and now has capacity to receive more.
+    if (allocation->allocated < allocation->limit)
+        waiters.insert(*allocation);
+
+    parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
+}
+
+// See ConcurrencyControlRoundRobinScheduler::Allocation::setMoreDemand for contract.
+void ConcurrencyControlMaxMinFairScheduler::Allocation::setMoreDemand(bool value)
+{
+    bool prev = has_more_demand.exchange(value, std::memory_order_acq_rel);
+    if (!value && prev)
+    {
+        SlotCount to_reclaim = granted.exchange(0, std::memory_order_acq_rel);
+        if (to_reclaim > 0)
+        {
+            parent.reclaim(this, to_reclaim);
+        }
+        else
+        {
+            std::unique_lock lock{parent.state.mutex};
+            parent.removeDemanderLocked(this);
+        }
+    }
+    else if (value && !prev)
+    {
+        // Only add to demanders if still a waiter — for MMF, waiters_hook.is_linked() is the
+        // authoritative check. This preserves the demanders ⊆ waiters invariant.
+        std::unique_lock lock{parent.state.mutex};
+        if (waiters_hook.is_linked())
+            parent.addDemanderLocked(this);
+        parent.parent.schedule(lock, /*lazy_grant=*/ true, /*single_grant=*/ false);
     }
 }
 
@@ -609,24 +1147,35 @@ String ConcurrencyControl::getScheduler() const
     }
 }
 
-void ConcurrencyControl::schedule(std::unique_lock<std::mutex> & lock)
+void ConcurrencyControl::setLazyAllocation(bool value)
+{
+    // Atomic — no lock needed. Only affects allocations made after this point.
+    state.lazy_allocation.store(value, std::memory_order_relaxed);
+}
+
+bool ConcurrencyControl::getLazyAllocation() const
+{
+    return state.lazy_allocation.load(std::memory_order_relaxed);
+}
+
+void ConcurrencyControl::schedule(std::unique_lock<std::mutex> & lock, bool lazy_grant, bool single_grant)
 {
     switch (scheduler)
     {
         case Scheduler::RoundRobin:
-            fair_round_robin.schedule(lock); // first schedule from old scheduler (works only during transition period)
-            max_min_fair.schedule(lock);
-            round_robin.schedule(lock);
+            fair_round_robin.schedule(lock, lazy_grant, single_grant); // first schedule from old scheduler (works only during transition period)
+            max_min_fair.schedule(lock, lazy_grant, single_grant);
+            round_robin.schedule(lock, lazy_grant, single_grant);
             return;
         case Scheduler::FairRoundRobin:
-            round_robin.schedule(lock); // first schedule from old scheduler (works only during transition period)
-            max_min_fair.schedule(lock);
-            fair_round_robin.schedule(lock);
+            round_robin.schedule(lock, lazy_grant, single_grant); // first schedule from old scheduler (works only during transition period)
+            max_min_fair.schedule(lock, lazy_grant, single_grant);
+            fair_round_robin.schedule(lock, lazy_grant, single_grant);
             return;
         case Scheduler::MaxMinFair:
-            round_robin.schedule(lock); // first schedule from old scheduler (works only during transition period)
-            fair_round_robin.schedule(lock);
-            max_min_fair.schedule(lock);
+            round_robin.schedule(lock, lazy_grant, single_grant); // first schedule from old scheduler (works only during transition period)
+            fair_round_robin.schedule(lock, lazy_grant, single_grant);
+            max_min_fair.schedule(lock, lazy_grant, single_grant);
             return;
     }
 }

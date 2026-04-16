@@ -383,6 +383,15 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
 
 
             /// Upscaling.
+            ///
+            /// Demand-signaling contract with ConcurrencyControl:
+            ///  - SHOULD_SPAWN + spawn_mutex acquired: we are about to actually try spawning,
+            ///    so enable demand so CC may grant us slots.
+            ///  - DO_NOT_SPAWN reached inside spawnThreads: we turn demand off (see below).
+            ///  - SHOULD_SPAWN but spawn_mutex busy: another thread is already spawning and will
+            ///    handle demand signaling, so we intentionally do NOT flip demand here. Flipping
+            ///    it on lost-try_lock paths would cause demand to flap on/off across concurrent
+            ///    upscale attempts and trigger spurious scheduler rounds.
             if (pool && spawn_status == ExecutorTasks::SHOULD_SPAWN)
             {
                 // Only allow one thread to spawn, if someone is already spawning threads, just skip.
@@ -391,6 +400,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
                     try
                     {
                         std::lock_guard lock(spawn_mutex, std::adopt_lock);
+                        /// Pipeline wants to upscale — tell ConcurrencyControl we want more slots.
+                        cpu_slots->setMoreDemand(true);
                         spawnThreads({});
                     }
                     catch (...)
@@ -575,7 +586,14 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         slot.reset(); // To make tidy build happy (bugprone-use-after-move)
 
         if (spawn_status == ExecutorTasks::DO_NOT_SPAWN)
+        {
+            /// Pipeline has reached its current target parallelism — tell ConcurrencyControl
+            /// that we don't want more slots granted right now. This lets CC redirect freed
+            /// capacity to actively-consuming queries instead of piling pending grants onto us.
+            /// When the pipeline wants to upscale again (SHOULD_SPAWN), demand is re-enabled.
+            cpu_slots->setMoreDemand(false);
             return;
+        }
     }
 }
 

@@ -23,6 +23,19 @@ namespace DB
  * granted: slot is allocated by specific query, but not yet acquired by any thread.
  * acquired: slot is allocated by specific query and acquired by a thread.
  *
+ * Invariants (enforced by all three schedulers):
+ *  - `waiters`: set/list of allocations that have `allocated < limit` and may receive more slots.
+ *  - `demanders` ⊆ `waiters`: the subset with `has_more_demand == true`. Lazy scheduling
+ *    iterates `demanders` — not `waiters` — so the hot path scales with actively-demanding
+ *    queries, not the full waiter list.
+ *  - `demanders` membership flips via `setMoreDemand`. An allocation enters `demanders` at
+ *    creation (default demand=true) and leaves on `setMoreDemand(false)`, on losing waiter
+ *    status (allocated reached limit), or on destruction. It re-enters on `setMoreDemand(true)`.
+ *  - All membership changes (add/remove from `waiters`, `demanders`) happen under `state.mutex`.
+ *  - MMF uses `allocated` as the sort key of both intrusive sets — `grant()` must not run while
+ *    the allocation is linked in either set (remove → grant → re-insert).
+ *  - `setMoreDemand` MUST NOT be called while holding `state.mutex` — it takes that lock itself.
+ *
  * USAGE:
  *   1. Create an allocation for a query:
  *      `auto slots = ConcurrencyControl::instance().allocate(min, max);`
@@ -62,6 +75,20 @@ struct ConcurrencyControlState
     SlotCount max_concurrency = UnlimitedSlots;
     SlotCount cur_concurrency = 0;
     CurrentMetrics::Increment max_concurrency_metric;
+
+    // Emergency revert for the lazy allocation strategy. When false, allocate() grants all
+    // slots that fit in remaining capacity (pre-#88339 behavior). When true (default), only
+    // `min + at most 1` slots are granted, with the rest granted lazily via setMoreDemand.
+    // Intended as a rollback lever in case the lazy strategy regresses on a specific workload.
+    // Read without locking (relaxed) — toggling mid-query is racy by design (only affects
+    // allocations made after the toggle).
+    std::atomic<bool> lazy_allocation{true};
+
+    // Total number of demanders across all three schedulers (maintained by addDemanderLocked/
+    // removeDemanderLocked). Read lock-free by notifyAcquired() as a fast-path: if no
+    // demanders exist anywhere, there is nothing to schedule and we skip the state.mutex
+    // acquisition entirely. Writes happen under state.mutex; reads are relaxed.
+    std::atomic<size_t> total_demanders{0};
 };
 
 class ConcurrencyControlRoundRobinScheduler
@@ -69,6 +96,10 @@ class ConcurrencyControlRoundRobinScheduler
 public:
     struct Allocation;
     using Waiters = std::list<Allocation *>;
+    // `demanders` is a subset of `waiters` containing only those with has_more_demand == true.
+    // Lazy schedule iterates this list (not the full waiters list) so the cost scales with
+    // the number of actively demanding allocations, not the total number of waiters.
+    using Demanders = std::list<Allocation *>;
 
     // Scoped guard for acquired slot, see Allocation::tryAcquire()
     struct Slot : public IAcquiredSlot
@@ -95,9 +126,12 @@ public:
         // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
         [[nodiscard]] AcquiredSlotPtr acquire() override;
 
+        // Signal whether the consumer currently wants more slots granted (see ISlotAllocation).
+        void setMoreDemand(bool value) override;
+
     private:
         friend struct Slot; // for release()
-        friend class ConcurrencyControlRoundRobinScheduler; // for grant(), free() and ctor
+        friend class ConcurrencyControlRoundRobinScheduler; // for grant(), free(), schedule() and ctor
 
         Allocation(ConcurrencyControlRoundRobinScheduler & parent_, SlotCount limit_, SlotCount granted_, Waiters::iterator waiter_ = {});
 
@@ -125,8 +159,15 @@ public:
         size_t last_slot_id = 0;
 
         std::atomic<SlotCount> granted; // allocated, but not yet acquired
+        std::atomic<bool> has_more_demand{true}; // consumer wants more slots granted (see setMoreDemand)
 
-        const Waiters::iterator waiter; // iterator to itself in Waiters list; valid iff allocated < limit
+        // Iterator to self in Waiters list; valid iff allocated < limit.
+        // Non-const so reclaim() can re-insert after a previously-saturated allocation gets
+        // its budget restored via setMoreDemand(false)/reclaim.
+        Waiters::iterator waiter;
+        // Iterator to self in Demanders list; valid iff `in_demanders` is true.
+        Demanders::iterator demander_iter;
+        bool in_demanders = false; // whether this allocation is currently in the demanders list
     };
 
     ConcurrencyControlRoundRobinScheduler(ConcurrencyControl & parent_, ConcurrencyControlState & state_);
@@ -140,19 +181,43 @@ public:
     // Use `Allocation::tryAcquire()` to acquire allocated slot, before running a thread.
     SlotAllocationPtr allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max);
 
-    // Round-robin scheduling of available slots among waiting allocations
-    void schedule(std::unique_lock<std::mutex> &);
+    // Round-robin scheduling of available slots among waiting allocations.
+    // In bulk mode (lazy=false): distributes ALL available capacity fairly. Used by release/setMaxConcurrency.
+    // In lazy mode (lazy=true): grants at most 1 slot to 1 waiter with granted==0. Used by notifyAcquired.
+    // lazy_grant: if true, skip waiters with granted > 0 (preserves fairness for release/notify paths).
+    // single_grant: if true, stop after 1 grant (only checked when lazy_grant=true).
+    // Default (lazy_grant=false, single_grant=false) is bulk mode — original eager distribution.
+    void schedule(std::unique_lock<std::mutex> &, bool lazy_grant = false, bool single_grant = false);
 
 private:
-    friend struct Allocation; // for free() and release()
+    friend struct Allocation; // for free(), release(), notifyAcquired(), notifyDemand() and reclaim()
 
     void free(Allocation * allocation);
     void release(SlotCount amount);
+
+    // Called by Allocation::tryAcquire() after a granted slot is consumed.
+    // Triggers lazy schedule to grant the next slot for one-at-a-time ramp-up.
+    void notifyAcquired();
+
+    // Called by Allocation::setMoreDemand() on false->true transition.
+    // Triggers lazy schedule so allocations that gained demand can be granted slots.
+    void notifyDemand();
+
+    // Called by Allocation::setMoreDemand(false) to return pending (granted but not acquired) slots.
+    // Atomically decrements cur_concurrency and updates the allocation's accounting.
+    void reclaim(Allocation * allocation, SlotCount amount);
+
+    // Demanders list maintenance. These require state.mutex. Invariant: demanders ⊆ waiters AND
+    // every allocation in demanders has has_more_demand == true.
+    void addDemanderLocked(Allocation * allocation);   // caller holds state.mutex
+    void removeDemanderLocked(Allocation * allocation); // caller holds state.mutex
 
     ConcurrencyControl & parent;
     ConcurrencyControlState & state;
     Waiters waiters;
     Waiters::iterator cur_waiter; // round-robin pointer
+    Demanders demanders; // subset of waiters with has_more_demand == true
+    Demanders::iterator cur_demander; // round-robin pointer for demanders
 };
 
 class ConcurrencyControlFairRoundRobinScheduler
@@ -160,6 +225,8 @@ class ConcurrencyControlFairRoundRobinScheduler
 public:
     struct Allocation;
     using Waiters = std::list<Allocation *>;
+    // See RoundRobinScheduler::Demanders.
+    using Demanders = std::list<Allocation *>;
 
     // Scoped guard for acquired slot, see Allocation::tryAcquire()
     struct Slot : public IAcquiredSlot
@@ -187,9 +254,12 @@ public:
         // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
         [[nodiscard]] AcquiredSlotPtr acquire() override;
 
+        // Signal whether the consumer currently wants more slots granted (see ISlotAllocation).
+        void setMoreDemand(bool value) override;
+
     private:
         friend struct Slot; // for release()
-        friend class ConcurrencyControlFairRoundRobinScheduler; // for grant(), free() and ctor
+        friend class ConcurrencyControlFairRoundRobinScheduler; // for grant(), free(), schedule() and ctor
 
         Allocation(ConcurrencyControlFairRoundRobinScheduler & parent_, SlotCount min_, SlotCount max, SlotCount granted_, Waiters::iterator waiter_ = {});
 
@@ -219,8 +289,13 @@ public:
 
         std::atomic<SlotCount> noncompeting; // allocated noncompeting slots, but not yet acquired
         std::atomic<SlotCount> granted; // allocated competing slots, but not yet acquired
+        std::atomic<bool> has_more_demand{true}; // consumer wants more slots granted (see setMoreDemand)
 
-        const Waiters::iterator waiter; // iterator to itself in Waiters list; valid iff allocated < limit
+        // Iterator to self in Waiters list; valid iff allocated < limit.
+        // Non-const so reclaim() can re-insert after a previously-saturated allocation.
+        Waiters::iterator waiter;
+        Demanders::iterator demander_iter; // valid iff `in_demanders` is true
+        bool in_demanders = false;
     };
 
     ConcurrencyControlFairRoundRobinScheduler(ConcurrencyControl & parent_, ConcurrencyControlState & state_);
@@ -234,19 +309,31 @@ public:
     // Use `Allocation::tryAcquire()` to acquire allocated slot, before running a thread.
     SlotAllocationPtr allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max);
 
-    // Round-robin scheduling of available slots among waiting allocations
-    void schedule(std::unique_lock<std::mutex> &);
+    // Round-robin scheduling of available slots among waiting allocations.
+    // Bulk mode (lazy=false) and lazy mode (lazy=true) — see RoundRobinScheduler for semantics.
+    // lazy_grant: if true, skip waiters with granted > 0 (preserves fairness for release/notify paths).
+    // single_grant: if true, stop after 1 grant (only checked when lazy_grant=true).
+    // Default (lazy_grant=false, single_grant=false) is bulk mode — original eager distribution.
+    void schedule(std::unique_lock<std::mutex> &, bool lazy_grant = false, bool single_grant = false);
 
 private:
-    friend struct Allocation; // for free() and release()
+    friend struct Allocation; // for free(), release(), notifyAcquired(), notifyDemand() and reclaim()
 
     void free(Allocation * allocation);
     void release(SlotCount amount);
+    void notifyAcquired();
+    void notifyDemand();
+    void reclaim(Allocation * allocation, SlotCount amount);
+
+    void addDemanderLocked(Allocation * allocation);
+    void removeDemanderLocked(Allocation * allocation);
 
     ConcurrencyControl & parent;
     ConcurrencyControlState & state;
     Waiters waiters;
     Waiters::iterator cur_waiter; // round-robin pointer
+    Demanders demanders;
+    Demanders::iterator cur_demander;
 };
 
 class ConcurrencyControlMaxMinFairScheduler
@@ -267,9 +354,12 @@ public:
         // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
         [[nodiscard]] AcquiredSlotPtr acquire() override;
 
+        // Signal whether the consumer currently wants more slots granted (see ISlotAllocation).
+        void setMoreDemand(bool value) override;
+
     private:
         friend struct Slot; // for release()
-        friend class ConcurrencyControlMaxMinFairScheduler; // for grant(), free() and ctor
+        friend class ConcurrencyControlMaxMinFairScheduler; // for grant(), free(), schedule() and ctor
         friend struct AllocationCompare;
 
         Allocation(ConcurrencyControlMaxMinFairScheduler & parent_, SlotCount min_, SlotCount max, SlotCount granted_, UInt64 sequence_number_);
@@ -297,9 +387,13 @@ public:
 
         std::atomic<SlotCount> noncompeting; // allocated noncompeting slots, but not yet acquired
         std::atomic<SlotCount> granted; // allocated competing slots, but not yet acquired
+        std::atomic<bool> has_more_demand{true}; // consumer wants more slots granted (see setMoreDemand)
 
         UInt64 sequence_number; // monotonically increasing counter for FIFO ordering
         boost::intrusive::set_member_hook<> waiters_hook; // intrusive hook for waiters set, use is_linked() to check if waiting
+        // Separate hook for the demanders set (subset of waiters with has_more_demand == true).
+        // See RoundRobinScheduler::Demanders.
+        boost::intrusive::set_member_hook<> demanders_hook;
     };
 
     // Scoped guard for acquired slot, see Allocation::tryAcquire()
@@ -328,6 +422,14 @@ public:
         boost::intrusive::compare<AllocationCompare>,
         boost::intrusive::member_hook<Allocation, boost::intrusive::set_member_hook<>, &Allocation::waiters_hook>
     >;
+    // Demanders is the same sort order as Waiters but contains only allocations with
+    // has_more_demand == true. Lazy schedule iterates this set so the hot path scales with the
+    // number of actively demanding allocations, not the total number of waiters.
+    using Demanders = boost::intrusive::set<
+        Allocation,
+        boost::intrusive::compare<AllocationCompare>,
+        boost::intrusive::member_hook<Allocation, boost::intrusive::set_member_hook<>, &Allocation::demanders_hook>
+    >;
 
     ConcurrencyControlMaxMinFairScheduler(ConcurrencyControl & parent_, ConcurrencyControlState & state_);
 
@@ -340,18 +442,37 @@ public:
     // Use `Allocation::tryAcquire()` to acquire allocated slot, before running a thread.
     SlotAllocationPtr allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max);
 
-    // Max-min fair scheduling of available slots among waiting allocations
-    void schedule(std::unique_lock<std::mutex> &);
+    // Max-min fair scheduling of available slots among waiting allocations.
+    // Bulk mode (lazy=false) and lazy mode (lazy=true) — see RoundRobinScheduler for semantics.
+    // lazy_grant: if true, skip waiters with granted > 0 (preserves fairness for release/notify paths).
+    // single_grant: if true, stop after 1 grant (only checked when lazy_grant=true).
+    // Default (lazy_grant=false, single_grant=false) is bulk mode — original eager distribution.
+    void schedule(std::unique_lock<std::mutex> &, bool lazy_grant = false, bool single_grant = false);
 
 private:
-    friend struct Allocation; // for free() and release()
+    friend struct Allocation; // for free(), release() and notifyAcquired()
 
     void free(Allocation * allocation);
     void release(SlotCount amount);
 
+    // Min-level lazy single grant: finds a waiter at the minimum allocation level with granted==0
+    // and demand, and grants 1 slot. Does not descend to higher-allocated waiters, preserving max-min fairness.
+    void notifyAcquired();
+
+    // Called on false->true demand transition — triggers lazy schedule.
+    void notifyDemand();
+
+    // Return pending slots to the pool on setMoreDemand(false).
+    void reclaim(Allocation * allocation, SlotCount amount);
+
+    // Demanders set maintenance (see RoundRobinScheduler). Caller holds state.mutex.
+    void addDemanderLocked(Allocation * allocation);
+    void removeDemanderLocked(Allocation * allocation);
+
     ConcurrencyControl & parent;
     ConcurrencyControlState & state;
     Waiters waiters;
+    Demanders demanders;
     UInt64 next_sequence_number = 0; // monotonically increasing counter for FIFO ordering
 };
 
@@ -377,9 +498,21 @@ public:
     // Returns the current scheduling algorithm
     String getScheduler() const;
 
+    // Emergency revert lever: when false, allocate() grants everything eagerly (pre-#88339).
+    // Default is true (lazy). Safe to toggle at runtime — only affects new allocations.
+    void setLazyAllocation(bool value);
+
+    // Returns the current value of the lazy allocation flag.
+    bool getLazyAllocation() const;
+
     // Schedule available slots to waiters.
     // Do not call directly, for internal use only.
-    void schedule(std::unique_lock<std::mutex> &);
+    // In bulk mode (lazy=false): distributes all available capacity fairly.
+    // In lazy mode (lazy=true): grants at most 1 slot to 1 waiter with granted==0.
+    // lazy_grant: if true, skip waiters with granted > 0 (preserves fairness for release/notify paths).
+    // single_grant: if true, stop after 1 grant (only checked when lazy_grant=true).
+    // Default (lazy_grant=false, single_grant=false) is bulk mode — original eager distribution.
+    void schedule(std::unique_lock<std::mutex> &, bool lazy_grant = false, bool single_grant = false);
 
 private:
     ConcurrencyControlState state;
