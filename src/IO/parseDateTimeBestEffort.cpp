@@ -130,6 +130,7 @@ ReturnType parseDateTimeBestEffortImpl(
     bool is_pm = false;
 
     bool has_comma_between_date_and_time = false;
+    bool has_fractional_separator = false;
 
     auto read_alpha_month = [&month] (const auto & alpha)
     {
@@ -562,8 +563,9 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (!has_time)
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected point symbol");
 
-                if (fractional && fractional->digits)
+                if (has_fractional_separator)
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: fractional part is duplicated");
+                has_fractional_separator = true;
 
                 ++in.position();
                 num_digits = readDigits(digits, sizeof(digits), in);
