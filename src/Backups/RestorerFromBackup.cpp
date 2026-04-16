@@ -330,7 +330,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_TABLE;
             }
 
-            if (!restore_settings.structure_only && table_info.has_data)
+            if (restore_settings.shouldRestoreTableData() && table_info.has_data)
             {
                 flags |= AccessType::INSERT;
             }
