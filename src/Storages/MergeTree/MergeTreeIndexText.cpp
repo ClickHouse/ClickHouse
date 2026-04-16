@@ -809,12 +809,14 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
     PostingListCodecPtr posting_list_codec_,
     SortedTokensAndPostings && tokens_and_postings_,
+    std::list<PostingListBuilder> && posting_list_builders_,
     TokenToPostingsBuilderMap && tokens_map_,
     std::unique_ptr<Arena> && arena_)
     : params(std::move(params_))
     , posting_list_codec(posting_list_codec_)
     , tokens_and_postings(std::move(tokens_and_postings_))
     , tokens_map(std::move(tokens_map_))
+    , posting_list_builders(std::move(posting_list_builders_))
     , arena(std::move(arena_))
     , logger(getLogger("TextIndexGranuleWriter"))
 {
@@ -1312,12 +1314,6 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
 {
 }
 
-void PostingListBuilder::add(UInt32 value)
-{
-    if (values.empty() || values.back() != value)
-        values.push_back(value);
-}
-
 PostingList PostingListBuilder::toPostingList() const
 {
     PostingList result;
@@ -1327,8 +1323,8 @@ PostingList PostingListBuilder::toPostingList() const
 
 size_t PostingListBuilder::getSizeInBytes() const
 {
-    if (values.capacity() > inlined_capacity)
-        return values.capacity() * sizeof(UInt32);
+    if (values.allocated_bytes() > inlined_bytes)
+        return values.allocated_bytes();
     return 0;
 }
 
@@ -1346,7 +1342,18 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};
             tokens_map.emplace(key_holder, it, inserted);
 
-            it->getMapped().add(static_cast<UInt32>(current_row));
+            if (inserted)
+            {
+                auto & builder = posting_list_builders.emplace_back();
+                builder.values.push_back(static_cast<UInt32>(current_row));
+                it->getMapped() = &builder;
+            }
+            else
+            {
+                if (it->getMapped()->values.back() != static_cast<UInt32>(current_row))
+                    it->getMapped()->values.push_back(static_cast<UInt32>(current_row));
+            }
+
             ++num_processed_tokens;
             return false;
         });
@@ -1365,7 +1372,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_values.emplace_back(key, &mapped);
+        sorted_values.emplace_back(key, mapped);
     });
 
     std::ranges::sort(sorted_values, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
@@ -1374,6 +1381,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
         params,
         posting_list_codec,
         std::move(sorted_values),
+        std::move(posting_list_builders),
         std::move(tokens_map),
         std::move(arena));
 }
@@ -1384,6 +1392,7 @@ void MergeTreeIndexTextGranuleBuilder::reset()
     current_row = 0;
     num_processed_tokens = 0;
     tokens_map = {};
+    posting_list_builders.clear();
     arena = std::make_unique<Arena>();
 }
 

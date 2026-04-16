@@ -7,6 +7,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
+#include <Common/PODArray_fwd.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <absl/container/btree_map.h>
@@ -87,18 +88,17 @@ using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
 
 /// A struct for building a posting list during INSERT.
-/// Uses absl::InlinedVector to store the first few row_ids inline (avoiding heap allocation
+/// Uses PODArrayWithStackMemory to store the first few row_ids inline (avoiding heap allocation
 /// for infrequent tokens) and spills to the heap when the posting list grows.
+/// Unlike InlinedVector, PODArray uses realloc for growth, which can often extend
+/// the allocation in-place without copying — a significant win for large posting lists.
 /// Values are always added in non-descending order, with duplicates skipped.
 /// Roaring bitmaps are only materialized at serialization time via `toPostingList`.
 struct PostingListBuilder
 {
-    /// Matches the previous max_small_size. The InlinedVector stores up to this many
-    /// elements inline (on the stack), avoiding heap allocations for rare tokens.
-    static constexpr size_t inlined_capacity = 6;
-
-    /// Appends a row_id. Values must arrive in non-descending order. Duplicates are skipped.
-    void add(UInt32 value);
+    static constexpr size_t inlined_bytes = 24;
+    /// Number of elements that fit in the inline buffer. Used for the static_assert below.
+    static constexpr size_t inlined_capacity = inlined_bytes / sizeof(UInt32);
 
     size_t size() const { return values.size(); }
     bool isEmpty() const { return values.empty(); }
@@ -112,13 +112,13 @@ struct PostingListBuilder
     /// Only called at serialization time for paths that need roaring internals.
     PostingList toPostingList() const;
 
-    /// Returns heap-allocated memory (bytes) used by the vector beyond the inline buffer.
+    /// Returns heap-allocated memory (bytes) used beyond the inline buffer.
     size_t getSizeInBytes() const;
 
-    absl::InlinedVector<UInt32, 6> values;
+    PODArrayWithStackMemory<UInt32, inlined_bytes> values;
 };
 
-using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
+using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder *>;
 using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
 struct TokenPostingsInfo;
 
@@ -346,6 +346,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         MergeTreeIndexTextParams params_,
         PostingListCodecPtr posting_list_codec_,
         SortedTokensAndPostings && tokens_and_postings_,
+        std::list<PostingListBuilder> && posting_list_builders_,
         TokenToPostingsBuilderMap && tokens_map_,
         std::unique_ptr<Arena> && arena_);
 
@@ -364,8 +365,8 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     /// Pointers to tokens and posting lists in the granule.
     SortedTokensAndPostings tokens_and_postings;
     /// tokens_and_postings has references to data held in the fields below.
-    /// Posting list data lives inside PostingListBuilder::values within the hash map cells.
     TokenToPostingsBuilderMap tokens_map;
+    std::list<PostingListBuilder> posting_list_builders;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
 };
@@ -396,8 +397,10 @@ struct MergeTreeIndexTextGranuleBuilder
     bool is_empty = true;
     UInt64 current_row = 0;
     UInt64 num_processed_tokens = 0;
-    /// Token → PostingListBuilder map. Posting list data lives in PostingListBuilder::values.
+    /// Token → PostingListBuilder map.
     TokenToPostingsBuilderMap tokens_map;
+    /// Owns PostingListBuilder objects. Provides stable pointers for the hash map.
+    std::list<PostingListBuilder> posting_list_builders;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
 };
