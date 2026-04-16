@@ -386,10 +386,6 @@ void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns,
             block.insert(ColumnWithTypeAndName{std::move(mutable_column), BlockOffsetColumn::type, column_name});
             block_columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
         }
-        else
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Materialization of column '{}' is not supported", column_name);
-        }
     }
 }
 
