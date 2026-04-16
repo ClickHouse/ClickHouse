@@ -566,8 +566,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
-    global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
-    global_ctx->virtual_columns = global_ctx->storage_snapshot->virtual_columns->getNamesAndTypesList();
+    global_ctx->storage_columns = global_ctx->metadata_snapshot->columns.getAllPhysical();
+    global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;

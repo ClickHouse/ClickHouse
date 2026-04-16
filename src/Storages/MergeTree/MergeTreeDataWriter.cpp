@@ -386,12 +386,16 @@ void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns,
             block.insert(ColumnWithTypeAndName{std::move(mutable_column), BlockOffsetColumn::type, column_name});
             block_columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
         }
+        else
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Materialization of column '{}' is not supported", column_name);
+        }
     }
 }
 
-bool hasVirtualColumnsInBlock(const Block & block, const NamesAndTypesList & virtual_columns)
+bool hasVirtualColumnsInBlock(const Block & block, const VirtualColumnsDescription & virtuals)
 {
-    for (const auto & col : virtual_columns)
+    for (const auto & col : virtuals)
         if (block.has(col.name))
             return true;
 
@@ -984,7 +988,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part,
         gathered_data,
         /*sync=*/(*data_settings)[MergeTreeSetting::fsync_after_insert],
-        /*init_index=*/!hasVirtualColumnsInBlock(block, data.getVirtualsList()));
+        /*init_index=*/!hasVirtualColumnsInBlock(block, metadata_snapshot->virtuals));
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -1138,7 +1142,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     out->writeWithPermutation(block, perm_ptr);
     out->finalizeIndexGranularity();
-    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, /*sync=*/false, /*init_index=*/!hasVirtualColumnsInBlock(block, data.getVirtualsList()));
+    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, /*sync=*/false, /*init_index=*/!hasVirtualColumnsInBlock(block, metadata_snapshot->virtuals));
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 

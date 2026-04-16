@@ -928,7 +928,6 @@ void MergeTreeData::checkProperties(
         }
     }
 
-    KeyDescription old_sorting_key = old_metadata.sorting_key;
     KeyDescription new_sorting_key = new_metadata.sorting_key;
     KeyDescription new_primary_key = new_metadata.primary_key;
 
