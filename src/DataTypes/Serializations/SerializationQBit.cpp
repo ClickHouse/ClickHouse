@@ -177,7 +177,9 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
 
     /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
     dst.resize(dimension);
-    writeVectorBinary(dst, ostr);
+    writeVarUInt(dst.size(), ostr);
+    for (const auto & element : dst)
+        writeBinaryLittleEndian(element, ostr);
 }
 
 template <typename FloatType>
@@ -198,7 +200,7 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
 
     for (size_t i = 0; i < dimension; i++)
     {
-        readFloatBinary(v, istr);
+        readBinaryLittleEndian(v, istr);
         std::memcpy(&w, &v, sizeof(Word));
         transposeBits<Word>(w, i, total_bits, plane_ptrs.data());
     }
@@ -288,7 +290,12 @@ void SerializationQBit::deserializeBinary(Field & field, ReadBuffer & istr, cons
 void SerializationQBit::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     /// Lambda to write the vector of floats to the output buffer
-    auto write_binary = [&ostr](const auto & dst) { writeVectorBinary(dst, ostr); };
+    auto write_binary = [&ostr](const auto & dst)
+    {
+        writeVarUInt(dst.size(), ostr);
+        for (const auto & element : dst)
+            writeBinaryLittleEndian(element, ostr);
+    };
 
     dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBit<FloatType>(column, row_num, write_binary); });
 }
@@ -297,7 +304,7 @@ void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, c
 {
     validateAndReadQBitSize(istr, settings);
 
-    auto read_binary = [&]<typename FloatType>(FloatType & v, size_t) { readBinary(v, istr); };
+    auto read_binary = [&]<typename FloatType>(FloatType & v, size_t) { readBinaryLittleEndian(v, istr); };
 
     auto deserialize = [&]() -> bool
     {

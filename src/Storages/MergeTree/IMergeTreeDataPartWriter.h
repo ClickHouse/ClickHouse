@@ -39,7 +39,6 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const MergeTreeWriterSettings & settings_,
         MergeTreeIndexGranularityPtr index_granularity_);
 
@@ -80,7 +79,6 @@ protected:
     const MergeTreeIndexGranularityInfo index_granularity_info;
     const MergeTreeSettingsPtr storage_settings;
     const StorageMetadataPtr metadata_snapshot;
-    const VirtualsDescriptionPtr virtual_columns;
     const NamesAndTypesList columns_list;
     const MergeTreeWriterSettings settings;
     const bool with_final_mark;
@@ -108,7 +106,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const NamesAndTypesList & columns_list,
         const ColumnPositions & column_positions,
         const StorageMetadataPtr & metadata_snapshot,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec_,

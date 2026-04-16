@@ -41,9 +41,6 @@ struct ReplicatedMergeTreeTableMetadata
     String ttl_table;
     UInt64 index_granularity_bytes;
 
-    /// Storage virtual columns for type resolution during key expression analysis.
-    NamesAndTypesList virtual_columns;
-
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
 
@@ -90,12 +87,13 @@ struct ReplicatedMergeTreeTableMetadata
                 && !ttl_table_changed && !constraints_changed;
         }
 
-        StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
+        StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
     bool checkEquals(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const ColumnsDescription & columns,
+        const VirtualColumnsDescription & virtuals,
         const std::string & table_name_for_error_message,
         ContextPtr context,
         bool check_index_granularity = true,
@@ -105,15 +103,16 @@ struct ReplicatedMergeTreeTableMetadata
     Diff checkAndFindDiff(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const ColumnsDescription & columns,
+        const VirtualColumnsDescription & virtuals,
         const std::string & table_name_for_error_message,
         ContextPtr context,
         bool check_index_granularity = true) const;
 
 private:
-
     void checkImmutableFieldsEquals(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const ColumnsDescription & columns,
+        const VirtualColumnsDescription & virtuals,
         const std::string & table_name_for_error_message,
         ContextPtr context,
         bool check_index_granularity = true) const;

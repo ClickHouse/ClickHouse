@@ -18,6 +18,14 @@ The `FROM` clause specifies the source to read data from:
 
 Subquery is another `SELECT` query that may be specified in parenthesis inside `FROM` clause.
 
+A SQL standard `VALUES` clause can also be used as a table expression:
+
+```sql
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+See [Values table function](/sql-reference/table-functions/values#sql-standard-values-clause) for more details.
+
 The `FROM` can contain multiple data sources, separated by commas, which is equivalent of performing [CROSS JOIN](../../../sql-reference/statements/select/join.md) on them.
 
 `FROM` can optionally appear before a `SELECT` clause. This is a ClickHouse-specific extension of standard SQL which makes `SELECT` statements easier to read. Example:

@@ -155,14 +155,11 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
 {
     /// NOTE: It is safe to modify AST without lock since alterTable() is called under IStorage::lockForShare()
     ASTPtr create_query;
-    NamesAndTypesList virtual_columns_list;
     {
         std::lock_guard lock{mutex};
         auto it = tables.find(table_id.table_name);
         if (it == tables.end() || (table_id.uuid != UUIDHelpers::Nil && it->second->getStorageID().uuid != table_id.uuid))
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
-
-        virtual_columns_list = it->second->getVirtualsPtr()->getNamesAndTypesList();
 
         auto it_query = create_queries.find(table_id.table_name);
         if (it_query == create_queries.end() || !it_query->second)
@@ -173,7 +170,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
 
     /// Apply metadata changes without holding a lock to avoid possible deadlock
     /// (i.e. when ALTER contains IN (table))
-    applyMetadataChangesToCreateQuery(create_query, metadata, virtual_columns_list, local_context, validate_new_create_query);
+    applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());

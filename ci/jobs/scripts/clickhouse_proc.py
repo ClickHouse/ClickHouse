@@ -38,6 +38,19 @@ CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
 CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
+def collect_and_encrypt_cores(directory, key_path: str, aes_key_path: str = None) -> List[str]:
+    if aes_key_path is None:
+        aes_key_path = str(Path(directory) / "aes.key")
+    encrypted = []
+    for core in sorted(Path(directory).glob("core.*"))[:3]:
+        if not core.name.endswith(".zst") and not core.name.endswith(".enc"):
+            zst_path = Utils.compress_zst(core)
+            encrypted.append(Utils.encrypt(str(zst_path), key_path, aes_key_path))
+    if encrypted and Path(f"{aes_key_path}.rsa").exists():
+        encrypted.append(f"{aes_key_path}.rsa")
+    return encrypted
+
+
 class ClickHouseProc:
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
@@ -55,11 +68,13 @@ class ClickHouseProc:
         self,
         is_db_replicated=False,
         is_shared_catalog=False,
+        is_per_test_coverage=False,
         ch_config_dir="/etc/clickhouse-server",
         ch_var_lib_dir="/var/lib/clickhouse",
     ):
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
+        self.is_per_test_coverage = is_per_test_coverage
         self.ch_config_dir = ch_config_dir
         self.ch_var_lib_dir = ch_var_lib_dir
         self.run_path0 = f"{temp_dir}/run_r0"
@@ -164,13 +179,13 @@ class ClickHouseProc:
 
     def start_azurite(self):
         command = (
-            f"cd {temp_dir} && azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
+            f"cd {temp_dir} && azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory",
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
-        print(f"Started azurite asynchronously with PID {self.azurite_proc.pid}")
+        print(f"Started azurite-rs asynchronously with PID {self.azurite_proc.pid}")
         return True
 
     def start_kafka(self):
@@ -210,32 +225,18 @@ class ClickHouseProc:
 
         os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
         os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = (
-            "1"
-        )
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "1"
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
         os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.001"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = (
-            "10000"
-        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
         os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = (
-            "10000"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = (
-            "10000"
-        )
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
 
     @staticmethod
     def set_memory_ratio(ratio):
@@ -466,8 +467,10 @@ profiles:
             Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
         )
 
-        # set profile file for the server
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
+        # set profile file for the server (not needed for per-test coverage,
+        # which uses system.coverage_log instead of .profraw files)
+        if not self.is_per_test_coverage:
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
 
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
@@ -709,7 +712,10 @@ clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < ./tests/docker_scripts/create.sql
 bash ./tests/docker_scripts/create_tpcds.sh
+bash ./tests/docker_scripts/create_tpch.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM tpcds"
+clickhouse-client --query "SHOW TABLES FROM tpch"
 
 clickhouse-client --query "CREATE DATABASE test"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -725,6 +731,7 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
     clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
     clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
     clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
+    # Note: `tpcds` and `tpch` databases are NOT dropped here as they are used by stateful tests.
 else
     clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
     clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
@@ -781,15 +788,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
             try:
                 process.wait(timeout=timeout)
+                reader_thread.join()
+                return process.returncode == 0
             except subprocess.TimeoutExpired:
-                print(f"ERROR: fast test timed out after {timeout}s, killing process group")
+                print(
+                    f"ERROR: fast test timed out after {timeout}s, killing process group"
+                )
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.wait()
                 reader_thread.join()
                 return False
-
-            reader_thread.join()
-            return process.returncode == 0
+            finally:
+                # Kill any test processes that survived clickhouse-test's own cleanup
+                # (e.g. if it was killed with SIGKILL before its signal handlers ran).
+                # clickhouse-test writes the group pid file itself on startup; --cleanup
+                # reads it and kills all orphaned test process groups.
+                _clickhouse_test = Path(__file__).resolve().parent.parent.parent.parent / "tests" / "clickhouse-test"
+                subprocess.run([sys.executable, str(_clickhouse_test), "--cleanup"], check=False)
 
     def terminate(self, force=False):
         if self.minio_proc:
@@ -866,8 +881,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
-                if Path(f"{self.aes_key}.rsa").exists():
-                    res.append(f"{self.aes_key}.rsa")
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -892,11 +905,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
-        cores = list(p_temp_dir.glob("run_r*/core.*"))[:3]
-        return [
-            Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/ci/defs/public.pem", self.aes_key)
-            for f in cores
-        ]
+        result = []
+        for run_dir in sorted(p_temp_dir.glob("run_r*")):
+            result.extend(
+                collect_and_encrypt_cores(
+                    run_dir, f"{repo_dir}/ci/defs/public.pem", self.aes_key
+                )
+            )
+        return result
 
     @classmethod
     def _get_logs_archive_coordination(cls):

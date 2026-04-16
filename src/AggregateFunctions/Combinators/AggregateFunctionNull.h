@@ -169,7 +169,28 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
+        if constexpr (result_is_nullable)
+            if (getFlag(rhs))
+                setFlag(place);
+
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, is_cancelled, arena);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (result_is_nullable)
+            for (size_t i = 1; i < places.size(); ++i)
+                if (getFlag(places[i]))
+                {
+                    setFlag(places[0]);
+                    break;
+                }
+
+        AggregateDataPtrs nested_places(places.size());
+        for (size_t i = 0; i < places.size(); ++i)
+            nested_places[i] = nestedPlace(places[i]);
+
+        nested_function->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

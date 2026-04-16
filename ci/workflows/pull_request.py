@@ -49,25 +49,26 @@ workflow = Workflow.Config(
         JobConfigs.code_review,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
+        *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
-        *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
+        *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
         *[
-            job.set_dependency(STYLE_AND_FAST_TESTS)
+            job.set_run_after(STYLE_AND_FAST_TESTS)
             for job in JobConfigs.extra_validation_build_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.release_build_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
-        *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
+        *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
         JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
         JobConfigs.lightweight_functional_tests_job,
-        JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
+        *[j.set_allow_merge_on_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
         JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_merge_on_failure(),
@@ -76,7 +77,7 @@ workflow = Workflow.Config(
         JobConfigs.bugfix_validation_ft_pr_job,
         JobConfigs.bugfix_validation_it_job,
         *[
-            j.set_dependency(
+            j.set_run_after(
                 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
                 if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
                 else []
@@ -84,57 +85,59 @@ workflow = Workflow.Config(
             for j in JobConfigs.functional_tests_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.functional_tests_jobs_azure
         ],
         *JobConfigs.functional_test_llvm_coverage_jobs,
+        *JobConfigs.functional_test_excluded_from_llvm_job,
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_required[:]
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
         *JobConfigs.integration_test_llvm_coverage_jobs,
+        *JobConfigs.integration_test_excluded_from_llvm_job,
         *JobConfigs.unittest_jobs,
         *JobConfigs.unittest_llvm_coverage_job,
-        JobConfigs.docker_server.set_dependency(
+        JobConfigs.docker_server.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
-        JobConfigs.docker_keeper.set_dependency(
+        JobConfigs.docker_keeper.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.install_check_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.compatibility_test_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.stress_test_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.upgrade_test_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.ast_fuzzer_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.buzz_fuzzer_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
         JobConfigs.llvm_coverage_job,
-        JobConfigs.sqllogic_test_master_job.set_dependency(
+        JobConfigs.sqllogic_test_master_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
@@ -144,9 +147,9 @@ workflow = Workflow.Config(
             .set_timeout(3 * 3600),
         *JobConfigs.toolchain_build_jobs,
         # TODO: uncomment when praktika supports depends-on-all-jobs;
-        # currently set_dependency requires an explicit list, but CI Results Review
+        # currently set_run_after requires an explicit list, but CI Results Review
         # should only run after every other job has finished.
-        # JobConfigs.ci_results_review.set_dependency(
+        # JobConfigs.ci_results_review.set_run_after(
         #     FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         # ),
     ],

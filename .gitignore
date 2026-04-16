@@ -1,3 +1,6 @@
+# local CI environment overrides (see ci/local.env.example)
+ci/local.env
+
 # emacs files
 *~
 *\#
@@ -12,6 +15,10 @@
 /build
 /build_*
 /build-*
+
+# e2e test credentials (copy from .env.example and fill in)
+.env
+/tests/integration/.env
 /ci/tmp
 /tests/venv
 /obj-x86_64-linux-gnu/

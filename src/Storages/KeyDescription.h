@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
@@ -45,12 +46,6 @@ struct KeyDescription
     /// but added to expression_list_ast and all its derivatives.
     NamesAndTypesList additional_columns;
 
-    /// Virtual columns whose types must be available for expression analysis
-    /// (via `getColumnsForAnalysis`) but are NOT appended to the key columns
-    /// (unlike `additional_columns`). Used for virtual columns like `_block_number`
-    /// that appear in the key AST but are not in `ColumnsDescription`.
-    NamesAndTypesList virtual_columns;
-
     /// ID of this specific order by key, make sense for engines which allow to change sorting key
     /// for example Iceberg.
     std::optional<Int32> sort_order_id;
@@ -62,7 +57,7 @@ struct KeyDescription
     static KeyDescription getKeyFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
-        const NamesAndTypesList & virtual_columns,
+        const VirtualColumnsDescription & virtuals,
         const ContextPtr & context,
         const NamesAndTypesList & additional_columns = {});
 
@@ -74,6 +69,7 @@ struct KeyDescription
     /// changes in constant fields. Just wrapper for static methods.
     void recalculateWithNewColumns(
         const ColumnsDescription & new_columns,
+        const VirtualColumnsDescription & virtuals,
         const ContextPtr & context);
 
     /// Recalculate all expressions and fields for key with new ast without
@@ -81,11 +77,8 @@ struct KeyDescription
     void recalculateWithNewAST(
         const ASTPtr & new_ast,
         const ColumnsDescription & columns,
+        const VirtualColumnsDescription & virtuals,
         const ContextPtr & context);
-
-    /// Returns all physical columns plus any additional_columns not already present.
-    NamesAndTypesList getColumnsForAnalysis(const ColumnsDescription & columns) const;
-    NamesAndTypesList getColumnsForAnalysis(const NamesAndTypesList & columns) const;
 
     ASTPtr getOriginalExpressionList() const;
 
@@ -103,7 +96,7 @@ struct KeyDescription
     static KeyDescription parse(
         const String & str,
         const ColumnsDescription & columns,
-        const NamesAndTypesList & virtual_columns,
+        const VirtualColumnsDescription & virtuals,
         const ContextPtr & context,
         bool allow_order);
 };

@@ -75,7 +75,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         columns_list,
         data_part->getColumnPositions(),
         metadata_snapshot,
-        data_part->storage.getVirtualsPtr(),
         skip_indices,
         data_part->getMarksFileExtension(),
         default_codec,

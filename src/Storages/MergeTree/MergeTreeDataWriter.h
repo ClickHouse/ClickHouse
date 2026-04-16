@@ -5,7 +5,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 
-#include <Columns/ColumnsNumber.h>
 
 #include <Interpreters/sortBlock.h>
 

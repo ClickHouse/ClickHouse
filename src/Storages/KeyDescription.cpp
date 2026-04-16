@@ -1,4 +1,5 @@
 #include <Storages/KeyDescription.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -32,7 +33,6 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , reverse_flags(other.reverse_flags)
     , data_types(other.data_types)
     , additional_columns(other.additional_columns)
-    , virtual_columns(other.virtual_columns)
     , sort_order_id(other.sort_order_id)
 {
     if (other.expression)
@@ -67,11 +67,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
     if (!additional_columns.empty() && other.additional_columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_columns");
 
-    if (!virtual_columns.empty() && other.virtual_columns.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing virtual_columns");
-
     additional_columns = other.additional_columns;
-    virtual_columns = other.virtual_columns;
     sort_order_id = other.sort_order_id;
     return *this;
 }
@@ -79,16 +75,18 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 void KeyDescription::recalculateWithNewAST(
     const ASTPtr & new_ast,
     const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
     const ContextPtr & context)
 {
-    *this = getKeyFromAST(new_ast, columns, virtual_columns, context, additional_columns);
+    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns);
 }
 
 void KeyDescription::recalculateWithNewColumns(
     const ColumnsDescription & new_columns,
+    const VirtualColumnsDescription & virtuals,
     const ContextPtr & context)
 {
-    *this = getKeyFromAST(definition_ast, new_columns, virtual_columns, context, additional_columns);
+    *this = getKeyFromAST(definition_ast, new_columns, virtuals, context, additional_columns);
 }
 
 bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
@@ -118,14 +116,14 @@ bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
 
 /// Build expression_list_ast, column_names, and reverse_flags from key children and additional columns.
 std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
-    const ASTs & children,
+    const ASTPtr & key_expression_list,
     const NamesAndTypesList & additional_columns)
 {
     auto expression_list_ast = make_intrusive<ASTExpressionList>();
     Names column_names;
     std::vector<bool> reverse_flags;
 
-    for (const auto & child : children)
+    for (const auto & child : key_expression_list->children)
     {
         auto real_key = child;
         if (auto * elem = child->as<ASTStorageOrderByElement>())
@@ -157,18 +155,17 @@ std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
 KeyDescription KeyDescription::getKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    const NamesAndTypesList & virtual_columns,
+    const VirtualColumnsDescription & virtuals,
     const ContextPtr & context,
     const NamesAndTypesList & additional_columns)
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
     result.additional_columns = additional_columns;
-    result.virtual_columns = virtual_columns;
     auto key_expression_list = extractKeyExpressionList(definition_ast);
     checkExpressionDoesntContainSubqueries(*key_expression_list);
 
-    std::tie(result.expression_list_ast, result.column_names, result.reverse_flags) = buildKeyColumns(key_expression_list->children, additional_columns);
+    std::tie(result.expression_list_ast, result.column_names, result.reverse_flags) = buildKeyColumns(key_expression_list, additional_columns);
     if (!result.reverse_flags.empty() && result.reverse_flags.size() != result.expression_list_ast->children.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -177,7 +174,7 @@ KeyDescription KeyDescription::getKeyFromAST(
 
     {
         auto expr = result.expression_list_ast->clone();
-        auto all_columns = result.getColumnsForAnalysis(columns);
+        auto all_columns = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals);
         auto syntax_result = TreeRewriter(context).analyze(expr, all_columns);
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
@@ -205,21 +202,6 @@ KeyDescription KeyDescription::getKeyFromAST(
         check(*result.data_types.back());
         result.data_types.back()->forEachChild(check);
     }
-
-    return result;
-}
-
-NamesAndTypesList KeyDescription::getColumnsForAnalysis(const ColumnsDescription & columns) const
-{
-    return getColumnsForAnalysis(columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
-}
-
-NamesAndTypesList KeyDescription::getColumnsForAnalysis(const NamesAndTypesList & columns) const
-{
-    auto result = columns;
-    for (const auto & col : virtual_columns)
-        if (!result.contains(col.name))
-            result.push_back(col);
 
     return result;
 }
@@ -253,7 +235,7 @@ KeyDescription KeyDescription::buildEmptyKey()
 KeyDescription KeyDescription::parse(
     const String & str,
     const ColumnsDescription & columns,
-    const NamesAndTypesList & virtual_columns,
+    const VirtualColumnsDescription & virtuals,
     const ContextPtr & context,
     bool allow_order)
 {
@@ -265,7 +247,7 @@ KeyDescription KeyDescription::parse(
     ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getKeyFromAST(ast, columns, virtual_columns, context);
+    return getKeyFromAST(ast, columns, virtuals, context);
 }
 
 }

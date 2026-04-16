@@ -2,7 +2,7 @@ services:
   glue:
     image: motoserver/moto:5.1.5
     ports:
-      - 3000:3000
+      - "${GLUE_CATALOG_PORT}:3000"
     environment:
       - MOTO_PORT=3000
     healthcheck:

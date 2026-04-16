@@ -63,7 +63,7 @@ TEST(SupportsTrivialCountOptimization, NullMutationsSnapshot)
     auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
     auto partition_key = metadata.partition_key.expression_list_ast->clone();
     metadata.minmax_count_projection.emplace(
-        ProjectionDescription::getMinMaxCountProjection(columns, partition_key, minmax_columns, metadata.primary_key, context));
+        ProjectionDescription::getMinMaxCountProjection(columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
 
     auto storage_settings = std::make_unique<MergeTreeSettings>(context->getMergeTreeSettings());
 
@@ -78,7 +78,7 @@ TEST(SupportsTrivialCountOptimization, NullMutationsSnapshot)
         MergeTreeData::MergingParams{},
         std::move(storage_settings));
 
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
     /// Case 1: Null StorageSnapshot entirely (already handled by existing code before our fix).
     {
