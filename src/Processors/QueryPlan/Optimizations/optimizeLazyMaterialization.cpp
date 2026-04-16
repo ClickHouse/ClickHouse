@@ -1,4 +1,5 @@
 #include <memory>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -31,9 +32,6 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
         return false;
 
     if (reading->isQueryWithSampling())
-        return false;
-
-    if (reading->isVectorColumnReplaced())
         return false;
 
     return true;
