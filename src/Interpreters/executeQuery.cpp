@@ -14,6 +14,7 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -78,7 +79,9 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -167,6 +170,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool query_cache_before_limit_and_order_by;
     extern const SettingsBool query_cache_compress_entries;
+    extern const SettingsBool query_cache_partial_results;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
     extern const SettingsMilliseconds query_cache_min_query_duration;
@@ -1700,7 +1704,8 @@ static BlockIO executeQueryImpl(
             auto get_result_from_query_result_cache = [&]()
             {
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache]
-                    && !settings[Setting::query_cache_before_limit_and_order_by])
+                    && !settings[Setting::query_cache_before_limit_and_order_by]
+                    && !settings[Setting::query_cache_partial_results])
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
@@ -1969,12 +1974,154 @@ static BlockIO executeQueryImpl(
                         }
                     }
 
+                    /// Partial results caching: insert cache steps at every non-leaf level of the QueryPlan,
+                    /// keyed by prefix hash (step type + parameters + children hashes).
+                    if (can_use_query_result_cache && settings[Setting::query_cache_partial_results])
+                    {
+                        auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get());
+                        if (interpreter_with_analyzer)
+                        {
+                            auto & plan = interpreter_with_analyzer->getQueryPlan();
+
+                            /// Compute a prefix hash for a sub-plan rooted at `node`.
+                            /// The hash includes step type, parameters (via describeActions), output header, and children hashes.
+                            std::function<IASTHash(QueryPlan::Node *)> compute_prefix_hash =
+                                [&](QueryPlan::Node * node) -> IASTHash
+                            {
+                                SipHash hash;
+                                hash.update(node->step->getName());
+
+                                /// Hash step parameters via describeActions
+                                WriteBufferFromOwnString desc_buf;
+                                IQueryPlanStep::FormatSettings fmt{.out = desc_buf, .header_prefix = "", .detail_prefix = ""};
+                                node->step->describeActions(fmt);
+                                hash.update(desc_buf.str());
+
+                                /// Hash output header (column names and types)
+                                const auto & hdr = node->step->getOutputHeader();
+                                for (const auto & col : *hdr)
+                                {
+                                    hash.update(col.name);
+                                    hash.update(col.type->getName());
+                                }
+
+                                /// Chain: include children hashes
+                                for (auto * child : node->children)
+                                {
+                                    auto child_hash = compute_prefix_hash(child);
+                                    hash.update(child_hash.low64);
+                                    hash.update(child_hash.high64);
+                                }
+
+                                return getSipHash128AsPair(hash);
+                            };
+
+                            /// Try to read from cache: walk top-down, find highest-level cache hit.
+                            bool partial_cache_hit = false;
+
+                            std::function<bool(QueryPlan::Node *)> try_cache_read =
+                                [&](QueryPlan::Node * node) -> bool
+                            {
+                                if (!node || node->children.empty())
+                                    return false;
+
+                                for (size_t i = 0; i < node->children.size(); ++i)
+                                {
+                                    auto * child = node->children[i];
+                                    if (child->children.empty())
+                                        continue; /// skip leaf nodes (sources)
+
+                                    auto prefix_hash = compute_prefix_hash(child);
+                                    QueryResultCache::Key read_key(
+                                        prefix_hash,
+                                        context->getCurrentQueryId(),
+                                        context->getUserID(), context->getCurrentRoles());
+
+                                    auto reader = query_result_cache->createReader(read_key);
+                                    if (reader.hasCacheEntryForKey())
+                                    {
+                                        auto source = reader.getSource();
+                                        Pipe pipe(std::move(source));
+                                        QueryPlan source_plan;
+                                        source_plan.addStep(std::make_unique<ReadFromPreparedSource>(std::move(pipe)));
+                                        plan.replaceNodeWithPlan(child, std::move(source_plan));
+                                        query_result_cache_usage = QueryResultCacheUsage::Read;
+                                        return true; /// found a hit, stop
+                                    }
+                                }
+
+                                /// No hit at this level, try children
+                                for (auto * child : node->children)
+                                    if (try_cache_read(child))
+                                        return true;
+
+                                return false;
+                            };
+
+                            if (settings[Setting::enable_reads_from_query_cache])
+                                partial_cache_hit = try_cache_read(plan.getRootNode());
+
+                            /// On cache miss: insert write steps at every non-leaf, non-source level
+                            if (!partial_cache_hit && settings[Setting::enable_writes_to_query_cache])
+                            {
+                                auto created_at = std::chrono::system_clock::now();
+                                auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+
+                                std::function<void(QueryPlan::Node *)> insert_write_steps =
+                                    [&](QueryPlan::Node * node)
+                                {
+                                    if (!node)
+                                        return;
+
+                                    for (size_t i = 0; i < node->children.size(); ++i)
+                                    {
+                                        auto * child = node->children[i];
+                                        if (child->children.empty())
+                                            continue; /// skip leaf nodes
+
+                                        auto prefix_hash = compute_prefix_hash(child);
+                                        auto child_header = child->step->getOutputHeader();
+                                        auto shared_header = std::make_shared<const Block>(*child_header);
+
+                                        QueryResultCache::Key write_key(
+                                            prefix_hash, shared_header,
+                                            context->getCurrentQueryId(),
+                                            context->getUserID(), context->getCurrentRoles(),
+                                            settings[Setting::query_cache_share_between_users],
+                                            created_at, expires_at,
+                                            settings[Setting::query_cache_compress_entries]);
+
+                                        auto writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                                            write_key,
+                                            std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                            settings[Setting::query_cache_squash_partial_results],
+                                            settings[Setting::max_block_size],
+                                            settings[Setting::query_cache_max_size_in_bytes],
+                                            settings[Setting::query_cache_max_entries]));
+
+                                        auto write_step = std::make_unique<WriteToQueryResultCacheStep>(shared_header, writer);
+                                        plan.insertStep(node, i, std::move(write_step));
+
+                                        /// After insertStep, node->children[i] is now the cache step,
+                                        /// and its child is the original child. Recurse into the original child.
+                                        if (node->children[i]->children.size() == 1)
+                                            insert_write_steps(node->children[i]->children[0]);
+                                    }
+                                };
+
+                                insert_write_steps(plan.getRootNode());
+                                query_result_cache_usage = QueryResultCacheUsage::Write;
+                            }
+                        }
+                    }
+
                     res = interpreter->execute();
 
                     /// If it is a non-internal SELECT query, and active (write) use of the query result cache is enabled, then add a
                     /// processor on top of the pipeline which stores the result in the query result cache.
                     if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache]
-                        && !settings[Setting::query_cache_before_limit_and_order_by])
+                        && !settings[Setting::query_cache_before_limit_and_order_by]
+                        && !settings[Setting::query_cache_partial_results])
                     {
                         /// Only use the query result cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
 

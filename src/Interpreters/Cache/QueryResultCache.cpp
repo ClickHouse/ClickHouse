@@ -410,6 +410,48 @@ QueryResultCache::Key::Key(
 {
 }
 
+QueryResultCache::Key::Key(
+    IASTHash precomputed_hash,
+    SharedHeader header_,
+    const String & query_id_,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_,
+    bool is_shared_,
+    std::chrono::time_point<std::chrono::system_clock> created_at_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
+    bool is_compressed_)
+    : ast_hash(precomputed_hash)
+    , header(header_)
+    , user_id(user_id_)
+    , current_user_roles(current_user_roles_)
+    , is_shared(is_shared_)
+    , created_at(created_at_)
+    , expires_at(expires_at_)
+    , is_compressed(is_compressed_)
+    , query_string("partial_result")
+    , query_id(query_id_)
+    , tag("")
+{
+}
+
+QueryResultCache::Key::Key(
+    IASTHash precomputed_hash,
+    const String & query_id_,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_)
+    : QueryResultCache::Key(
+            precomputed_hash,
+            std::make_shared<const Block>(Block{}),
+            query_id_,
+            user_id_,
+            current_user_roles_,
+            false,
+            std::chrono::system_clock::from_time_t(1),
+            std::chrono::system_clock::from_time_t(1),
+            false)
+{
+}
+
 bool QueryResultCache::Key::operator==(const Key & other) const
 {
     return ast_hash == other.ast_hash;

@@ -5387,6 +5387,17 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, query_cache_partial_results, false, R"(
+If enabled, intermediate results at each stage of the query execution plan are cached in the [query cache](../query-cache.md).
+This allows structurally similar queries that share a common prefix (e.g. same filter, different aggregation) to reuse
+intermediate results. Each plan step is identified by a prefix hash that includes the step type, parameters, and all
+preceding steps. Mutually exclusive with regular query result caching and `query_cache_before_limit_and_order_by`.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(String, query_cache_tag, "", R"(
 A string which acts as a label for [query cache](../query-cache.md) entries.
 The same queries with different tags are considered different by the query cache.

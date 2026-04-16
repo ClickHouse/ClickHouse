@@ -121,6 +121,22 @@ public:
             bool strip_order_by_and_limit = false,
             const Block * pre_sort_header = nullptr);
 
+        /// Ctor for partial results caching with a pre-computed prefix hash (no AST needed).
+        /// Write variant:
+        Key(IASTHash precomputed_hash,
+            SharedHeader header_,
+            const String & query_id_,
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            bool is_shared_,
+            std::chrono::time_point<std::chrono::system_clock> created_at_,
+            std::chrono::time_point<std::chrono::system_clock> expires_at_,
+            bool is_compressed);
+
+        /// Read variant:
+        Key(IASTHash precomputed_hash,
+            const String & query_id_,
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+
         bool operator==(const Key & other) const;
     };
 
