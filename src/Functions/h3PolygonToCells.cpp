@@ -14,6 +14,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -28,6 +30,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_COLUMN;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace
@@ -79,7 +82,12 @@ class FunctionH3PolygonToCells : public IFunction
 public:
     static constexpr auto name = "h3PolygonToCells";
     String getName() const override { return name; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3PolygonToCells>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3PolygonToCells>(context); }
+
+    explicit FunctionH3PolygonToCells(ContextPtr context)
+        : process_list_element(context ? context->getProcessListElement() : nullptr)
+    {
+    }
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -155,6 +163,9 @@ public:
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {
+                if (process_list_element && process_list_element->isKilled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
                 if (!is_const_resolution)
                     resolution = get_resolution(row);
 
@@ -208,14 +219,13 @@ public:
                     dst_offsets[row] = current_offset;
                 }
             }
-        }
-        );
-
+        });
 
         return dst;
     }
 
 private:
+    QueryStatusPtr process_list_element;
 
     class GeoPolygonContainer
     {

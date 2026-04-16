@@ -14,7 +14,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/BloomFilter.h>
 
 namespace DB

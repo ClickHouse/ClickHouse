@@ -29,19 +29,21 @@ from .utils import Shell, TeePopen, Utils
 _GH_authenticated = False
 
 
-def _GH_Auth(workflow):
+def _GH_Auth():
     global _GH_authenticated
     if _GH_authenticated:
-        return
+        return True
     if not Settings.USE_CUSTOM_GH_AUTH:
-        return
+        return True
     from .gh_auth import GHAuth
 
-    if not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
-    _GH_authenticated = True
+    try:
+        GHAuth.auth_from_settings()
+        _GH_authenticated = True
+        return True
+    except Exception as e:
+        print(f"WARNING: GH auth failed: {e}")
+        return False
 
 
 class Runner:
@@ -70,6 +72,7 @@ class Runner:
             cache_artifacts={},
             cache_jobs={},
             filtered_jobs={},
+            submodule_cache_hash="",
             custom_data={},
         )
         # Extract repository name from git remote (format: owner/repo)
@@ -181,9 +184,9 @@ class Runner:
         if job.requires and not _is_praktika_job(job.name):
             print("Download required artifacts")
             required_artifacts = []
-            # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
-            #  this artifact is created to replace legacy build_report and maintain seamless transition to praktika
-            #  once there is no need for this "hacky" artifact report - second condition in "if" can be removed
+            job_names_with_provides = {
+                j.name for j in workflow.jobs if j.provides
+            }
             for requires_artifact_name in job.requires:
                 for artifact in workflow.artifacts:
                     if (
@@ -191,14 +194,11 @@ class Runner:
                         and artifact.type == Artifact.Type.S3
                     ):
                         required_artifacts.append(artifact)
+                        break
                 else:
-                    if (
-                        requires_artifact_name
-                        in [job.name for job in workflow.jobs if job.provides]
-                        and Settings.ENABLE_ARTIFACTS_REPORT
-                    ):
+                    if requires_artifact_name in job_names_with_provides:
                         print(
-                            f"Artifact report for [{requires_artifact_name}] will be uploaded"
+                            f"Artifact report for [{requires_artifact_name}] will be downloaded"
                         )
                         required_artifacts.append(
                             Artifact.Config(
@@ -243,16 +243,44 @@ class Runner:
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
-                        # Job report (phony artifact) is required only for a few jobs, introduced for seamless migration from legacy CI.
-                        # Copying it may fail if the dependency job was skipped due to a user's workflow filter hook.
-                        # We choose to ignore these errors, but a better solution would be to remove these types of artifacts or implement a consistent way of working with them. TODO.
-                        no_strict=artifact.is_phony(),
                     )
 
                     if artifact.compress_zst:
                         Utils.decompress_file(Path(Settings.INPUT_DIR) / artifact_path)
 
+        if not local_run and job.needs_submodules and Settings.ENABLE_SUBMODULE_CACHE:
+            self._restore_submodule_cache()
+
         return 0
+
+    @staticmethod
+    def _restore_submodule_cache():
+        try:
+            wf_config = RunConfig.from_workflow_data()
+            cache_hash = wf_config.submodule_cache_hash
+            if not cache_hash:
+                print("NOTE: No submodule cache hash in workflow config, skipping restore")
+                return
+            s3_path = f"{Settings.CACHE_S3_PATH}/submodules/{cache_hash}.tar.zst"
+            local_archive = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
+            print(f"Restoring submodule cache: {s3_path}")
+            S3.copy_file_from_s3(s3_path=s3_path, local_path=local_archive, no_strict=True)
+            if Path(local_archive).exists():
+                if Shell.check(
+                    f"zstd -d {local_archive} --stdout | tar -xf - -C .",
+                    verbose=True,
+                ):
+                    Shell.check(f"rm -f {local_archive}")
+                    print("Submodule cache restored successfully")
+                else:
+                    print("WARNING: Submodule cache extraction failed, cleaning up")
+                    Shell.check("rm -rf .git/modules")
+                    Shell.check(f"rm -f {local_archive}")
+            else:
+                print("WARNING: Submodule cache download failed, will clone from GitHub")
+        except Exception as e:
+            print(f"WARNING: Submodule cache restore failed: {e}, will clone from GitHub")
+            traceback.print_exc()
 
     def _run(
         self,
@@ -294,9 +322,13 @@ class Runner:
                 )
 
         if job.enable_gh_auth:
-            _GH_Auth(workflow=workflow)
+            if not _GH_Auth():
+                Utils.raise_with_error("GH auth failed - required by job")
 
+        print("INFO: disk status before running a job:")
+        Shell.run("df -h")
         if job.run_in_docker and not no_docker:
+            Shell.run("docker system df")
             job.run_in_docker, docker_settings = (
                 job.run_in_docker.split("+")[0],
                 job.run_in_docker.split("+")[1:],
@@ -410,7 +442,8 @@ class Runner:
                     rewritten_settings.append(s)
                 settings = rewritten_settings
 
-            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            local_env_flag = f"--env-file {self.LOCAL_ENV_FILE}" if Path(self.LOCAL_ENV_FILE).exists() else ""
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' {local_env_flag} --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -439,15 +472,6 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
-        # Clean up stale experimental result file before starting the subprocess.
-        # This must happen before TeePopen.__enter__ which sleeps 1s after spawning
-        # the process — if the subprocess completes during that sleep (common for
-        # fast native jobs like Finish Workflow in backport PRs), deleting the file
-        # afterwards would remove the subprocess's own output, causing a spurious
-        # "Job killed or terminated" error.
-        if Path((Result.experimental_file_name_static())).exists():
-            Path(Result.experimental_file_name_static()).unlink()
-
         with TeePopen(
             cmd,
             timeout=job.timeout,
@@ -457,15 +481,6 @@ class Runner:
             start_time = Utils.timestamp()
 
             exit_code = process.wait()
-
-            if Path(Result.experimental_file_name_static()).exists():
-                result = Result.experimental_from_fs(job.name)
-                if not result.start_time:
-                    print(
-                        "WARNING: no start_time set by the job - set job start_time/duration"
-                    )
-                    result.start_time = start_time
-                    result.dump()
 
             result = Result.from_fs(job.name)
             if exit_code != 0:
@@ -488,6 +503,9 @@ class Runner:
                     ).set_info("---")
             result.dump()
 
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
+
         # When running Docker containers as root (non-rootless mode), any files created
         # by the job will be owned by root. This causes issues when:
         # 1. Files need to be read/compressed/uploaded by subsequent steps
@@ -503,13 +521,10 @@ class Runner:
 
         return exit_code
 
-    def _post_run(
-        self, workflow, job, setup_env_exit_code, prerun_exit_code, run_exit_code
-    ):
-        info_errors = []
-        env = _Environment.get()
+    def _get_result_object(
+        self, job, setup_env_exit_code, prerun_exit_code, run_exit_code,
+    ) -> Result:
         result_exist = Result.exist(job.name)
-        is_ok = True
 
         if setup_env_exit_code != 0:
             info = f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}"
@@ -565,37 +580,19 @@ class Runner:
             Shell.check(result.get_on_error_hook(), verbose=True)
 
         result.update_duration()
-        result.set_files([Settings.RUN_LOG])
+        result.set_files([Settings.RUN_LOG], strict=False)
+        return result
 
-        if job.post_hooks:
-            sw_ = Utils.Stopwatch()
-            results_ = []
-            for check in job.post_hooks:
-                if callable(check):
-                    name = check.__name__
-                else:
-                    name = str(check)
-                results_.append(Result.from_commands_run(name=name, command=check))
-            result.results.append(
-                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
-            )
+    def _post_run(
+        self, result, workflow, job, run_exit_code,
+    ) -> bool:
+        info_errors = []
+        env = _Environment.get()
+        is_ok = True
+
 
         is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
         is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
-
-        # run after post hooks as they might modify workflow kv data
-        job_outputs = env.JOB_KV_DATA
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        if is_initial_job:
-            output = dataclasses.asdict(env)
-            output["pipeline_status"] = "success"
-        else:
-            output = job_outputs
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"data={json.dumps(output)}",
-                file=f,
-            )
 
         if run_exit_code == 0 or result.do_not_block_pipeline_on_failure():
             providing_artifacts = []
@@ -647,10 +644,10 @@ class Runner:
                             info_errors.append(error)
                             result.set_status(Result.Status.ERROR)
                             is_ok = False
-                if Settings.ENABLE_ARTIFACTS_REPORT and artifact_links:
+                if artifact_links:
                     artifact_report = {"build_urls": artifact_links}
                     print(
-                        f"Artifact report enabled and will be uploaded: [{artifact_report}]"
+                        f"Artifact report will be uploaded: [{artifact_report}]"
                     )
                     artifact_report_file = f"{Settings.TEMP_DIR}/artifact_report_{Utils.normalize_string(env.JOB_NAME)}.json"
                     with open(artifact_report_file, "w", encoding="utf-8") as f:
@@ -659,6 +656,20 @@ class Runner:
                         s3_path=s3_path, local_path=artifact_report_file
                     )
                     result.set_link(link)
+
+        # run after post hooks as they might modify workflow kv data
+        job_outputs = env.JOB_KV_DATA
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        if is_initial_job:
+            output = dataclasses.asdict(env)
+            output["pipeline_status"] = "success"
+        else:
+            output = job_outputs
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(output)}",
+                file=f,
+            )
 
         ci_db = None
         if workflow.enable_cidb:
@@ -747,13 +758,13 @@ class Runner:
             status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
             if status_updated:
                 print(f"Update GH commit status [{result.name}]: [{status_updated}]")
-                _GH_Auth(workflow)
-                GH.post_commit_status(
-                    name=workflow.name,
-                    status=GH.convert_to_gh_status(status_updated),
-                    description="",
-                    url=Info().get_report_url(latest=False),
-                )
+                if _GH_Auth():
+                    GH.post_commit_status(
+                        name=workflow.name,
+                        status=GH.convert_to_gh_status(status_updated),
+                        description="",
+                        url=Info().get_report_url(latest=False),
+                    )
 
             workflow_result = Result.from_fs(workflow.name)
             if is_final_job and ci_db:
@@ -780,8 +791,7 @@ class Runner:
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
-        ):
-            _GH_Auth(workflow)
+        ) and _GH_Auth():
             workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
@@ -799,15 +809,15 @@ class Runner:
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
-            _GH_Auth(workflow)
-            if not GH.post_commit_status(
-                name=job.name,
-                status=result.status,
-                description=result.info.splitlines()[0] if result.info else "",
-                url=report_url,
-            ):
-                env.add_info("Failed to post GH commit status for the job")
-                print(f"ERROR: Failed to post commit status for the job")
+            if _GH_Auth():
+                if not GH.post_commit_status(
+                    name=job.name,
+                    status=result.status,
+                    description=result.info.splitlines()[0] if result.info else "",
+                    url=report_url,
+                ):
+                    env.add_info("Failed to post GH commit status for the job")
+                    print(f"ERROR: Failed to post commit status for the job")
 
         if workflow.enable_report:
             # to make it visible in GH Actions annotations
@@ -819,7 +829,7 @@ class Runner:
             and workflow.is_event_pull_request()
         ):
             try:
-                _GH_Auth(workflow)
+                _GH_Auth()
                 workflow_result = Result.from_fs(workflow.name)
                 if workflow_result.is_ok():
                     if not GH.merge_pr():
@@ -880,12 +890,30 @@ class Runner:
 
         return is_ok
 
+    LOCAL_ENV_FILE = "ci/local.env"
+
+    @classmethod
+    def _load_local_env(cls):
+        """Load environment variables from a gitignored local env file (KEY=VALUE format)."""
+        try:
+            with open(cls.LOCAL_ENV_FILE) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, _, value = line.partition("=")
+                        os.environ[key.strip()] = value.strip()
+        except FileNotFoundError:
+            pass
+
     def run(
         self,
         workflow,
         job,
         docker="",
         local_run=False,
+        run_hooks=True,
         no_docker=False,
         param=None,
         test="",
@@ -898,6 +926,8 @@ class Runner:
         path_1="",
         workers=None,
     ):
+        self._load_local_env()
+
         res = True
         setup_env_code = -10
         prerun_code = -10
@@ -939,6 +969,19 @@ class Runner:
                 Info().store_traceback()
             print(f"=== Pre run finished ===\n\n")
 
+        prehook_result = None
+        if res and run_hooks and job.pre_hooks:
+            print(f"=== Pre-hooks [{job.name}], workflow [{workflow.name}] ===")
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.pre_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(Result.from_commands_run(name=name, command=check))
+            prehook_result = Result.create_from(name="Pre Hooks", results=results_, stopwatch=sw_)
+
         if res:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
             run_code = None
@@ -974,13 +1017,37 @@ class Runner:
 
             print(f"=== Run script finished ===\n\n")
 
-        if not local_run:
-            print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            post_res = self._post_run(
-                workflow, job, setup_env_code, prerun_code, run_code
+        if run_hooks:
+            result = self._get_result_object(
+                job, setup_env_code, prerun_code, run_code
             )
-            res = res and post_res
-            print(f"=== Post run script finished ===")
+
+            if prehook_result:
+                result.results.append(prehook_result)
+            if job.post_hooks:
+                print(f"=== Post hooks [{job.name}], workflow [{workflow.name}] ===")
+                sw_ = Utils.Stopwatch()
+                results_ = []
+                for check in job.post_hooks:
+                    if callable(check):
+                        name = check.__name__
+                    else:
+                        name = str(check)
+                    results_.append(Result.from_commands_run(name=name, command=check))
+                result.results.append(
+                    Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+                )
+                print(f"=== Post hooks finished ===")
+
+            if not local_run:
+                print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
+                post_res = self._post_run(
+                    result, workflow, job, run_code
+                )
+                res = res and post_res
+                print(f"=== Post run script finished ===")
+
+            result.dump()
 
         if not res:
             sys.exit(1)

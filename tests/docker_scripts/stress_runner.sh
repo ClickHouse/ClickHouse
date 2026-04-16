@@ -61,7 +61,10 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start |
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < /repo/tests/docker_scripts/create.sql
 bash /repo/tests/docker_scripts/create_tpcds.sh
+bash /repo/tests/docker_scripts/create_tpch.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM tpcds"
+clickhouse-client --query "SHOW TABLES FROM tpch"
 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
@@ -87,6 +90,8 @@ start_server || { echo "Failed to start server"; exit 1; }
 clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM tpcds"
+clickhouse-client --query "SHOW TABLES FROM tpch"
 clickhouse-client --query "SHOW TABLES FROM test"
 
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
@@ -205,6 +210,9 @@ clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_u
 
 clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
+# Drop `tpch` before the storage policy switch below. Its tables live on the `default` disk which becomes unavailable under
+# `azure_cache`/`s3_cache`, preventing the server from starting. `tpcds` is not dropped because web disk survives policy changes.
+clickhouse-client --query "DROP DATABASE IF EXISTS tpch SYNC"
 
 clickhouse-client --query "SHOW TABLES FROM test"
 set -e
@@ -257,7 +265,7 @@ if [ "$cache_policy" = "SLRU" ]; then
 fi
 
 # Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
+if [ $((RANDOM % 2)) -eq 0 ]; then
     sudo echo "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
@@ -286,7 +294,9 @@ unset "${!THREAD_@}"
 # running with fault injection.
 rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 
-start_server || { echo "Failed to start server"; exit 1; }
+# Use a larger timeout for the post-stress restart: under sanitizers with
+# async_load_databases=false the server may need minutes to load all tables.
+start_server 30 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 

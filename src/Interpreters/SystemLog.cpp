@@ -518,9 +518,36 @@ void SystemLogs::shutdown()
 
 void SystemLogs::handleCrash()
 {
+    /// Flush crash_log first since it's the most important log during a crash.
+    /// Other logs with flush_on_crash (e.g. query_log) can consume significant
+    /// time budget from the signal handler's 303-second timeout, potentially
+    /// preventing crash_log from being flushed if stack symbolization was slow.
+    /// Use try/catch so that a timeout in one log does not prevent flushing others.
+    if (crash_log)
+    {
+        try
+        {
+            crash_log->handleCrash();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
     auto logs = getAllLogs();
     for (auto & log : logs)
-        log->handleCrash();
+    {
+        try
+        {
+            if (log != crash_log.get())
+                log->handleCrash();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 template <typename LogElement>
@@ -533,7 +560,7 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>())
+    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
 {
     create_query = getCreateTableQuery()->formatWithSecretsOneLine();
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
@@ -817,7 +844,8 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
     /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
-    /// `true` for `SharedSystemLogFlushPolicy` and `false` for `DefaultSystemLogFlushPolicy`.
+    /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
+    /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
     if (!flush_policy->shouldSkipAliasColumns())
         ordinary_columns.setAliases(alias_columns);
 

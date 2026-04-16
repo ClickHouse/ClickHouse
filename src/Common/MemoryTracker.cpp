@@ -241,17 +241,19 @@ void MemoryTracker::injectFault() const
 
 void incrementAllocationWithoutCheck(Int64 size)
 {
-    /// Note, it is always blocked for release build, so we do not write MemoryAllocatedWithoutCheck there
+    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheck);
+    if (size < 0)
+        return;
+
+    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheckBytes, size);
+
+    /// In release builds, `isBlocked` is always true, so only profile events are collected;
+    /// the trace sending below is debug/sanitizer-only.
     if (MemoryTrackerDebugBlockerInThread::isBlocked())
         return;
 
     /// The choice is arbitrary (maybe we should decrease it)
     constexpr Int64 threshold = 16 * 1024 * 1024;
-
-    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheck);
-    if (size < 0)
-        return;
-    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheckBytes, size);
 
     if (size > threshold)
     {
@@ -370,23 +372,39 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             current_hard_limit && (will_be > current_hard_limit || (level == VariableContext::Global && will_be_rss > current_hard_limit))))
     {
 #if USE_JEMALLOC
-        if (level == VariableContext::Global && jemalloc_flush_profile_on_memory_exceeded)
+        if (level == VariableContext::Global && (jemalloc_flush_profile_on_memory_exceeded_interval_s || jemalloc_flush_profile_on_memory_exceeded))
         {
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
             if (DB::Jemalloc::getValue<bool>("prof.active"))
             {
-                static std::atomic<uint64_t> flush_count = 0;
                 auto * flush_prefix = DB::Jemalloc::getValue<char *>("opt.prof_prefix");
                 if (!flush_prefix)
                 {
                     if (throw_if_memory_exceeded)
                         LOG_WARNING(getLogger("MemoryTracker"), "Cannot flush memory profile, empty prefix");
                 }
-                else if (flush_count.fetch_add(1, std::memory_order_relaxed) < 100) // so we don't flush too many profiles
+                else if (jemalloc_flush_profile_on_memory_exceeded_interval_s)
                 {
-                    auto flushed_profile = DB::Jemalloc::flushProfile(flush_prefix);
-                    if (throw_if_memory_exceeded)
-                        LOG_INFO(getLogger("MemoryTracker"), "Flushed memory profile to {} after total memory exceeded", flushed_profile);
+                    static std::atomic<UInt64> last_flush_time{0};
+                    UInt64 now = static_cast<UInt64>(time(nullptr));
+                    UInt64 last = last_flush_time.load(std::memory_order_relaxed);
+                    if (now - last >= jemalloc_flush_profile_on_memory_exceeded_interval_s
+                        && last_flush_time.compare_exchange_strong(last, now, std::memory_order_relaxed))
+                    {
+                        auto flushed_profile = DB::Jemalloc::flushProfile(flush_prefix);
+                        if (throw_if_memory_exceeded)
+                            LOG_INFO(getLogger("MemoryTracker"), "Flushed memory profile to {} after total memory exceeded", flushed_profile);
+                    }
+                }
+                else
+                {
+                    static std::atomic<uint64_t> flush_count = 0;
+                    if (flush_count.fetch_add(1, std::memory_order_relaxed) < 100)
+                    {
+                        auto flushed_profile = DB::Jemalloc::flushProfile(flush_prefix);
+                        if (throw_if_memory_exceeded)
+                            LOG_INFO(getLogger("MemoryTracker"), "Flushed memory profile to {} after total memory exceeded", flushed_profile);
+                    }
                 }
             }
         }

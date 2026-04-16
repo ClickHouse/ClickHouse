@@ -235,7 +235,8 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         true,
         static_cast<unsigned>(settings[Setting::max_parser_depth]),
         static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
-        throw_on_error);
+        throw_on_error,
+        getContext());
     return create_table_query;
 }
 
@@ -662,7 +663,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     };
-    factory.registerDatabase("MySQL", create_fn, {.supports_arguments = true, .supports_settings = true});
+    factory.registerDatabase("MySQL", create_fn, {.supports_arguments = true, .supports_settings = true, .is_external = true});
 }
 }
 

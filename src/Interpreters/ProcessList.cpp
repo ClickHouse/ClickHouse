@@ -379,16 +379,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
-            total_network_throttler = std::make_shared<Throttler>("network_all_users", settings[Setting::max_network_bandwidth_for_all_users]);
+            total_network_throttler = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_all_users]);
         }
 
         if (!user_process_list.user_throttler)
         {
             if (settings[Setting::max_network_bandwidth_for_user])
-            {
                 user_process_list.user_throttler
-                    = std::make_shared<Throttler>("network_user", settings[Setting::max_network_bandwidth_for_user], total_network_throttler);
-            }
+                    = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_user], total_network_throttler);
             else if (settings[Setting::max_network_bandwidth_for_all_users])
                 user_process_list.user_throttler = total_network_throttler;
         }
