@@ -688,8 +688,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (!sorting_columns.empty() && sorting_columns != std::vector<std::string>{BlockNumberColumn::name, BlockOffsetColumn::name})
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY is not supported for {} engine.", args.engine_name);
 
-            std::vector<std::string> primary_columns = unpack_key_ast(args.storage_def->primary_key);
-            if (!primary_columns.empty())
+            if (args.storage_def->primary_key)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "PRIMARY KEY is not supported for {} engine.", args.engine_name);
         }
 
