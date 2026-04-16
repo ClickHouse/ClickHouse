@@ -71,14 +71,4 @@ void AIQuotaTracker::recordResponse(UInt64 in_tokens, UInt64 out_tokens)
     output_tokens += out_tokens;
 }
 
-bool AIQuotaTracker::handleRowError()
-{
-    if (!throw_on_error)
-    {
-        ++rows_skipped;
-        return true;
-    }
-    return false;
-}
-
 }

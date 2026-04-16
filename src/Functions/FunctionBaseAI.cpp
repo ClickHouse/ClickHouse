@@ -195,7 +195,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                     continue;
                 }
 
-                if (quota.handleRowError())
+                if (!quota.throwsOnError())
                     break;
 
                 throw;
