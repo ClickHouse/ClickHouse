@@ -674,6 +674,10 @@ std::optional<String> optimizeUseAggregateProjections(
             LOG_DEBUG(logger, "{}", stat.description);
 
             inexact_ranges_select_result->selected_parts = parent_parts_with_ranges.size();
+            /// The original result may have exceeded_row_limits set because the full table scan
+            /// was over the limit.  After subtracting exact ranges the remaining rows are fewer,
+            /// so clear the flag — the reduced result will be re-checked during execution.
+            inexact_ranges_select_result->exceeded_row_limits = false;
             if (parent_parts_with_ranges.empty())
             {
                 chassert(inexact_ranges_select_result->selected_marks == 0);
@@ -693,6 +697,7 @@ std::optional<String> optimizeUseAggregateProjections(
 
                 auto projection_query_info = query_info;
                 projection_query_info.prewhere_info = nullptr;
+                projection_query_info.row_level_filter = nullptr;
                 projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(candidate.dag.clone());
 
                 MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), candidate.projection);
@@ -856,6 +861,7 @@ std::optional<String> optimizeUseAggregateProjections(
         auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
         auto projection_query_info = query_info;
         projection_query_info.prewhere_info = nullptr;
+        projection_query_info.row_level_filter = nullptr;
         projection_query_info.filter_actions_dag = nullptr;
 
         MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), best_candidate->projection);

@@ -142,6 +142,24 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
 void DatabaseReplicatedDDLWorker::shutdown()
 {
     DDLWorker::shutdown();
+
+    /// Explicitly remove the active node before the destructor runs.
+    /// The EphemeralNodeHolder destructor also calls tryRemove, but if it fails
+    /// (e.g. due to a transient ZK connection issue), the exception is silently caught
+    /// and the ephemeral node persists until the shared ZK session expires.
+    /// This can cause SYSTEM DROP DATABASE REPLICA to spuriously fail with "is active".
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::shutdown");
+    if (active_node_holder_zookeeper && !active_node_holder_zookeeper->expired())
+    {
+        String active_path = fs::path(database->replica_path) / "active";
+        active_node_holder_zookeeper->tryRemove(active_path);
+    }
+
+    if (active_node_holder)
+        active_node_holder->setAlreadyRemoved();
+    active_node_holder.reset();
+    active_node_holder_zookeeper.reset();
+
     wait_current_task_change.notify_all();
 }
 
@@ -500,7 +518,8 @@ static bool getRMVCoordinationInfo(
     const ZooKeeperPtr & zookeeper,
     UUID parent_uuid,
     Coordination::Stat & stats,
-    RefreshTask::CoordinationZnode & coordination_znode)
+    RefreshTask::CoordinationZnode & coordination_znode,
+    ContextPtr context)
 {
     if (parent_uuid == UUIDHelpers::Nil)
         return false;
@@ -508,7 +527,7 @@ static bool getRMVCoordinationInfo(
     const auto storage = DatabaseCatalog::instance().tryGetByUUID(parent_uuid).second;
     if (!storage)
         return false;
-    auto in_memory_metadata = storage->getInMemoryMetadataPtr();
+    auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
     const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
     if (!refresh || refresh->append)
         return false;
@@ -544,7 +563,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
     Coordination::Stat stats;
     RefreshTask::CoordinationZnode coordination_znode;
 
-    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode, context))
         return false;
 
     LOG_TEST(log, "MV {}, coordination info: {}", parent_uuid, coordination_znode.toString());
@@ -552,7 +571,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
         return false;
 
     LOG_TEST(log, "ddl_log_ctime {}, stats.mtime {}", ddl_log_ctime, stats.mtime);
-    // It is possible the the temporary table is created and replicated before the coordiation info is updated.
+    // It is possible the temporary table is created and replicated before the coordination info is updated.
     // So if ddl_log_ctime >= stats.mtime, the table is new and should not be skip.
     return ddl_log_ctime < stats.mtime;
 }
@@ -563,7 +582,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipRenamingRMVTempTable(
     Coordination::Stat stats;
     RefreshTask::CoordinationZnode coordination_znode;
 
-    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode, context))
         return false;
 
     StorageID storage_id{rename_from_table};

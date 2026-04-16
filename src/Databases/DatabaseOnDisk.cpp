@@ -29,8 +29,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ErrnoException.h>
 #include <Common/assert_cast.h>
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
@@ -436,6 +436,7 @@ void DatabaseOnDisk::renameTable(
     if (exchange)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Tables can be exchanged only in Atomic databases");
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::renameTable");
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
     if (typeid(*this) != typeid(to_database))
@@ -846,7 +847,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & table_name, boo
 
 ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const
 {
-    auto metadata_ptr = storage->getInMemoryMetadataPtr();
+    auto metadata_ptr = storage->getInMemoryMetadataPtr(getContext(), false);
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
@@ -869,10 +870,11 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         false,
         static_cast<unsigned>(settings[Setting::max_parser_depth]),
         static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
-        throw_on_error);
+        throw_on_error,
+        getContext());
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            make_intrusive<ASTLiteral>(storage->getInMemoryMetadata().comment));
+                            make_intrusive<ASTLiteral>(storage->getInMemoryMetadataPtr(getContext(), false)->comment));
 
     return create_table_query;
 }

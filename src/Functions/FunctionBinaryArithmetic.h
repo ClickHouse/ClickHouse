@@ -19,14 +19,12 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -39,7 +37,8 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/getMostSubtype.h>
+#include <Formats/FormatSettings.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Functions/DivisionUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -54,6 +53,7 @@
 #include <base/types.h>
 #include <base/wide_integer_to_string.h>
 #include <Common/Arena.h>
+#include <Core/AccurateComparison.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -79,7 +79,10 @@ namespace ErrorCodes
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
+
+FormatSettings::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context);
 
 namespace traits_
 {
@@ -820,6 +823,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division = IsOperation<Op>::division;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
+    static constexpr bool is_positive_modulo = IsOperation<Op>::positive_modulo;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
@@ -1056,10 +1060,10 @@ class FunctionBinaryArithmetic : public IFunction
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
         /// We construct another function (example: tupleMultiplyByNumber) and call it.
 
-        if constexpr (!is_multiply && !is_division)
+        if constexpr (!is_multiply && !is_division && !is_positive_modulo)
             return {};
 
-        if (isNumber(type0) && is_division)
+        if (isNumber(type0) && (is_division || is_positive_modulo))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
                                                                   "argument of numeric type cannot be first", name);
 
@@ -1067,6 +1071,10 @@ class FunctionBinaryArithmetic : public IFunction
         if constexpr (is_multiply)
         {
             function_name = "tupleMultiplyByNumber";
+        }
+        else if constexpr (is_positive_modulo)
+        {
+            function_name = "tuplePositiveModuloByNumber";
         }
         else // is_division
         {
@@ -1140,6 +1148,18 @@ class FunctionBinaryArithmetic : public IFunction
             return true;
 
         return which1.isTime64() && which0.isTimeOrTime64();
+    }
+
+    static bool isDateAndTimeAddition(const DataTypePtr & type0, const DataTypePtr & type1)
+    {
+        if constexpr (!is_plus)
+            return false;
+
+        WhichDataType which0(type0);
+        WhichDataType which1(type1);
+
+        return (which0.isDateOrDate32() && which1.isTimeOrTime64())
+            || (which0.isTimeOrTime64() && which1.isDateOrDate32());
     }
 
     /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
@@ -1438,6 +1458,202 @@ class FunctionBinaryArithmetic : public IFunction
         return col_res;
     }
 
+    /// Executes Date/Date32 + Time/Time64 -> DateTime/DateTime64.
+    ///
+    /// Converts the date to a midnight unix timestamp, then adds the time-of-day offset.
+    /// For Time64, the midnight timestamp is scaled to match Time64's precision (e.g. milliseconds)
+    /// before adding. The arithmetic uses Int128 so that the scaling cannot overflow.
+    ///
+    /// Result type: Date + Time -> DateTime, all other combinations -> DateTime64(scale).
+    /// Overflow: respects date_time_overflow_behavior (throw / saturate / ignore).
+    ColumnPtr executeDateAndTimeAddition(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+        /// The operation is commutative — figure out which argument is the date and which is the time.
+        WhichDataType which0(arguments[0].type);
+        size_t date_idx = which0.isDateOrDate32() ? 0 : 1;
+        const auto & date_arg = arguments[date_idx];
+        const auto & time_arg = arguments[1 - date_idx];
+
+        bool is_date32 = WhichDataType(date_arg.type).isDate32();
+        bool is_time64 = WhichDataType(time_arg.type).isTime64();
+
+        /// Date + Time -> DateTime (UInt32 seconds). All other combinations -> DateTime64
+        /// because either Date32's range exceeds UInt32, or Time64 requires sub-second precision.
+        bool result_is_datetime64 = is_date32 || is_time64;
+
+        /// Session timezone if set, otherwise server default. Used by fromDayNum to convert
+        /// a day number to a midnight unix timestamp — different timezones give different timestamps.
+        const auto & time_zone = DateLUT::instance();
+
+        /// Time64 values are stored in scaled units (e.g. milliseconds at scale 3, nanoseconds at scale 9).
+        /// The midnight timestamp is in seconds, so we multiply it by this factor to match Time64's units.
+        /// For plain Time (seconds), scale_multiplier stays 1.
+        Int64 scale_multiplier = 1;
+        if (is_time64)
+        {
+            const auto * time64_type = checkAndGetDataType<DataTypeTime64>(time_arg.type.get());
+            scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(time64_type->getScale());
+        }
+
+        auto overflow_behavior = getDateTimeOverflowBehavior(context);
+
+        /// The valid range for the result, expressed in the result's own units:
+        ///   DateTime:   seconds in [0, 2^32-1], covering ~1970 to ~2106.
+        ///   DateTime64: scaled values in [MIN_DATETIME64_TIMESTAMP * 10^scale, MAX_DATETIME64_TIMESTAMP * 10^scale],
+        ///               covering ~1900 to ~2299 (but narrower at scale 9 due to Int64 capacity).
+        Int64 result_min = 0;
+        Int64 result_max = static_cast<Int64>(MAX_DATETIME_TIMESTAMP);
+        UInt32 result_scale = 0;
+        if (result_is_datetime64)
+        {
+            const auto & res_type = assert_cast<const DataTypeDateTime64 &>(*result_type);
+            result_scale = res_type.getScale();
+            Int64 result_scale_mul = DecimalUtils::scaleMultiplier<Int64>(result_scale);
+            /// The min side (1900-01-01) fits in Int64 for all supported scales (0-9).
+            /// The max side (2299-12-31) overflows Int64 at scale 9; clamp to Int64 max in that case.
+            result_min = MIN_DATETIME64_TIMESTAMP * result_scale_mul;
+            result_max = (MAX_DATETIME64_TIMESTAMP <= std::numeric_limits<Int64>::max() / result_scale_mul)
+                ? MAX_DATETIME64_TIMESTAMP * result_scale_mul + result_scale_mul - 1
+                : std::numeric_limits<Int64>::max();
+        }
+
+        /// Convert a day number to the unix timestamp (seconds) at midnight of that day.
+        auto to_midnight = [&](Int64 day_num) -> Int64
+        {
+            return is_date32 ? static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(day_num))))
+                             : static_cast<Int64>(time_zone.fromDayNum(DayNum(static_cast<UInt16>(day_num))));
+        };
+
+        /// Check whether the computed result fits in the valid range.
+        /// The result comes in as Int128 (which cannot overflow), and is narrowed to Int64 here.
+        auto check_and_clamp = [&](Int128 wide_result) -> Int64
+        {
+            if (wide_result >= result_min && wide_result <= result_max) [[likely]]
+                return static_cast<Int64>(wide_result);
+
+            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            {
+                if (result_is_datetime64)
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "The result of Date plus Time is out of bounds of type DateTime64({})",
+                        result_scale);
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Value {} is out of bounds of type DateTime",
+                        static_cast<Int64>(wide_result));
+            }
+            else if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+            {
+                return static_cast<Int64>(std::clamp<Int128>(wide_result, result_min, result_max));
+            }
+            /// Ignore: truncate to Int64. The result is undefined per ClickHouse docs.
+            return static_cast<Int64>(wide_result);
+        };
+
+        /// Full computation: look up midnight from the day number, scale it, add time, check bounds.
+        auto compute_from_day = [&](Int64 day_num, Int64 time_val) -> Int64
+        {
+            Int64 midnight_ts = to_midnight(day_num);
+
+            if (is_time64)
+                return check_and_clamp(Int128(midnight_ts) * scale_multiplier + time_val);
+
+            return check_and_clamp(Int128(midnight_ts) + time_val);
+        };
+
+        /// When the date is a constant, midnight (already scaled) is precomputed before the loop.
+        /// This skips the day-number lookup and the multiply on every row.
+        auto compute_from_precomputed_midnight
+            = [&](Int128 midnight_wide, Int64 time_val) -> Int64 { return check_and_clamp(midnight_wide + time_val); };
+
+        /// Resolve column data to typed raw pointers once, so the per-row loop
+        /// only does pointer indexing — no dynamic_cast or type checks per row.
+        const auto * date_col = date_arg.column.get();
+        const auto * time_col = time_arg.column.get();
+        bool date_is_const = isColumnConst(*date_col);
+        bool time_is_const = isColumnConst(*time_col);
+
+        Int64 date_const_value = 0;
+        const Int32 * date32_ptr = nullptr;
+        const UInt16 * date16_ptr = nullptr;
+        if (date_is_const)
+            date_const_value = is_date32 ? checkAndGetColumnConst<ColumnVector<Int32>>(date_col)->template getValue<Int32>()
+                                         : checkAndGetColumnConst<ColumnVector<UInt16>>(date_col)->template getValue<UInt16>();
+        else if (is_date32)
+            date32_ptr = checkAndGetColumn<ColumnVector<Int32>>(date_col)->getData().data();
+        else
+            date16_ptr = checkAndGetColumn<ColumnVector<UInt16>>(date_col)->getData().data();
+
+        Int64 time_const_value = 0;
+        const Time64 * time64_ptr = nullptr;
+        const Int32 * time32_ptr = nullptr;
+        if (time_is_const)
+            time_const_value = is_time64 ? checkAndGetColumnConst<ColumnDecimal<Time64>>(time_col)->template getValue<Time64>().value
+                                         : checkAndGetColumnConst<ColumnVector<Int32>>(time_col)->template getValue<Int32>();
+        else if (is_time64)
+            time64_ptr = checkAndGetColumn<ColumnDecimal<Time64>>(time_col)->getData().data();
+        else
+            time32_ptr = checkAndGetColumn<ColumnVector<Int32>>(time_col)->getData().data();
+
+        auto get_date = [&](size_t i) -> Int64
+        {
+            if (date_is_const)
+                return date_const_value;
+            return is_date32 ? static_cast<Int64>(date32_ptr[i]) : static_cast<Int64>(date16_ptr[i]);
+        };
+        auto get_time = [&](size_t i) -> Int64
+        {
+            if (time_is_const)
+                return time_const_value;
+            return is_time64 ? time64_ptr[i].value : static_cast<Int64>(time32_ptr[i]);
+        };
+
+        /// When the date column is constant, compute midnight once (as Int128, already scaled
+        /// for Time64) so the loop only needs to add each row's time value.
+        Int128 midnight_precomputed = 0;
+        if (date_is_const)
+        {
+            Int64 midnight_ts = to_midnight(date_const_value);
+            midnight_precomputed = is_time64 ? Int128(midnight_ts) * scale_multiplier : Int128(midnight_ts);
+        }
+
+        /// Both columns constant — compute once, return a single-value column.
+        if (date_is_const && time_is_const)
+        {
+            Int64 const_result = compute_from_precomputed_midnight(midnight_precomputed, time_const_value);
+            if (result_is_datetime64)
+                return result_type->createColumnConst(input_rows_count, DecimalField<DateTime64>(DateTime64(const_result), result_scale));
+            return result_type->createColumnConst(input_rows_count, static_cast<UInt64>(static_cast<UInt32>(const_result)));
+        }
+
+        if (result_is_datetime64)
+        {
+            auto col_res = ColumnDecimal<DateTime64>::create(input_rows_count, result_scale);
+            auto & result_data = col_res->getData();
+            if (date_is_const)
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    result_data[i] = DateTime64(compute_from_precomputed_midnight(midnight_precomputed, get_time(i)));
+            else
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    result_data[i] = DateTime64(compute_from_day(get_date(i), get_time(i)));
+            return col_res;
+        }
+        else
+        {
+            auto col_res = ColumnVector<UInt32>::create(input_rows_count);
+            auto & result_data = col_res->getData();
+            if (date_is_const)
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    result_data[i] = static_cast<UInt32>(compute_from_precomputed_midnight(midnight_precomputed, get_time(i)));
+            else
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    result_data[i] = static_cast<UInt32>(compute_from_day(get_date(i), get_time(i)));
+            return col_res;
+        }
+    }
+
     ColumnPtr executeDateTimeIntervalPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                                                size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
     {
@@ -1589,7 +1805,7 @@ class FunctionBinaryArithmetic : public IFunction
         else
             new_arguments[1] = {right_col->replicate(left_array_col->getOffsets()), arguments[1].type, arguments[1].name};
 
-        result_array_type = left_array_elements_type;
+        result_array_type = return_type_array->getNestedType();
 
         if (is_swapped)
             std::swap(new_arguments[1], new_arguments[0]);
@@ -1802,7 +2018,7 @@ public:
             return arguments[0];
         }
 
-        /// Special case - one argument is IPv4 and the other is Ipv4 or an integer
+        /// Special case - one argument is IPv4 and the other is IPv4 or an integer
         if ((isIPv4(arguments[0]) && (isIPv4(arguments[1]) || isInteger(arguments[1])))
             || (isIPv4(arguments[1]) && isInteger(arguments[0])))
         {
@@ -1871,6 +2087,42 @@ public:
                 scale_rhs = rhs->getScale();
             }
             return std::make_shared<DataTypeDecimal64>(DecimalUtils::max_precision<Time64>, std::max(scale_lhs, scale_rhs));
+        }
+        else if (isDateAndTimeAddition(arguments[0], arguments[1])) /// Special case when the function is plus, one argument is Date/Date32 and the other is Time/Time64.
+        {
+            WhichDataType which0(arguments[0]);
+            WhichDataType which1(arguments[1]);
+
+            const WhichDataType & date_which = which0.isDateOrDate32() ? which0 : which1;
+            const WhichDataType & time_which = which0.isTimeOrTime64() ? which0 : which1;
+            const DataTypePtr & time_type = which0.isTimeOrTime64() ? arguments[0] : arguments[1];
+
+            if (date_which.isDate() && time_which.isTime())
+            {
+                return std::make_shared<DataTypeDateTime>();
+            }
+            else if (date_which.isDate() && time_which.isTime64())
+            {
+                const auto * t64 = checkAndGetDataType<DataTypeTime64>(time_type.get());
+                return std::make_shared<DataTypeDateTime64>(t64->getScale());
+            }
+            else if (date_which.isDate32() && time_which.isTime())
+            {
+                return std::make_shared<DataTypeDateTime64>(0);
+            }
+            else if (date_which.isDate32() && time_which.isTime64())
+            {
+                const auto * t64 = checkAndGetDataType<DataTypeTime64>(time_type.get());
+                return std::make_shared<DataTypeDateTime64>(t64->getScale());
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected combination of date and time types for plus: {} and {}",
+                    arguments[0]->getName(),
+                    arguments[1]->getName());
+            }
         }
 
         if constexpr (is_multiply || is_division)
@@ -2250,7 +2502,7 @@ public:
 
                 auto res = OpImpl::constConst(a, b);
 
-                return DataTypeUInt64{}.createColumnConst(1, res);
+                return DataTypeUInt64{}.createColumnConst(col_left_const->size(), res);
             }
         }
 
@@ -2564,6 +2816,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         if (isTime64Subtraction(arguments[0].type, arguments[1].type))
         {
             return executeTime64Subtraction(arguments, result_type, input_rows_count);
+        }
+
+        /// Special case when the function is plus, one argument is Date/Date32 and the other is Time/Time64.
+        if (isDateAndTimeAddition(arguments[0].type, arguments[1].type))
+        {
+            return executeDateAndTimeAddition(arguments, result_type, input_rows_count);
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
@@ -2905,12 +3163,16 @@ public:
     bool hasInformationAboutMonotonicity() const override
     {
         const std::string_view name_view = Name::name;
-        return (name_view == "minus" || name_view == "plus" || name_view == "divide" || name_view == "intDiv");
+        return (name_view == "minus" || name_view == "plus" || name_view == "multiply" || name_view == "divide" || name_view == "intDiv");
     }
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field & left_point, const Field & right_point) const override
     {
         const std::string_view name_view = Name::name;
+
+        // NaN breaks monotonicity for floating-point types.
+        if (isNaNField(left_point) || isNaNField(right_point))
+            return {false, true, false, false};
 
         // For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
         if (left_point.isNull() || right_point.isNull())
@@ -2932,9 +3194,22 @@ public:
             return {false, true, false, false};
         }
 
-        // For simplicity, we treat every single value interval as positive monotonic.
+        // For simplicity, we treat every single value interval as positive monotonic,
+        // unless the function is undefined at that point (e.g. division by zero).
         if (accurateEquals(left_point, right_point))
+        {
+            // Division is undefined at zero, so we must not report monotonicity:
+            // - divide(const, x) or intDiv(const, x) at x = 0 (right_arg_is_zero)
+            // - divide(x, 0) or intDiv(x, 0) where the constant divisor is 0 (right_const_is_zero)
+            bool is_div_function = name_view == "divide" || name_view == "intDiv";
+            bool right_arg_is_zero = left.column && isColumnConst(*left.column) && accurateEquals(left_point, Field(0));
+            bool right_const_is_zero = right.column && isColumnConst(*right.column) && accurateEquals((*right.column)[0], Field(0));
+
+            if (is_div_function && (right_arg_is_zero || right_const_is_zero))
+                return {false, true, false, false};
+
             return {true, true, false, false};
+        }
 
         if (name_view == "minus" || name_view == "plus")
         {
@@ -3034,6 +3309,101 @@ public:
                 bool is_constant_positive = accurateLess(Field(0), constant);
                 // division is saturated to `inf`, thus it doesn't have overflow issues.
                 return {true, is_constant_positive, true, is_strict};
+            }
+        }
+        if (name_view == "multiply")
+        {
+            /// variable * constant or constant * variable
+            const auto & const_side = (right.column && isColumnConst(*right.column)) ? right : left;
+            if (const_side.column && isColumnConst(*const_side.column))
+            {
+                auto constant = (*const_side.column)[0];
+                if (accurateEquals(constant, Field(0)))
+                    return {true, true, false, false}; /// x * 0 is constant, trivially monotonic but not strict
+
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
+
+                bool is_constant_positive = accurateLess(Field(0), constant);
+
+                /// Check if multiplication can overflow within [left_point, right_point].
+                ///
+                /// Multiply by constant `c` can have `c-1` wrap boundaries in modular arithmetic,
+                /// so unlike plus/minus, comparing endpoint directions does not reliably detect overflow.
+                /// Instead, we verify each endpoint is within [TYPE_MIN/c, TYPE_MAX/c].
+                /// If both are in this safe range, the entire interval is overflow-free.
+
+                auto check_overflow = [&]<typename T>(const Field & point, const Field & c, std::type_identity<T>) -> bool
+                {
+                    T type_min = std::numeric_limits<T>::min();
+                    T type_max = std::numeric_limits<T>::max();
+
+                    /// Convert Field to T, returning nullopt if the value is out of range.
+                    auto to_T = [&](const Field & f) -> std::optional<T>
+                    {
+                        return Field::dispatch([&](const auto & v) -> std::optional<T>
+                        {
+                            using V = std::decay_t<decltype(v)>;
+                            if constexpr (is_integer<V>)
+                            {
+                                if (accurate::lessOp(v, type_min) || accurate::greaterOp(v, type_max))
+                                    return std::nullopt;
+                                return static_cast<T>(v);
+                            }
+                            else
+                                return std::nullopt;
+                        }, f);
+                    };
+
+                    auto a = to_T(point);
+                    auto b = to_T(c);
+                    if (!a || !b)
+                        return true; /// value doesn't fit → overflow
+
+                    if (*b == T(0))
+                        return false;
+
+                    if constexpr (is_signed_v<T>)
+                    {
+                        /// TYPE_MIN / -1 is UB for native signed types.
+                        if (*b == T(-1))
+                            return *a == type_min;
+
+                        T lo = (*b > T(0)) ? (type_min / *b) : (type_max / *b);
+                        T hi = (*b > T(0)) ? (type_max / *b) : (type_min / *b);
+                        return *a < lo || *a > hi;
+                    }
+                    else
+                    {
+                        return *a > type_max / *b;
+                    }
+                };
+
+                auto overflows = [&]<typename T>(std::type_identity<T> tag)
+                {
+                    return check_overflow(left_point, constant, tag)
+                        || check_overflow(right_point, constant, tag);
+                };
+
+                WhichDataType which(ret_type->getTypeId());
+                bool overflow
+                    = which.isUInt8()   ? overflows(std::type_identity<UInt8>{})
+                    : which.isUInt16()  ? overflows(std::type_identity<UInt16>{})
+                    : which.isUInt32()  ? overflows(std::type_identity<UInt32>{})
+                    : which.isUInt64()  ? overflows(std::type_identity<UInt64>{})
+                    : which.isUInt128() ? overflows(std::type_identity<UInt128>{})
+                    : which.isUInt256() ? overflows(std::type_identity<UInt256>{})
+                    : which.isInt8()    ? overflows(std::type_identity<Int8>{})
+                    : which.isInt16()   ? overflows(std::type_identity<Int16>{})
+                    : which.isInt32()   ? overflows(std::type_identity<Int32>{})
+                    : which.isInt64()   ? overflows(std::type_identity<Int64>{})
+                    : which.isInt128()  ? overflows(std::type_identity<Int128>{})
+                    : which.isInt256()  ? overflows(std::type_identity<Int256>{})
+                    : true; /// unknown type — conservatively assume overflow
+
+                if (overflow)
+                    return {false, true, false, false};
+
+                return {true, is_constant_positive, false, true};
             }
         }
         return {false, true, false};

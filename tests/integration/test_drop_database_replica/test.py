@@ -108,10 +108,21 @@ def cleanup_database_on_all_nodes():
     """Drop the database on all nodes to ensure clean state between tests.
     Stops refreshable MVs first to avoid 'tables still in use' errors from
     temporary tables that have a delayed drop (database_atomic_delay_before_drop_table_sec).
+    Also cleans up ZooKeeper path to prevent stale table metadata from being synced.
     """
     for node in [node1, node2, node3, node4]:
         stop_refreshable_mvs(node)
         node.query("DROP DATABASE IF EXISTS db SYNC", ignore_error=True)
+
+    # Clean up ZooKeeper path in case some replicas were not properly dropped.
+    # Stale metadata in ZK can cause "Table already exists" errors when the
+    # database is recreated with the same path.
+    try:
+        zk_client = cluster.get_kazoo_client("zoo1")
+        if zk_client.exists("/test/db"):
+            zk_client.delete("/test/db", recursive=True)
+    except Exception:
+        logging.warning("Failed to clean up ZooKeeper path /test/db", exc_info=True)
 
 
 @pytest.mark.parametrize("with_tables", [False, True])

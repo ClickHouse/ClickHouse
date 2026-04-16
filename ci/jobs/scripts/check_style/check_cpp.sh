@@ -17,53 +17,58 @@ ROOT_PATH=$(git rev-parse --show-toplevel)
 EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|base/base/openpty\.h|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
-# From [1]:
-#     But since array_to_string_internal() in array.c still loops over array
-#     elements and concatenates them into a string, it's probably not more
-#     efficient than the looping solutions proposed, but it's more readable.
-#
-#  [1]: https://stackoverflow.com/a/15394738/328260
-function in_array()
+# Pre-compute file lists to avoid repeated find+grep
+STYLE_TMPDIR=$(mktemp -d)
+trap 'rm -rf "$STYLE_TMPDIR"' EXIT
+
+# All dirs (src,base,programs,utils), h+cpp, with EXCLUDE filter
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null | grep -vP $EXCLUDE > "$STYLE_TMPDIR/all_excluded"
+# Without base dir, h+cpp, with EXCLUDE filter
+grep -v '/base/' "$STYLE_TMPDIR/all_excluded" > "$STYLE_TMPDIR/nobase_excluded"
+# Without base dir, headers only, with EXCLUDE filter
+grep '\.h$' "$STYLE_TMPDIR/nobase_excluded" > "$STYLE_TMPDIR/nobase_headers_excluded"
+# Without base dir, h+cpp, without EXCLUDE filter
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null > "$STYLE_TMPDIR/nobase_all"
+# src+base only, h+cpp, with EXCLUDE filter
+grep -v -e '/programs/' -e '/utils/' "$STYLE_TMPDIR/all_excluded" > "$STYLE_TMPDIR/srcbase_excluded"
+
+# All checks are independent — run them in parallel, collecting output in numbered files.
+O="$STYLE_TMPDIR/out"
+
+# 01: Style formatting (uses rg native file discovery; tabs and trailing whitespace are checked separately in 02/06b)
 {
-    local IFS="|"
-    local value=$1 && shift
-
-    [[ "${IFS}${*}${IFS}" =~ "${IFS}${value}${IFS}" ]]
-}
-
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE |
-    grep -v 'src/Storages/System/StorageSystemDashboards.cpp' |
-    grep -vP $EXCLUDE_DOCS |
-    xargs grep $@ -n -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
-# a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
-    grep -v -P '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
+rg $@ -n --glob '*.h' --glob '*.cpp' \
+    --glob '!**/build/**' --glob '!**/integration/**' --glob '!**/widechar_width/**' \
+    --glob '!**/glibc-compatibility/**' --glob '!**/poco/**' --glob '!**/memcpy/**' \
+    --glob '!**/consistent-hashing/**' --glob '!**/*benchmark*' \
+    --glob '!**/tests/**/*.cpp' \
+    --glob '!**/base/base/openpty.h' --glob '!**/AvroSchema.h' \
+    --glob '!**/*Settings.cpp' --glob '!**/FormatFactorySettings.h' \
+    --glob '!**/StorageSystemDashboards.cpp' \
+    '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \
+    $ROOT_PATH/{src,base,programs,utils} |
+# a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
+    rg -v '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
+} > "$O.01" 2>&1 &
 
-# Tabs
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE |
-    xargs grep $@ -F $'\t' && echo '^ tabs are not allowed'
+# 02: Tabs and namespace comments
+{
+xargs < "$STYLE_TMPDIR/all_excluded" rg $@ -F $'\t' && echo '^ tabs are not allowed'
 
 # // namespace comments are unneeded
-result=$(find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE |
-    xargs grep $@ -P '}\s*//+\s*namespace\s*' 2>/dev/null)
-
+result=$(xargs < "$STYLE_TMPDIR/all_excluded" rg $@ '}\s*//+\s*namespace\s*' 2>/dev/null)
 if [ -n "$result" ]; then
     echo "$result"
     echo "^ Found unnecessary namespace comments"
 fi
+} > "$O.02" 2>&1 &
 
-# Duplicated or incorrect setting declarations
-bash $ROOT_PATH/ci/jobs/scripts/check_style/check-settings-style
+# 03: Duplicated or incorrect setting declarations
+bash $ROOT_PATH/ci/jobs/scripts/check_style/check-settings-style > "$O.03" 2>&1 &
 
-# Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
-declare -A EXTERN_TYPES
-EXTERN_TYPES[ErrorCodes]=int
-EXTERN_TYPES[ProfileEvents]=Event
-EXTERN_TYPES[CurrentMetrics]=Metric
-
+# 04: Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
+{
 EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::global_counters
     ProfileEvents::Event
@@ -87,8 +92,11 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::CountersIncrement
     ProfileEvents::size
     ProfileEvents::checkCPUOverload
+    ProfileEvents::getDocumentation
+    ProfileEvents::NAME
 
     CurrentMetrics::add
+    CurrentMetrics::max
     CurrentMetrics::sub
     CurrentMetrics::get
     CurrentMetrics::set
@@ -113,111 +121,149 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::getErrorCodeByName
     ErrorCodes::Value
 )
-for extern_type in ${!EXTERN_TYPES[@]}; do
-    type_of_extern=${EXTERN_TYPES[$extern_type]}
-    allowed_chars='[_A-Za-z]+'
+# Check unused/undefined/duplicate ErrorCodes, ProfileEvents, CurrentMetrics declarations.
+# NOTE: the unused check is pretty dumb and distinguishes only by the type_of_extern,
+# and this matches with zkutil::CreateMode
+grep -v -e 'src/Common/ZooKeeper/Types.h' -e 'src/Coordination/KeeperConstants.cpp' "$STYLE_TMPDIR/all_excluded" > "$STYLE_TMPDIR/extern_files"
 
-    # Unused
-    # NOTE: to fix automatically, replace echo with:
-    # sed -i "/extern const $type_of_extern $val/d" $file
-    find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        # NOTE: the check is pretty dumb and distinguish only by the type_of_extern,
-        # and this matches with zkutil::CreateMode
-        grep -v -e 'src/Common/ZooKeeper/Types.h' -e 'src/Coordination/KeeperConstants.cpp'
-    } | {
-        grep -vP $EXCLUDE | xargs grep -l -P "extern const $type_of_extern $allowed_chars"
-    } | while read file; do
-        grep -P "extern const $type_of_extern $allowed_chars;" $file | sed -r -e "s/^.*?extern const $type_of_extern ($allowed_chars);.*?$/\1/" | while read val; do
-            if ! grep -q "$extern_type::$val" $file; then
-                # Excludes for SOFTWARE_EVENT/HARDWARE_EVENT/CACHE_EVENT in ThreadProfileEvents.cpp
-                if [[ ! $extern_type::$val =~ ProfileEvents::Perf.* ]]; then
-                    echo "$extern_type::$val is defined but not used in file $file"
-                fi
-            fi
-        done
-    done
+# Extract declarations: "filepath:D TYPE NAME"
+xargs < "$STYLE_TMPDIR/extern_files" rg -o --no-line-number \
+    'extern const (int|Event|Metric) ([_A-Za-z0-9]+);' -r 'D $1 $2' > "$STYLE_TMPDIR/extern_combined"
 
-    # Undefined
-    # NOTE: to fix automatically, replace echo with:
-    # ( grep -q -F 'namespace $extern_type' $file && \
-    #   sed -i -r "0,/(\s*)extern const $type_of_extern [$allowed_chars]+/s//\1extern const $type_of_extern $val;\n&/" $file || \
-    #     awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace $extern_type\n{\n    extern const $type_of_extern '$val';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
-    find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE | xargs grep -l -P "$extern_type::$allowed_chars"
-    } | while read file; do
-        grep -P "$extern_type::$allowed_chars" $file | grep -P -v '^\s*//' | sed -r -e "s/^.*?$extern_type::($allowed_chars).*?$/\1/" | while read val; do
-            if ! grep -q "extern const $type_of_extern $val" $file; then
-                if ! in_array "$extern_type::$val" "${EXTERN_TYPES_EXCLUDES[@]}"; then
-                    echo "$extern_type::$val is used in file $file but not defined"
-                fi
-            fi
-        done
-    done
+# Extract usages (skipping comment lines): "filepath:U NS NAME"
+xargs < "$STYLE_TMPDIR/extern_files" rg --no-line-number \
+    '(ErrorCodes|ProfileEvents|CurrentMetrics)::[_A-Za-z0-9]+' | \
+    awk -F: '{
+        file = $1
+        line = ""
+        for (i = 2; i <= NF; i++) line = line (i > 2 ? ":" : "") $i
+        sub(/^[[:space:]]+/, "", line)
+        if (substr(line, 1, 2) == "//") next
+        while (match(line, /(ErrorCodes|ProfileEvents|CurrentMetrics)::[_A-Za-z0-9]+/)) {
+            ns = substr(line, RSTART, RLENGTH)
+            sep = index(ns, "::")
+            print file ":U " substr(ns, 1, sep - 1) " " substr(ns, sep + 2)
+            line = substr(line, RSTART + RLENGTH)
+        }
+    }' >> "$STYLE_TMPDIR/extern_combined"
 
-    # Duplicates
-    find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE | xargs grep -l -P "$extern_type::$allowed_chars"
-    } | while read file; do
-        grep -P "extern const $type_of_extern $allowed_chars;" $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate $extern_type in file $file"
-    done
-done
+# Compare declarations vs usages per file
+awk -v excludes="${EXTERN_TYPES_EXCLUDES[*]}" '
+BEGIN {
+    split(excludes, exc_arr, " ")
+    for (i in exc_arr) exc_set[exc_arr[i]] = 1
+    type_to_ns["int"] = "ErrorCodes"
+    type_to_ns["Event"] = "ProfileEvents"
+    type_to_ns["Metric"] = "CurrentMetrics"
+}
+{
+    colon = index($0, ":")
+    file = substr($0, 1, colon - 1)
+    rest = substr($0, colon + 1)
+    split(rest, p, " ")
+    if (p[1] == "D") {
+        ns = type_to_ns[p[2]]
+        key = file SUBSEP ns SUBSEP p[3]
+        decl[key]++
+    } else {
+        key = file SUBSEP p[2] SUBSEP p[3]
+        used[key] = 1
+    }
+}
+END {
+    for (key in decl) {
+        split(key, k, SUBSEP)
+        file = k[1]; ns = k[2]; name = k[3]
+        if (!(key in used))
+            if (!(ns == "ProfileEvents" && substr(name, 1, 4) == "Perf"))
+                print ns "::" name " is defined but not used in file " file
+        if (decl[key] > 1)
+            print "Duplicate " ns " in file " file
+    }
+    for (key in used) {
+        if (!(key in decl)) {
+            split(key, k, SUBSEP)
+            if (!((k[2] "::" k[3]) in exc_set))
+                print k[2] "::" k[3] " is used in file " k[1] " but not defined"
+        }
+    }
+}
+' "$STYLE_TMPDIR/extern_combined"
+} > "$O.04" 2>&1 &
 
-# Three or more consecutive empty lines
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
+# 05: Consecutive empty lines and pragma once
+{
+# Three or more consecutive empty lines (pre-filter with grep to avoid reading all files through awk)
+xargs < "$STYLE_TMPDIR/all_excluded" rg -l0 --multiline '\A\n\n\n|\n\n\n\n' 2>/dev/null | \
+    xargs -0 awk 'FNR==1 { i = 0 } /^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file " FILENAME } } /./ { i = 0 }'
 
 # Check that every header file has #pragma once in first line
-find $ROOT_PATH/{src,programs,utils} -name '*.h' |
-    grep -vP $EXCLUDE |
-    while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
+xargs < "$STYLE_TMPDIR/nobase_headers_excluded" awk 'FNR==1 && !/^#pragma once$/ { print "File " FILENAME " must have '"'"'#pragma once'"'"' in first line" }'
+} > "$O.05" 2>&1 &
 
-# Too many exclamation marks
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    xargs grep -F '!!!' | grep -P '.' && echo "Too many exclamation marks (looks dirty, unconfident)."
+# 06a: Too many exclamation marks
+{
+xargs < "$STYLE_TMPDIR/all_excluded" grep -F '!!!' | grep . && echo "Too many exclamation marks (looks dirty, unconfident)."
 
 # Exclamation mark in a message
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    xargs grep -F '!",' | grep -P '.' && echo "No need for an exclamation mark (looks dirty, unconfident)."
+xargs < "$STYLE_TMPDIR/all_excluded" grep -F '!",' | grep . && echo "No need for an exclamation mark (looks dirty, unconfident)."
+} > "$O.06a" 2>&1 &
 
-# Trailing whitespaces
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    xargs grep -n -P ' $' | grep -n -P '.' && echo "^ Trailing whitespaces."
+# 06b: Trailing whitespaces
+{
+xargs < "$STYLE_TMPDIR/all_excluded" grep -n ' $' | grep . && echo "^ Trailing whitespaces."
+} > "$O.06b" 2>&1 &
 
+# 07a: Forbidden patterns in nobase_excluded (part 1)
+{
 # Forbid stringstream because it's easy to use them incorrectly and hard to debug possible issues
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    xargs grep -P 'std::[io]?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"
+xargs < "$STYLE_TMPDIR/nobase_excluded" rg 'std::[io]?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"
 
 # Forbid hardware_destructive_interference_size because it provides unrealistic values for ARM (see https://github.com/ClickHouse/ClickHouse/pull/97357)
-find "$ROOT_PATH"/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP "$EXCLUDE" |
-    xargs grep -P '(hardware_destructive_interference_size|hardware_constructive_interference_size)' | grep -vP ':\s*//' && echo "Use CH_CACHE_LINE_SIZE from Common/CacheLine.h instead"
+xargs < "$STYLE_TMPDIR/nobase_excluded" rg '(hardware_destructive_interference_size|hardware_constructive_interference_size)' | grep -vE ':[[:space:]]*//' && echo "Use CH_CACHE_LINE_SIZE from Common/CacheLine.h instead"
 
+# Forbid std::filesystem::is_symlink and std::filesystem::read_symlink, because it's easy to use them incorrectly
+xargs < "$STYLE_TMPDIR/nobase_excluded" rg '::(is|read)_symlink' | grep -v "STYLE_CHECK_ALLOW_STD_FS_SYMLINK" && echo "Use DB::FS::isSymlink and DB::FS::readSymlink instead"
+
+# Forbid using std::shared_mutex and point to the faster alternative
+xargs < "$STYLE_TMPDIR/nobase_excluded" grep 'std::shared_mutex' | \
+  xargs -I{} echo "Found std::shared_mutex '{}'. Please use DB::SharedMutex instead"
+} > "$O.07a" 2>&1 &
+
+# 07b: Forbidden patterns in nobase_excluded (part 2)
+{
+# Forbid __builtin_unreachable(), because it's hard to debug when it becomes reachable
+xargs < "$STYLE_TMPDIR/nobase_excluded" grep -F '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"
+
+# Forbid mt19937() and random_device() which are outdated and slow
+xargs < "$STYLE_TMPDIR/nobase_excluded" rg '(std::mt19937|std::mersenne_twister_engine|std::random_device)' && echo "Use pcg64_fast (from pcg_random.h) and randomSeed (from Common/randomSeed.h) instead"
+
+# Require checking return value of close(),
+# since it can hide fd misuse and break other places.
+xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | grep -v = && echo "Return value of close() should be checked"
+} > "$O.07b" 2>&1 &
+
+# 08: std containers lint
+{
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
+    src/Columns
     src/Dictionaries
 )
 
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do
-    find "$ROOT_PATH/$dir" -name '*.h' -or -name '*.cpp' |
-        grep -vP "$EXCLUDE" |
-        xargs grep -Hn -P 'std::(deque|list|map|multimap|multiset|queue|set|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)<' |
+    grep "/$dir/" "$STYLE_TMPDIR/all_excluded" |
+        xargs rg -Hn 'std::(deque|list|map|multimap|multiset|queue|set|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)<' |
         grep -v "STYLE_CHECK_ALLOW_STD_CONTAINERS" && echo "Use an -WithMemoryTracking alternative or mark these usages with STYLE_CHECK_ALLOW_STD_CONTAINERS"
 done
+} > "$O.08" 2>&1 &
 
-# Forbid std::cerr/std::cout in src (fine in programs/utils)
+# 09: Forbid std::cerr/std::cout in src (fine in programs/utils)
+{
 std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
-    # OK
-    base/base/ask.cpp
-    src/Common/ProgressIndication.cpp
-    src/Common/ProgressTable.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
     src/Common/HashTable/HashTable.h
     # SensitiveDataMasker::printStats()
@@ -229,55 +275,51 @@ std_cerr_cout_excludes=(
     # IProcessor::dump()
     src/Processors/IProcessor.cpp
     src/Client/ClientApplicationBase.cpp
-    src/Client/ClientBase.cpp
     src/Common/ProgressIndication.h
     src/Client/LineReader.h
-    src/Client/LineReader.cpp
     src/Client/ReplxxLineReader.h
-    src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
     src/Client/ClientBase.h
-    src/Client/LineReader.h
-    src/Client/ReplxxLineReader.h
-    src/Bridge/IBridge.cpp
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
-    src/Common/ProgressIndication.h
-    src/Common/ZooKeeper/KeeperClientCLI/KeeperClient.h
     src/IO/Ask.cpp
+    # Only in block comments (/* ... */)
+    src/Storages/IStorage.h
+    src/Common/mysqlxx/mysqlxx/Query.h
+    src/Common/OptimizedRegularExpression.cpp
 )
-sources_with_std_cerr_cout=( $(
-    find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
-        grep -vP $EXCLUDE | \
-        grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") | \
-        xargs grep -F --with-filename -e std::cerr -e std::cout | cut -d: -f1 | sort -u
-) )
-# Exclude comments
-for src in "${sources_with_std_cerr_cout[@]}"; do
-    # suppress stderr, since it may contain warning for #pragma once in headers
-    if gcc -fpreprocessed -dD -E "$src" 2>/dev/null | grep -F -q -e std::cerr -e std::cout; then
-        echo "$src: uses std::cerr/std::cout"
-    fi
-done
+grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") "$STYLE_TMPDIR/srcbase_excluded" | \
+    xargs grep -F -l -e 'std::cerr' -e 'std::cout' | \
+    xargs grep -P -l '^\s*(?!//)([^/]|/[^/])*std::c(err|out)' | \
+    while read -r src; do echo "$src: uses std::cerr/std::cout"; done
+} > "$O.09" 2>&1 &
 
-expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
-for test_case in "${expect_tests[@]}"; do
-    pattern="^exp_internal -f \$CLICKHOUSE_TMP/\$basename.debuglog 0$"
-    grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+# 10: Expect test validation (single awk pass instead of per-file grep loop)
+{
+find $ROOT_PATH/tests/queries -name '*.expect' -print0 | xargs -0 awk '
+FNR == 1 {
+    if (file != "") check_file()
+    file = FILENAME
+    debuglog = 0; spawn_client = 0; history = 0; timeout_found = 0; eof_found = 0
+}
+/^exp_internal -f \$CLICKHOUSE_TMP\/\$basename\.debuglog 0$/ { debuglog = 1 }
+/^spawn.*CLICKHOUSE_CLIENT_BINARY$/ { spawn_client = 1 }
+/^spawn.*CLICKHOUSE_CLIENT_BINARY.*--history_file/ { history = 1 }
+/-i \$any_spawn_id timeout/ { timeout_found = 1 }
+/-i \$any_spawn_id eof/ { eof_found = 1 }
+END { if (file != "") check_file() }
+function check_file() {
+    q = "\047"
+    if (!debuglog) print "Missing " q "^exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0$" q " in " q file q
+    if (spawn_client && !history) print "Missing " q "^spawn.*CLICKHOUSE_CLIENT_BINARY.*--history_file$" q " in " q file q
+    if (!timeout_found) print "Missing " q "-i $any_spawn_id timeout" q " in " q file q
+    if (!eof_found) print "Missing " q "-i $any_spawn_id eof" q " in " q file q
+}
+'
+} > "$O.10" 2>&1 &
 
-    if grep -q "^spawn.*CLICKHOUSE_CLIENT_BINARY$" "$test_case"; then
-        pattern="^spawn.*CLICKHOUSE_CLIENT_BINARY.*--history_file$"
-        grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
-    fi
-
-    # Otherwise expect_after/expect_before will not bail without stdin attached
-    # (and actually this is a hack anyway, correct way is to use $any_spawn_id)
-    pattern="-i \$any_spawn_id timeout"
-    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
-    pattern="-i \$any_spawn_id eof"
-    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
-done
-
+# 11: Misc small checks (error codes, find_path, CMake, allow_ settings)
+{
 # Forbid non-unique error codes
 if [[ "$(grep -Po "M\([0-9]*," $ROOT_PATH/src/Common/ErrorCodes.cpp | wc -l)" != "$(grep -Po "M\([0-9]*," $ROOT_PATH/src/Common/ErrorCodes.cpp | sort | uniq | wc -l)" ]]
 then
@@ -294,93 +336,80 @@ if git grep -e find_path -e find_library -- :**CMakeLists.txt; then
     echo "There is find_path/find_library usage. ClickHouse should use everything bundled. Consider adding one more contrib module."
 fi
 
-# Forbid std::filesystem::is_symlink and std::filesystem::read_symlink, because it's easy to use them incorrectly
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    xargs grep -P '::(is|read)_symlink' | grep -v "STYLE_CHECK_ALLOW_STD_FS_SYMLINK" && echo "Use DB::FS::isSymlink and DB::FS::readSymlink instead"
-
-# Forbid __builtin_unreachable(), because it's hard to debug when it becomes reachable
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    xargs grep -P '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"
-
-# Forbid mt19937() and random_device() which are outdated and slow
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    xargs grep -P '(std::mt19937|std::mersenne_twister_engine|std::random_device)' && echo "Use pcg64_fast (from pcg_random.h) and randomSeed (from Common/randomSeed.h) instead"
-
-# Require checking return value of close(),
-# since it can hide fd misuse and break other places.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    xargs grep -e ' close(.*fd' -e ' ::close(' | grep -v = && echo "Return value of close() should be checked"
-
-# A small typo can lead to debug code in release builds, see https://github.com/ClickHouse/ClickHouse/pull/47647
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -l -F '#ifdef NDEBUG' | xargs -I@FILE awk '/#ifdef NDEBUG/ { inside = 1; dirty = 1 } /#endif/ { if (inside && dirty) { print "File @FILE has suspicious #ifdef NDEBUG, possibly confused with #ifndef NDEBUG" }; inside = 0 } /#else/ { dirty = 0 }' @FILE
-
-# If a user is doing dynamic or typeid cast with a pointer, and immediately dereferencing it, it is unsafe.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep --line-number -P '(dynamic|typeid)_cast<[^>]+\*>\([^\(\)]+\)->' | grep -P '.' && echo "It's suspicious when you are doing a dynamic_cast or typeid_cast with a pointer and immediately dereferencing it. Use references instead of pointers or check a pointer to nullptr."
-
-# Check for bad punctuation: whitespace before comma.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '\w ,' | grep -v 'bad punctuation is ok here' && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
-
-# Check usage of std::regex which is too bloated and slow.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number 'std::regex' | grep -P '.' && echo "^ Please use re2 instead of std::regex"
-
-# Cyrillic characters hiding inside Latin.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | grep -v StorageSystemContributors.generated.cpp | xargs grep -P --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
-
-# Orphaned header files.
-join -v1 <(find $ROOT_PATH/{src,programs,utils} -name '*.h' -printf '%f\n' | sort | uniq) <(find $ROOT_PATH/{src,programs,utils,tests/lexer} -name '*.cpp' -or -name '*.c' -or -name '*.h' -or -name '*.S' | xargs grep --no-filename -o -P '[\w-]+\.h' | sort | uniq) |
-    grep . && echo '^ Found orphan header files.'
-
 # Don't allow dynamic compiler check with CMake, because we are using hermetic, reproducible, cross-compiled, static (TLDR, good) builds.
-ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or -name '*.cmake' | xargs grep --with-filename -i -P 'check_c_compiler_flag|check_cxx_compiler_flag|check_c_source_compiles|check_cxx_source_compiles|check_include_file|check_symbol_exists|cmake_push_check_state|cmake_pop_check_state|find_package|CMAKE_REQUIRED_FLAGS|CheckIncludeFile|CheckCCompilerFlag|CheckCXXCompilerFlag|CheckCSourceCompiles|CheckCXXSourceCompiles|CheckCSymbolExists|CheckCXXSymbolExists' | grep -v Rust && echo "^ It's not allowed to have dynamic compiler checks with CMake."
-
-# Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|TcpExtListenOverflows' &&
-    echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
-
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE |
-    xargs grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
-    echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
+find $ROOT_PATH/contrib/*-cmake -name 'CMakeLists.txt' -or -name '*.cmake' | xargs grep --with-filename -i -E 'check_c_compiler_flag|check_cxx_compiler_flag|check_c_source_compiles|check_cxx_source_compiles|check_include_file|check_symbol_exists|cmake_push_check_state|cmake_pop_check_state|find_package|CMAKE_REQUIRED_FLAGS|CheckIncludeFile|CheckCCompilerFlag|CheckCXXCompilerFlag|CheckCSourceCompiles|CheckCXXSourceCompiles|CheckCSymbolExists|CheckCXXSymbolExists' | grep -v Rust && echo "^ It's not allowed to have dynamic compiler checks with CMake."
 
 PATTERN="allow_";
 DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/ci/jobs/scripts/check_style/experimental_settings_ignore.txt | sort -u));
 [ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to ci/jobs/scripts/check_style/experimental_settings_ignore.txt"
+} > "$O.11" 2>&1 &
 
+# 12a: NDEBUG and cast checks on nobase_all
+{
+# A small typo can lead to debug code in release builds, see https://github.com/ClickHouse/ClickHouse/pull/47647
+xargs < "$STYLE_TMPDIR/nobase_all" grep -l -F '#ifdef NDEBUG' | \
+    xargs awk '/#ifdef NDEBUG/ { inside = 1; dirty = 1 } /#endif/ { if (inside && dirty) { print "File " FILENAME " has suspicious #ifdef NDEBUG, possibly confused with #ifndef NDEBUG" }; inside = 0 } /#else/ { dirty = 0 }'
+
+# If a user is doing dynamic or typeid cast with a pointer, and immediately dereferencing it, it is unsafe.
+xargs < "$STYLE_TMPDIR/nobase_all" rg --line-number '(dynamic|typeid)_cast<[^>]+\*>\([^\(\)]+\)->' | grep . && echo "It's suspicious when you are doing a dynamic_cast or typeid_cast with a pointer and immediately dereferencing it. Use references instead of pointers or check a pointer to nullptr."
+} > "$O.12a" 2>&1 &
+
+# 12b: Punctuation, std::regex, and Cyrillic checks on nobase_all
+{
+# Check for bad punctuation: whitespace before comma.
+xargs < "$STYLE_TMPDIR/nobase_all" rg --line-number '\w ,' | grep -v 'bad punctuation is ok here' && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
+
+# Check usage of std::regex which is too bloated and slow.
+xargs < "$STYLE_TMPDIR/nobase_all" grep -F --line-number 'std::regex' | grep . && echo "^ Please use re2 instead of std::regex"
+
+# Cyrillic characters hiding inside Latin.
+grep -v StorageSystemContributors.generated.cpp "$STYLE_TMPDIR/nobase_all" | \
+    xargs rg --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
+} > "$O.12b" 2>&1 &
+
+# 13: Orphaned header files
+{
+join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | sed 's:.*/::'  | sort -u) <(rg --no-filename -o '[\w-]+\.h' --glob '*.cpp' --glob '*.c' --glob '*.h' --glob '*.S' $ROOT_PATH/src $ROOT_PATH/programs $ROOT_PATH/utils $ROOT_PATH/tests/lexer | sort -u) |
+    grep . && echo '^ Found orphan header files.'
+} > "$O.13" 2>&1 &
+
+# 14: Abbreviation checks and error message style
+{
+# Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
+xargs < "$STYLE_TMPDIR/all_excluded" rg 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|TcpExtListenOverflows' &&
+    echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
+
+xargs < "$STYLE_TMPDIR/all_excluded" grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
+    echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
+} > "$O.14" 2>&1 &
+
+# 15: magic_enum and std::format
+{
 # Don't allow the direct inclusion of magic_enum.hpp and instead point to base/EnumReflection.h
-find $ROOT_PATH/{src,base,programs,utils} -name '*.cpp' -or -name '*.h' | xargs grep -l "magic_enum.hpp" | grep -v EnumReflection.h | while read -r line;
+xargs < "$STYLE_TMPDIR/all_excluded" grep -l "magic_enum.hpp" | grep -v EnumReflection.h | while read -r line;
 do
     echo "Found the inclusion of magic_enum.hpp in '${line}'. Please use <base/EnumReflection.h> instead"
 done
 
 # Currently fmt::format is faster both at compile and runtime
 EXCLUDE_STD_FORMAT='HTTPHandler'
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -vP $EXCLUDE | grep -vP $EXCLUDE_STD_FORMAT | xargs grep -l "std::format" | while read -r file;
+grep -vP $EXCLUDE_STD_FORMAT "$STYLE_TMPDIR/all_excluded" | xargs grep -l "std::format" | while read -r file;
 do
     echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
 done
+} > "$O.15" 2>&1 &
 
+# 16: Quote includes and shared_mutex
+{
 # Forbid using quotes for includes (except for autogenerated files)
-QUOTE_EXCLUSIONS=(
-    --exclude "$ROOT_PATH/utils/memcpy-bench/glibc/*"
-)
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | \
-  grep -vP $EXCLUDE |
-  xargs grep -P '#include[\s]*(").*(")' "${QUOTE_EXCLUSIONS[@]}" | \
-  grep -v -F -e \"config.h\" -e \"config_tools.h\" -e \"SQLGrammar.pb.h\" -e \"out.pb.h\" -e \"clickhouse_grpc.grpc.pb.h\" -e \"delta_kernel_ffi.hpp\" | \
-  xargs -i echo "Found include with quotes in '{}'. Please use <> instead"
+grep -v 'utils/memcpy-bench/glibc/' "$STYLE_TMPDIR/nobase_excluded" | \
+  xargs rg '#include\s*".*"' | \
+  grep -v -F -e '"config.h"' -e '"config_tools.h"' -e '"SQLGrammar.pb.h"' -e '"out.pb.h"' -e '"clickhouse_grpc.grpc.pb.h"' -e '"delta_kernel_ffi.hpp"' | \
+  sed "s/^/Found include with quotes in '/;s/$/'. Please use <> instead/"
+} > "$O.16" 2>&1 &
 
-# Forbid using std::shared_mutex and point to the faster alternative
-find ./{src,programs,utils} -name '*.h' -or -name '*.cpp' | \
-  grep -vP $EXCLUDE |
-  xargs grep 'std::shared_mutex' | \
-  xargs -i echo "Found std::shared_mutex '{}'. Please use DB::SharedMutex instead"
-
+# 17: Context.h usage
+{
 # Context.h (and a few similar headers) is included in many parts of the
 # codebase, so any modifications to it trigger a large-scale recompilation.
 # Therefore, it is crucial to avoid unnecessary inclusion of Context.h in
@@ -408,5 +437,10 @@ CONTEXT_H_EXCLUDES=(
 )
 find $ROOT_PATH/src -name '*.h' -print0 | xargs -0 grep -P '#include[\s]*(<|")Interpreters/Context.h(>|")' "${CONTEXT_H_EXCLUDES[@]}" | \
     grep . && echo '^ Too broad Context.h usage. Consider using Context_fwd.h and Context.h out from .h into .cpp'
+} > "$O.17" 2>&1 &
+
+# Wait for all parallel checks to complete, then output results in order
+wait
+cat "$O".* 2>/dev/null
 
 exit 0

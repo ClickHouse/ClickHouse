@@ -11,6 +11,7 @@ from pathlib import Path
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.settings import Settings
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
@@ -20,6 +21,7 @@ perf_right = f"{perf_wd}/right"
 perf_left = f"{perf_wd}/left"
 perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
+raw_query_metrics_path = f"{perf_wd}/analyze/raw-query-metrics-upload.tsv"
 
 GET_HISTORICAL_TRESHOLDS_QUERY = """\
 SELECT test, query_index,
@@ -38,6 +40,27 @@ HAVING count() > 100"""
 
 INSERT_HISTORICAL_DATA = """\
 INSERT INTO query_metrics_v2
+(
+    event_date,
+    event_time,
+    pr_number,
+    old_sha,
+    new_sha,
+    test,
+    query_index,
+    query_display_name,
+    metric,
+    old_value,
+    new_value,
+    diff,
+    stat_threshold,
+    arch,
+    workflow_name,
+    base_branch,
+    report_url,
+    instance_type,
+    instance_id
+)
 SELECT
     '{EVENT_DATE}' AS event_date,
     '{EVENT_DATE_TIME}' AS event_time,
@@ -51,7 +74,13 @@ SELECT
     old_value,
     new_value,
     diff,
-    stat_threshold
+    stat_threshold,
+    '{ARCH}' AS arch,
+    '{WORKFLOW_NAME}' AS workflow_name,
+    '{BASE_BRANCH}' AS base_branch,
+    '{REPORT_URL}' AS report_url,
+    '{INSTANCE_TYPE}' AS instance_type,
+    '{INSTANCE_ID}' AS instance_id
 FROM input(
     'metric_name String,
      old_value Float64,
@@ -63,6 +92,82 @@ FROM input(
      query_index Int32,
      query_display_name String'
 ) FORMAT TSV"""
+
+RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
+
+INSERT_RAW_QUERY_METRICS_DATA = """\
+INSERT INTO {RAW_QUERY_METRICS_TABLE}
+(
+    event_date,
+    check_start_time,
+    pr_number,
+    old_sha,
+    new_sha,
+    arch,
+    baseline_kind,
+    workflow_name,
+    base_branch,
+    report_url,
+    instance_type,
+    instance_id,
+    test,
+    query_index,
+    query_display_name,
+    side,
+    query_id,
+    metric_name,
+    metric_value
+)
+SELECT
+    '{EVENT_DATE}' AS event_date,
+    '{CHECK_START_TIME}' AS check_start_time,
+    {PR_NUMBER} AS pr_number,
+    '{REF_SHA}' AS old_sha,
+    '{CUR_SHA}' AS new_sha,
+    '{ARCH}' AS arch,
+    '{BASELINE_KIND}' AS baseline_kind,
+    '{WORKFLOW_NAME}' AS workflow_name,
+    '{BASE_BRANCH}' AS base_branch,
+    '{REPORT_URL}' AS report_url,
+    '{INSTANCE_TYPE}' AS instance_type,
+    '{INSTANCE_ID}' AS instance_id,
+    test,
+    query_index,
+    query_display_name,
+    if(version = 0, 'baseline', 'candidate') AS side,
+    query_id,
+    metric_name,
+    metric_value
+FROM input(
+    'test String,
+     query_index Int32,
+     query_display_name String,
+     metric_name String,
+     version UInt8,
+     query_id String,
+     metric_value Float64'
+) FORMAT TSV"""
+
+BUILD_RAW_QUERY_METRICS_QUERY = """\
+create view query_display_names as
+    select *
+    from file('analyze/query-display-names.tsv', TSV,
+        'test text, query_index int, query_display_name text');
+
+create table raw_query_metrics_tsv engine File(TSV, 'analyze/raw-query-metrics-upload.tsv')
+as select
+    denorm.test,
+    denorm.query_index,
+    ifNull(query_display_names.query_display_name, '') as query_display_name,
+    denorm.metric_name,
+    denorm.version,
+    denorm.query_id,
+    denorm.metric_value
+from file('analyze/query-run-metrics-denorm.tsv', TSV,
+    'test text, query_index int, metric_name text, version UInt8, query_id text, metric_value float') denorm
+left join query_display_names using (test, query_index)
+order by denorm.test, denorm.query_index, denorm.metric_name, denorm.version, denorm.query_id
+"""
 
 # Precision is going to be 1.5 times worse for PRs, because we run the queries
 # less times. How do I know it? I ran this:
@@ -95,6 +200,61 @@ class JobStages(metaclass=MetaClasses.WithIter):
     REPORT = "report"
     # TODO: stage implement code from the old script as is - refactor and remove
     CHECK_RESULTS = "check_results"
+
+
+def escape_sql_string(value):
+    if value is None:
+        return ""
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("\n", "\\n")
+    )
+
+
+def get_perf_arch():
+    if Utils.is_arm():
+        return "arm"
+    if Utils.is_amd():
+        return "amd"
+    Utils.raise_with_error("Unknown processor architecture")
+
+
+def get_insert_metadata(info, compare_against_release):
+    return {
+        "ARCH": escape_sql_string(get_perf_arch()),
+        "BASELINE_KIND": "release_base" if compare_against_release else "master_head",
+        "WORKFLOW_NAME": escape_sql_string(info.workflow_name),
+        "BASE_BRANCH": escape_sql_string(info.base_branch),
+        "REPORT_URL": escape_sql_string(info.get_job_report_url()),
+        "INSTANCE_TYPE": escape_sql_string(info.instance_type),
+        "INSTANCE_ID": escape_sql_string(info.instance_id),
+    }
+
+
+def build_raw_query_metrics_tsv():
+    Path(raw_query_metrics_path).unlink(missing_ok=True)
+    result = subprocess.run(
+        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY],
+        cwd=perf_wd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print(result.stderr)
+    if result.returncode != 0:
+        print(
+            f"WARNING: Failed to build raw query metrics TSV with exit code [{result.returncode}]"
+        )
+        return False
+    if not Path(raw_query_metrics_path).is_file():
+        print(f"WARNING: Raw query metrics TSV [{raw_query_metrics_path}] was not created")
+        return False
+    return True
 
 
 class CHServer:
@@ -494,6 +654,7 @@ def main():
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
+                "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
             cmds = []
             for dataset_path in dataset_paths.values():
@@ -549,6 +710,8 @@ def main():
             f"cp -al {db_path} {perf_right}/db ||:",
             f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
             f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
+            # Symlink user_files from the repository into both servers' user_files directories
+            f'for f in ./tests/performance/user_files/*; do [ -e "$f" ] || continue; ln -sf "$(readlink -f "$f")" {perf_left}/db/user_files/; ln -sf "$(readlink -f "$f")" {perf_right}/db/user_files/; done',
         ]
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
@@ -611,7 +774,7 @@ def main():
 
         def run_tests():
             # Run 10 random queries per test by default, but all queries for benchmarks
-            benchmarks = {"clickbench.xml", "tpch.xml"}
+            benchmarks = {"clickbench.xml", "tpch.xml", "tpcds.xml"}
             for test in test_files:
                 max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
@@ -682,7 +845,69 @@ def main():
 
         res = results[-1].is_ok()
 
-    if res and not info.is_local_run and not compare_against_release:
+    if res and not info.is_local_run and JobStages.REPORT in stages:
+
+        def insert_raw_query_metrics_data():
+            cidb = CIDBCluster()
+            assert cidb.is_ready()
+
+            if not build_raw_query_metrics_tsv():
+                print("WARNING: Failed to prepare raw query metrics TSV")
+                return True
+
+            check_start_timestamp = os.environ.get("CHPC_CHECK_START_TIMESTAMP", "")
+            if check_start_timestamp:
+                check_start_time = datetime.fromtimestamp(
+                    int(check_start_timestamp)
+                ).isoformat(sep=" ").split(".")[0]
+            else:
+                check_start_time = datetime.now().isoformat(sep=" ").split(".")[0]
+
+            now = datetime.now()
+            date = now.date().isoformat()
+
+            with open(raw_query_metrics_path, "r", encoding="utf-8") as f:
+                data = f.read()
+            line_count = data.count("\n")
+
+            insert_metadata = get_insert_metadata(info, compare_against_release)
+            query = INSERT_RAW_QUERY_METRICS_DATA.format(
+                RAW_QUERY_METRICS_TABLE=RAW_QUERY_METRICS_TABLE,
+                EVENT_DATE=date,
+                CHECK_START_TIME=check_start_time,
+                PR_NUMBER=info.pr_number,
+                REF_SHA=escape_sql_string(reference_sha),
+                CUR_SHA=escape_sql_string(info.sha),
+                **insert_metadata,
+            )
+
+            print(f"Do insert raw query metrics query: >>>\n{query}\n<<<")
+            insert_ok = cidb.do_insert_query(
+                query=query,
+                data=data,
+                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                retries=3,
+            )
+            if insert_ok:
+                print(f"Inserted [{line_count}] raw query metric lines")
+            else:
+                print(f"Inserted [{line_count}] raw query metric lines - failed")
+            return True
+
+        results.append(
+            Result.from_commands_run(
+                name="Insert raw query metrics data",
+                command=insert_raw_query_metrics_data,
+                with_info=True,
+            )
+        )
+
+    if (
+        res
+        and not info.is_local_run
+        and not compare_against_release
+        and JobStages.REPORT in stages
+    ):
 
         def insert_historical_data():
             cidb = CIDBCluster()
@@ -699,22 +924,24 @@ def main():
                 data = "".join(lines)
             print(data)
 
+            insert_metadata = get_insert_metadata(info, compare_against_release)
             query = INSERT_HISTORICAL_DATA.format(
                 EVENT_DATE=date,
                 EVENT_DATE_TIME=date_time,
                 PR_NUMBER=info.pr_number,
-                REF_SHA=reference_sha,
-                CUR_SHA=info.sha,
+                REF_SHA=escape_sql_string(reference_sha),
+                CUR_SHA=escape_sql_string(info.sha),
+                **insert_metadata,
             )
 
             print(f"Do insert historical data query: >>>\n{query}\n<<<")
-            res = cidb.do_insert_query(
+            insert_ok = cidb.do_insert_query(
                 query=query,
                 data=data,
-                timeout=10,
+                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 retries=3,
             )
-            if res:
+            if insert_ok:
                 print(f"Inserted [{len(lines)}] lines")
             else:
                 print(f"Inserted [{len(lines)}] lines - failed")

@@ -58,6 +58,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
@@ -102,6 +103,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include <Common/config_version.h>
 #include <Common/XDGBaseDirectories.h>
@@ -136,6 +138,8 @@ namespace Setting
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
+    extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsString polyglot_dialect;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
@@ -408,6 +412,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     else if (dialect == Dialect::promql)
         parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+    else if (dialect == Dialect::polyglot)
+        parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
     else
         parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -792,6 +798,12 @@ try
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
 
         output_format->setAutoFlush();
+
+        /// Replay progress that was accumulated before the output format was created
+        /// (e.g. from scalar subqueries evaluated during query analysis on the server).
+        auto replayed = pending_progress.fetchAndResetPiecewiseAtomically();
+        if (replayed.read_rows || replayed.read_bytes)
+            output_format->onProgress(replayed);
 
         if ((!select_into_file || select_into_file_and_stdout)
             && stdout_is_a_tty
@@ -1313,6 +1325,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+            /// Allow cancellation during query analysis (e.g. scalar subqueries).
+            /// For TCP connections this is handled by receivePacketsExpectCancel;
+            /// for local connections this callback checks the signal handler flag.
+            connection->setCancelCallback([this]() { return query_interrupt_handler.cancelled(); });
+
             try
             {
                 connection->sendQuery(
@@ -1536,6 +1553,8 @@ void ClientBase::onProgress(const Progress & value)
 
     if (output_format)
         output_format->onProgress(value);
+    else
+        pending_progress.incrementPiecewiseAtomically(value);
 
     if (need_render_progress && tty_buf)
     {
@@ -1714,6 +1733,7 @@ void ClientBase::resetOutput()
     }
 
     output_format.reset();
+    pending_progress.reset();
 
     logs_out_stream.reset();
 
@@ -2003,7 +2023,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         try
         {
-            auto metadata = storage->getInMemoryMetadataPtr();
+            auto metadata = storage->getInMemoryMetadataPtr(client_context, false);
             QueryPlan plan;
             storage->read(
                 plan,
@@ -2966,6 +2986,16 @@ bool ClientBase::processQueryText(const String & text)
         return processMultiQueryFromFile(file_name);
     }
 
+    // Handle `ls` metacommand
+    if (supportsLocalMetaCommands() && boost::iequals(trimmed_input, "ls"))
+    {
+        // Rewrites `ls` into a query that returns the list of all files of the current working directory
+        // TODO: Use the filesystem table engine once https://github.com/ClickHouse/ClickHouse/pull/53610 is merged
+        const String ls_query = "SELECT _file AS file FROM file('*', 'One') ORDER BY file";
+        return executeMultiQuery(ls_query);
+    }
+
+
 #if USE_CLIENT_AI
     // Handle "?? <free_text>" command
     if (text.starts_with("??"))
@@ -3306,7 +3336,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("enable-progress-table-toggle", po::value<bool>()->default_value(true), "Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table enabled.")
 
         ("disable_suggestion,A", "Disable loading suggestions. Note that suggestions are loaded asynchronously through a second connection to ClickHouse server. Recommended when pasting queries with TAB characters.") /// Shorthand -A like in MySQL client
-        ("wait_for_suggestions_to_load", "Load suggestion data synchonously")
+        ("wait_for_suggestions_to_load", "Load suggestion data synchronously")
         ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch")
 
         ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -3532,7 +3562,10 @@ void ClientBase::runInteractive()
     initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    /// AI SQL generation is disabled for the embedded client (SSH and WebSocket protocols)
+    /// because it accesses the environment (API keys) which could be a security concern.
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -3630,7 +3663,6 @@ void ClientBase::runInteractive()
         .in_fd = stdin_fd,
         .out_fd = stdout_fd,
         .err_fd = stderr_fd,
-        .on_complete_modify_callback = ReplxxLineReader::OnCompleteModifyCallback(),
     };
 
     lr = std::make_unique<ReplxxLineReader>(std::move(options));
@@ -3784,14 +3816,14 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     return executeMultiQuery(queries_from_file);
 }
 
-
 void ClientBase::runNonInteractive()
 {
     if (delayed_interactive)
         initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     if (!buzz_house && !queries_files.empty())

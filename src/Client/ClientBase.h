@@ -263,6 +263,7 @@ private:
     /// Execute a query and collect all results as a single string (rows separated by newlines)
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
+    virtual bool supportsLocalMetaCommands() const { return false; }
 
 protected:
 
@@ -407,6 +408,9 @@ protected:
     SettingsChanges settings_from_server;
 
     ProgressIndication progress_indication;
+    /// Progress received before the output format was created (e.g. from scalar subqueries during analysis).
+    /// Replayed into output_format once it's available.
+    Progress pending_progress;
     ProgressTable progress_table;
     bool need_render_progress = true;
     bool need_render_progress_table = true;

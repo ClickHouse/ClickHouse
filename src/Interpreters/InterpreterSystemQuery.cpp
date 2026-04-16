@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <DataTypes/DataTypesNumber.h>
 #include <csignal>
 #include <filesystem>
+#include <utility>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -14,14 +16,15 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/enableAllExperimentalSettings.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -53,12 +56,14 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
+#include <Common/CoverageCollection.h>
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
@@ -139,7 +144,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
-    extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
@@ -147,6 +151,12 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int UNSUPPORTED_METHOD;
     extern const int DELTA_KERNEL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char restart_replica_fail_after_detach[];
 }
 
 namespace ActionLocks
@@ -875,6 +885,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_DISTRIBUTED:
             flushDistributed(query);
             break;
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+            flushObjectStorageQueue(query);
+            break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
             break;
@@ -890,8 +903,22 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
-        case Type::RESTART_DISK:
-            restartDisk(query.disk);
+        case Type::WAIT_BLOBS_CLEANUP:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_WAIT_BLOBS_CLEANUP);
+
+            auto disk_ptr = getContext()->getDisk(query.disk);
+            auto * object_disk = dynamic_cast<DiskObjectStorage *>(disk_ptr.get());
+            if (!object_disk)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not an object storage disk", query.disk);
+
+            /// We wait 2 times here because a background blob cleanup round may already be running
+            /// and this query must guarantee that after it returns, all expected blobs have been cleaned up.
+            object_disk->waitBlobsCleanup();
+            object_disk->waitBlobsCleanup();
+
+            break;
+        }
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -1020,6 +1047,41 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM);
             resetCoverage();
+            break;
+        }
+        case Type::SET_COVERAGE_TEST:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM);
+            LOG_INFO(getLogger("InterpreterSystemQuery"),
+                "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
+#if WITH_COVERAGE_DEPTH
+            {
+                /// Register (or re-register) the flush callback so coverage data is
+                /// resolved and inserted into system.coverage_log when the previous
+                /// test's counters are flushed.  We re-register on each call so the
+                /// captured global context stays fresh after server restart scenarios,
+                /// and so that the callback is available even on the very first call.
+                ContextPtr global_ctx = getContext()->getGlobalContext();
+                registerCoverageFlushCallback(
+                    [global_ctx](std::string_view prev_test,
+                                 const std::vector<CovCounter> & name_refs,
+                                 const std::vector<IndirectCallEntry> & indirect_calls)
+                    {
+                        LOG_INFO(getLogger("CoverageCollection"),
+                            "Flushing coverage for test '{}': {} covered counters, {} indirect calls",
+                            prev_test, name_refs.size(), indirect_calls.size());
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+                        DB::collectAndInsertCoverage(prev_test, name_refs, indirect_calls, global_ctx);
+#else
+                        (void)prev_test;
+                        (void)name_refs;
+                        (void)indirect_calls;
+                        (void)global_ctx;
+#endif
+                    });
+            }
+#endif
+            setCoverageTest(query.coverage_test_name);
             break;
         }
         case Type::LOAD_PRIMARY_KEY: {
@@ -1240,55 +1302,86 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     /// metadata, which causes metadata digest mismatches in DatabaseReplicated.
     /// We retry on all exceptions, not just ZooKeeper ones, because re-creating from valid metadata
     /// should always eventually succeed for transient errors.
+    /// If all retries fail (or the query is cancelled), we adjust the in-memory metadata digest
+    /// to reflect the table's absence, preventing false "Digest does not match" assertions.
 
     StoragePtr new_table;
-    size_t non_zk_retries = 0;
-    constexpr size_t max_non_zk_retries = 10;
-    while (true)
+    try
     {
-        try
+        size_t non_zk_retries = 0;
+        constexpr size_t max_non_zk_retries = 10;
+        while (true)
         {
-            new_table = StorageFactory::instance().get(create,
-                data_path,
-                system_context,
-                system_context->getGlobalContext(),
-                columns,
-                constraints,
-                LoadingStrictnessLevel::ATTACH);
+            try
+            {
+                fiu_do_on(FailPoints::restart_replica_fail_after_detach,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED,
+                        "Injected failure by failpoint restart_replica_fail_after_detach");
+                });
 
-            break;
+                new_table = StorageFactory::instance().get(create,
+                    data_path,
+                    system_context,
+                    system_context->getGlobalContext(),
+                    columns,
+                    constraints,
+                    LoadingStrictnessLevel::ATTACH);
+
+                break;
+            }
+            catch (const Coordination::Exception & e)
+            {
+                /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
+                if (!Coordination::isHardwareError(e.code))
+                    throw;
+
+                tryLogCurrentException(
+                    getLogger("InterpreterSystemQuery"),
+                    fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
+
+                /// Check if the query was cancelled (e.g. server is shutting down)
+                if (auto process_list_element = getContext()->getProcessListElementSafe())
+                    process_list_element->checkTimeLimit();
+
+                sleepForSeconds(1);
+            }
+            catch (...)
+            {
+                if (++non_zk_retries > max_non_zk_retries)
+                    throw;
+
+                tryLogCurrentException(
+                    getLogger("InterpreterSystemQuery"),
+                    fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
+                        replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+
+                if (auto process_list_element = getContext()->getProcessListElementSafe())
+                    process_list_element->checkTimeLimit();
+
+                sleepForSeconds(1);
+            }
         }
-        catch (const Coordination::Exception & e)
+    }
+    catch (...)
+    {
+        /// The table is left permanently detached from the in-memory tables map.
+        /// Adjust the metadata digest so it stays consistent with the tables map,
+        /// preventing false "Digest does not match" LOGICAL_ERROR exceptions.
+        /// The table's metadata file still exists on disk, so it will be restored
+        /// on server restart or after DatabaseReplicated recovery.
+        if (auto * replicated_db = typeid_cast<DatabaseReplicated *>(database.get()))
         {
-            /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
-            if (!Coordination::isHardwareError(e.code))
-                throw;
-
-            tryLogCurrentException(
-                getLogger("InterpreterSystemQuery"),
-                fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
-
-            /// Check if the query was cancelled (e.g. server is shutting down)
-            if (auto process_list_element = getContext()->getProcessListElementSafe())
-                process_list_element->checkTimeLimit();
-
-            sleepForSeconds(1);
+            try
+            {
+                replicated_db->adjustDigestOnTableLostFromRestart(replica_table_id.table_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to adjust digest after failed SYSTEM RESTART REPLICA for table " + replica_table_id.table_name + "; digest mismatch will persist until server restart or DatabaseReplicated recovery");
+            }
         }
-        catch (...)
-        {
-            if (++non_zk_retries > max_non_zk_retries)
-                throw;
-
-            tryLogCurrentException(
-                getLogger("InterpreterSystemQuery"),
-                fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
-                    replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
-
-            if (auto process_list_element = getContext()->getProcessListElementSafe())
-                process_list_element->checkTimeLimit();
-
-            sleepForSeconds(1);
-        }
+        throw;
     }
 
     database->attachTable(system_context, replica_table_id.table_name, new_table, data_path);
@@ -2061,10 +2154,21 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
 
-[[noreturn]] void InterpreterSystemQuery::restartDisk(String &)
+void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
 {
-    getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
+    auto context = getContext();
+    context->checkAccess(AccessType::SYSTEM_FLUSH_OBJECT_STORAGE_QUEUE, table_id);
+
+    if (query.queue_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PATH must be specified for SYSTEM FLUSH OBJECT STORAGE QUEUE");
+
+    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto * queue = dynamic_cast<StorageObjectStorageQueue *>(table.get());
+    if (!queue)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
+
+    queue->waitForPathToBeProcessed(query.queue_path, context);
 }
 
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
@@ -2411,6 +2515,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_OBJECT_STORAGE_QUEUE, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::FLUSH_LOGS:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
@@ -2422,8 +2531,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::RESTART_DISK:
+        case Type::WAIT_BLOBS_CLEANUP:
         {
-            required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
+            required_access.emplace_back(AccessType::SYSTEM_WAIT_BLOBS_CLEANUP);
             break;
         }
         case Type::UNFREEZE:
@@ -2494,6 +2604,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
+        case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::RESET_DDL_WORKER:
         case Type::END: break;

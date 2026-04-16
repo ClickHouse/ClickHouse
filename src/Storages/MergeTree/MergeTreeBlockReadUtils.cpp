@@ -9,6 +9,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -31,6 +32,11 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
+namespace FailPoints
+{
+    extern const char patch_parts_reverse_column_order[];
+}
+
 namespace
 {
 
@@ -39,10 +45,10 @@ bool hasMaterializedTextIndex(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const String & virtual_column_name)
 {
-    if (!storage_snapshot->virtual_columns)
+    if (storage_snapshot->metadata->virtuals.empty())
         return false;
 
-    const auto * virtual_column = storage_snapshot->virtual_columns->tryGetDescription(virtual_column_name);
+    const auto * virtual_column = storage_snapshot->metadata->virtuals.tryGetDescription(virtual_column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     if (!virtual_column)
         return false;
 
@@ -158,7 +164,7 @@ NameSet injectRequiredColumns(
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-        .withVirtuals()
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns(with_subcolumns);
 
     for (size_t i = 0; i < columns.size(); ++i)
@@ -167,9 +173,18 @@ NameSet injectRequiredColumns(
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
 
+        /// Copy columns[i] to avoid a dangling reference: injectRequiredColumnsRecursively may call
+        /// columns.emplace_back, which can reallocate the vector and invalidate any reference into it.
+        String column_name = columns[i];
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
-            columns[i], storage_snapshot, alter_conversions,
-            data_part_info_for_reader, options, columns, required_columns, injected_columns);
+            column_name,
+            storage_snapshot,
+            alter_conversions,
+            data_part_info_for_reader,
+            options,
+            columns,
+            required_columns,
+            injected_columns);
     }
 
     /** Add a column of the minimum size.
@@ -245,9 +260,10 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             ColumnInfo info;
             info.name = column_name;
+            info.is_subcolumn = column_from_part && column_from_part->isSubcolumn();
             /// If column isn't fixed and doesn't have checksum, than take first
             ColumnSize column_size;
-            if (column_from_part && column_from_part->isSubcolumn() && allow_subcolumns_sizes_calculation)
+            if (info.is_subcolumn && allow_subcolumns_sizes_calculation)
                 column_size = data_part->getSubcolumnSize(column_name);
             else
                 column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
@@ -318,6 +334,13 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
         double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
         info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
+
+        /// For subcolumns, the output column size can be much smaller than what was
+        /// actually read from disk (e.g. a Map subcolumn reads the entire Map but
+        /// only extracts one key's values). Prevent the estimate from dropping below
+        /// the global average so that chunk sizes stay appropriate for the real I/O cost.
+        if (info.is_subcolumn)
+            info.bytes_per_row = std::max(info.bytes_per_row, info.bytes_per_row_global);
 
         info.size_bytes = new_size;
         block_size_bytes += new_size;
@@ -390,6 +413,17 @@ void addPatchPartsColumns(
         required_virtuals.insert(patch_system_columns.begin(), patch_system_columns.end());
 
         Names patch_columns_to_read_names(patch_columns_to_read_set.begin(), patch_columns_to_read_set.end());
+
+        fiu_do_on(FailPoints::patch_parts_reverse_column_order,
+        {
+            /// Simulate non-deterministic NameSet iteration producing different column
+            /// orderings for different patches. This reproduces the bug fixed in
+            /// getUpdatedHeader (applyPatches.cpp) where sortColumns() normalizes order
+            /// before the positional assertCompatibleHeader comparison.
+            if (i % 2 == 1)
+                std::reverse(patch_columns_to_read_names.begin(), patch_columns_to_read_names.end());
+        });
+
         result.patch_columns[i] = storage_snapshot->getColumnsByNames(options, patch_columns_to_read_names);
     }
 
@@ -426,7 +460,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
-        .withVirtuals()
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns(with_subcolumns);
 
     auto add_step = [&](const PrewhereExprStep & step)

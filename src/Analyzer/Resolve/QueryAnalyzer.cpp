@@ -1,28 +1,30 @@
-#include <Analyzer/Utils.h>
-#include <Analyzer/SetUtils.h>
 #include <Analyzer/AggregationUtils.h>
-#include <Analyzer/WindowFunctionsUtils.h>
-#include <Analyzer/ValidationUtils.h>
-#include <Analyzer/HashUtils.h>
-#include <Analyzer/IdentifierNode.h>
-#include <Analyzer/MatcherNode.h>
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ColumnTransformers.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/LambdaNode.h>
-#include <Analyzer/SortNode.h>
+#include <Analyzer/HashUtils.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/inlineMaterializedCTEIfNeeded.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Analyzer/InterpolateNode.h>
-#include <Analyzer/WindowNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/UnionNode.h>
+#include <Analyzer/LambdaNode.h>
+#include <Analyzer/MatcherNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/RecursiveCTE.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/RecursiveCTE.h>
+#include <Analyzer/SetUtils.h>
+#include <Analyzer/SortNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
+#include <Analyzer/ValidationUtils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/WindowNode.h>
 
 #include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
@@ -51,10 +53,15 @@
 #include <Interpreters/convertFieldToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageView.h>
+#include <Storages/ColumnsDescription.h>
+
+#include <Access/EnabledRowPolicies.h>
 
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <memory>
 #include <ranges>
 
 namespace DB
@@ -63,10 +70,13 @@ namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
+    extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
+    extern const SettingsBool asterisk_include_virtual_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_materialized_cte;
     extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
@@ -162,8 +172,13 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             {
                 scope.expression_join_tree_node = table_expression;
                 scope.registered_table_expression_nodes.insert(table_expression);
+                /// Mark table expression as being in resolve process to prevent
+                /// premature access during ALIAS column resolution in
+                /// initializeTableExpressionData (e.g. dictGet ALIAS columns).
+                scope.table_expressions_in_resolve_process.insert(table_expression.get());
                 validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
                 initializeTableExpressionData(scope.expression_join_tree_node, scope);
+                scope.table_expressions_in_resolve_process.erase(table_expression.get());
             }
 
             if (node_type == QueryTreeNodeType::LIST)
@@ -194,6 +209,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     }
 
     validateCorrelatedSubqueries(node);
+    inlineMaterializedCTEIfNeeded(node, reused_materialized_cte, context);
 }
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
@@ -213,8 +229,13 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     {
         scope.expression_join_tree_node = table_expression;
         scope.registered_table_expression_nodes.insert(table_expression);
+        /// Mark table expression as being in resolve process to prevent
+        /// premature access during ALIAS column resolution in
+        /// initializeTableExpressionData (e.g. dictGet ALIAS columns).
+        scope.table_expressions_in_resolve_process.insert(table_expression.get());
         validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
+        scope.table_expressions_in_resolve_process.erase(table_expression.get());
     }
 
     if (node_type == QueryTreeNodeType::LIST)
@@ -932,7 +953,7 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     if (need_add_or_null)
     {
         auto properties = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name, action);
-        if (!properties->returns_default_when_only_null)
+        if (!properties || !properties->returns_default_when_only_null)
             result_aggregate_function_name += "OrNull";
     }
 
@@ -1129,6 +1150,59 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
 
+/* Try to resolve identifier as Common Table Expression (CTE)
+ *
+ * CTE is set to be MATERIALIZED, the corresponding CTE subquery is resolved and
+ * replaced with table node in the CTE map.
+ */
+IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
+    const IdentifierLookup & identifier_lookup,
+    IdentifierResolveScope & scope
+)
+{
+    auto full_name = identifier_lookup.identifier.getFullName();
+    auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+
+    /// CTE may reference table expressions with the same name, e.g.:
+    ///
+    /// WITH test1 AS (SELECT * FROM test1) SELECT * FROM test1;
+    ///
+    /// Since recursive CTEs are handled in different place, `test1` identifier inside of CTE
+    /// references to table <default database name>.test1.
+    /// This means that the example above is equivalent to the following query:
+    ///
+    /// SELECT * FROM test1;
+    ///
+    /// To accomplish this behaviour it's not allowed to resolve identifiers to
+    /// CTE that is being resolved.
+    if (cte_query_node_it == scope.cte_name_to_query_node.end() || ctes_in_resolve_process.contains(cte_query_node_it->second))
+        return {};
+
+    auto & cte_node = cte_query_node_it->second;
+    auto * query_node = cte_node->as<QueryNode>();
+    auto * union_node = cte_node->as<UnionNode>();
+
+    bool is_materialized_cte = (query_node && query_node->isMaterialized()) || (union_node && union_node->isMaterialized());
+    if (is_materialized_cte && scope.context->getSettingsRef()[Setting::enable_materialized_cte])
+    {
+        /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
+        /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
+        auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
+        table_node->setAlias(full_name);
+
+        cte_node = table_node;
+    }
+    else if (auto * table_node = cte_node->as<TableNode>())
+    {
+        if (table_node->isMaterializedCTE())
+        {
+            reused_materialized_cte.insert(table_node->getMaterializedCTE());
+        }
+    }
+
+    return { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
+}
+
 /** Try to resolve identifier recursively in parent scopes.
   *
   * If identifier is resolved to expression it must be resolved in the context of the current scope.
@@ -1195,9 +1269,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     {
         auto * subquery_node = resolved_identifier->as<QueryNode>();
         auto * union_node = resolved_identifier->as<UnionNode>();
+        auto * table_node = resolved_identifier->as<TableNode>();
 
         /// Resolved to CTE in parent scope.
-        bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
+        bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE()) || (table_node && table_node->isMaterializedCTE());
         /// Resolved to lambda argument.
         bool is_table_from_expression_arguments = resolve_result.isResolvedFromExpressionArguments() &&
             resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
@@ -1232,7 +1307,10 @@ static void correctColumnExpressionType(ColumnNode & column_node, const ContextP
     if (!column_node.hasExpression())
         return;
     auto & column_expression = column_node.getExpression();
-    if (column_node.getColumnType()->equals(*column_expression->getResultType()))
+    /// Use getName() comparison instead of equals() because equals() ignores
+    /// timezone for DateTime/DateTime64 types, but ALIAS columns with a different
+    /// timezone must still be cast to the declared type.
+    if (column_node.getColumnType()->getName() == column_expression->getResultType()->getName())
         return;
     column_expression = buildCastFunction(column_expression, column_node.getColumnType(), context, true);
 }
@@ -1356,28 +1434,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
+    /// Try to resolve identifier from Common Table Expressions (CTE)
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_cte && identifier_lookup.isTableExpressionLookup())
     {
-        auto full_name = identifier_lookup.identifier.getFullName();
-        auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
-
-        /// CTE may reference table expressions with the same name, e.g.:
-        ///
-        /// WITH test1 AS (SELECT * FROM test1) SELECT * FROM test1;
-        ///
-        /// Since we don't support recursive CTEs, `test1` identifier inside of CTE
-        /// references to table <default database name>.test1.
-        /// This means that the example above is equivalent to the following query:
-        ///
-        /// SELECT * FROM test1;
-        ///
-        /// To accomplish this behaviour it's not allowed to resolve identifiers to
-        /// CTE that is being resolved.
-        if (cte_query_node_it != scope.cte_name_to_query_node.end()
-            && !ctes_in_resolve_process.contains(cte_query_node_it->second))
-        {
-            resolve_result = { .resolved_identifier = cte_query_node_it->second, .resolve_place = IdentifierResolvePlace::CTE };
-        }
+        resolve_result = tryResolveIdentifierFromCTE(identifier_lookup, scope);
     }
 
     /// Try to resolve identifier from parent scopes
@@ -1499,6 +1559,7 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
     UInt8 get_columns_options_kind = GetColumnsOptions::AllPhysicalAndAliases;
+    VirtualsKind virtuals_kind = VirtualsKind::None;
 
     if (matcher_node_typed.isAsteriskMatcher())
     {
@@ -1511,9 +1572,12 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
 
         if (settings[Setting::asterisk_include_materialized_columns])
             get_columns_options_kind |= GetColumnsOptions::Kind::Materialized;
+
+        if (settings[Setting::asterisk_include_virtual_columns])
+            virtuals_kind = VirtualsKind::All;
     }
 
-    return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind));
+    return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind)).withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
 }
 
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
@@ -2802,8 +2866,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     /// If table identifier is resolved as CTE clone it and resolve
                     auto * subquery_node = resolved_identifier_node->as<QueryNode>();
                     auto * union_node = resolved_identifier_node->as<UnionNode>();
+                    auto * table_node = resolved_identifier_node->as<TableNode>();
                     bool resolved_as_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
 
+                    /// Non-materialized CTEs must be resolved here
                     if (resolved_as_cte)
                     {
                         auto original_cte_node = resolved_identifier_node;
@@ -2835,11 +2901,85 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                         ctes_in_resolve_process.erase(original_cte_node);
                     }
+                    else if (table_node != nullptr && table_node->isMaterializedCTE())
+                    {
+                        resolved_identifier_node = resolved_identifier_node->clone();
+                        auto * mat_table_node = resolved_identifier_node->as<TableNode>();
+                        auto materialized_cte_ptr = mat_table_node->getMaterializedCTE();
+
+                        auto & mat_subquery = mat_table_node->getMaterializedCTESubquery();
+
+                        /// Resolve the subquery if this clone's copy hasn't been resolved yet.
+                        bool mat_subquery_is_resolved = mat_subquery->as<QueryNode>()
+                            ? mat_subquery->as<QueryNode>()->isResolved()
+                            : mat_subquery->as<UnionNode>()->isResolved();
+
+                        if (!mat_subquery_is_resolved)
+                        {
+                            ctes_in_resolve_process.insert(resolved_identifier_node);
+
+                            IdentifierResolveScope & mat_subquery_scope = createIdentifierResolveScope(mat_subquery, &scope);
+                            mat_subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+                            if (mat_subquery->getNodeType() == QueryTreeNodeType::QUERY)
+                                resolveQuery(mat_subquery, mat_subquery_scope);
+                            else
+                                resolveUnion(mat_subquery, mat_subquery_scope);
+
+                            ctes_in_resolve_process.erase(resolved_identifier_node);
+                        }
+
+                        /// Create temp table only if no other clone has done it yet.
+                        if (!materialized_cte_ptr->isStorageInitialized())
+                        {
+                            const auto & proj_cols = mat_subquery->as<QueryNode>()
+                                ? mat_subquery->as<QueryNode>()->getProjectionColumns()
+                                : mat_subquery->as<UnionNode>()->computeProjectionColumns();
+
+                            NamesAndTypesList columns;
+                            for (const auto & col : proj_cols)
+                                columns.emplace_back(col.name, col.type);
+
+                            auto query_context = scope.context->getQueryContext();
+                            auto storage_holder = TemporaryTableHolder(
+                                query_context,
+                                ColumnsDescription(std::move(columns), false),
+                                ConstraintsDescription{},
+                                nullptr /*query*/,
+                                true /*create_for_global_subquery*/);
+
+                            mat_table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
+                        }
+                        else
+                        {
+                            mat_table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
+                        }
+                    }
                 }
             }
 
             if (!resolved_identifier_node)
             {
+                /** If the identifier could not be resolved and there is an expression with the same alias
+                  * currently being resolved (cycle prevention returned {}), check if this alias is duplicated.
+                  * If so, report MULTIPLE_EXPRESSIONS_FOR_ALIAS instead of UNKNOWN_IDENTIFIER,
+                  * which is a much more helpful error message.
+                  * Example: SELECT number AS num, num * 1 AS num FROM numbers(10)
+                  */
+                if (scope.expressions_in_resolve_process_stack.getExpressionWithAlias(unresolved_identifier.getFullName()) != nullptr)
+                {
+                    for (const auto & node_with_duplicated_alias : scope.aliases.nodes_with_duplicated_aliases)
+                    {
+                        if (node_with_duplicated_alias->getAlias() == unresolved_identifier.getFullName())
+                        {
+                            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                                "Multiple expressions with the same alias {}. In scope {}",
+                                backQuote(unresolved_identifier.getFullName()),
+                                scope.scope_node->formatASTForErrorMessage());
+                        }
+                    }
+                }
+
                 std::string message_clarification;
                 if (allow_lambda_expression)
                     message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::FUNCTION);
@@ -3650,7 +3790,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         if (storage_snapshot->storage.supportsSubcolumns())
         {
             get_column_options.withSubcolumns();
@@ -3716,7 +3856,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
                 false /*allow_lambda_expression*/,
                 false /*allow_table_expression*/);
             auto & resolved_expression = alias_column_to_resolve->getExpression();
-            if (!resolved_expression->getResultType()->equals(*alias_column_to_resolve->getResultType()))
+            if (resolved_expression->getResultType()->getName() != alias_column_to_resolve->getResultType()->getName())
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
             table_expression_data.column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
         }
@@ -3906,20 +4046,17 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
 
                 QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
-                if (table_function_argument_function_name == "view")
+                if (table_function_argument_function_name == "view"
+                    || (table_function_argument_function_name == "merge"
+                        && (table_function_name == "remote" || table_function_name == "remoteSecure"
+                            || table_function_name == "cluster" || table_function_name == "clusterAllReplicas")))
                 {
-                    /// Subquery in view() table function can reference tables that don't exist on the initiator.
-                    /// In the following example `users` table may be not available on the initiator:
-                    /// SELECT *
-                    /// FROM remoteSecure(<address>, view(
-                    ///     SELECT
-                    ///         t1.age,
-                    ///         t1.name,
-                    ///         t2.name
-                    ///     FROM users AS t1
-                    ///     INNER JOIN users AS t2 ON t1.uid = t2.uid
-                    /// ), <user>, <password>)
-                    /// SETTINGS prefer_localhost_replica = 0
+                    /// The `view` table function contains a subquery that may reference tables
+                    /// not available on the initiator.
+                    /// The `merge` table function inside remote/cluster should not be resolved
+                    /// on the initiator, because it pattern-matches tables that may only exist
+                    /// on the remote server.
+                    /// For example: SELECT count() FROM remote('host', merge(currentDatabase(), '^test'))
                     skip_analysis_arguments_indexes.push_back(table_function_argument_index);
                 }
                 else
@@ -3958,6 +4095,16 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         {
             if (exception.code() == ErrorCodes::UNKNOWN_IDENTIFIER)
             {
+                /** If resolution failed, the argument's subexpressions (e.g. scalar subqueries)
+                  * may be in an unresolved state. Mark the argument as unresolved so that
+                  * query tree passes (via traverseQueryTree) do not traverse into it and
+                  * encounter unresolved nodes like IDENTIFIER in join trees.
+                  *
+                  * Example: SELECT * FROM remote('localhost', view(SELECT 2 AS x), concat(x, (SELECT 1)))
+                  * Here concat(x, (SELECT 1)) fails on 'x', but the inner (SELECT 1) subquery
+                  * may not have been resolved yet, leaving its join tree as IdentifierNode("system.one").
+                  */
+                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
                 result_table_function_arguments.push_back(table_function_argument);
                 continue;
             }
@@ -4415,6 +4562,80 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
     return true;
 }
 
+/// Get ordered column names from a table expression, preserving left-to-right order.
+/// Returns false if the table expression type is not supported.
+static bool getOrderedColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, Names & result_columns)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push_back(root_table_expression.get());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * table_expression = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        switch (table_expression->getNodeType())
+        {
+            case QueryTreeNodeType::TABLE:
+            {
+                const auto * table_node = table_expression->as<TableNode>();
+                chassert(table_node);
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+                for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
+                    result_columns.push_back(column.name);
+                break;
+            }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                const auto * table_function_node = table_expression->as<TableFunctionNode>();
+                chassert(table_function_node);
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
+                    result_columns.push_back(column.name);
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                const auto * query_node = table_expression->as<QueryNode>();
+                chassert(query_node);
+                for (const auto & column : query_node->getProjectionColumns())
+                    result_columns.push_back(column.name);
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                const auto * union_node = table_expression->as<UnionNode>();
+                chassert(union_node);
+                for (const auto & column : union_node->computeProjectionColumns())
+                    result_columns.push_back(column.name);
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                const auto * join_node = table_expression->as<JoinNode>();
+                chassert(join_node);
+                nodes_to_process.push_back(join_node->getRightTableExpression().get());
+                nodes_to_process.push_back(join_node->getLeftTableExpression().get());
+                break;
+            }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                const auto * cross_join_node = table_expression->as<CrossJoinNode>();
+                chassert(cross_join_node);
+                const auto & exprs = cross_join_node->getTableExpressions();
+                for (auto it = exprs.rbegin(); it != exprs.rend(); ++it)
+                    nodes_to_process.push_back(it->get());
+                break;
+            }
+            default:
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 /// Resolve join node in scope
 void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
@@ -4438,6 +4659,49 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
         checkDuplicateTableNamesOrAliasForPasteJoin(join_node_typed, scope);
+
+    if (join_node_typed.isNaturalJoin())
+    {
+        /// Synthesize a USING expression from the intersection of left and right column names.
+        Names left_cols;
+        NameSet right_cols;
+
+        if (!getOrderedColumnsFromTableExpression(join_node_typed.getLeftTableExpression(), left_cols))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "NATURAL JOIN: cannot determine columns of left table expression in {}",
+                join_node_typed.formatASTForErrorMessage());
+
+        if (!getColumnsFromTableExpression(join_node_typed.getRightTableExpression(), right_cols))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "NATURAL JOIN: cannot determine columns of right table expression in {}",
+                join_node_typed.formatASTForErrorMessage());
+
+        QueryTreeNodes using_nodes;
+        NameSet seen;
+        for (const auto & col_name : left_cols)
+        {
+            /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
+            if (col_name.find('.') != std::string::npos)
+                continue;
+
+            if (right_cols.contains(col_name) && !seen.contains(col_name))
+            {
+                seen.insert(col_name);
+                using_nodes.push_back(std::make_shared<IdentifierNode>(Identifier(col_name)));
+            }
+        }
+
+        if (using_nodes.empty())
+        {
+            /// No common columns — degrade to CROSS JOIN (standard SQL behavior).
+            join_node_typed.setKind(JoinKind::Cross);
+            join_node_typed.setNatural(false);
+            return;
+        }
+
+        join_node_typed.getJoinExpression() = std::make_shared<ListNode>(std::move(using_nodes));
+        join_node_typed.setUsingJoinExpression();
+    }
 
     if (join_node_typed.isOnJoinExpression())
     {
@@ -4491,7 +4755,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     {
                         auto left_subquery = std::make_shared<QueryNode>(query_node->getMutableContext());
                         left_subquery->getProjection().getNodes().push_back(projection_node->clone());
-                        left_subquery->getJoinTree() = left_table_expression;
+                        auto subquery_join_tree = left_table_expression;
+                        if (subquery_join_tree->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                            subquery_join_tree = subquery_join_tree->as<ArrayJoinNode &>().getTableExpression();
+                        left_subquery->getJoinTree() = subquery_join_tree;
 
                         IdentifierResolveScope & left_subquery_scope = createIdentifierResolveScope(left_subquery, nullptr /*parent_scope*/);
                         /// We are using alias column mechanism for USING column from projection.
@@ -4648,6 +4915,184 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     }
 }
 
+/** Try to expand an ordinary (non-materialized, non-parameterized) VIEW into an inline subquery.
+  * This replaces the TableNode wrapping a StorageView with a QueryNode/UnionNode built from the
+  * view's inner query AST, making the view transparent to the analyzer and all optimization passes.
+  */
+void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const
+{
+    if (!scope.context->getSettingsRef()[Setting::analyzer_inline_views])
+        return;
+
+    auto * table_node = join_tree_node->as<TableNode>();
+    if (!table_node)
+        return;
+
+    const auto & storage = table_node->getStorage();
+    const auto * view = typeid_cast<const StorageView *>(storage.get());
+    if (!view || view->isParameterizedView())
+        return;
+
+    /// Do not inline views with FINAL/SAMPLE modifiers for now.
+    if (table_node->hasTableExpressionModifiers())
+        return;
+
+    /// Get the view's inner query AST.
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+
+    auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
+
+    /// Check for row policies on the view itself.
+    auto storage_id = storage->getStorageID();
+    auto row_policy_filter = scope.context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+
+    /// Build the query tree from the view's inner query AST.
+    ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
+    auto view_query_tree = buildQueryTree(view_ast, view_context);
+    QueryAnalyzer view_analyzer(this->only_analyze);
+    view_analyzer.resolve(view_query_tree, {}, view_context);
+
+    /// Mark the inlined query as a subquery so it is wrapped in parentheses when serialized to AST
+    /// (e.g. for sending to parallel replicas). Without this, it produces `FROM SELECT ...` instead
+    /// of `FROM (SELECT ...)`.
+    if (auto * query_node = view_query_tree->as<QueryNode>())
+        query_node->setIsSubquery(true);
+    else if (auto * union_node = view_query_tree->as<UnionNode>())
+        union_node->setIsSubquery(true);
+
+    /// The VIEW's declared column types may differ from what the inner subquery actually produces
+    /// (e.g. the view was created with explicit column types, or implicit conversions apply).
+    /// Normally StorageView adds a converting step in the query pipeline. When inlining, we must
+    /// reproduce that by wrapping the subquery in SELECT CAST(col, 'ViewType') ... FROM (subquery).
+    auto view_columns_list = storage_snapshot->metadata->getColumns().getOrdinary();
+    NamesAndTypes view_columns(view_columns_list.begin(), view_columns_list.end());
+
+    NamesAndTypes subquery_columns;
+    if (const auto * query_node = view_query_tree->as<QueryNode>())
+        subquery_columns = query_node->getProjectionColumns();
+    else if (const auto * union_node = view_query_tree->as<UnionNode>())
+        subquery_columns = union_node->computeProjectionColumns();
+
+    bool needs_type_conversion = false;
+    if (view_columns.size() == subquery_columns.size())
+    {
+        for (size_t i = 0; i < view_columns.size(); ++i)
+        {
+            if (!view_columns[i].type->equals(*subquery_columns[i].type))
+            {
+                needs_type_conversion = true;
+                break;
+            }
+        }
+    }
+
+    QueryTreeNodePtr result_node;
+
+    if (needs_type_conversion)
+    {
+        /// Build a wrapping query: SELECT CAST(col1, 'Type1') AS col1, ... FROM (view_subquery)
+        QueryTreeNodes projection_nodes;
+        NamesAndTypes projection_columns;
+        projection_nodes.reserve(view_columns.size());
+        projection_columns.reserve(view_columns.size());
+
+        for (size_t i = 0; i < view_columns.size(); ++i)
+        {
+            auto column_node = std::make_shared<ColumnNode>(subquery_columns[i], view_query_tree);
+            QueryTreeNodePtr projection_node;
+
+            if (!view_columns[i].type->equals(*subquery_columns[i].type))
+            {
+                projection_node = buildCastFunction(column_node, view_columns[i].type, scope.context);
+                projection_node->setAlias(view_columns[i].name);
+            }
+            else
+            {
+                projection_node = std::move(column_node);
+            }
+
+            projection_nodes.push_back(std::move(projection_node));
+            projection_columns.push_back(view_columns[i]);
+        }
+
+        auto wrapper_context = Context::createCopy(scope.context);
+        auto wrapper_query = std::make_shared<QueryNode>(std::move(wrapper_context));
+        wrapper_query->getProjection().getNodes() = std::move(projection_nodes);
+        wrapper_query->resolveProjectionColumns(std::move(projection_columns));
+        wrapper_query->getJoinTree() = view_query_tree;
+        wrapper_query->setIsSubquery(true);
+
+        result_node = std::move(wrapper_query);
+    }
+    else
+    {
+        result_node = std::move(view_query_tree);
+    }
+
+    /// If the view has a row policy, wrap result_node with a filter:
+    ///   SELECT <cols> FROM (result_node) WHERE <row_policy_filter>
+    /// Applied after type conversion so the filter sees view column names and types,
+    /// matching the non-inlined path where the Planner applies the filter after `StorageView::read`.
+    if (has_row_policy)
+    {
+        /// Without a type-conversion wrapper, result_node still has the inner query's column names.
+        /// The row policy filter references the view's declared column names.
+        /// If they don't match, we cannot inline.
+        if (!needs_type_conversion)
+        {
+            if (view_columns.size() != subquery_columns.size())
+                return;
+
+            for (size_t i = 0; i < view_columns.size(); ++i)
+                if (view_columns[i].name != subquery_columns[i].name)
+                    return;
+        }
+
+        /// Resolve the row policy filter expression against result_node's columns.
+        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
+        QueryAnalyzer filter_analyzer(this->only_analyze);
+        filter_analyzer.resolve(filter_node, result_node, scope.context);
+
+        /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>
+        auto result_columns = result_node->as<QueryNode>()
+            ? result_node->as<QueryNode>()->getProjectionColumns()
+            : result_node->as<UnionNode>()->computeProjectionColumns();
+
+        QueryTreeNodes projection_nodes;
+        NamesAndTypes projection_columns;
+        projection_nodes.reserve(result_columns.size());
+        projection_columns.reserve(result_columns.size());
+
+        for (const auto & col : result_columns)
+        {
+            projection_nodes.push_back(std::make_shared<ColumnNode>(col, result_node));
+            projection_columns.push_back(col);
+        }
+
+        auto wrapper_context = Context::createCopy(scope.context);
+        auto wrapper_query = std::make_shared<QueryNode>(std::move(wrapper_context));
+        wrapper_query->getProjection().getNodes() = std::move(projection_nodes);
+        wrapper_query->resolveProjectionColumns(std::move(projection_columns));
+        wrapper_query->getJoinTree() = result_node;
+        wrapper_query->getWhere() = std::move(filter_node);
+        wrapper_query->setIsSubquery(true);
+
+        result_node = std::move(wrapper_query);
+    }
+
+    /// Preserve alias: the outer query references columns via the view name or user-provided alias.
+    result_node->setAlias(table_node->getAlias());
+
+    /// Fix scope tracking: the old TableNode pointer was inserted during initializeQueryJoinTreeNode.
+    auto * old_ptr = join_tree_node.get();
+    scope.table_expressions_in_resolve_process.erase(old_ptr);
+
+    join_tree_node = std::move(result_node);
+    scope.table_expressions_in_resolve_process.insert(join_tree_node.get());
+}
+
 /** Resolve query join tree.
   *
   * Query join tree must be initialized before calling this function.
@@ -4686,6 +5131,84 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         }
         case QueryTreeNodeType::TABLE:
         {
+            auto * table_node = join_tree_node->as<TableNode>();
+            if (table_node->isMaterializedCTE())
+            {
+                auto materialized_cte_ptr = table_node->getMaterializedCTE();
+
+                /// Each clone gets a deep-cloned subquery (IQueryTreeNode::clone deep-clones children).
+                /// Use materialized_cte->storage (shared across clones) to distinguish first vs subsequent.
+                if (!materialized_cte_ptr->isStorageInitialized())
+                {
+                    auto & subquery = table_node->getMaterializedCTESubquery();
+
+                    /// Prevent recursive CTE references during subquery resolution.
+                    const auto & cte_name = materialized_cte_ptr->cte_name;
+                    QueryTreeNodePtr cte_map_node;
+                    for (auto * s = &scope; s; s = s->parent_scope)
+                    {
+                        auto it = s->cte_name_to_query_node.find(cte_name);
+                        if (it != s->cte_name_to_query_node.end())
+                        {
+                            cte_map_node = it->second;
+                            break;
+                        }
+                    }
+
+                    if (cte_map_node)
+                        ctes_in_resolve_process.insert(cte_map_node);
+
+                    IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(subquery, &scope);
+                    subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+                    if (subquery->getNodeType() == QueryTreeNodeType::QUERY)
+                        resolveQuery(subquery, subquery_scope);
+                    else
+                        resolveUnion(subquery, subquery_scope);
+
+                    if (cte_map_node)
+                        ctes_in_resolve_process.erase(cte_map_node);
+
+                    bool is_correlated = subquery->as<QueryNode>()
+                        ? subquery->as<QueryNode>()->isCorrelated()
+                        : subquery->as<UnionNode>()->isCorrelated();
+                    if (is_correlated)
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Materialized CTE '{}' cannot be correlated. In scope {}",
+                            cte_name,
+                            scope.scope_node->formatASTForErrorMessage());
+
+                    const auto & projection_columns = subquery->as<QueryNode>()
+                        ? subquery->as<QueryNode>()->getProjectionColumns()
+                        : subquery->as<UnionNode>()->computeProjectionColumns();
+
+                    NamesAndTypesList columns;
+                    for (const auto & col : projection_columns)
+                        columns.emplace_back(col.name, col.type);
+
+                    auto query_context = scope.context->getQueryContext();
+                    auto storage_holder = TemporaryTableHolder(
+                        query_context,
+                        ColumnsDescription(std::move(columns), false),
+                        ConstraintsDescription{},
+                        nullptr /*query*/,
+                        true /*create_for_global_subquery*/);
+
+                    table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
+                }
+                else
+                {
+                    /// Subsequent reference: another clone already resolved and created the storage.
+                    /// Resolve this clone's own subquery copy for correct EXPLAIN output,
+                    /// then reuse the existing storage.
+                    auto & subquery = table_node->getMaterializedCTESubquery();
+                    resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+
+                    table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
+                }
+            }
+
+            inlineViewSubqueryIfNeeded(join_tree_node, scope);
             break;
         }
         case QueryTreeNodeType::ARRAY_JOIN:

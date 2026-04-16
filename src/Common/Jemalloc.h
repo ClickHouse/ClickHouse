@@ -51,7 +51,7 @@ void setMaxBackgroundThreads(size_t max_threads);
 template <typename T>
 void setValue(const char * name, T value)
 {
-    mallctl(name, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
+    je_mallctl(name, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
 }
 
 template <typename T>
@@ -59,7 +59,7 @@ T getValue(const char * name)
 {
     T value;
     size_t value_size = sizeof(T);
-    mallctl(name, &value, &value_size, nullptr, 0);
+    je_mallctl(name, &value, &value_size, nullptr, 0);
     return value;
 }
 
@@ -88,25 +88,25 @@ struct MibCache
 {
     explicit MibCache(const char * name)
     {
-        mallctlnametomib(name, mib, &mib_length);
+        je_mallctlnametomib(name, mib, &mib_length);
     }
 
     void setValue(T value) const
     {
-        mallctlbymib(mib, mib_length, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
+        je_mallctlbymib(mib, mib_length, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
     }
 
     T getValue() const
     {
         T value;
         size_t value_size = sizeof(T);
-        mallctlbymib(mib, mib_length, &value, &value_size, nullptr, 0);
+        je_mallctlbymib(mib, mib_length, &value, &value_size, nullptr, 0);
         return value;
     }
 
     void run() const
     {
-        mallctlbymib(mib, mib_length, nullptr, nullptr, nullptr, 0);
+        je_mallctlbymib(mib, mib_length, nullptr, nullptr, nullptr, 0);
     }
 
 private:
@@ -122,6 +122,8 @@ void setCollectLocalProfileSamplesInTraceLog(bool value);
 
 std::string_view getLastFlushProfileForThread();
 
+/// Capture malloc_stats_print output as a string.
+std::string getStats();
 
 }
 

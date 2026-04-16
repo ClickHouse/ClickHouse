@@ -39,7 +39,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -65,7 +65,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -88,7 +88,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -114,7 +114,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -140,7 +140,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -166,7 +166,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -192,7 +192,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -577,7 +577,7 @@ Expression ((Projection + Before ORDER BY))
       Filter (WHERE)
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -603,7 +603,7 @@ Expression ((Projection + Before ORDER BY))
       Filter (WHERE)
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -626,7 +626,7 @@ Expression ((Projection + Before ORDER BY))
       Filter (WHERE)
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -652,7 +652,7 @@ Expression ((Projection + Before ORDER BY))
       Filter (WHERE)
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -678,7 +678,7 @@ Expression ((Projection + Before ORDER BY))
       Filter (WHERE)
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -704,7 +704,7 @@ Expression ((Projection + Before ORDER BY))
       Filter (WHERE)
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2
@@ -730,7 +730,7 @@ Expression ((Projection + Before ORDER BY))
       Filter (WHERE)
         ReadFromMergeTree (default.events)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 2/2
             Granules: 2/2

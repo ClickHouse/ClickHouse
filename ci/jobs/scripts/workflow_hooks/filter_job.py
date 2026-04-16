@@ -39,24 +39,39 @@ PRELIMINARY_JOBS = [
 ]
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
-    "Build (amd_asan)",
-    "Integration tests (amd_asan, flaky)",
+    "Build (amd_asan_ubsan)",
+    "Integration tests (amd_asan_ubsan, flaky)",
 ]
 
 FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
-    "Build (amd_asan)",
+    "Build (amd_asan_ubsan)",
     "Build (amd_tsan)",
     "Build (amd_msan)",
-    "Build (amd_ubsan)",
     "Build (amd_debug)",
     "Build (amd_binary)",
-    "Stateless tests (amd_asan, flaky check)",
+    "Stateless tests (amd_asan_ubsan, flaky check)",
     "Stateless tests (amd_tsan, flaky check)",
     "Stateless tests (amd_msan, flaky check)",
-    "Stateless tests (amd_ubsan, flaky check)",
     "Stateless tests (amd_debug, flaky check)",
     "Stateless tests (amd_binary, flaky check)",
 ]
+
+# Must match ci.workflows.pull_request.KEEPER_STRESS_PR_NAME
+KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
+
+
+def _has_keeper_stress_changes(changed_files):
+    """True if any changed file is under src/Coordination, tests/stress/keeper, programs/keeper-bench, or ci/jobs/keeper_stress_job.py."""
+    for f in changed_files:
+        p = f.removeprefix(".").removeprefix("/")
+        if (
+            p.startswith("src/Coordination")
+            or p.startswith("tests/stress/keeper")
+            or p.startswith("programs/keeper-bench")
+            or p == "ci/jobs/keeper_stress_job.py"
+        ):
+            return True
+    return False
 
 
 _info_cache = None
@@ -80,6 +95,16 @@ def should_skip_job(job_name):
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
+        return False, ""
+
+    # Run Keeper Stress jobs only when there are changes in src/Coordination,
+    # tests/stress/keeper, or ci/jobs/keeper_stress_job.py
+    if job_name == KEEPER_STRESS_PR_NAME:
+        if not _has_keeper_stress_changes(changed_files):
+            return (
+                True,
+                "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
+            )
         return False, ""
 
     if job_name == JobNames.PR_BODY:
@@ -186,11 +211,26 @@ def should_skip_job(job_name):
             return True, "Skipped, not a bug-fix PR"
 
     if "flaky" in job_name.lower():
+        from ci.jobs.scripts.find_tests import Targeting
+
+        targeter = Targeting(info=_info_cache)
+        # _info_cache.job_name is the hook runner job, not the flaky check job.
+        # Set job_type explicitly from the job_name argument so CIDB queries use
+        # the correct check_name prefix (e.g. 'Stateless%' instead of None).
+        if "stateless" in job_name.lower():
+            targeter.job_type = Targeting.STATELESS_JOB_TYPE
+        elif "integration" in job_name.lower():
+            targeter.job_type = Targeting.INTEGRATION_JOB_TYPE
         changed_files = _info_cache.get_changed_files()
-        if "stateless" in job_name.lower() and not has_new_functional_tests(
-            changed_files
-        ):
-            return True, "Skipped, no functional tests updates"
+        if "stateless" in job_name.lower():
+            changed_tests = targeter.get_changed_tests()
+            try:
+                previously_failed = targeter.get_previously_failed_tests()
+            except Exception as e:
+                print(f"Warning: failed to fetch previously-failed tests: {e}")
+                previously_failed = []
+            if not changed_tests and not previously_failed:
+                return True, "Skipped, no tests to run"
         if "integration" in job_name.lower() and not has_new_integration_tests(
             changed_files
         ):
@@ -212,12 +252,13 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, no integration tests updates"
 
-    # skip ARM perf tests for non-performance update
+    # skip AMD perf tests for non-performance update (ARM runs by default)
     if (
-        "- Performance Improvement" not in _info_cache.pr_body
+        " Performance Improvement" not in _info_cache.pr_body
         and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
+        and Labels.PR_PERFORMANCE not in _info_cache.pr_labels
         and JobNames.PERFORMANCE in job_name
-        and "arm" in job_name
+        and "amd" in job_name
         and _info_cache.pr_number  # run all performance jobs on master
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
