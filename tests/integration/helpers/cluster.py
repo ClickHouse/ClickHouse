@@ -3966,7 +3966,7 @@ class ClickHouseCluster:
                 if self.with_hms_catalog:
                     catalog_buckets.append("warehouse-hms")
                 if self.with_iceberg_catalog:
-                    catalog_buckets.extend(["warehouse-rest", "iceberg_data"])
+                    catalog_buckets.extend(["warehouse-rest", "iceberg-data"])
                 self.create_minio_buckets(catalog_buckets, set_public_policy=True)
 
             if self.with_glue_catalog and self.base_glue_catalog_cmd:
