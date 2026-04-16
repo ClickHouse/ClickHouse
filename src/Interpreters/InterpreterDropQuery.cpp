@@ -206,7 +206,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
         bool is_refreshable_view = materialized_view && materialized_view->isRefreshable();
 
-        if (!secondary_query && !is_refreshable_view
+        /// Prevents recursive drop from drop database query. The original query must specify a table.
+        bool is_drop_or_detach_database = !current_query_ptr->as<ASTDropQuery>()->table;
+
+        /// Don't ignore DROP when it's part of DROP DATABASE: selectively ignoring individual
+        /// table drops can break dependency invariants (e.g., a dependent table's drop is ignored
+        /// while the table it depends on is dropped, since DROP DATABASE skips same-database
+        /// dependency checks), leaving orphaned tables that prevent server restart.
+        if (!secondary_query && !is_refreshable_view && !is_drop_or_detach_database
             && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings[Setting::ignore_drop_queries_probability])
         {
@@ -223,9 +230,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
         /// Now get UUID, so we can wait for table data to be finally dropped
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
-
-        /// Prevents recursive drop from drop database query. The original query must specify a table.
-        bool is_drop_or_detach_database = !current_query_ptr->as<ASTDropQuery>()->table;
 
         AccessFlags drop_storage;
 
@@ -317,7 +321,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (!std::dynamic_pointer_cast<MergeTreeData>(table))
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-            auto metadata_snapshot = table->getInMemoryMetadataPtr();
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
             /// Drop table data, don't touch metadata
             table->truncate(current_query_ptr, metadata_snapshot, context_, table_excl_lock);
         }
@@ -376,7 +380,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             auto table_lock
                 = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
             /// Drop table data, don't touch metadata
-            auto metadata_snapshot = table->getInMemoryMetadataPtr();
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
             table->truncate(current_query_ptr, metadata_snapshot, getContext(), table_lock);
         }
         else if (kind == ASTDropQuery::Kind::Drop)
