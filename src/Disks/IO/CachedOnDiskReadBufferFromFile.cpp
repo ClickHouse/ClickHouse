@@ -422,6 +422,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
                 auto adjusted_settings = info.settings;
                 if (info.adjusted_read_scope)
                     adjusted_settings.read_scope = info.adjusted_read_scope;
+
                 auto impl = info.implementation_buffer_creator(adjusted_settings);
                 if (impl->supportsRightBoundedReads())
                     remote_fs_segment_reader = std::move(impl);

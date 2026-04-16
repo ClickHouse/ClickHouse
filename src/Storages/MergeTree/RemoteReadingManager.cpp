@@ -162,8 +162,13 @@ std::unique_ptr<ReadBufferFromFileBase> RemoteReadingManager::createObjectReadBu
            && scope.reading_ranges[first_nonempty].begin == scope.reading_ranges[first_nonempty].end)
         ++first_nonempty;
 
-    size_t first_padding = (first_nonempty < scope.cache_pre_padding_bytes.size())
-        ? scope.cache_pre_padding_bytes[first_nonempty] : 0;
+    /// The padding for the first non-empty range might be recorded on an
+    /// earlier empty range (e.g. [0,0) prefix or a zero-width granule).
+    /// Take the maximum padding across all ranges up to and including
+    /// the first non-empty one.
+    size_t first_padding = 0;
+    for (size_t i = 0; i <= first_nonempty && i < scope.cache_pre_padding_bytes.size(); ++i)
+        first_padding = std::max(first_padding, scope.cache_pre_padding_bytes[i]);
     size_t range_begin = scope.reading_ranges[first_nonempty].begin - first_padding;
     size_t range_end = scope.reading_ranges.back().end + scope.encryption_header_bytes;
 
@@ -199,43 +204,59 @@ std::unique_ptr<ReadBufferFromFileBase> RemoteReadingManager::createObjectReadBu
             {
                 LoggerPtr prefetch_log = getLogger("RRMPrefetch");
 
-                auto conn = factory(range_begin, range_end, /* attempt = */ 0);
-
-                LOG_DEBUG(prefetch_log, "Connection opened: key={} fd={} has_body={} range=[{}, {})",
-                    key, conn.fd, conn.body_stream != nullptr, range_begin, range_end);
-
-                if (!conn.body_stream)
-                    throw Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
-                        "RRM prefetch: no body stream for {}", key);
-
-                /// Read from the HTTP body stream (not the raw FD).
-                /// The body stream includes data from Poco's internal buffer
-                /// and handles chunked transfer encoding transparently.
+                static constexpr size_t max_attempts = 20;
                 Memory<> buffer(range_size);
                 size_t bytes_read = 0;
-                while (bytes_read < range_size)
-                {
-                    conn.body_stream->read(buffer.m_data + bytes_read, range_size - bytes_read);
-                    auto n = conn.body_stream->gcount();
-                    if (n == 0)
-                        break;
 
-                    if (bytes_read == 0)
+                for (size_t attempt = 0; attempt < max_attempts && bytes_read < range_size; ++attempt)
+                {
+                    size_t current_begin = range_begin + bytes_read;
+                    auto conn = factory(current_begin, range_end, attempt);
+
+                    LOG_DEBUG(prefetch_log, "Connection opened: key={} fd={} has_body={} range=[{}, {}) attempt={}",
+                        key, conn.fd, conn.body_stream != nullptr, current_begin, range_end, attempt);
+
+                    if (!conn.body_stream)
+                        throw Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                            "RRM prefetch: no body stream for {}", key);
+
+                    /// Read from the HTTP body stream (not the raw FD).
+                    /// The body stream includes data from Poco's internal buffer
+                    /// and handles chunked transfer encoding transparently.
+                    while (bytes_read < range_size)
                     {
-                        String hex;
-                        size_t dump_n = std::min(static_cast<size_t>(n), size_t(32));
-                        for (size_t i = 0; i < dump_n; ++i)
+                        conn.body_stream->read(buffer.m_data + bytes_read, range_size - bytes_read);
+                        auto n = conn.body_stream->gcount();
+                        if (n == 0)
+                            break;
+
+                        if (bytes_read == 0)
                         {
-                            if (i > 0) hex += ' ';
-                            hex += fmt::format("{:02x}", static_cast<unsigned char>(buffer.m_data[i]));
+                            String hex;
+                            size_t dump_n = std::min(static_cast<size_t>(n), size_t(32));
+                            for (size_t i = 0; i < dump_n; ++i)
+                            {
+                                if (i > 0) hex += ' ';
+                                hex += fmt::format("{:02x}", static_cast<unsigned char>(buffer.m_data[i]));
+                            }
+                            LOG_DEBUG(prefetch_log, "First read: key={} n={} first_bytes=[{}]", key, n, hex);
                         }
-                        LOG_DEBUG(prefetch_log, "First read: key={} n={} first_bytes=[{}]", key, n, hex);
+
+                        bytes_read += n;
                     }
 
-                    bytes_read += n;
+                    if (bytes_read < range_size)
+                        LOG_WARNING(prefetch_log, "Short read: key={} got={} expected={} attempt={}",
+                            key, bytes_read, range_size, attempt);
                 }
 
                 LOG_DEBUG(prefetch_log, "Read complete: key={} total_bytes={} expected={}", key, bytes_read, range_size);
+
+                if (bytes_read < range_size)
+                    throw Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                        "RRM prefetch: short read for {}, got {} of {} bytes after {} attempts",
+                        key, bytes_read, range_size, max_attempts);
+
                 buffer.m_size = bytes_read;
                 promise->set_value(std::move(buffer));
             }
