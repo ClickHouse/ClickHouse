@@ -146,14 +146,17 @@ public:
 
     static DataTypePtr getKeyType(const DataTypes & types, const AggregateFunctionPtr & nested)
     {
+
         if (types.size() == 1)
         {
             const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
-            if (!map_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Aggregate function {}Map requires map as argument", nested->getName());
+            if (map_type)
+                return map_type->getKeyType();
+            else if (nested->getName().startsWith("count"))
+                return types.back();
 
-            return map_type->getKeyType();
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Aggregate function {}Map requires map as argument", nested->getName());
         }
         return types.back();
     }
