@@ -18,6 +18,12 @@ SELECT
 3" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --multiquery \
     2>&1 | grep -q "Loaded 3 queries" && echo "OK: Multiple multiline queries"
 
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE IF NOT EXISTS t (a UInt8) engine = Memory"
+
+echo "INSERT INTO t FORMAT Values (1), (2);
+SELECT 1;" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --multiquery \
+    2>&1 | grep -q "Loaded 2 queries" && echo "OK: Insert FORMAT Values"
+
 echo "SELECT
 1" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 -m \
     2>&1 | grep -q "Queries executed: 1" && echo "OK: Short option -m"
