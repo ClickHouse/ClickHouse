@@ -1,7 +1,10 @@
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DataLake/Common.h>
@@ -100,7 +103,7 @@ static Block getPositionDeleteFileSampleBlock()
     return Block(delete_file_columns_desc);
 }
 
-static Block getNonVirtualColumns(const Block & block)
+static Block getNonVirtualColumns(const Block & block, bool remove_low_cardinality = false)
 {
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
     std::unordered_set<String> virtual_columns;
@@ -111,7 +114,14 @@ static Block getNonVirtualColumns(const Block & block)
     {
         if (virtual_columns.contains(block.getNames()[i]))
             continue;
-        columns.push_back(ColumnWithTypeAndName(block.getColumns()[i], block.getDataTypes()[i], block.getNames()[i]));
+        auto col_type = block.getDataTypes()[i];
+        auto col_data = block.getColumns()[i];
+        if (remove_low_cardinality)
+        {
+            col_type = removeLowCardinality(col_type);
+            col_data = col_data->convertToFullColumnIfLowCardinality();
+        }
+        columns.push_back(ColumnWithTypeAndName(col_data, col_type, block.getNames()[i]));
     }
     return Block(columns);
 }
@@ -219,12 +229,19 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                 col_data_filename.column = partition_chunk.getColumns()[col_data_filename_index];
                 col_position.column = partition_chunk.getColumns()[col_position_index];
 
+                /// The virtual column `_iceberg_metadata_file_path` may arrive as
+                /// LowCardinality(String) from the pipeline, but the position delete
+                /// file format expects plain String. Unwrap it.
+                col_data_filename.column = col_data_filename.column->convertToFullColumnIfLowCardinality();
+                col_data_filename.type = removeLowCardinality(col_data_filename.type);
+
                 if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(col_position.column.get()))
                 {
                     const auto & null_map = nullable->getNullMapData();
                     if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
                     col_position.column = nullable->getNestedColumnPtr();
+                    col_position.type = removeNullable(col_position.type);
                 }
 
                 /// _iceberg_metadata_file_path already contains the correct metadata path format
@@ -278,7 +295,9 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             if (block.rows() == 0)
                 continue;
 
-            auto data_block = getNonVirtualColumns(block);
+            /// Strip virtual columns and unwrap LowCardinality to ensure the
+            /// block types are compatible with the Avro serializer schema.
+            auto data_block = getNonVirtualColumns(block, /*remove_low_cardinality=*/ true);
             Chunk chunk(data_block.getColumns(), data_block.rows());
             auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 

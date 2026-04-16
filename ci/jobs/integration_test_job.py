@@ -416,6 +416,22 @@ def get_parallel_sequential_tests_to_run(
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
         test_files, total_batches, batch_num, workers, job_options, info
     )
+
+    if "excluded_from_llvm" in (job_options or ""):
+        excluded_from_llvm_set = {
+            f
+            for f in (parallel_test_modules + sequential_test_modules)
+            if any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            or "is_built_with_llvm_coverage" in Path(f"./tests/integration/{f}").read_text()
+        }
+        parallel_test_modules = [f for f in parallel_test_modules if f in excluded_from_llvm_set]
+        sequential_test_modules = [f for f in sequential_test_modules if f in excluded_from_llvm_set]
+        print(
+            f"LLVM coverage disabled-only: kept {len(parallel_test_modules)} parallel and "
+            f"{len(sequential_test_modules)} sequential test files "
+            f"(from LLVM_COVERAGE_SKIP_PREFIXES or containing is_built_with_llvm_coverage)"
+        )
+
     if not args_test:
         return parallel_test_modules, sequential_test_modules
 

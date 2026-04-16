@@ -1,4 +1,5 @@
 #include <base/defines.h>
+#include <DataTypes/DataTypeString.h>
 #include <base/sleep.h>
 #include "config.h"
 #if USE_AVRO
