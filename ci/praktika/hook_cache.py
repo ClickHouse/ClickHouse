@@ -35,25 +35,18 @@ class CacheRunnerHooks:
                 # assign the job digest also to the artifacts it provides
                 for artifact in job.provides:
                     artifact_digest_map[artifact] = digest
+                # TODO: remove together with artifact_report_ hack
+                artifact_digest_map[job.name] = digest
         for job in workflow.jobs:
             digests_combined_list = []
             if job.requires and job.digest_config:
-                # include digests of hard dependencies (artifacts and job names)
-                for req_name in job.requires:
-                    if req_name in artifact_digest_map:
-                        digests_combined_list.append(artifact_digest_map[req_name])
-                    elif req_name in job_digest_map:
-                        digests_combined_list.append(job_digest_map[req_name])
+                # include digest of required artifact to the job digest, so that they affect job state
+                for artifact_name in job.requires:
+                    if artifact_name in artifact_digest_map:
+                        digests_combined_list.append(artifact_digest_map[artifact_name])
             digests_combined_list.append(job_digest_map[job.name])
-            # Deduplicate tokens to shrink the key when multiple deps
-            # share the same file digest (e.g. amd/arm release builds)
-            seen = set()
-            unique_tokens = []
-            for token in "-".join(digests_combined_list).split("-"):
-                if token not in seen:
-                    seen.add(token)
-                    unique_tokens.append(token)
-            workflow_config.digest_jobs[job.name] = "-".join(unique_tokens)
+            final_digest = "-".join(digests_combined_list)
+            workflow_config.digest_jobs[job.name] = final_digest
 
         assert (
             workflow_config.digest_jobs
@@ -92,17 +85,16 @@ class CacheRunnerHooks:
             dependent_jobs = {}
 
             for job_name, job_digest in eligible_jobs.items():
-                # Check if this job's digest starts with any other job's digest
-                # (meaning it depends on that other job)
-                is_dependent = False
+                # Check if this digest is a prefix of any other digest
+                has_prefix = False
                 for other_digest in eligible_jobs.values():
-                    if other_digest != job_digest and job_digest.startswith(
-                        other_digest + "-"
+                    if other_digest != job_digest and other_digest.startswith(
+                        job_digest + "-"
                     ):
-                        is_dependent = True
+                        has_prefix = True
                         break
 
-                if not is_dependent:
+                if not has_prefix:
                     root_jobs[job_name] = job_digest
                 else:
                     dependent_jobs[job_name] = job_digest
@@ -187,11 +179,10 @@ class CacheRunnerHooks:
                         workflow_config.cache_artifacts[artifact_name] = (
                             workflow_config.cache_jobs[job.name]
                         )
-                    # Also cache the artifact report by job name so that
-                    # downstream jobs requiring this job by name can reuse it
-                    workflow_config.cache_artifacts[job.name] = (
-                        workflow_config.cache_jobs[job.name]
-                    )
+                    if Settings.ENABLE_ARTIFACTS_REPORT:
+                        workflow_config.cache_artifacts[job.name] = (
+                            workflow_config.cache_jobs[job.name]
+                        )
 
         print(
             "Dump WorkflowConfig to fs, the next hooks in this job might want to see it"

@@ -1,6 +1,5 @@
 # docker build -t clickhouse/postgresql-java-client .
 # PostgreSQL Java client docker container
-# Rebuild to enable SBOM/provenance attestations (see #97903, #98511)
 
 FROM ubuntu:24.04
 

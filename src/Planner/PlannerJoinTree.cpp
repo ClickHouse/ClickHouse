@@ -401,9 +401,19 @@ bool applyTrivialCountIfPossible(
     auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
     column->insertFrom(place);
 
+    /// get count() argument type
+    DataTypes argument_types;
+    argument_types.reserve(columns_names.size());
+    {
+        const Block source_header = table_node ? table_node->getStorageSnapshot()->getSampleBlockForColumns(columns_names)
+                                               : table_function_node->getStorageSnapshot()->getSampleBlockForColumns(columns_names);
+        for (const auto & column_name : columns_names)
+            argument_types.push_back(source_header.getByName(column_name).type);
+    }
+
     auto block_with_count = std::make_shared<const Block>(Block{
         {std::move(column),
-         std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), agg_count.getArgumentTypes(), Array{}),
+         std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), argument_types, Array{}),
          columns_names.front()}});
 
     auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
@@ -560,8 +570,6 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
     for (const auto & row_policy : row_policy_filter->policies)
     {
         auto name = row_policy->getFullName().toString();
-        if (query_context->hasQueryContext())
-            query_context->getQueryContext()->addUsedRowPolicy(name);
         used_row_policies.emplace(std::move(name));
     }
 
@@ -595,7 +603,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         {settings[Setting::parallel_replicas_mode],
          settings[Setting::parallel_replicas_custom_key_range_lower],
          settings[Setting::parallel_replicas_custom_key_range_upper]},
-        storage->getInMemoryMetadataPtr(query_context, false)->columns,
+        storage->getInMemoryMetadataPtr()->columns,
         query_context);
 
     return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
@@ -731,6 +739,37 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
     auto alias_column_step = std::make_unique<ExpressionStep>(current_header, std::move(merged_alias_columns_actions_dag));
     alias_column_step->setStepDescription("Compute alias columns");
     return alias_column_step;
+}
+
+bool extractRequiredNonTableColumnsFromStorage(
+    const Names & columns_names,
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    const QueryProcessingStage::Enum processed_stage,
+    Names & extracted_column_names)
+{
+    if (processed_stage != QueryProcessingStage::FetchColumns)
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageMerge>(storage))
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageDistributed>(storage))
+        return false;
+
+    bool has_table_virtual_column = false;
+    for (const auto & column_name : columns_names)
+    {
+        if (column_name == "_table" && storage->isVirtualColumn(column_name, storage_snapshot->metadata))
+            has_table_virtual_column = true;
+        else
+            extracted_column_names.push_back(column_name);
+    }
+
+    if (has_table_virtual_column && extracted_column_names.empty())
+        extracted_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+
+    return has_table_virtual_column;
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
@@ -1006,9 +1045,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     till_stage = storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
+                Names extracted_column_names;
+                bool has_table_virtual_column
+                        = extractRequiredNonTableColumnsFromStorage(columns_names, storage, storage_snapshot, till_stage, extracted_column_names);
+                const auto & storage_column_names = has_table_virtual_column ? extracted_column_names : columns_names;
+
                 if (select_query_options.build_logical_plan)
                 {
-                    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_names));
+                    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(storage_column_names));
 
                     if (table_node)
                     {
@@ -1063,7 +1107,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                         storage->read(
                             query_plan,
-                            columns_names,
+                            storage_column_names,
                             storage_snapshot,
                             table_expression_query_info,
                             std::move(mutable_context),
@@ -1075,7 +1119,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         storage->read(
                             query_plan,
-                            columns_names,
+                            storage_column_names,
                             storage_snapshot,
                             table_expression_query_info,
                             query_context,
@@ -1194,7 +1238,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 query_plan_parallel_replicas,
                                 storage->getStorageID(),
                                 modified_query_info,
-                                storage->getInMemoryMetadataPtr(query_context, false)->getColumns(),
+                                storage->getInMemoryMetadataPtr()->getColumns(),
                                 storage_snapshot,
                                 till_stage,
                                 table_expression_query_info.query_tree,
@@ -1288,7 +1332,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             QueryPlan query_plan_no_parallel_replicas;
                             storage->read(
                                 query_plan_no_parallel_replicas,
-                                columns_names,
+                                storage_column_names,
                                 storage_snapshot,
                                 table_expression_query_info,
                                 query_context,
@@ -1297,6 +1341,27 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 max_streams);
                             query_plan = std::move(query_plan_no_parallel_replicas);
                         }
+                    }
+                }
+
+                if (has_table_virtual_column && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
+                {
+                    const auto & data_header = query_plan.getCurrentHeader();
+                    if (!data_header->findByName(static_cast<std::string_view>("_table")))
+                    {
+                        String table_name;
+                        if (table_node && !(table_node->getTemporaryTableName().empty()))
+                            table_name = table_node->getTemporaryTableName();
+                        else
+                            table_name = storage->getStorageID().getTableName();
+                        ColumnWithTypeAndName column;
+                        column.name = "_table";
+                        column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                        column.column = column.type->createColumnConst(0, Field(table_name));
+
+                        auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+                        auto expression_step = std::make_unique<ExpressionStep>(data_header, std::move(adding_column_dag));
+                        query_plan.addStep(std::move(expression_step));
                     }
                 }
 
@@ -1602,56 +1667,10 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     size_t max_step_description_length)
 {
     const auto & left_header = left_plan.getCurrentHeader();
-    auto right_header = right_plan.getCurrentHeader();
+    const auto & right_header = right_plan.getCurrentHeader();
 
     auto columns_from_left_table = left_header->getNamesAndTypesList();
     auto columns_from_right_table = right_header->getNamesAndTypesList();
-
-    /// Remove non-key right columns that overlap with left column names.
-    /// Such columns cause a count mismatch in `HashJoin::getNonJoinedBlocks` because
-    /// `AddedColumns` skips right columns matching left column names (deduplication),
-    /// but the assertion expects the arithmetic sum.
-    {
-        NameSet left_column_names;
-        for (const auto & col : columns_from_left_table)
-            left_column_names.insert(col.name);
-
-        NameSet right_key_names;
-        for (const auto & clause : table_join->getClauses())
-            for (const auto & key_name : clause.key_names_right)
-                right_key_names.insert(key_name);
-
-        bool has_overlapping = false;
-        for (const auto & col : columns_from_right_table)
-        {
-            if (left_column_names.contains(col.name) && !right_key_names.contains(col.name))
-            {
-                has_overlapping = true;
-                break;
-            }
-        }
-
-        if (has_overlapping)
-        {
-            ActionsDAG dag(right_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-            ActionsDAG::NodeRawConstPtrs updated_outputs;
-            for (const auto * output : dag.getOutputs())
-            {
-                if (!left_column_names.contains(output->result_name)
-                    || right_key_names.contains(output->result_name))
-                    updated_outputs.push_back(output);
-            }
-            dag.getOutputs() = std::move(updated_outputs);
-
-            auto step = std::make_unique<ExpressionStep>(
-                right_plan.getCurrentHeader(), std::move(dag));
-            step->setStepDescription("Remove columns overlapping with left side of JOIN");
-            right_plan.addStep(std::move(step));
-
-            right_header = right_plan.getCurrentHeader();
-            columns_from_right_table = right_header->getNamesAndTypesList();
-        }
-    }
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1795,17 +1814,6 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
         }
 
         auto join_pipeline_type = join_algorithm->pipelineType();
-
-        /// `required_columns_after_join` starts as `outer_scope_columns`, which may
-        /// include columns from unrelated tables (e.g. from the right side of a CROSS
-        /// JOIN that wraps this join). Remove columns that don't exist in either join
-        /// input — the join cannot produce them and their presence confuses the
-        /// JoinStep's column-permutation logic (it treats "no matching required columns"
-        /// as "keep all columns", which breaks when the join output changes after swap).
-        std::erase_if(required_columns_after_join, [&](const String & name)
-        {
-            return !left_header->has(name) && !right_header->has(name);
-        });
 
         if (required_columns_after_join.empty())
         {

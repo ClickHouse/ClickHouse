@@ -674,10 +674,6 @@ std::optional<String> optimizeUseAggregateProjections(
             LOG_DEBUG(logger, "{}", stat.description);
 
             inexact_ranges_select_result->selected_parts = parent_parts_with_ranges.size();
-            /// The original result may have exceeded_row_limits set because the full table scan
-            /// was over the limit.  After subtracting exact ranges the remaining rows are fewer,
-            /// so clear the flag — the reduced result will be re-checked during execution.
-            inexact_ranges_select_result->exceeded_row_limits = false;
             if (parent_parts_with_ranges.empty())
             {
                 chassert(inexact_ranges_select_result->selected_marks == 0);
@@ -937,45 +933,31 @@ std::optional<String> optimizeUseAggregateProjections(
 
     const auto & projection_header = aggregate_projection_node->step->getOutputHeader();
 
-    QueryPlan::Node * source_node = aggregate_projection_node;
-
-    if (aggregating)
+    if (has_parent_parts)
     {
-        if (has_parent_parts)
+        if (aggregating)
+        {
             node.step = aggregating->convertToAggregatingProjection(projection_header);
+        }
         else
-            aggregating->requestOnlyMergeForAggregateProjection(projection_header);
-    }
-    else
-    {
-        /// For DISTINCT, handle potential type mismatches between the projection
-        /// output and the expected types. This can happen when removeTrivialWrappers
-        /// strips materialize/identity from the query DAG, causing the query to match
-        /// a projection whose column types differ in LowCardinality wrapping.
-        const auto & expected_header = node.step->getOutputHeader();
-        if (blocksHaveEqualStructure(*projection_header, *expected_header))
         {
             node.step->updateInputHeader(projection_header);
         }
+        node.children.push_back(aggregate_projection_node);
+    }
+    else
+    {
+        /// All parts are taken from projection
+        if (aggregating)
+        {
+            aggregating->requestOnlyMergeForAggregateProjection(projection_header);
+        }
         else
         {
-            auto converting = ActionsDAG::makeConvertingActions(
-                projection_header->getColumnsWithTypeAndName(),
-                expected_header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name,
-                context);
-            auto & converting_node = nodes.emplace_back();
-            converting_node.step = std::make_unique<ExpressionStep>(
-                projection_header, std::move(converting));
-            converting_node.children.push_back(aggregate_projection_node);
-            source_node = &converting_node;
+            node.step->updateInputHeader(projection_header);
         }
+        node.children.front() = aggregate_projection_node;
     }
-
-    if (has_parent_parts)
-        node.children.push_back(source_node);
-    else
-        node.children.front() = source_node;
 
     return selected_projection_name;
 }
