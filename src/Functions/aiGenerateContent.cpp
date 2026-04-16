@@ -32,7 +32,7 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args{
             {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
-            {"prompt", nullptr, nullptr, "String or Nullable(String)"},
+            {"prompt", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
         FunctionArgumentDescriptors optional_args{
             {"system_prompt", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
@@ -43,12 +43,16 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-protected:
+private:
+    static constexpr float default_temp = 0.7f;
+    static constexpr size_t prompt_arg_index = 1;
+    static constexpr size_t temp_arg_idx = 3;
+
     String functionName() const override { return name; }
 
-    float defaultTemperature() const override { return 0.7f; }
-    size_t promptArgumentIndex() const override { return 1; }
-    size_t temperatureArgumentIndex() const override { return 3; }
+    float defaultTemperature() const override { return default_temp; }
+    size_t promptArgumentIndex() const override { return prompt_arg_index; }
+    size_t temperatureArgumentIndex() const override { return temp_arg_idx; }
 
     String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -64,7 +68,7 @@ protected:
 
     String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
-        return String(arguments[1].column->getDataAt(row));
+        return String(arguments[prompt_arg_index].column->getDataAt(row));
     }
 };
 

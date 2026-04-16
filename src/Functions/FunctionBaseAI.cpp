@@ -137,7 +137,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto response_format = buildResponseFormat(arguments);
 
     auto result_col = ColumnString::create();
-    const auto & text_col = arguments[promptArgumentIndex()].column;
 
     UInt64 total_api_calls = 0;
     UInt64 total_input_tokens = 0;
@@ -147,7 +146,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        if (text_col->isNullAt(i) || quota.isQuotaExceeded())
+        if (quota.isQuotaExceeded())
         {
             result_col->insertDefault();
             ++rows_skipped;

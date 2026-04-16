@@ -10,7 +10,7 @@ aiGenerateContent
 -- Nonexistent named collection
 -- aiGenerateContent return type
 result	String
--- NULL input returns empty string
+-- NULL input returns NULL
 1
 -- Empty string input accepted
 0
