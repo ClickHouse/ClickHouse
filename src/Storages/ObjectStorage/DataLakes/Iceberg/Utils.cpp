@@ -170,16 +170,18 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             path);
     }
     String version_str;
-    /// v<V>.metadata.json
     if (file_name.starts_with('v'))
     {
-        auto dot_pos = file_name.find_first_of('.');
-        if (dot_pos == String::npos || dot_pos <= 1)
+        /// Formats: v<V>.metadata.json  or  v<V>-<uuid>.metadata.json
+        /// The 'v' prefix is followed by a version number, then either '.' or '-'.
+        auto after_v = file_name.begin() + 1;
+        auto end_of_version = std::find_if(after_v, file_name.end(), [](char c) { return c == '.' || c == '-'; });
+        if (end_of_version == file_name.end())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
                 file_name);
-        version_str = String(file_name.begin() + 1, file_name.begin() + dot_pos);
+        version_str = String(after_v, end_of_version);
     }
     /// <V>-<random-uuid>.metadata.json
     else
@@ -188,14 +190,16 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         if (dash_pos == String::npos || dash_pos == 0)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
                 file_name);
         version_str = String(file_name.begin(), file_name.begin() + dash_pos);
     }
 
     if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bad metadata file name: '{}'. Expected `vN.metadata.json`, `vN-<uuid>.metadata.json`, or `N-<uuid>.metadata.json` where N is a version number",
+            file_name);
 
     return MetadataFileWithInfo{
         .version = std::stoi(version_str), .path = path, .compression_method = getCompressionMethodFromMetadataFile(path)};
