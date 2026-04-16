@@ -1,6 +1,8 @@
 #pragma once
 
+#include <base/demangle.h>
 #include <base/types.h>
+#include <Common/Exception.h>
 #include <Core/Defines.h>
 #include <base/TypeLists.h>
 #include <Columns/IColumn.h>

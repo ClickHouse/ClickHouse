@@ -8,11 +8,9 @@
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
-#include <Storages/IStorage.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Disks/StoragePolicy.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -328,6 +326,8 @@ public:
     DataPartsSharedLock readLockParts() const { return DataPartsSharedLock(data_parts_mutex); }
 
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
+    /// NOTE: `operation_with_data_parts_mutex` is also locked directly via `std::lock` in
+    /// StorageMergeTree::movePartitionToTable to avoid lock ordering issues between two tables.
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
     MergeTreeDataPartFormat
@@ -365,8 +365,7 @@ public:
 
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
-        void rollback();
-        void rollback(DataPartsLock & lock);
+        void rollback(DataPartsLock * acquired_lock = nullptr);
 
         /// Immediately remove parts from table's data_parts set and change part
         /// state to temporary. Useful for new parts which not present in table.
@@ -486,7 +485,7 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const StorageID & table_id_,
-                  const StorageInMemoryMetadata & metadata_,
+                  StorageInMemoryMetadata metadata_,
                   ContextMutablePtr context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
@@ -535,7 +534,7 @@ public:
 
     bool supportsTTL() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
 
     bool supportsLightweightDelete() const override;
@@ -639,13 +638,21 @@ public:
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
-    /// Returns a pointer to primary index cache if it is enabled and required to be prewarmed.
-    PrimaryIndexCachePtr getPrimaryIndexCacheToPrewarm(size_t part_uncompressed_bytes) const;
-    /// Returns a pointer to primary mark cache if it is required to be prewarmed.
-    MarkCachePtr getMarkCacheToPrewarm(size_t part_uncompressed_bytes) const;
 
-    /// Prewarm mark cache and primary index cache for the most recent data parts.
-    void prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache);
+    struct CachesToPrewarm
+    {
+        MarkCachePtr mark_cache;
+        MarkCachePtr index_mark_cache;
+        PrimaryIndexCachePtr primary_index_cache;
+
+        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache; }
+    };
+
+    /// Returns caches that should be prewarmed for a part of the given size.
+    CachesToPrewarm getCachesToPrewarm(size_t part_uncompressed_bytes) const;
+
+    /// Prewarm mark cache, index mark cache, and primary index cache for the most recent data parts.
+    void prewarmCaches(ThreadPool & pool, const CachesToPrewarm & caches);
 
     String getLogName() const { return log.loadName(); }
 
@@ -766,6 +773,16 @@ public:
     static void validateDetachedPartName(const String & name);
 
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
+
+    /// Execute a merge of the specified parts to a temporary directory without committing.
+    /// Used by OPTIMIZE ... DRY RUN PARTS.
+    void optimizeDryRun(
+        const Names & part_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool deduplicate,
+        const Names & deduplicate_by_columns,
+        bool cleanup,
+        ContextPtr context);
 
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
@@ -1072,8 +1089,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
@@ -1115,7 +1131,7 @@ public:
     /// When `projection` is provided, apply projection-level overrides on top of the table settings.
     MergeTreeSettingsPtr getSettings(ProjectionDescriptionRawPtr projection = nullptr) const;
 
-    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override; /// NOLINT
+    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
     String getRelativeDataPath() const { return relative_data_path; }
 
@@ -1355,11 +1371,7 @@ public:
 
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
-    static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
-    static VirtualColumnsDescription createProjectionVirtuals(const StorageInMemoryMetadata & metadata);
-
-    /// Similar to IStorage::getVirtuals but returns only virtual columns valid in projection.
-    VirtualsDescriptionPtr getProjectionVirtualsPtr() const { return projection_virtuals.get(); }
+    static VirtualColumnsDescription createVirtuals(const KeyDescription * partition_key);
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;
@@ -1688,7 +1700,8 @@ protected:
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-        const Strings & mutation_ids = {});
+        const Strings & mutation_ids,
+        const std::map<String, UInt64> & projections_duration_ms);
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
@@ -1965,8 +1978,6 @@ private:
     void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
 
     mutable TemporaryParts temporary_parts;
-
-    MultiVersionVirtualsDescriptionPtr projection_virtuals;
 
     /// A regexp for files that should be prewarmed in the cache if cache_populated_by_fetch is enabled.
     MultiVersion<re2::RE2> filename_regexp_for_cache_prewarming;

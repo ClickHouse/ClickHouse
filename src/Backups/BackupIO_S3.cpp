@@ -379,34 +379,33 @@ BackupWriterS3::BackupWriterS3(
     }
 }
 
-void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                      bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterS3::copyFileFromDisk(
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
     /// We don't check for `has_throttling` here because the native copy almost doesn't use network.
     auto source_data_source_description = src_disk->getDataSourceDescription();
     if (source_data_source_description.sameKind(data_source_description) && (source_data_source_description.is_encrypted == copy_encrypted))
     {
-        /// getBlobPath() can return more than 3 elements if the file is stored as multiple objects in S3 bucket.
+        /// getBlobPath() can return more than 2 elements if the file is stored as multiple objects in S3 bucket.
         /// In this case we can't use the native copy.
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
-            /// Use storage client with overridden retry strategy settings.
             copyS3File(
                 /* src_s3_client */ disk_client_factory.getOrCreate(src_disk),
                 /* src_bucket */ blob_path[1],
-                /* src_key= */ blob_path[0],
+                /* src_key */ blob_path[0],
                 start_pos,
                 length,
-                /* dest_s3_client= */ client,
-                /* dest_bucket= */ s3_uri.bucket,
-                /* dest_key= */ fs::path(s3_uri.key) / path_in_backup,
+                /* dest_s3_client */ client,
+                /* dest_bucket */ s3_uri.bucket,
+                /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
                 s3_settings.request_settings,
                 read_settings,
                 blob_storage_log,
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
-                [&]
+                [&, this]
                 {
                     LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
 

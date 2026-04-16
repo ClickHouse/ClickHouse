@@ -351,6 +351,10 @@ public:
     /// Apply materialize() function to node. Unlike for materializeNodeWithoutRename, result node has the same name.
     const Node & materializeNode(const Node & node, bool materialize_sparse = true);
 
+    /// Remove materialize() and identity() wrapper functions from the DAG.
+    /// These are transparent wrappers that don't change values. Removing them projection matching for queries through views.
+    void removeTrivialWrappers();
+
     enum class MatchColumnsMode : uint8_t
     {
         Position,
@@ -375,6 +379,7 @@ public:
         NameSet * columns_contain_compiled_function = nullptr);
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
+    static ActionsDAG makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value);
 
     /// Create ActionsDAG which represents expression equivalent to applying first and second actions consequently.
     /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.

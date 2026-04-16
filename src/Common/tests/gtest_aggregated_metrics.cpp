@@ -89,10 +89,12 @@ TEST(AggregatedMetrics, GlobalQuantileSingleHandleMin)
 TEST(AggregatedMetrics, GlobalQuantileMultipleHandlesMax)
 {
     auto handle1 = std::make_unique<AggregatedMetrics::GlobalQuantile>(CurrentMetrics::SharedMergeTreeMaxReplicas);
-    auto handle2 = std::make_unique<AggregatedMetrics::GlobalQuantile>(CurrentMetrics::SharedMergeTreeMaxReplicas);
     ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::SharedMergeTreeMaxReplicas), 0);
 
     handle1->set(5);
+    ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::SharedMergeTreeMaxReplicas), 5);
+
+    auto handle2 = std::make_unique<AggregatedMetrics::GlobalQuantile>(CurrentMetrics::SharedMergeTreeMaxReplicas);
     ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::SharedMergeTreeMaxReplicas), 5);
 
     handle2->set(3);
@@ -114,11 +116,13 @@ TEST(AggregatedMetrics, GlobalQuantileMultipleHandlesMax)
 TEST(AggregatedMetrics, GlobalQuantileMultipleHandlesMin)
 {
     auto handle1 = std::make_unique<AggregatedMetrics::GlobalQuantile>(CurrentMetrics::SharedMergeTreeMinReplicas);
-    auto handle2 = std::make_unique<AggregatedMetrics::GlobalQuantile>(CurrentMetrics::SharedMergeTreeMinReplicas);
     ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::SharedMergeTreeMinReplicas), 0);
 
     handle1->set(5);
     ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::SharedMergeTreeMinReplicas), 5);
+
+    auto handle2 = std::make_unique<AggregatedMetrics::GlobalQuantile>(CurrentMetrics::SharedMergeTreeMinReplicas);
+    ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::SharedMergeTreeMinReplicas), 0);
 
     handle2->set(7);
     ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::SharedMergeTreeMinReplicas), 5);

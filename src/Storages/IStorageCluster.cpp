@@ -13,7 +13,6 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -54,58 +53,14 @@ IStorageCluster::IStorageCluster(
 {
 }
 
-class ReadFromCluster : public SourceStepWithFilter
-{
-public:
-    std::string getName() const override { return "ReadFromCluster"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
-
-    ReadFromCluster(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        SharedHeader sample_block,
-        std::shared_ptr<IStorageCluster> storage_,
-        ASTPtr query_to_send_,
-        QueryProcessingStage::Enum processed_stage_,
-        ClusterPtr cluster_,
-        LoggerPtr log_)
-        : SourceStepWithFilter(
-            std::move(sample_block),
-            column_names_,
-            query_info_,
-            storage_snapshot_,
-            context_)
-        , storage(std::move(storage_))
-        , query_to_send(std::move(query_to_send_))
-        , processed_stage(processed_stage_)
-        , cluster(std::move(cluster_))
-        , log(log_)
-    {
-    }
-
-private:
-    std::shared_ptr<IStorageCluster> storage;
-    ASTPtr query_to_send;
-    QueryProcessingStage::Enum processed_stage;
-    ClusterPtr cluster;
-    LoggerPtr log;
-
-    std::optional<RemoteQueryExecutor::Extension> extension;
-
-    void createExtension(const ActionsDAG::Node * predicate);
-    ContextPtr updateSettings(const Settings & settings);
-};
-
 void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
     const ActionsDAG::Node * predicate = nullptr;
-    if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
+    if (filter)
+        predicate = filter->getOutputs().at(0);
 
     createExtension(predicate);
 }
@@ -232,7 +187,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             Tables(),
             processed_stage,
             nullptr,
-            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
+            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)},
+            shard_info.pool);
 
         remote_query_executor->setLogger(log);
         Pipe pipe{std::make_shared<RemoteSource>(

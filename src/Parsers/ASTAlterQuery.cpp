@@ -65,6 +65,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->sql_security = res->children.emplace_back(sql_security->clone()).get();
     if (rename_to)
         res->rename_to = res->children.emplace_back(rename_to->clone()).get();
+    if (execute_args)
+        res->execute_args = res->children.emplace_back(execute_args->clone()).get();
 
     return res;
 }
@@ -261,7 +263,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << quoteString(snapshot_name);
         if (snapshot_desc != nullptr)
         {
-            ostr << "FROM ";
+            ostr << " FROM ";
             snapshot_desc->format(ostr, settings, state, frame);
         }
     }
@@ -503,9 +505,24 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
-        ostr << "MODIFY QUERY" << settings.nl_or_ws
-                     ;
-        select->format(ostr, settings, state, frame);
+        ostr << "MODIFY QUERY" << settings.nl_or_ws;
+
+        /// When the ALTER query has trailing SETTINGS (inherited from ASTQueryWithOutput),
+        /// we must wrap the MODIFY QUERY select in parentheses. Otherwise the trailing
+        /// SETTINGS clause would be consumed by `ParserSelectQuery` as part of the
+        /// last SELECT during re-parsing, instead of remaining on the ALTER query.
+        /// Clear the flags to prevent inner nodes from adding redundant parentheses.
+        if (frame.parent_has_trailing_settings)
+        {
+            ostr << "(";
+            frame.parent_has_trailing_settings = false;
+            select->format(ostr, settings, state, frame);
+            ostr << ")";
+        }
+        else
+        {
+            select->format(ostr, settings, state, frame);
+        }
     }
     else if (type == ASTAlterCommand::MODIFY_REFRESH)
     {
@@ -547,6 +564,13 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             partition->format(ostr, settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::EXECUTE_COMMAND)
+    {
+        ostr << "EXECUTE " << execute_command_name << "(";
+        if (execute_args)
+            execute_args->format(ostr, settings, state, frame);
+        ostr << ")";
+    }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
 }
@@ -574,6 +598,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::i
     f(&select, nullptr);
     f(&sql_security, nullptr);
     f(&rename_to, nullptr);
+    f(&execute_args, nullptr);
 }
 
 

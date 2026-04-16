@@ -242,7 +242,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, fast_test, build_amd_binary]
+    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, fast_test, style_check]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

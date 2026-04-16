@@ -17,7 +17,7 @@ struct ConverterContext
     DataTypePtr timestamp_data_type;
     UInt32 timestamp_scale;
     DataTypePtr scalar_data_type;
-    const NodeEvaluationRangeGetter node_evaluation_range_getter;
+    const NodeEvaluationRangeGetter node_range_getter;
     const ResultType result_type;
     SQLSubqueries subqueries;
 

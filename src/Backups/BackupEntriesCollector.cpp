@@ -1,4 +1,5 @@
 #include <Access/AccessControl.h>
+#include <Common/CurrentThread.h>
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
@@ -18,14 +19,12 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/intExp2.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
-
-#include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/copy.hpp>
 
 #include <filesystem>
 
@@ -227,6 +226,8 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
     /// ...
     /// and so on, the sleep time is doubled each time until it reaches 5000 milliseconds.
     /// And such attempts will be continued until 600000 milliseconds pass.
+
+    auto component_guard = Coordination::setCurrentComponent("BackupEntriesCollector::gatherMetadataAndCheckConsistency");
 
     setStage(Stage::formatGatheringMetadata(0));
 

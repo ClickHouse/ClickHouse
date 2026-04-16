@@ -76,6 +76,7 @@ void setUpConfig(const std::string & file_name)
                 <metadata_path>metadata_storage_dir</metadata_path>
                 <metadata_type>local</metadata_type>
                 <use_fake_transaction>false</use_fake_transaction>
+                <persistent_removal_log>true</persistent_removal_log>
                 <data_background_cleanup>
                     <enabled>true</enabled>
                     <interval_sec>1</interval_sec>
@@ -117,6 +118,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char disk_object_storage_fail_commit_metadata_transaction[];
+    extern const char write_file_operation_fail_on_read[];
 }
 
 }
@@ -249,6 +251,7 @@ TEST_F(DiskObjectStorageTest, WriteListReadFile)
 
     std::vector<String> files;
     disk->listFiles(".", files);
+    std::erase_if(files, [](const String & file) { return file == ".metadata"; });
 
     EXPECT_EQ(files.size(), 1);
     EXPECT_EQ(files, std::vector<String>{file_name});
@@ -408,6 +411,50 @@ TEST_F(DiskObjectStorageTest, RewriteFileTxCommitFail)
 
     EXPECT_THROW(tx->commit(), DB::Exception);
 
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    waitBlobsCount(disk, 1);
+}
+
+TEST_F(DiskObjectStorageTest, AppendFileTxReadFailDoesNotDeleteFile)
+{
+    // Regression test for: WriteFileOperation::undo() incorrectly deletes a file
+    // when execute() fails after opening the file but before setting prev_data.
+    // Reproduces the bug that corrupts txn_version.txt metadata on object storage.
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_content";
+
+    // Create the initial file
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    waitBlobsCount(disk, 1);
+
+    // Enable failpoint that fires inside WriteFileOperation::execute(),
+    // after the existing file is opened but before prev_data is set.
+    // This simulates ThreadFuzzer fault injection on async ThreadPoolReader::submit().
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::write_file_operation_fail_on_read);
+
+    // Append to the file — triggers AddBlobOperation -> WriteFileOperation::execute()
+    auto tx = disk->createTransaction();
+    {
+        auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append, DB::WriteSettings{});
+        DB::writeText("_appended", *wb);
+        wb->finalize();
+    }
+
+    // Commit fails because the failpoint fires during WriteFileOperation::execute()
+    EXPECT_THROW(tx->commit(), DB::Exception);
+
+    // Without the fix: WriteFileOperation::undo() sees !prev_data and deletes the file.
+    // With the fix: undo() sees file_existed==true and preserves the file.
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
     waitBlobsCount(disk, 1);

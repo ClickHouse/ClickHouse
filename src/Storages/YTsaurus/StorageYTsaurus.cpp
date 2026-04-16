@@ -2,6 +2,8 @@
 
 #if USE_YTSAURUS
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageFactory.h>
@@ -44,7 +46,7 @@ StorageYTsaurus::StorageYTsaurus(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
-    : IStorage{table_id_}
+    : StorageWithCommonVirtualColumns{table_id_}
     , cypress_path(std::move(configuration_.cypress_path))
     , settings(configuration_.settings)
     , client_connection_info{
@@ -59,7 +61,16 @@ StorageYTsaurus::StorageYTsaurus(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageYTsaurus::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 Pipe StorageYTsaurus::read(
@@ -69,7 +80,7 @@ Pipe StorageYTsaurus::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -82,9 +93,7 @@ Pipe StorageYTsaurus::read(
     }
 
     YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));
-    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = cypress_path, .settings = settings}, sample_block, max_block_size);
-
-    return Pipe(ptr);
+    return YTsaurusSourceFactory::createPipe(client, cypress_path, {.settings = settings}, sample_block, max_block_size, num_streams);
 }
 
 YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(

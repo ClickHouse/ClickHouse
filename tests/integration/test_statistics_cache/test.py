@@ -4,14 +4,14 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-ch1 = cluster.add_instance("ch1", stay_alive=True)
-r1  = cluster.add_instance("r1", with_zookeeper=True, stay_alive=True)
-r2  = cluster.add_instance("r2", with_zookeeper=True, stay_alive=True)
+ch1 = cluster.add_instance("ch1", stay_alive=True, user_configs=["config/config.xml"])
+r1  = cluster.add_instance("r1", with_zookeeper=True, stay_alive=True, user_configs=["config/config.xml"])
+r2  = cluster.add_instance("r2", with_zookeeper=True, stay_alive=True, user_configs=["config/config.xml"])
 
 TEST_DB = f"db_sc_{uuid.uuid4().hex[:6]}"
 SET_PREFIX = f"""\
 USE {TEST_DB};
-SET allow_experimental_statistics = 1;
+SET allow_statistics = 1;
 SET use_statistics = 1;
 SET mutations_sync = 2;
 SET log_queries = 1;
@@ -67,7 +67,7 @@ def _create_tbl(node, name, interval):
         CREATE TABLE {name} (k UInt32, v Float64)
         ENGINE=MergeTree
         ORDER BY k
-        SETTINGS refresh_statistics_interval = {interval}
+        SETTINGS refresh_statistics_interval = {interval}, auto_statistics_types = ''
     """)
     _query(node, f"INSERT INTO {name} SELECT number, toFloat64(rand())/4294967296.0 FROM numbers({ROWS_SMALL})")
     _query_retry(node, f"ALTER TABLE {name} ADD STATISTICS v TYPE TDigest")
@@ -286,12 +286,14 @@ def test_alter_interval_requires_detach_attach():
     _query(ch1, "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='alt-pre' FORMAT Null")
     _assert_load(ch1, "alt-pre")
     _query_retry(ch1, "ALTER TABLE alt_tbl MODIFY SETTING refresh_statistics_interval = 1")
-    _query(ch1, "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='alt-now' FORMAT Null")
-    _assert_load(ch1, "alt-now")
-    _query_retry(ch1, "DETACH TABLE alt_tbl; ATTACH TABLE alt_tbl")
     _wait_hit(
         ch1, "alt-post",
         "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='alt-post' FORMAT Null"
+    )
+    _query_retry(ch1, "DETACH TABLE alt_tbl; ATTACH TABLE alt_tbl")
+    _wait_hit(
+        ch1, "detach-attach-post",
+        "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='detach-attach-post' FORMAT Null"
     )
 
 def test_types_smoke_and_nullable():
@@ -353,31 +355,6 @@ def test_drop_statistics_means_no_load_and_bypass_still_loads():
            "SETTINGS use_statistics_cache=0, log_comment='drop-bypass' FORMAT Null")
     # after optimization, there is no load after `drop statistics`
     _assert_hit(ch1, "drop-bypass")
-
-def test_per_replica_cache_and_restart_needed():
-    table = _create_rep(0)
-    _query(r1, f"SELECT count() FROM {table} WHERE v>0.99 AND id>=0 SETTINGS use_statistics_cache=1, log_comment='rep-r1-pre' FORMAT Null")
-    _assert_load(r1, "rep-r1-pre")
-    _query(r2, f"SELECT count() FROM {table} WHERE v>0.99 AND id>=0 SETTINGS use_statistics_cache=1, log_comment='rep-r2-pre' FORMAT Null")
-    _assert_load(r2, "rep-r2-pre")
-
-    for n in (r1, r2):
-        _query_retry(n, f"ALTER TABLE {table} MODIFY SETTING refresh_statistics_interval = 1")
-
-    _query(r1, f"SELECT count() FROM {table} WHERE v>0.99 AND id>=0 SETTINGS use_statistics_cache=1, log_comment='rep-now' FORMAT Null")
-    _assert_load(r1, "rep-now")
-
-    _query_retry(r1, f"SYSTEM RESTART REPLICA {table}")
-    _query_retry(r2, f"SYSTEM RESTART REPLICA {table}")
-
-    _wait_hit(
-        r1, "rep-post-r1",
-        f"SELECT count() FROM {table} WHERE v>0.99 AND id>=0 SETTINGS use_statistics_cache=1, log_comment='rep-post-r1' FORMAT Null"
-    )
-    _wait_hit(
-        r2, "rep-post-r2",
-        f"SELECT count() FROM {table} WHERE v>0.99 AND id>=0 SETTINGS use_statistics_cache=1, log_comment='rep-post-r2' FORMAT Null"
-    )
 
 def test_replication_inserts_keep_hit():
     table = _create_rep(1)

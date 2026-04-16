@@ -476,6 +476,7 @@ void BackupCoordinationStageSync::watchingThread()
 {
     LOG_TRACE(log, "Started the watching thread");
 
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationStageSync::watchingThread");
     auto should_stop = [&]
     {
         std::lock_guard lock{mutex};
@@ -1028,6 +1029,7 @@ void BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
 
     stopWatchingThread();
 
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationStageSync::finish");
     try
     {
         auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::finish", retries_kind);

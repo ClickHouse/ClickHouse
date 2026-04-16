@@ -531,6 +531,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                 ["none", "hash", "range"]
             ),
             "write.object-storage.enabled": true_false_lambda,
+            "write.object-storage.partitioned-paths": true_false_lambda,
             # Write parallelism
             "write.tasks.max": lambda: str(
                 random.choice([1, 2, 8, 100, 500, 1000, 2000])
@@ -546,11 +547,15 @@ class IcebergTableGenerator(LakeTableGenerator):
             "write.update.mode": lambda: random.choice(
                 ["copy-on-write", "merge-on-read"]
             ),
+            "write.delete.granularity": lambda: random.choice(["partition", "file"]),
             "write.delete.isolation-level": lambda: random.choice(
                 ["serializable", "snapshot"]
             ),
             "write.delete.mode": lambda: random.choice(
                 ["copy-on-write", "merge-on-read"]
+            ),
+            "write.merge.isolation-level": lambda: random.choice(
+                ["serializable", "snapshot"]
             ),
             "write.merge.mode": lambda: random.choice(
                 ["copy-on-write", "merge-on-read"]
@@ -558,6 +563,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             "write.metadata.compression-codec": lambda: random.choice(
                 ["gzip", "zstd", "none"]
             ),
+            "write.spark.fanout.enabled": true_false_lambda,
             "write.wap.enabled": true_false_lambda,
             "read.manifest.cache.enabled": true_false_lambda,
             # Split size
@@ -621,7 +627,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                         )  # 1MB, 2MB, 4MB, 8MB
                     ),
                     "write.parquet.compression-codec": lambda: random.choice(
-                        ["snappy", "gzip", "zstd", "lz4", "uncompressed"]
+                        ["zstd", "brotli", "lz4", "gzip", "snappy", "uncompressed"]
                     ),
                     "write.parquet.compression-level": lambda: str(
                         random.randint(1, 9)
@@ -648,7 +654,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             next_properties.update(
                 {
                     "write.orc.compression-codec": lambda: random.choice(
-                        ["snappy", "zlib", "lzo", "zstd", "none"]
+                        ["zstd", "lz4", "lzo", "zlib", "snappy", "none"]
                     ),
                     "write.orc.compression-strategy": lambda: random.choice(
                         ["speed", "compression"]
@@ -670,7 +676,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             next_properties.update(
                 {
                     "write.avro.compression-codec": lambda: random.choice(
-                        ["snappy", "uncompressed"]
+                        ["gzip", "zstd", "snappy", "uncompressed"]
                     )
                 }
             )

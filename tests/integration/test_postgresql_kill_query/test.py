@@ -65,15 +65,6 @@ SELECT generate_infinite_sequence() as counter;"""
     conn.close()
 
 
-# Stop clickhouse-client by SIGINT signal that is the same as pressing Ctrl+C
-def stop_clickhouse_client():
-    client_pid = node1.get_process_pid("clickhouse client")
-    node1.exec_in_container(
-        ["bash", "-c", f"kill -INT {client_pid}"],
-        user="root",
-    )
-
-
 @pytest.fixture(scope="module")
 def setup_big_data_table(started_cluster):
     # Connect to postgres_database database
@@ -135,7 +126,7 @@ def test_kill_infinite_query(setup_infinite_query):
 
     # Verify that query was successfully cancelled in ClickHouse server
     result = node1.query(
-        "SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
 
@@ -172,7 +163,7 @@ SETTINGS max_block_size = 10000""",
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    node1.wait_for_log_line("Generate a chuck from stream")
+    node1.wait_for_log_line("Generate a chunk from stream")
     time.sleep(1)
 
     node1.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
@@ -181,7 +172,7 @@ SETTINGS max_block_size = 10000""",
 
     # Verify that query was successfully cancelled in ClickHouse server
     result = node1.query(
-        "SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
 
@@ -221,7 +212,7 @@ def test_cancel_infinite_query(setup_infinite_query):
     )
     time.sleep(2)
 
-    stop_clickhouse_client()
+    node1.stop_clickhouse_client()
     node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
     time.sleep(1)
 
@@ -252,10 +243,10 @@ SETTINGS max_block_size = 10000"""
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
-    node1.wait_for_log_line("Generate a chuck from stream")
+    node1.wait_for_log_line("Generate a chunk from stream")
     time.sleep(2)
 
-    stop_clickhouse_client()
+    node1.stop_clickhouse_client()
     node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
     time.sleep(1)
 

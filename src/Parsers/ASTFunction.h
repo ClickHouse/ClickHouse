@@ -77,7 +77,7 @@ public:
 
     /// do not print empty parentheses if there are no args - compatibility with engine names.
     bool noEmptyArgs() const { return flags<ASTFunctionFlags>().no_empty_args; }
-    void setNoEmptyArgs(bool value) { flags<ASTFunctionFlags>().no_empty_args = value; }
+    void setNoEmptyArgs(bool value);
 
     /// Specifies where this function-like expression is used.
     enum class Kind : UInt8

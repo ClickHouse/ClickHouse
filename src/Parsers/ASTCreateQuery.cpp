@@ -122,6 +122,25 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     }
 }
 
+void ASTStorage::normalizeChildrenOrder()
+{
+    /// Keep old children alive while we rebuild the vector, because the raw
+    /// member pointers (engine, primary_key, …) do not hold ownership —
+    /// the intrusive_ptrs in `children` do.  Clearing first would destroy
+    /// the objects and leave dangling raw pointers.
+    ASTs old_children;
+    old_children.swap(children);
+
+    if (engine) children.emplace_back(engine);
+    if (partition_by) children.emplace_back(partition_by);
+    if (primary_key) children.emplace_back(primary_key);
+    if (order_by) children.emplace_back(order_by);
+    if (sample_by) children.emplace_back(sample_by);
+    if (ttl_table) children.emplace_back(ttl_table);
+    if (settings) children.emplace_back(settings);
+}
+
+
 bool ASTStorage::isExtendedStorageDefinition() const
 {
     return partition_by || primary_key || order_by || sample_by || settings;
@@ -375,7 +394,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         if (uuid != UUIDHelpers::Nil)
             ostr << " UUID " << quoteString(toString(uuid));
 
-        assert(attach || !has_attach_from_path);
+        chassert(attach || !has_attach_from_path);
         if (has_attach_from_path)
             ostr << " FROM " << quoteString(attach_from_path);
 
@@ -500,7 +519,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     frame.expression_list_always_start_on_new_line = true;
 
-    if (is_ordinary_view && aliases_list && !as_table_function)
+    if ((is_ordinary_view || is_materialized_view) && aliases_list && !as_table_function)
     {
         ostr << (settings.one_line ? " (" : "\n(");
         aliases_list->format(ostr, settings, state, frame);
@@ -582,7 +601,27 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         ostr << settings.nl_or_ws;
         ostr << "AS ";
-        select->format(ostr, settings, state, frame);
+
+        /// When the query has trailing output options like SETTINGS, FORMAT, or INTO OUTFILE
+        /// (either from this CREATE query or from an outer query like EXPLAIN),
+        /// we must wrap the AS-select in parentheses. Otherwise the trailing
+        /// SETTINGS clause would be consumed by `ParserSelectQuery` as part of the
+        /// last SELECT in the UNION/INTERSECT chain during re-parsing, instead of
+        /// remaining on the outer query — breaking the formatting roundtrip.
+        /// The outer parentheses already protect against consumption, so
+        /// clear the flags to prevent inner nodes from adding redundant parentheses.
+        if (settings_ast || frame.has_trailing_output_options)
+        {
+            ostr << "(";
+            frame.parent_has_trailing_settings = false;
+            frame.has_trailing_output_options = false;
+            select->format(ostr, settings, state, frame);
+            ostr << ")";
+        }
+        else
+        {
+            select->format(ostr, settings, state, frame);
+        }
     }
 }
 
