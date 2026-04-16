@@ -186,28 +186,6 @@ def _skip_by_backend(request):
             pytest.skip(f"requires {required} backend")
 
 
-# Tests that pass reliably on the OneLake backend and should not be marked xfail.
-_ONELAKE_PASSING = frozenset({
-    "test_show_tables",
-    "test_onelake_invalid_client_secret",
-    "test_onelake_wrong_tenant_id",
-    "test_onelake_warehouse_id_as_data_item",
-})
-
-@pytest.fixture(autouse=True)
-def _xfail_onelake(request):
-    """Mark OneLake tests that are not yet passing as expected failures."""
-    if request.node.callspec.params.get("catalog_manager") != "onelake":
-        return
-    if request.node.originalname not in _ONELAKE_PASSING:
-        request.node.add_marker(
-            pytest.mark.xfail(
-                reason="OneLake returns IncorrectEndpointError; fix pending",
-                strict=False,
-            )
-        )
-
-
 @pytest.fixture(scope="module")
 def started_cluster(catalog_manager):
     cluster = ClickHouseCluster(__file__, name=f"test_e2e_catalogs_{catalog_manager}")
@@ -1017,9 +995,6 @@ def test_onelake_warehouse_id_as_data_item(node, catalog_manager):
 
 
 @only_onelake
-@pytest.mark.xfail(
-    reason="credentials leak in system.databases engine_full"
-)
 def test_onelake_system_databases(node, catalog_manager):
     """All system.databases fields are correct for a DataLakeCatalog database."""
 
@@ -1057,7 +1032,6 @@ def test_onelake_system_databases(node, catalog_manager):
 
 
 @only_onelake
-@pytest.mark.xfail(reason="credentials leak in SHOW CREATE DATABASE")
 def test_onelake_show_create_no_secret(node, catalog_manager, sales_table):
     """SHOW CREATE DATABASE must not expose client_secret."""
 
@@ -1068,7 +1042,6 @@ def test_onelake_show_create_no_secret(node, catalog_manager, sales_table):
 
 
 @only_onelake
-@pytest.mark.xfail(reason="credentials leak in SHOW CREATE DATABASE")
 def test_onelake_show_create_table_no_secret(
     node, shared_db, sales_table, catalog_manager,
 ):
@@ -1098,6 +1071,8 @@ def test_insert_into_table(node, catalog_manager, request):
     backend = request.node.callspec.params.get("catalog_manager")
     if backend == "biglake":
         pytest.xfail("INSERT into BigLake DataLakeCatalog does not commit to the catalog")
+    if backend == "onelake":
+        pytest.xfail("INSERT into OneLake raises StorageException during blob upload")
     data = pa.table(
         {
             "id": pa.array([1, 2], type=pa.int64()),

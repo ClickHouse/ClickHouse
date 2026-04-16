@@ -822,7 +822,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 baco->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
             }
 
-            gen.setBackupDestination(rg, bac);
+            gen.setBackupOut(rg, bac->mutable_out());
             res->mutable_out()->CopyFrom(bac->out());
             res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
 
