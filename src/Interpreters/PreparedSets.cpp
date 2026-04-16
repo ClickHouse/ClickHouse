@@ -22,6 +22,7 @@
 #include <Processors/Sinks/NullSink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
@@ -216,7 +217,7 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     if (set.empty())
         return;
 
-    auto metadata = external_table_->getInMemoryMetadataPtr();
+    auto metadata = external_table_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     const auto & expected_columns = metadata->getColumns().getAllPhysical();
 
     Columns set_elements = set.getSetElements();

@@ -89,7 +89,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
 }
 
 void StorageSystemPartsColumns::processNextStorage(
-    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageSystemPartsColumns::processNextStorage");
     /// Prepare information about columns in storage.
@@ -100,7 +100,7 @@ void StorageSystemPartsColumns::processNextStorage(
     };
 
     std::unordered_map<String, ColumnInfo> columns_info;
-    for (const auto & column : info.storage->getInMemoryMetadataPtr()->getColumns())
+    for (const auto & column : info.storage->getInMemoryMetadataPtr(context, false)->getColumns())
     {
         ColumnInfo column_info;
         if (column.default_desc.expression)

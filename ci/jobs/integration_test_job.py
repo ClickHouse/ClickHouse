@@ -764,6 +764,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
         sequential_test_modules = []
         assert not is_sequential
 
+    if is_targeted_check and not parallel_test_modules and not sequential_test_modules:
+        # All targeted tests were stale (removed or renamed since the CIDB record).
+        # This is expected — skip gracefully instead of producing a "no results" error.
+        Result.create_from(
+            status=Result.Status.SKIPPED,
+            info="All targeted tests are stale (removed or renamed)",
+        ).complete_job()
+
     if is_flaky_check or is_targeted_check:
         # Sort by module file so all tests from the same file are consecutive.
         # With --dist=each, pytest preserves CLI argument order and uses it as the

@@ -339,7 +339,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
 {
     const auto context = data.getContext();
     const auto settings = data.getSettings();
-    const auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    const auto metadata_snapshot = data.getInMemoryMetadataPtr(context, false);
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
@@ -397,7 +397,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
 {
     const auto context = data.getContext();
     const auto settings = data.getSettings();
-    const auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    const auto metadata_snapshot = data.getInMemoryMetadataPtr(context, false);
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
