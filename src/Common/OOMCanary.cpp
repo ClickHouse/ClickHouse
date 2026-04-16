@@ -22,6 +22,7 @@
 #    include <sys/prctl.h>
 #    include <cerrno>
 #    include <cstring>
+#    include <ctime>
 #endif
 
 namespace DB
@@ -163,6 +164,20 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
 
 [[noreturn]] void OOMCanary::childMain(size_t size_bytes, int64_t page_size, int max_fd, pid_t parent_pid)
 {
+    /// Reset all inherited signal handlers to SIG_DFL immediately.
+    /// The parent installs complex handlers (SignalHandlers.cpp) that access
+    /// thread-local storage, closed pipe fds, jemalloc, and singletons —
+    /// none of which are valid in the cloned child.  In debug/sanitizer
+    /// builds the inherited handler triggers SIGILL (ud2 from UBSan).
+    {
+        struct sigaction sa;
+        ::memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = SIG_DFL;
+        ::sigemptyset(&sa.sa_mask); // NOLINT(concurrency-mt-unsafe)
+        for (int sig = 1; sig < _NSIG; ++sig)
+            ::sigaction(sig, &sa, nullptr); /// ignore errors for unresettable signals
+    }
+
     /// Ask the kernel to send `SIGKILL` when the parent process exits,
     /// preventing this child from becoming an orphan.
     if (::prctl(PR_SET_PDEATHSIG, SIGKILL) != 0)
@@ -228,22 +243,31 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
     /// D-04: If mlock fails, degrade to unlocked memory and continue
     ::mlock(mem, size_bytes);
 
-    /// Wait for a signal (the parent will SIGKILL us to stop, or OOM killer will SIGKILL us)
-    sigset_t mask;
-    ::sigfillset(&mask); // NOLINT(concurrency-mt-unsafe)
-    ::sigprocmask(SIG_SETMASK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe)
-
-    /// Block all signals and wait — sigsuspend atomically unblocks and waits
-    sigset_t empty_mask;
-    ::sigemptyset(&empty_mask); // NOLINT(concurrency-mt-unsafe)
+    /// Block all signals and sleep forever.  Only SIGKILL (unblockable by
+    /// the kernel) can terminate us — either from the OOM killer or the
+    /// parent's cleanup path.
+    ///
+    /// Use `pause` instead of `sigsuspend` because `sigsuspend` is trapped
+    /// by `base/harmful/harmful.c` in debug builds (`__builtin_trap` → SIGILL).
+    /// With all signals blocked via `sigprocmask`, `pause` will only return
+    /// when a signal that cannot be blocked (SIGKILL) terminates the process.
+    sigset_t full_mask;
+    ::sigfillset(&full_mask); // NOLINT(concurrency-mt-unsafe)
+    ::sigprocmask(SIG_SETMASK, &full_mask, nullptr); // NOLINT(concurrency-mt-unsafe)
 
     for (;;)
-        ::sigsuspend(&empty_mask); // NOLINT(concurrency-mt-unsafe)
+        ::pause();
 }
 
 void OOMCanary::monitorThread()
 {
     LOG_INFO(log, "OOM canary monitor thread started, watching pid {}", canary_pid.load(std::memory_order_relaxed));
+
+    static constexpr int max_rapid_relaunches = 10;
+    static constexpr int initial_backoff_sec = 1;
+    static constexpr int max_backoff_sec = 60;
+    int rapid_relaunch_count = 0;
+    int backoff_sec = initial_backoff_sec;
 
     while (!shutdown_requested.load(std::memory_order_acquire))
     {
@@ -283,6 +307,11 @@ void OOMCanary::monitorThread()
                     LOG_FATAL(log, "OOM canary child pid {} was killed by signal {}. "
                         "This likely indicates the system is under severe memory pressure.",
                         current_pid, sig);
+
+                    /// A genuine OOM kill resets the rapid-relaunch counter
+                    /// because it is expected behavior, not a child bug.
+                    rapid_relaunch_count = 0;
+                    backoff_sec = initial_backoff_sec;
                 }
                 else
                 {
@@ -303,10 +332,35 @@ void OOMCanary::monitorThread()
             if (should_run_oom_response)
                 onCanaryDied();
 
-            /// Optionally relaunch the canary
+            /// Optionally relaunch the canary with exponential backoff
+            /// and a retry cap to avoid tight restart loops when the child
+            /// exits immediately (e.g. mmap/mlock failure).
             if (relaunch_enabled && !shutdown_requested.load(std::memory_order_acquire))
             {
-                LOG_INFO(log, "Attempting to relaunch OOM canary");
+                ++rapid_relaunch_count;
+                if (rapid_relaunch_count > max_rapid_relaunches)
+                {
+                    LOG_WARNING(log, "OOM canary relaunch limit ({}) reached, giving up", max_rapid_relaunches);
+                    break;
+                }
+
+                LOG_INFO(log, "Attempting to relaunch OOM canary (attempt {}/{}) after {} second(s)",
+                    rapid_relaunch_count, max_rapid_relaunches, backoff_sec);
+
+                /// Sleep with shutdown check.
+                /// Use `nanosleep` instead of `sleep` because `sleep` is trapped
+                /// by `base/harmful/harmful.c` in debug builds.
+                for (int elapsed = 0; elapsed < backoff_sec && !shutdown_requested.load(std::memory_order_acquire); ++elapsed)
+                {
+                    struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
+                    ::nanosleep(&ts, nullptr);
+                }
+
+                if (shutdown_requested.load(std::memory_order_acquire))
+                    break;
+
+                backoff_sec = std::min(backoff_sec * 2, max_backoff_sec);
+
                 pid_t new_pid = spawnCanary(canary_size_bytes);
                 if (new_pid > 0)
                 {
