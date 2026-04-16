@@ -800,6 +800,11 @@ For Values format: when parsing and interpreting expressions using template, che
     DECLARE(Bool, input_format_avro_allow_missing_fields, false, R"(
 For Avro/AvroConfluent format: when field is not found in schema use default value instead of error
 )", 0) \
+    DECLARE(Bool, input_format_avro_union_type_name, false, R"(
+For Avro format: for each union-typed field, expose a virtual `$name` sub-column of type `Nullable(String)` that contains the active union branch name, or `NULL` for the null branch.
+
+Example: given a union field `payload` with branches `["null", "TypeA", "TypeB"]`, querying `payload.$name` returns `NULL`, `'TypeA'`, or `'TypeB'` per row. Requires schema inference or an explicit `Nullable(String)` column in the table schema.
+)", 0) \
     /** This setting is obsolete and do nothing, left for compatibility reasons. */ \
     DECLARE(Bool, input_format_avro_null_as_default, false, R"(
 For Avro/AvroConfluent format: insert default in case of null and non Nullable column
