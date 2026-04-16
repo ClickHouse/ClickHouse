@@ -1,9 +1,10 @@
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
@@ -23,6 +24,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char write_through_cache_fail[];
 }
 
 FileSegmentRangeWriter::FileSegmentRangeWriter(
@@ -44,6 +51,8 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
     , source_path(source_path_)
     , is_distributed_cache(is_distributed_cache_)
 {
+    LOG_TEST(log, "Cache key: {}, source path: {}, is distributed cache: {}",
+             key.toString(), source_path, is_distributed_cache);
 }
 
 bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
@@ -206,9 +215,16 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
     /// if we have less size to write, file segment will be resized in complete() method.
     if (is_distributed_cache)
     {
+        /// Use boundary_alignment=0 (no alignment) to avoid aligning the offset.
+        /// This is important for retry scenarios where the client retries a write
+        /// at a non-boundary-aligned offset (e.g. after a disconnect that happened mid-segment),
+        /// because a previously written file segment part could have been evicted
+        /// in between the retries, leading here to a creation of EMPTY non-downloaded
+        /// file segment which starts from incorrect offset.
         file_segments = cache->getOrSet(
             key, offset, /* size */cache->getMaxFileSegmentSize(),
-            /* file_size */0, create_settings, /* file_segments_limit */1, origin);
+            /* file_size */0, create_settings, /* file_segments_limit */1, origin,
+            /* boundary_alignment_ */0);
 
         const auto & file_segment = file_segments->front();
         if (file_segment.getDownloadedSize() != 0)
@@ -222,8 +238,11 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
                 file_segment.range().toString(), offset);
         }
 
-        if (file_segment.getCurrentWriteOffset() > offset
-            && file_segment.isBackgroundDownloadEnabled())
+        /// This can happen because of retries.
+        /// Two cases are possible:
+        /// 1. On first try we failed to write to cache, but background download did it for us.
+        /// 2. On first try we succeeded, but disconnected before telling client that we succeeded.
+        if (file_segment.getCurrentWriteOffset() > offset)
         {
             LOG_TRACE(log, "Writing at offset {}, but covering file segment has write offset {}. "
                       "This could be because background download is turned on",
@@ -231,6 +250,9 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
         }
         else if (file_segment.getCurrentWriteOffset() != offset)
         {
+            /// Note: this exception can happen if you configure
+            /// max_file_segment_size < 2 * boundary_alignment, which is a misconfiguration,
+            /// but difficult to validate.
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Writing at offset {}, but covering file segment has write offset {} ({})",
@@ -253,6 +275,13 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
         return;
 
     auto file_segment_range = file_segment.range();
+    /// Skip empty segments: `left + downloaded_size - 1` would wrap to `SIZE_MAX` when
+    /// `downloaded_size == 0`, producing an invalid range in the log.
+    /// This can happen when `jumpToPosition` calls `completeFileSegment` on a segment that was
+    /// allocated but never written to.
+    if (!file_segment.getDownloadedSize())
+        return;
+
     size_t file_segment_right_bound = file_segment_range.left + file_segment.getDownloadedSize() - 1;
 
     FilesystemCacheLogElement elem
@@ -272,6 +301,12 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
     cache_log->add(std::move(elem));
 }
 
+void FileSegmentRangeWriter::setFileFinishedForDistributedCache()
+{
+    is_file_finished_for_distributed_cache = true;
+    LOG_TEST(log, "Set file as finished for distributed cache"); /// Used for integration test.
+}
+
 void FileSegmentRangeWriter::completeFileSegment()
 {
     if (!file_segments || file_segments->empty())
@@ -284,15 +319,15 @@ void FileSegmentRangeWriter::completeFileSegment()
 
     LOG_TEST(log, "Completing file segment {}:{}", file_segment.key(), file_segment.offset());
 
-    /// We do not force shrink file segment in case of distributed cache,
+    /// We do not always force shrink file segment in case of distributed cache,
     /// because it is possible that we reconnected and
     /// used a different connection to continue writing to cache,
     /// so we want to continue writing to existing file segment.
-    /// The drawback - we do not know when to actually shrink it,
-    /// but in fact it does not affect anything,
-    /// file segment size != reserved size.
-    /// TODO: we could send a packet from client indicating end of file.
-    file_segments->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/!is_distributed_cache);
+    const bool force_shrink_file_segment = !is_distributed_cache || is_file_finished_for_distributed_cache;
+    file_segments->completeAndPopFront(
+        /*allow_background_download=*/false,
+        /*force_shrink_to_downloaded_size=*/force_shrink_file_segment);
+
     appendFilesystemCacheLog(file_segment);
 }
 
@@ -309,7 +344,7 @@ void FileSegmentRangeWriter::jumpToPosition(size_t position)
         if (position < current_write_offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot jump backwards: {} < {}", position, current_write_offset);
 
-        file_segments->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/!is_distributed_cache);
+        completeFileSegment();
         file_segments = nullptr;
     }
 
@@ -393,6 +428,11 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
 
     try
     {
+        fiu_do_on(FailPoints::write_through_cache_fail,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint: write through cache failed");
+        });
+
         if (!cache_writer->write(data, size, current_download_offset, file_segment_kind))
         {
             LOG_INFO(log, "Write-through cache is stopped as cache limit is reached and nothing can be evicted");
@@ -402,7 +442,8 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
     catch (ErrnoException & e)
     {
         int code = e.getErrno();
-        if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
+        if (!is_distributed_cache
+            && (code == /* No space left on device */28 || code == /* Quota exceeded */122))
         {
             LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
             return;
