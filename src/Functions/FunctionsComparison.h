@@ -4,24 +4,18 @@
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
-#include <Columns/ColumnArray.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
-#include <Core/Settings.h>
 #include <Core/callOnTypeIndex.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -32,11 +26,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Functions/ComparisonNames.h>
 #include <type_traits>
 
 #if USE_EMBEDDED_COMPILER
@@ -48,13 +41,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool validate_enum_literals_in_operators;
-    extern const SettingsBool use_variant_default_implementation_for_comparisons;
-    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
-}
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 
@@ -687,13 +673,6 @@ template <> struct CompileOp<GreaterOrEqualsOp>
 
 #endif
 
-struct NameEquals          { static constexpr auto name = "equals"; };
-struct NameNotEquals       { static constexpr auto name = "notEquals"; };
-struct NameLess            { static constexpr auto name = "less"; };
-struct NameGreater         { static constexpr auto name = "greater"; };
-struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
-struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
-
 struct ComparisonParams
 {
     bool check_decimal_overflow = false;
@@ -701,14 +680,7 @@ struct ComparisonParams
     bool use_variant_default_implementation = true;
     FormatSettings format_settings;
 
-    explicit ComparisonParams(const ContextPtr & context)
-        : check_decimal_overflow(decimalCheckComparisonOverflow(context))
-        , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
-        , use_variant_default_implementation(context->getSettingsRef()[Setting::use_variant_default_implementation_for_comparisons])
-        , format_settings(getFormatSettings(context))
-    {
-        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
-    }
+    explicit ComparisonParams(const ContextPtr & context);
 
     ComparisonParams() = default;
 };
