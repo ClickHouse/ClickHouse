@@ -183,7 +183,7 @@ void ColumnIdMapping::renameColumn(const String & old_logical_name, const String
     auto column_id = it->second;
 
     if (id_to_logical.contains(new_logical_name) && new_logical_name != column_id)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot rename column '{}' to '{}': the new name collides with an existing column ID",
             old_logical_name, new_logical_name);
 
@@ -204,7 +204,7 @@ void ColumnIdMapping::beginRename(const String & old_logical_name, const String 
     auto column_id = it->second;
 
     if (id_to_logical.contains(new_logical_name) && new_logical_name != column_id)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot rename column '{}' to '{}': the new name collides with an existing column ID",
             old_logical_name, new_logical_name);
 
