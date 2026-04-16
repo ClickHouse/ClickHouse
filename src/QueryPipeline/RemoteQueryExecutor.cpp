@@ -441,9 +441,6 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
     }
 
-    if (distributed_fanout > 0)
-        connections->setDistributedFanout(distributed_fanout);
-
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, local_granted_roles);
 
     established = false;
@@ -932,7 +929,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 data->creating_pipe_callback = [cur, limits, my_context = this->context]()
                 {
                     SelectQueryInfo query_info;
-                    auto metadata_snapshot = cur->getInMemoryMetadataPtr(my_context, false);
+                    auto metadata_snapshot = cur->getInMemoryMetadataPtr();
                     auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, my_context);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
                         my_context, QueryProcessingStage::Complete, storage_snapshot, query_info);

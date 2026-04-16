@@ -117,7 +117,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (columns.projections)
     {
         for (const auto & child : columns.projections->children)
-            ProjectionDescription::getProjectionFromAST(child, columns_desc, nullptr, context);
+            ProjectionDescription::getProjectionFromAST(child, columns_desc, context);
     }
     if (!new_query.storage)
         return;
@@ -234,10 +234,10 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 
 
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
-    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context)
+    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error)
 {
     auto table_id = storage->getStorageID();
-    auto metadata_ptr = storage->getInMemoryMetadataPtr(context, false);
+    auto metadata_ptr = storage->getInMemoryMetadataPtr();
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
