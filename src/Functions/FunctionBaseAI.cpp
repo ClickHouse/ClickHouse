@@ -42,7 +42,8 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-namespace {
+namespace
+{
 
 /// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
 static String sanitizeTextForAI(const String & input)

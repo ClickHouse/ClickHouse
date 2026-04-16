@@ -69,7 +69,7 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/operations/s
 | `AIInputTokens` | Total input tokens consumed. |
 | `AIOutputTokens` | Total output tokens consumed. |
 | `AIRowsProcessed` | Number of rows that received a result. |
-| `AIRowsSkipped` | Number of rows skipped (empty input, quota exceeded, error). |
+| `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
 
 Query these events:
 
