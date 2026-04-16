@@ -100,6 +100,7 @@ static struct InitFiu
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
+    ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
@@ -168,7 +169,8 @@ static struct InitFiu
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
-    REGULAR(patch_parts_reverse_column_order)
+    REGULAR(patch_parts_reverse_column_order) \
+    REGULAR(wide_part_writer_fail_in_add_streams)
 
 namespace FailPoints
 {
