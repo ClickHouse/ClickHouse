@@ -18,7 +18,7 @@ public:
         , throw_on_quota_exceeded(throw_on_quota_exceeded_)
     {}
 
-    /// Check all quotes, return true if any quota is met or exceeded, false otherwise. Should be called before issuing API call.
+    /// Check all quotas, return true if any quota is met or exceeded, false otherwise. Should be called before issuing API call.
     bool checkQuotas();
 
     /// Record one API call and its token counts. Should be called after an API call, does not check quotas.
