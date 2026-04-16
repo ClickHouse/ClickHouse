@@ -313,9 +313,9 @@ SELECT count() FROM tab WHERE hasToken(val, 'world');  -- row 3, new part (index
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '12. Array tokenizer + postprocessor: has() must not use Exact direct-read.';
--- With a postprocessor, indexed tokens differ from stored values, so Exact mode is unsafe.
--- 'Foo' → lower → 'foo'; has(val, 'Foo') must match the stored value, not the indexed token.
+SELECT '12. Array tokenizer + postprocessor: has() applies postprocessor to both sides.';
+-- With a lower postprocessor, has() becomes case-insensitive: each array element and the
+-- needle are both lowercased before comparison, matching what is stored in the index.
 
 CREATE TABLE tab
 (
@@ -329,6 +329,7 @@ INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
 
 SELECT count() FROM tab WHERE has(val, 'Foo');   -- 1
 SELECT count() FROM tab WHERE has(val, 'BAR');   -- 1
-SELECT count() FROM tab WHERE has(val, 'foo');   -- 1: case-insensitive, matches row 1
+SELECT count() FROM tab WHERE has(val, 'foo');   -- 1: lower('foo') = lower('Foo'), matches row 1
+SELECT count() FROM tab WHERE has(val, 'xyz');   -- 0
 
 DROP TABLE tab;

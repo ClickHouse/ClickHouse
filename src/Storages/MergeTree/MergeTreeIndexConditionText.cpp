@@ -232,10 +232,14 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "mapContainsValue")
     {
         /// These functions compare the searched token as a whole and therefore
-        /// exact direct read is only possible with array token extractor, that doesn't
-        /// split documents into tokens. A preprocessor or postprocessor changes token
-        /// values at index-build time without being applied to the query needle here,
-        /// so Exact mode would produce false negatives; fall back to hint mode.
+        /// exact direct read is only possible with the array token extractor, which
+        /// does not split documents into sub-tokens. A preprocessor changes the
+        /// haystack before tokenization, which cannot be reversed for the needle,
+        /// so Exact mode would produce false negatives. A postprocessor is handled
+        /// consistently (applied to the needle in stringToTokens and to the haystack
+        /// via the query-plan rewrite in optimizeDirectReadFromTextIndex), but Exact
+        /// mode replaces the predicate entirely, bypassing that rewrite; fall back to
+        /// hint mode so the rewritten predicate is evaluated at row level.
         bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
         bool has_preprocessor = preprocessor && preprocessor->hasActions();
         bool has_postprocessor = postprocessor && postprocessor->hasActions();

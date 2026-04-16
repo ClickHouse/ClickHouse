@@ -373,7 +373,7 @@ private:
 
     static bool needApplyPostprocessor(const String & function_name)
     {
-        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
+        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "has";
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node)
