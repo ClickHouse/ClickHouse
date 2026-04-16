@@ -16,9 +16,10 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ProcessList.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -146,7 +147,7 @@ namespace ActionLocks
 static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutationEntry & mutation, LoggerPtr log = nullptr)
 {
     assert(!mutation.tid.isEmpty());
-    if (mutation.tid.isPrehistoric())
+    if (mutation.tid.isNonTransactional())
         return {};
 
     auto txn = TransactionLog::instance().tryGetRunningTransaction(mutation.tid.getHash());
@@ -644,7 +645,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = getStoragePolicy()->getAnyDisk();
-    TransactionID current_tid = Tx::PrehistoricTID;
+    TransactionID current_tid = Tx::NonTransactionalTID;
     String additional_info;
     auto txn = query_context->getCurrentTransaction();
     if (txn)
@@ -939,7 +940,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     auto txn = tryGetTransactionForMutation(mutation_entry, log.load());
     /// There's no way a transaction may finish before a mutation that was started by the transaction.
     /// But sometimes we need to check status of an unrelated mutation, in this case we don't care about transactions.
-    assert(txn || mutation_entry.tid.isPrehistoric() || from_another_mutation);
+    assert(txn || mutation_entry.tid.isNonTransactional() || from_another_mutation);
 
     /// Check deadlock: if this mutation belongs to a transaction, check if there are
     /// intermediate mutations between it and an earlier mutation from the same transaction
@@ -1002,7 +1003,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             else if (txn && !from_another_mutation)
             {
                 /// Part is locked by concurrent transaction, most likely it will never be mutated
-                TIDHash part_locked = data_part->version.removal_tid_lock.load();
+                TIDHash part_locked = data_part->version->getRemovalTIDLockHash();
                 if (part_locked && part_locked != mutation_entry.tid.getHash())
                 {
                     result.latest_failed_part = data_part->name;
@@ -1202,7 +1203,7 @@ void StorageMergeTree::loadMutations()
                 UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
-                if (!entry.tid.isPrehistoric() && !entry.csn)
+                if (!entry.tid.isNonTransactional() && !entry.csn)
                 {
                     if (auto csn = TransactionLog::getCSN(entry.tid))
                     {
@@ -1543,7 +1544,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             continue;
         }
 
-        if (!first_mutation_tid.isPrehistoric())
+        if (!first_mutation_tid.isNonTransactional())
         {
 
             /// Mutate visible parts only
@@ -1552,7 +1553,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
             /// It's possible that both mutation and transaction are already finished,
             /// because that part should not be mutated because it was not visible for that transaction.
-            if (!part->version.isVisible(first_mutation_tid.start_csn, first_mutation_tid))
+            if (!part->version->isVisible(first_mutation_tid.start_csn, first_mutation_tid))
             {
                 current_parts_postpone_reasons[part->name] = PostponeReasons::VERSION_NOT_VISIBLE;
                 continue;
@@ -1585,7 +1586,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             /// Mutate visible parts only (similar to mutation with transaction)
             /// NOTE Do not mutate parts in an active transaction.
             /// Mutation without transaction should wait for the transaction to commit or rollback.
-            if (!part->version.isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID))
+            if (!part->version->isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID))
             {
                 LOG_DEBUG(log, "Cannot mutate part {} because it's not visible (outdated, being created or removed "
                           "in an active transaction) to mutation {}.",
@@ -1860,7 +1861,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         {
             auto & entry = it->second;
 
-            if (!entry.tid.isPrehistoric())
+            if (!entry.tid.isNonTransactional())
             {
                 end_it = it;
                 break;
@@ -1884,7 +1885,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             const auto & tid = it->second.tid;
-            if (!tid.isPrehistoric() && !TransactionLog::getCSN(tid))
+            if (!tid.isNonTransactional() && !TransactionLog::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
 
@@ -2519,9 +2520,8 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_dir);
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         auto txn = local_context->getCurrentTransaction();
-        TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-        loaded_parts[i]->version.setCreationTID(tid, nullptr);
-        loaded_parts[i]->storeVersionMetadata();
+        TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
+        loaded_parts[i]->version->setAndStoreCreationTID(tid, nullptr);
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
