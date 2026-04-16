@@ -781,6 +781,7 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
+    updateExternalDynamicMetadataIfExists(context_);
     auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto storage = getStorageID();
     configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);

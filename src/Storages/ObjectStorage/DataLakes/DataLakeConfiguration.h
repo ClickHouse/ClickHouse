@@ -154,7 +154,8 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands) override
     {
-        assertInitialized();
+        if (!current_metadata)
+            return;
         current_metadata->checkMutationIsPossible(commands);
     }
 
