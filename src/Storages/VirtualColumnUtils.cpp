@@ -42,6 +42,7 @@
 #include <Functions/indexHint.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/StorageSnapshot.h>
@@ -742,6 +743,23 @@ Names filterVirtualColumns(
     if (result.empty())
         if (const auto & all_physical = metadata_snapshot->getColumns().getAllPhysical(); !all_physical.empty())
             result.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
+
+    return result;
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns)
+{
+    return getColumnsWithVirtualsForAnalysis(
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()),
+        virtual_columns.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns)
+{
+    auto result = columns;
+    for (const auto & col : virtual_columns)
+        if (!result.contains(col.name))
+            result.push_back(col);
 
     return result;
 }
