@@ -1,10 +1,17 @@
 #include <Columns/ColumnSparse.h>
 #include <Core/SortCursor.h>
 #include <Interpreters/sortBlock.h>
+#include <Processors/ChunkSortDescription.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Common/PODArray.h>
+#include <Common/ProfileEvents.h>
 #include <Common/iota.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event SortBlockAlreadySortedByChunkInfo;
+}
 
 namespace DB
 {
@@ -112,6 +119,33 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     if (read_rows)
         read_rows->add(chunk.getNumRows());
+
+    /// O(1) check: if the chunk carries sort metadata that covers our sort
+    /// description, the data is already sorted and we can skip the expensive
+    /// permutation computation entirely.
+    ///
+    /// Column names in the ChunkSortDescription are kept up-to-date by
+    /// ExpressionTransform (via applyActionsToSortDescription), so a simple
+    /// name-based prefix check is sufficient here.
+    if (auto sort_info = chunk.getChunkInfos().get<ChunkSortDescription>())
+    {
+        const auto & chunk_sort = sort_info->sort_description;
+
+        if (chunk_sort.hasPrefix(description))
+        {
+            ProfileEvents::increment(ProfileEvents::SortBlockAlreadySortedByChunkInfo);
+
+            /// If there is a LIMIT, truncate the chunk.
+            if (limit && limit < chunk.getNumRows())
+            {
+                auto columns = chunk.detachColumns();
+                for (auto & col : columns)
+                    col = col->cut(0, limit);
+                chunk.setColumns(std::move(columns), limit);
+            }
+            return;
+        }
+    }
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 

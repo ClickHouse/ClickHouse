@@ -6,11 +6,17 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Common/iota.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
+
+namespace ProfileEvents
+{
+    extern const Event SortBlockAlreadySorted;
+}
 
 namespace DB
 {
@@ -340,11 +346,34 @@ void checkSortedWithPermutation(const Block & block, const SortDescription & des
 
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit, IColumn::PermutationSortStability stability)
 {
-    IColumn::Permutation permutation;
-
 #ifndef NDEBUG
     block.checkNumberOfRows();
 #endif
+
+    if (block.empty() || description.empty())
+        return;
+
+    /// Quick check: if the block is already sorted, we can skip the expensive permutation computation.
+    /// isAlreadySorted uses a sampling heuristic that rejects unsorted data in ~10 comparisons,
+    /// so the cost for unsorted data is negligible compared to the O(n log n) sort.
+    if (isAlreadySorted(block, description))
+    {
+        ProfileEvents::increment(ProfileEvents::SortBlockAlreadySorted);
+
+        /// If there is a LIMIT, we still need to truncate the block.
+        if (limit && limit < block.rows())
+        {
+            size_t columns = block.columns();
+            for (size_t i = 0; i < columns; ++i)
+            {
+                auto & column_to_sort = block.getByPosition(i).column;
+                column_to_sort = column_to_sort->cut(0, limit);
+            }
+        }
+        return;
+    }
+
+    IColumn::Permutation permutation;
     getBlockSortPermutationImpl(block, description, stability, limit, permutation);
 
 #ifndef NDEBUG

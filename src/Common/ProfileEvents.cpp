@@ -345,6 +345,8 @@
     M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggragating/joining)", ValueType::Bytes) \
     M(ExternalProcessingUncompressedBytesTotal, "Amount of data (uncompressed, before compression) written by external processing (sorting/aggragating/joining)", ValueType::Bytes) \
     M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggragating/joining)", ValueType::Number) \
+    M(SortBlockAlreadySorted, "Number of times a block passed to sortBlock appeared to be already sorted, so sorting was skipped.", ValueType::Number) \
+    M(SortBlockAlreadySortedByChunkInfo, "Number of times sorting was skipped because ChunkSortDescription indicated the data is already sorted.", ValueType::Number) \
     M(ExternalSortWritePart, "Number of times a temporary file was written to disk for sorting in external memory.", ValueType::Number) \
     M(ExternalSortMerge, "Number of times temporary files were merged for sorting in external memory.", ValueType::Number) \
     M(ExternalSortCompressedBytes, "Number of compressed bytes written for sorting in external memory.", ValueType::Bytes) \

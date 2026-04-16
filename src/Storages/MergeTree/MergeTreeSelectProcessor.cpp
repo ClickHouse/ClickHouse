@@ -247,6 +247,9 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
         if (add_part_level)
             chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
 
+        if (chunk_sort_description)
+            chunk.getChunkInfos().add(chunk_sort_description);
+
         if (reader_settings.use_query_condition_cache)
         {
             String part_name

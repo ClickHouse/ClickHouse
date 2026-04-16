@@ -2,6 +2,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Core/Block.h>
 #include <Functions/IFunction.h>
+#include <Processors/ChunkSortDescription.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <memory>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -31,6 +33,16 @@ void ExpressionTransform::transform(Chunk & chunk)
     expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
 
     chunk.setColumns(block.getColumns(), num_rows);
+
+    /// Update ChunkSortDescription column names to reflect any renames
+    /// performed by this expression (e.g. "x" → "__table1.x").
+    if (auto sort_info = chunk.getChunkInfos().extract<ChunkSortDescription>())
+    {
+        auto updated = sort_info->sort_description;
+        applyActionsToSortDescription(updated, expression->getActionsDAG());
+        if (!updated.empty())
+            chunk.getChunkInfos().add(std::make_shared<ChunkSortDescription>(std::move(updated)));
+    }
 
     if (updater)
         updater->recordOutputChunk(chunk, block);

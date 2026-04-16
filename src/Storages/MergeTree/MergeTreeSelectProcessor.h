@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/Chunk.h>
+#include <Processors/ChunkSortDescription.h>
 
 namespace DB
 {
@@ -142,6 +143,14 @@ public:
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
+    /// Attach sort-order metadata to every output chunk so that downstream
+    /// sorting transforms can skip redundant work when ORDER BY matches the
+    /// storage's sorting key.
+    void setChunkSortDescription(std::shared_ptr<ChunkSortDescription> sort_description_)
+    {
+        chunk_sort_description = std::move(sort_description_);
+    }
+
     /// Enable per-block virtual row generation for read-in-order optimization.
     /// When set, after each block read, a virtual row carrying the next mark's PK boundary
     /// is emitted so that MergingSortedTransform can reprioritize sources.
@@ -174,6 +183,9 @@ private:
 
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;
+
+    /// Pre-computed sort-order metadata to attach to every output chunk.
+    std::shared_ptr<ChunkSortDescription> chunk_sort_description;
 
     /// Shared context used for building indexes during query execution.
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context;

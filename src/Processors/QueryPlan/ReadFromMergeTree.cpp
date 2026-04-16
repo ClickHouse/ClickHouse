@@ -36,6 +36,7 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
+#include <Processors/ChunkSortDescription.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -139,6 +140,34 @@ bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info
         added = added || restoreDAGInputs(info->prewhere_actions, inputs);
 
     return added;
+}
+
+/// Build a ChunkSortDescription from the storage's sorting key, limited to the
+/// longest prefix of key columns that are present in the result header.
+/// Returns nullptr if no sorting key columns are in the header.
+std::shared_ptr<DB::ChunkSortDescription> buildChunkSortDescriptionFromStorage(
+    const DB::StorageMetadataPtr & metadata, const DB::Block & result_header)
+{
+    const auto & sorting_key = metadata->getSortingKey();
+    const auto & key_columns = sorting_key.column_names;
+    const auto & reverse_flags = sorting_key.reverse_flags;
+
+    DB::SortDescription sort_desc;
+    sort_desc.reserve(key_columns.size());
+
+    for (size_t i = 0; i < key_columns.size(); ++i)
+    {
+        if (!result_header.has(key_columns[i]))
+            break;
+
+        int direction = (i < reverse_flags.size() && reverse_flags[i]) ? -1 : 1;
+        sort_desc.emplace_back(key_columns[i], direction);
+    }
+
+    if (sort_desc.empty())
+        return nullptr;
+
+    return std::make_shared<DB::ChunkSortDescription>(std::move(sort_desc));
 }
 
 }
@@ -497,6 +526,10 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     Pipes pipes;
 
+    auto chunk_sort_desc = buildChunkSortDescriptionFromStorage(
+        getStorageMetadata(),
+        MergeTreeSelectProcessor::transformHeader(pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info));
+
     for (size_t i = 0; i < pool_settings.threads; ++i)
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
@@ -510,6 +543,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             actions_settings,
             reader_settings,
             index_build_context);
+
+        if (chunk_sort_desc)
+            processor->setChunkSortDescription(chunk_sort_desc);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -605,6 +641,10 @@ Pipe ReadFromMergeTree::readFromPool(
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
 
+    auto chunk_sort_desc = buildChunkSortDescriptionFromStorage(
+        getStorageMetadata(),
+        MergeTreeSelectProcessor::transformHeader(pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info));
+
     Pipes pipes;
     for (size_t i = 0; i < pool_settings.threads; ++i)
     {
@@ -619,6 +659,9 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             index_build_context);
+
+        if (chunk_sort_desc)
+            processor->setChunkSortDescription(chunk_sort_desc);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -704,6 +747,10 @@ Pipe ReadFromMergeTree::readInOrder(
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
+    auto chunk_sort_desc = buildChunkSortDescriptionFromStorage(
+        getStorageMetadata(),
+        MergeTreeSelectProcessor::transformHeader(pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info));
+
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
     {
@@ -738,6 +785,9 @@ Pipe ReadFromMergeTree::readInOrder(
             index_build_context);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
+
+        if (chunk_sort_desc)
+            processor->setChunkSortDescription(chunk_sort_desc);
 
         bool use_virtual_row = virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder);
         bool use_virtual_row_per_block = use_virtual_row && context->getSettingsRef()[Setting::read_in_order_use_virtual_row_per_block];
