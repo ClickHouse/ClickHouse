@@ -219,8 +219,7 @@ StorageRedis::StorageRedis(
     , primary_key(primary_key_)
 {
     pool = std::make_shared<RedisPool>(configuration.pool_size);
-    setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
+    setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
 }
 
 VirtualColumnsDescription StorageRedis::createVirtuals()
@@ -423,7 +422,7 @@ namespace
         if (!args.storage_def->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageRedis must require one column in primary key");
 
-        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
         auto primary_key_names = primary_key_desc.expression->getRequiredColumns();
 
         if (primary_key_names.size() != 1)
@@ -445,7 +444,7 @@ Chunk StorageRedis::getBySerializedKeys(const std::vector<std::string> & keys, P
 
 Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<UInt8> * null_map) const
 {
-    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+    Block sample_block = getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
     MutableColumns columns = sample_block.cloneEmptyColumns();
@@ -560,7 +559,7 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
 
 Block StorageRedis::getSampleBlock(const Names &) const
 {
-    return getInMemoryMetadataPtr()->getSampleBlock();
+    return getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
 }
 
 SinkToStoragePtr StorageRedis::write(
@@ -609,7 +608,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
 
     assert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto physical_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);

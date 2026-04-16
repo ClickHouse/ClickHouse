@@ -798,6 +798,21 @@ def lambda_handler(event, context):
 
             # Add user_id to subscription list (supports multiple Slack users per email)
             if subscriptions_s3_path:
+                # Remove user from previous subscription if switching emails
+                prev_email = FeedSubscription.find_user_subscription(
+                    user_id, s3_path=subscriptions_s3_path
+                )
+                if prev_email and prev_email != user_email:
+                    FeedSubscription.remove_user_id(
+                        user_email=prev_email,
+                        user_id=user_id,
+                        s3_path=subscriptions_s3_path,
+                    )
+                    SUBSCRIPTION_CACHE.pop(prev_email, None)
+                    print(
+                        f"Removed user {user_id} from previous subscription: {prev_email}"
+                    )
+
                 subscription = FeedSubscription.add_user_id(
                     user_email=user_email,
                     user_id=user_id,

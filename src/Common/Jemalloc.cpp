@@ -93,6 +93,21 @@ void setProfileSamplingRate(size_t lg_prof_sample)
 }
 
 
+std::string getStats()
+{
+    std::string result;
+    auto callback = [](void * opaque, const char * data)
+    {
+        auto * str = static_cast<std::string *>(opaque);
+        str->append(data);
+    };
+    size_t epoch = 1;
+    size_t sz = sizeof(epoch);
+    je_mallctl("epoch", &epoch, &sz, &epoch, sz);
+    je_malloc_stats_print(callback, &result, nullptr);
+    return result;
+}
+
 namespace
 {
 
