@@ -33,64 +33,7 @@ set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/third-party/siphash/include"
 )
 if (ENABLE_XRAY)
-    set (LLVM_INCLUDE_DIRS "${LLVM_INCLUDE_DIRS}" "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
-endif ()
-
-set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
-
-# There are compilation errors with C++23.
-set (CMAKE_CXX_STANDARD 17)
-
-if (ARCH_AMD64)
-    set (LLVM_TARGETS_TO_BUILD "X86" CACHE INTERNAL "")
-elseif (ARCH_AARCH64)
-    set (LLVM_TARGETS_TO_BUILD "AArch64" CACHE INTERNAL "")
-elseif (ARCH_PPC64LE)
-    set (LLVM_TARGETS_TO_BUILD "PowerPC" CACHE INTERNAL "")
-elseif (ARCH_S390X)
-    set (LLVM_TARGETS_TO_BUILD "SystemZ" CACHE INTERNAL "")
-elseif (ARCH_RISCV64)
-    set (LLVM_TARGETS_TO_BUILD "RISCV" CACHE INTERNAL "")
-elseif (ARCH_LOONGARCH64)
-    set (LLVM_TARGETS_TO_BUILD "LoongArch" CACHE INTERNAL "")
-endif ()
-
-if (USE_MUSL)
-    set (CMAKE_DL_LIBS "")
-    # Musl provides these functions, but they cannot be auto-detected during
-    # CMake configuration because musl headers aren't in the default include path.
-    # Force-define these so LLVM's config-ix.cmake doesn't fail to detect them.
-    set (HAVE_GETPAGESIZE 1 CACHE INTERNAL "")
-    set (HAVE_SYSCONF 1 CACHE INTERNAL "")
-    set (HAVE_GETAUXVAL 1 CACHE INTERNAL "")
-    set (HAVE_GETRUSAGE 1 CACHE INTERNAL "")
-    set (HAVE_ISATTY 1 CACHE INTERNAL "")
-    set (HAVE_FUTIMENS 1 CACHE INTERNAL "")
-    set (HAVE_PREAD 1 CACHE INTERNAL "")
-    set (HAVE_SBRK 1 CACHE INTERNAL "")
-    set (HAVE_STRERROR_R 1 CACHE INTERNAL "")
-    set (HAVE_SETENV 1 CACHE INTERNAL "")
-    set (HAVE_DLOPEN 1 CACHE INTERNAL "")
-    set (HAVE_POSIX_SPAWN 1 CACHE INTERNAL "")
-    set (HAVE_PTHREAD_GETNAME_NP 1 CACHE INTERNAL "")
-    set (HAVE_PTHREAD_SETNAME_NP 1 CACHE INTERNAL "")
-    set (HAVE_SIGALTSTACK 1 CACHE INTERNAL "")
-    set (HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC 1 CACHE INTERNAL "")
-    set (HAVE__UNWIND_BACKTRACE 1 CACHE INTERNAL "")
-    # These are either not in musl or we don't have them
-    set (HAVE_MALLINFO 0 CACHE INTERNAL "")
-    set (HAVE_MALLINFO2 0 CACHE INTERNAL "")
-    set (HAVE_MALLCTL 0 CACHE INTERNAL "")
-    set (HAVE_MALLOC_ZONE_STATISTICS 0 CACHE INTERNAL "")
-    # pthread is built into musl
-    set (HAVE_LIBPTHREAD 0 CACHE INTERNAL "")
-    set (PTHREAD_IN_LIBC 1 CACHE INTERNAL "")
-    set (HAVE_PTHREAD_RWLOCK_INIT 1 CACHE INTERNAL "")
-    set (HAVE_PTHREAD_MUTEX_LOCK 1 CACHE INTERNAL "")
-    # dlopen is in libc for musl
-    set (HAVE_LIBDL 0 CACHE INTERNAL "")
-    # rt functions (shm_open, etc.) are in libc for musl, no separate librt
-    set (HAVE_LIBRT 0 CACHE INTERNAL "")
+    list(APPEND LLVM_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
 endif()
 
 # Target architecture
@@ -1137,86 +1080,7 @@ else()
     endif()
 endif()
 
-<<<<<<< HEAD
-
-# Skip useless "install" instructions from CMake:
-set (LLVM_INSTALL_TOOLCHAIN_ONLY 1 CACHE INTERNAL "")
-
-message (STATUS "LLVM TARGETS TO BUILD ${LLVM_TARGETS_TO_BUILD}")
-
-set (CMAKE_INSTALL_RPATH "ON") # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
-set (LLVM_COMPILER_CHECKED 1 CACHE INTERNAL "") # Skip internal compiler selection
-set (LLVM_ENABLE_EH 1 CACHE INTERNAL "") # With exception handling
-set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
-set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
-
-# Omit unnecessary stuff (just the options which are ON by default)
-set(LLVM_ENABLE_BACKTRACES 0 CACHE INTERNAL "")
-set(LLVM_ENABLE_CRASH_OVERRIDES 0 CACHE INTERNAL "")
-set(LLVM_ENABLE_TERMINFO 0 CACHE INTERNAL "")
-set(LLVM_ENABLE_LIBXML2 0 CACHE INTERNAL "")
-set(LLVM_ENABLE_LIBEDIT 0 CACHE INTERNAL "")
-set(LLVM_ENABLE_LIBPFM 0 CACHE INTERNAL "")
-set(LLVM_ENABLE_ZLIB 0 CACHE INTERNAL "")
-set(LLVM_ENABLE_ZSTD 0 CACHE INTERNAL "")
-set(LLVM_ENABLE_Z3_SOLVER 0 CACHE INTERNAL "")
-set(LLVM_INCLUDE_TOOLS 0 CACHE INTERNAL "")
-set(LLVM_BUILD_TOOLS 0 CACHE INTERNAL "")
-set(LLVM_INCLUDE_UTILS 0 CACHE INTERNAL "")
-set(LLVM_BUILD_UTILS 0 CACHE INTERNAL "")
-set(LLVM_INCLUDE_RUNTIMES 0 CACHE INTERNAL "")
-set(LLVM_BUILD_RUNTIMES 0 CACHE INTERNAL "")
-set(LLVM_BUILD_RUNTIME 0 CACHE INTERNAL "")
-set(LLVM_INCLUDE_EXAMPLES 0 CACHE INTERNAL "")
-set(LLVM_INCLUDE_TESTS 0 CACHE INTERNAL "")
-set(LLVM_INCLUDE_GO_TESTS 0 CACHE INTERNAL "")
-set(LLVM_INCLUDE_BENCHMARKS 0 CACHE INTERNAL "")
-set(LLVM_INCLUDE_DOCS 0 CACHE INTERNAL "")
-set(LLVM_ENABLE_OCAMLDOC 0 CACHE INTERNAL "")
-set(LLVM_ENABLE_BINDINGS 0 CACHE INTERNAL "")
-
-set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm")
-set (LLVM_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
-
-message (STATUS "LLVM CMAKE CROSS COMPILING ${CMAKE_CROSSCOMPILING}")
-if (CMAKE_CROSSCOMPILING)
-    set (LLVM_HOST_TRIPLE "${CMAKE_C_COMPILER_TARGET}" CACHE INTERNAL "")
-    message (STATUS "CROSS COMPILING SET LLVM HOST TRIPLE ${LLVM_HOST_TRIPLE}")
-endif()
-
-# When using musl, we need LLVM build tools (tblgen etc.) to be built natively for the host
-# because our musl toolchain uses -nostartfiles which breaks standalone executables
-if (USE_MUSL)
-    set (LLVM_USE_HOST_TOOLS ON CACHE INTERNAL "")
-endif()
-
-# llvm-project/llvm/cmake/config-ix.cmake does a weird thing: it defines _LARGEFILE64_SOURCE,
-# then checks if lseek64() function exists, then undefines _LARGEFILE64_SOURCE.
-# Then the actual code that uses this function *doesn't* define _LARGEFILE64_SOURCE, so lseek64()
-# may not exist and compilation fails. This happens with musl.
-add_compile_definitions("_LARGEFILE64_SOURCE")
-
-add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
-
-set_directory_properties (PROPERTIES
-   # due to llvm crosscompile cmake does not know how to clean it, and on clean
-   # will lead to the following error:
-   #
-   #   ninja: error: remove(contrib/llvm/llvm/NATIVE): Directory not empty
-   #
-   ADDITIONAL_CLEAN_FILES "${LLVM_BINARY_DIR}"
-   # llvm's cmake configuring this file only when cmake runs,
-   # and after clean cmake will not know that it should re-run,
-   # add explicitly depends from llvm-config.h
-   CMAKE_CONFIGURE_DEPENDS "${LLVM_BINARY_DIR}/include/llvm/Config/llvm-config.h"
-)
-
-add_library (_llvm INTERFACE)
-target_link_libraries (_llvm INTERFACE ${REQUIRED_LLVM_LIBRARIES})
-target_include_directories (_llvm SYSTEM BEFORE INTERFACE ${LLVM_INCLUDE_DIRS})
-=======
 add_library(_llvm INTERFACE)
 target_link_libraries(_llvm INTERFACE ${REQUIRED_LLVM_LIBRARIES})
 target_include_directories(_llvm SYSTEM BEFORE INTERFACE ${LLVM_INCLUDE_DIRS})
->>>>>>> origin/master
 add_library(ch_contrib::llvm ALIAS _llvm)
