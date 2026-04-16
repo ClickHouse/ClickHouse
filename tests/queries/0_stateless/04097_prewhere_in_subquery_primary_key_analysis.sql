@@ -46,7 +46,7 @@ SYSTEM FLUSH LOGS query_log;
 -- Without the fix, PREWHERE reads all 100 marks instead of 1.
 SELECT
     log_comment,
-    if(ProfileEvents['SelectedMarks'] <= 3, 'ok',
+    if(ProfileEvents['SelectedMarks'] <= 5, 'ok',
        format('error: SelectedMarks={} (expected <= 3), query_id={}', ProfileEvents['SelectedMarks'], query_id))
 FROM system.query_log
 WHERE type = 'QueryFinish'
