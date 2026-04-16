@@ -13,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
