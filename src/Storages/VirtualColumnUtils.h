@@ -169,7 +169,6 @@ DataPartsVector filterDataPartsWithExpression(
 Names filterVirtualColumns(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const VirtualsDescriptionPtr & virtual_columns,
     const VirtualsKind & kind_to_filter,
     const VirtualsMaterializationPlace & place_to_filter);
 

@@ -366,7 +366,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
+    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
     zk_path = chooseZooKeeperPath(
@@ -1579,7 +1579,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         getStorageID(),
         list_objects_batch_size_copy,
         predicate,
-        getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        getInMemoryMetadataPtr(local_context, false)->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         hive_partition_columns_to_read_from_file_path,
         local_context,
         log,

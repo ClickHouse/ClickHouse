@@ -555,11 +555,14 @@ Chunk JemallocProfileSource::generateCollapsed()
     return Chunk(std::move(columns), num_rows);
 }
 
-void symbolizeJemallocHeapProfile(
+namespace
+{
+
+void pullProfileLines(
     const std::string & input_filename,
-    const std::string & output_filename,
     JemallocProfileFormat format,
-    bool symbolize_with_inline)
+    bool symbolize_with_inline,
+    WriteBuffer & out)
 {
     Block header;
     header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "line"});
@@ -572,7 +575,6 @@ void symbolizeJemallocHeapProfile(
 
     QueryPipeline pipeline(std::move(source));
     PullingPipelineExecutor executor(pipeline);
-    WriteBufferFromFile out(output_filename);
     Block block;
     while (executor.pull(block))
     {
@@ -584,7 +586,29 @@ void symbolizeJemallocHeapProfile(
             writeChar('\n', out);
         }
     }
+}
+
+}
+
+void symbolizeJemallocHeapProfile(
+    const std::string & input_filename,
+    const std::string & output_filename,
+    JemallocProfileFormat format,
+    bool symbolize_with_inline)
+{
+    WriteBufferFromFile out(output_filename);
+    pullProfileLines(input_filename, format, symbolize_with_inline, out);
     out.finalize();
+}
+
+std::string symbolizeJemallocHeapProfileToString(
+    const std::string & input_filename,
+    JemallocProfileFormat format,
+    bool symbolize_with_inline)
+{
+    WriteBufferFromOwnString out;
+    pullProfileLines(input_filename, format, symbolize_with_inline, out);
+    return out.str();
 }
 
 }

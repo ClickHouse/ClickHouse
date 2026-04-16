@@ -42,3 +42,11 @@ def test_asynchronous_metric_log(start_cluster):
         "SELECT count() > 0 FROM system.asynchronous_metric_log WHERE metric = 'KeeperIsLeader'",
         "1",
     )
+
+
+def test_skip_alias_columns(start_cluster):
+    node.query("SYSTEM FLUSH LOGS")
+    # build_id is an ALIAS column on trace_log. With skip_alias_columns=true,
+    # it should be absent from the table schema.
+    error = node.query_and_get_error("SELECT build_id FROM system.trace_log LIMIT 0")
+    assert "UNKNOWN_IDENTIFIER" in error

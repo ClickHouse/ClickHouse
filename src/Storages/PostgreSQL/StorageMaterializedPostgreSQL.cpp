@@ -83,8 +83,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     if (table_id_.uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL is allowed only for Atomic database");
 
-    setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
+    setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
 
     (*replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list] = remote_table_name_;
 
@@ -140,7 +139,6 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     , nested_table_id(nested_storage_->getStorageID())
 {
     setInMemoryMetadata(*nested_storage_->getInMemoryMetadataPtr(context_, false));
-    setVirtuals(*nested_storage_->getVirtualsPtr());
 }
 
 VirtualColumnsDescription StorageMaterializedPostgreSQL::createVirtuals()

@@ -354,6 +354,9 @@ set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEP
 set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
 
+set_source_files_properties(Server/KeeperJemallocHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+
 # Common/FrequencyHolder.cpp embeds files from contrib/nlp-data/ via #embed.
 # Add OBJECT_DEPENDS only if the submodule is checked out.
 set(_nlp_charset "${CMAKE_SOURCE_DIR}/contrib/nlp-data/charset.zst")

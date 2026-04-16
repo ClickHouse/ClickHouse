@@ -219,8 +219,7 @@ StorageRedis::StorageRedis(
     , primary_key(primary_key_)
 {
     pool = std::make_shared<RedisPool>(configuration.pool_size);
-    setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
+    setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
 }
 
 VirtualColumnsDescription StorageRedis::createVirtuals()

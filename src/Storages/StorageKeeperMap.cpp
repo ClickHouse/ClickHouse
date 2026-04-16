@@ -368,10 +368,7 @@ StorageKeeperMap::StorageKeeperMap(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined");
 
     verifyTableId(table_id);
-
-    setInMemoryMetadata(metadata);
-
-    setVirtuals(createVirtuals());
+    setInMemoryMetadata(metadata.withVirtuals(createVirtuals()));
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"

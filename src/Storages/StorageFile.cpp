@@ -1280,7 +1280,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         format_settings,
         args.getContext());
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
+    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
     setInMemoryMetadata(storage_metadata);
 
     supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
@@ -1850,7 +1850,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->paths,
         storage->archive_info,
         predicate,
-        storage->getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing);
