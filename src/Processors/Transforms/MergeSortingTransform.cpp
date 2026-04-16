@@ -1,4 +1,5 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
+#include <Processors/ChunkSortDescription.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/ISink.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -18,6 +19,7 @@
 namespace ProfileEvents
 {
     extern const Event ExternalSortMerge;
+    extern const Event MergeSortAlreadySorted;
 }
 
 
@@ -27,6 +29,65 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Check whether a sequence of chunks, each already individually sorted by `description`,
+/// also forms a globally sorted sequence. O(k * d) where k = chunks, d = sort columns.
+/// Empty chunks carry no ordering information and are skipped.
+bool areChunksGloballySorted(
+    const Chunks & chunks,
+    const SortDescription & description,
+    const Block & header)
+{
+    /// Hoist column positions to avoid repeated name lookups.
+    std::vector<size_t> positions;
+    positions.reserve(description.size());
+    for (const auto & col_desc : description)
+        positions.push_back(header.getPositionByName(col_desc.column_name));
+
+    size_t prev_nonempty = SIZE_MAX;
+    for (size_t i = 0; i < chunks.size(); ++i)
+    {
+        if (chunks[i].getNumRows() == 0)
+            continue;
+
+        if (prev_nonempty != SIZE_MAX)
+        {
+            const auto & prev = chunks[prev_nonempty];
+            const auto & next = chunks[i];
+            size_t last_row = prev.getNumRows() - 1;
+
+            for (size_t c = 0; c < description.size(); ++c)
+            {
+                const auto & col_desc = description[c];
+                const auto & prev_col = prev.getColumns()[positions[c]];
+                const auto & next_col = next.getColumns()[positions[c]];
+
+                int cmp;
+                if (col_desc.collator)
+                    cmp = prev_col->compareAtWithCollation(last_row, 0, *next_col, col_desc.nulls_direction, *col_desc.collator);
+                else
+                    cmp = prev_col->compareAt(last_row, 0, *next_col, col_desc.nulls_direction);
+
+                cmp *= col_desc.direction;
+
+                if (cmp > 0)
+                    return false;
+                if (cmp < 0)
+                    break;
+                /// cmp == 0: continue to next sort column
+            }
+        }
+
+        prev_nonempty = i;
+    }
+
+    return true;
+}
+
 }
 
 class BufferingToFileSink : public ISink
@@ -193,6 +254,15 @@ void MergeSortingTransform::consume(Chunk chunk)
         return;
     }
 
+    /// Check whether this chunk carries sort metadata that covers our sort description.
+    /// If any chunk lacks valid metadata, we must fall back to normal merge-sort.
+    if (all_chunks_sorted)
+    {
+        auto chunk_sort_desc = chunk.getChunkInfos().get<ChunkSortDescription>();
+        if (!chunk_sort_desc || !chunk_sort_desc->sort_description.hasPrefix(description))
+            all_chunks_sorted = false;
+    }
+
     removeConstColumns(chunk);
 
     sum_rows_in_blocks += chunk.getNumRows();
@@ -209,6 +279,8 @@ void MergeSortingTransform::consume(Chunk chunk)
         && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
     {
         remerge();
+        /// Remerge creates new chunks without ChunkSortDescription metadata.
+        all_chunks_sorted = false;
     }
 
     /** If too many of them and if external sorting is enabled,
@@ -223,6 +295,8 @@ void MergeSortingTransform::consume(Chunk chunk)
             if (!tmp_data)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDisk is not set for MergeSortingTransform");
             temporary_files_num++;
+            /// External sort creates new chunks from disk — metadata is lost.
+            all_chunks_sorted = false;
 
             LOG_TRACE(log, "Will dump sorting block ({}, limit: {}) to disk (query memory: {}, limit: {})",
                 formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks),
@@ -293,7 +367,28 @@ void MergeSortingTransform::generate()
     {
         if (temporary_files_num == 0)
         {
-            merge_sorter = std::make_unique<MergeSorter>(std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit);
+            if (all_chunks_sorted && !chunks.empty())
+            {
+                /// All chunks carry valid ChunkSortDescription. Verify they form a globally
+                /// sorted sequence via O(k) boundary checks (last row of chunk i vs first row of chunk i+1).
+                if (areChunksGloballySorted(chunks, description, header_without_constants))
+                {
+                    ProfileEvents::increment(ProfileEvents::MergeSortAlreadySorted);
+                    LOG_DEBUG(log, "All {} chunks are already globally sorted, skipping merge", chunks.size());
+                    passthrough_chunk_idx = 0;
+                }
+                else
+                {
+                    /// Chunks are individually sorted but not globally — must merge.
+                    all_chunks_sorted = false;
+                    merge_sorter = std::make_unique<MergeSorter>(std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit);
+                }
+            }
+            else
+            {
+                all_chunks_sorted = false;
+                merge_sorter = std::make_unique<MergeSorter>(std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit);
+            }
         }
         else
         {
@@ -307,7 +402,54 @@ void MergeSortingTransform::generate()
         generated_prefix = true;
     }
 
-    if (merge_sorter)
+    if (all_chunks_sorted && temporary_files_num == 0)
+    {
+        /// Passthrough mode: emit accumulated chunks one by one without merging.
+        if (passthrough_chunk_idx < chunks.size())
+        {
+            generated_chunk = std::move(chunks[passthrough_chunk_idx]);
+            ++passthrough_chunk_idx;
+            enrichChunkWithConstants(generated_chunk);
+
+            /// Handle LIMIT: truncate or stop early.
+            if (limit)
+            {
+                size_t rows = generated_chunk.getNumRows();
+                if (passthrough_rows_emitted + rows >= limit)
+                {
+                    /// This is the last chunk we need — truncate if necessary.
+                    size_t rows_to_keep = limit - passthrough_rows_emitted;
+                    if (rows_to_keep < rows)
+                    {
+                        auto columns = generated_chunk.detachColumns();
+                        for (auto & col : columns)
+                            col = col->cut(0, rows_to_keep);
+                        generated_chunk.setColumns(std::move(columns), rows_to_keep);
+                    }
+                    passthrough_rows_emitted = limit;
+                    /// Done — clear remaining chunks.
+                    chunks.clear();
+                }
+                else
+                {
+                    passthrough_rows_emitted += rows;
+
+                    if (passthrough_chunk_idx >= chunks.size())
+                        chunks.clear();
+                }
+            }
+            else
+            {
+                if (passthrough_chunk_idx >= chunks.size())
+                    chunks.clear();
+            }
+        }
+        else
+        {
+            chunks.clear();
+        }
+    }
+    else if (merge_sorter)
     {
         generated_chunk = merge_sorter->read();
         if (!generated_chunk)

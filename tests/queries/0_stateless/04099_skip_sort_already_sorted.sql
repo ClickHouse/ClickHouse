@@ -1,24 +1,30 @@
 -- Tags: no-random-settings
 
--- Test that per-chunk sorting is skipped when the chunk carries ChunkSortDescription
--- metadata indicating it is already sorted (O(1) check in PartialSortingTransform).
+-- Test that sorting is skipped when data is already sorted.
+-- Three mechanisms are tested:
+-- 1. ChunkSortDescription metadata from MergeTree (O(1) check in PartialSortingTransform)
+-- 2. MergeSortAlreadySorted passthrough in MergeSortingTransform (O(k) boundary check)
+-- 3. isAlreadySorted fallback in sortBlock (O(n) check)
 
 DROP TABLE IF EXISTS t_skip_sort_04099;
 
 CREATE TABLE t_skip_sort_04099 (x UInt64, y String) ENGINE = MergeTree ORDER BY x;
 
--- Insert enough rows to produce multiple chunks at max_block_size = 10000.
+-- Insert enough rows to produce multiple chunks at max_block_size=10000.
 INSERT INTO t_skip_sort_04099 SELECT number, toString(number) FROM numbers(50000);
 
 -- Positive case: ORDER BY matches the table's sort key.
--- PartialSortingTransform should skip per-chunk sorting.
+-- PartialSortingTransform should skip per-chunk sorting (Phase 1),
+-- and MergeSortingTransform should skip the merge (Phase 2).
 SELECT x, y FROM t_skip_sort_04099 ORDER BY x
 FORMAT Null
 SETTINGS optimize_read_in_order = 0, max_threads = 1, max_block_size = 10000;
 
 SYSTEM FLUSH LOGS;
 
-SELECT ProfileEvents['SortBlockAlreadySortedByChunkInfo'] > 0 AS sort_skipped_by_metadata
+SELECT
+    ProfileEvents['SortBlockAlreadySortedByChunkInfo'] > 0 AS sort_skipped_by_metadata,
+    ProfileEvents['MergeSortAlreadySorted'] > 0 AS merge_skipped
 FROM system.query_log
 WHERE
     current_database = currentDatabase()
@@ -35,7 +41,9 @@ SETTINGS optimize_read_in_order = 0, max_threads = 1, max_block_size = 10000;
 
 SYSTEM FLUSH LOGS;
 
-SELECT ProfileEvents['SortBlockAlreadySortedByChunkInfo'] AS metadata_skips
+SELECT
+    ProfileEvents['SortBlockAlreadySortedByChunkInfo'] AS metadata_skips,
+    ProfileEvents['MergeSortAlreadySorted'] AS merge_skips
 FROM system.query_log
 WHERE
     current_database = currentDatabase()

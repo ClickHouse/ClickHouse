@@ -62,6 +62,16 @@ private:
     /// If remerge doesn't save memory at least several times, mark it as useless and don't do it anymore.
     bool remerge_is_useful = true;
 
+    /// Tracks whether all accumulated chunks carry ChunkSortDescription metadata
+    /// that covers the required sort order, allowing us to skip the merge step.
+    bool all_chunks_sorted = true;
+
+    /// Index into the chunks vector for passthrough mode (emitting pre-sorted chunks one by one).
+    size_t passthrough_chunk_idx = 0;
+
+    /// Number of rows emitted so far in passthrough mode (for LIMIT handling).
+    size_t passthrough_rows_emitted = 0;
+
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();
 
