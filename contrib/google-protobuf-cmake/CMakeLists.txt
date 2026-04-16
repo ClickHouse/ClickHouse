@@ -422,6 +422,14 @@ target_link_libraries(protoc _libprotoc _libprotobuf)
 if (NOT USE_MUSL)
     target_link_libraries(protoc pthread)
 endif()
+# When using musl, native build tools need CRT objects (crt1, crti, crtn) for _start.
+if (USE_MUSL)
+    target_sources(protoc PRIVATE
+        $<TARGET_OBJECTS:musl-crt1>
+        $<TARGET_OBJECTS:musl-crti>
+        $<TARGET_OBJECTS:musl-crtn>
+    )
+endif()
 target_link_libraries(protoc
     utf8_validity
     ${protobuf_absl_used_targets})

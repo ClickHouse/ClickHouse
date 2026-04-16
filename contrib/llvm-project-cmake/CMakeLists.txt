@@ -406,6 +406,16 @@ elseif (UNIX AND NOT APPLE)
     target_link_libraries(llvm-min-tblgen PRIVATE pthread)
 endif()
 
+# When using musl, native build tools need CRT objects (crt1, crti, crtn) for _start.
+# clickhouse_add_executable handles this for normal targets, but plain add_executable does not.
+if (USE_MUSL)
+    target_sources(llvm-min-tblgen PRIVATE
+        $<TARGET_OBJECTS:musl-crt1>
+        $<TARGET_OBJECTS:musl-crti>
+        $<TARGET_OBJECTS:musl-crtn>
+    )
+endif()
+
 #
 # Generate GenVT.inc using llvm-min-tblgen (needed for CodeGenTypes which llvm-tblgen uses)
 # This must be done before building llvm-tblgen
@@ -552,6 +562,15 @@ if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-tblgen PRIVATE pthread dl)
 elseif (UNIX AND NOT APPLE)
     target_link_libraries(llvm-tblgen PRIVATE pthread)
+endif()
+
+# When using musl, native build tools need CRT objects (crt1, crti, crtn) for _start.
+if (USE_MUSL)
+    target_sources(llvm-tblgen PRIVATE
+        $<TARGET_OBJECTS:musl-crt1>
+        $<TARGET_OBJECTS:musl-crti>
+        $<TARGET_OBJECTS:musl-crtn>
+    )
 endif()
 
 # End of native tablegen build block
