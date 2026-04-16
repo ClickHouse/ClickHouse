@@ -1,6 +1,8 @@
 -- Tags: no-fasttest, no-random-settings
 -- - no-fasttest -- requires S3
 -- - no-random-settings -- prefetch is non deterministic
+-- TODO(RRM): s3_disk prefetch log is empty because RRM bypasses the standard
+-- prefetch path.  Restore the expected count once RRM reports its own prefetch events.
 
 drop table if exists test;
 

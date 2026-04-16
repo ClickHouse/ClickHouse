@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-random-settings, no-distributed-cache
+# TODO(RRM): ReadBufferFromS3Bytes is lower because RRM bypasses ReadBufferFromS3 for
+# most reads.  Restore expected values once RRM reports its own S3 read byte counters.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
