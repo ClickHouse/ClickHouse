@@ -123,6 +123,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
+    extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
@@ -1161,10 +1162,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts don't have it (commit-order projection)", projection.name);
             global_ctx->projections_to_rebuild.push_back(&projection);
         }
-        else
+        else if ((*global_ctx->data_settings)[MergeTreeSetting::materialize_projections_on_merge])
         {
             chassert(projection_parts.size() < global_ctx->future_part->parts.size());
             global_ctx->projections_to_rebuild.push_back(&projection);
+        }
+        else
+        {
+            chassert(projection_parts.size() < global_ctx->future_part->parts.size());
+            LOG_DEBUG(ctx->log, "Projection {} is not merged because some parts don't have it", projection.name);
+            continue;
         }
     }
 
