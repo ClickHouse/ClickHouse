@@ -185,10 +185,17 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             {
                 if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
                 {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms * (1ULL << attempt)));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms * (1ULL << std::min(attempt, UInt64(63)))));
                     continue;
                 }
 
+                if (!throw_on_error)
+                    break;
+
+                throw;
+            }
+            catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
+            {
                 if (!throw_on_error)
                     break;
 
