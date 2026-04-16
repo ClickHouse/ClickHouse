@@ -7,7 +7,6 @@
 #include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedCTE.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
 #include <Common/MultiVersion.h>

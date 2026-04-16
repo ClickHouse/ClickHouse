@@ -112,7 +112,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         {
             response.response->enqueue_ts = std::chrono::steady_clock::now();
             if (response.request)
-                ZooKeeperOpentelemetrySpans::maybeInitialize(response.request->spans.dispatcher_responses_queue, response.request->tracing_context);
+                response.request->spans.maybeInitialize(KeeperSpan::DispatcherResponsesQueue, response.request->tracing_context.get());
 
             /// Special new session response.
             if (response.response->xid != Coordination::WATCH_XID && response.response->getOpNum() == Coordination::OpNum::SessionID)

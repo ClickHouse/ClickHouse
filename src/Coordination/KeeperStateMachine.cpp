@@ -275,13 +275,13 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 
     const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
     {
-        ZooKeeperOpentelemetrySpans::maybeInitialize(
-            request_for_session->request->spans.pre_commit,
-            request_for_session->request->tracing_context,
+        request_for_session->request->spans.maybeInitialize(
+            KeeperSpan::PreCommit,
+            request_for_session->request->tracing_context.get(),
             start_time_us);
 
-        ZooKeeperOpentelemetrySpans::maybeFinalize(
-            request_for_session->request->spans.pre_commit,
+        request_for_session->request->spans.maybeFinalize(
+            KeeperSpan::PreCommit,
             [&]
             {
                 return std::vector<OpenTelemetry::SpanAttribute>{
@@ -412,12 +412,12 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
         xid_helper.xid = static_cast<int32_t>(xid_helper.parts.lower);
     }
 
-    std::optional<OpenTelemetry::TracingContext> tracing_context;
+    std::shared_ptr<OpenTelemetry::TracingContext> tracing_context;
     if (!buffer.eof())
     {
         version = WITH_OPTIONAL_TRACING_CONTEXT;
 
-        tracing_context.emplace();
+        tracing_context = std::make_shared<OpenTelemetry::TracingContext>();
         tracing_context->deserialize(buffer);
     }
 
@@ -555,7 +555,7 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
         return { session_id, std::move(res) };
     };
 
-    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, /*is_local=*/ true, /*is_reconfig=*/ true))
+    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, /*is_local=*/ true, /*should_lock_storage=*/ true))
         return bad_request(ZNOAUTH);
 
     KeeperDispatcher & dispatcher = *keeper_context->getDispatcher();
@@ -619,13 +619,13 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
     const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
     {
-        ZooKeeperOpentelemetrySpans::maybeInitialize(
-            request_for_session->request->spans.commit,
-            request_for_session->request->tracing_context,
+        request_for_session->request->spans.maybeInitialize(
+            KeeperSpan::Commit,
+            request_for_session->request->tracing_context.get(),
             start_time_us);
 
-        ZooKeeperOpentelemetrySpans::maybeFinalize(
-            request_for_session->request->spans.commit,
+        request_for_session->request->spans.maybeFinalize(
+            KeeperSpan::Commit,
             [&]
             {
                 return std::vector<OpenTelemetry::SpanAttribute>{
@@ -1494,6 +1494,7 @@ KeeperDigest KeeperStateMachine<Storage>::getNodesDigest() const
 template<typename Storage>
 int64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
 {
+    KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getZXID();
 }
 

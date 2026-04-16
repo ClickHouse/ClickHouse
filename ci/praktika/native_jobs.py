@@ -558,37 +558,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
                 if is_affected:
                     affected_artifacts.extend(job.provides)
-                    if job.provides:
-                        # for cases when artifact report is used instead of real artifacts
-                        affected_artifacts.append(job.name)
-                    # Only add artifact names to all_required_artifacts.
-                    # Job names in requirements are ordering-only dependencies unless
-                    # needs_jobs_from_requires is set, in which case the required job
-                    # must run (cannot be skipped as unaffected).
+                    # Propagate the job name so that downstream jobs
+                    # requiring this job by name are marked as affected
+                    affected_artifacts.append(job.name)
+                    # All items in requires are hard dependencies
                     for req in job.requires:
-                        if req not in job_names:
-                            # Not a job name, must be an artifact name
-                            all_required_artifacts.add(req)
-                        elif job.needs_jobs_from_requires:
-                            print(
-                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as hard dependency"
-                            )
-                            all_required_artifacts.add(req)
-                        else:
-                            print(
-                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as ordering-only dependency"
-                            )
+                        all_required_artifacts.add(req)
                 else:
                     print(f"Job [{job.name}] is not affected by the change")
-                    if not job.provides:
-                        workflow_config.set_job_as_filtered(
-                            job.name, "Not affected by the changed files"
-                        )
-                    else:
-                        print(
-                            f"NOTE: Job [{job.name}] is not affected, but may provide required artifacts"
-                        )
-                        unaffected_jobs_with_artifacts[job.name] = job.provides
+                    unaffected_jobs_with_artifacts[job.name] = job.provides
 
             print(f"All required artifacts [{all_required_artifacts}]")
             print(f"Affected artifacts [{affected_artifacts}]")
@@ -598,12 +576,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                     or job_name in all_required_artifacts
                 ):
                     print(
-                        f"NOTE: Job [{job_name}] provides required artifacts - cannot be skipped"
+                        f"NOTE: Job [{job_name}] is required by affected jobs - cannot be skipped"
                     )
                 else:
                     workflow_config.set_job_as_filtered(
                         job_name,
-                        "Not affected by the changed files, and artifacts are not required",
+                        "Not affected by the changed files and not required",
                     )
 
             workflow_config.dump()
