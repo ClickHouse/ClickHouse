@@ -140,7 +140,7 @@ When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly 
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
-When adding a new test, consult `./tests/queries/0_stateless/add-test` to determine the correct name prefix for the new test.
+When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.sql` tests or `./tests/queries/0_stateless/add-test <name>.sh` for `.sh` tests. It assigns the next available number prefix and creates both the test and reference files.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
@@ -156,7 +156,7 @@ When building ClickHouse (running ninja), always redirect output to the build lo
 
 When running tests, always redirect output to a log file in the build directory (e.g. `<build_directory>/test_<test_name>.log`). Use unique file names per test so multiple tests can run in parallel. Always use a subagent to analyze each log and return only a concise summary.
 
-If I provided a URL with the CI report, logs, or examples, include it in the commit message.
+If I provided a URL with the CI report, logs, or examples, include it in the commit message. If the link has `PR=...`, also add a link to the corresponding PR.
 
 When creating or updating a pull request, use `.github/PULL_REQUEST_TEMPLATE.md` as the PR body template. The body should contain: a short description of the change and motivation, then the Changelog category (leave one from the list), then the Changelog entry, then the Documentation entry checkbox. Do not invent a custom "## Summary" or "## Test plan" structure — follow the template exactly. The "Bug Fix" category should be used only for real bug fixes, while for fixing CI reports you can use the "CI Fix or improvement" category. Include the URL to CI report I provided if any. If the PR is about a CI failure, search for the corresponding open issues and provide a link in the PR description.
 
