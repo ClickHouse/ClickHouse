@@ -41,6 +41,8 @@ Use plain paragraphs. Headers like `## Motivation`, `## Changes`, `## Results` a
 
 Fill in the changelog category (delete the rest of the list), write the changelog entry, and keep the documentation checkbox.
 
+**Exception — CI Fix or Improvement:** omit the Changelog entry and Documentation entry sections entirely (they are not required). Keep the entire PR body under 100 words.
+
 ### Example of a well-written body
 
 From [#96110](https://github.com/ClickHouse/ClickHouse/pull/96110):

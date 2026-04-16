@@ -804,7 +804,10 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     size_t base_offset = column.meta->meta_data.bloom_filter_offset + header_size;
     for (size_t block_idx : block_idxs)
         subranges.emplace_back(base_offset + block_idx * bytes_per_block, bytes_per_block);
-    auto prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
+
+    std::vector<PrefetchHandle> prefetches;
+    if (!subranges.empty()) // can be empty e.g. if `WHERE x IN ()`
+        prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
 
     column.bloom_filter_blocks.reserve(block_idxs.size());
     for (size_t i = 0; i < block_idxs.size(); ++i)

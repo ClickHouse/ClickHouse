@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdlib>
 #include <new>
 #include <base/defines.h>
 
@@ -7,7 +8,6 @@
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTrackerDebugBlockerInThread.h>
-#include <Common/ProfileEvents.h>
 
 #if defined(OS_LINUX)
 #    include <malloc.h>

@@ -2437,6 +2437,7 @@ hasAll
 hasAllTokens
 hasAny
 hasAnyTokens
+hasPhrase
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -3523,6 +3524,7 @@ tcp
 tcpPort
 tcpnodelay
 templateignorespaces
+textarea
 tgamma
 tgz
 th

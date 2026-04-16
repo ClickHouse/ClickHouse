@@ -4,7 +4,6 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <IO/WriteHelpers.h>
 
 #include <absl/container/inlined_vector.h>
 
@@ -34,7 +33,7 @@ public:
         : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_, createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
-        assert(parameters == nested_func->getParameters());
+        chassert(parameters == nested_func->getParameters());
         for (const auto & type : arguments)
             if (!isArray(type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for aggregate function {} must be arrays", getName());
