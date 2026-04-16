@@ -123,12 +123,13 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 max_retries = settings[Setting::ai_function_max_retries].value;
     UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
 
+    bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
+
     AIQuotaTracker quota(
         settings[Setting::ai_function_max_input_tokens_per_query].value,
         settings[Setting::ai_function_max_output_tokens_per_query].value,
         settings[Setting::ai_function_max_api_calls_per_query].value,
-        settings[Setting::ai_function_throw_on_quota_exceeded].value,
-        settings[Setting::ai_function_throw_on_error].value);
+        settings[Setting::ai_function_throw_on_quota_exceeded].value);
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -188,7 +189,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                     continue;
                 }
 
-                if (!quota.throwOnError())
+                if (!throw_on_error)
                     break;
 
                 throw;

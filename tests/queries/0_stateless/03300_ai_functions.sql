@@ -1,5 +1,6 @@
--- Tags: no-fasttest, no-parallel, no-replicated-database
--- no-parallel: drops and creates named collections
+-- Tags: no-parallel, no-replicated-database
+-- no-parallel: creates and drops global named collections
+-- no-replicated-database: named collections are server-global, not database-scoped
 
 -- =============================================================================
 -- AI Functions Test Suite
