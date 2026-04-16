@@ -1799,12 +1799,16 @@ QueryPipelineBuilder MutationsInterpreter::execute()
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
     ///
-    /// Only check sort order when mutating MergeTree parts. In MergeTree, mutations
-    /// process one part at a time and each part is physically sorted by the sorting key,
-    /// so the check is a valid invariant assertion. Other storages (e.g. Iceberg) may declare
-    /// a sorting key but process the entire table at once, reading multiple independently
-    /// sorted data files whose combined stream is not globally sorted.
-    if (source.getMergeTreeData())
+    /// Only check sort order when mutating a single MergeTree part. In that mode mutations
+    /// read one part at a time via `MergeTreeSequentialSource` and each part is physically
+    /// sorted by the sorting key, so every stream is sort-key-monotonic and the check is a
+    /// valid invariant assertion. Other entry points (e.g. lightweight updates routed through
+    /// the storage-level read path that can parallelize across granule ranges via
+    /// `readFromPool`, or storages like `Iceberg` that expose a sorting key but process the
+    /// whole table at once over multiple independently-sorted data files) do not produce a
+    /// globally sort-key-monotonic stream per pipeline port and must skip the check — the
+    /// downstream sink (patch-part writer, etc.) is responsible for sorting the output.
+    if (source.isMutatingDataPart())
     {
         if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
         {
