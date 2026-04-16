@@ -132,6 +132,7 @@ DatabaseDataLake::DatabaseDataLake(
     , db_uuid(uuid)
 {
     validateSettings();
+    initialize();
 }
 
 void DatabaseDataLake::validateSettings()
@@ -151,16 +152,13 @@ void DatabaseDataLake::validateSettings()
     }
 }
 
-std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
+void DatabaseDataLake::initialize()
 {
-
-    if (catalog_impl)
-        return catalog_impl;
+    std::lock_guard lock(catalog_mutex);
 
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
-    std::lock_guard lock(catalog_mutex);
     auto catalog_parameters = DataLake::CatalogSettings{
         .storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value,
         .aws_access_key_id = settings[DatabaseDataLakeSetting::aws_access_key_id].value,
@@ -294,7 +292,11 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             break;
         }
     }
+}
 
+std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
+{
+    std::lock_guard lock(catalog_mutex);
     return catalog_impl;
 }
 
