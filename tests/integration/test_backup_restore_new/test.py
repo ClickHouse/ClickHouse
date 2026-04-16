@@ -2308,10 +2308,11 @@ def test_async_backup_restore_with_max_execution_time_zero():
 
 
 def test_structure_only_restores_access_entities_and_udfs():
-    """Verifies two things:
-    1. structure_only=true alone does NOT restore access entities or UDFs (backward compat).
+    """Verifies three things:
+    1. structure_only=true alone does NOT restore access entities, UDFs, or table data (backward compat).
     2. structure_only=true with restore_access_entities=true, restore_functions=true restores
-       access entities and UDFs, but not table data."""
+       access entities and UDFs, but not table data.
+    3. structure_only=true with restore_table_data=true restores table data but not access/UDFs."""
     instance.query("CREATE DATABASE test")
     instance.query(
         "CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY x"
@@ -2389,3 +2390,27 @@ def test_structure_only_restores_access_entities_and_udfs():
     assert instance.query("SELECT linear_equation(2, 3, 1)") == "7\n"
 
     instance.query("DROP FUNCTION linear_equation")
+
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    instance.query("DROP DATABASE test")
+    instance.query("DROP USER u1")
+    instance.query("DROP ROLE r1")
+    instance.query("DROP SETTINGS PROFILE prof1")
+    instance.query("DROP QUOTA q1")
+
+    # Phase 3: structure_only + restore_table_data restores data but not access/UDFs
+    instance.query(
+        f"RESTORE ALL FROM {backup_name}"
+        f" SETTINGS structure_only=true, restore_table_data=true"
+    )
+
+    # Table data was restored
+    assert instance.query("EXISTS test.table") == "1\n"
+    assert instance.query("SELECT count() FROM test.table") == "100\n"
+
+    # Access entities were NOT restored
+    assert instance.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.roles WHERE name = 'r1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.settings_profiles WHERE name = 'prof1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.row_policies WHERE short_name = 'rowpol1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.quotas WHERE name = 'q1'") == "0\n"
