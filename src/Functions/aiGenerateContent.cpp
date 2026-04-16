@@ -46,16 +46,15 @@ public:
 protected:
     String functionName() const override { return name; }
 
-    /// Higher temp for some creativity due to nature of the task.
     float defaultTemperature() const override { return 0.7f; }
+    size_t promptArgumentIndex() const override { return 1; }
+    size_t temperatureArgumentIndex() const override { return 3; }
 
     String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t prompt_idx = FIRST_DATA_ARG_INDEX;
-
-        if (arguments.size() > prompt_idx + 1 && isString(arguments[prompt_idx + 1].type))
+        if (arguments.size() > 2 && isString(arguments[2].type))
         {
-            String system_prompt(arguments[prompt_idx + 1].column->getDataAt(0));
+            String system_prompt(arguments[2].column->getDataAt(0));
             if (!system_prompt.empty())
                 return system_prompt;
         }
@@ -65,8 +64,7 @@ protected:
 
     String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
-        size_t prompt_idx = FIRST_DATA_ARG_INDEX;
-        return String(arguments[prompt_idx].column->getDataAt(row));
+        return String(arguments[1].column->getDataAt(row));
     }
 };
 

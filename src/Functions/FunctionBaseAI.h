@@ -10,7 +10,6 @@ namespace DB
 {
 
 static constexpr UInt64 DEFAULT_AI_MAX_TOKENS = 1024;
-static constexpr size_t FIRST_DATA_ARG_INDEX = 1; /// 0-th argument is the provider credentials (named collection)
 
 class FunctionBaseAI : public IFunction
 {
@@ -49,6 +48,12 @@ protected:
     virtual Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
 
     virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
+
+    /// Index of the per-row text column in the arguments list.
+    virtual size_t promptArgumentIndex() const = 0;
+
+    /// Index of the temperature argument. Return 0 if the function doesn't accept temperature.
+    virtual size_t temperatureArgumentIndex() const = 0;
 
 
 

@@ -101,8 +101,8 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
 
 float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & arguments, const ResolvedConfig & config) const
 {
-    size_t temp_idx = FIRST_DATA_ARG_INDEX + 2;
-    if (temp_idx < arguments.size() && isNumber(arguments[temp_idx].type))
+    size_t temp_idx = temperatureArgumentIndex();
+    if (temp_idx > 0 && temp_idx < arguments.size() && isNumber(arguments[temp_idx].type))
     {
         const auto * col_const = typeid_cast<const ColumnConst *>(arguments[temp_idx].column.get());
         if (col_const)
@@ -137,7 +137,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto response_format = buildResponseFormat(arguments);
 
     auto result_col = ColumnString::create();
-    const auto & text_col = arguments[FIRST_DATA_ARG_INDEX].column;
+    const auto & text_col = arguments[promptArgumentIndex()].column;
 
     UInt64 total_api_calls = 0;
     UInt64 total_input_tokens = 0;
