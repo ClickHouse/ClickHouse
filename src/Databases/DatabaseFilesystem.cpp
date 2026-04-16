@@ -263,6 +263,6 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
     };
-    factory.registerDatabase("Filesystem", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Filesystem", create_fn, {.supports_arguments = true, .is_external = true});
 }
 }
