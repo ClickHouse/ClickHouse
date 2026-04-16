@@ -1826,12 +1826,23 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
         if (!found)
             found = std::find(parts_to_fetch.begin(), parts_to_fetch.end(), part_name) != parts_to_fetch.end();
 
+        /// Check if there's a local active part that covers this ZK part.
+        /// This legitimately happens after a merge or mutation: the covering part
+        /// is active locally, the covered part was cleaned from disk by
+        /// clearOldPartsAndRemoveFromZK, but the covered part's ZK entry hasn't
+        /// been cleaned up yet (ZK cleanup can lag behind disk cleanup, or the
+        /// server was restarted between the two). The data is preserved in the
+        /// local covering part, and the stale ZK entry will be removed by the
+        /// cleanup thread after startup.
+        if (!found)
+            found = getActiveContainingPart(part_name) != nullptr;
+
         if (!found)
         {
             LOG_WARNING(
                 log,
-                "Part {} of table {} exists in ZooKeeper and covered by another part in ZooKeeper ({}), but doesn't exist on any disk. "
-                "It may cause false-positive 'part is lost forever' messages",
+                "Part {} of table {} exists in ZooKeeper and covered by another part in ZooKeeper ({}), but doesn't exist on any disk "
+                "and no local active part covers it. It may cause false-positive 'part is lost forever' messages",
                 part_name,
                 getStorageID().getNameForLogs(),
                 covering_part);
