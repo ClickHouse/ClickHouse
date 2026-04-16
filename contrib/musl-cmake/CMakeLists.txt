@@ -1751,12 +1751,18 @@ set(MUSL_ALL_ASM_SOURCES ${MUSL_ARCH_ASM_SOURCES} ${MUSL_LDSO_ARCH_ASM_SOURCES})
 # Combine C sources only (no ASM)
 set(MUSL_SOURCES_BASE ${MUSL_SOURCES_BASE_COMMON})
 list(REMOVE_ITEM MUSL_SOURCES_BASE ${MUSL_ARCH_REMOVE_SOURCES})
+
+# Replace musl's naive byte-by-byte memcmp with a SIMD-friendly version.
+# See contrib/musl-cmake/memcmp.c for rationale.
+list(REMOVE_ITEM MUSL_SOURCES_BASE "${MUSL_SOURCE_DIR}/src/string/memcmp.c")
+
 set(MUSL_C_SOURCES
     ${MUSL_SOURCES_BASE}
     ${MUSL_ARCH_C_SOURCES}
     ${MUSL_LDSO_SOURCES}
     ${MUSL_LDSO_ARCH_C_SOURCES}
     ${MUSL_COMPAT_SOURCES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/memcmp.c"
 )
 
 # Remove duplicates
