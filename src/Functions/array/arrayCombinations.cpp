@@ -23,7 +23,7 @@ static constexpr size_t MAX_COMBINATION_RESULT_ELEMENTS = 1000000;
 static size_t combinationCountCapped(size_t n, size_t k, size_t limit)
 {
     if (k > n) return 0;
-    if (k == 0 || k == n) return 1;
+    if (k == 0 || k == n) return limit >= 1 ? 1 : 0;
     k = std::min(k, n - k);
 
     size_t result = 1;

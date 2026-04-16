@@ -26,6 +26,10 @@ SELECT length(arrayCombinations(range(toUInt8(10)), 3));
 -- size limit: should fail — C(20,10)=184756 rows but 184756*10 = 1847560 total elements > 1M
 SELECT arrayCombinations(range(toUInt8(20)), 10); -- {serverError TOO_LARGE_ARRAY_SIZE}
 
+-- size limit: k == n fast path must honor the element cap.
+-- C(n,n)=1 but the single combination has n elements, which exceeds the 1M cap when n > 1M.
+SELECT arrayCombinations(range(1000001), 1000001); -- {serverError TOO_LARGE_ARRAY_SIZE}
+
 -- size limit: should fail (15! > 1M)
 SELECT arrayPermutations(range(toUInt8(15))); -- {serverError TOO_LARGE_ARRAY_SIZE}
 
