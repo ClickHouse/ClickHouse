@@ -188,6 +188,9 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
     h1, h2, h3 = ch1.hostname, ch2.hostname, ch3.hostname
     port = 9000
     nodes_all = (ch1, ch2, ch3)
+    # `ON CLUSTER {cluster}` only runs DDL on hosts listed for that cluster. Until `ch3` joins
+    # (extra replica or second shard), workload tables do not exist on `ch3`.
+    nodes_ha_two = (ch1, ch2)
 
     try:
         # --- (1) Bootstrap endpoints as named collections (ZK-backed; create on one node only). ---
@@ -224,7 +227,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number FROM numbers(17)")
-        assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "17\n")
+        assert_distr_rowcount_all_nodes(nodes_ha_two, names["workload_distr"], "17\n")
         assert TSV(
             ch1.query(
                 f"SELECT min(x), max(x), count() FROM default.{names['workload_distr']} FORMAT TabSeparated"
@@ -271,7 +274,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 2000 FROM numbers(23)")
-        assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "23\n")
+        assert_distr_rowcount_all_nodes(nodes_ha_two, names["workload_distr"], "23\n")
         assert_eq_with_retry(
             ch1,
             f"SELECT count() FROM clusterAllReplicas('{names['cluster']}', 'default', '{names['workload_local']}') FORMAT TabSeparated",
@@ -333,7 +336,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 200 FROM numbers(9)")
-        assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "9\n")
+        assert_distr_rowcount_all_nodes(nodes_ha_two, names["workload_distr"], "9\n")
 
         # --- (3) Shard-level and replica-level (named collection) property changes. ---
         # Set HA shard weight to 1 so both shards can be compared under equal weights.
@@ -453,11 +456,8 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 4000 FROM numbers(10)")
-        assert_eq_with_retry(
-            ch3,
-            f"SELECT count() FROM default.{names['workload_distr']} FORMAT TabSeparated",
-            "10\n",
-        )
+        # Cluster is still `shard_ha` only here; `ADD SHARD` is below. Same as the first `17` row check.
+        assert_distr_rowcount_all_nodes(nodes_ha_two, names["workload_distr"], "10\n")
 
         broadcast_catalog_ddl(
             ch1,

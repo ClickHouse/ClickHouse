@@ -11,6 +11,9 @@ DATA_DIR=$CUR_DIR/data_avro
 
 CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1"
 
+# Map text serialization follows physical key order; sort keys for stable test output.
+SELECT_STAR_SORTED='string_only, string_or_null, null_or_string, double_or_string, string_or_double, null_or_string_or_double, string_or_double_or_null, string_or_float_or_long, long_or_string_or_float, double_or_null_or_string_or_long, double_or_long_or_string_in_array, mapSort(double_or_string_or_long_or_null_in_map) AS double_or_string_or_long_or_null_in_map'
+
 file_name="$CLICKHOUSE_DATABASE"_union_in_complex_types.avro
 cp $DATA_DIR/union_in_complex_types.avro $CLICKHOUSE_USER_FILES/$file_name
 
@@ -31,11 +34,11 @@ $CH_CLIENT -q "
 echo
 
 echo "== SELECT * =="
-$CH_CLIENT -q "select * from file('$file_name')"
+$CH_CLIENT -q "SELECT ${SELECT_STAR_SORTED} FROM file('$file_name')"
 echo
 
 echo "== SELECT * WITH CustomSchema =="
-$CH_CLIENT -q "select * from file('$file_name', 'Avro', '
+$CH_CLIENT -q "SELECT ${SELECT_STAR_SORTED} FROM file('$file_name', 'Avro', '
   string_only String,
   string_or_null Nullable(String),
   null_or_string Nullable(String),
@@ -52,7 +55,7 @@ $CH_CLIENT -q "select * from file('$file_name', 'Avro', '
 echo
 
 echo "== SELECT * WITH CustomSchema SwappedFirstLastVariant =="
-$CH_CLIENT -q "select * from file('$file_name', 'Avro', '
+$CH_CLIENT -q "SELECT ${SELECT_STAR_SORTED} FROM file('$file_name', 'Avro', '
   string_only String,
   string_or_null Nullable(String),
   null_or_string Nullable(String),
@@ -69,7 +72,7 @@ $CH_CLIENT -q "select * from file('$file_name', 'Avro', '
 echo
 
 echo "== SELECT * WITH CustomSchema Float32 instead of Float64 =="
-$CH_CLIENT -q "select * from file('$file_name', 'Avro', '
+$CH_CLIENT -q "SELECT ${SELECT_STAR_SORTED} FROM file('$file_name', 'Avro', '
   string_only String,
   string_or_null Nullable(String),
   null_or_string Nullable(String),
@@ -86,7 +89,7 @@ $CH_CLIENT -q "select * from file('$file_name', 'Avro', '
 echo
 
 echo "== SELECT * WITH CustomSchema more types than expected =="
-$CH_CLIENT -q "select * from file('$file_name', 'Avro', '
+$CH_CLIENT -q "SELECT ${SELECT_STAR_SORTED} FROM file('$file_name', 'Avro', '
   string_only String,
   string_or_null Nullable(String),
   null_or_string Nullable(String),
@@ -103,7 +106,7 @@ $CH_CLIENT -q "select * from file('$file_name', 'Avro', '
 echo
 
 echo "== SELECT * WITH CustomSchema less types than expected =="
-$CH_CLIENT -q "select * from file('$file_name', 'Avro', '
+$CH_CLIENT -q "SELECT ${SELECT_STAR_SORTED} FROM file('$file_name', 'Avro', '
   string_only String,
   string_or_null Nullable(String),
   null_or_string Nullable(String),
@@ -137,12 +140,12 @@ $CH_CLIENT -q "CREATE TABLE avro_union_test_03237 (
 echo
 
 echo "== SELECT * FORMAT Avro | INSERT INTO avro_union_test_03237 FORMAT Avro =="
-$CH_CLIENT -q "SELECT * FROM file('$file_name') FORMAT Avro" | tee /tmp/out.avro | $CH_CLIENT -q "INSERT INTO avro_union_test_03237 FORMAT Avro"
+$CH_CLIENT -q "SELECT ${SELECT_STAR_SORTED} FROM file('$file_name') FORMAT Avro" | tee /tmp/out.avro | $CH_CLIENT -q "INSERT INTO avro_union_test_03237 FORMAT Avro"
 echo
 
 
 echo "== SELECT * FROM avro_union_test_03237 =="
-$CH_CLIENT -q "SELECT * FROM avro_union_test_03237"
+$CH_CLIENT -q "SELECT ${SELECT_STAR_SORTED} FROM avro_union_test_03237"
 echo
 
 echo "== TRUNCATE TABLE avro_union_test_03237 =="
@@ -150,19 +153,19 @@ $CH_CLIENT -q "TRUNCATE TABLE avro_union_test_03237"
 echo
 
 echo "== insert into table avro_union_test_03237 select * from file('union_in_complex_types.avro') =="
-$CH_CLIENT -q "insert into table avro_union_test_03237 select * from file('$file_name')"
+$CH_CLIENT -q "INSERT INTO TABLE avro_union_test_03237 SELECT ${SELECT_STAR_SORTED} FROM file('$file_name')"
 echo
 
 echo "== SELECT * FROM avro_union_test_03237 =="
-$CH_CLIENT -q "SELECT * FROM avro_union_test_03237"
+$CH_CLIENT -q "SELECT ${SELECT_STAR_SORTED} FROM avro_union_test_03237"
 echo
 
 file_name_2="$CLICKHOUSE_DATABASE"_union_in_complex_types_2.avro
 rm -f $CLICKHOUSE_USER_FILES/$file_name_2
 
 echo "== insert into table function file('union_in_complex_types_2.avro') select * from file('union_in_complex_types.avro') =="
-$CH_CLIENT -q "insert into table function file('$file_name_2') select * from file('$file_name') format Avro"
+$CH_CLIENT -q "INSERT INTO TABLE FUNCTION file('$file_name_2') SELECT ${SELECT_STAR_SORTED} FROM file('$file_name') FORMAT Avro"
 echo
 
 echo "== SELECT * FROM file('union_in_complex_types_2.avro') =="
-$CH_CLIENT -q "SELECT * FROM file('$file_name_2')"
+$CH_CLIENT -q "SELECT ${SELECT_STAR_SORTED} FROM file('$file_name_2')"

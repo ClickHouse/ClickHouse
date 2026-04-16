@@ -96,7 +96,7 @@ TEST(AccessRights, GrantWildcard)
     root.grantWildcard(AccessType::INSERT, "default", "t");
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t"), true);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "default", "t"), true);
-    ASSERT_EQ(root.toString(), "GRANT SELECT ON default.t, GRANT INSERT ON default.t*");
+    ASSERT_EQ(root.toString(), "GRANT INSERT ON default.t*, GRANT SELECT ON default.t");
 
     root.revoke(AccessType::INSERT, "default", "t");
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t"), true);
@@ -614,7 +614,7 @@ TEST(AccessRights, WildcardGrantEdgeCases)
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "testing"));
     ASSERT_TRUE(root.isGranted(AccessType::INSERT, "test"));
     ASSERT_FALSE(root.isGranted(AccessType::INSERT, "testing"));
-    ASSERT_EQ(root.toString(), "GRANT SELECT ON test*.*, GRANT INSERT ON test.*");
+    ASSERT_EQ(root.toString(), "GRANT INSERT ON test.*, GRANT SELECT ON test*.*");
 
     root = {};
     root.grantWildcard(AccessType::SELECT, "prod");
