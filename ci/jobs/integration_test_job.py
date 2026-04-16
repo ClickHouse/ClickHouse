@@ -416,6 +416,22 @@ def get_parallel_sequential_tests_to_run(
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
         test_files, total_batches, batch_num, workers, job_options, info
     )
+
+    if "excluded_from_llvm" in (job_options or ""):
+        excluded_from_llvm_set = {
+            f
+            for f in (parallel_test_modules + sequential_test_modules)
+            if any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            or "is_built_with_llvm_coverage" in Path(f"./tests/integration/{f}").read_text()
+        }
+        parallel_test_modules = [f for f in parallel_test_modules if f in excluded_from_llvm_set]
+        sequential_test_modules = [f for f in sequential_test_modules if f in excluded_from_llvm_set]
+        print(
+            f"LLVM coverage disabled-only: kept {len(parallel_test_modules)} parallel and "
+            f"{len(sequential_test_modules)} sequential test files "
+            f"(from LLVM_COVERAGE_SKIP_PREFIXES or containing is_built_with_llvm_coverage)"
+        )
+
     if not args_test:
         return parallel_test_modules, sequential_test_modules
 
@@ -747,6 +763,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
     elif is_parallel:
         sequential_test_modules = []
         assert not is_sequential
+
+    if is_targeted_check and not parallel_test_modules and not sequential_test_modules:
+        # All targeted tests were stale (removed or renamed since the CIDB record).
+        # This is expected — skip gracefully instead of producing a "no results" error.
+        Result.create_from(
+            status=Result.Status.SKIPPED,
+            info="All targeted tests are stale (removed or renamed)",
+        ).complete_job()
 
     if is_flaky_check or is_targeted_check:
         # Sort by module file so all tests from the same file are consecutive.
