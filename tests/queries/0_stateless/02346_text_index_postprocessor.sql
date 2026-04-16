@@ -327,8 +327,8 @@ ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
 
-SELECT count() FROM tab WHERE has(val, 'Foo');   -- 1: stored 'Foo', row-level match
+SELECT count() FROM tab WHERE has(val, 'Foo');   -- 1
 SELECT count() FROM tab WHERE has(val, 'BAR');   -- 1
-SELECT count() FROM tab WHERE has(val, 'foo');   -- 0: no row stores 'foo'
+SELECT count() FROM tab WHERE has(val, 'foo');   -- 1: case-insensitive, matches row 1
 
 DROP TABLE tab;
