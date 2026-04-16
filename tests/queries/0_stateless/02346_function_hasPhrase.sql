@@ -19,6 +19,8 @@ SELECT hasPhrase(NULL); -- { serverError BAD_ARGUMENTS }
 SELECT hasPhrase(NULL, NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasPhrase(NULL, 'quick brown');
 SELECT hasPhrase('the quick brown fox', NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- 2nd arg must be const String, materialize(NULL) should not be accepted
+SELECT hasPhrase('', materialize(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'Constants: hasPhrase should be constant';
 

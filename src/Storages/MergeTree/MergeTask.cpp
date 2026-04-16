@@ -2898,7 +2898,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     if (global_ctx->deduplicate)
     {
-        const auto & virtuals = *global_ctx->data->getVirtualsPtr();
+        const auto & virtuals = global_ctx->metadata_snapshot->virtuals;
 
         /// We don't want to deduplicate by virtual persistent column.
         /// If deduplicate_by_columns is empty, add all columns except virtuals.

@@ -485,7 +485,7 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const StorageID & table_id_,
-                  const StorageInMemoryMetadata & metadata_,
+                  StorageInMemoryMetadata metadata_,
                   ContextMutablePtr context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
@@ -1371,7 +1371,7 @@ public:
 
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
-    static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
+    static VirtualColumnsDescription createVirtuals(const KeyDescription * partition_key);
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;

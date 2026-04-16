@@ -1,6 +1,7 @@
 #include <Disks/DiskType.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -17,11 +18,13 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -652,7 +655,7 @@ PatchParts MergeTreeData::MutationsSnapshotBase::getPatchesForPart(const DataPar
 
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
-    const StorageInMemoryMetadata & metadata_,
+    StorageInMemoryMetadata metadata_,
     ContextMutablePtr context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
@@ -676,6 +679,7 @@ MergeTreeData::MergeTreeData(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, table_id_, BackgroundJobsAssignee::Type::Moving, getContext())
 {
+    metadata_.setVirtuals(createVirtuals(metadata_.hasPartitionKey() ? &metadata_.partition_key : nullptr));
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
 
     const auto settings = getSettings();
@@ -751,7 +755,7 @@ MergeTreeData::MergeTreeData(
     };
 }
 
-VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMetadata & metadata)
+VirtualColumnsDescription MergeTreeData::createVirtuals(const KeyDescription * partition_key)
 {
     VirtualColumnsDescription desc;
 
@@ -769,9 +773,9 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
-    if (metadata.hasPartitionKey())
+    if (partition_key && partition_key->sample_block.columns() > 0)
     {
-        auto partition_types = metadata.partition_key.sample_block.getDataTypes();
+        auto partition_types = partition_key->sample_block.getDataTypes();
         desc.addEphemeral("_partition_value", std::make_shared<DataTypeTuple>(std::move(partition_types)), "Value (a tuple) of a PARTITION BY expression", VirtualsMaterializationPlace::Reader);
     }
 
@@ -956,7 +960,8 @@ void MergeTreeData::checkProperties(
         }
     }
 
-    auto all_columns = new_metadata.columns.getAllPhysical();
+    auto new_columns_for_analysis = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(new_metadata.columns, new_metadata.virtuals);
+    auto old_columns_for_analysis = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(old_metadata.columns, old_metadata.virtuals);
 
     /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
     /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
@@ -981,12 +986,12 @@ void MergeTreeData::checkProperties(
 
     if (!added_key_column_expr_list->children.empty())
     {
-        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, all_columns);
+        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, new_columns_for_analysis);
         Names used_columns = syntax->requiredSourceColumns();
 
         NamesAndTypesList deleted_columns;
         NamesAndTypesList added_columns;
-        old_metadata.getColumns().getAllPhysical().getDifference(all_columns, deleted_columns, added_columns);
+        old_columns_for_analysis.getDifference(new_columns_for_analysis, deleted_columns, added_columns);
 
         for (const String & col : used_columns)
         {
@@ -1001,6 +1006,15 @@ void MergeTreeData::checkProperties(
                                 "Newly added column {} has a default expression, so adding expressions that use "
                                 "it to the sorting key is forbidden", backQuoteIfNeed(col));
         }
+    }
+
+    {
+        const auto new_virtuals_sample_block = new_metadata.virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        const auto old_virtuals_sample_block = old_metadata.virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        if (!blocksHaveEqualStructure(new_virtuals_sample_block, old_virtuals_sample_block))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Virtual columns were lost during alter. New: {}, Old: {}",
+                new_virtuals_sample_block.dumpStructure(), old_virtuals_sample_block.dumpStructure());
     }
 
     if (!new_metadata.secondary_indices.empty())
@@ -1190,7 +1204,6 @@ void MergeTreeData::setProperties(
         local_context);
 
     setInMemoryMetadata(new_metadata);
-    setVirtuals(createVirtuals(new_metadata));
 
     std::lock_guard lock(patch_parts_metadata_mutex);
     patch_parts_metadata_cache.clear();
@@ -1203,6 +1216,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     const KeyDescription & key,
     const MergeTreeIndices & indices,
     const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
     ContextPtr context)
 {
     ASTPtr combined_expr_list = key.expression_list_ast->clone();
@@ -1211,7 +1225,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         for (const auto & index_expr : index->index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
@@ -1243,15 +1257,14 @@ DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_
 ExpressionActionsPtr
 MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->getColumns(), getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
 ExpressionActionsPtr
 MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->getColumns(), getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
-
 
 void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
 {
@@ -1627,12 +1640,12 @@ Block MergeTreeData::getHeaderWithVirtualsForFilter(const StorageMetadataPtr & m
 {
     const auto columns = metadata->getColumns().getAllPhysical();
     Block header;
-    auto virtuals_desc = getVirtualsPtr();
+    const auto & virtuals_desc = metadata->virtuals;
     for (const auto & name : virtuals_useful_for_filter)
     {
         if (columns.contains(name))
             continue;
-        if (auto column = virtuals_desc->tryGet(name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+        if (auto column = virtuals_desc.tryGet(name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
             header.insert({column->type->createColumn(), column->type, name});
     }
 

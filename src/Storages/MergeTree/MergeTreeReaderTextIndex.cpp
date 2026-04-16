@@ -183,6 +183,8 @@ void MergeTreeReaderTextIndex::readGranule()
     auto substreams = index.index->getSubstreams();
     auto data_part = getDataPart();
 
+    LOG_TRACE(getLogger("MergeTreeReaderTextIndex"), "Reading text index granule for data part '{}'", data_part->getDataPartStorage().getFullPath());
+
     auto make_stream = [&](const auto & substream)
     {
         return makeTextIndexInputStream(
