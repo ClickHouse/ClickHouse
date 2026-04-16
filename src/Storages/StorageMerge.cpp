@@ -701,21 +701,25 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 row_policy_data_opt->extendNames(real_column_names);
             }
 
-            auto modified_query_info
-                = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
+            RowPolicyDataOpt no_row_policy_data_opt;
+            const RowPolicyDataOpt * effective_row_policy_data_opt = &row_policy_data_opt;
 
-            auto child_row_level_filter = row_policy_data_opt ? row_policy_data_opt->createFilterDAGInfo() : nullptr;
-
-            /// Apply all row-level filters during the child read, but keep the combined filter column
-            /// until we leave the child plan. this needed to not drop intermediate filter state that a
-            /// later policy still needs while ensuring the temporary filter column is not exposed
-            /// above the `Merge` table
-            auto inherited_row_level_filter = FilterDAGInfo::combineConjunction(modified_query_info.row_level_filter, child_row_level_filter);
-            bool remove_inherited_row_level_filter = inherited_row_level_filter != nullptr;
-            if (inherited_row_level_filter)
+            /// when both the `Merge` table and the child table have row-level filters
+            /// If only one side has a filter, keep the existing execution
+            /// path to avoid changing unrelated `Merge` table behavior
+            FilterDAGInfoPtr inherited_row_level_filter;
+            if (modified_query_info.row_level_filter && row_policy_data_opt)
             {
+                auto child_row_level_filter = row_policy_data_opt->createFilterDAGInfo();
+
+                /// Apply both row-level filters during the child read, but keep the combined filter column
+                /// until we leave the child plan. this needed to not drop intermediate filter state that a
+                /// later policy still needs while ensuring the temporary filter column is not exposed
+                /// above the `Merge` table
+                inherited_row_level_filter = FilterDAGInfo::combineConjunction(modified_query_info.row_level_filter, child_row_level_filter);
                 modified_query_info.row_level_filter = inherited_row_level_filter;
                 modified_query_info.row_level_filter->do_remove_column = false;
+                effective_row_policy_data_opt = &no_row_policy_data_opt;
             }
 
             if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -786,7 +790,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 table,
                 column_names_to_read,
                 is_smallest_column_requested,
-                std::nullopt,
+                *effective_row_policy_data_opt,
                 modified_context,
                 current_streams);
 
@@ -794,7 +798,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             if (child.plan.isInitialized())
             {
-                if (remove_inherited_row_level_filter)
+                if (inherited_row_level_filter)
                 {
                     auto filter_step = std::make_unique<FilterStep>(
                         child.plan.getCurrentHeader(),
@@ -806,7 +810,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, std::nullopt, context, child, is_smallest_column_requested);
+                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, *effective_row_policy_data_opt, context, child, is_smallest_column_requested);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
