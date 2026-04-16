@@ -1,0 +1,14 @@
+simple:	1	hello	1
+subset:	1	hello	1
+subset:	2	world	0.5
+alias:	1	hello	1
+alias:	2	world	0.5
+alias:	3	alias_test	0.5
+where_pass:	4	positive
+order_by:	5	ordered
+multi:	10	first	1.1
+multi:	20	second	2.2
+multi:	30	third	3.3
+insert_select:	0	0
+insert_select:	1	1
+insert_select:	2	2

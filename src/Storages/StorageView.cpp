@@ -3,17 +3,24 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageView.h>
@@ -25,6 +32,8 @@
 #include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -32,6 +41,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
@@ -50,6 +60,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int VIOLATED_CONSTRAINT;
 }
 
 
@@ -101,6 +112,250 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
     }
     return false;
 }
+
+/// Extracts the single ASTSelectQuery from the view definition.
+/// Throws if the view uses UNION.
+const ASTSelectQuery & getSingleSelectQuery(const StorageMetadataPtr & metadata, const StorageID & view_id)
+{
+    const auto & inner_query = metadata->getSelectQuery().inner_query;
+    const auto * select_union = inner_query->as<ASTSelectWithUnionQuery>();
+
+    if (!select_union || select_union->list_of_selects->children.size() != 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains UNION",
+            view_id.getFullTableName());
+
+    const auto * select = select_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+    if (!select)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query is not a simple SELECT",
+            view_id.getFullTableName());
+
+    return *select;
+}
+
+/// Validates the view's SELECT query is simple enough for INSERTs.
+void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID & view_id)
+{
+    if (select.distinct)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains DISTINCT",
+            view_id.getFullTableName());
+
+    if (select.groupBy())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains GROUP BY",
+            view_id.getFullTableName());
+
+    if (select.having())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains HAVING",
+            view_id.getFullTableName());
+
+    if (select.limitLength() || select.limitBy())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains LIMIT",
+            view_id.getFullTableName());
+
+    if (hasJoin(select))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains a JOIN",
+            view_id.getFullTableName());
+}
+
+/// Extracts column mapping from view column names to target table column names.
+/// Returns empty map for asterisk (all columns map 1:1 by name).
+std::unordered_map<String, String> extractColumnMapping(
+    const ASTSelectQuery & select,
+    const StorageID & view_id)
+{
+    std::unordered_map<String, String> mapping;
+
+    if (!select.select())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "View {} has no SELECT expression list", view_id.getFullTableName());
+
+    for (const auto & expr : select.select()->children)
+    {
+        /// Asterisk — all columns map 1:1.
+        if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
+            return {};
+
+        /// Must be a simple column reference (possibly with alias).
+        const auto * identifier = expr->as<ASTIdentifier>();
+        if (!identifier)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot INSERT into view {} because its SELECT list contains "
+                "expressions that are not simple column references",
+                view_id.getFullTableName());
+
+        String target_col = identifier->name();
+        String view_col = identifier->tryGetAlias();
+        if (view_col.empty())
+            view_col = target_col;
+
+        if (view_col != target_col)
+            mapping[view_col] = target_col;
+    }
+
+    return mapping;
+}
+
+/// Gets the target table from the view's FROM clause.
+StoragePtr getViewTargetTable(
+    const ASTSelectQuery & select,
+    const StorageID & view_id,
+    ContextPtr context)
+{
+    const auto & tables = select.tables();
+    if (!tables || tables->children.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {}: no tables in FROM clause",
+            view_id.getFullTableName());
+
+    if (tables->children.size() > 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query references multiple tables",
+            view_id.getFullTableName());
+
+    const auto * element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
+    if (!element || !element->table_expression)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {}: unsupported FROM clause",
+            view_id.getFullTableName());
+
+    const auto * table_expr = element->table_expression->as<ASTTableExpression>();
+    if (!table_expr || !table_expr->database_and_table_name)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {}: FROM clause must reference a table directly",
+            view_id.getFullTableName());
+
+    auto table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
+    if (!table_id)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {}: FROM clause must reference a table directly",
+            view_id.getFullTableName());
+
+    auto resolved_id = context->resolveStorageID(table_id->getTableId());
+    return DatabaseCatalog::instance().getTable(resolved_id, context);
+}
+
+
+/// Sink that inserts data into the target table of a view.
+/// Handles column name mapping (for aliased views) and WHERE constraint checking.
+class SinkToStorageView : public SinkToStorage
+{
+public:
+    SinkToStorageView(
+        SharedHeader view_header,
+        StoragePtr target_table,
+        ContextPtr context,
+        std::unordered_map<String, String> column_mapping,
+        ASTPtr where_condition,
+        const StorageID & view_id,
+        bool async_insert)
+        : SinkToStorage(view_header)
+        , target_table_(std::move(target_table))
+        , column_mapping_(std::move(column_mapping))
+        , view_id_(view_id)
+    {
+        auto insert_context = Context::createCopy(context);
+
+        /// Build an INSERT query targeting the underlying table.
+        auto insert_query = make_intrusive<ASTInsertQuery>();
+        insert_query->table_id = target_table_->getStorageID();
+
+        /// Set column list: view columns mapped to target column names.
+        auto columns_ast = make_intrusive<ASTExpressionList>();
+        for (const auto & col : getHeader().getColumnsWithTypeAndName())
+        {
+            auto it = column_mapping_.find(col.name);
+            String target_name = (it != column_mapping_.end()) ? it->second : col.name;
+            columns_ast->children.push_back(make_intrusive<ASTIdentifier>(target_name));
+        }
+        insert_query->columns = columns_ast;
+        insert_query->children.push_back(insert_query->columns);
+
+        /// Create the inner INSERT pipeline for the target table.
+        ASTPtr insert_query_ptr = insert_query;
+        InterpreterInsertQuery interpreter(insert_query_ptr, insert_context, /*allow_materialized=*/false, /*no_squash=*/false, /*no_destination=*/false, async_insert);
+        auto block_io = interpreter.execute();
+        pipeline_ = std::move(block_io.pipeline);
+        executor_ = std::make_unique<PushingPipelineExecutor>(pipeline_);
+        executor_->start();
+
+        /// Build WHERE constraint expression if the view has a WHERE clause.
+        if (where_condition)
+        {
+            auto where_clone = where_condition->clone();
+
+            /// Provide view columns (with target names) as source columns for expression analysis.
+            NamesAndTypesList source_columns;
+            for (const auto & col : getHeader().getColumnsWithTypeAndName())
+            {
+                auto it = column_mapping_.find(col.name);
+                String target_name = (it != column_mapping_.end()) ? it->second : col.name;
+                source_columns.emplace_back(target_name, col.type);
+            }
+
+            auto syntax = TreeRewriter(context).analyze(where_clone, source_columns);
+            where_actions_ = ExpressionAnalyzer(where_clone, syntax, context).getActions(false, true);
+            where_column_name_ = where_clone->getColumnName();
+        }
+
+        addInterpreterContext(std::move(insert_context));
+    }
+
+    String getName() const override { return "SinkToStorageView"; }
+
+    void consume(Chunk & chunk) override
+    {
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+
+        /// Rename view columns to target table columns.
+        for (const auto & [view_name, target_name] : column_mapping_)
+            if (block.has(view_name))
+                block.getByName(view_name).name = target_name;
+
+        /// Check WHERE constraint: every inserted row must satisfy the view's WHERE condition.
+        if (where_actions_)
+        {
+            Block check_block(block);
+            where_actions_->execute(check_block);
+
+            const auto & result_column = check_block.getByName(where_column_name_).column;
+            for (size_t i = 0; i < result_column->size(); ++i)
+            {
+                if (result_column->isNullAt(i) || !result_column->getBool(i))
+                    throw Exception(
+                        ErrorCodes::VIOLATED_CONSTRAINT,
+                        "Cannot INSERT into view {}: the inserted row does not satisfy "
+                        "the view's WHERE condition",
+                        view_id_.getFullTableName());
+            }
+        }
+
+        /// Push to the inner INSERT pipeline which handles defaults, constraints, and writing.
+        executor_->push(std::move(block));
+    }
+
+    void onFinish() override
+    {
+        executor_->finish();
+    }
+
+private:
+    StoragePtr target_table_;
+    std::unordered_map<String, String> column_mapping_;
+    StorageID view_id_;
+
+    QueryPipeline pipeline_;
+    std::unique_ptr<PushingPipelineExecutor> executor_;
+
+    ExpressionActionsPtr where_actions_;
+    String where_column_name_;
+};
+
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
@@ -234,6 +489,39 @@ void StorageView::readImpl(
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
+}
+
+SinkToStoragePtr StorageView::write(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context,
+    bool async_insert)
+{
+    if (is_parameterized_view)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into parameterized view {}", getStorageID().getFullTableName());
+
+    const auto & select = getSingleSelectQuery(metadata_snapshot, getStorageID());
+    validateViewSelectForInsert(select, getStorageID());
+    auto column_mapping = extractColumnMapping(select, getStorageID());
+
+    /// Use the view's SQL security context for accessing the target table.
+    auto context = metadata_snapshot->getSQLSecurityOverriddenContext(local_context);
+    auto target_table = getViewTargetTable(select, getStorageID(), context);
+
+    /// The view's WHERE clause becomes a constraint for inserts.
+    ASTPtr where_condition = select.where() ? select.where()->clone() : nullptr;
+
+    auto view_header = std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized());
+
+    return std::make_shared<SinkToStorageView>(
+        std::move(view_header),
+        std::move(target_table),
+        context,
+        std::move(column_mapping),
+        std::move(where_condition),
+        getStorageID(),
+        async_insert);
 }
 
 void StorageView::drop()
