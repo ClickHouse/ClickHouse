@@ -76,6 +76,9 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
     std::shared_ptr<AzureBlobStorage::StaticCredential>>;
+
+
+struct ConnectionParams;
 }
 
 #endif
@@ -314,10 +317,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
+    virtual const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+
     virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
+
 #endif
 
 #if USE_AWS_S3

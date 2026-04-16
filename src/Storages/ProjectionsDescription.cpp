@@ -1,4 +1,5 @@
 #include <Storages/ProjectionsDescription.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>
@@ -37,6 +38,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -58,32 +60,6 @@ namespace Setting
 {
 
 extern const SettingsBool enable_positional_arguments_for_projections;
-
-}
-
-namespace
-{
-
-VirtualsDescriptionPtr createProjectionVirtuals(const KeyDescription * partition_key)
-{
-    auto desc = std::make_shared<VirtualColumnsDescription>();
-
-    desc->addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part");
-    desc->addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result");
-    desc->addEphemeral("_part_starting_offset", std::make_shared<DataTypeUInt64>(), "Cumulative starting row of the part in the query result");
-    desc->addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)");
-    desc->addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
-    desc->addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
-    desc->addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
-
-    if (partition_key && partition_key->sample_block.columns() > 0)
-    {
-        auto partition_types = partition_key->sample_block.getDataTypes();
-        desc->addEphemeral("_partition_value", std::make_shared<DataTypeTuple>(std::move(partition_types)), "Value (a tuple) of a PARTITION BY expression");
-    }
-
-    return desc;
-}
 
 }
 
@@ -126,7 +102,6 @@ ProjectionDescription ProjectionDescription::clone() const
     other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
-    other.virtuals = virtuals;
 
     return other;
 }
@@ -157,12 +132,8 @@ public:
     {
         StorageInMemoryMetadata storage_metadata;
         storage_metadata.setColumns(columns_description);
+        storage_metadata.setVirtuals(MergeTreeData::createVirtuals(nullptr));
         setInMemoryMetadata(storage_metadata);
-        VirtualColumnsDescription desc;
-        desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "");
-        desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "");
-        desc.addPersistent(BlockOffsetColumn::name, BlockOffsetColumn::type, BlockOffsetColumn::codec, "");
-        setVirtuals(std::move(desc));
     }
 
     std::string getName() const override { return "ProjectionSource"; }
@@ -485,8 +456,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     }
 
     metadata.setColumns(ColumnsDescription(metadata_columns));
+    metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
-    result.virtuals = createProjectionVirtuals(partition_key);
 }
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
@@ -586,11 +557,11 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
+    metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
     metadata.partition_key = KeyDescription::buildEmptyKey();
     metadata.sorting_key = KeyDescription::buildEmptyKey();
     metadata.primary_key = KeyDescription::buildEmptyKey();
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
-    result.virtuals = createProjectionVirtuals(partition_key);
     return result;
 }
 

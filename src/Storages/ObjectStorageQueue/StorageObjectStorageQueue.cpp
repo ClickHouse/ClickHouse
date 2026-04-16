@@ -146,6 +146,7 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int KEEPER_EXCEPTION;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -365,7 +366,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
+    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
     zk_path = chooseZooKeeperPath(
@@ -822,7 +823,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
 
@@ -1278,7 +1279,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         }
     }
 
-    StorageInMemoryMetadata old_metadata(getInMemoryMetadata());
+    StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
     SettingsChanges * old_settings = nullptr;
     if (old_metadata.settings_changes)
     {
@@ -1351,7 +1352,7 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
         auto alter_commands = normalizeAlterCommands(commands);
 
-        StorageInMemoryMetadata old_metadata(getInMemoryMetadata());
+        StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
         SettingsChanges * old_settings = nullptr;
         if (old_metadata.settings_changes)
         {
@@ -1578,7 +1579,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         getStorageID(),
         list_objects_batch_size_copy,
         predicate,
-        getVirtualsList(),
+        getInMemoryMetadataPtr(local_context, false)->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
@@ -1732,7 +1733,8 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
 
 void StorageObjectStorageQueue::waitForPathToBeProcessed(
     const std::string & path,
-    ContextPtr local_context) const
+    ContextPtr local_context,
+    std::optional<std::chrono::steady_clock::time_point> deadline) const
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::waitForPathToBeProcessed");
 
@@ -1792,6 +1794,11 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
 
         if (auto query_status = local_context->getProcessListElementSafe())
             query_status->checkTimeLimit();
+
+        if (deadline && std::chrono::steady_clock::now() >= *deadline)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout waiting for path '{}' to be processed by {}",
+                path, getStorageID().getNameForLogs());
 
         /// Register watches before checking state to avoid missing a transition
         /// that occurs between the state check and watch registration.
