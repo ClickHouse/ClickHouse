@@ -26,6 +26,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StreamingStorageRegistry.h>
 #include <cppkafka/configuration.h>
 #include <librdkafka/rdkafka.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -33,6 +34,7 @@
 #include <Common/Macros.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -204,8 +206,8 @@ StorageKafka::StorageKafka(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(StorageKafkaUtils::createVirtuals((*kafka_settings)[KafkaSetting::kafka_handle_error_mode]));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(StorageKafkaUtils::createVirtuals((*kafka_settings)[KafkaSetting::kafka_handle_error_mode]));
 
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -285,6 +287,7 @@ void StorageKafka::startup()
     {
         task->holder->activateAndSchedule();
     }
+    StreamingStorageRegistry::instance().registerTable(getStorageID());
 }
 
 
@@ -325,6 +328,15 @@ void StorageKafka::shutdown(bool)
         cleanConsumers();
         LOG_TRACE(log, "Consumers closed in {} ms.", watch.elapsedMilliseconds());
     }
+
+    StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
+}
+
+void StorageKafka::renameInMemory(const StorageID & new_table_id)
+{
+    const auto prev_storage_id = getStorageID();
+    IStorage::renameInMemory(new_table_id);
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 void StorageKafka::cleanConsumers()
@@ -610,8 +622,6 @@ void StorageKafka::threadFunc(size_t idx)
     }
     catch (...)
     {
-        /// do bare minimum in catch block
-        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
         exception_str = getCurrentExceptionMessage(true /* with_stacktrace */);
     }
 
@@ -647,10 +657,10 @@ bool StorageKafka::streamToViews()
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
 
     // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
     size_t block_size = getMaxBlockSize();
@@ -721,7 +731,7 @@ bool StorageKafka::streamToViews()
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
-        formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
+        formatReadableQuantity(rows.load()), table_id.getNameForLogs(), milliseconds);
 
     return some_stream_is_stalled;
 }

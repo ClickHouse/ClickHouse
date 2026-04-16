@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <base/types.h>
@@ -67,7 +68,7 @@ private:
     Int64 profiler_step = 0;
 
     /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
-    double fault_probability = 0;
+    std::atomic<double> fault_probability = 0;
 
     /// To randomly sample allocations and deallocations in trace_log.
     double sample_probability = -1;
@@ -80,6 +81,7 @@ private:
 
     UInt64 jemalloc_flush_profile_interval_bytes = 0;
     bool jemalloc_flush_profile_on_memory_exceeded = false;
+    UInt64 jemalloc_flush_profile_on_memory_exceeded_interval_s = 0;
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
@@ -172,7 +174,9 @@ public:
 
     void setFaultProbability(double value)
     {
-        fault_probability = value;
+        /// Cap to 0.5 to avoid infinite loops where every allocation fails
+        /// and operations that retry on memory errors can never make progress.
+        fault_probability.store(std::min(value, 0.5), std::memory_order_relaxed);
     }
 
     void injectFault() const;
@@ -197,6 +201,11 @@ public:
     void setJemallocFlushProfileOnMemoryExceeded(bool flush)
     {
         jemalloc_flush_profile_on_memory_exceeded = flush;
+    }
+
+    void setJemallocFlushProfileOnMemoryExceededSeconds(UInt64 interval_s)
+    {
+        jemalloc_flush_profile_on_memory_exceeded_interval_s = interval_s;
     }
 
     void setSampleMaxAllocationSize(UInt64 value)
@@ -281,5 +290,6 @@ public:
 
 extern MemoryTracker total_memory_tracker;
 extern MemoryTracker background_memory_tracker;
+bool isTotalMemoryTrackerInitialized();
 
 bool canEnqueueBackgroundTask();

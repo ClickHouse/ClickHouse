@@ -23,7 +23,7 @@ class EphemeralLockInZooKeeper : public boost::noncopyable
         const std::optional<String> & znode_data);
 
 protected:
-    EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, const String & conflict_path_ = "");
+    EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, UInt64 number_, const String & conflict_path_ = "");
 
 public:
     EphemeralLockInZooKeeper() = delete;
@@ -45,6 +45,7 @@ public:
         path_prefix = std::move(rhs.path_prefix);
         path = std::move(rhs.path);
         conflict_path = std::move(rhs.conflict_path);
+        number = rhs.number;
         return *this;
     }
 
@@ -66,14 +67,16 @@ public:
         return conflict_path;
     }
 
-    /// Parse the number at the end of the path.
-    UInt64 getNumber() const;
+    UInt64 getNumber() const
+    {
+        checkCreated();
+        return number;
+    }
 
     void unlock();
 
     /// Adds actions equivalent to `unlock()` to the list.
-    /// Returns index of the action that removes
-    void getUnlockOp(Coordination::Requests & ops);
+    void getUnlockOp(Coordination::Requests & ops) const;
 
     /// Do not delete nodes in destructor. You may call this method after 'getUnlockOps' and successful execution of these ops,
     ///  because the nodes will be already deleted.
@@ -91,6 +94,7 @@ private:
     String path_prefix;
     String path;
     String conflict_path;
+    UInt64 number = 0;
 };
 
 EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
@@ -136,6 +140,8 @@ public:
     const std::vector<LockInfo> & getLocks() const { return locks; }
 
     void unlock();
+    void assumeUnlocked();
+    void getUnlockOps(Coordination::Requests & ops) const;
 
     ~EphemeralLocksInAllPartitions();
 
@@ -174,6 +180,8 @@ public:
     {
     }
 
+    void assumeUnlocked();
+    void getUnlockOps(Coordination::Requests & ops) const;
     const BlockNumbersType & getBlockNumbers() const { return block_numbers; }
 
     void reset()

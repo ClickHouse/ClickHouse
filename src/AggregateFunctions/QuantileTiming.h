@@ -1,9 +1,7 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <base/sort.h>
@@ -62,7 +60,7 @@ namespace detail
             if (unlikely(x > BIG_THRESHOLD))
                 x = BIG_THRESHOLD;
 
-            elems[count] = x;
+            elems[count] = static_cast<UInt16>(x);
             ++count;
         }
 
@@ -154,7 +152,7 @@ namespace detail
             if (unlikely(x > BIG_THRESHOLD))
                 x = BIG_THRESHOLD;
 
-            elems.emplace_back(x);
+            elems.emplace_back(static_cast<UInt16>(x));
         }
 
         void merge(const QuantileTimingMedium & rhs)
@@ -186,7 +184,7 @@ namespace detail
             if (!elems.empty())
             {
                 size_t n = level < 1
-                    ? static_cast<size_t>(level * elems.size())
+                    ? static_cast<size_t>(level * static_cast<double>(elems.size()))
                     : (elems.size() - 1);
 
                 /// Sorting an array will not be considered a violation of constancy.
@@ -209,7 +207,7 @@ namespace detail
                 auto level = levels[level_index];
 
                 size_t n = level < 1
-                    ? static_cast<size_t>(level * elems.size())
+                    ? static_cast<size_t>(level * static_cast<double>(elems.size()))
                     : (elems.size() - 1);
 
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
@@ -264,8 +262,9 @@ namespace detail
         /// Get value of quantile by index in array `count_big`.
         static UInt16 indexInBigToValue(size_t i)
         {
-            return (i * BIG_PRECISION) + SMALL_THRESHOLD
-                + (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));    /// A small randomization so that it is not noticeable that all the values are even.
+            return static_cast<UInt16>(
+                (i * BIG_PRECISION) + SMALL_THRESHOLD
+                + (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2)));    /// A small randomization so that it is not noticeable that all the values are even.
         }
 
         /// Lets you scroll through the histogram values, skipping zeros.
@@ -302,7 +301,7 @@ namespace detail
             UInt16 key() const
             {
                 return pos - begin < SMALL_THRESHOLD
-                    ? pos - begin
+                    ? static_cast<UInt16>(pos - begin)
                     : indexInBigToValue(pos - begin - SMALL_THRESHOLD);
             }
         };
@@ -407,14 +406,14 @@ namespace detail
         /// Get the value of the `level` quantile. The level must be between 0 and 1.
         UInt16 get(double level) const
         {
-            double pos = std::ceil(count * level);
+            double pos = std::ceil(static_cast<double>(count) * level);
 
             double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())
             {
-                accumulated += it.count();
+                accumulated += static_cast<double>(it.count());
 
                 if (accumulated >= pos)
                     break;
@@ -433,14 +432,14 @@ namespace detail
             const auto * indices_end = indices + size;
             const auto * index = indices;
 
-            double pos = std::ceil(count * levels[*index]);
+            double pos = std::ceil(static_cast<double>(count) * levels[*index]);
 
             double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())
             {
-                accumulated += it.count();
+                accumulated += static_cast<double>(it.count());
 
                 while (accumulated >= pos)
                 {
@@ -450,7 +449,7 @@ namespace detail
                     if (index == indices_end)
                         return;
 
-                    pos = std::ceil(count * levels[*index]);
+                    pos = std::ceil(static_cast<double>(count) * levels[*index]);
                 }
 
                 it.next();

@@ -37,10 +37,11 @@ bool S3Exception::isRetryableError() const
     return !unretryable_errors.contains(code);
 }
 
-}
-namespace DB::ErrorCodes
+bool S3Exception::isAccessTokenExpiredError() const
 {
-    extern const int S3_ERROR;
+    return code == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID || code == Aws::S3::S3Errors::ACCESS_DENIED || code == Aws::S3::S3Errors::INVALID_SIGNATURE || code == Aws::S3::S3Errors::UNKNOWN;
+}
+
 }
 
 #endif

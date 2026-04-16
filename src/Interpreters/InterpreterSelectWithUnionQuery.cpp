@@ -124,12 +124,12 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             {
                 limit_offset = evaluateConstantExpressionAsLiteral(limit_offset_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
                 UInt64 new_limit_offset = settings[Setting::offset] + limit_offset;
-                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(new_limit_offset);
+                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(new_limit_offset);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
             else if (settings[Setting::offset])
             {
-                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(settings[Setting::offset].value);
+                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(settings[Setting::offset].value);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
 
@@ -145,12 +145,12 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
                     new_limit_length = settings[Setting::limit] ? std::min(settings[Setting::limit].value, limit_length - settings[Setting::offset].value)
                                                        : (limit_length - settings[Setting::offset].value);
 
-                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(new_limit_length);
+                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(new_limit_length);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
             else if (settings[Setting::limit])
             {
-                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(settings[Setting::limit].value);
+                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(settings[Setting::limit].value);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
 
@@ -235,7 +235,7 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const SharedHeade
                             common_header.dumpNames(), headers[query_num]->dumpNames());
     }
 
-    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
+    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
 
     for (size_t column_num = 0; column_num < num_columns; ++column_num)
     {
@@ -404,25 +404,6 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
 {
     for (auto & interpreter : nested_interpreters)
         interpreter->ignoreWithTotals();
-}
-
-void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
-{
-    for (const auto & interpreter : nested_interpreters)
-    {
-        if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))
-        {
-            auto filter = select_interpreter->getRowPolicyFilter();
-            if (filter)
-            {
-                for (const auto & row_policy : filter->policies)
-                {
-                    auto name = row_policy->getFullName().toString();
-                    elem.used_row_policies.emplace(std::move(name));
-                }
-            }
-        }
-    }
 }
 
 void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory)

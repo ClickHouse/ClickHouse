@@ -82,7 +82,7 @@ private:
 
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
     std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
-    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
+    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context);
 
     // if applicable, build pipeline for replicated MergeTree from cluster storage
     std::optional<QueryPipeline>

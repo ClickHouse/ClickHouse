@@ -19,33 +19,18 @@ namespace ErrorCodes
 namespace
 {
 
-struct FilesystemAvailable
-{
-    static constexpr auto name = "filesystemAvailable";
-    static UInt64 get(const DiskPtr & disk) { return disk->getAvailableSpace().value_or(std::numeric_limits<UInt64>::max()); }
-};
-
-struct FilesystemUnreserved
-{
-    static constexpr auto name = "filesystemUnreserved";
-    static UInt64 get(const DiskPtr & disk) { return disk->getUnreservedSpace().value_or(std::numeric_limits<UInt64>::max()); }
-};
-
-struct FilesystemCapacity
-{
-    static constexpr auto name = "filesystemCapacity";
-    static UInt64 get(const DiskPtr & disk) { return disk->getTotalSpace().value_or(std::numeric_limits<UInt64>::max()); }
-};
-
-template <typename Impl>
 class FilesystemImpl : public IFunction
 {
 public:
-    static constexpr auto name = Impl::name;
+    using GetFunc = UInt64 (*)(const DiskPtr &);
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FilesystemImpl<Impl>>(context_); }
+    FilesystemImpl(ContextPtr context_, const char * name_, GetFunc get_func_)
+        : context(context_), function_name(name_), get_func(get_func_) {}
 
-    explicit FilesystemImpl(ContextPtr context_) : context(context_) { }
+    static FunctionPtr create(ContextPtr context_, const char * name, GetFunc get_func)
+    {
+        return std::make_shared<FilesystemImpl>(context_, name, get_func);
+    }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -54,7 +39,7 @@ public:
         return false;
     }
 
-    String getName() const override { return name; }
+    String getName() const override { return function_name; }
 
     bool isVariadic() const override { return true; }
 
@@ -80,7 +65,7 @@ public:
         if (arguments.empty())
         {
             auto disk = context->getDisk("default");
-            return DataTypeUInt64().createColumnConst(input_rows_count, Impl::get(disk));
+            return DataTypeUInt64().createColumnConst(input_rows_count, get_func(disk));
         }
 
         auto col = arguments[0].column;
@@ -94,7 +79,7 @@ public:
             {
                 auto disk_name = col_str->getDataAt(i);
                 if (auto it = disk_map.find(disk_name); it != disk_map.end())
-                    data[i] = Impl::get(it->second);
+                    data[i] = get_func(it->second);
                 else
                     throw Exception(ErrorCodes::UNKNOWN_DISK, "Unknown disk name {} while execute function {}", disk_name, getName());
             }
@@ -106,7 +91,13 @@ public:
 
 private:
     ContextPtr context;
+    const char * function_name;
+    GetFunc get_func;
 };
+
+UInt64 filesystemAvailable(const DiskPtr & disk) { return disk->getAvailableSpace().value_or(std::numeric_limits<UInt64>::max()); }
+UInt64 filesystemUnreserved(const DiskPtr & disk) { return disk->getUnreservedSpace().value_or(std::numeric_limits<UInt64>::max()); }
+UInt64 filesystemCapacity(const DiskPtr & disk) { return disk->getTotalSpace().value_or(std::numeric_limits<UInt64>::max()); }
 
 }
 
@@ -138,7 +129,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
     FunctionDocumentation::Category category_filesystemAvailable = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_filesystemAvailable = {description_filesystemAvailable, syntax_filesystemAvailable, arguments_filesystemAvailable, {}, returned_value_filesystemAvailable, examples_filesystemAvailable, introduced_in_filesystemAvailable, category_filesystemAvailable};
 
-    factory.registerFunction<FilesystemImpl<FilesystemAvailable>>(documentation_filesystemAvailable);
+    factory.registerFunction("filesystemAvailable", [](ContextPtr ctx){ return FilesystemImpl::create(ctx, "filesystemAvailable", filesystemAvailable); }, documentation_filesystemAvailable);
 
     FunctionDocumentation::Description description_filesystemCapacity = R"(
 Returns the capacity of the filesystem in bytes.
@@ -166,7 +157,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity";
     FunctionDocumentation::Category category_filesystemCapacity = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_filesystemCapacity = {description_filesystemCapacity, syntax_filesystemCapacity, arguments_filesystemCapacity, {}, returned_value_filesystemCapacity, examples_filesystemCapacity, introduced_in_filesystemCapacity, category_filesystemCapacity};
 
-    factory.registerFunction<FilesystemImpl<FilesystemCapacity>>(documentation_filesystemCapacity);
+    factory.registerFunction("filesystemCapacity", [](ContextPtr ctx){ return FilesystemImpl::create(ctx, "filesystemCapacity", filesystemCapacity); }, documentation_filesystemCapacity);
 
     FunctionDocumentation::Description description_filesystemUnreserved = R"(
 Returns the total amount of free space on the filesystem hosting the database persistence (previously `filesystemFree`).
@@ -194,7 +185,7 @@ SELECT formatReadableSize(filesystemUnreserved()) AS "Free space";
     FunctionDocumentation::Category category_filesystemUnreserved = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_filesystemUnreserved = {description_filesystemUnreserved, syntax_filesystemUnreserved, arguments_filesystemUnreserved, {}, returned_value_filesystemUnreserved, examples_filesystemUnreserved, introduced_in_filesystemUnreserved, category_filesystemUnreserved};
 
-    factory.registerFunction<FilesystemImpl<FilesystemUnreserved>>(documentation_filesystemUnreserved);
+    factory.registerFunction("filesystemUnreserved", [](ContextPtr ctx){ return FilesystemImpl::create(ctx, "filesystemUnreserved", filesystemUnreserved); }, documentation_filesystemUnreserved);
 }
 
 }

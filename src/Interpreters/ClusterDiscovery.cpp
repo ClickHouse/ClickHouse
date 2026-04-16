@@ -11,6 +11,7 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
@@ -637,6 +638,7 @@ void ClusterDiscovery::start()
 
     try
     {
+        auto component_guard = Coordination::setCurrentComponent("ClusterDiscovery::start");
         initialUpdate();
     }
     catch (...)
@@ -678,6 +680,8 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
 {
     DB::setThreadName(ThreadName::CLUSTER_DISCOVERY);
     LOG_DEBUG(log, "Worker thread started");
+
+    auto component_guard = Coordination::setCurrentComponent("ClusterDiscovery::runMainThread");
 
     using namespace std::chrono_literals;
 

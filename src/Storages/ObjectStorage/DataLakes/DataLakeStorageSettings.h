@@ -55,6 +55,9 @@ Explicit table UUID to read metadata for. Ignored if iceberg_metadata_file_path 
     DECLARE(Bool, iceberg_recent_metadata_file_by_last_updated_ms_field, false, R"(
 If enabled, the engine would use the metadata file with the most recent last_updated_ms json field. Does not make sense to use with iceberg_metadata_file_path.
 )", 0) \
+    DECLARE(UInt32, iceberg_metadata_async_prefetch_period_ms, 0, R"(
+The period in milliseconds to asynchronously prefetch the latest metadata snapshot from a remote iceberg catalog. Default is 0 - disabled.
+)", 0) \
     DECLARE(Bool, iceberg_use_version_hint, false, R"(
 Get latest metadata path from version-hint.text file.
 )", 0) \
@@ -71,6 +74,8 @@ Metadata format version.
     DECLARE(String, storage_aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
     DECLARE(String, storage_aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
     DECLARE(String, storage_region, "", "Region for Glue catalog", 0)           \
+    DECLARE(String, storage_aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
+    DECLARE(String, storage_aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
     DECLARE(String, object_storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(String, storage_catalog_url, "", "Catalog url", 0) \
     DECLARE(String, disk, "", "Disk name to use for underlying storage", 0) \

@@ -17,11 +17,11 @@
 #include <Common/config_version.h>
 #include <Common/re2.h>
 
-#include <incbin.h>
-
 /// Embedded HTML pages
-INCBIN(resource_keeper_dashboard_html, SOURCE_DIR "/programs/keeper/dashboard.html");
-
+constexpr unsigned char resource_keeper_dashboard_html[] =
+{
+#embed "../../programs/keeper/dashboard.html"
+};
 
 namespace DB
 {
@@ -29,7 +29,7 @@ namespace DB
 void KeeperDashboardWebUIRequestHandler::handleRequest(
     HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    std::string html(reinterpret_cast<const char *>(gresource_keeper_dashboard_htmlData), gresource_keeper_dashboard_htmlSize);
+    std::string_view html(reinterpret_cast<const char *>(resource_keeper_dashboard_html), std::size(resource_keeper_dashboard_html));
 
     response.setContentType("text/html; charset=UTF-8");
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)

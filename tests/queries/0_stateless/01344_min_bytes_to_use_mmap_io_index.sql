@@ -8,6 +8,6 @@ SELECT * FROM test_01344 WHERE x = 'Hello, world';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['CreatedReadBufferMMap'] as value FROM system.query_log
-    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND query LIKE 'SELECT * FROM test_01344 WHERE x = ''Hello, world''%' AND type = 2 ORDER BY event_time DESC LIMIT 1;
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600 AND query LIKE 'SELECT * FROM test_01344 WHERE x = ''Hello, world''%' AND type = 2 ORDER BY event_time DESC LIMIT 1;
 
 DROP TABLE test_01344;

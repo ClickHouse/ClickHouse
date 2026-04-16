@@ -16,7 +16,6 @@
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadHelpers.h>
 #include <base/range.h>
 
 #include "config.h"
@@ -367,7 +366,7 @@ public:
         if (isColumnNullable(dest))
         {
             ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
-            col_null.getNullMapData().push_back(0);
+            col_null.getNullMapData().push_back(false);
             col_str = assert_cast<ColumnString *>(&col_null.getNestedColumn());
         }
         else

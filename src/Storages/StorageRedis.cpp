@@ -30,6 +30,9 @@
 #include <Common/parseAddress.h>
 #include <Common/JSONBuilder.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
+
 namespace DB
 {
 
@@ -209,14 +212,22 @@ StorageRedis::StorageRedis(
     ContextPtr context_,
     const StorageInMemoryMetadata & storage_metadata,
     const String & primary_key_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , configuration(configuration_)
     , log(getLogger("StorageRedis"))
     , primary_key(primary_key_)
 {
     pool = std::make_shared<RedisPool>(configuration.pool_size);
-    setInMemoryMetadata(storage_metadata);
+    setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
+}
+
+VirtualColumnsDescription StorageRedis::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 class ReadFromRedis : public SourceStepWithFilter
@@ -254,7 +265,7 @@ private:
     bool all_scan = true;
 };
 
-void StorageRedis::read(
+void StorageRedis::readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -328,7 +339,7 @@ void ReadFromRedis::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromRedis::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix(format_settings.offset, format_settings.indent_char);
+    const std::string & prefix = format_settings.detail_prefix;
     if (!all_scan)
     {
         format_settings.out << prefix << "ReadType: GetKeys\n";
@@ -351,15 +362,14 @@ void ReadFromRedis::describeActions(JSONBuilder::JSONMap & map) const
 
 namespace
 {
-    //  host:port, db_index, password, pool_size
-    RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context)
+    RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context, const StorageID & table_id)
     {
         RedisConfiguration configuration;
 
         if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad arguments count when creating Redis table engine");
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, &table_id))
         {
             validateNamedCollection(
                 *named_collection,
@@ -402,7 +412,7 @@ namespace
 
     StoragePtr createStorageRedis(const StorageFactory::Arguments & args)
     {
-        auto configuration = getRedisConfiguration(args.engine_args, args.getLocalContext());
+        auto configuration = getRedisConfiguration(args.engine_args, args.getLocalContext(), args.table_id);
 
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
@@ -412,7 +422,7 @@ namespace
         if (!args.storage_def->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageRedis must require one column in primary key");
 
-        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
         auto primary_key_names = primary_key_desc.expression->getRequiredColumns();
 
         if (primary_key_names.size() != 1)
@@ -434,7 +444,7 @@ Chunk StorageRedis::getBySerializedKeys(const std::vector<std::string> & keys, P
 
 Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<UInt8> * null_map) const
 {
-    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+    Block sample_block = getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
     MutableColumns columns = sample_block.cloneEmptyColumns();
@@ -549,7 +559,7 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
 
 Block StorageRedis::getSampleBlock(const Names &) const
 {
-    return getInMemoryMetadataPtr()->getSampleBlock();
+    return getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
 }
 
 SinkToStoragePtr StorageRedis::write(
@@ -598,7 +608,8 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
 
     assert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
+    auto physical_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
 
@@ -608,7 +619,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
         settings.return_all_columns = true;
         settings.return_mutated_rows = true;
 
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, settings);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, physical_columns, context_, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -646,7 +657,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     settings.return_all_columns = true;
     settings.return_mutated_rows = true;
 
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, physical_columns, context_, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 

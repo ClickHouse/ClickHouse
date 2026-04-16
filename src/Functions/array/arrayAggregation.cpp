@@ -255,7 +255,7 @@ struct ArrayAggregateImpl
                     }
                     else
                     {
-                        res[i] = x;
+                        res[i] = static_cast<ResultType>(x);
                     }
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
@@ -288,7 +288,7 @@ struct ArrayAggregateImpl
                         for (size_t array_index = 1; array_index < array_size; ++array_index)
                             product = product * x;
 
-                        res[i] = product;
+                        res[i] = static_cast<ResultType>(product);
                     }
                 }
 
@@ -320,7 +320,7 @@ struct ArrayAggregateImpl
                 if constexpr (is_decimal<AggregationType>)
                     res[i] = aggregate_value.value;
                 else
-                    res[i] = aggregate_value;
+                    res[i] = static_cast<ResultType>(aggregate_value);
                 continue;
             }
 
@@ -366,7 +366,7 @@ struct ArrayAggregateImpl
                 }
                 else
                 {
-                    res[i] = static_cast<ResultType>(aggregate_value) / count;
+                    res[i] = static_cast<ResultType>(aggregate_value) / static_cast<ResultType>(count);
                 }
             }
             else if constexpr (aggregate_operation == AggregateOperation::product && is_decimal<Element>)
@@ -381,7 +381,7 @@ struct ArrayAggregateImpl
             }
             else
             {
-                res[i] = aggregate_value;
+                res[i] = static_cast<ResultType>(aggregate_value);
             }
         }
 
@@ -495,7 +495,7 @@ Returns the sum of elements in the source array.
 
 If a lambda function `func` is specified, returns the sum of elements of the lambda results.
     )";
-    FunctionDocumentation::Syntax syntax_sum = "arrayMax([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Syntax syntax_sum = "arraySum([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_sum = {
         {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},

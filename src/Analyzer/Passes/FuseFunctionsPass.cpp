@@ -16,6 +16,10 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/TableNode.h>
+
+#include <Storages/IStorage.h>
+#include <Storages/ProjectionsDescription.h>
 
 #include <numeric>
 
@@ -25,6 +29,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_syntax_fuse_functions;
+    extern const SettingsBool optimize_use_projections;
 }
 
 namespace ErrorCodes
@@ -35,6 +40,30 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool canFuseToSumCount(const DataTypePtr & type)
+{
+    WhichDataType t(type);
+    return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal();
+}
+
+bool sourceHasAggregateProjections(const QueryTreeNodePtr & source, const ContextPtr & context)
+{
+    auto * table_node = source->as<TableNode>();
+    if (!table_node)
+        return false;
+
+    if (!context->getSettingsRef()[Setting::optimize_use_projections])
+        return false;
+
+    auto metadata = table_node->getStorage()->getInMemoryMetadataPtr(context, false);
+    for (const auto & projection : metadata->projections)
+    {
+        if (projection.type == ProjectionDescription::Type::Aggregate)
+            return true;
+    }
+    return false;
+}
 
 class CollectColumnSourcesVisitor : public InDepthQueryTreeVisitor<CollectColumnSourcesVisitor, true>
 {
@@ -172,6 +201,10 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
 
     String function_name = node->as<const FunctionNode &>().getFunctionName();
 
+    /// Preserve the original column name so that consumers that match columns by name
+    /// (e.g. StorageBuffer union, Distributed queries) see the same names regardless of fusion.
+    auto original_column_name = node->formatConvertedASTForErrorMessage();
+
     if (function_name == "sum")
     {
         assert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
@@ -194,6 +227,8 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported function '{}'", function_name);
     }
+
+    node->setAlias(original_column_name);
 }
 
 /// Reorder nodes according to the value of the quantile level parameter.
@@ -266,6 +301,29 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
         if (nodes.size() < 2)
             continue;
 
+        /// Require at least 2 distinct function names (e.g. sum + count, sum + avg).
+        /// ORDER BY ALL can duplicate a single aggregate function node, making nodes.size() >= 2
+        /// even though there is only one unique function — fusing in that case is wrong.
+        {
+            std::unordered_set<String> distinct_names;
+            for (auto * node : nodes)
+                distinct_names.insert((*node)->as<const FunctionNode &>().getFunctionName());
+            if (distinct_names.size() < 2)
+                continue;
+        }
+
+        if (isNullableOrLowCardinalityNullable(argument.first.node->getResultType()))
+            /// Do not apply to functions with Nullable/LowCardinality(Nullable) arguments, because `sumCount` handles it different from `sum` and `avg`.
+            continue;
+
+        if (!canFuseToSumCount(argument.first.node->getResultType()))
+            /// Only allow types supported by the `sumCount` aggregate function: Int, UInt, Float, Decimal.
+            continue;
+
+        if (sourceHasAggregateProjections(argument.second, context))
+            /// Fusion breaks projection matching because the optimizer cannot match `sumCount` to projections defined with `sum`, `count`, or `avg`.
+            continue;
+
         auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
         for (auto * node : nodes)
         {
@@ -297,8 +355,10 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 
         for (size_t i = 0; i < nodes_set.size(); ++i)
         {
+            auto original_column_name = (*nodes[i])->formatConvertedASTForErrorMessage();
             size_t array_index = i + 1;
             *nodes[i] = createArrayElementFunction(context, quantiles_node, array_index);
+            (*nodes[i])->setAlias(original_column_name);
         }
     }
 }

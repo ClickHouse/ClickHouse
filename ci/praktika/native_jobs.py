@@ -1,7 +1,10 @@
 import dataclasses
+import hashlib
+import json
 import platform
 import sys
 import traceback
+from pathlib import Path
 from typing import Dict
 
 from . import Job, Workflow
@@ -24,15 +27,13 @@ assert Settings.CI_CONFIG_RUNS_ON
 
 
 # TODO: find the right place to not dublicate
-def _GH_Auth(workflow):
+def _GH_Auth(force=False):
     if not Settings.USE_CUSTOM_GH_AUTH:
         return
     from .gh_auth import GHAuth
 
-    if not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
+    if force or not Shell.check(f"gh auth status", verbose=True):
+        GHAuth.auth_from_settings()
 
 
 _workflow_config_job = Job.Config(
@@ -221,6 +222,68 @@ def _clean_buildx_volumes():
     )
 
 
+def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
+    """Compute a content-addressed hash of submodule SHAs and ensure a cache
+    archive exists in S3.  Stores the hash in workflow_config so that downstream
+    jobs with needs_submodules=True can restore it."""
+    stop_watch = Utils.Stopwatch()
+    info = ""
+    try:
+        submodule_shas = Digest.get_submodule_shas()
+        if not submodule_shas:
+            print("WARNING: No submodules found, skipping submodule cache")
+            return Result.create_from(
+                name="Submodule Cache",
+                status=Result.Status.SUCCESS,
+                stopwatch=stop_watch,
+                info="No submodules",
+            )
+
+        cache_hash = hashlib.sha256(submodule_shas.encode()).hexdigest()[:16]
+        s3_path = f"{Settings.CACHE_S3_PATH}/submodules/{cache_hash}.tar.zst"
+        print(f"Submodule cache hash: {cache_hash}")
+
+        # Check if cache already exists in S3
+        if S3.head_object(s3_path):
+            print(f"Submodule cache hit: {s3_path}")
+            info = f"cache hit: {cache_hash}"
+        else:
+            print(f"Submodule cache miss, creating: {s3_path}")
+            Shell.check("git submodule sync", verbose=True, strict=True)
+            Shell.check("git submodule init", verbose=True, strict=True)
+            Shell.check(
+                "git submodule update --depth=1 --single-branch --jobs 64",
+                verbose=True,
+                strict=True,
+                retries=3,
+            )
+            archive_path = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
+            Shell.check(
+                f"tar -cf - .git/modules | zstd -c -T0 > {archive_path}",
+                verbose=True,
+                strict=True,
+            )
+            S3.copy_file_to_s3(s3_path=s3_path, local_path=archive_path, with_rename=True)
+            Shell.check(f"rm -f {archive_path}")
+            info = f"cache miss, created: {cache_hash}"
+
+        workflow_config.submodule_cache_hash = cache_hash
+        workflow_config.dump()
+        status = Result.Status.SUCCESS
+    except Exception as e:
+        print(f"WARNING: Submodule cache failed: {e}")
+        traceback.print_exc()
+        info = f"{e}\n{traceback.format_exc()}"
+        status = Result.Status.SUCCESS  # non-fatal, jobs fall back to GitHub clone
+
+    return Result.create_from(
+        name="Submodule Cache",
+        status=status,
+        stopwatch=stop_watch,
+        info=info,
+    )
+
+
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # debug info
     GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
@@ -228,9 +291,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     def _check_yaml_up_to_date():
         print("Check workflows are up to date")
         commands = [
-            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
             f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f'test -z "$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX})"',
+            f'sh -c \'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n "$changed" ]; then echo "ERROR: workflows are outdated. Changed files:"; printf "%s\\n" "$changed"; exit 1; fi\'',
         ]
 
         return Result.from_commands_run(
@@ -274,30 +336,44 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             info=info,
         )
 
-    if workflow.enable_report:
-        print("Push pending CI report")
-        HtmlRunnerHooks.push_pending_ci_report(workflow)
-
     print(f"Start [{job_name}], workflow [{workflow.name}]")
-    results = []
     files = []
     env = _Environment.get()
-    _ = RunConfig(
-        name=workflow.name,
-        digest_jobs={},
-        digest_dockers={},
-        sha=env.SHA,
-        cache_success=[],
-        cache_success_base64=[],
-        cache_artifacts={},
-        cache_jobs={},
-        filtered_jobs={},
-        custom_data={},
-    ).dump()
 
+    # Ensure the local repository has full history (not a shallow clone).
+    # Some Praktika features require complete git metadata, such as:
+    # - all authors who contributed to the PR
+    # - the original commit messages before GitHub's ephemeral merge commit
+    commands = [
+        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
+    ]
+    if env.BASE_BRANCH and env.PR_NUMBER:
+        commands.append(
+            f"git fetch --prune --no-recurse-submodules --filter=tree:0 origin {env.BASE_BRANCH} ||:"
+        )
+    results = [
+        Result.from_commands_run(
+            name="repo unshallow",
+            command=commands,
+        ),
+    ]
+
+    if not env.COMMIT_MESSAGE:
+        env.COMMIT_MESSAGE = Shell.get_output(
+            f"git log -1 --pretty=%s {env.SHA}", verbose=True
+        )
+        env.dump()
+
+    try:
+        _GH_Auth(force=True)
+    except Exception as e:
+        print(f"WARNING: Failed to auth with GH: [{e}]")
+
+    # refresh PR data
     if env.PR_NUMBER > 0:
-        # refresh PR data
         title, body, labels = GH.get_pr_title_body_labels()
+        print(f"NOTE: PR title: {title}")
+        print(f"NOTE: PR labels: {labels}")
         if title:
             if title != env.PR_TITLE:
                 print("PR title has been changed")
@@ -309,6 +385,47 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 print("PR labels have been changed")
                 env.PR_LABELS = labels
             env.dump()
+
+    if workflow.enable_report:
+        print("Push pending CI report")
+        HtmlRunnerHooks.push_pending_ci_report(workflow)
+
+        info = Info()
+        report_url_latest_sha = info.get_report_url(latest=True)
+        report_url_current_sha = info.get_report_url(latest=False)
+        body = f"Workflow [[{workflow.name}]({report_url_latest_sha})], commit [{env.SHA[:8]}]"
+        res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
+            comment_tags_and_bodies={
+                "report": body,
+                "param_1": "",
+                "summary": "",
+                "review": "",
+            },
+        )
+        res1 = GH.post_commit_status(
+            name=workflow.name,
+            status=Result.Status.PENDING,
+            description="",
+            url=report_url_current_sha,
+        )
+        if not (res1 or res2):
+            Utils.raise_with_error(
+                "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
+            )
+
+    _ = RunConfig(
+        name=workflow.name,
+        digest_jobs={},
+        digest_dockers={},
+        sha=env.SHA,
+        cache_success=[],
+        cache_success_base64=[],
+        cache_artifacts={},
+        cache_jobs={},
+        filtered_jobs={},
+        submodule_cache_hash="",
+        custom_data={},
+    ).dump()
 
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
@@ -417,6 +534,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             unaffected_jobs_with_artifacts = {}
             all_required_artifacts = set()
 
+            # Build set of all job names for quick lookup
+            job_names = {j.name for j in workflow.jobs}
+
             for job in workflow.jobs:
                 # Skip native Praktika jobs
                 if _is_praktika_job(job.name):
@@ -438,34 +558,30 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
                 if is_affected:
                     affected_artifacts.extend(job.provides)
-                    if job.provides:
-                        # for cases when artifact report is used instead of real artifacts
-                        affected_artifacts.append(job.name)
-                    all_required_artifacts.update(job.requires)
+                    # Propagate the job name so that downstream jobs
+                    # requiring this job by name are marked as affected
+                    affected_artifacts.append(job.name)
+                    # All items in requires are hard dependencies
+                    for req in job.requires:
+                        all_required_artifacts.add(req)
                 else:
                     print(f"Job [{job.name}] is not affected by the change")
-                    if not job.provides:
-                        workflow_config.set_job_as_filtered(
-                            job.name, "Not affected by the changed files"
-                        )
-                    else:
-                        print(
-                            f"NOTE: Job [{job.name}] is not affected, but may provide required artifacts"
-                        )
-                        unaffected_jobs_with_artifacts[job.name] = job.provides
+                    unaffected_jobs_with_artifacts[job.name] = job.provides
 
+            print(f"All required artifacts [{all_required_artifacts}]")
+            print(f"Affected artifacts [{affected_artifacts}]")
             for job_name, artifacts in unaffected_jobs_with_artifacts.items():
                 if (
                     any(a in all_required_artifacts for a in artifacts)
                     or job_name in all_required_artifacts
                 ):
                     print(
-                        f"NOTE: Job [{job_name}] provides required artifacts — cannot be skipped"
+                        f"NOTE: Job [{job_name}] is required by affected jobs - cannot be skipped"
                     )
                 else:
                     workflow_config.set_job_as_filtered(
                         job_name,
-                        "Not affected by the changed files, and artifacts are not required",
+                        "Not affected by the changed files and not required",
                     )
 
             workflow_config.dump()
@@ -500,9 +616,84 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
+    if results[-1].is_ok() and workflow.enable_cache and Settings.ENABLE_SUBMODULE_CACHE:
+        result = _prepare_submodule_cache(workflow_config)
+        results.append(result)
+
+    if workflow.enable_slack_feed:
+        if env.PR_NUMBER:
+            commit_authors = set()
+            try:
+                # Find the first merge commit (going backwards from SHA) that has no parent from BASE_BRANCH
+                # This indicates a merge from outside the base branch, where we should stop (support complex git scenarious with forks syncronization)
+                stop_commit = ""
+                merge_commits = Shell.get_output(
+                    f"git rev-list --merges origin/{env.BASE_BRANCH}..{env.SHA}",
+                    verbose=True,
+                ).strip()
+
+                if merge_commits:
+                    for merge_commit in reversed(merge_commits.split("\n")):
+                        if not merge_commit:
+                            continue
+                        # Get parents of this merge commit
+                        parents = Shell.get_output(
+                            f"git rev-parse {merge_commit}^@", verbose=False
+                        ).strip()
+
+                        # Check if any parent is reachable from BASE_BRANCH
+                        has_base_parent = False
+                        for parent in parents.split("\n"):
+                            if not parent:
+                                continue
+                            # Check if parent is ancestor of BASE_BRANCH or BASE_BRANCH is ancestor of parent
+                            try:
+                                Shell.check(
+                                    f"git merge-base --is-ancestor {parent} origin/{env.BASE_BRANCH}",
+                                    verbose=False,
+                                )
+                                has_base_parent = True
+                                break
+                            except:
+                                pass
+
+                        if not has_base_parent:
+                            # Found a merge with no parent from BASE_BRANCH - stop here
+                            stop_commit = merge_commit
+                            print(
+                                f"Found merge commit without BASE_BRANCH parent: {merge_commit[:8]}"
+                            )
+                            break
+
+                # Get commit author emails, excluding merge commits, up to stop point
+                if stop_commit:
+                    end_ref = f"{stop_commit}^"
+                else:
+                    end_ref = env.SHA
+
+                commits_emails = Shell.get_output(
+                    f"git log --format='%ae' --no-merges origin/{env.BASE_BRANCH}..{end_ref}",
+                    verbose=True,
+                ).strip()
+
+                if commits_emails:
+                    # Validate emails contain @ symbol
+                    commit_authors = set(
+                        email
+                        for email in commits_emails.split("\n")
+                        if email and "@" in email and "+" not in email
+                    )
+            except Exception as e:
+                print(f"WARNING: Failed to extract commit authors from git: {e}")
+            print(f"Found {len(commit_authors)} commit authors")
+            if commit_authors:
+                env.COMMIT_AUTHORS = list(commit_authors)
+                env.JOB_KV_DATA["commit_authors"] = list(commit_authors)
+                env.dump()
+
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
-    env.JOB_KV_DATA["workflow_config"] = dataclasses.asdict(workflow_config)
+    env.WORKFLOW_CONFIG = dataclasses.asdict(workflow_config)
     env.dump()
 
     if results[-1].is_ok() and workflow.enable_report:
@@ -562,6 +753,16 @@ def _finish_workflow(workflow, job_name):
     env = _Environment.get()
     stop_watch = Utils.Stopwatch()
 
+    workflow_job_data = {}
+    try:
+        if Path(Settings.WORKFLOW_STATUS_FILE).is_file():
+            with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+                workflow_job_data = json.load(f)
+    except Exception as e:
+        print(
+            f"ERROR: failed to read workflow status file [{Settings.WORKFLOW_STATUS_FILE}]: {e}"
+        )
+
     print("Check Actions statuses")
     print(env.get_needs_statuses())
 
@@ -576,7 +777,7 @@ def _finish_workflow(workflow, job_name):
         or workflow.enable_open_issues_check
         or workflow.post_hooks
     ):
-        _GH_Auth(workflow)
+        _GH_Auth()
 
     update_final_report = False
     results = []
@@ -613,18 +814,60 @@ def _finish_workflow(workflow, job_name):
         if result.status == Result.Status.DROPPED:
             dropped_results.append(result.name)
             continue
-        if not result.is_completed():
-            print(
-                f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
+        if workflow.enable_open_issues_check and (
+            (
+                result.has_label(Result.Label.ISSUE)
+                and not result.has_label(Result.Label.BLOCKER)
             )
-            result.status = Result.Status.ERROR
-            # dump workflow result after update - to have an updated result in post
-            workflow_result.dump()
-            # add error into env - should appear in the report on the main page
-            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
-            # add error info to job info as well
-            result.set_info(ResultInfo.NOT_FINALIZED)
-            update_final_report = True
+            or (
+                result.results
+                and all(
+                    (
+                        sub_result.has_label(Result.Label.ISSUE)
+                        and not sub_result.has_label(Result.Label.BLOCKER)
+                    )
+                    for sub_result in result.results
+                )
+            )
+        ):
+            print(
+                f"NOTE: All failures are known and have open issues - do not block merge by [{result.name}]"
+            )
+            continue
+        if not result.is_completed():
+            normalized_name = Utils.normalize_string(result.name)
+            gh_job = workflow_job_data.get(normalized_name, {})
+            gh_job_result = (gh_job.get("result") or "").lower()
+            if gh_job_result in ("cancelled", "canceled"):
+                print(
+                    f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to dropped"
+                )
+                result.status = Result.Status.DROPPED
+                workflow_result.dump()
+                workflow_result.ext["is_cancelled"] = True
+                update_final_report = True
+                dropped_results.append(result.name)
+                continue
+            elif gh_job_result == "success":
+                print(
+                    f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to success"
+                )
+                result.status = Result.Status.SUCCESS
+                workflow_result.dump()
+                update_final_report = True
+                continue
+            else:
+                print(
+                    f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
+                )
+                result.status = Result.Status.ERROR
+                # dump workflow result after update - to have an updated result in post
+                workflow_result.dump()
+                # add error into env - should appear in the report on the main page
+                env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
+                # add error info to job info as well
+                result.set_info(ResultInfo.NOT_FINALIZED)
+                update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
             print(
@@ -642,6 +885,18 @@ def _finish_workflow(workflow, job_name):
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
 
+    # Revert PRs should be easy to merge - only Fast test is required
+    if "Reverts ClickHouse/" in env.PR_BODY:
+        fast_test_failed = any(
+            "Fast test" in name for name in failed_results
+        )
+        if not fast_test_failed and ready_for_merge_status != Result.Status.SUCCESS:
+            print(
+                f"NOTE: Revert PR detected - setting merge status to success despite failures"
+            )
+            ready_for_merge_status = Result.Status.SUCCESS
+            ready_for_merge_description = "Revert PR"
+
     if workflow.enable_merge_ready_status:
         if not GH.post_commit_status(
             name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
@@ -657,9 +912,13 @@ def _finish_workflow(workflow, job_name):
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
     if results:
-        return Result.create_from(results=results, stopwatch=stop_watch)
+        return Result.create_from(
+            name=job_name, results=results, stopwatch=stop_watch
+        )
     else:
-        return Result.create_from(status=Result.Status.SUCCESS, stopwatch=stop_watch)
+        return Result.create_from(
+            name=job_name, status=Result.Status.SUCCESS, stopwatch=stop_watch
+        )
 
 
 if __name__ == "__main__":

@@ -1326,10 +1326,10 @@ typedef uint64_t uintmax_t;
 #define ICONV_CONST
 
 /* Version number of libarchive as a single integer */
-#define LIBARCHIVE_VERSION_NUMBER "3007004"
+#define LIBARCHIVE_VERSION_NUMBER "3008005"
 
 /* Version number of libarchive */
-#define LIBARCHIVE_VERSION_STRING "3.7.4"
+#define LIBARCHIVE_VERSION_STRING "3.8.5"
 
 /* Define to 1 if `lstat' dereferences a symlink specified with a trailing
    slash. */
@@ -1392,7 +1392,7 @@ typedef uint64_t uintmax_t;
 #endif /* SAFE_TO_DEFINE_EXTENSIONS */
 
 /* Version number of package */
-#define VERSION "3.7.4"
+#define VERSION "3.8.5"
 
 /* Number of bits in a file offset, on hosts where this is settable. */
 /* #undef _FILE_OFFSET_BITS */

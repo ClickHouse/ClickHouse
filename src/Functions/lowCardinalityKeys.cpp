@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
@@ -7,11 +8,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 namespace
 {
 
@@ -29,14 +25,18 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].get());
-        if (!type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First first argument of function lowCardinalityKeys must be ColumnLowCardinality, "
-                            "but got {}", arguments[0]->getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"col", &isLowCardinalityType, nullptr, "LowCardinality"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        const auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].type.get());
 
         return type->getDictionaryType();
     }

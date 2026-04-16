@@ -1,3 +1,4 @@
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -7,6 +8,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -40,7 +42,7 @@ namespace Setting
 }
 
 StoragesInfoStreamBase::StoragesInfoStreamBase(ContextPtr context)
-    : query_id(context->getCurrentQueryId()), lock_timeout(context->getSettingsRef()[Setting::lock_acquire_timeout]), next_row(0), rows(0)
+    : query_id(context->getCurrentQueryId()), lock_timeout(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds())), next_row(0), rows(0)
 {
 }
 
@@ -85,7 +87,7 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 MergeTreeData::ProjectionPartsVector
 StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
-    if (data->getInMemoryMetadataPtr()->projections.empty())
+    if (data->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->projections.empty())
         return {};
 
     using State = MergeTreeData::DataPartState;
@@ -290,7 +292,7 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
-void StorageSystemPartsBase::read(
+void StorageSystemPartsBase::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -339,7 +341,7 @@ void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline
 
 
 StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     auto add_alias = [&](const String & alias_name, const String & column_name)
     {
@@ -347,7 +349,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
             return;
         ColumnDescription column(alias_name, columns.get(column_name).type);
         column.default_desc.kind = ColumnDefaultKind::Alias;
-        column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);
+        column.default_desc.expression = make_intrusive<ASTIdentifier>(column_name);
         columns.add(column);
     };
 
@@ -358,16 +360,22 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
 
-    VirtualColumnsDescription virtuals;
-    virtuals.addEphemeral("_state", std::make_shared<DataTypeString>(), "");
-    setVirtuals(std::move(virtuals));
+VirtualColumnsDescription StorageSystemPartsBase::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_state", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
 {
-    info.table_lock = info.storage->tryLockForShare(query_id, lock_timeout);
+    info.table_lock = info.storage->tryLockForShare(query_id, Poco::Timespan(lock_timeout.count() * 1000));
     // nullptr means table was dropped while acquiring the lock
     return info.table_lock != nullptr;
 }

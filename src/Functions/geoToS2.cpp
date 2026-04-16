@@ -5,9 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <base/range.h>
 
 #include <Functions/s2_fwd.h>
 
@@ -149,7 +147,22 @@ public:
 
 REGISTER_FUNCTION(GeoToS2)
 {
-    factory.registerFunction<FunctionGeoToS2>();
+    FunctionDocumentation::Description description = R"(
+Returns the S2 point index corresponding to the provided coordinates (longitude, latitude).
+An S2 point index is a number that internally encodes a point on the surface of a unit sphere, unlike traditional (longitude, latitude) pairs. Use `s2ToGeo` to get the coordinates from an S2 point index.
+    )";
+    FunctionDocumentation::Syntax syntax = "geoToS2(lon, lat)";
+    FunctionDocumentation::Arguments arguments = {
+        {"lon", "Longitude.", {"Float64"}},
+        {"lat", "Latitude.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the S2 cell identifier.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT geoToS2(37.79506683, 55.71290588)", "4704772434919038107"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGeoToS2>(documentation);
 }
 
 }

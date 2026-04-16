@@ -9,7 +9,6 @@
 #include <limits>
 #include <vector>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 #include <base/StringViewHash.h>
 #include <fmt/ranges.h>
 #include <Common/Arena.h>
@@ -359,7 +358,7 @@ public:
                         if (it != token_class_map->end())
                             count = static_cast<double>(it->getMapped());
                     }
-                    const double probability = (count + alpha) / (class_total + alpha * vocabulary_size);
+                    const double probability = (count + alpha) / (class_total + alpha * static_cast<double>(vocabulary_size));
                     class_log_probabilities[class_id] += std::log(probability);
                 }
             }

@@ -1,0 +1,41 @@
+<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
+<!-- Scale factor: 10 -->
+<test>
+
+<settings file="../benchmarks/tpc-h/settings.json"/>
+
+<substitutions>
+    <substitution>
+        <name>table</name>
+        <values>
+            <value>tpch10</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<fill_query>USE {table}</fill_query>
+
+<!-- Q1 -->  <query file="../benchmarks/tpc-h/queries/query_01.sql"/>
+<!-- Q2 -->  <query file="../benchmarks/tpc-h/queries/query_02.sql"/>
+<!-- Q3 -->  <query file="../benchmarks/tpc-h/queries/query_03.sql"/>
+<!-- Q4 -->  <query file="../benchmarks/tpc-h/queries/query_04.sql"/>
+<!-- Q5 -->  <query file="../benchmarks/tpc-h/queries/query_05.sql"/>
+<!-- Q6 -->  <query file="../benchmarks/tpc-h/queries/query_06.sql"/>
+<!-- Q7 -->  <query file="../benchmarks/tpc-h/queries/query_07.sql"/>
+<!-- Q8 -->  <query file="../benchmarks/tpc-h/queries/query_08.sql"/>
+<!-- Q9 -->  <query file="../benchmarks/tpc-h/queries/query_09.sql"/>
+<!-- Q10 --> <query file="../benchmarks/tpc-h/queries/query_10.sql"/>
+<!-- Q11 --> <query file="../benchmarks/tpc-h/queries/query_11_sf10.sql"/>
+<!-- Q12 --> <query file="../benchmarks/tpc-h/queries/query_12.sql"/>
+<!-- Q13 --> <query file="../benchmarks/tpc-h/queries/query_13.sql"/>
+<!-- Q14 --> <query file="../benchmarks/tpc-h/queries/query_14.sql"/>
+<!-- Q15 --> <query file="../benchmarks/tpc-h/queries/query_15.sql"/>
+<!-- Q16 --> <query file="../benchmarks/tpc-h/queries/query_16.sql"/>
+<!-- Q17 --> <query file="../benchmarks/tpc-h/queries/query_17.sql"/>
+<!-- Q18 --> <query file="../benchmarks/tpc-h/queries/query_18.sql"/>
+<!-- Q19 --> <query file="../benchmarks/tpc-h/queries/query_19.sql"/>
+<!-- Q20 --> <query file="../benchmarks/tpc-h/queries/query_20.sql"/>
+<!-- Q21 --> <query file="../benchmarks/tpc-h/queries/query_21.sql"/>
+<!-- Q22 --> <query file="../benchmarks/tpc-h/queries/query_22.sql"/>
+
+</test>

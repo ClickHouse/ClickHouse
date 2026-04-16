@@ -1,3 +1,4 @@
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
 #if USE_MYSQL
@@ -74,7 +75,7 @@ namespace ErrorCodes
 
 constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
-static const std::chrono::seconds lock_acquire_timeout{10};
+static const Poco::Timespan lock_acquire_timeout{10ull, 0ull};
 
 DatabaseMySQL::DatabaseMySQL(
     ContextPtr context_,
@@ -206,7 +207,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     auto table_storage_define = database_engine_define->clone();
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-        ast_storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
+        ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
         ASTs storage_children = ast_storage->children;
         auto storage_engine_arguments = ast_storage->engine->arguments;
 
@@ -214,11 +215,11 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
         {
             storage_engine_arguments->children.push_back(
-                makeASTOperator("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_name)));
+                makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_name)));
         }
         else
         {
-            auto mysql_table_name = std::make_shared<ASTLiteral>(table_name);
+            auto mysql_table_name = make_intrusive<ASTLiteral>(table_name);
             storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
         }
 
@@ -234,7 +235,8 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         true,
         static_cast<unsigned>(settings[Setting::max_parser_depth]),
         static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
-        throw_on_error);
+        throw_on_error,
+        getContext());
     return create_table_query;
 }
 
@@ -252,13 +254,13 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 
 ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
 {
-    const auto & create_query = std::make_shared<ASTCreateQuery>();
+    const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -538,6 +540,7 @@ void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_nam
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseMySQL::dropTable");
     detachTablePermanently(local_context, table_name);
 }
 
@@ -660,7 +663,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     };
-    factory.registerDatabase("MySQL", create_fn, {.supports_arguments = true, .supports_settings = true});
+    factory.registerDatabase("MySQL", create_fn, {.supports_arguments = true, .supports_settings = true, .is_external = true});
 }
 }
 

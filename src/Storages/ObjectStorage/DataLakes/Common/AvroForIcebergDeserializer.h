@@ -1,18 +1,27 @@
 #pragma once
 
+#include <Core/ColumnsWithTypeAndName.h>
 #include "config.h"
 
 #if USE_AVRO
 
-#include <IO/ReadBufferFromFileBase.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
+#include <Common/SharedMutex.h>
+
 
 #include <memory>
 
+#include <base/defines.h>
+
 namespace DB::Iceberg
 {
+
+struct ParsedManifestFileEntry;
+using ParsedManifestFileEntryPtr = std::shared_ptr<const ParsedManifestFileEntry>;
 
 /// In Iceberg manifest files and manifest lists are store in Avro format: https://avro.apache.org/
 /// This format is some kind of mix between JSON and binary schemaful format like protobuf.
@@ -28,16 +37,32 @@ class AvroForIcebergDeserializer
 {
 private:
     std::unique_ptr<DB::ReadBufferFromFileBase> buffer;
-    std::string manifest_file_path;
+    Iceberg::IcebergPathFromMetadata manifest_file_path;
     DB::ColumnPtr parsed_column;
     std::shared_ptr<const DB::DataTypeTuple> parsed_column_data_type;
+    mutable std::optional<ColumnsWithTypeAndName> cache_parsed_columns TSA_GUARDED_BY(cache_mutex);
+    mutable std::unordered_map<std::string, std::optional<std::pair<ColumnPtr, DataTypePtr>>>
+        cache_extracted_subcolumns_with_types TSA_GUARDED_BY(cache_mutex);
 
     std::map<std::string, std::vector<uint8_t>> metadata;
-public:
 
+    /// Shared mutex to protect mutable cache members for thread safety
+    mutable SharedMutex cache_mutex;
+
+    std::optional<std::pair<ColumnPtr, DataTypePtr>> & extractSubcolumnWithType(const std::string & path) const;
+
+    /// Helper to format a row as JSON. Assumes cache_parsed_columns is initialized and lock is held.
+    String formatRowAsJSON(const ColumnsWithTypeAndName & parsed_columns, size_t row_number) const TSA_REQUIRES_SHARED(cache_mutex);
+
+    mutable std::vector<ParsedManifestFileEntryPtr> parsed_manifest_file_entries TSA_GUARDED_BY(cache_mutex);
+
+    Int64 getFormatVersionFromManifestFileMetadata() const;
+
+    ParsedManifestFileEntryPtr createParsedManifestFileEntry(size_t row_index) const;
+public:
     AvroForIcebergDeserializer(
         std::unique_ptr<DB::ReadBufferFromFileBase> buffer_,
-        const std::string & manifest_file_path_,
+        const Iceberg::IcebergPathFromMetadata & manifest_file_path_,
         const DB::FormatSettings & format_settings);
 
     size_t rows() const;
@@ -50,6 +75,8 @@ public:
     DB::Field getValueFromRowByName(size_t row_num, const std::string & path, std::optional<DB::TypeIndex> expected_type = std::nullopt) const;
 
     std::optional<std::string> tryGetAvroMetadataValue(std::string metadata_key) const;
+
+    ParsedManifestFileEntryPtr getParsedManifestFileEntry(size_t row_index) const;
 
     String getContent(size_t row_number) const;
     String getMetadataContent() const;

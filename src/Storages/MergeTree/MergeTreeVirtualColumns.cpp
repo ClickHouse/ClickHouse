@@ -15,8 +15,8 @@ namespace ErrorCodes
 static ASTPtr getCompressionCodecDeltaLZ4()
 {
     return makeASTFunction("CODEC",
-        std::make_shared<ASTIdentifier>("Delta"),
-        std::make_shared<ASTIdentifier>("LZ4"));
+        make_intrusive<ASTIdentifier>("Delta"),
+        make_intrusive<ASTIdentifier>("LZ4"));
 }
 
 const String RowExistsColumn::name = "_row_exists";
