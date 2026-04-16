@@ -11,7 +11,7 @@ doc_type: 'reference'
 AI Functions are built-in functions in ClickHouse that you can use to call AI or generate embeddings to work with your data, extract information, classify data, etc...
 
 :::note
-AI functions can return unpredictable inputs. The result will highly depend on the quality of the prompt and the model used.
+AI functions can return unpredictable outputs. The result will highly depend on the quality of the prompt and the model used.
 :::
 
 All functions are sharing a common infrastructure that provides:
@@ -36,7 +36,7 @@ CREATE NAMED COLLECTION ai_credentials AS
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. |
+| `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. See note below. |
 | `endpoint` | String | — | API endpoint URL. |
 | `model` | String | — | Model name (e.g. `'gpt-4o-mini'`, `'text-embedding-3-small'`). |
 | `api_key` | String | — | Authentication key for the provider. |
@@ -57,7 +57,6 @@ All AI-related settings are listed in [Settings](/operations/settings/settings) 
 |----------|-----------------|----------------|-------|
 | OpenAI | `'openai'` | Yes | Default provider. |
 | Anthropic | `'anthropic'` | Yes | Uses `/v1/messages` endpoint. |
-| HuggingFace TEI | `'huggingface'` or `'tei'` | Yes | Uses OpenAI-compatible API format. Useful for self-hosted models. |
 
 
 ## Observability {#observability}
