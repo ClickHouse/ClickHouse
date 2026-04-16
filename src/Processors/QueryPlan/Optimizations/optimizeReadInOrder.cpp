@@ -1,8 +1,4 @@
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
@@ -10,8 +6,6 @@
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -23,7 +17,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -80,7 +73,8 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         for (const auto & table : tables)
         {
             auto storage = std::get<StoragePtr>(table);
-            const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+            const auto storage_metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
+            const auto & sorting_key = storage_metadata->getSortingKey();
             if (sorting_key.column_names.empty())
                 return nullptr;
         }
@@ -969,7 +963,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        auto metadata = storage->getInMemoryMetadataPtr();
+        auto metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
         const auto & sorting_key = metadata->getSortingKey();
         // const auto & pk_column_names = metadata->getPrimaryKey().column_names;
 
@@ -1037,7 +1031,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+        const auto storage_metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
+        const auto & sorting_key = storage_metadata->getSortingKey();
         const auto & sorting_key_columns = sorting_key.column_names;
 
         if (sorting_key_columns.empty())
