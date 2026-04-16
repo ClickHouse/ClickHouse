@@ -557,7 +557,7 @@ void MergeTreeData::reconcileColumnIdMappingWithMetadata()
         return;
 
     auto mapping = getColumnIdMapping();
-    auto metadata_columns = getInMemoryMetadataPtr()->getColumns().getAllPhysical();
+    auto metadata_columns = getInMemoryMetadataPtr(nullptr, false)->getColumns().getAllPhysical();
 
     ColumnIdMapping reconciled = *mapping;
     bool changed = false;
