@@ -162,6 +162,10 @@ public:
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
     void replaceNodeWithPlan(Node * node, QueryPlan plan);
 
+    /// Insert a pass-through step between parent and one of its children.
+    /// The new step becomes parent->children[child_index], and the previous child becomes the new step's child.
+    void insertStep(Node * parent, size_t child_index, QueryPlanStepPtr step);
+
     QueryPlan extractSubplan(Node * subplan_root);
     void cloneInplace(Node * node_to_replace, Node * subplan_root);
     QueryPlan clone() const;

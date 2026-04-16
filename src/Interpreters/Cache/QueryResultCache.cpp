@@ -9,6 +9,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/IAST.h>
@@ -268,9 +270,42 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
-IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings)
+/// Strips ORDER BY, LIMIT and OFFSET clauses from ASTSelectQuery nodes so that queries differing only in these clauses
+/// produce the same cache key.
+void removeOrderByAndLimit(ASTPtr & ast)
+{
+    if (auto * select = ast->as<ASTSelectQuery>())
+    {
+        select->setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, nullptr);
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, nullptr);
+    }
+    else if (auto * union_query = ast->as<ASTSelectWithUnionQuery>())
+    {
+        if (union_query->list_of_selects)
+        {
+            for (auto & child : union_query->list_of_selects->children)
+                removeOrderByAndLimit(child);
+        }
+    }
+}
+
+bool isSettingIgnoredForBeforeLimitCache(const String & setting_name)
+{
+    return setting_name == "limit" || setting_name == "offset";
+}
+
+IASTHash calculateASTHash(
+    ASTPtr ast,
+    const String & current_database,
+    const Settings & settings,
+    bool strip_order_by_and_limit = false,
+    const Block * pre_sort_header = nullptr)
 {
     ast = removeQueryResultCacheSettings(ast);
+
+    if (strip_order_by_and_limit)
+        removeOrderByAndLimit(ast);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -289,13 +324,25 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
     {
         const String & name = change.name;
         if (!isSettingIgnoredInQueryResultCache(name)) /// see removeQueryResultCacheSettings() why this is a good idea
-            changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
+            if (!(strip_order_by_and_limit && isSettingIgnoredForBeforeLimitCache(name)))
+                changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & setting : changed_settings_sorted)
     {
         hash.update(setting.first);
         hash.update(setting.second);
+    }
+
+    /// When caching before LIMIT/ORDER BY, also hash the pre-sort header to ensure queries needing different column sets
+    /// (due to different ORDER BY columns) get separate cache entries.
+    if (strip_order_by_and_limit && pre_sort_header)
+    {
+        for (const auto & col : *pre_sort_header)
+        {
+            hash.update(col.name);
+            hash.update(col.type->getName());
+        }
     }
 
     return getSipHash128AsPair(hash);
@@ -319,8 +366,10 @@ QueryResultCache::Key::Key(
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
-    bool is_compressed_)
-    : ast_hash(calculateASTHash(ast_, current_database, settings))
+    bool is_compressed_,
+    bool strip_order_by_and_limit_,
+    const Block * pre_sort_header_)
+    : ast_hash(calculateASTHash(ast_, current_database, settings, strip_order_by_and_limit_, pre_sort_header_))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -340,7 +389,9 @@ QueryResultCache::Key::Key(
     const Settings & settings,
     const String & query_id_,
     std::optional<UUID> user_id_,
-    const std::vector<UUID> & current_user_roles_)
+    const std::vector<UUID> & current_user_roles_,
+    bool strip_order_by_and_limit_,
+    const Block * pre_sort_header_)
     : QueryResultCache::Key(
             ast_,
             current_database,
@@ -352,7 +403,9 @@ QueryResultCache::Key::Key(
             false,
             std::chrono::system_clock::from_time_t(1),
             std::chrono::system_clock::from_time_t(1),
-            false)
+            false,
+            strip_order_by_and_limit_,
+            pre_sort_header_)
     /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }

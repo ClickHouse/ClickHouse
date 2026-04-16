@@ -5377,6 +5377,16 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, query_cache_before_limit_and_order_by, false, R"(
+If enabled, query results are cached in the [query cache](../query-cache.md) before applying ORDER BY and LIMIT.
+This allows reusing cached results for queries that are identical except for their ORDER BY and LIMIT clauses.
+Mutually exclusive with regular query result caching: when enabled, the normal (post-LIMIT) cache path is disabled.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(String, query_cache_tag, "", R"(
 A string which acts as a label for [query cache](../query-cache.md) entries.
 The same queries with different tags are considered different by the query cache.

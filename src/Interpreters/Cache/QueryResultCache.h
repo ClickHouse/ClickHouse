@@ -96,6 +96,9 @@ public:
         const String tag;
 
         /// Ctor to construct a Key for writing into query result cache.
+        /// When strip_order_by_and_limit is true, ORDER BY/LIMIT clauses are excluded from the hash so that
+        /// queries differing only in sorting/limiting share a cache entry.
+        /// pre_sort_header is hashed alongside the AST to distinguish queries needing different column sets.
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
@@ -105,14 +108,18 @@ public:
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
-            bool is_compressed);
+            bool is_compressed,
+            bool strip_order_by_and_limit = false,
+            const Block * pre_sort_header = nullptr);
 
         /// Ctor to construct a Key for reading from query result cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
             const String & query_id_,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            bool strip_order_by_and_limit = false,
+            const Block * pre_sort_header = nullptr);
 
         bool operator==(const Key & other) const;
     };

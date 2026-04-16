@@ -79,8 +79,14 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WriteToQueryResultCacheStep.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Common/QueryFuzzer.h>
@@ -159,6 +165,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
+    extern const SettingsBool query_cache_before_limit_and_order_by;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
@@ -1692,7 +1699,8 @@ static BlockIO executeQueryImpl(
             /// then set a pipeline with a source populated by the query result cache.
             auto get_result_from_query_result_cache = [&]()
             {
-                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
+                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache]
+                    && !settings[Setting::query_cache_before_limit_and_order_by])
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
@@ -1812,11 +1820,161 @@ static BlockIO executeQueryImpl(
                         span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                     }
 
+                    /// If query_cache_before_limit_and_order_by is enabled, insert cache read/write into the QueryPlan
+                    /// before SortingStep/LimitStep, rather than at the pipeline output. This is done before
+                    /// interpreter->execute() which converts the plan into a pipeline.
+                    if (can_use_query_result_cache && settings[Setting::query_cache_before_limit_and_order_by])
+                    {
+                        auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get());
+                        if (interpreter_with_analyzer)
+                        {
+                            auto & plan = interpreter_with_analyzer->getQueryPlan();
+
+                            /// Walk the plan tree (DFS) to find:
+                            /// 1. SortingStep (Type::Full) — preferred target
+                            /// 2. LimitStep — fallback if no SortingStep found
+                            /// SortingStep is searched first across the entire tree because
+                            /// a preliminary LimitStep may appear above SortingStep in the plan.
+                            std::function<QueryPlan::Node *(QueryPlan::Node *)> find_sorting_node =
+                                [&](QueryPlan::Node * node) -> QueryPlan::Node *
+                            {
+                                if (!node)
+                                    return nullptr;
+                                if (auto * sorting = dynamic_cast<SortingStep *>(node->step.get()))
+                                    if (sorting->getType() == SortingStep::Type::Full)
+                                        return node;
+                                for (auto * child : node->children)
+                                    if (auto * result = find_sorting_node(child))
+                                        return result;
+                                return nullptr;
+                            };
+
+                            std::function<QueryPlan::Node *(QueryPlan::Node *)> find_limit_node =
+                                [&](QueryPlan::Node * node) -> QueryPlan::Node *
+                            {
+                                if (!node)
+                                    return nullptr;
+                                if (dynamic_cast<LimitStep *>(node->step.get()))
+                                    return node;
+                                for (auto * child : node->children)
+                                    if (auto * result = find_limit_node(child))
+                                        return result;
+                                return nullptr;
+                            };
+
+                            auto * target_node = find_sorting_node(plan.getRootNode());
+                            if (!target_node)
+                                target_node = find_limit_node(plan.getRootNode());
+
+                            if (target_node && !target_node->children.empty())
+                            {
+                                auto * child_node = target_node->children[0];
+                                const auto & pre_sort_header = child_node->step->getOutputHeader();
+                                Block pre_sort_header_block = *pre_sort_header;
+
+                                /// Check cache for a matching entry
+                                bool cache_hit = false;
+                                if (settings[Setting::enable_reads_from_query_cache])
+                                {
+                                    QueryResultCache::Key read_key(
+                                        out_ast, context->getCurrentDatabase(), *settings_copy,
+                                        context->getCurrentQueryId(),
+                                        context->getUserID(), context->getCurrentRoles(),
+                                        /*strip_order_by_and_limit=*/true, &pre_sort_header_block);
+
+                                    QueryResultCacheReader reader = query_result_cache->createReader(read_key);
+                                    if (reader.hasCacheEntryForKey())
+                                    {
+                                        result_details.query_cache_entry_created_at = reader.entryCreatedAt();
+                                        result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
+
+                                        /// Replace the sub-plan below the target step with a source that reads from cache
+                                        auto source = reader.getSource();
+                                        Pipe pipe(std::move(source));
+                                        QueryPlan source_plan;
+                                        source_plan.addStep(std::make_unique<ReadFromPreparedSource>(std::move(pipe)));
+                                        plan.replaceNodeWithPlan(child_node, std::move(source_plan));
+
+                                        query_result_cache_usage = QueryResultCacheUsage::Read;
+                                        cache_hit = true;
+                                    }
+                                }
+
+                                /// On cache miss, insert a write step to populate the cache
+                                if (!cache_hit && settings[Setting::enable_writes_to_query_cache])
+                                {
+                                    const bool ast_has_nondeterministic = astContainsNonDeterministicFunctions(out_ast, context);
+                                    const bool ast_has_system_tables = astContainsSystemTables(out_ast, context);
+
+                                    const auto ndf_handling = settings[Setting::query_cache_nondeterministic_function_handling];
+                                    const auto st_handling = settings[Setting::query_cache_system_table_handling];
+
+                                    if (ast_has_nondeterministic && ndf_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
+                                        throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
+                                            "The query result was not cached because the query contains a non-deterministic function."
+                                            " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'`"
+                                            " to cache the query result regardless or to omit caching");
+
+                                    if (ast_has_system_tables && st_handling == QueryResultCacheSystemTableHandling::Throw)
+                                        throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
+                                            "The query result was not cached because the query contains a system table."
+                                            " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'`"
+                                            " to cache the query result regardless or to omit caching");
+
+                                    if ((!ast_has_nondeterministic || ndf_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
+                                        && (!ast_has_system_tables || st_handling == QueryResultCacheSystemTableHandling::Save))
+                                    {
+                                        auto created_at = std::chrono::system_clock::now();
+                                        auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+
+                                        auto pre_sort_shared_header = std::make_shared<const Block>(pre_sort_header_block);
+                                        QueryResultCache::Key write_key(
+                                            out_ast, context->getCurrentDatabase(), *settings_copy, pre_sort_shared_header,
+                                            context->getCurrentQueryId(),
+                                            context->getUserID(), context->getCurrentRoles(),
+                                            settings[Setting::query_cache_share_between_users],
+                                            created_at, expires_at,
+                                            settings[Setting::query_cache_compress_entries],
+                                            /*strip_order_by_and_limit=*/true, &pre_sort_header_block);
+
+                                        const size_t num_query_runs = settings[Setting::query_cache_min_query_runs]
+                                            ? query_result_cache->recordQueryRun(write_key) : 1;
+
+                                        if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
+                                        {
+                                            LOG_TRACE(getLogger("QueryResultCache"),
+                                                "Skipped insert (before limit) because the query ran {} times but the minimum required number is {}",
+                                                num_query_runs, settings[Setting::query_cache_min_query_runs].value);
+                                        }
+                                        else
+                                        {
+                                            auto writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                                                write_key,
+                                                std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                                settings[Setting::query_cache_squash_partial_results],
+                                                settings[Setting::max_block_size],
+                                                settings[Setting::query_cache_max_size_in_bytes],
+                                                settings[Setting::query_cache_max_entries]));
+
+                                            auto write_step = std::make_unique<WriteToQueryResultCacheStep>(pre_sort_shared_header, writer);
+                                            plan.insertStep(target_node, 0, std::move(write_step));
+                                            query_result_cache_usage = QueryResultCacheUsage::Write;
+                                        }
+
+                                        if (settings[Setting::enable_reads_from_query_cache])
+                                            result_details.query_cache_entry_expires_at = expires_at;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     res = interpreter->execute();
 
                     /// If it is a non-internal SELECT query, and active (write) use of the query result cache is enabled, then add a
                     /// processor on top of the pipeline which stores the result in the query result cache.
-                    if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache])
+                    if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache]
+                        && !settings[Setting::query_cache_before_limit_and_order_by])
                     {
                         /// Only use the query result cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
 
