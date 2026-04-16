@@ -96,7 +96,7 @@ TEST(AccessRights, GrantWildcard)
     root.grantWildcard(AccessType::INSERT, "default", "t");
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t"), true);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "default", "t"), true);
-    ASSERT_EQ(root.toString(), "GRANT INSERT ON default.t*, GRANT SELECT ON default.t");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON default.t, GRANT INSERT ON default.t*");
 
     root.revoke(AccessType::INSERT, "default", "t");
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t"), true);

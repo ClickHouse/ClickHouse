@@ -125,6 +125,23 @@ def assert_distr_rowcount_all_nodes(nodes, workload_distr, expected: str):
         )
 
 
+def assert_workload_tables_on_nodes(nodes, workload_local, workload_distr):
+    """
+    After `CREATE TABLE ... ON CLUSTER`, each host that participates in the SQL catalog cluster for this DDL
+    should see exactly two tables in `default` (`workload_local` + `workload_distr`). Catches replication / DDL lag
+    before inserts and `SELECT count()` assertions.
+    """
+    for node in nodes:
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.tables WHERE database = 'default' "
+            f"AND name IN ('{workload_local}', '{workload_distr}') FORMAT TabSeparated",
+            "2\n",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+
+
 @pytest.mark.parametrize(
     "catalog_storage",
     [pytest.param(b, id=b) for b in CATALOG_STORAGE_BACKENDS],
@@ -226,6 +243,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         recreate_workload_tables(
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
+        assert_workload_tables_on_nodes(nodes_ha_two, names["workload_local"], names["workload_distr"])
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number FROM numbers(17)")
         assert_distr_rowcount_all_nodes(nodes_ha_two, names["workload_distr"], "17\n")
         assert TSV(
@@ -250,10 +268,30 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             f"FORMAT TabSeparated"
         ).strip()
         assert names["rep_extra"] in rep_row
+        # `ON CLUSTER` is dispatched to every host in `integration_ddl_all` (ch1–ch3). On each node,
+        # `DDLTask::tryFindHostInCluster` needs an exact `host_name` + port match for the local host in
+        # `tryGetCluster({cluster})` (see `DDLTask.cpp`). Wait until the SQL catalog is replicated everywhere;
+        # row count alone can race ahead of the host row `ch3` needs for matching.
+        for node in (ch1, ch2, ch3):
+            assert_eq_with_retry(
+                node,
+                f"SELECT count() FROM system.clusters WHERE cluster = '{names['cluster']}' FORMAT TabSeparated",
+                "3\n",
+                retry_count=60,
+                sleep_time=0.5,
+            )
+        assert_eq_with_retry(
+            ch3,
+            f"SELECT count() FROM system.clusters WHERE cluster = '{names['cluster']}' AND host_name = '{h3}' FORMAT TabSeparated",
+            "1\n",
+            retry_count=60,
+            sleep_time=0.5,
+        )
 
         recreate_workload_tables(
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
+        assert_workload_tables_on_nodes(nodes_all, names["workload_local"], names["workload_distr"])
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 1000 FROM numbers(23)")
         assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "23\n")
 
@@ -273,6 +311,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         recreate_workload_tables(
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
+        assert_workload_tables_on_nodes(nodes_ha_two, names["workload_local"], names["workload_distr"])
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 2000 FROM numbers(23)")
         assert_distr_rowcount_all_nodes(nodes_ha_two, names["workload_distr"], "23\n")
         assert_eq_with_retry(
@@ -303,6 +342,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         recreate_workload_tables(
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
+        assert_workload_tables_on_nodes(nodes_all, names["workload_local"], names["workload_distr"])
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 100 FROM numbers(40)")
         assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "40\n")
         single_shard_rows_before_drop = ch1.query(
@@ -335,6 +375,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         recreate_workload_tables(
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
+        assert_workload_tables_on_nodes(nodes_ha_two, names["workload_local"], names["workload_distr"])
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 200 FROM numbers(9)")
         assert_distr_rowcount_all_nodes(nodes_ha_two, names["workload_distr"], "9\n")
 
@@ -386,6 +427,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             names["workload_distr"],
             sharding_key="x",
         )
+        assert_workload_tables_on_nodes(nodes_all, names["workload_local"], names["workload_distr"])
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number FROM numbers(200)")
         assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "200\n")
         # With two shards of equal weight, 200 sequential keys should split evenly: 100 rows per shard.
@@ -421,6 +463,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         recreate_workload_tables(
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
+        assert_workload_tables_on_nodes(nodes_all, names["workload_local"], names["workload_distr"])
         broadcast_catalog_ddl(
             ch1,
             broadcast,
@@ -455,6 +498,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         recreate_workload_tables(
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
+        assert_workload_tables_on_nodes(nodes_ha_two, names["workload_local"], names["workload_distr"])
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 4000 FROM numbers(10)")
         # Cluster is still `shard_ha` only here; `ADD SHARD` is below. Same as the first `17` row check.
         assert_distr_rowcount_all_nodes(nodes_ha_two, names["workload_distr"], "10\n")
@@ -479,6 +523,8 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         recreate_workload_tables(
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
+        # Only `shard_extra` (ch3) is in the cluster; `ON CLUSTER` creates tables on ch3 only.
+        assert_workload_tables_on_nodes((ch3,), names["workload_local"], names["workload_distr"])
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 5000 FROM numbers(20)")
         assert_eq_with_retry(
             ch3,
