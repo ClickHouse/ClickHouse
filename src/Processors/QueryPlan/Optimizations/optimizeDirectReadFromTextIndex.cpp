@@ -361,20 +361,30 @@ private:
         const TextIndexReadInfo * info = nullptr;
     };
 
-    static bool needApplyTokenizer(const String & function_name)
+    struct TextIndexFunctionTransforms
     {
-        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        bool apply_tokenizer     = false;
+        bool apply_preprocessor  = false;
+        bool apply_postprocessor = false;
+    };
+
+    static TextIndexFunctionTransforms getRequiredTransforms(const String & function_name)
+    {
+        static const std::unordered_map<std::string_view, TextIndexFunctionTransforms> table =
+        {
+            {"hasToken",     {false, true,  true}},
+            {"hasAllTokens", {true,  true,  true}},
+            {"hasAnyTokens", {true,  true,  true}},
+            {"hasPhrase",    {true,  true,  false}},
+            {"has",          {false, false, true}},
+        };
+        auto it = table.find(function_name);
+        return it != table.end() ? it->second : TextIndexFunctionTransforms{};
     }
 
-    static bool needApplyPreprocessor(const String & function_name)
-    {
-        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
-    }
-
-    static bool needApplyPostprocessor(const String & function_name)
-    {
-        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "has";
-    }
+    static bool needApplyTokenizer(const String & fn)     { return getRequiredTransforms(fn).apply_tokenizer; }
+    static bool needApplyPreprocessor(const String & fn)  { return getRequiredTransforms(fn).apply_preprocessor; }
+    static bool needApplyPostprocessor(const String & fn) { return getRequiredTransforms(fn).apply_postprocessor; }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node)
     {
