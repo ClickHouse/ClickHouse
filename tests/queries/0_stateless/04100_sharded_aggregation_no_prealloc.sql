@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS test_no_prealloc_cube;
 CREATE TABLE test_no_prealloc_cube (a String, b UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_no_prealloc_cube SELECT toString(number % 100), number FROM numbers(1000);
 SELECT 'CUBE with materialize(NULL)';
-SELECT a, count() FROM test_no_prealloc_cube GROUP BY a, materialize(NULL) WITH CUBE ORDER BY a LIMIT 5;
+SELECT a, count() FROM test_no_prealloc_cube GROUP BY a, materialize(NULL) WITH CUBE ORDER BY a LIMIT 5 SETTINGS enable_analyzer = 1;
 DROP TABLE test_no_prealloc_cube;
 
 DROP TABLE IF EXISTS test_arr;
