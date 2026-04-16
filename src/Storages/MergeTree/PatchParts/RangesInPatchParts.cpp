@@ -10,6 +10,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
 namespace ProfileEvents
@@ -71,8 +72,43 @@ MarkRanges getRangesInPatchPartMerge(const DataPartPtr & original_part, const Pa
     if (patch_index->size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index of patch part must have 2 columns, got {}", patch_index->size());
 
-    const auto & patch_name_column = assert_cast<const ColumnLowCardinality &>(*patch_index->at(0));
-    const auto & patch_offset_data = assert_cast<const ColumnUInt64 &>(*patch_index->at(1)).getData();
+    /// Fall-back helper used when the patch's primary index can't be reliably consulted: emit every
+    /// mark range so the caller at least reads the whole patch and applies it correctly, instead of
+    /// either crashing or silently skipping the patch (which would miss updates).
+    auto emit_all_patch_ranges = [&]() -> MarkRanges
+    {
+        const auto & patch_granularity = patch.part->getIndexGranularity();
+        if (patch_granularity.getMarksCount() == 0)
+            return {};
+        MarkRanges all;
+        all.emplace_back(0, patch_granularity.getMarksCount());
+        return all;
+    };
+
+    /// Defensive: loadIndex on tables with `ORDER BY tuple()` can fail to populate the sparse primary
+    /// index and leave its ColumnPtrs null. Emit all ranges rather than segfaulting inside
+    /// `getPartNameOffsetRange` (which would then miss applying the patch entirely).
+    if (!patch_index->at(0) || !patch_index->at(1))
+        return emit_all_patch_ranges();
+
+    const auto * patch_name_column_ptr = typeid_cast<const ColumnLowCardinality *>(patch_index->at(0).get());
+    const auto * patch_offset_column_ptr = typeid_cast<const ColumnUInt64 *>(patch_index->at(1).get());
+    if (!patch_name_column_ptr || !patch_offset_column_ptr)
+    {
+        /// Primary-index deserialization for patch parts whose base table has `ORDER BY tuple()`
+        /// has been observed to produce column types that don't match the declared sort key schema
+        /// (usually UInt64/UInt64 instead of LowCardinality(String)/UInt64). Suppress the crash
+        /// and fall back to reading the whole patch so correctness is preserved.
+        LOG_DEBUG(getLogger("getRangesInPatchPartMerge"),
+            "Patch {} primary index has unexpected types: col0={}, col1={} — falling back to all ranges",
+            patch.part->getPartName(),
+            patch_index->at(0) ? patch_index->at(0)->getName() : "(null)",
+            patch_index->at(1) ? patch_index->at(1)->getName() : "(null)");
+        return emit_all_patch_ranges();
+    }
+
+    const auto & patch_name_column = *patch_name_column_ptr;
+    const auto & patch_offset_data = patch_offset_column_ptr->getData();
 
     for (const auto & range : original_ranges)
     {
@@ -132,6 +168,22 @@ MarkRanges getRangesInPatchPartJoin(const PatchPartInfoForReader & patch)
     return optimizeRanges(patch_part_ranges);
 }
 
+/// v2 patches. For now we return every mark range of the patch — the streaming merge loop will
+/// then prune via the primary-index-based `min/max sort-key` comparisons in `needOldPatch` and
+/// `needNewPatch`. A targeted primary-index intersection that shrinks `ranges` up-front is a
+/// follow-up optimisation (tracked in the plan as a Phase-1 perf task).
+MarkRanges getRangesInPatchPartMergeOnKey(const PatchPartInfoForReader & patch)
+{
+    chassert(patch.mode == PatchMode::MergeOnKey);
+    const auto & index_granularity = patch.part->getIndexGranularity();
+    if (index_granularity.getMarksCount() == 0)
+        return {};
+
+    MarkRanges ranges;
+    ranges.emplace_back(0, index_granularity.getMarksCount());
+    return ranges;
+}
+
 MarkRanges getRangesInPatchPart(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & ranges)
 {
     switch (patch.mode)
@@ -140,6 +192,8 @@ MarkRanges getRangesInPatchPart(const DataPartPtr & original_part, const PatchPa
             return getRangesInPatchPartMerge(original_part, patch, ranges);
         case PatchMode::Join:
             return getRangesInPatchPartJoin(patch);
+        case PatchMode::MergeOnKey:
+            return getRangesInPatchPartMergeOnKey(patch);
     }
 }
 

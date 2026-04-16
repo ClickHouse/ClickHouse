@@ -193,6 +193,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsBool enable_v2_lightweight_update_patches;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
@@ -8430,12 +8431,41 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     }
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
-    auto patch_metadata = DB::getPatchPartMetadata(pipeline.getHeader(), context_copy);
+
+    /// See the matching block in StorageMergeTree::updateLightweight: for v2 we persist the
+    /// sort-key expression list (as SQL) plus DESC flags in the patch's SourcePartsSetForPatch.
+    const bool v2_patches_enabled = isV2LightweightUpdateUsable(context_copy);
+    StorageMetadataPtr patch_metadata;
+    String v2_sort_key_expr_list_sql;
+    std::vector<UInt8> v2_sort_key_reverse_flags;
+
+    if (v2_patches_enabled)
+    {
+        auto main_metadata = getInMemoryMetadataPtr(context_copy, false);
+        const auto & sk = main_metadata->getSortingKey();
+        if (sk.expression_list_ast)
+            v2_sort_key_expr_list_sql = sk.expression_list_ast->formatWithSecretsOneLine();
+
+        size_t n = sk.expression_list_ast ? sk.expression_list_ast->children.size() : 0;
+        auto reverse = main_metadata->getSortingKeyReverseFlags();
+        /// See matching block in StorageMergeTree for why we pad when reverse-flags is empty.
+        v2_sort_key_reverse_flags.assign(n, 0);
+        for (size_t i = 0; i < reverse.size() && i < n; ++i)
+            v2_sort_key_reverse_flags[i] = reverse[i] ? 1 : 0;
+
+        patch_metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), v2_sort_key_expr_list_sql, v2_sort_key_reverse_flags, context_copy);
+    }
+    else
+    {
+        patch_metadata = DB::getPatchPartMetadata(pipeline.getHeader(), context_copy);
+    }
 
     auto sink = std::make_shared<ReplicatedMergeTreeSinkPatch>(
         *this,
         std::move(patch_metadata),
         std::move(update_holder),
+        std::move(v2_sort_key_expr_list_sql),
+        std::move(v2_sort_key_reverse_flags),
         context_copy);
 
     chassert(!pipeline.completed());

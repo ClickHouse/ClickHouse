@@ -288,6 +288,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
+    extern const MergeTreeSettingsBool enable_v2_lightweight_update_patches;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool enable_block_number_column;
@@ -9949,7 +9950,48 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
         auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context);
+        auto original_patch_part = patch.part;
         auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(std::move(patch.part), std::move(patch_conversions));
+
+        Names source_column_names;
+        Names result_column_names;
+        std::vector<UInt8> reverse_flags = std::move(patch.sort_key_reverse_flags);
+        ExpressionActionsPtr sort_key_expression;
+
+        if (patch.mode == PatchMode::MergeOnKey)
+        {
+            /// Rebuild the patch's KeyDescription from its own persisted sort-key AST. We build
+            /// the metadata snapshot inline (rather than going through `getPatchPartMetadata`)
+            /// because this static helper has no `this` pointer, and the metadata-cache this
+            /// function feeds into is reached later via `patch_for_reader`'s storage anyway —
+            /// there's no correctness gain from warming the cache early.
+            const auto & source_parts_set = original_patch_part->getSourcePartsSet();
+            auto patch_metadata_snapshot = DB::getPatchPartMetadataV2(
+                original_patch_part->getColumnsDescription(),
+                source_parts_set.getSortKeyExprListSQL(),
+                source_parts_set.getSortKeyReverseFlags(),
+                query_context);
+            const auto & sk = patch_metadata_snapshot->getSortingKey();
+
+            constexpr size_t n_appended = 2;
+            size_t n_full = sk.column_names.size();
+            size_t n_semantic = n_full > n_appended ? n_full - n_appended : 0;
+
+            result_column_names.assign(sk.column_names.begin(), sk.column_names.begin() + n_semantic);
+
+            /// Source columns: inputs to the sort-key expression, minus the two identity
+            /// columns (they're already plumbed through as system virtuals).
+            NameSet seen;
+            for (const auto & input : sk.expression->getRequiredColumns())
+            {
+                if (input == BlockNumberColumn::name || input == BlockOffsetColumn::name)
+                    continue;
+                if (seen.insert(input).second)
+                    source_column_names.push_back(input);
+            }
+
+            sort_key_expression = sk.expression;
+        }
 
         patches_for_reader.push_back(PatchPartInfoForReader
         {
@@ -9957,19 +9999,51 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
             .part = std::move(patch_for_reader),
             .source_parts = std::move(patch.source_parts),
             .source_data_version = patch.source_data_version,
+            .perform_alter_conversions = patch.perform_alter_conversions,
+            .sort_key_source_column_names = std::move(source_column_names),
+            .sort_key_result_column_names = std::move(result_column_names),
+            .sort_key_reverse_flags = std::move(reverse_flags),
+            .sort_key_expression = std::move(sort_key_expression),
         });
     }
 
     return std::make_shared<AlterConversions>(commands, patches_for_reader, query_context);
 }
 
-StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const ColumnsDescription & patch_part_desc, const String & patch_partition_id, ContextPtr local_context) const
+bool MergeTreeData::isV2LightweightUpdateUsable(const ContextPtr & /*query_context*/) const
+{
+    if (!(*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches])
+        return false;
+
+    /// v2 now supports *all* sort keys — including expression sort keys — because the patch part
+    /// persists the physical **source columns** of the sort-key expression and the sort-key
+    /// `ExpressionActions` is replayed at apply time to materialize the result columns (the same
+    /// mechanism FINAL uses for base parts). See `getPatchPartMetadataV2` for details.
+    return true;
+}
+
+StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const
 {
     std::lock_guard lock(patch_parts_metadata_mutex);
 
+    const auto & patch_partition_id = patch_part.info.getPartitionId();
     auto & metadata_snapshot = patch_parts_metadata_cache[patch_partition_id];
-    if (!metadata_snapshot)
-        metadata_snapshot = DB::getPatchPartMetadata(patch_part_desc, local_context);
+    if (metadata_snapshot)
+        return metadata_snapshot;
+
+    const auto & source_parts_set = patch_part.getSourcePartsSet();
+    if (source_parts_set.getFormatVersion() == SourcePartsSetForPatch::V2_FORMAT_VERSION)
+    {
+        metadata_snapshot = DB::getPatchPartMetadataV2(
+            patch_part.getColumnsDescription(),
+            source_parts_set.getSortKeyExprListSQL(),
+            source_parts_set.getSortKeyReverseFlags(),
+            local_context);
+    }
+    else
+    {
+        metadata_snapshot = DB::getPatchPartMetadata(patch_part.getColumnsDescription(), local_context);
+    }
 
     return metadata_snapshot;
 }
@@ -10025,6 +10099,42 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
             .column_name = name,
             .data_type = type,
         });
+    }
+
+    /// For v2 patches, additionally read the **physical source columns** of the target table's
+    /// sort-key expression through the mutation pipeline, so they land in every patch row.
+    /// The sort-key expression itself (e.g. `cityHash64(id)`) is not materialized here — it is
+    /// replayed at patch-apply time from the same physical columns on both the main-side block
+    /// and the patch-side block, mirroring what FINAL does for base parts (see
+    /// `ReadFromMergeTree.cpp:1431`). UPDATE of any sort-key-source column is already rejected
+    /// by `MutationsInterpreter::validateUpdateColumns`, so there's no conflict with `commands`.
+    /// Deduplicate against `system_columns` since `_block_number`/`_block_offset` could
+    /// technically be inputs to the sort-key expression for tables that reference them.
+    if (isV2LightweightUpdateUsable(query_context))
+    {
+        auto main_metadata = getInMemoryMetadataPtr(query_context, false);
+        const auto & main_columns = main_metadata->getColumns();
+
+        NameSet already_read;
+        for (const auto & [name, _] : system_columns)
+            already_read.insert(name);
+
+        Names source_columns;
+        if (main_metadata->hasSortingKey())
+            source_columns = main_metadata->getSortingKey().expression->getRequiredColumns();
+
+        for (const auto & name : source_columns)
+        {
+            if (!already_read.insert(name).second)
+                continue;
+
+            commands_to_run.push_back(MutationCommand
+            {
+                .type = MutationCommand::READ_COLUMN,
+                .column_name = name,
+                .data_type = main_columns.getPhysical(name).type,
+            });
+        }
     }
 
     commands_to_run.insert(commands_to_run.end(), commands.begin(), commands.end());

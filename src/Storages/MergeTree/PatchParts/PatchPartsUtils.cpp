@@ -10,10 +10,22 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <base/range.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+}
 
 namespace ErrorCodes
 {
@@ -42,6 +54,7 @@ static String getColumnsHash(Names column_names)
 static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
 {
     /// Apply for these columns the same codecs as for the virtual columns in the original parts.
+    /// `_part_offset` only exists in v1 patches; v2 patches drop it, so the modify is guarded.
     columns_desc.modify(BlockNumberColumn::name, [&](auto & column_desc)
     {
         column_desc.codec = BlockNumberColumn::codec;
@@ -52,10 +65,13 @@ static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
         column_desc.codec = BlockOffsetColumn::codec;
     });
 
-    columns_desc.modify("_part_offset", [&](auto & column_desc)
+    if (columns_desc.has("_part_offset"))
     {
-        column_desc.codec = BlockOffsetColumn::codec;
-    });
+        columns_desc.modify("_part_offset", [&](auto & column_desc)
+        {
+            column_desc.codec = BlockOffsetColumn::codec;
+        });
+    }
 }
 
 StorageMetadataPtr getPatchPartMetadata(Block sample_block, ContextPtr local_context)
@@ -104,6 +120,138 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
     part_metadata.setColumns(std::move(patch_part_desc));
 
     return std::make_shared<StorageInMemoryMetadata>(std::move(part_metadata));
+}
+
+/// Unique marker mixed into the v2 partition-id hash. Guarantees that v2 patches never share a
+/// partition with v1 patches (whose hash input is just the column names) even when the rest of
+/// the schema coincides. Changing the marker is equivalent to an on-disk format break.
+static constexpr auto PATCH_FORMAT_V2_HASH_MARKER = "__patch_format_v2__";
+
+/// Parse `sort_key_expr_list_sql` (stored in the patch's `SourcePartsSetForPatch`) back into an
+/// `ASTExpressionList`. Returns an empty expression list for the degenerate `ORDER BY tuple()`
+/// case. Throws on malformed SQL — which should never happen because the SQL is produced by
+/// `IAST::formatWithSecretsOneLine` from a KeyDescription this same server just built.
+ASTPtr parseSortKeyExprList(const String & sort_key_expr_list_sql, const ContextPtr & local_context)
+{
+    auto expr_list = make_intrusive<ASTExpressionList>();
+    if (sort_key_expr_list_sql.empty())
+        return expr_list;
+
+    const auto & settings = local_context->getSettingsRef();
+    ParserExpressionList parser(/*allow_alias_without_as_keyword=*/ false);
+    const char * begin = sort_key_expr_list_sql.data();
+    const char * end = begin + sort_key_expr_list_sql.size();
+
+    auto parsed = parseQuery(
+        parser, begin, end, "patch part sort key expression list",
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
+
+    /// The parser always produces an ASTExpressionList at the top level; if for some reason it
+    /// doesn't, fall back to wrapping the node so downstream children iteration still works.
+    if (parsed && parsed->as<ASTExpressionList>())
+        return parsed;
+    if (parsed)
+        expr_list->children.push_back(std::move(parsed));
+    return expr_list;
+}
+
+StorageMetadataPtr getPatchPartMetadataV2(
+    ColumnsDescription patch_part_desc,
+    const String & sort_key_expr_list_sql,
+    const std::vector<UInt8> & sort_key_reverse_flags,
+    ContextPtr local_context)
+{
+    StorageInMemoryMetadata part_metadata;
+
+    /// v2 keeps `_part` and `_part_offset` as on-disk columns for two reasons:
+    ///  - `_part` is the first argument of `__patchPartitionID` that derives the patch's partition id;
+    ///  - `_part_offset` is emitted by the mutation pipeline and must line up with the sink's stream
+    ///    structure (dropping it at metadata time produces a "Block structure mismatch" between
+    ///    `AddDeduplicationInfoTransform` and the sink).
+    /// Both columns are small on disk — `_part` is LowCardinality(String) with at most a handful of
+    /// distinct values, and `_part_offset` is Delta+LZ4 compressed UInt64 that compresses well on
+    /// sorted data. v2 still saves memory vs v1 at apply time, which is the primary goal.
+    auto part_column_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    if (!patch_part_desc.has("_part"))
+        patch_part_desc.add(ColumnDescription("_part", part_column_type));
+    if (!patch_part_desc.has("_part_offset"))
+        patch_part_desc.add(ColumnDescription("_part_offset", std::make_shared<DataTypeUInt64>()));
+
+    /// Ensure v2 identity + version columns are present (they may be missing when constructing
+    /// an empty coverage part via createEmptyPart).
+    auto ensure_column = [&](const String & name, const DataTypePtr & type)
+    {
+        if (!patch_part_desc.has(name))
+            patch_part_desc.add(ColumnDescription(name, type));
+    };
+    ensure_column(BlockNumberColumn::name, BlockNumberColumn::type);
+    ensure_column(BlockOffsetColumn::name, BlockOffsetColumn::type);
+    ensure_column(PartDataVersionColumn::name, PartDataVersionColumn::type);
+
+    /// Parse the sort-key expression list SQL into an AST. The children become the tuple
+    /// elements of the ORDER BY expression; `_block_number` and `_block_offset` are appended
+    /// as trailing identity columns.
+    auto sort_key_expr_list = parseSortKeyExprList(sort_key_expr_list_sql, local_context);
+    size_t n_semantic = sort_key_expr_list->children.size();
+
+    /// Partition id: `__patchPartitionID(_part, hash(...))`. Hash input includes the on-disk
+    /// column names, the serialized sort-key AST, and a v2 marker. Serializing the AST (not
+    /// just the final column names) ensures that two tables with sort keys that collide in
+    /// their *result* names but differ in expression structure still land in different
+    /// partitions. The v2 marker guarantees that v1 and v2 patches never land in the same
+    /// partition even if they happen to cover identical columns.
+    auto part_identifier = make_intrusive<ASTIdentifier>("_part");
+
+    Names hash_input = patch_part_desc.getNamesOfPhysical();
+    hash_input.emplace_back(sort_key_expr_list_sql);
+    hash_input.emplace_back(PATCH_FORMAT_V2_HASH_MARKER);
+    auto columns_hash = getColumnsHash(std::move(hash_input));
+    auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
+
+    auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
+    part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, {}, local_context);
+
+    /// Sort key: `(<sort_key_expr_children>..., _block_number, _block_offset)`. Primary key
+    /// equals sort key — the widened sparse index subsumes the v1 per-granule minmax index on
+    /// `_block_number` and `_block_offset`, so no secondary indices are needed here.
+    /// Building via `KeyDescription::getKeyFromAST` gives us `expression` (an ExpressionActions
+    /// that materializes the result columns from physical source columns — the same way FINAL
+    /// does for base parts), `column_names` (the result column names), and `reverse_flags`
+    /// (we override the reverse flags from the per-shard DESC info since our AST children are
+    /// plain expressions, not ASTStorageOrderByElements).
+    auto order_by_expression = makeASTOperator("tuple");
+    for (const auto & child : sort_key_expr_list->children)
+        order_by_expression->arguments->children.push_back(child->clone());
+    order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockNumberColumn::name));
+    order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockOffsetColumn::name));
+
+    addCodecsForPatchSystemColumns(patch_part_desc);
+
+    part_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, {}, local_context);
+
+    /// Honour DESC flags from the main table for the semantic sort-key prefix. The two trailing
+    /// identity columns (`_block_number`, `_block_offset`) are always ASC.
+    part_metadata.sorting_key.reverse_flags.assign(n_semantic + 2, false);
+    for (size_t i = 0; i < sort_key_reverse_flags.size() && i < n_semantic; ++i)
+        part_metadata.sorting_key.reverse_flags[i] = (sort_key_reverse_flags[i] != 0);
+
+    part_metadata.primary_key = part_metadata.sorting_key;
+    part_metadata.primary_key.definition_ast = nullptr;
+
+    part_metadata.setColumns(std::move(patch_part_desc));
+    return std::make_shared<StorageInMemoryMetadata>(std::move(part_metadata));
+}
+
+StorageMetadataPtr getPatchPartMetadataV2(
+    Block sample_block,
+    const String & sort_key_expr_list_sql,
+    const std::vector<UInt8> & sort_key_reverse_flags,
+    ContextPtr local_context)
+{
+    ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
+    return getPatchPartMetadataV2(std::move(columns_desc), sort_key_expr_list_sql, sort_key_reverse_flags, local_context);
 }
 
 const NamesAndTypesList & getPatchPartKeyColumns()
@@ -209,6 +357,18 @@ Names getVirtualsRequiredForPatch(const PatchPartInfoForReader & patch)
             break;
         case PatchMode::Join:
             columns = {BlockNumberColumn::name, BlockOffsetColumn::name};
+            break;
+        case PatchMode::MergeOnKey:
+            /// v2 reads the **physical source columns** of the patch's sort-key expression plus
+            /// the two identity columns. For a plain sort key the source set equals the result
+            /// set; for an expression sort key (e.g. `ORDER BY cityHash64(id)`) the source set
+            /// is just `{id}` and the result column `cityHash64(id)` is materialized by
+            /// `sort_key_expression` at apply time. The source-column set is derived from the
+            /// patch part's own metadata in `MergeTreeData::getAlterConversionsForPart`, so
+            /// ALTER MODIFY ORDER BY after the patch was written doesn't invalidate it.
+            columns = patch.sort_key_source_column_names;
+            columns.emplace_back(BlockNumberColumn::name);
+            columns.emplace_back(BlockOffsetColumn::name);
             break;
     }
 

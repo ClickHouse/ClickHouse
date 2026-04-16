@@ -7,9 +7,12 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
+#include <absl/container/flat_hash_map.h>
 #include <shared_mutex>
 
 namespace ProfileEvents
@@ -17,6 +20,9 @@ namespace ProfileEvents
     extern const Event ApplyPatchesMicroseconds;
     extern const Event BuildPatchesJoinMicroseconds;
     extern const Event BuildPatchesMergeMicroseconds;
+    extern const Event BuildPatchesMergeOnKeyMicroseconds;
+    extern const Event ApplyPatchMergeOnKeyMicroseconds;
+    extern const Event PatchesMergeOnKeyRowsAddedToHashTable;
 }
 
 namespace DB
@@ -502,6 +508,162 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
                 patch_to_apply->result_row_indices.push_back(result_it++);
             }
         }
+    }
+
+    return patch_to_apply;
+}
+
+namespace
+{
+
+/// Compares sort-key tuples at two (block, row) positions, honouring DESC flags. `a_block` /
+/// `b_block` must each have every column in `sort_key_column_names`; typically they're either the
+/// same block or two blocks that both carry the target table's sort-key columns. Returns <0, =0,
+/// or >0 using the same convention as `IColumn::compareAt` (NULL-aware, nan-last).
+int compareSortKeyRows(
+    const Block & a_block,
+    size_t a_row,
+    const Block & b_block,
+    size_t b_row,
+    const Names & sort_key_column_names,
+    const std::vector<UInt8> & reverse_flags)
+{
+    for (size_t i = 0; i < sort_key_column_names.size(); ++i)
+    {
+        const auto & a_col = *a_block.getByName(sort_key_column_names[i]).column;
+        const auto & b_col = *b_block.getByName(sort_key_column_names[i]).column;
+        int cmp = a_col.compareAt(a_row, b_row, b_col, /*nan_direction_hint=*/ 1);
+        if (cmp != 0)
+            return (i < reverse_flags.size() && reverse_flags[i]) ? -cmp : cmp;
+    }
+    return 0;
+}
+
+/// Pack `(block_number, block_offset)` into a `UInt128`: `block_offset` in the low 64 bits,
+/// `block_number` in the high 64 bits. `UInt128TrivialHash` takes the low limb as the hash,
+/// so putting the per-row-unique `block_offset` there keeps buckets well spread.
+ALWAYS_INLINE UInt128 makeBlockIdentity(UInt64 block_number, UInt64 block_offset)
+{
+    return (UInt128(block_number) << 64) | UInt128(block_offset);
+}
+
+}
+
+PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch)
+{
+    if (patch.mode != PatchMode::MergeOnKey)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "applyPatchMergeOnKey called with patch mode {}", patch.mode);
+
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchMergeOnKeyMicroseconds);
+
+    auto patch_to_apply = std::make_shared<PatchToApply>();
+    size_t m_rows = result_block.rows();
+    size_t p_rows = patch_block.rows();
+
+    if (m_rows == 0 || p_rows == 0)
+        return patch_to_apply;
+
+    /// Materialize the sort-key result columns on the main side, the same way FINAL does: the main
+    /// block has only physical source columns; the expression evaluates the sort key expression
+    /// (e.g. `cityHash64(id)`) into a new column. The patch block was already augmented in
+    /// `MergeTreePatchReaderMergeOnKey::readPatch` — running the expression again would collide on
+    /// the output column name — so we consume it as-is.
+    /// Executing on a clone keeps the caller's `result_block` untouched; `Block` copy is shallow,
+    /// so this is cheap. We emit the (unchanged) `patch_block` in `patch_blocks` so the combined-
+    /// apply stage still finds user data columns by name.
+    Block main_clone = result_block;
+    if (patch.sort_key_expression)
+        patch.sort_key_expression->execute(main_clone);
+
+    patch_to_apply->patch_blocks.emplace_back(patch_block);
+
+    const auto & sort_key_names = patch.sort_key_result_column_names;
+    const auto & reverse_flags = patch.sort_key_reverse_flags;
+
+    const auto & m_bn = getColumnUInt64Data(main_clone, BlockNumberColumn::name);
+    const auto & m_bo = getColumnUInt64Data(main_clone, BlockOffsetColumn::name);
+    const auto & p_bn = getColumnUInt64Data(patch_block, BlockNumberColumn::name);
+    const auto & p_bo = getColumnUInt64Data(patch_block, BlockOffsetColumn::name);
+
+    /// Degenerate sort key (tuple of no columns): by design the "equal-sort-key run" is the whole
+    /// block on both sides. We fall through to the hash-map branch and build a map over the full
+    /// patch — this mirrors today's Join-mode memory profile exactly, by user-locked decision.
+    size_t m = 0;
+    size_t p = 0;
+
+    while (m < m_rows && p < p_rows)
+    {
+        int cmp = sort_key_names.empty() ? 0 : compareSortKeyRows(main_clone, m, patch_block, p, sort_key_names, reverse_flags);
+
+        if (cmp < 0)
+        {
+            ++m;
+            continue;
+        }
+        if (cmp > 0)
+        {
+            ++p;
+            continue;
+        }
+
+        /// Equal-sort-key run on both sides. Find the run extents.
+        size_t m_run_end = m + 1;
+        if (!sort_key_names.empty())
+        {
+            while (m_run_end < m_rows
+                && compareSortKeyRows(main_clone, m_run_end, patch_block, p, sort_key_names, reverse_flags) == 0)
+                ++m_run_end;
+        }
+        else
+        {
+            m_run_end = m_rows;
+        }
+
+        size_t p_run_end = p + 1;
+        if (!sort_key_names.empty())
+        {
+            while (p_run_end < p_rows
+                && compareSortKeyRows(patch_block, p_run_end, patch_block, p, sort_key_names, reverse_flags) == 0)
+                ++p_run_end;
+        }
+        else
+        {
+            p_run_end = p_rows;
+        }
+
+        if (m_run_end - m == 1 && p_run_end - p == 1)
+        {
+            /// Common case for unique sort keys: no hash map, just compare identity directly.
+            if (m_bn[m] == p_bn[p] && m_bo[m] == p_bo[p])
+            {
+                patch_to_apply->result_row_indices.push_back(m);
+                patch_to_apply->patch_row_indices.push_back(static_cast<UInt64>(p));
+            }
+        }
+        else
+        {
+            ProfileEventTimeIncrement<Microseconds> build_watch(ProfileEvents::BuildPatchesMergeOnKeyMicroseconds);
+            absl::flat_hash_map<UInt128, UInt32, UInt128TrivialHash> local_map;
+            local_map.reserve(p_run_end - p);
+
+            for (size_t i = p; i < p_run_end; ++i)
+                local_map.emplace(makeBlockIdentity(p_bn[i], p_bo[i]), static_cast<UInt32>(i));
+
+            ProfileEvents::increment(ProfileEvents::PatchesMergeOnKeyRowsAddedToHashTable, p_run_end - p);
+
+            for (size_t i = m; i < m_run_end; ++i)
+            {
+                auto it = local_map.find(makeBlockIdentity(m_bn[i], m_bo[i]));
+                if (it != local_map.end())
+                {
+                    patch_to_apply->result_row_indices.push_back(i);
+                    patch_to_apply->patch_row_indices.push_back(it->second);
+                }
+            }
+        }
+
+        m = m_run_end;
+        p = p_run_end;
     }
 
     return patch_to_apply;

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 #include <Interpreters/InsertDeduplication.h>
 
 namespace DB
@@ -15,6 +16,8 @@ ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
     StorageReplicatedMergeTree & storage_,
     StorageMetadataPtr metadata_snapshot_,
     LightweightUpdateHolderInKeeper update_holder_,
+    String v2_sort_key_expr_list_sql_,
+    std::vector<UInt8> v2_sort_key_reverse_flags_,
     ContextPtr context_)
     : ReplicatedMergeTreeSink(
         /*async_insert=*/ false,
@@ -27,6 +30,8 @@ ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
         /*majority_quorum=*/ false,
         std::move(context_))
     , update_holder(std::move(update_holder_))
+    , v2_sort_key_expr_list_sql(std::move(v2_sort_key_expr_list_sql_))
+    , v2_sort_key_reverse_flags(std::move(v2_sort_key_reverse_flags_))
 {
     deduplicate = false;
 }
@@ -82,6 +87,13 @@ TemporaryPartPtr ReplicatedMergeTreeSinkPatch::writeNewTempPart(BlockWithPartiti
     auto data_version = getDataVersionInPartition(partition_id);
 
     auto source_parts_set = buildSourceSetForPatch(*block.block, data_version);
+
+    if (!v2_sort_key_expr_list_sql.empty() || !v2_sort_key_reverse_flags.empty())
+    {
+        source_parts_set.setFormatVersion(SourcePartsSetForPatch::V2_FORMAT_VERSION);
+        source_parts_set.setSortKey(v2_sort_key_expr_list_sql, v2_sort_key_reverse_flags);
+    }
+
     return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);
 }
 

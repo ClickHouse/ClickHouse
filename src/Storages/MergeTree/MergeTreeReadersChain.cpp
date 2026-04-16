@@ -297,6 +297,24 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
         if (!to.has(column.name) && from.has(column.name))
             to.insert(from.getByName(column.name));
     }
+
+    /// v2 (MergeOnKey) patches need the main table's **physical source columns** for the
+    /// sort-key expression at apply time. For a plain sort key these are the sort-key columns
+    /// themselves; for an expression sort key (e.g. `ORDER BY cityHash64(id)`) these are the
+    /// expression inputs (`id`). The expression is *not* evaluated here — we defer it to
+    /// `applyPatchMergeOnKey` (which runs on its own clone) to keep this routine purely
+    /// mechanical. The result columns materialize at apply time, same pattern as FINAL.
+    for (const auto & patch_reader : patch_readers)
+    {
+        const auto & patch = patch_reader->getPatchPart();
+        if (patch.mode != PatchMode::MergeOnKey)
+            continue;
+        for (const auto & name : patch.sort_key_source_column_names)
+        {
+            if (!to.has(name) && from.has(name))
+                to.insert(from.getByName(name));
+        }
+    }
 }
 
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
@@ -306,7 +324,7 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
         auto & patch_results = patches_results[i];
 
         /// Remove patches that are not needed for current block anymore.
-        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front()))
+        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front(), result_header))
         {
             patch_results.pop_front();
         }

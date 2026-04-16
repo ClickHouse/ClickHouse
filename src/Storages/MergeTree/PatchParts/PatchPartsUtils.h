@@ -20,11 +20,32 @@ using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 /// Returns at most one patch of type Merge and at most one patch of type Join.
 PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPartPtr & patch_part);
 
-/// Returns metadata snapshot of patch part that contains the following columns.
+/// Returns metadata snapshot of a legacy (v1) patch part. Sort key is `(_part, _part_offset)`.
 StorageMetadataPtr getPatchPartMetadata(Block sample_block, ContextPtr local_context);
 StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, ContextPtr local_context);
 
-/// Returns system columns which are common for all patch parts.
+/// Returns metadata snapshot of a v2 patch part. Sort key is
+/// `(<sort_key_expr_children>..., _block_number, _block_offset)` where `sort_key_expr_list_sql` is
+/// the SQL text of the main table's sort-key expression list (parsed on-the-fly into an
+/// `ASTExpressionList`). Thanks to `KeyDescription::getKeyFromAST`, the produced `KeyDescription`
+/// carries an `ExpressionActions` object that materializes the sort-key result columns from the
+/// physical source columns — the same mechanism FINAL uses to compute sort-key outputs from
+/// base-part rows. `_part_offset` and `_part` remain on-disk as LowCardinality/UInt64 (the former
+/// purely to line up with the sink's stream structure, the latter for partition-id derivation via
+/// `__patchPartitionID`). `sort_key_reverse_flags` is parallel to the top-level children of the
+/// expression list (1 = DESC).
+StorageMetadataPtr getPatchPartMetadataV2(
+    Block sample_block,
+    const String & sort_key_expr_list_sql,
+    const std::vector<UInt8> & sort_key_reverse_flags,
+    ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV2(
+    ColumnsDescription patch_part_desc,
+    const String & sort_key_expr_list_sql,
+    const std::vector<UInt8> & sort_key_reverse_flags,
+    ContextPtr local_context);
+
+/// Returns system columns which are common for all v1 patch parts.
 const NamesAndTypesList & getPatchPartKeyColumns();
 const NamesAndTypesList & getPatchPartSystemColumns();
 bool isPatchPartSystemColumn(const String & column_name);

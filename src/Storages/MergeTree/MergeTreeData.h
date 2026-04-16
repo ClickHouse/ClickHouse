@@ -1352,8 +1352,19 @@ public:
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
 
-    /// Returns cached metadata snapshot of a patch part that contains the following columns.
-    StorageMetadataPtr getPatchPartMetadata(const ColumnsDescription & patch_part_desc, const String & patch_partition_id, ContextPtr local_context) const;
+    /// Returns the metadata snapshot used to read a patch part, rebuilt deterministically from the
+    /// part's columns + source-parts set. v1 patches (format_version = 0) use `DB::getPatchPartMetadata`;
+    /// v2 patches (format_version = 1) use `DB::getPatchPartMetadataV2` with the sort-key column names
+    /// persisted in the part's `SourcePartsSetForPatch`. Cached by partition id (v1 and v2 patches
+    /// never share a partition by construction of the partition-id hash).
+    StorageMetadataPtr getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
+
+    /// Returns true iff the `enable_v2_lightweight_update_patches` setting is on AND the table's
+    /// sort key consists only of plain column references (no expressions). v2 patches must carry
+    /// the sort-key columns as physical storage, which is impossible for expression sort keys like
+    /// `ORDER BY cityHash64(id)` without persisting + replaying the expression on read. Falls back
+    /// to v1 for such tables.
+    bool isV2LightweightUpdateUsable(const ContextPtr & query_context) const;
 
     static MergingParams getMergingParamsForPatchParts();
 
