@@ -153,14 +153,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         }
 
         String user_message = sanitizeTextForAI(buildUserMessage(arguments, i));
-
-        if (!quota.checkBeforeDispatch(user_message.size() + system_prompt.size()))
-        {
-            result_col->insertDefault();
-            ++rows_skipped;
-            continue;
-        }
-
         String result;
         bool success = false;
 

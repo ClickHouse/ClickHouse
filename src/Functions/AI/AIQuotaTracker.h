@@ -19,20 +19,16 @@ public:
         , throw_on_error(throw_on_error_)
     {}
 
-    /// Check if we have already exceeded a quota, or if we are about to exceed the API calls, estimated input tokens quota.
-    /// Also checks if we exceeded the max_output_tokens quota on the previous call
-    /// estimated_text_bytes is the total size of the prompt text in bytes
-    /// true - quota not exceeded
-    /// false - quota exceeded
-    bool checkBeforeDispatch(size_t estimated_text_bytes = 0);
-
-    /// Record counts of input and output tokens. To be called after the API call.
+    /// Record one API call and its token counts. Checks all quotas after updating.
+    /// If a limit is exceeded: throws if throw_on_quota_exceeded, otherwise sets quota_exceeded flag.
     void recordResponse(UInt64 in_tokens, UInt64 out_tokens);
 
     bool isQuotaExceeded() const { return quota_exceeded; }
     bool throwsOnError() const { return throw_on_error; }
 
 private:
+    void checkQuotas();
+
     const UInt64 max_input_tokens;
     const UInt64 max_output_tokens;
     const UInt64 max_api_calls;

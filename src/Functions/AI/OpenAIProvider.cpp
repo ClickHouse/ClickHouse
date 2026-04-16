@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 namespace
 {
-String extractProviderError(const std::string & response_body, int status_code)
+String extractProviderError(const String & response_body, int status_code)
 {
     try
     {
