@@ -948,7 +948,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             std::move(merged),
             filter->getFilterColumnName(),
             filter->removesFilterColumn());
-        new_filter->setStepDescription(filter->getStepDescription());
+        new_filter->setStepDescription(*filter);
 
         parent_node->step = std::move(new_filter);
         parent_node->children.swap(child_node->children);
