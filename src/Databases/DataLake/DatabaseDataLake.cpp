@@ -160,7 +160,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
-    std::lock_guard lock(catalog_mutex);g
+    std::lock_guard lock(catalog_mutex);
     auto catalog_parameters = DataLake::CatalogSettings{
         .storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value,
         .aws_access_key_id = settings[DatabaseDataLakeSetting::aws_access_key_id].value,
