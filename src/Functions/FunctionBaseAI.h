@@ -55,8 +55,6 @@ protected:
     /// Index of the temperature argument. Return 0 if the function doesn't accept temperature.
     virtual size_t temperatureArgumentIndex() const = 0;
 
-
-
 private:
     struct ResolvedConfig
     {
