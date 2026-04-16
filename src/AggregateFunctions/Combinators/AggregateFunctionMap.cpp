@@ -5,6 +5,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
@@ -161,9 +162,10 @@ public:
     void addSingleKey(AggregateDataPtr __restrict place, const IColumn & key_column, const IColumn ** value_column, size_t position, Arena * arena) const
     {
         typename Data::SearchType key;
+
         if constexpr (std::is_same_v<KeyType, String>)
         {
-            StringRef key_ref;
+            std::string_view key_ref;
             if (key_type->getTypeId() == TypeIndex::FixedString)
                 key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(position);
             else if (key_type->getTypeId() == TypeIndex::IPv6)
@@ -171,7 +173,7 @@ public:
             else
                 key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(position);
 
-            key = key_ref.toView();
+            key = key_ref;
         }
         else
         {
@@ -204,29 +206,11 @@ public:
         }
         else
         {
-
             const auto & map_column = assert_cast<const ColumnMap &>(*columns[0]);
             const auto & map_nested_tuple = map_column.getNestedData();
             const IColumn::Offsets & map_array_offsets = map_column.getNestedColumn().getOffsets();
-            if constexpr (std::is_same_v<KeyType, String>)
-            {
-                std::string_view key_ref;
-                if (key_type->getTypeId() == TypeIndex::FixedString)
-                    key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(offset + i);
-                else if (key_type->getTypeId() == TypeIndex::IPv6)
-                    key_ref = assert_cast<const ColumnIPv6 &>(key_column).getDataAt(offset + i);
-                else
-                    key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
-
-                key = key_ref;
-            }
-            else
-            {
-                key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[offset + i];
-            }
-
-            const size_t offset = map_array_offsets[row_num - 1];
-            const size_t size = (map_array_offsets[row_num] - offset);
+            const size_t offset = row_num == 0 ? 0 : map_array_offsets[row_num - 1];
+            const size_t size = map_array_offsets[row_num] - offset;
 
             const auto & key_column = map_nested_tuple.getColumn(0);
             const auto & val_column = map_nested_tuple.getColumn(1);
@@ -485,7 +469,7 @@ public:
 
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Map key type {} is not is not supported by combinator {}", key_type->getName(), getName());
+                "Map key type {} is not supported by combinator {}", key_type->getName(), getName());
         }
         else
         {
@@ -499,7 +483,7 @@ public:
 
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Map key type {} is not is not supported by combinator {}", key_type->getName(), getName());
+                "Map key type {} is not supported by combinator {}", key_type->getName(), getName());
         }
     }
 };
