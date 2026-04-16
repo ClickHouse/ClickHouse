@@ -960,7 +960,8 @@ void MergeTreeData::checkProperties(
         }
     }
 
-    auto all_columns = new_metadata.columns.getAllPhysical();
+    auto new_columns_for_analysis = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(new_metadata.columns, new_metadata.virtuals);
+    auto old_columns_for_analysis = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(old_metadata.columns, old_metadata.virtuals);
 
     /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
     /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
@@ -985,12 +986,12 @@ void MergeTreeData::checkProperties(
 
     if (!added_key_column_expr_list->children.empty())
     {
-        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, all_columns);
+        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, new_columns_for_analysis);
         Names used_columns = syntax->requiredSourceColumns();
 
         NamesAndTypesList deleted_columns;
         NamesAndTypesList added_columns;
-        old_metadata.getColumns().getAllPhysical().getDifference(all_columns, deleted_columns, added_columns);
+        old_columns_for_analysis.getDifference(new_columns_for_analysis, deleted_columns, added_columns);
 
         for (const String & col : used_columns)
         {
@@ -1215,6 +1216,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     const KeyDescription & key,
     const MergeTreeIndices & indices,
     const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
     ContextPtr context)
 {
     ASTPtr combined_expr_list = key.expression_list_ast->clone();
@@ -1223,7 +1225,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         for (const auto & index_expr : index->index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
@@ -1255,15 +1257,14 @@ DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_
 ExpressionActionsPtr
 MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->getColumns(), getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
 ExpressionActionsPtr
 MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->getColumns(), getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
-
 
 void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
 {

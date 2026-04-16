@@ -660,15 +660,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             /// Primary and sorting key become independent after this ALTER so
             /// we have to save the old ORDER BY expression as the new primary
             /// key.
-            primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, context);
+            primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, metadata.virtuals, context);
         }
 
         /// Recalculate key with new order_by expression.
-        sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
+        sorting_key.recalculateWithNewAST(order_by, metadata.columns, metadata.virtuals, context);
     }
     else if (type == MODIFY_SAMPLE_BY)
     {
-        metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, context);
+        metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, metadata.virtuals, context);
     }
     else if (type == REMOVE_SAMPLE_BY)
     {
@@ -1311,24 +1311,24 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             command.apply(metadata_copy, context);
 
     /// Changes in columns may lead to changes in keys expression.
-    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
-        metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     }
     else
     {
-        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
     {
-        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
         /// If partition key expression is changed, we also need to rebuild minmax_count_projection
-        if (!blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
+        if (metadata.minmax_count_projection && !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
         {
             auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
             auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
@@ -1340,7 +1340,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     // /// And in sample key expression
     if (metadata_copy.sampling_key.definition_ast != nullptr)
-        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
     /// Changes in columns may lead to changes in secondary indices
     for (auto & index : metadata_copy.secondary_indices)
