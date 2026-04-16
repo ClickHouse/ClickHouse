@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Verify that the nested() function preserves LowCardinality in column types.
 -- See https://github.com/ClickHouse/ClickHouse/issues/95582
 
