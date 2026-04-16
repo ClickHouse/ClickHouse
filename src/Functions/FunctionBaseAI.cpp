@@ -146,7 +146,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        if (quota.isQuotaExceeded())
+        if (quota.checkQuotas())
         {
             result_col->insertDefault();
             ++rows_skipped;
@@ -170,11 +170,11 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.max_tokens = config.max_tokens;
 
                 auto ai_response = provider->call(ai_request, timeouts);
+                ++total_api_calls;
 
                 quota.recordResponse(ai_response.input_tokens, ai_response.output_tokens);
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
-                ++total_api_calls;
 
                 result = postProcessResponse(ai_response.result);
                 success = true;
@@ -188,7 +188,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                     continue;
                 }
 
-                if (!quota.throwsOnError())
+                if (!quota.throwOnError())
                     break;
 
                 throw;
