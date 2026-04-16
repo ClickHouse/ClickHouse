@@ -29,6 +29,8 @@ namespace ProfileEvents
     extern const Event KeeperStaleRequestsSkipped;
     extern const Event KeeperReadBatchCount;
     extern const Event KeeperReadBatchTotalRequests;
+    extern const Event KeeperWriteBatchCount;
+    extern const Event KeeperWriteBatchTotalRequests;
 }
 
 namespace HistogramMetrics
@@ -766,6 +768,8 @@ void KeeperRequestDispatcher2::dispatchThread()
             {
                 HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, batch_subrequests);
                 HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, batch_bytes);
+                ProfileEvents::increment(ProfileEvents::KeeperWriteBatchCount);
+                ProfileEvents::increment(ProfileEvents::KeeperWriteBatchTotalRequests, requests.size());
 
                 /// Add information about the batch to the queue of in-flight requests.
 
