@@ -636,7 +636,7 @@ void QueryPlan::explainPlan(
     }
 }
 
-static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
+static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings, bool distributed)
 {
     settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
 
@@ -644,6 +644,9 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
     step.describePipeline(settings);
     if (current_offset == settings.offset)
         settings.offset += settings.base_indent;
+
+    if (distributed)
+        step.describeDistributedPipeline(settings, distributed);
 }
 
 void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const
@@ -670,7 +673,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
         if (!frame.is_description_printed)
         {
             settings.offset = frame.offset;
-            explainPipelineStep(*frame.node->step, settings);
+            explainPipelineStep(*frame.node->step, settings, options.distributed);
             frame.offset = settings.offset;
             frame.is_description_printed = true;
         }

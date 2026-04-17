@@ -279,7 +279,11 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
             if (normalized_endpoint.ends_with('/'))
                 normalized_endpoint.pop_back();
             if (data_location.starts_with(normalized_endpoint))
+            {
                 data_location = data_location.substr(normalized_endpoint.size());
+                if (azure_account_with_suffix.empty() && !data_location.empty() && data_location.front() == '/')
+                    data_location = data_location.substr(1);
+            }
         }
 
         /// For Azure ABFSS locations we need to reconcile two different formats:
