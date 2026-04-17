@@ -113,6 +113,12 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
+                    /// Only wrap type-conversion errors as LOGICAL_ERROR.
+                    /// Other exceptions (e.g. MEMORY_LIMIT_EXCEEDED) should propagate as-is.
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -135,6 +141,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -226,6 +236,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -251,6 +265,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             }
             catch (const Exception & e)
             {
+                if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                    && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                    throw;
+
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -270,6 +288,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -389,6 +411,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -545,6 +571,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",

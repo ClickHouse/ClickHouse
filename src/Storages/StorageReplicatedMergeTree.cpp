@@ -106,6 +106,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -1753,7 +1754,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Implicit statistics (auto_statistics_types) are not serialized to ZooKeeper,
     /// so we need to re-add them after loading metadata from ZK.
     auto settings = getSettings();
-    auto [auto_stats_types, _] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings);
+    auto [auto_stats_types, _] = getNewImplicitStatisticsTypes(new_metadata, *settings);
     addImplicitStatistics(new_metadata.columns, auto_stats_types);
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
@@ -2447,7 +2448,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             Transaction transaction(*this, NO_TRANSACTION_RAW);
 
-            part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+            part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
             renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
             transaction.renameParts();
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
@@ -6646,7 +6647,7 @@ void StorageReplicatedMergeTree::alter(
     commands.apply(future_metadata, query_context);
 
     auto old_settings = getSettings();
-    auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(future_metadata, *old_settings);
+    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
     if (commands.isSettingsAlter())
