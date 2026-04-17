@@ -3,8 +3,8 @@
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>

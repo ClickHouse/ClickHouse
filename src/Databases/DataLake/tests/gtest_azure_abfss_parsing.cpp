@@ -92,6 +92,20 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationS3)
     EXPECT_EQ(location, "s3://mybucket/path/to/table");
 }
 
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3WithHttpEndpoint)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://warehouse-rest/data/testns/testtable");
+    metadata.setEndpoint("http://minio:9000");
+
+    EXPECT_EQ(metadata.getLocation(), "http://minio:9000/warehouse-rest/data/testns/testtable/");
+
+    const std::string metadata_file =
+        "s3://warehouse-rest/data/testns/testtable/metadata/v1.metadata.json";
+    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
+}
+
 TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationInvalidFormat)
 {
     TableMetadata metadata;
