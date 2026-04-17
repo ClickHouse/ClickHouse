@@ -1,4 +1,10 @@
 <clickhouse>
+    <profiles>
+        <default/>
+        <my.profile>
+            <max_memory_usage>10000000</max_memory_usage>
+        </my.profile>
+    </profiles>
     <users>
         <default>
             <password/>
@@ -16,8 +22,32 @@
             <profile>default</profile>
             <quota>default</quota>
         </user.name>
+        <dotted.user>
+            <password/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>my.profile</profile>
+            <quota>my.quota</quota>
+            <grants>
+                <query>GRANT `my.role`</query>
+            </grants>
+        </dotted.user>
     </users>
+    <roles>
+        <my.role>
+            <grants>
+                <query>GRANT SELECT ON system.numbers</query>
+            </grants>
+        </my.role>
+    </roles>
     <quotas>
         <default/>
+        <my.quota>
+            <interval>
+                <duration>3600</duration>
+                <queries>100</queries>
+            </interval>
+        </my.quota>
     </quotas>
 </clickhouse>
