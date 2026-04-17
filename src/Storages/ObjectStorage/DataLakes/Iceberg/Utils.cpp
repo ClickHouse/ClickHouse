@@ -369,12 +369,12 @@ bool writeMetadataFileAndVersionHint(
 }
 
 
-std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src, const String & time_zone)
+std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src, std::optional<String> time_zone)
 {
     std::string transform_name = Poco::toLower(transform_name_src);
 
     std::optional<String> time_zone_opt;
-    if (!time_zone.empty())
+    if (time_zone.has_value() && !time_zone.value().empty())
         time_zone_opt = time_zone;
 
     if (transform_name == "year" || transform_name == "years")

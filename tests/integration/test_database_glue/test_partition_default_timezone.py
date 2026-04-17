@@ -1,6 +1,7 @@
 import logging
 import time
 import uuid
+import os
 from datetime import datetime
 
 import pyarrow as pa
@@ -21,9 +22,9 @@ from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.test_tools import TSV
 from helpers.config_cluster import minio_secret_key
 
-BASE_URL = "http://rest:8181/v1"
+CATALOG_NAME = "test"
 
-CATALOG_NAME = "demo"
+BASE_URL = "http://glue:3000"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -40,13 +41,15 @@ DEFAULT_SCHEMA = Schema(
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
+        # We must add some credentials, otherwise moto (AWS Mock)
+        # will reject boto connection
+        os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+        os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/timezone.xml"],
-            user_configs=["configs/iceberg_partition_timezone.xml"],
             stay_alive=True,
-            with_iceberg_catalog=True,
+            with_glue_catalog=True,
             with_zookeeper=True,
         )
 
@@ -62,13 +65,17 @@ def started_cluster():
         cluster.shutdown()
 
 
+def get_glue_local_url(cluster):
+    return f"http://localhost:{cluster.glue_catalog_port}"
+
+
 def load_catalog_impl(started_cluster):
-    base_url_local_raw = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}"
     return load_catalog(
-        CATALOG_NAME,
+        CATALOG_NAME,  # name is not important
         **{
-            "uri": base_url_local_raw,
-            "type": "rest",
+            "type": "glue",
+            "glue.endpoint": get_glue_local_url(started_cluster),
+            "glue.region": "us-east-1",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
             "s3.secret-access-key": minio_secret_key,
@@ -83,39 +90,42 @@ def create_table(
     schema=DEFAULT_SCHEMA,
     partition_spec=DEFAULT_PARTITION_SPEC,
     sort_order=DEFAULT_SORT_ORDER,
+    dir="data"
 ):
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3://warehouse-rest/data",
+        location=f"s3://warehouse-glue/{dir}",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
 
 
-def create_clickhouse_iceberg_database(
-    node, name, additional_settings={}, engine='DataLakeCatalog'
+def create_clickhouse_glue_database(
+    node, name, additional_settings={}, with_credentials=True
 ):
     settings = {
-        "catalog_type": "rest",
-        "warehouse": "demo",
-        "storage_endpoint": "http://minio:9000/warehouse-rest",
+        "catalog_type": "glue",
+        "warehouse": "test",
+        "storage_endpoint": "http://minio:9000/warehouse-glue",
+        "region": "us-east-1",
     }
 
     settings.update(additional_settings)
 
+    credential_args = f",'{minio_access_key}', '{minio_secret_key}'" if with_credentials else ""
+
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
-CREATE DATABASE {name} ENGINE = {engine}('{BASE_URL}', 'minio', '{minio_secret_key}')
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}'{credential_args})
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+    """,
+        settings={
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
-    show_result = node.query(f"SHOW DATABASE {name}")
-    assert minio_secret_key not in show_result
-    assert "HIDDEN" in show_result
 
 
 def test_partition_timezone(started_cluster):
@@ -137,18 +147,18 @@ def test_partition_timezone(started_cluster):
     table.append(df)
 
     node = started_cluster.instances["node1"]
-    create_clickhouse_iceberg_database(node, CATALOG_NAME)
+    create_clickhouse_glue_database(node, CATALOG_NAME)
 
-    # server timezone is Asia/Istanbul (UTC+3)
+    # server timezone is default UTC
     assert node.query(f"""
                       SELECT datetime, value
                       FROM {CATALOG_NAME}.`{namespace}.{table_name}`
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
-            ["2024-01-01 23:00:00.000000", 1],
-            ["2024-01-02 02:00:00.000000", 2],
-            ["2024-01-02 05:00:00.000000", 3],
+            ["2024-01-01 20:00:00.000000", 1],
+            ["2024-01-01 23:00:00.000000", 2],
+            ["2024-01-02 02:00:00.000000", 3],
         ])
     
     # partitioning works correctly
@@ -159,8 +169,7 @@ def test_partition_timezone(started_cluster):
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
-            ["2024-01-02 02:00:00.000000", 2],
-            ["2024-01-02 05:00:00.000000", 3],
+            ["2024-01-02 02:00:00.000000", 3],
         ])
 
     assert node.query(f"""
@@ -170,5 +179,6 @@ def test_partition_timezone(started_cluster):
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
-            ["2024-01-01 23:00:00.000000", 1],
+            ["2024-01-01 20:00:00.000000", 1],
+            ["2024-01-01 23:00:00.000000", 2],
         ])

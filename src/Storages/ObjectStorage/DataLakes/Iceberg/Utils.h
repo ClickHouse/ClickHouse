@@ -58,7 +58,7 @@ struct TransformAndArgument
     std::optional<String> time_zone;
 };
 
-std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src, const String & time_zone);
+std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src, std::optional<String> time_zone = std::nullopt);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 

@@ -43,8 +43,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/timezone.xml"],
-            user_configs=["configs/iceberg_partition_timezone.xml"],
+            main_configs=["configs/cluster.xml"],
             stay_alive=True,
             with_iceberg_catalog=True,
             with_zookeeper=True,
@@ -118,10 +117,10 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     assert "HIDDEN" in show_result
 
 
-def test_partition_timezone(started_cluster):
+def test_partition_default_timezone(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     namespace = f"timezone_ns_{uuid.uuid4()}"
-    table_name = f"tz_table__{uuid.uuid4()}"
+    table_name = f"default_tz_table__{uuid.uuid4()}"
     catalog.create_namespace(namespace)
     table = create_table(
         catalog,
@@ -139,16 +138,16 @@ def test_partition_timezone(started_cluster):
     node = started_cluster.instances["node1"]
     create_clickhouse_iceberg_database(node, CATALOG_NAME)
 
-    # server timezone is Asia/Istanbul (UTC+3)
+    # server timezone is default UTC
     assert node.query(f"""
                       SELECT datetime, value
                       FROM {CATALOG_NAME}.`{namespace}.{table_name}`
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
-            ["2024-01-01 23:00:00.000000", 1],
-            ["2024-01-02 02:00:00.000000", 2],
-            ["2024-01-02 05:00:00.000000", 3],
+            ["2024-01-01 20:00:00.000000", 1],
+            ["2024-01-01 23:00:00.000000", 2],
+            ["2024-01-02 02:00:00.000000", 3],
         ])
     
     # partitioning works correctly
@@ -159,8 +158,7 @@ def test_partition_timezone(started_cluster):
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
-            ["2024-01-02 02:00:00.000000", 2],
-            ["2024-01-02 05:00:00.000000", 3],
+            ["2024-01-02 02:00:00.000000", 3],
         ])
 
     assert node.query(f"""
@@ -170,5 +168,6 @@ def test_partition_timezone(started_cluster):
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
-            ["2024-01-01 23:00:00.000000", 1],
+            ["2024-01-01 20:00:00.000000", 1],
+            ["2024-01-01 23:00:00.000000", 2],
         ])

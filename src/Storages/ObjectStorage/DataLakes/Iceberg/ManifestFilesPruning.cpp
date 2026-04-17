@@ -27,7 +27,7 @@ using namespace DB;
 namespace DB::Iceberg
 {
 
-DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name, const String & time_zone)
+DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name, std::optional<String> time_zone)
 {
     auto transform_and_argument = parseTransformAndArgument(transform_name_src, time_zone);
     if (!transform_and_argument)
