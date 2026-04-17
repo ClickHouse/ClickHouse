@@ -7582,6 +7582,9 @@ Possible values:
 
 Default value is empty.
 )", 0) \
+    DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
+Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
