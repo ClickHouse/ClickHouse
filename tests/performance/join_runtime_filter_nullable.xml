@@ -1,0 +1,195 @@
+<test>
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <enable_parallel_replicas>0</enable_parallel_replicas>
+        <join_algorithm>hash</join_algorithm>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+        <query_plan_optimize_join_order_algorithm>greedy</query_plan_optimize_join_order_algorithm>
+        <query_plan_optimize_join_order_limit>1</query_plan_optimize_join_order_limit>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <max_threads>8</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE rf_nullable_left
+        (
+            k_no_nulls Nullable(UInt64),
+            k_low_nulls Nullable(UInt64),
+            k_many_nulls Nullable(UInt64),
+            payload UInt64
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <create_query>
+        CREATE TABLE rf_nullable_right
+        (
+            k Nullable(UInt64),
+            kind UInt8
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <create_query>
+        CREATE TABLE rf_lc_nullable_left
+        (
+            k LowCardinality(Nullable(String)),
+            payload UInt64
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <create_query>
+        CREATE TABLE rf_lc_nullable_right
+        (
+            k LowCardinality(Nullable(String))
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO rf_nullable_left
+        SELECT
+            toNullable(number % 1000000),
+            if(number % 100 = 0, NULL, number % 1000000),
+            if(number % 2 = 0, NULL, number % 1000000),
+            number
+        FROM numbers(20000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO rf_nullable_right
+        SELECT if(number = 0, NULL, number), 1
+        FROM numbers(101)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO rf_nullable_right
+        SELECT if(number = 0, NULL, number), 2
+        FROM numbers(10001)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO rf_lc_nullable_left
+        SELECT
+            if(number % 20 = 0, NULL, concat('key_', toString(number % 100000))),
+            number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO rf_lc_nullable_right
+        SELECT if(number = 0, NULL, concat('key_', toString(number)))
+        FROM numbers(5001)
+    </fill_query>
+
+    <!-- Exact `Nullable(UInt64)` runtime filter with build-side and probe-side `NULL`s. -->
+    <query tag='exact_nullable_low_nulls_off'>
+        SELECT count()
+        FROM
+            (SELECT k_low_nulls AS k, payload FROM rf_nullable_left) AS l
+        INNER JOIN
+            (SELECT k FROM rf_nullable_right WHERE kind = 1) AS r
+        USING (k)
+        SETTINGS enable_join_runtime_filters = 0, join_runtime_filter_exact_values_limit = 1000
+        FORMAT Null
+    </query>
+
+    <query tag='exact_nullable_low_nulls_on'>
+        SELECT count()
+        FROM
+            (SELECT k_low_nulls AS k, payload FROM rf_nullable_left) AS l
+        INNER JOIN
+            (SELECT k FROM rf_nullable_right WHERE kind = 1) AS r
+        USING (k)
+        SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_exact_values_limit = 1000
+        FORMAT Null
+    </query>
+
+    <!-- Bloom `Nullable(UInt64)` runtime filter with no actual `NULL`s in the probe column. -->
+    <query tag='bloom_nullable_no_nulls_off'>
+        SELECT count()
+        FROM
+            (SELECT k_no_nulls AS k, payload FROM rf_nullable_left) AS l
+        INNER JOIN
+            (SELECT k FROM rf_nullable_right WHERE kind = 2) AS r
+        USING (k)
+        SETTINGS enable_join_runtime_filters = 0, join_runtime_filter_exact_values_limit = 10
+        FORMAT Null
+    </query>
+
+    <query tag='bloom_nullable_no_nulls_on'>
+        SELECT count()
+        FROM
+            (SELECT k_no_nulls AS k, payload FROM rf_nullable_left) AS l
+        INNER JOIN
+            (SELECT k FROM rf_nullable_right WHERE kind = 2) AS r
+        USING (k)
+        SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_exact_values_limit = 10
+        FORMAT Null
+    </query>
+
+    <!-- Bloom `Nullable(UInt64)` runtime filter with a sparse probe null map. -->
+    <query tag='bloom_nullable_low_nulls_off'>
+        SELECT count()
+        FROM
+            (SELECT k_low_nulls AS k, payload FROM rf_nullable_left) AS l
+        INNER JOIN
+            (SELECT k FROM rf_nullable_right WHERE kind = 2) AS r
+        USING (k)
+        SETTINGS enable_join_runtime_filters = 0, join_runtime_filter_exact_values_limit = 10
+        FORMAT Null
+    </query>
+
+    <query tag='bloom_nullable_low_nulls_on'>
+        SELECT count()
+        FROM
+            (SELECT k_low_nulls AS k, payload FROM rf_nullable_left) AS l
+        INNER JOIN
+            (SELECT k FROM rf_nullable_right WHERE kind = 2) AS r
+        USING (k)
+        SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_exact_values_limit = 10
+        FORMAT Null
+    </query>
+
+    <!-- Bloom `Nullable(UInt64)` runtime filter with a dense probe null map. -->
+    <query tag='bloom_nullable_many_nulls_off'>
+        SELECT count()
+        FROM
+            (SELECT k_many_nulls AS k, payload FROM rf_nullable_left) AS l
+        INNER JOIN
+            (SELECT k FROM rf_nullable_right WHERE kind = 2) AS r
+        USING (k)
+        SETTINGS enable_join_runtime_filters = 0, join_runtime_filter_exact_values_limit = 10
+        FORMAT Null
+    </query>
+
+    <query tag='bloom_nullable_many_nulls_on'>
+        SELECT count()
+        FROM
+            (SELECT k_many_nulls AS k, payload FROM rf_nullable_left) AS l
+        INNER JOIN
+            (SELECT k FROM rf_nullable_right WHERE kind = 2) AS r
+        USING (k)
+        SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_exact_values_limit = 10
+        FORMAT Null
+    </query>
+
+    <!-- Bloom `LowCardinality(Nullable(String))` runtime filter. -->
+    <query tag='bloom_lc_nullable_string_off'>
+        SELECT count()
+        FROM rf_lc_nullable_left AS l
+        INNER JOIN rf_lc_nullable_right AS r USING (k)
+        SETTINGS enable_join_runtime_filters = 0, join_runtime_filter_exact_values_limit = 10
+        FORMAT Null
+    </query>
+
+    <query tag='bloom_lc_nullable_string_on'>
+        SELECT count()
+        FROM rf_lc_nullable_left AS l
+        INNER JOIN rf_lc_nullable_right AS r USING (k)
+        SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_exact_values_limit = 10
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE rf_nullable_left</drop_query>
+    <drop_query>DROP TABLE rf_nullable_right</drop_query>
+    <drop_query>DROP TABLE rf_lc_nullable_left</drop_query>
+    <drop_query>DROP TABLE rf_lc_nullable_right</drop_query>
+</test>
