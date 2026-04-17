@@ -132,3 +132,72 @@ def test_total_pk_bytes_in_memory_fields(started_cluster):
 
     # finally drop the table
     node.query("DROP table test_pk_bytes;")
+
+
+def test_total_pk_bytes_in_memory_includes_projection_parts(started_cluster):
+    node.query("""
+        CREATE TABLE test_pk_bytes_proj
+        (
+           a UInt64,
+           b UInt64,
+           PROJECTION proj_b (SELECT * ORDER BY b)
+        )
+        Engine=MergeTree()
+        ORDER BY a SETTINGS index_granularity=1
+    """)
+
+    query_pk_bytes = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'TotalPrimaryKeyBytesInMemory';"
+    query_pk_bytes_allocated = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'TotalPrimaryKeyBytesInMemoryAllocated';"
+
+    pk_bytes_before = int(node.query(query_pk_bytes).strip())
+    pk_bytes_allocated_before = int(node.query(query_pk_bytes_allocated).strip())
+
+    node.query("INSERT INTO test_pk_bytes_proj SELECT number, number * 2 FROM numbers(1000000)")
+    node.query("SELECT * FROM test_pk_bytes_proj WHERE a > 1000000")
+
+    def res_pk_bytes():
+        return int(node.query(query_pk_bytes).strip())
+
+    def res_pk_bytes_allocated():
+        return int(node.query(query_pk_bytes_allocated).strip())
+
+    # metrics must increase after insert — projection parts contribute their own index memory
+    pk_bytes_before, pk_bytes_after = query_until_condition(
+        pk_bytes_before, res_pk_bytes, condition=greater
+    )
+    assert pk_bytes_after > pk_bytes_before
+
+    pk_bytes_allocated_before, pk_bytes_allocated_after = query_until_condition(
+        pk_bytes_allocated_before, res_pk_bytes_allocated, condition=greater
+    )
+    assert pk_bytes_allocated_after > pk_bytes_allocated_before
+
+    # create a table with the same schema but no projection, insert same data,
+    # and verify the metric is smaller (projection parts add index memory on top)
+    node.query("""
+        CREATE TABLE test_pk_bytes_no_proj
+        (
+           a UInt64,
+           b UInt64
+        )
+        Engine=MergeTree()
+        ORDER BY a SETTINGS index_granularity=1
+    """)
+    node.query("INSERT INTO test_pk_bytes_no_proj SELECT number, number * 2 FROM numbers(1000000)")
+    node.query("SELECT * FROM test_pk_bytes_no_proj WHERE a > 1000000")
+
+    # capture metric with both tables present; it must be strictly greater than
+    # what the no-projection table alone would contribute
+    pk_bytes_with_proj = int(node.query(query_pk_bytes).strip())
+
+    node.query("DROP TABLE test_pk_bytes_proj")
+
+    def res_pk_bytes_no_proj():
+        return int(node.query(query_pk_bytes).strip())
+
+    _, pk_bytes_no_proj = query_until_condition(
+        pk_bytes_with_proj, res_pk_bytes_no_proj, condition=lesser
+    )
+    assert pk_bytes_with_proj > pk_bytes_no_proj
+
+    node.query("DROP TABLE test_pk_bytes_no_proj")
