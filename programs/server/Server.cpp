@@ -2542,6 +2542,13 @@ try
             /// synchronously.
             can_initialize_keeper_async = global_context->tryCheckClientConnectionToMyKeeperCluster();
         }
+        /// Initialize certificates before Keeper RAFT so that NuRaft SSL contexts
+        /// can register with CertificateReloader for hot-reload support.
+#if USE_SSL
+        CertificateReloader::instance().tryLoad(config());
+        CertificateReloader::instance().tryLoadClient(config());
+#endif
+
         /// Initialize keeper RAFT.
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
         FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());

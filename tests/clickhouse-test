@@ -1142,6 +1142,7 @@ class FailureReason(enum.Enum):
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
+    NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -2402,6 +2403,9 @@ class TestCase:
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
 
+        if "no-darwin" in tags and platform.system() == "Darwin":
+            return FailureReason.NOT_SUPPORTED_ON_DARWIN
+
         # Do not run *Log and Memory engine-specific tests
         if (
             "memory-engine" in tags or "log-engine" in tags
@@ -2540,10 +2544,7 @@ class TestCase:
             return FailureReason.SKIP
 
         if "no-flaky-check" in tags and args.flaky_check:
-            # In flaky check mode, no-flaky-check tests run sequentially (like no-parallel)
-            # with --sequential-test-runs runs instead of being skipped entirely.
-            # They are still excluded from parallel execution — see is_sequential_test().
-            pass
+            return FailureReason.SKIP
         if "stateful" in tags and args.no_stateful:
             return FailureReason.NO_STATEFUL
         if "stateful" not in tags and args.no_stateless:
@@ -3836,8 +3837,6 @@ class TestSuite:
 
         tags = self.all_tags[test_name]
         if "no-parallel" in tags or "sequential" in tags:
-            return True
-        if "no-flaky-check" in tags and args.flaky_check:
             return True
         return False
 

@@ -703,9 +703,9 @@ class Runner:
                 if test_cases_result and not test_cases_result.is_ok() and ci_db:
                     for test_case_result in test_cases_result.results:
                         if not test_case_result.is_ok():
-                            test_case_result.set_clickable_label(
-                                "cidb",
-                                ci_db.get_link_to_test_case_statistics(
+                            test_case_result.set_label(
+                                Result.Label.CIDB,
+                                link=ci_db.get_link_to_test_case_statistics(
                                     test_case_result.name,
                                     failure_patterns=Settings.TEST_FAILURE_PATTERNS,
                                     test_output=test_case_result.info,
@@ -722,7 +722,7 @@ class Runner:
             except Exception as ex:
                 if not info_errors:
                     traceback.print_exc()
-                    error = f"ERROR: Failed to set clickable label for test cases, exception [{ex}]"
+                    error = f"ERROR: Failed to set CIDB label for test cases, exception [{ex}]"
                     print(error)
                     info_errors.append(error)
 
@@ -761,7 +761,7 @@ class Runner:
                 if _GH_Auth():
                     GH.post_commit_status(
                         name=workflow.name,
-                        status=GH.convert_to_gh_status(status_updated),
+                        status=status_updated,
                         description="",
                         url=Info().get_report_url(latest=False),
                     )
@@ -843,13 +843,13 @@ class Runner:
                 traceback.print_exc()
 
         # finally, set the status flag for GH Actions
-        pipeline_status = Result.Status.SUCCESS
+        pipeline_status = Result.Status.OK
         if not result.is_ok():
             if result.is_failure() and result.do_not_block_pipeline_on_failure():
                 # job explicitly says to not block ci even though result is failure
                 pass
             else:
-                pipeline_status = Result.Status.FAILED
+                pipeline_status = Result.Status.FAIL
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
                 f"pipeline_status={pipeline_status}",

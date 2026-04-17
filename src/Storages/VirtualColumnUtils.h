@@ -16,6 +16,7 @@ namespace DB
 class Block;
 class Chunk;
 class NamesAndTypesList;
+class ColumnsDescription;
 
 class ExpressionActions;
 class IMergeTreeDataPart;
@@ -155,6 +156,11 @@ void addRequestedFileLikeStorageVirtualsToChunk(
 /// the "need only count" optimization that skips actual row parsing.
 bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns);
 
+/// Append virtual columns to a physical columns list for expression analysis.
+/// Virtual columns that already exist in the list are skipped.
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns);
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns);
+
 /// Find hive partitioning part inside path
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g
 std::string_view findHivePartitioningInPath(const String & path);
@@ -169,7 +175,6 @@ DataPartsVector filterDataPartsWithExpression(
 Names filterVirtualColumns(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const VirtualsDescriptionPtr & virtual_columns,
     const VirtualsKind & kind_to_filter,
     const VirtualsMaterializationPlace & place_to_filter);
 
