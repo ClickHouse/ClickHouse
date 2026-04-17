@@ -205,6 +205,7 @@ private:
     std::unordered_map<String, SQLFunction> staged_functions;
     std::unordered_map<String, SQLFunction> functions;
     std::unordered_map<uint32_t, CatalogBackup> backups;
+    std::unordered_map<uint32_t, CatalogBackup> snapshots;
     std::unordered_map<String, SQLPolicy> staged_policies;
     std::unordered_map<String, SQLPolicy> policies;
 
@@ -274,7 +275,8 @@ private:
         SelectQuery,
         Kill,
         ShowStatement,
-        CreatePolicy
+        CreatePolicy,
+        SnapshotQuery
     };
 
     enum class LitOp
@@ -701,9 +703,11 @@ private:
     void generateNextTablePartition(
         RandomGenerator & rg, uint32_t allow_parts, bool detached, bool supports_all, const SQLTable & t, PartitionExpr * pexpr);
 
+    void setBackupOut(RandomGenerator & rg, BackupOut * bout);
     void generateNextBackup(RandomGenerator & rg, BackupRestore * br);
     void generateNextRestore(RandomGenerator & rg, BackupRestore * br);
     void generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br);
+    void generateNextSnapshot(RandomGenerator & rg, SnapshotQuery * sq);
     void updateGeneratorFromSingleQuery(const SingleSQLQuery & sq, ExternalIntegrations & ei, bool success);
 
     template <typename T>
@@ -908,7 +912,6 @@ public:
 
     StatementGenerator(RandomGenerator & rg, FuzzConfig & fuzzc, ExternalIntegrations & conn, bool supports_cloud_features_);
 
-    void setBackupDestination(RandomGenerator & rg, BackupRestore * br);
     std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, SQLObject obj, const SQLBase & b);
 
     void generateNextCreateTable(RandomGenerator & rg, bool in_parallel, CreateTable * ct);

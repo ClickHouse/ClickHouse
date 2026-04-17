@@ -14,7 +14,20 @@ CURRENT_DIR = Utils.cwd()
 TEMP_DIR = f"{CURRENT_DIR}/ci/tmp/"
 
 
-def get_lcov_summary_percentages(info_file_path: str) -> tuple[float, float, float]:
+def get_lcov_summary(
+    info_file_path: str,
+) -> tuple[
+    tuple[float, int, int],
+    tuple[float, int, int],
+    tuple[float, int, int],
+]:
+    """Return ((pct, hit, total), ...) for lines, functions, and branches.
+
+    Each inner tuple contains the coverage percentage, the number of covered
+    items (hit), and the total number of items.  Raw counts allow callers to
+    compute precise deltas (e.g. "+55 lines covered") that round-tripping
+    through a percentage would lose.
+    """
     # lcov --summary writes to stderr, so merge stderr into stdout with 2>&1
     output = Shell.get_output(
         " ".join(
@@ -32,25 +45,28 @@ def get_lcov_summary_percentages(info_file_path: str) -> tuple[float, float, flo
         verbose=True,
     )
 
-    def extract_percent(metric: str) -> float:
+    def extract_metric(metric: str) -> tuple[float, int, int]:
+        # lcov --summary format: "  lines......: 55.23% (12345 of 22345 lines)"
         match = re.search(
-            rf"^\s*{metric}\.*:\s*([0-9]+(?:\.[0-9]+)?)%", output, re.MULTILINE
+            rf"^\s*{metric}\.*:\s*([0-9]+(?:\.[0-9]+)?)%\s+\((\d+) of (\d+)",
+            output,
+            re.MULTILINE,
         )
         if match:
-            return float(match.group(1))
+            return float(match.group(1)), int(match.group(2)), int(match.group(3))
         if re.search(rf"^\s*{metric}\.*:\s*no data found", output, re.MULTILINE):
             raise ValueError(
                 f"lcov summary contains no data for '{metric}'. "
                 "Make sure you run lcov with --branch-coverage when you need branch stats."
             )
         raise ValueError(
-            f"Failed to parse '{metric}' percentage from lcov output:\n{output}"
+            f"Failed to parse '{metric}' from lcov output:\n{output}"
         )
 
     return (
-        extract_percent("lines"),
-        extract_percent("functions"),
-        extract_percent("branches"),
+        extract_metric("lines"),
+        extract_metric("functions"),
+        extract_metric("branches"),
     )
 
 
@@ -199,15 +215,22 @@ if __name__ == "__main__":
         _diff_ran = _diff_report_dir.exists()
 
         b_line_cov = c_line_cov = b_function_cov = c_function_cov = b_branch_cov = c_branch_cov = delta = 0.0
+        b_line_hit = b_line_total = c_line_hit = c_line_total = 0
+        b_func_hit = b_func_total = c_func_hit = c_func_total = 0
+        b_branch_hit = b_branch_total = c_branch_hit = c_branch_total = 0
 
         if _diff_ran:
-            # Baseline coverage percentages for the current branch (from the merged report)
-            b_line_cov, b_function_cov, b_branch_cov = get_lcov_summary_percentages(
+            # Baseline coverage for the current branch (from the merged report)
+            (b_line_cov, b_line_hit, b_line_total), \
+            (b_function_cov, b_func_hit, b_func_total), \
+            (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(
                 f"{TEMP_DIR}/base_llvm_coverage.info"
             )
 
-            # Current coverage percentages for the current branch
-            c_line_cov, c_function_cov, c_branch_cov = get_lcov_summary_percentages(
+            # Current coverage for the current branch
+            (c_line_cov, c_line_hit, c_line_total), \
+            (c_function_cov, c_func_hit, c_func_total), \
+            (c_branch_cov, c_branch_hit, c_branch_total) = get_lcov_summary(
                 f"{TEMP_DIR}/llvm_coverage.info"
             )
 
@@ -273,7 +296,24 @@ if __name__ == "__main__":
                 info=msg,
             )
             print_res.set_comment(msg)
-        print_res.files.append(_print_log)
+        # Append high-precision hit/total counts to the log so they are visible
+        # in the artifact without cluttering the GitHub comment.
+        if _diff_ran:
+            with open(_print_log, "a") as _f:
+                _f.write(
+                    f"\n--- Coverage counts ---\n"
+                    f"Lines     : baseline {b_line_hit:,}/{b_line_total:,}"
+                    f"  ->  current {c_line_hit:,}/{c_line_total:,}"
+                    f"  (delta {c_line_hit - b_line_hit:+,} / {c_line_total - b_line_total:+,})\n"
+                    f"Functions : baseline {b_func_hit:,}/{b_func_total:,}"
+                    f"  ->  current {c_func_hit:,}/{c_func_total:,}"
+                    f"  (delta {c_func_hit - b_func_hit:+,} / {c_func_total - b_func_total:+,})\n"
+                    f"Branches  : baseline {b_branch_hit:,}/{b_branch_total:,}"
+                    f"  ->  current {c_branch_hit:,}/{c_branch_total:,}"
+                    f"  (delta {c_branch_hit - b_branch_hit:+,} / {c_branch_total - b_branch_total:+,})\n"
+                )
+        if _diff_inputs_exist:
+            print_res.files.append(_print_log)
         results.append(print_res)
 
         if not is_local_run:
@@ -314,8 +354,12 @@ if __name__ == "__main__":
                 _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
                 if not _diff_ran and Path(_base_info).exists() and Path(_curr_info).exists():
                     try:
-                        b_line_cov, b_function_cov, b_branch_cov = get_lcov_summary_percentages(_base_info)
-                        c_line_cov, c_function_cov, c_branch_cov = get_lcov_summary_percentages(_curr_info)
+                        (b_line_cov, b_line_hit, b_line_total), \
+                        (b_function_cov, b_func_hit, b_func_total), \
+                        (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(_base_info)
+                        (c_line_cov, c_line_hit, c_line_total), \
+                        (c_function_cov, c_func_hit, c_func_total), \
+                        (c_branch_cov, c_branch_hit, c_branch_total) = get_lcov_summary(_curr_info)
                         delta = c_line_cov - b_line_cov
                     except Exception as e:
                         print(f"Warning: could not compute global coverage percentages: {e}")
@@ -328,6 +372,18 @@ if __name__ == "__main__":
                     "c_function_cov": c_function_cov,
                     "b_branch_cov": b_branch_cov,
                     "c_branch_cov": c_branch_cov,
+                    "b_line_hit": b_line_hit,
+                    "b_line_total": b_line_total,
+                    "c_line_hit": c_line_hit,
+                    "c_line_total": c_line_total,
+                    "b_func_hit": b_func_hit,
+                    "b_func_total": b_func_total,
+                    "c_func_hit": c_func_hit,
+                    "c_func_total": c_func_total,
+                    "b_branch_hit": b_branch_hit,
+                    "b_branch_total": b_branch_total,
+                    "c_branch_hit": c_branch_hit,
+                    "c_branch_total": c_branch_total,
                     "pr_changed_lines_info": _pr_changed_lines_info,
                     "changed_lines_total": _changed_lines_total,
                     "changed_lines_covered": _changed_lines_covered,
@@ -356,10 +412,12 @@ if __name__ == "__main__":
         print("On master branch, skipping diff coverage generation")
         if not is_local_run:
             try:
-                m_line_cov, m_function_cov, m_branch_cov = get_lcov_summary_percentages(
+                (m_line_cov, m_line_hit, m_line_total), \
+                (m_function_cov, m_func_hit, m_func_total), \
+                (m_branch_cov, m_branch_hit, m_branch_total) = get_lcov_summary(
                     f"{TEMP_DIR}/llvm_coverage.info"
                 )
-                print(f"Master coverage: lines={m_line_cov:.2f}% functions={m_function_cov:.2f}% branches={m_branch_cov:.2f}%")
+                print(f"Master coverage: lines={m_line_cov:.2f}% ({m_line_hit}/{m_line_total}) functions={m_function_cov:.2f}% ({m_func_hit}/{m_func_total}) branches={m_branch_cov:.2f}% ({m_branch_hit}/{m_branch_total})")
                 _s3_prefix = f"REFs/{branch}/{current_commit_sha}"
                 _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
                 _master_data = {
@@ -376,6 +434,18 @@ if __name__ == "__main__":
                     "c_function_cov": m_function_cov,
                     "b_branch_cov": 0.0,
                     "c_branch_cov": m_branch_cov,
+                    "b_line_hit": 0,
+                    "b_line_total": 0,
+                    "c_line_hit": m_line_hit,
+                    "c_line_total": m_line_total,
+                    "b_func_hit": 0,
+                    "b_func_total": 0,
+                    "c_func_hit": m_func_hit,
+                    "c_func_total": m_func_total,
+                    "b_branch_hit": 0,
+                    "b_branch_total": 0,
+                    "c_branch_hit": m_branch_hit,
+                    "c_branch_total": m_branch_total,
                     "delta_line_cov": 0.0,
                     "coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
                     "diff_coverage_report_url": "",
