@@ -113,6 +113,47 @@ UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
 }
 
 
+template <typename T>
+bool ZooKeeper::waitForFutureWithProgress(std::future<T> & future) const
+{
+    using clock = std::chrono::steady_clock;
+    const auto timeout = std::chrono::milliseconds(args.operation_timeout_ms);
+    /// Poll in 100ms intervals. Short enough to detect progress promptly,
+    /// long enough to avoid busy-spinning.
+    const auto poll_interval = std::chrono::milliseconds(100);
+
+    auto deadline = clock::now() + timeout;
+    Int64 last_seen_ts = impl->getLastResponseTimestamp();
+
+    for (;;)
+    {
+        auto now = clock::now();
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - now);
+
+        if (remaining.count() <= 0)
+            break;
+
+        auto wait_time = std::min(remaining, poll_interval);
+
+        if (future.wait_for(wait_time) == std::future_status::ready)
+            return true;
+
+        /// Check if the server made progress since our last check.
+        Int64 current_ts = impl->getLastResponseTimestamp();
+        if (current_ts > last_seen_ts)
+        {
+            /// Server is alive -- extend the deadline.
+            last_seen_ts = current_ts;
+            deadline = clock::now() + timeout;
+        }
+    }
+
+    /// One final check -- the future may have become ready during the last wait.
+    return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready;
+}
+
+
 void ZooKeeper::updateAvailabilityZones()
 {
     ShuffleHosts shuffled_hosts = shuffleHosts();
@@ -360,10 +401,11 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
 
     auto future_result = asyncTryGetChildrenNoThrow(path, watch_callback, list_request_type, with_stat, with_data);
 
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future_result))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::List, path));
+        impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
+            Coordination::OpNum::List, path, args.operation_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -443,10 +485,11 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
 
     auto future_result = asyncTryCreateNoThrow(path, data, mode);
 
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future_result))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Create, path));
+        impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
+            Coordination::OpNum::Create, path, args.operation_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -606,10 +649,11 @@ Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t vers
 
     auto future_result = asyncTryRemoveNoThrow(path, version);
 
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future_result))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Remove, path));
+        impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
+            Coordination::OpNum::Remove, path, args.operation_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -655,10 +699,11 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
 
     auto future_result = asyncTryExistsNoThrow(path, watch_callback);
 
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future_result))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Exists, path));
+        impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
+            Coordination::OpNum::Exists, path, args.operation_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -716,10 +761,11 @@ Coordination::Error ZooKeeper::getImpl(
 
     auto future_result = asyncTryGetNoThrow(path, watch_callback);
 
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future_result))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Get, path));
+        impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
+            Coordination::OpNum::Get, path, args.operation_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -803,10 +849,11 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
 
     auto future_result = asyncTrySetNoThrow(path, data, version);
 
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future_result))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Set, path));
+        impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
+            Coordination::OpNum::Set, path, args.operation_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -887,14 +934,15 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
         future_result = asyncTryMultiNoThrow(requests);
     }
 
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future_result))
     {
         auto & request = *requests[0];
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format(
-            "Operation timeout on {} of {} requests. First ({}): {}",
+            "Operation timeout on {} of {} requests (no progress for {} ms). First ({}): {}",
             Coordination::OpNum::Multi,
             requests.size(),
+            args.operation_timeout_ms,
             demangle(typeid(request).name()),
             request.getPath()));
         return {Coordination::Error::ZOPERATIONTIMEOUT, ""};
@@ -973,10 +1021,11 @@ Coordination::Error ZooKeeper::syncImpl(const std::string & path, std::string & 
 
     auto future_result = asyncTrySyncNoThrow(path);
 
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future_result))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Sync, path));
+        impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
+            Coordination::OpNum::Sync, path, args.operation_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -1163,10 +1212,11 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
 
     impl->removeRecursive(path, remove_nodes_limit, std::move(callback));
 
-    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::RemoveRecursive, path));
+        impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
+            Coordination::OpNum::RemoveRecursive, path, args.operation_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -1199,10 +1249,11 @@ Coordination::Error ZooKeeper::getACLImpl(const std::string & path, Coordination
 
     auto future_result = asyncTryGetACLNoThrow(path);
 
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future_result))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Sync, path));
+        impl->finalize(fmt::format("Operation timeout on {} {} (no progress for {} ms)",
+            Coordination::OpNum::GetACL, path, args.operation_timeout_ms));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
@@ -1356,10 +1407,11 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
 
     auto future_result = asyncReconfig(joining, leaving, new_members, version);
 
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    if (!waitForFutureWithProgress(future_result))
     {
         maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {}", Coordination::OpNum::Reconfig));
+        impl->finalize(fmt::format("Operation timeout on {} (no progress for {} ms)",
+            Coordination::OpNum::Reconfig, args.operation_timeout_ms));
         throw KeeperException(Coordination::Error::ZOPERATIONTIMEOUT);
     }
 
@@ -2134,5 +2186,17 @@ void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & 
 
 template void addCheckNotExistsRequest<zkutil::ZooKeeper>(Coordination::Requests & requests, const zkutil::ZooKeeper & client, const std::string & path);
 template void addCheckNotExistsRequest<DB::ZooKeeperWithFaultInjection>(Coordination::Requests & requests, const DB::ZooKeeperWithFaultInjection & client, const std::string & path);
+
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::ListResponse>(std::future<Coordination::ListResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::CreateResponse>(std::future<Coordination::CreateResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::RemoveResponse>(std::future<Coordination::RemoveResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::ExistsResponse>(std::future<Coordination::ExistsResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::GetResponse>(std::future<Coordination::GetResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::SetResponse>(std::future<Coordination::SetResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::MultiResponse>(std::future<Coordination::MultiResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::SyncResponse>(std::future<Coordination::SyncResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::ReconfigResponse>(std::future<Coordination::ReconfigResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::RemoveRecursiveResponse>(std::future<Coordination::RemoveRecursiveResponse> &) const;
+template bool ZooKeeper::waitForFutureWithProgress<Coordination::GetACLResponse>(std::future<Coordination::GetACLResponse> &) const;
 
 }

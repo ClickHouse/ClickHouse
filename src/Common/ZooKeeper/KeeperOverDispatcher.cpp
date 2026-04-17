@@ -37,6 +37,12 @@ KeeperOverDispatcher::KeeperOverDispatcher(
             return;
         }
 
+        /// Update progress tracker for normal operation responses.
+        state->last_response_ts.store(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count(),
+            std::memory_order_relaxed);
+
         ResponseCallback callback;
         {
             std::lock_guard lock(state->callbacks_mutex);
@@ -53,6 +59,11 @@ KeeperOverDispatcher::KeeperOverDispatcher(
     };
 
     keeper_dispatcher->registerSession(session_id, response_callback);
+
+    callback_state->last_response_ts.store(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count(),
+        std::memory_order_relaxed);
 }
 
 KeeperOverDispatcher::~KeeperOverDispatcher()

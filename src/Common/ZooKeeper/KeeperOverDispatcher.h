@@ -32,6 +32,11 @@ public:
     int64_t getSessionID() const override { return session_id; }
     int64_t getLastZXIDSeen() const override { return 0; }
 
+    Int64 getLastResponseTimestamp() const override
+    {
+        return callback_state->last_response_ts.load(std::memory_order_relaxed);
+    }
+
     using ResponseCallback = std::function<void(const ZooKeeperResponsePtr &)>;
 
     void create(
@@ -118,6 +123,8 @@ private:
     struct CallbackState
     {
         std::atomic<bool> expired{false};
+        /// Progress tracker: microseconds since steady_clock epoch of the last response.
+        std::atomic<Int64> last_response_ts{0};
         std::mutex callbacks_mutex;
         std::unordered_map<XID, ResponseCallback> callbacks;
     };

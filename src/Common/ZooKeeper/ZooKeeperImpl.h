@@ -232,6 +232,11 @@ public:
 
     int64_t getLastZXIDSeen() const override { return last_zxid_seen.load(std::memory_order_relaxed); }
 
+    Int64 getLastResponseTimestamp() const override
+    {
+        return last_response_ts.load(std::memory_order_relaxed);
+    }
+
 private:
     const Int32 send_receive_os_threads_nice_value;
 
@@ -369,6 +374,12 @@ private:
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
     std::atomic<int64_t> last_zxid_seen;
+
+    /// Timestamp of the last response received from the server, in microseconds
+    /// since steady_clock epoch. Updated by receiveThread on every operation
+    /// response and heartbeat reply (NOT watch notifications).
+    /// Read by sync wrappers via getLastResponseTimestamp() for progress-based timeout.
+    std::atomic<Int64> last_response_ts{0};
 
     DB::KeeperFeatureFlags keeper_feature_flags;
 };

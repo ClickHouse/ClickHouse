@@ -471,6 +471,13 @@ ZooKeeper::ZooKeeper(
     if (!args.auth_scheme.empty())
         sendAuth(args.auth_scheme, args.identity);
 
+    /// Initialize progress tracker to "now" so the receive loop does not
+    /// immediately trigger a timeout before any responses arrive.
+    last_response_ts.store(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            clock::now().time_since_epoch()).count(),
+        std::memory_order_relaxed);
+
     try
     {
         send_thread = ThreadFromGlobalPool([this] { sendThread(); });
@@ -904,28 +911,88 @@ void ZooKeeper::receiveThread()
 
     try
     {
-        Int64 waited_us = 0;
+        const auto session_timeout_us = std::chrono::microseconds(
+            static_cast<Int64>(args.session_timeout_ms) * 1000);
+        const auto operation_timeout_us = std::chrono::microseconds(
+            static_cast<Int64>(args.operation_timeout_ms) * 1000);
+
+        auto idle_deadline = clock::now() + session_timeout_us;
+
         while (!requests_queue.isFinished())
         {
             maybeInjectRecvSleep();
             auto prev_bytes_received = in->count();
 
             clock::time_point now = clock::now();
-            UInt64 max_wait_us = static_cast<UInt64>(args.operation_timeout_ms) * 1000;
-            std::optional<RequestInfo> earliest_operation;
+            bool has_operations = false;
+            /// Only extract what we need under the lock: create_ts for timeout
+            /// computation and request ptr for error messages. Avoids copying
+            /// the full RequestInfo (which includes std::function callback and
+            /// watch shared_ptrs) on every iteration of the hot loop.
+            std::optional<clock::time_point> earliest_create_ts;
+            ZooKeeperRequestPtr earliest_request;
 
             {
                 std::lock_guard lock(operations_mutex);
-                if (!operations.empty())
+                has_operations = !operations.empty();
+                if (has_operations)
                 {
-                    /// Operations are ordered by xid (and consequently, by create_ts).
-                    earliest_operation = operations.begin()->second;
-                    auto earliest_operation_deadline = earliest_operation->request->create_ts + std::chrono::microseconds(static_cast<Int64>(args.operation_timeout_ms) * 1000);
-                    if (now > earliest_operation_deadline)
-                        throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline of {} ms already expired) for path: {}",
-                                        args.operation_timeout_ms, earliest_operation->request->getPath());
-                    max_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(earliest_operation_deadline - now).count();
+                    const auto & earliest = operations.begin()->second;
+                    earliest_create_ts = earliest.request->create_ts;
+                    earliest_request = earliest.request;
                 }
+            }
+
+            UInt64 max_wait_us;
+            if (has_operations)
+            {
+                /// Active path: operations are in flight.
+                /// Compute the progress-based timeout baseline as the LATER of:
+                ///   (a) the last response received from the server
+                ///   (b) the creation time of the earliest in-flight operation
+                ///
+                /// Using max(a, b) handles idle-to-active transitions: after an idle
+                /// period longer than operation_timeout_ms, last_response_ts is stale.
+                /// The request's create_ts provides a fresh baseline in this scenario.
+                Int64 last_ts = last_response_ts.load(std::memory_order_relaxed);
+                auto last_response_time = clock::time_point(
+                    std::chrono::microseconds(last_ts));
+
+                auto baseline = std::max(last_response_time, *earliest_create_ts);
+                auto silence_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                    now - baseline);
+
+                if (silence_duration >= operation_timeout_us)
+                {
+                    throw Exception(Error::ZOPERATIONTIMEOUT,
+                        "Operation timeout (no response in {} ms) for request {} for path: {}",
+                        args.operation_timeout_ms,
+                        earliest_request->getOpNum(),
+                        earliest_request->getPath());
+                }
+
+                max_wait_us = static_cast<UInt64>(
+                    (operation_timeout_us - silence_duration).count());
+
+                /// Reset idle deadline whenever we have active operations.
+                idle_deadline = now + session_timeout_us;
+            }
+            else
+            {
+                /// Idle path: no operations in flight.
+                /// Use session_timeout_ms as the overall idle deadline, but bound
+                /// each individual poll to operation_timeout_ms so we re-check
+                /// operations.empty() frequently.
+                auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(
+                    idle_deadline - now);
+
+                if (remaining.count() <= 0)
+                    throw Exception(Error::ZOPERATIONTIMEOUT,
+                        "Nothing is received in session timeout of {} ms",
+                        args.session_timeout_ms);
+
+                max_wait_us = static_cast<UInt64>(
+                    std::min(remaining, operation_timeout_us).count());
             }
 
             if (in->poll(max_wait_us))
@@ -934,22 +1001,36 @@ void ZooKeeper::receiveThread()
                     break;
 
                 receiveEvent();
-                waited_us = 0;
+
+                /// Reset idle deadline on every received response.
+                idle_deadline = clock::now() + session_timeout_us;
             }
-            else
+            else if (has_operations)
             {
-                if (earliest_operation)
+                /// Poll timed out while operations were in flight.
+                /// Re-check progress -- a response may have arrived since we
+                /// computed max_wait_us. Re-read last_response_ts freshly.
+                Int64 last_ts = last_response_ts.load(std::memory_order_relaxed);
+                auto last_response_time = clock::time_point(
+                    std::chrono::microseconds(last_ts));
+
+                auto baseline = std::max(last_response_time, *earliest_create_ts);
+                auto silence_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                    clock::now() - baseline);
+
+                if (silence_duration >= operation_timeout_us)
                 {
-                    throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response in {} ms) for request {} for path: {}",
-                        args.operation_timeout_ms, earliest_operation->request->getOpNum(), earliest_operation->request->getPath());
+                    throw Exception(Error::ZOPERATIONTIMEOUT,
+                        "Operation timeout (no response in {} ms) for request {} for path: {}",
+                        args.operation_timeout_ms,
+                        earliest_request->getOpNum(),
+                        earliest_request->getPath());
                 }
-                waited_us += max_wait_us;
-                if (waited_us >= static_cast<Int64>(args.session_timeout_ms) * 1000)
-                    throw Exception(Error::ZOPERATIONTIMEOUT, "Nothing is received in session timeout of {} ms", args.session_timeout_ms);
-
             }
+            /// else: idle poll timed out -- loop back to re-check operations and idle_deadline.
 
-            ProfileEvents::increment(ProfileEvents::ZooKeeperBytesReceived, in->count() - prev_bytes_received);
+            ProfileEvents::increment(ProfileEvents::ZooKeeperBytesReceived,
+                in->count() - prev_bytes_received);
         }
     }
     catch (...)
@@ -1000,6 +1081,12 @@ void ZooKeeper::receiveEvent()
             throw Exception(Error::ZRUNTIMEINCONSISTENCY, "Received error in heartbeat response: {}", err);
 
         response = std::make_shared<ZooKeeperHeartbeatResponse>();
+
+        /// Heartbeat confirms the server is alive and the network path works.
+        last_response_ts.store(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                clock::now().time_since_epoch()).count(),
+            std::memory_order_relaxed);
     }
     else if (xid == WATCH_XID)
     {
@@ -1058,6 +1145,13 @@ void ZooKeeper::receiveEvent()
         }
 
         auto receive_ts = clock::now();
+
+        /// Normal operation response: proves the server is processing our
+        /// request pipeline. Update progress tracker.
+        last_response_ts.store(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                receive_ts.time_since_epoch()).count(),
+            std::memory_order_relaxed);
 
         chassert(request_info.request->create_ts != std::chrono::steady_clock::time_point{});
         elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(receive_ts - request_info.request->create_ts).count();
@@ -1400,6 +1494,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
 void ZooKeeper::pushRequest(RequestInfo && info)
 {
+    bool queue_full_timeout = false;
     try
     {
         info.request->create_ts = clock::now();
@@ -1461,12 +1556,19 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             if (requests_queue.isFinished())
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired");
 
-            throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout of {} ms", args.operation_timeout_ms);
+            queue_full_timeout = true;
+            throw Exception(Error::ZOPERATIONTIMEOUT,
+                "Cannot push request to queue within operation timeout of {} ms",
+                args.operation_timeout_ms);
         }
     }
     catch (...)
     {
-        finalize(false, false, getCurrentExceptionMessage(false, false, false));
+        /// Queue-full timeout is transient backpressure, not a session failure.
+        /// The request was never sent (probably_sent=false), so it's safe to
+        /// fail just this one request without killing the session.
+        if (!queue_full_timeout)
+            finalize(false, false, getCurrentExceptionMessage(false, false, false));
         throw;
     }
 
