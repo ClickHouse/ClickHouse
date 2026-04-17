@@ -605,8 +605,6 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    bool is_first_reservation = (current_downloaded_size == 0 && already_reserved_size == 0);
-
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
 
@@ -620,6 +618,7 @@ bool FileSegment::reserve(
     /// Register in RocksDB index on first successful reservation, not at segment creation.
     /// Many EMPTY segments are never downloaded (unused prefetches, LIMIT in query, etc.),
     /// so deferring avoids redundant contention on creation/removal of empty segments.
+    bool is_first_reservation = (current_downloaded_size == 0 && already_reserved_size == 0);
     if (is_first_reservation)
     {
         try
