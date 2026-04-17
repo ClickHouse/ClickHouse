@@ -694,6 +694,12 @@ public:
         }
         else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
+            if (element.isInt64() && (element.getInt64() < 0))
+            {
+                error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
+                return false;
+            }
+
             value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else

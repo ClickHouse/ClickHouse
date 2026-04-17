@@ -1,7 +1,4 @@
 -- Tags: no-fasttest
--- Regression test for https://github.com/ClickHouse/ClickHouse/issues/102016
--- TimeNode and DateTimeNode used isUInt64() to check for numeric values,
--- but simdjson parses positive integers as Int64, so the check failed silently.
 
 SET enable_time_time64_type = 1;
 
@@ -36,3 +33,10 @@ SELECT JSONExtract('{"t": 1234567890123}', 't', 'DateTime64(3)') SETTINGS date_t
 -- Large UInt64 value that is genuinely UInt64 (> INT64_MAX) for DateTime
 SELECT 'DateTime from large UInt64';
 SELECT JSONExtract('{"t": 4294967295}', 't', 'DateTime') SETTINGS date_time_output_format = 'iso';
+
+-- DateTime from Int64
+SELECT 'DateTime from Int64';
+SELECT JSONExtract('{"t": 1}', 't', 'DateTime');
+SELECT JSONExtract('{"t": 1234567890}', 't', 'DateTime');
+SELECT JSONExtract('{"t": -1}', 't', 'DateTime');
+SELECT JSONExtract('{"t": -1234567890}', 't', 'DateTime');
