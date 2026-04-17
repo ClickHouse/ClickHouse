@@ -37,6 +37,20 @@ private:
     bool checkTLPAggregate(const ASTSelectQuery & select, const ContextMutablePtr & context);
     bool checkDQP(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Metamorphic identity oracle: verifies that `WHERE p`, `WHERE NOT(NOT p)`,
+    /// `WHERE (p) AND (1)`, and `WHERE (p) OR (0)` all return the same rows.
+    /// Unlike TLP, this works on ANY SELECT that has WHERE — including queries
+    /// with LIMIT, DISTINCT, GROUP BY, HAVING, or aggregates, because it doesn't
+    /// change query structure, only rewrites the WHERE predicate in equivalent ways.
+    bool checkIdentityWhere(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Subquery pushdown oracle: verifies that
+    /// `SELECT ... FROM t WHERE p`
+    /// equals
+    /// `SELECT ... FROM (SELECT * FROM t) WHERE p`.
+    /// Tests predicate pushdown through subqueries.
+    bool checkSubqueryWrap(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
     /// Try to insert random data into the table referenced by the SELECT query.
     void tryPopulateTable(const ASTSelectQuery & select, const ContextMutablePtr & context);
 

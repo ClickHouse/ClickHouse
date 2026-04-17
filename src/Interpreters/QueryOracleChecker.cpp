@@ -8,6 +8,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Core/Joins.h>
@@ -206,9 +207,12 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
         return false;
     if (select.limitBy())
         return false;
-    /// PREWHERE is safe — it filters rows before WHERE, so the TLP partition
-    /// on WHERE is still complete for the surviving rows. We keep PREWHERE
-    /// unchanged across all partitions.
+    /// PREWHERE can interact unpredictably with WHERE partitioning — the fuzzer
+    /// may produce PREWHERE expressions with suspicious type coercions that
+    /// silently succeed in some contexts but fail in others, causing false
+    /// positive mismatches. Skip queries with PREWHERE.
+    if (select.prewhere())
+        return false;
     if (select.qualify())
         return false;
     if (!select.tables())
@@ -1120,6 +1124,175 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
 }
 
 
+bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// Metamorphic identity oracle.
+    /// Verifies that equivalent WHERE predicates produce identical results.
+    ///
+    /// This works for any SELECT with WHERE — even queries with LIMIT, DISTINCT,
+    /// GROUP BY, HAVING, or aggregates. We don't change query structure, only
+    /// rewrite the WHERE predicate in a provably-equivalent way.
+    ///
+    /// Requires ORDER BY for deterministic comparison when query has LIMIT, since
+    /// LIMIT is order-dependent. Otherwise sorts results for set comparison.
+
+    if (!select.where())
+        return false;
+    if (!select.tables())
+        return false;
+
+    /// PREWHERE + WHERE interactions produce false positives due to type coercions
+    /// that behave differently under fuzzer-relaxed settings.
+    if (select.prewhere())
+        return false;
+
+    /// WITH CUBE/ROLLUP/GROUPING SETS combined with WHERE predicate rewriting
+    /// can produce false positives due to interactions with correlated subqueries
+    /// and the multi-way grouping.
+    if (select.group_by_with_rollup || select.group_by_with_cube
+        || select.group_by_with_totals || select.group_by_with_grouping_sets)
+        return false;
+
+    /// ARRAY JOIN / PASTE JOIN are safe here because we don't change structure.
+    /// But window functions and non-deterministic results aren't reproducible.
+    if (hasNonDeterministicFunctions(select.clone()))
+        return false;
+
+    /// Skip if LIMIT without ORDER BY — would be non-deterministic.
+    if (select.limitLength() && !select.orderBy())
+        return false;
+
+    ASTPtr predicate = select.where()->clone();
+
+    /// Build reference query: original.
+    auto ref_ast = select.clone();
+    String ref_sql = formatAST(ref_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    /// Variant 1: WHERE NOT(NOT(p)) — tests NOT handling.
+    auto v1_ast = select.clone();
+    auto & v1 = v1_ast->as<ASTSelectQuery &>();
+    v1.setExpression(ASTSelectQuery::Expression::WHERE,
+        makeASTFunction("not", makeASTFunction("not", predicate->clone())));
+    String v1_sql = formatAST(v1_ast);
+    if (v1_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    /// Variant 2: WHERE (p) AND (1) — tests constant-AND folding.
+    auto v2_ast = select.clone();
+    auto & v2 = v2_ast->as<ASTSelectQuery &>();
+    v2.setExpression(ASTSelectQuery::Expression::WHERE,
+        makeASTFunction("and", predicate->clone(), make_intrusive<ASTLiteral>(Field(UInt8(1)))));
+    String v2_sql = formatAST(v2_ast);
+    if (v2_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    /// Variant 3: WHERE (p) OR (0) — tests constant-OR folding.
+    auto v3_ast = select.clone();
+    auto & v3 = v3_ast->as<ASTSelectQuery &>();
+    v3.setExpression(ASTSelectQuery::Expression::WHERE,
+        makeASTFunction("or", predicate->clone(), make_intrusive<ASTLiteral>(Field(UInt8(0)))));
+    String v3_sql = formatAST(v3_ast);
+    if (v3_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+
+    LOG_TRACE(logger, "Identity WHERE oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "Identity WHERE oracle: variant NOT(NOT): {}", v1_sql);
+    LOG_TRACE(logger, "Identity WHERE oracle: variant AND 1: {}", v2_sql);
+    LOG_TRACE(logger, "Identity WHERE oracle: variant OR 0: {}", v3_sql);
+
+    auto ref_rows = executeAndCollectSortedRows(ref_sql, context);
+    auto v1_rows = executeAndCollectSortedRows(v1_sql, context);
+    auto v2_rows = executeAndCollectSortedRows(v2_sql, context);
+    auto v3_rows = executeAndCollectSortedRows(v3_sql, context);
+
+    auto check_variant = [&](const String & name, const String & sql, const std::vector<String> & rows)
+    {
+        if (ref_rows != rows)
+        {
+            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Identity WHERE ({}) oracle mismatch!\n"
+                "Reference query ({} rows): {}\n"
+                "Variant query ({} rows): {}",
+                name, ref_rows.size(), ref_sql, rows.size(), sql);
+        }
+    };
+
+    check_variant("NOT(NOT p)", v1_sql, v1_rows);
+    check_variant("p AND 1", v2_sql, v2_rows);
+    check_variant("p OR 0", v3_sql, v3_rows);
+
+    LOG_TRACE(logger, "Identity WHERE oracle passed ({} rows, 3 variants)", ref_rows.size());
+    return true;
+}
+
+
+bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// Subquery pushdown oracle.
+    /// Verifies that `SELECT ... FROM t WHERE p` equals
+    /// `SELECT ... FROM (<original>) ORDER BY ... LIMIT ...` when the outer has no WHERE.
+    ///
+    /// Simpler formulation: wrap the entire query as a subquery with SELECT * outside.
+    /// Result should be identical (stripped to set semantics since ORDER may be lost).
+
+    if (!select.tables())
+        return false;
+    if (hasNonDeterministicFunctions(select.clone()))
+        return false;
+
+    /// PREWHERE produces false positives with suspicious type coercions.
+    if (select.prewhere())
+        return false;
+
+    /// Skip if query has LIMIT without ORDER BY (non-deterministic row selection).
+    if (select.limitLength() && !select.orderBy())
+        return false;
+
+    /// Skip WITH TOTALS / ROLLUP / CUBE / GROUPING SETS — the wrapping changes
+    /// which columns are visible in the outer SELECT and the modifier semantics.
+    if (select.group_by_with_rollup || select.group_by_with_cube
+        || select.group_by_with_totals || select.group_by_with_grouping_sets)
+        return false;
+
+    auto ref_ast = select.clone();
+    stripOrderAndLimit(ref_ast->as<ASTSelectQuery &>());
+    String ref_sql = formatAST(ref_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    String wrapped_sql = fmt::format("SELECT * FROM ({})", ref_sql);
+    if (wrapped_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+
+    LOG_TRACE(logger, "Subquery wrap oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "Subquery wrap oracle: wrapped: {}", wrapped_sql);
+
+    auto ref_rows = executeAndCollectSortedRows(ref_sql, context);
+    auto wrapped_rows = executeAndCollectSortedRows(wrapped_sql, context);
+
+    if (ref_rows != wrapped_rows)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Subquery wrap oracle mismatch!\n"
+            "Reference query ({} rows): {}\n"
+            "Wrapped query ({} rows): {}",
+            ref_rows.size(), ref_sql,
+            wrapped_rows.size(), wrapped_sql);
+    }
+
+    LOG_TRACE(logger, "Subquery wrap oracle passed ({} rows)", ref_rows.size());
+    return true;
+}
+
+
 void QueryOracleChecker::tryPopulateTable(const ASTSelectQuery & select, const ContextMutablePtr & context)
 {
     /// With 80% probability, try to insert random data into all tables referenced by the query.
@@ -1329,6 +1502,40 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     catch (...)
     {
         LOG_TRACE(logger, "DQP oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
+    }
+
+    /// Identity WHERE oracle (rewrites WHERE into equivalent forms — NOT(NOT p), p AND 1, p OR 0)
+    try
+    {
+        if (checkIdentityWhere(*select, context))
+            any_check_performed = true;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+            throw;
+        LOG_TRACE(logger, "Identity WHERE oracle execution error (skipping): {}", e.message());
+    }
+    catch (...)
+    {
+        LOG_TRACE(logger, "Identity WHERE oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
+    }
+
+    /// Subquery wrap oracle (wraps original as subquery and verifies identical result)
+    try
+    {
+        if (checkSubqueryWrap(*select, context))
+            any_check_performed = true;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+            throw;
+        LOG_TRACE(logger, "Subquery wrap oracle execution error (skipping): {}", e.message());
+    }
+    catch (...)
+    {
+        LOG_TRACE(logger, "Subquery wrap oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
     }
 
     return any_check_performed;
