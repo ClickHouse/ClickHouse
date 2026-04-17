@@ -40,9 +40,17 @@ function configure
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
 
-    if [[ "${AST_FUZZER_ORACLE:-}" = "1" ]]; then
-        echo "Enabling AST fuzzer oracle (TLP WHERE + NoREC)"
-        cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/oracle-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
+    if [[ -n "${SERVER_FUZZER_ENABLED:-}" ]]; then
+        cat > $CONFIG_DIR/users.d/serverfuzz-tweaks.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
     fi
 
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
@@ -286,6 +294,10 @@ function fuzz
             then
                 # Give it some time to cool down
                 clickhouse-client --query "SHOW PROCESSLIST"
+                sleep 1
+            elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
+            then
+                # Server is alive but at memory limit, give it time to reclaim
                 sleep 1
             else
                 echo "Server live check returns $?"

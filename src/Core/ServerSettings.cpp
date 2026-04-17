@@ -1126,6 +1126,25 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, prepare_system_log_tables_on_startup, false, R"(
     If true, ClickHouse creates all configured `system.*_log` tables before the startup. It can be helpful if some startup scripts depend on these tables.
     )", 0) \
+    DECLARE(Bool, use_shared_merge_tree_log_pipeline, false, R"(
+    Only available on ClickHouse Cloud. When enabled, `system.*_log` tables are backed by `SharedMergeTree` via an S3-based pipeline.
+    For each log `<log>`, the following objects are created automatically on startup:
+
+    - `system.<log>_s3` — an `S3`-backed table that is the direct flush target; each
+      `SYSTEM FLUSH LOGS` call writes a new partitioned file here.
+    - `system.<log>_s3queue` — an `S3Queue` table (ordered mode) that picks up files from
+      `<log>_s3` and streams rows downstream. Each node processes only its own files via
+      `partition_regex`-based partitioning.
+    - `system.<log>_mv` — a `MATERIALIZED VIEW` that routes rows from `<log>_s3queue` into
+      the final `SharedMergeTree` table.
+    - `system.<log>` — the final `SharedMergeTree` table where rows accumulate and are queried.
+
+    On schema or settings change, the affected table is renamed to `<log>_0`, `<log>_1`, etc.
+    and recreated, consistent with the existing `SystemLog` rotation behavior.
+
+    Requires `<shared_log_pipeline><endpoint>` to be set in the server configuration.
+    See also: `shared_log_pipeline.enable_polling`, `shared_log_pipeline.flush_timeout_seconds`.
+    )", EXPERIMENTAL) \
     DECLARE(UInt64, config_reload_interval_ms, 2000, R"(
     How often clickhouse will reload config and check for new changes
     )", 0) \
@@ -1258,6 +1277,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_interval_bytes, 0, R"(Flushing jemalloc profile will be done after global peak memory usage increased by jemalloc_flush_profile_interval_bytes)", 0) \
     DECLARE(Bool, jemalloc_flush_profile_on_memory_exceeded, 0, R"(Flushing jemalloc profile will be done on total memory exceeded errors)", 0) \
+    DECLARE(UInt64, jemalloc_flush_profile_on_memory_exceeded_interval, 0, R"(If non-zero, sets the minimum interval in seconds between flushing jemalloc profiles on total memory exceeded errors. For example, 5 means at most one profile flush every 5 seconds. Takes priority over `jemalloc_flush_profile_on_memory_exceeded`.)", 0) \
     DECLARE(Bool, jemalloc_enable_global_profiler, Jemalloc::default_enable_global_profiler, R"(Enable jemalloc's allocation profiler for all threads. Jemalloc will sample allocations and all deallocations for sampled allocations.
     Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
     Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.

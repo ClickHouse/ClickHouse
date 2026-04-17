@@ -238,6 +238,7 @@ private:
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
+    void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
