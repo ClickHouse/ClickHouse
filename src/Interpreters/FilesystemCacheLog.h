@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
