@@ -20,9 +20,7 @@ namespace ProfileEvents
     extern const Event ApplyPatchesMicroseconds;
     extern const Event BuildPatchesJoinMicroseconds;
     extern const Event BuildPatchesMergeMicroseconds;
-    extern const Event BuildPatchesMergeOnKeyMicroseconds;
     extern const Event ApplyPatchMergeOnKeyMicroseconds;
-    extern const Event PatchesMergeOnKeyRowsAddedToHashTable;
 }
 
 namespace DB
@@ -665,14 +663,11 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
         }
         else
         {
-            ProfileEventTimeIncrement<Microseconds> build_watch(ProfileEvents::BuildPatchesMergeOnKeyMicroseconds);
             absl::flat_hash_map<UInt128, UInt32, UInt128TrivialHash> local_map;
             local_map.reserve(p_run_end - p);
 
             for (size_t i = p; i < p_run_end; ++i)
                 local_map.emplace(makeBlockIdentity(p_bn[i], p_bo[i]), static_cast<UInt32>(i));
-
-            ProfileEvents::increment(ProfileEvents::PatchesMergeOnKeyRowsAddedToHashTable, p_run_end - p);
 
             for (size_t i = m; i < m_run_end; ++i)
             {
