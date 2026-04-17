@@ -265,7 +265,7 @@ if [ "$cache_policy" = "SLRU" ]; then
 fi
 
 # Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
+if [ $((RANDOM % 2)) -eq 0 ]; then
     sudo echo "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
@@ -294,7 +294,9 @@ unset "${!THREAD_@}"
 # running with fault injection.
 rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 
-start_server || { echo "Failed to start server"; exit 1; }
+# Use a larger timeout for the post-stress restart: under sanitizers with
+# async_load_databases=false the server may need minutes to load all tables.
+start_server 30 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 
