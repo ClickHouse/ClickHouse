@@ -43,6 +43,7 @@ from ast import literal_eval as make_tuple
 from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timedelta
 from errno import EPERM, ESRCH
+from pathlib import Path
 from ssl import SSLEOFError
 from subprocess import PIPE, Popen
 from time import sleep, time
@@ -53,6 +54,27 @@ try:
 except ImportError:
     termcolor = None
 
+
+# Base path for per-process PGID files used by `--cleanup` to locate orphaned
+# test process groups.  Each worker process writes its own file named
+# ``_GROUP_PID_NAME.<pid>`` so no cross-process locking is needed.
+# The CI hook can invoke `clickhouse-test --cleanup` even if the parent was
+# killed with SIGKILL before its cleanup code ran.
+# `__file__` is `{repo}/tests/clickhouse-test`, so this resolves to
+# `{repo}/ci/tmp/clickhouse_test_group_pid`.
+_GROUP_PID_PATH = Path(__file__).resolve().parent.parent / "ci" / "tmp"
+_GROUP_PID_NAME = "clickhouse_test_group_pid"
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """Write `text` to `path` atomically via a sibling `.tmp` file and `os.replace`."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(text)
+        os.replace(tmp, path)
+    except Exception as e:
+        print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
 USE_JINJA = True
 try:
@@ -111,19 +133,22 @@ CGROUP_VERSION = detect_cgroup_version()
 BASH = "/bin/bash"
 
 def shell_get_output(cmd: str) -> str:
-    res = subprocess.run(
-        cmd,
-        shell=True,
-        executable=BASH,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    return res.stdout.strip()
-
+    try:
+        res = subprocess.run(
+            cmd,
+            shell=True,
+            executable=BASH,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+        )
+        return res.stdout.strip()
+    except Exception as e:
+        print(f"Error running command {cmd!r}: {e}", file=sys.stderr)
+        return ""
 
 class SharedEngineReplacer:
     SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|Coalescing"
@@ -601,12 +626,11 @@ CAPTURE_CLIENT_STACKTRACE = False
 
 def kill_process_group(pgid, fatal_log):
     try:
-        print(f"Processes left in process group {pgid}:")
-        print(
-            '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
-        )
-
         if SANITIZED:
+            print(f"Processes left in process group {pgid}:")
+            print(
+                '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
+            )
             print("Wait 60 seconds to let sanitizers print the report...")
             sleep(60)
 
@@ -918,11 +942,7 @@ def get_transactions_list(args):
 
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(pid):
-    try:
-        return shell_get_output(f"gdb -batch -ex 'thread apply all backtrace' -p {pid}")
-    except Exception as e:
-        print(f"Error occurred while receiving stack traces from gdb (for {pid}): {e}")
-        return None
+    return shell_get_output(f"gdb -batch -ex 'thread apply all backtrace' -p {pid}")
 
 
 # collect server stacktraces from system.stack_trace table
@@ -964,11 +984,7 @@ def get_stacktraces_from_clickhouse(args):
             'FROM system.stack_trace FORMAT Vertical"'
         )
 
-    try:
-        return shell_get_output(msg)
-    except Exception as e:
-        print(f"Error occurred while receiving stack traces from client: {e}")
-        return None
+    return shell_get_output(msg)
 
 def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[str]]:
     ps = shell_get_output("ps -eo pid,ppid,pgid,command").splitlines()[1:]
@@ -2524,10 +2540,7 @@ class TestCase:
             return FailureReason.SKIP
 
         if "no-flaky-check" in tags and args.flaky_check:
-            # In flaky check mode, no-flaky-check tests run sequentially (like no-parallel)
-            # with --sequential-test-runs runs instead of being skipped entirely.
-            # They are still excluded from parallel execution — see is_sequential_test().
-            pass
+            return FailureReason.SKIP
         if "stateful" in tags and args.no_stateful:
             return FailureReason.NO_STATEFUL
         if "stateful" not in tags and args.no_stateless:
@@ -3118,6 +3131,10 @@ class TestCase:
 
         # pylint:disable-next=consider-using-with; TODO: fix
         proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
+        # proc.pid == PGID after start_new_session=True; write it atomically so
+        # `clickhouse-test --cleanup` can find it even if we are killed with SIGKILL.
+        _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
+        write_text_atomic(_gpid_file, f"{proc.pid}\n")
 
         try:
             proc.wait(args.timeout)
@@ -3127,6 +3144,7 @@ class TestCase:
         finally:
             if cgroup_name:
                 cleanup_cgroup(cgroup_name)
+            _gpid_file.unlink(missing_ok=True)
 
         total_time = (datetime.now() - start_time).total_seconds()
 
@@ -3815,8 +3833,6 @@ class TestSuite:
 
         tags = self.all_tags[test_name]
         if "no-parallel" in tags or "sequential" in tags:
-            return True
-        if "no-flaky-check" in tags and args.flaky_check:
             return True
         return False
 
@@ -5908,7 +5924,29 @@ def parse_args():
         help="Do not retry failed tests",
     )
 
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Kill all processes from the group pid file and exit (used by CI hooks for orphan cleanup)",
+    )
+
     return parser.parse_args()
+
+
+def cleanup_test_groups():
+    """Kill all process groups recorded in per-worker PGID files.
+    """
+    for _pgid_file in _GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"):
+        if _pgid_file.name.endswith(".tmp"):
+            continue
+        try:
+            pgid = int(_pgid_file.read_text())
+            kill_process_group(pgid, None)
+        except Exception as e:
+            print(f"Warning: could not read {_pgid_file}: {e}", file=sys.stderr)
+            continue
+        finally:
+            _pgid_file.unlink(missing_ok=True)
 
 
 class Terminated(KeyboardInterrupt):
@@ -5921,10 +5959,25 @@ def signal_handler(signal, frame):
 
 
 if __name__ == "__main__":
-    # Move to a new process group and kill it at exit so that we don't have any
-    # infinite tests processes left
-    # (new process group is required to avoid killing some parent processes)
-    os.setpgid(0, 0)
+    try:
+        args = parse_args()
+    except Exception as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
+
+    if args.cleanup:
+        cleanup_test_groups()
+        sys.exit(0)
+
+    # Move to a new process group so that signals from the controlling terminal
+    # (e.g. Ctrl+C) do not accidentally reach our caller.  If the caller already
+    # used start_new_session=True (as run_test() does), we are already a process
+    # group leader and setpgid would raise PermissionError — that is fine.
+    if os.getpid() != os.getpgid(0):
+        try:
+            os.setpgid(0, 0)
+        except PermissionError:
+            pass  # already a session/process-group leader
 
     check_name = os.environ.get("CHECK_NAME")
     if check_name and "aarch" in check_name:
@@ -5937,12 +5990,6 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGHUP, signal_handler)
-
-    try:
-        args = parse_args()
-    except Exception as e:
-        print(e, file=sys.stderr)
-        sys.exit(1)
 
     # When using --record, disable engine replacement to ensure we record
     # the original test's output, not a modified version

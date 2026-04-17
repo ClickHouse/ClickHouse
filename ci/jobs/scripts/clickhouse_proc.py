@@ -788,15 +788,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
             try:
                 process.wait(timeout=timeout)
+                reader_thread.join()
+                return process.returncode == 0
             except subprocess.TimeoutExpired:
-                print(f"ERROR: fast test timed out after {timeout}s, killing process group")
+                print(
+                    f"ERROR: fast test timed out after {timeout}s, killing process group"
+                )
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.wait()
                 reader_thread.join()
                 return False
-
-            reader_thread.join()
-            return process.returncode == 0
+            finally:
+                # Kill any test processes that survived clickhouse-test's own cleanup
+                # (e.g. if it was killed with SIGKILL before its signal handlers ran).
+                # clickhouse-test writes the group pid file itself on startup; --cleanup
+                # reads it and kills all orphaned test process groups.
+                _clickhouse_test = Path(__file__).resolve().parent.parent.parent.parent / "tests" / "clickhouse-test"
+                subprocess.run([sys.executable, str(_clickhouse_test), "--cleanup"], check=False)
 
     def terminate(self, force=False):
         if self.minio_proc:

@@ -1388,7 +1388,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     part.parent_part,
                     part.part_index_in_query,
                     part.part_starting_offset_in_query,
-                    std::move(ranges_to_get_from_part));
+                    std::move(ranges_to_get_from_part),
+                    part.read_hints);
             }
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
@@ -1731,7 +1732,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     part_it->parent_part,
                     part_it->part_index_in_query,
                     part_it->part_starting_offset_in_query,
-                    part_it->ranges);
+                    part_it->ranges,
+                    part_it->read_hints);
                 current_ranges_marks += part_it->getMarksCount();
             }
 
@@ -2714,7 +2716,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                             it_parts->parent_part,
                             it_parts->part_index_in_query,
                             it_parts->part_starting_offset_in_query,
-                            std::move(diff_ranges));
+                            std::move(diff_ranges),
+                            it_parts->read_hints);
                     }
 
                     ++it_parts;
@@ -3158,13 +3161,13 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
             columns_to_keep.insert(input->result_name);
     }
 
-    auto virtuals = data.getVirtualsPtr();
+    const auto & virtuals = getStorageMetadata()->virtuals;
 
     Names new_column_names;
     Names columns_to_remove;
     for (const auto & column_name : all_column_names)
     {
-        if (columns_to_keep.contains(column_name) || virtuals->has(column_name))
+        if (columns_to_keep.contains(column_name) || virtuals.has(column_name))
             new_column_names.push_back(column_name);
         else
             columns_to_remove.push_back(column_name);
@@ -4110,7 +4113,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     }
 
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
-    auto new_virtual_columns = std::make_shared<VirtualColumnsDescription>(*storage_snapshot->virtual_columns);
+    auto new_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_snapshot->metadata);
 
     for (const auto & [index_name, added_virtual_columns] : added_columns)
     {
@@ -4139,7 +4142,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} already added for reading", added_virtual_column.name);
 
             all_column_names.push_back(added_virtual_column.name);
-            new_virtual_columns->add(added_virtual_column);
+            new_metadata->virtuals.add(added_virtual_column);
             index_task.columns.emplace_back(added_virtual_column.name, added_virtual_column.type);
         }
     }
@@ -4157,8 +4160,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 
     storage_snapshot = std::make_shared<StorageSnapshot>(
         storage_snapshot->storage,
-        storage_snapshot->metadata,
-        std::move(new_virtual_columns));
+        std::move(new_metadata));
 
     if (output_header != nullptr)
     {

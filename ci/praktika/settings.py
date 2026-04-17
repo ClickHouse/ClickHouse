@@ -33,8 +33,6 @@ class _Settings:
     ENABLED_WORKFLOWS: Optional[List[str]] = None
     DEFAULT_LOCAL_TEST_WORKFLOW: str = ""
 
-    ENABLE_ARTIFACTS_REPORT: bool = False
-
     ######################################
     #    Runtime Settings                #
     ######################################
@@ -180,7 +178,6 @@ _USER_DEFINED_SETTINGS = [
     "DISABLED_WORKFLOWS",
     "ENABLED_WORKFLOWS",
     "PYTHONPATHS",
-    "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
     "ENABLE_SUBMODULE_CACHE",

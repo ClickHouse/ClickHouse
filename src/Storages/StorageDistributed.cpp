@@ -368,8 +368,7 @@ VirtualColumnsDescription StorageDistributed::createVirtuals()
     /// NOTE: This is weird.
     /// Most of these virtual columns are part of MergeTree
     /// tables info. But Distributed is general-purpose engine.
-    StorageInMemoryMetadata metadata;
-    auto desc = MergeTreeData::createVirtuals(metadata);
+    auto desc = MergeTreeData::createVirtuals(nullptr);
 
     desc.addEphemeral("_shard_num", std::make_shared<DataTypeUInt32>(), "Deprecated. Use function shardNum instead", VirtualsMaterializationPlace::Reader);
 
@@ -425,8 +424,8 @@ StorageDistributed::StorageDistributed(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (sharding_key_)
     {
@@ -745,11 +744,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
     return QueryProcessingStage::Complete;
-}
-
-StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
-{
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 }
 
 namespace

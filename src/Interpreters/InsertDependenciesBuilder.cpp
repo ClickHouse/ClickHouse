@@ -604,7 +604,7 @@ private:
             source_id,
             source_metadata->getColumns(),
             std::move(data_block),
-            *source_storage->getVirtualsPtr()));
+            source_metadata->virtuals));
 
         QueryPipelineBuilder pipeline;
 
