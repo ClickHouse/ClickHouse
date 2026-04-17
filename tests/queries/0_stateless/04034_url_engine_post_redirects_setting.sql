@@ -1,4 +1,3 @@
--- Tags: no-fasttest, no-parallel
 -- Verify that the http_allow_redirects_on_post setting exists and defaults to false.
 -- Full redirect testing requires an HTTP server, but we can verify the setting
 -- is recognized and configurable.
