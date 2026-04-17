@@ -834,7 +834,8 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     settings.path.back() = Substream::Regular;
     auto * stream = settings.getter(settings.path);
     if (!stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for String data.");
+        throw Exception(
+            settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Got empty stream for String data.");
 
     /// Fill offsets and calculate bytes to skip and read based on sizes column.
     auto mutable_column = column->assumeMutable();

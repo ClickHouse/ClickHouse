@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
@@ -284,7 +285,11 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     if (variant_element_state->variant->size() < *variant_limit)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of deserialized variant column less than the limit: {} < {}", variant_element_state->variant->size(), *variant_limit);
+        throw Exception(
+            settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+            "Size of deserialized variant column less than the limit: {} < {}",
+            variant_element_state->variant->size(),
+            *variant_limit);
 
     size_t variant_offset = variant_element_state->variant->size() - *variant_limit;
 
