@@ -784,29 +784,43 @@ class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasCo
                            || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
             return nullptr;
 
+        const String & alias_name = column_node->getColumnName();
         auto column_expression = column_node->getExpression();
 
-        /// Compute the tree hash BEFORE setting the alias so that two
-        /// expressions that differ only in alias are recognized as duplicates.
+        /// Same `ALIAS` column visited more than once (e.g. referenced in both SELECT and GROUP BY) —
+        /// reuse the same expansion decision that was made the first time. Otherwise different
+        /// positions in the query would end up with different expressions (one plain, one wrapped
+        /// in `identity`) for the same alias, triggering `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
+        if (auto it = alias_wrapped_in_identity.find(alias_name); it != alias_wrapped_in_identity.end())
+        {
+            column_expression->setAlias(alias_name);
+            return it->second ? wrapInIdentity(column_expression, alias_name) : column_expression;
+        }
+
+        /// Compute the tree hash BEFORE setting the alias so that two `ALIAS` columns that
+        /// share the same underlying expression are recognized as duplicates.
         auto expression_hash = column_expression->getTreeHash(
             {.compare_aliases = false, .compare_types = true, .ignore_cte = false});
 
-        column_expression->setAlias(column_node->getColumnName());
+        column_expression->setAlias(alias_name);
 
-        /// If we already emitted an expression tree with the same structure,
-        /// wrap this one in `identity` so that the Planner treats it as
-        /// a separate expression and does not deduplicate the aggregate.
-        if (!seen_expression_hashes.emplace(expression_hash).second)
-        {
-            auto identity_function_node = std::make_shared<FunctionNode>("identity");
-            identity_function_node->getArguments().getNodes().push_back(column_expression);
-            auto identity_function = FunctionFactory::instance().get("identity", context);
-            identity_function_node->resolveAsFunction(identity_function->build(identity_function_node->getArgumentColumns()));
-            identity_function_node->setAlias(column_node->getColumnName());
-            return identity_function_node;
-        }
+        /// First alias gets the bare expression; every subsequent distinct alias that shares the
+        /// same expression tree is wrapped in `identity` so the Planner keeps them as separate
+        /// aggregate columns (otherwise deduplication collapses them and the Distributed result
+        /// header loses a column — see #85895).
+        const bool already_used = !seen_expression_hashes.emplace(expression_hash).second;
+        alias_wrapped_in_identity.emplace(alias_name, already_used);
+        return already_used ? wrapInIdentity(column_expression, alias_name) : column_expression;
+    }
 
-        return column_expression;
+    QueryTreeNodePtr wrapInIdentity(const QueryTreeNodePtr & inner, const String & alias_name)
+    {
+        auto identity_function_node = std::make_shared<FunctionNode>("identity");
+        identity_function_node->getArguments().getNodes().push_back(inner);
+        auto identity_function = FunctionFactory::instance().get("identity", context);
+        identity_function_node->resolveAsFunction(identity_function->build(identity_function_node->getArgumentColumns()));
+        identity_function_node->setAlias(alias_name);
+        return identity_function_node;
     }
 
 public:
@@ -832,6 +846,9 @@ private:
     };
 
     std::unordered_set<IQueryTreeNode::Hash, TreeHashHash> seen_expression_hashes;
+    /// Maps `ALIAS` column name to whether its expansion was wrapped in `identity` on first visit,
+    /// so repeat visits of the same alias reuse the same decision.
+    std::unordered_map<String, bool> alias_wrapped_in_identity;
 };
 
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
