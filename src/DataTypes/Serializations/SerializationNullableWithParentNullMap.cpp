@@ -2,12 +2,18 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationNullableWithParentNullMap.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -58,13 +64,10 @@ void SerializationNullableWithParentNullMap::enumerateStreams(
     }
 
     settings.path.push_back(Substream::NullMap);
-    settings.path.back().data
-        = SubstreamData(SerializationNumber<UInt8>::create()).withType(std::make_shared<DataTypeUInt8>());
+    settings.path.back().data = SubstreamData(SerializationNumber<UInt8>::create()).withType(std::make_shared<DataTypeUInt8>());
     callback(settings.path);
     settings.path.pop_back();
 
-    /// Inner streams emitted by the nested serialization are placed under
-    /// NullableElements so file name resolution matches the on-disk layout.
     settings.path.push_back(Substream::NullableElements);
     settings.path.back().data = nested_data;
     nested_serialization->enumerateStreams(settings, callback, nested_data);
@@ -132,7 +135,14 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
 
     const auto & accumulated_parent_null_map_data
         = assert_cast<const ColumnUInt8 &>(*parent_null_map_state->accumulated_parent_null_map).getData();
-    chassert(accumulated_parent_null_map_data.size() >= prev_size + new_rows);
+
+    if (accumulated_parent_null_map_data.size() < prev_size + new_rows)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Parent null map has fewer rows than the nested column of `Nullable(Tuple(...))` subcolumn "
+            "(parent null map size = {}, required = {})",
+            accumulated_parent_null_map_data.size(),
+            prev_size + new_rows);
 
     auto mutable_column = column->assumeMutable();
     auto & column_nullable = assert_cast<ColumnNullable &>(*mutable_column);
