@@ -370,7 +370,8 @@ private:
         size_t offset,
         size_t size,
         const KeyMetadataPtr & key_metadata,
-        const OriginInfo & origin);
+        const OriginInfo & origin,
+        bool is_in_rocksdb_index);
 
 #if USE_ROCKSDB
     void loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> entries);

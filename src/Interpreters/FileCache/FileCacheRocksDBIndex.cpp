@@ -142,6 +142,18 @@ void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 s
     auto serialized_key = serializeKey(key, offset);
     auto serialized_value = serializeValue(size, origin);
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    {
+        rocksdb::ReadOptions read_options;
+        std::string existing_value;
+        auto get_status = db->Get(read_options, serialized_key, &existing_value);
+        if (is_new_entry)
+            chassert(get_status.IsNotFound());
+        else
+            chassert(get_status.ok());
+    }
+#endif
+
     rocksdb::WriteOptions write_options;
     write_options.sync = true;
 
@@ -150,10 +162,7 @@ void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 s
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to write to RocksDB index: {}", status.ToString());
 
     if (is_new_entry)
-    {
-        auto count = element_count.fetch_add(1) + 1;
-        CurrentMetrics::set(CurrentMetrics::FilesystemCacheRocksDBIndexElements, count);
-    }
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheRocksDBIndexElements);
 }
 
 void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset)
@@ -167,9 +176,16 @@ void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset)
     if (!status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to delete from RocksDB index: {}", status.ToString());
 
-    auto count = element_count.fetch_sub(1) - 1;
-    chassert(count >= 0);
-    CurrentMetrics::set(CurrentMetrics::FilesystemCacheRocksDBIndexElements, count);
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheRocksDBIndexElements);
+}
+
+bool FileCacheRocksDBIndex::exists(const FileCacheKey & key, size_t offset) const
+{
+    auto serialized_key = serializeKey(key, offset);
+    rocksdb::ReadOptions read_options;
+    std::string value;
+    auto status = db->Get(read_options, serialized_key, &value);
+    return status.ok();
 }
 
 std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLoadAll()
@@ -190,6 +206,7 @@ std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLo
         if (key_slice.size() != expected_key_size)
         {
             LOG_WARNING(log, "Skipping malformed RocksDB entry: key_size={}", key_slice.size());
+            chassert(false);
             continue;
         }
 
@@ -203,14 +220,14 @@ std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLo
         catch (...)
         {
             LOG_WARNING(log, "Skipping malformed RocksDB value: {}", getCurrentExceptionMessage(false));
+            chassert(false);
         }
     }
 
     if (!it->status().ok())
         LOG_ERROR(log, "RocksDB iteration error: {}", it->status().ToString());
 
-    element_count.store(static_cast<Int64>(entries.size()));
-    CurrentMetrics::set(CurrentMetrics::FilesystemCacheRocksDBIndexElements, entries.size());
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheRocksDBIndexElements, entries.size());
 
     LOG_INFO(log, "Loaded {} entries from RocksDB metadata index", entries.size());
     return entries;
