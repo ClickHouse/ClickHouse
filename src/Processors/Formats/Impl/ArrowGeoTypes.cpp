@@ -198,6 +198,19 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
     return poly;
 }
 
+inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer)
+{
+    MultiLineString<CartesianPoint> mls;
+    readOpenBracket(in_buffer);
+    while (true)
+    {
+        mls.push_back(parseWKTLine(in_buffer));
+        if (readItemEnding(in_buffer))
+            break;
+    }
+    return mls;
+}
+
 inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer)
 {
     MultiPolygon<CartesianPoint> poly;
@@ -238,7 +251,7 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
     if (type == "POLYGON")
         return parseWKTPolygon(in_buffer);
     if (type == "MULTILINESTRING")
-        return parseWKTPolygon(in_buffer);
+        return parseWKTMultiLineString(in_buffer);
     if (type == "MULTIPOLYGON")
         return parseWKTMultiPolygon(in_buffer);
 
@@ -336,7 +349,7 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
             return;
         case GeoType::Polygon:
             if (!std::holds_alternative<Polygon<CartesianPoint>>(object))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multiline");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected polygon");
             appendPolygonToGeoColumn(std::get<Polygon<CartesianPoint>>(object), col);
             return;
         case GeoType::MultiLineString:
