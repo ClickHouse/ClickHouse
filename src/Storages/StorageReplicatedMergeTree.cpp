@@ -6659,7 +6659,7 @@ void StorageReplicatedMergeTree::alter(
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
-        auto old_metadata = getInMemoryMetadata();
+        auto old_metadata = getInMemoryMetadataPtr(query_context, true);
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         if (statistics_changed)
@@ -6672,9 +6672,9 @@ void StorageReplicatedMergeTree::alter(
         catch (...)
         {
             /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
-            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            changeSettings(old_metadata->settings_changes, table_lock_holder);
             if (statistics_changed)
-                setInMemoryMetadata(old_metadata);
+                setInMemoryMetadata(*old_metadata);
             throw;
         }
         return;
@@ -6682,7 +6682,7 @@ void StorageReplicatedMergeTree::alter(
 
     if (commands.isCommentAlter())
     {
-        auto old_metadata = getInMemoryMetadata();
+        auto old_metadata = getInMemoryMetadataPtr(query_context, true);
         setInMemoryMetadata(future_metadata);
 
         try
@@ -6691,7 +6691,7 @@ void StorageReplicatedMergeTree::alter(
         }
         catch (...)
         {
-            setInMemoryMetadata(old_metadata);
+            setInMemoryMetadata(*old_metadata);
             throw;
         }
         return;
