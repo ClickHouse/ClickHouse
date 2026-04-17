@@ -1272,13 +1272,22 @@ public:
             size_t size = any_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
-                DataTypePtr element_type = any_tuple->getElement(i);
+                DataTypePtr left_element_type, right_element_type;
                 if (both_tuples)
                 {
-                    ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
-                                                   {nullptr, right_tuple->getElements()[i], ""}};
-                    element_type = func->build(args)->getResultType();
+                    left_element_type = left_tuple->getElements()[i];
+                    right_element_type = right_tuple->getElements()[i];
                 }
+                else
+                {
+                    /// When comparing tuple with a string constant, the string is parsed
+                    /// and cast to the tuple's element types during execution, so the
+                    /// element comparison is effectively element_type vs element_type.
+                    left_element_type = right_element_type = any_tuple->getElement(i);
+                }
+                ColumnsWithTypeAndName args = {{nullptr, left_element_type, ""},
+                                               {nullptr, right_element_type, ""}};
+                auto element_type = func->build(args)->getResultType();
                 has_nullable = has_nullable || canContainNull(*element_type);
 
                 /// Nullable(Nothing)
