@@ -236,9 +236,8 @@ def main():
 
     runner_options += f" --jobs {workers}"
 
-    if is_flaky_check:
+    if is_flaky_check or is_targeted_check:
         # Stop after 5 total failures across all parallel workers (fast feedback on broken PRs).
-        # The 45-min global_time_limit is the primary stopping condition for healthy PRs.
         runner_options += " --max-failures 5"
 
     if is_excluded_from_llvm:
@@ -573,14 +572,14 @@ def main():
             )
 
         elif is_targeted_check:
-            job_timeout = int(3600 * 2.5)
-            soft_limit_margin = 3600
+            TARGETED_CHECK_TIME_LIMIT = 50 * 60  # 50 min
             global_time_limit = max(
-                job_timeout - soft_limit_margin - int(stop_watch.duration), 0
+                TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
             print(
-                f"Soft time limit for test runner: {global_time_limit}s"
-                f" (elapsed so far: {int(stop_watch.duration)}s)"
+                f"Targeted-check time limit: {TARGETED_CHECK_TIME_LIMIT}s"
+                f" (elapsed so far: {int(stop_watch.duration)}s,"
+                f" remaining: {global_time_limit}s)"
             )
 
             run_tests(
