@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 
 namespace DB::ErrorCodes
 {

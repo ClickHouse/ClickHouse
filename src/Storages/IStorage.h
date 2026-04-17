@@ -218,30 +218,9 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    void setVirtuals(VirtualColumnsDescription virtuals_)
-    {
-        virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
-    }
-
-    /// Return list of virtual columns (like _part, _table, etc). In the vast
-    /// majority of cases virtual columns are static constant part of Storage
-    /// class and don't depend on Storage object. But sometimes we have fake
-    /// storages, like Merge, which works as proxy for other storages and it's
-    /// virtual columns must contain virtual columns from underlying table.
-    ///
-    /// User can create columns with the same name as virtual column. After that
-    /// virtual column will be overridden and inaccessible.
-    ///
-    /// By default return empty list of columns.
-    VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
-
     Names getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
-
-    /// Returns whether the column is virtual - by default all columns are real.
-    /// Initially reserved virtual column name may be shadowed by real column.
-    bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
     virtual void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const;
@@ -305,9 +284,6 @@ private:
 
     /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
     MultiVersionStorageMetadataPtr metadata;
-
-    /// Description of virtual columns. Optional, may be set in constructor.
-    MultiVersionVirtualsDescriptionPtr virtuals;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(

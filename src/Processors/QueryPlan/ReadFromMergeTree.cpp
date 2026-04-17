@@ -3161,13 +3161,13 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
             columns_to_keep.insert(input->result_name);
     }
 
-    auto virtuals = data.getVirtualsPtr();
+    const auto & virtuals = getStorageMetadata()->virtuals;
 
     Names new_column_names;
     Names columns_to_remove;
     for (const auto & column_name : all_column_names)
     {
-        if (columns_to_keep.contains(column_name) || virtuals->has(column_name))
+        if (columns_to_keep.contains(column_name) || virtuals.has(column_name))
             new_column_names.push_back(column_name);
         else
             columns_to_remove.push_back(column_name);
@@ -4113,7 +4113,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     }
 
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
-    auto new_virtual_columns = std::make_shared<VirtualColumnsDescription>(*storage_snapshot->virtual_columns);
+    auto new_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_snapshot->metadata);
 
     for (const auto & [index_name, added_virtual_columns] : added_columns)
     {
@@ -4142,7 +4142,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} already added for reading", added_virtual_column.name);
 
             all_column_names.push_back(added_virtual_column.name);
-            new_virtual_columns->add(added_virtual_column);
+            new_metadata->virtuals.add(added_virtual_column);
             index_task.columns.emplace_back(added_virtual_column.name, added_virtual_column.type);
         }
     }
@@ -4160,8 +4160,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 
     storage_snapshot = std::make_shared<StorageSnapshot>(
         storage_snapshot->storage,
-        storage_snapshot->metadata,
-        std::move(new_virtual_columns));
+        std::move(new_metadata));
 
     if (output_header != nullptr)
     {

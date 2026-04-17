@@ -95,8 +95,8 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
 
     const auto & data_part = loaded_part_info->getDataPart();
-    const auto & storage_columns = storage_snapshot->metadata->getColumns();
-    const auto & virtual_columns = storage_snapshot->virtual_columns;
+    const auto & storage_columns = storage_snapshot->metadata->columns;
+    const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
     auto it = getColumns().begin();
     for (size_t pos = 0; pos < columns.size(); ++pos, ++it)
@@ -104,7 +104,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         if (columns[pos] || storage_columns.has(it->name))
             continue;
 
-        auto virtual_column = virtual_columns->tryGet(it->name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+        auto virtual_column = virtual_columns.tryGet(it->name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
         if (!virtual_column)
             continue;
 
@@ -194,9 +194,9 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
 ColumnsDescription IMergeTreeReader::buildCombinedColumnsForDefaultExpressions() const
 {
     auto combined_columns = storage_snapshot->metadata->getColumns();
-    if (storage_snapshot->virtual_columns)
+    if (!storage_snapshot->metadata->virtuals.empty())
     {
-        for (const auto & virtual_column : *storage_snapshot->virtual_columns)
+        for (const auto & virtual_column : storage_snapshot->metadata->virtuals)
             if (virtual_column.default_desc.expression)
                 combined_columns.add(virtual_column);
     }
