@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -19,12 +20,14 @@
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
 }
+
 }
 
 namespace DB::QueryPlanOptimizations
@@ -226,12 +229,11 @@ std::optional<String> optimizeUseNormalProjections(
 
     auto logger = getLogger("optimizeUseNormalProjections");
 
-    auto projection_virtuals = reading->getMergeTreeData().getProjectionVirtualsPtr();
     auto has_all_required_columns = [&](const ProjectionDescription * projection)
     {
         for (const auto & col : required_columns)
         {
-            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection_virtuals->has(col))
+            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection->metadata->virtuals.has(col))
                 return false;
         }
 
@@ -241,6 +243,7 @@ std::optional<String> optimizeUseNormalProjections(
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
+    projection_query_info.row_level_filter = nullptr;
     if (query.dag)
         projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();

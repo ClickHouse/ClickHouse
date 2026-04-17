@@ -40,6 +40,7 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -3159,42 +3160,53 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         return;
     }
 
+    /// Helper to collect aggregate data pointers for all states.
+    auto collect_data_vec = [&](size_t aggregate_index)
+    {
+        VectorWithMemoryTracking<AggregateDataPtr> data_vec;
+        data_vec.reserve(non_empty_data.size());
+        for (const auto & result : non_empty_data)
+            data_vec.emplace_back(result->without_key + offsets_of_aggregate_states[aggregate_index]);
+        return data_vec;
+    };
+
+    /// Prepare for parallel merge if needed.
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
         {
-            size_t size = non_empty_data.size();
-            std::vector<AggregateDataPtr> data_vec;
-            data_vec.reserve(size);
-
-            for (size_t result_num = 0; result_num < size; ++result_num)
-                data_vec.emplace_back(non_empty_data[result_num]->without_key + offsets_of_aggregate_states[i]);
-
+            auto data_vec = collect_data_vec(i);
             aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
         }
     }
 
-    /// We merge all aggregation results to the first.
-    for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
+    /// Merge all aggregation results to the first.
+    /// Use batch merge (parallelizeMergeMulti) when parallel merge is supported;
+    /// the default implementation falls back to pairwise merge with thread pool.
+    for (size_t i = 0; i < params.aggregates_size; ++i)
     {
-        AggregatedDataWithoutKey & current_data = non_empty_data[result_num]->without_key;
-
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-            if (aggregate_functions[i]->isAbleToParallelizeMerge())
+        if (aggregate_functions[i]->isAbleToParallelizeMerge())
+        {
+            auto data_vec = collect_data_vec(i);
+            aggregate_functions[i]->parallelizeMergeMulti(data_vec, thread_pool, is_cancelled, res->aggregates_pool);
+        }
+        else
+        {
+            for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
                 aggregate_functions[i]->merge(
                     res_data + offsets_of_aggregate_states[i],
-                    current_data + offsets_of_aggregate_states[i],
-                    thread_pool,
-                    is_cancelled,
+                    non_empty_data[result_num]->without_key + offsets_of_aggregate_states[i],
                     res->aggregates_pool);
-            else
-                aggregate_functions[i]->merge(
-                    res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i], res->aggregates_pool);
+        }
+    }
 
+    /// Destroy source states and null without_key per row to maintain exception safety:
+    /// if destruction of one row throws, already-nulled rows won't be double-destroyed during unwind.
+    for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
+    {
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
-
-        current_data = nullptr;
+            aggregate_functions[i]->destroy(non_empty_data[result_num]->without_key + offsets_of_aggregate_states[i]);
+        non_empty_data[result_num]->without_key = nullptr;
     }
 }
 
@@ -3629,7 +3641,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
         {
             if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
             {
-                std::vector<AggregateDataPtr> data_vec{res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row]};
+                AggregateDataPtrs data_vec{res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row]};
                 aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
             }
 
