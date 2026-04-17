@@ -107,23 +107,23 @@ struct LazyOutput
     /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
      *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
      */
-    template<bool from_row_list, bool from_row_store>
+    template<bool from_row_list, bool from_row_store, bool from_columns>
     void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    template<bool from_row_store>
+    template<bool from_row_store, bool from_columns>
     void buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    template<bool from_row_store>
+    template<bool from_row_store, bool from_columns>
     [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
         const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
         size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
 
 private:
-    template<bool from_row_store>
-    void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
+    template<bool from_row_store, bool from_columns>
+    void doBuildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
     template<typename F>
-    void dispatchRowStore(F && f) const;
+    void dispatchOutputs(F && f) const;
 };
 
 template <bool lazy>
@@ -206,9 +206,9 @@ public:
         {
             Columns row_store_sample_columns;
             for (size_t i = 0; i < saved_block_sample.columns(); ++i)
-            {                                                                                                                                                                                                                                               
+            {
                 if (access_indexes[i].type == ColumnsInfo::AccessIndex::RowStore)
-                    row_store_sample_columns.push_back(saved_block_sample.getByPosition(i).column->cloneEmpty());                                                                                                                                           
+                    row_store_sample_columns.push_back(saved_block_sample.getByPosition(i).column->cloneEmpty());
             }
             auto sample_row_store = RowDataStore::create(row_store_sample_columns);
 
@@ -217,7 +217,7 @@ public:
                 auto idx = access_indexes[right_indexes[i]];
                 if (idx.type == ColumnsInfo::AccessIndex::Type::RowStore)
                 {
-                    auto [offset, size] = sample_row_store.getFieldOffsetAndSize(idx.index); 
+                    auto [offset, size] = sample_row_store.getFieldOffsetAndSize(idx.index);
                     lazy_output.row_store_outputs.push_back({i, offset, size});
                 }
                 else
@@ -227,7 +227,7 @@ public:
         else
         {
             for (size_t i = 0; i < right_indexes.size(); ++i)
-                lazy_output.column_outputs.push_back({i, i});
+                lazy_output.column_outputs.push_back({i, right_indexes[i]});
         }
     }
 

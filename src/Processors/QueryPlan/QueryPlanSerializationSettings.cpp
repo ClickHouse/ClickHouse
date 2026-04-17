@@ -108,6 +108,7 @@ namespace DB
     DECLARE(Bool, enable_lazy_columns_replication, false, "When enabled, replication of columns data during ARRAY JOIN and JOIN is performed lazily", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
+    DECLARE(UInt64, min_columns_for_hash_join_row_store, 3, "Minimum number of payload columns to trigger transforming hash join payload to row major. 0 disables the row transformation.", 0) \
 
 
 // clang-format on

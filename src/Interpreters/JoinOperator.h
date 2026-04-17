@@ -103,6 +103,7 @@ struct JoinSettings
     bool use_join_disjunctions_push_down;
     bool enable_lazy_columns_replication;
     bool use_hash_table_stats_for_join_reordering;
+    UInt64 min_columns_for_hash_join_row_store;
 
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);

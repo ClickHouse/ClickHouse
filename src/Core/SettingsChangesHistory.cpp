@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"enable_materialized_cte", false, false, "New setting"},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
+            {"min_columns_for_hash_join_row_store", 0, 3, "New setting to control the minimum number of payload columns to trigger transforming hash join payload to row major."}
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

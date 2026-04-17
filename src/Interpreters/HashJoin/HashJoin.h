@@ -400,7 +400,7 @@ public:
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
         ScatteredColumnsList columns; /// Columns of "right" table.
-        /// Track index of  "right" table columns in columns list or row store.
+        /// Track index of "right" table columns in columns list or row store.
         ColumnsInfo::AccessIndexes column_access_indexes;
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 

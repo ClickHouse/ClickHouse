@@ -25,7 +25,7 @@ RowDataStore::RowLayout RowDataStore::initLayout(const Columns & columns)
     {
         ColumnPtr sample_col = column->cloneEmpty();
         if (!sample_col->isFixedAndContiguous())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnFixedRowTuple should only be used to wrap fixed and continous columns but was used for {}.", sample_col->getFamilyName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RowDataStore can only store fixed and contiguous columns, but got {}.", sample_col->getFamilyName());
 
         size_t field_size = sample_col->sizeOfValueIfFixed();
         layout.push_back(FieldLayout{sample_col, field_size, offset});
@@ -134,12 +134,15 @@ MutableColumns RowDataStore::buildColumns() const
 
 bool isRowStorageUseful(const ColumnPtr & column)
 {
+    /// Limit cost of copying columns to row store.
+    static constexpr size_t MAX_ROW_STORE_FIELD_SIZE = 64;
+
     const IColumn * col = column.get();
     if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(col))
         col = column_replicated->getNestedColumn().get();
 
-    /// Avoid copying long fixed string values.
-    return col->isFixedAndContiguous() && col->sizeOfValueIfFixed() < 64;
+
+    return col->isFixedAndContiguous() && col->sizeOfValueIfFixed() < MAX_ROW_STORE_FIELD_SIZE;
 }
 
 }

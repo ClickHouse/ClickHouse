@@ -1,4 +1,3 @@
-#include <Interpreters/RowDataStore.h>
 #include <Interpreters/RowRefs.h>
 
 #include <Columns/ColumnDecimal.h>
@@ -12,9 +11,9 @@
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
 #include <Common/RadixSort.h>
+#include <Interpreters/RowDataStore.h>
 
 #include <mutex>
-#include <optional>
 
 
 namespace DB
@@ -239,7 +238,7 @@ void ColumnsInfo::transferColumnsToRowStore(const AccessIndexes & access_indexes
     {
         const auto & [type, _] = access_indexes[i];
         if (type == AccessIndex::Type::RowStore)
-            /// For now replicated columns are materialized to make sure call blocks have
+            /// For now replicated columns are materialized to make sure all blocks have
             /// the same split of columnar and row store columns.
             /// TODO: try to allow columns to be in row store in some blocks and remain columnar
             /// in others (in case of replicated columns).

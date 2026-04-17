@@ -585,10 +585,13 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 
 void HashJoin::initRowStore()
 {
-    /// Skip using row store when the right table rearange optimization could get triggered.
-    /// TODO: allow row store when right table could get rearranged and build the rearanged table
+    if (table_join->minColumnsForHashJoinRowStore() == 0)
+        return;
+
+    /// Skip using row store when the right table rerange optimization could get triggered.
+    /// TODO: allow row store when right table could get reranged and build the reranged table
     /// based on the row store instead.
-    if(kind == JoinKind::Cross || data->type != Type::EMPTY || rightTableCanBeReranged())
+    if (kind == JoinKind::Cross || table_join->getClauses().empty() || rightTableCanBeReranged())
         return;
 
     /// Extract columns suitable for row store.
@@ -605,11 +608,10 @@ void HashJoin::initRowStore()
             access_indexes.push_back({ColumnsInfo::AccessIndex::Type::Columns, remaining_columns++});
     }
 
-    /// TODO: make the minimum column count configurable.
-    if (row_store_columns >= 3)
+    if (row_store_columns >= table_join->minColumnsForHashJoinRowStore())
     {
         /// Build row store from collected columns.
-        /// For now replicated columns are materialized to make sure call blocks have
+        /// For now replicated columns are materialized to make sure all blocks have
         /// the same split of columnar and row store columns.
         /// TODO: allow columns to be in row store in some blocks and remain columnar
         /// in others (in case of replicated columns).
@@ -1802,6 +1804,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
 
     /// Reconstruct full column list from compact columns and row store
     /// using the access indexes to place each column back at its original position.
+    /// TODO: make the row store a columns that can be spilled and reloaded as is.
     auto reconstruct_columns = [&](const ColumnsInfo & info) -> Columns
     {
         const auto & access_indexes = data->column_access_indexes;
