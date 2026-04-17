@@ -386,7 +386,33 @@ std::vector<MarkRanges> RangesInPatchParts::getRanges(const DataPartPtr & origin
     std::vector<MarkRanges> optimized_ranges(raw_ranges.size());
 
     for (size_t i = 0; i < raw_ranges.size(); ++i)
-        optimized_ranges[i] = getIntersectingRanges(patch_parts[i].part->getPartName(), raw_ranges[i]);
+    {
+        /// v2 `MergeOnKey` pruning already returns a sort-key-tight range per task
+        /// (`getRangesInPatchPartMergeOnKey`). Intersecting that against the pre-split 8-mark
+        /// chunks from `ranges_by_name` would widen the read back out to a chunk boundary: e.g.
+        /// a 1-mark overlap would fetch the whole 8-mark chunk (~65 k rows) instead of the single
+        /// ~8 k-row granule that actually matters. Split the tight range ourselves, capped at
+        /// `max_granules_in_range`, so the reader still gets chunk-sized units without over-reading.
+        if (patch_parts[i].mode == PatchMode::MergeOnKey)
+        {
+            MarkRanges split;
+            for (const auto & r : raw_ranges[i])
+            {
+                size_t begin = r.begin;
+                while (begin < r.end)
+                {
+                    size_t next = std::min<size_t>(r.end, begin + max_granules_in_range);
+                    split.emplace_back(begin, next);
+                    begin = next;
+                }
+            }
+            optimized_ranges[i] = std::move(split);
+        }
+        else
+        {
+            optimized_ranges[i] = getIntersectingRanges(patch_parts[i].part->getPartName(), raw_ranges[i]);
+        }
+    }
 
     return optimized_ranges;
 }
