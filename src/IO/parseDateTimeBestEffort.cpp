@@ -564,7 +564,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected point symbol");
 
                 if (has_fractional_separator)
-                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: fractional part is duplicated");
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: duplicate fractional separator");
                 has_fractional_separator = true;
 
                 ++in.position();
