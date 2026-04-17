@@ -516,23 +516,40 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
 namespace
 {
 
-/// Compares sort-key tuples at two (block, row) positions, honouring DESC flags. `a_block` /
-/// `b_block` must each have every column in `sort_key_column_names`; typically they're either the
-/// same block or two blocks that both carry the target table's sort-key columns. Returns <0, =0,
-/// or >0 using the same convention as `IColumn::compareAt` (NULL-aware, nan-last).
-int compareSortKeyRows(
-    const Block & a_block,
+/// Pre-resolved sort-key column pointers for one block. The slow part of the old
+/// name-indexed comparator was `Block::getByName` per-row — a `std::unordered_map`
+/// lookup that perf traces showed dominating `applyPatchMergeOnKey` at ~58% CPU
+/// (`__hash_const_iterator` + `findPositionByName` + `getPositionByName`). Resolving
+/// the columns once up-front collapses the inner loop to straight pointer chasing.
+struct SortKeyColumns
+{
+    std::vector<const IColumn *> columns;
+
+    static SortKeyColumns resolve(const Block & block, const Names & sort_key_column_names)
+    {
+        SortKeyColumns out;
+        out.columns.reserve(sort_key_column_names.size());
+        for (const auto & name : sort_key_column_names)
+            out.columns.push_back(block.getByName(name).column.get());
+        return out;
+    }
+};
+
+/// Compares sort-key tuples at two (block, row) positions, honouring DESC flags. Both
+/// `SortKeyColumns` must have been resolved against the same ordered `sort_key_column_names`;
+/// indices line up with `reverse_flags`. Returns <0, =0, or >0 using the same convention as
+/// `IColumn::compareAt` (NULL-aware, nan-last).
+ALWAYS_INLINE int compareSortKeyRows(
+    const SortKeyColumns & a_cols,
     size_t a_row,
-    const Block & b_block,
+    const SortKeyColumns & b_cols,
     size_t b_row,
-    const Names & sort_key_column_names,
     const std::vector<UInt8> & reverse_flags)
 {
-    for (size_t i = 0; i < sort_key_column_names.size(); ++i)
+    const size_t n = a_cols.columns.size();
+    for (size_t i = 0; i < n; ++i)
     {
-        const auto & a_col = *a_block.getByName(sort_key_column_names[i]).column;
-        const auto & b_col = *b_block.getByName(sort_key_column_names[i]).column;
-        int cmp = a_col.compareAt(a_row, b_row, b_col, /*nan_direction_hint=*/ 1);
+        int cmp = a_cols.columns[i]->compareAt(a_row, b_row, *b_cols.columns[i], /*nan_direction_hint=*/ 1);
         if (cmp != 0)
             return (i < reverse_flags.size() && reverse_flags[i]) ? -cmp : cmp;
     }
@@ -585,6 +602,12 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     const auto & p_bn = getColumnUInt64Data(patch_block, BlockNumberColumn::name);
     const auto & p_bo = getColumnUInt64Data(patch_block, BlockOffsetColumn::name);
 
+    /// Resolve sort-key columns once per block so the inner merge-loop comparator never
+    /// hits `Block::getByName`. Empty for an `ORDER BY tuple()` base table, which takes
+    /// the whole-block equal-run branch below and never consults these.
+    const auto m_sk = sort_key_names.empty() ? SortKeyColumns{} : SortKeyColumns::resolve(main_clone, sort_key_names);
+    const auto p_sk = sort_key_names.empty() ? SortKeyColumns{} : SortKeyColumns::resolve(patch_block, sort_key_names);
+
     /// Degenerate sort key (tuple of no columns): by design the "equal-sort-key run" is the whole
     /// block on both sides. We fall through to the hash-map branch and build a map over the full
     /// patch — this mirrors today's Join-mode memory profile exactly, by user-locked decision.
@@ -593,7 +616,7 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
 
     while (m < m_rows && p < p_rows)
     {
-        int cmp = sort_key_names.empty() ? 0 : compareSortKeyRows(main_clone, m, patch_block, p, sort_key_names, reverse_flags);
+        int cmp = sort_key_names.empty() ? 0 : compareSortKeyRows(m_sk, m, p_sk, p, reverse_flags);
 
         if (cmp < 0)
         {
@@ -611,7 +634,7 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
         if (!sort_key_names.empty())
         {
             while (m_run_end < m_rows
-                && compareSortKeyRows(main_clone, m_run_end, patch_block, p, sort_key_names, reverse_flags) == 0)
+                && compareSortKeyRows(m_sk, m_run_end, p_sk, p, reverse_flags) == 0)
                 ++m_run_end;
         }
         else
@@ -623,7 +646,7 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
         if (!sort_key_names.empty())
         {
             while (p_run_end < p_rows
-                && compareSortKeyRows(patch_block, p_run_end, patch_block, p, sort_key_names, reverse_flags) == 0)
+                && compareSortKeyRows(p_sk, p_run_end, p_sk, p, reverse_flags) == 0)
                 ++p_run_end;
         }
         else
