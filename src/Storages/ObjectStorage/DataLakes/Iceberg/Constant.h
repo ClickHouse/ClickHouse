@@ -129,6 +129,8 @@ DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
 DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);
+DEFINE_ICEBERG_FIELD_ALIAS(partition_statistics, partition-statistics);
+DEFINE_ICEBERG_FIELD_ALIAS(statistics_path, statistics-path);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(min_snapshots_to_keep, history.expire.min-snapshots-to-keep);
 DEFINE_ICEBERG_FIELD_ALIAS(max_snapshot_age_ms, history.expire.max-snapshot-age-ms);
@@ -150,6 +152,8 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, record_count);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_size_in_bytes);
 
 /// Fallback defaults for snapshot retention policy when table properties are absent.
 /// These values follow the Java reference implementation; the Iceberg spec does not

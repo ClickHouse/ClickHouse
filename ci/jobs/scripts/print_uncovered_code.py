@@ -20,6 +20,19 @@ _NOISE_PATTERNS = [
     re.compile(r"\babortOnFailedAssertion\s*\("),  # chassert failure handler
 ]
 
+# Stripped line content that carries no executable semantics.
+# lcov sometimes emits DA: entries for these (e.g. for `{` after `else`, or for
+# blank lines between statements), but marking them as "uncovered" is misleading.
+_STRUCTURAL_LINES = frozenset({
+    "",       # blank line
+    "{",      # opening brace
+    "}",      # closing brace
+    "};",     # closing brace + semicolon (struct/class/lambda end)
+    "else",   # bare else keyword (the branch body is on the next line)
+    "else{",  # else immediately followed by brace
+    "else {", # else with space before brace
+})
+
 # Lazily-loaded source file cache: relpath -> list of raw lines
 _source_cache: dict[str, list[str]] = {}
 
@@ -40,6 +53,8 @@ def _is_noise(relpath: str, lineno: int) -> bool:
     if not (1 <= lineno <= len(lines)):
         return False
     text = lines[lineno - 1].strip()
+    if text in _STRUCTURAL_LINES:
+        return True
     return any(p.search(text) for p in _NOISE_PATTERNS)
 
 
@@ -370,7 +385,13 @@ if __name__ == "__main__":
                 new_ln = _remap_line(old_ln, hunks)
                 if new_ln is None:
                     continue  # line was deleted by this PR — expected
-                if c["lines"].get(new_ln, 0) == 0 and not _is_noise(rel, new_ln):
+                # Only report if the current build actually has a DA entry for
+                # new_ln (count == 0 means coverable but not hit).  A missing
+                # entry means the line is not coverable (blank line, comment,
+                # preprocessor directive) — often caused by imprecise line
+                # remapping landing on such a line.
+                curr_cnt = c["lines"].get(new_ln)
+                if curr_cnt is not None and curr_cnt == 0 and not _is_noise(rel, new_ln):
                     lbc_lines.append((rel, new_ln))
 
             for fn, bcnt in b["fns"].items():

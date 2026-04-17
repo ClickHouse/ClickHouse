@@ -138,7 +138,7 @@ endif ()
 include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
 
-option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
+option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
 
@@ -195,8 +195,9 @@ option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
-if (LINKER_NAME MATCHES "lld")
+if (LINKER_NAME MATCHES "lld" AND NOT LINKER_NAME MATCHES "ld64")
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
+    # ld64.lld (MachO linker) does not support --build-id.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
 
@@ -262,8 +263,11 @@ endif()
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
-    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
+    # Fix DW_AT_comp_dir to "." regardless of the build directory location, then strip the source
+    # directory prefix from all file paths (trailing slash ensures the separator is stripped too,
+    # leaving bare relative paths like "src/Foo.cpp" that the symbolizer resolves to "./src/Foo.cpp").
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fdebug-compilation-dir=. -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=")
+    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -fdebug-compilation-dir=. -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=")
 endif ()
 
 option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
@@ -363,13 +367,10 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-if (NOT ENABLE_TESTS AND NOT ENABLE_CLANG_TIDY AND NOT SANITIZE AND OS_LINUX)
-    # https://clang.llvm.org/docs/ThinLTO.html
-    # Applies to clang and linux only.
-    # Disabled when building with tests or sanitizers.
-    # Also disabled with clang-tidy where we don't care about linking
-    option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
-endif()
+# https://clang.llvm.org/docs/ThinLTO.html
+# Applies to clang and linux only.
+# Disabled by default; explicitly enabled in CI for release and performance builds.
+option(ENABLE_THINLTO "Clang-specific link time optimization" OFF)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
