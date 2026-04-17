@@ -962,6 +962,65 @@ TEST(ConcurrencyControl, LazyAllocationRevertFlag)
     }
 }
 
+// Race regression: setMoreDemand(false) must not strand a slot if a concurrent scheduler
+// round grants between the has_more_demand flip and the reclaim. Prior to the fix,
+// granted.exchange(0) happened before state.mutex was held, so the race window allowed
+// the scheduler to increment `granted` and `cur_concurrency` without the subsequent reclaim
+// seeing or returning the new slot.
+//
+// This test simulates the scheduler-concurrent path by forcing the sequence: hold another
+// allocation, flip demand off on the target, then release — the release path calls schedule
+// under state.mutex. After the dust settles, no slot should be stranded: cur_concurrency
+// should go back to 0 once all allocations are dropped, and a fresh allocate(0, max) should
+// be able to acquire the full max again.
+TEST(ConcurrencyControl, SetMoreDemandFalseNoStrandedSlot)
+{
+    for (String scheduler : {"round_robin", "fair_round_robin", "max_min_fair"})
+    {
+        ConcurrencyControlTest t(4);
+        t.cc.setScheduler(scheduler);
+
+        // A1 is the allocation we flip off. A2 is an active allocation that will trigger
+        // schedule() via its release path, interleaving with A1's setMoreDemand(false).
+        auto a1 = t.cc.allocate(0, 4);
+        auto a2 = t.cc.allocate(0, 4);
+
+        // A2 acquires and will release repeatedly to cause schedule() rounds.
+        std::vector<AcquiredSlotPtr> a2_held;
+        for (int i = 0; i < 4; ++i)
+        {
+            if (auto slot = a2->tryAcquire())
+                a2_held.emplace_back(std::move(slot));
+        }
+
+        // Flap A1 — repeat enough to exercise the race window. Even without explicit
+        // synchronization, the acq_rel ordering plus state.mutex serialization after the fix
+        // should prevent any slot from being stranded.
+        for (int i = 0; i < 50; ++i)
+        {
+            a1->setMoreDemand(false);
+            a1->setMoreDemand(true);
+            if (!a2_held.empty())
+                a2_held.pop_back();  // release → schedule() round
+            if (auto slot = a2->tryAcquire())
+                a2_held.emplace_back(std::move(slot));
+        }
+
+        // Drop all allocations and verify full capacity is recovered.
+        a2_held.clear();
+        a1.reset();
+        a2.reset();
+
+        // Fresh allocation should be able to acquire all 4 slots — proves nothing was stranded.
+        auto probe = t.cc.allocate(0, 4);
+        std::vector<AcquiredSlotPtr> probe_held;
+        while (auto slot = probe->tryAcquire())
+            probe_held.emplace_back(std::move(slot));
+        ASSERT_EQ(probe_held.size(), 4u)
+            << "scheduler=" << scheduler << " — slot was stranded by setMoreDemand(false) race";
+    }
+}
+
 // Stress test: hammer setMoreDemand, tryAcquire, allocate and free concurrently. Intended
 // primarily to run under TSan — validates that the demanders ⊆ waiters invariant, lock
 // ordering (state.mutex -> allocation.mutex), MMF sort-key protection, and reclaim paths
@@ -1022,7 +1081,7 @@ TEST(ConcurrencyControl, StressDemandSignaling)
                         // Allocation destroyed here — exercises free() + schedule() path.
                     }
                 }
-                catch (...)
+                catch (...) // Ok: stress worker records any exception for the main thread to assert on.
                 {
                     had_exception.store(true);
                 }

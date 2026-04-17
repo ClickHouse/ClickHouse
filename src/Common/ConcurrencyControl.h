@@ -162,8 +162,8 @@ public:
         std::atomic<bool> has_more_demand{true}; // consumer wants more slots granted (see setMoreDemand)
 
         // Iterator to self in Waiters list; valid iff allocated < limit.
-        // Non-const so reclaim() can re-insert after a previously-saturated allocation gets
-        // its budget restored via setMoreDemand(false)/reclaim.
+        // Non-const so setMoreDemand(false) can re-insert after a previously-saturated
+        // allocation has its budget restored by reclaiming pending grants.
         Waiters::iterator waiter;
         // Iterator to self in Demanders list; valid iff `in_demanders` is true.
         Demanders::iterator demander_iter;
@@ -190,7 +190,7 @@ public:
     void schedule(std::unique_lock<std::mutex> &, bool lazy_grant = false, bool single_grant = false);
 
 private:
-    friend struct Allocation; // for free(), release(), notifyAcquired(), notifyDemand() and reclaim()
+    friend struct Allocation; // for free(), release(), notifyAcquired(), notifyDemand(), and setMoreDemand internals
 
     void free(Allocation * allocation);
     void release(SlotCount amount);
@@ -202,10 +202,6 @@ private:
     // Called by Allocation::setMoreDemand() on false->true transition.
     // Triggers lazy schedule so allocations that gained demand can be granted slots.
     void notifyDemand();
-
-    // Called by Allocation::setMoreDemand(false) to return pending (granted but not acquired) slots.
-    // Atomically decrements cur_concurrency and updates the allocation's accounting.
-    void reclaim(Allocation * allocation, SlotCount amount);
 
     // Demanders list maintenance. These require state.mutex. Invariant: demanders ⊆ waiters AND
     // every allocation in demanders has has_more_demand == true.
@@ -292,7 +288,7 @@ public:
         std::atomic<bool> has_more_demand{true}; // consumer wants more slots granted (see setMoreDemand)
 
         // Iterator to self in Waiters list; valid iff allocated < limit.
-        // Non-const so reclaim() can re-insert after a previously-saturated allocation.
+        // Non-const so setMoreDemand(false) can re-insert after a previously-saturated allocation.
         Waiters::iterator waiter;
         Demanders::iterator demander_iter; // valid iff `in_demanders` is true
         bool in_demanders = false;
@@ -317,13 +313,12 @@ public:
     void schedule(std::unique_lock<std::mutex> &, bool lazy_grant = false, bool single_grant = false);
 
 private:
-    friend struct Allocation; // for free(), release(), notifyAcquired(), notifyDemand() and reclaim()
+    friend struct Allocation; // for free(), release(), notifyAcquired(), notifyDemand(), and setMoreDemand internals
 
     void free(Allocation * allocation);
     void release(SlotCount amount);
     void notifyAcquired();
     void notifyDemand();
-    void reclaim(Allocation * allocation, SlotCount amount);
 
     void addDemanderLocked(Allocation * allocation);
     void removeDemanderLocked(Allocation * allocation);
@@ -461,9 +456,6 @@ private:
 
     // Called on false->true demand transition — triggers lazy schedule.
     void notifyDemand();
-
-    // Return pending slots to the pool on setMoreDemand(false).
-    void reclaim(Allocation * allocation, SlotCount amount);
 
     // Demanders set maintenance (see RoundRobinScheduler). Caller holds state.mutex.
     void addDemanderLocked(Allocation * allocation);
