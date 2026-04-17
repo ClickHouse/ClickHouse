@@ -635,7 +635,7 @@ bool FileSegment::reserve(
     if (is_first_reservation)
     {
         if (auto index = cache->getRocksDBIndex())
-            index->put(file_key, offset(), /* size */ -1, getKeyMetadata()->origin);
+            index->put(file_key, offset(), /* size */ -1, getKeyMetadata()->origin, /* is_new_entry */ true);
     }
 #endif
 
@@ -666,7 +666,7 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
 
     if (auto index = cache->getRocksDBIndex())
-        index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin);
+        index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin, /* is_new_entry */ false);
 #endif
 }
 
@@ -768,7 +768,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
 
         if (auto index = cache->getRocksDBIndex())
-            index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin);
+            index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin, /* is_new_entry */ false);
 #endif
     }
     else

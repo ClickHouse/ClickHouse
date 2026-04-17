@@ -33,11 +33,13 @@ namespace DB
 class FileCacheRocksDBIndex
 {
 public:
-    explicit FileCacheRocksDBIndex(const std::string & cache_base_path);
+    FileCacheRocksDBIndex(const std::string & cache_base_path, const std::string & cache_name);
     ~FileCacheRocksDBIndex();
 
     /// Store a segment entry. Use size = -1 for not-yet-downloaded segments.
-    void put(const FileCacheKey & key, size_t offset, Int64 size, const FileCacheOriginInfo & origin);
+    /// Set is_new_entry = true when inserting a brand-new segment (first reservation),
+    /// false when updating an existing entry (e.g. download completed).
+    void put(const FileCacheKey & key, size_t offset, Int64 size, const FileCacheOriginInfo & origin, bool is_new_entry);
 
     /// Remove a segment's entry. Called BEFORE the file is deleted from disk (in detach).
     void remove(const FileCacheKey & key, size_t offset);
@@ -50,13 +52,14 @@ public:
         FileCacheOriginInfo origin;
     };
 
-    /// Iterate the entire index and return all entries.
-    /// Called once at startup before loading metadata.
-    std::vector<Entry> loadAll() const;
+    /// Iterate the entire index, initialize element_count and the CurrentMetric,
+    /// and return all entries. Called once at startup before loading metadata.
+    std::vector<Entry> initializeAndLoadAll();
 
 private:
     std::unique_ptr<rocksdb::DB> db;
     LoggerPtr log;
+    std::atomic<Int64> element_count{0};
 
     static std::string serializeKey(const FileCacheKey & key, size_t offset);
     static void deserializeKey(std::string_view slice, FileCacheKey & key, size_t & offset);
