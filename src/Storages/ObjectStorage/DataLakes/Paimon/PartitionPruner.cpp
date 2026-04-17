@@ -125,7 +125,7 @@ namespace Paimon
             DB::ColumnsDescription col_desc(names_and_types);
 
             ColumnCondition cc;
-            cc.key = DB::KeyDescription::getKeyFromAST(col_ast, col_desc, context);
+            cc.key = DB::KeyDescription::getKeyFromAST(col_ast, col_desc, {}, context);
             auto cond = std::make_unique<DB::KeyCondition>(
                 inverted_dag, context, cc.key.column_names, cc.key.expression, false /* not single_point */);
 
