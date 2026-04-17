@@ -40,7 +40,9 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -10161,6 +10163,26 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
         pipeline_builder.getSharedHeader(),
         query_context->getSettingsRef()[Setting::min_insert_block_size_rows],
         query_context->getSettingsRef()[Setting::min_insert_block_size_bytes]));
+
+    /// v2 patches drop `_part_offset` from on-disk columns — the mutation interpreter emits it
+    /// unconditionally (since v1 patches need it as the sort-key tie-breaker), but v2's sink
+    /// header excludes it, and the pipeline-builder would otherwise bail with a "Block structure
+    /// mismatch". Project it out here so the sink sees exactly what it declared.
+    if (isV2LightweightUpdateUsable(query_context))
+    {
+        const auto & pipeline_header = *pipeline_builder.getSharedHeader();
+        if (pipeline_header.has("_part_offset"))
+        {
+            ActionsDAG drop_part_offset_dag(pipeline_header.getNamesAndTypesList());
+            drop_part_offset_dag.removeFromOutputs("_part_offset");
+            auto drop_expression = std::make_shared<ExpressionActions>(
+                std::move(drop_part_offset_dag), ExpressionActionsSettings(query_context));
+            pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
+            {
+                return std::make_shared<ExpressionTransform>(header, drop_expression);
+            });
+        }
+    }
 
     /// Required by MergeTree sinks.
     pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
