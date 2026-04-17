@@ -15,12 +15,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-void SourcePartsSetForPatch::setSortKey(String expr_list_sql, std::vector<UInt8> reverse_flags)
-{
-    sort_key_expr_list_sql = std::move(expr_list_sql);
-    sort_key_reverse_flags = std::move(reverse_flags);
-}
-
 void SourcePartsSetForPatch::addSourcePart(const String & name, UInt64 data_version)
 {
     if (min_max_versions_by_part.contains(name))
@@ -91,10 +85,9 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
 
     /// v2 patches apply with a single `MergeOnKey` pass that handles both the same-lineage case
     /// (`has_merge`) and the cross-lineage case (`names_for_join`) uniformly. Emit one `PatchPartInfo`
-    /// with the union of all covered source parts.
-    /// Source-column names + ExpressionActions for the patch's sort-key are populated later, in
-    /// `MergeTreeData::getAlterConversionsForPart`, from the patch part's own metadata (itself built
-    /// from the persisted sort-key AST).
+    /// with the union of all covered source parts. The sort-key columns / expression / reverse
+    /// flags are filled in later — by `MergeTreeData::getAlterConversionsForPart`, which pulls
+    /// them from the target table's current in-memory metadata snapshot.
     if (format_version == V2_FORMAT_VERSION)
     {
         Names all_source_parts(names_for_join.begin(), names_for_join.end());
@@ -112,7 +105,7 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
                 .perform_alter_conversions = true,
                 .sort_key_source_column_names = {},
                 .sort_key_result_column_names = {},
-                .sort_key_reverse_flags = sort_key_reverse_flags,
+                .sort_key_reverse_flags = {},
                 .sort_key_expression = nullptr,
             });
         }
@@ -184,20 +177,15 @@ SourcePartsSetForPatch SourcePartsSetForPatch::merge(const DataPartsVector & sou
         const auto & set = part->getSourcePartsSet();
 
         /// v1 and v2 patches live in different partitions (their partition-id hash differs), so
-        /// inputs to a patch-on-patch merge always share the same format version — and, for v2,
-        /// the same sort-key AST and directions.
+        /// inputs to a patch-on-patch merge always share the same format version.
         if (!format_version_set)
         {
             merged_set.format_version = set.format_version;
-            merged_set.sort_key_expr_list_sql = set.sort_key_expr_list_sql;
-            merged_set.sort_key_reverse_flags = set.sort_key_reverse_flags;
             format_version_set = true;
         }
         else
         {
             chassert(merged_set.format_version == set.format_version);
-            chassert(merged_set.sort_key_expr_list_sql == set.sort_key_expr_list_sql);
-            chassert(merged_set.sort_key_reverse_flags == set.sort_key_reverse_flags);
         }
 
         for (const auto & [part_name, min_max] : set.min_max_versions_by_part)
@@ -228,17 +216,6 @@ void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
         writeBinaryLittleEndian(min_max.first, out);
         writeBinaryLittleEndian(min_max.second, out);
     }
-
-    if (format_version >= V2_FORMAT_VERSION)
-    {
-        /// Persist the sort-key expression-list AST (as SQL) + parallel reverse flags captured at
-        /// write time so readers can rebuild the v2 patch's KeyDescription — *including* the
-        /// ExpressionActions for expression sort keys — even after the main table has been ALTERed.
-        writeStringBinary(sort_key_expr_list_sql, out);
-        writeBinaryLittleEndian(sort_key_reverse_flags.size(), out);
-        for (auto flag : sort_key_reverse_flags)
-            writeBinaryLittleEndian(flag, out);
-    }
 }
 
 void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
@@ -262,17 +239,6 @@ void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
         auto & min_max = min_max_versions_by_part[part_name];
         readBinaryLittleEndian(min_max.first, in);
         readBinaryLittleEndian(min_max.second, in);
-    }
-
-    if (format_version >= V2_FORMAT_VERSION)
-    {
-        readStringBinary(sort_key_expr_list_sql, in);
-
-        UInt64 num_flags = 0;
-        readBinaryLittleEndian(num_flags, in);
-        sort_key_reverse_flags.resize(num_flags);
-        for (auto & flag : sort_key_reverse_flags)
-            readBinaryLittleEndian(flag, in);
     }
 
     buildSourcePartsSet();

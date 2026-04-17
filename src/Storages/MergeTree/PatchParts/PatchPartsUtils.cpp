@@ -11,21 +11,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 #include <base/range.h>
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsUInt64 max_query_size;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
-}
 
 namespace ErrorCodes
 {
@@ -127,57 +117,31 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
 /// the schema coincides. Changing the marker is equivalent to an on-disk format break.
 static constexpr auto PATCH_FORMAT_V2_HASH_MARKER = "__patch_format_v2__";
 
-/// Parse `sort_key_expr_list_sql` (stored in the patch's `SourcePartsSetForPatch`) back into an
-/// `ASTExpressionList`. Returns an empty expression list for the degenerate `ORDER BY tuple()`
-/// case. Throws on malformed SQL — which should never happen because the SQL is produced by
-/// `IAST::formatWithSecretsOneLine` from a KeyDescription this same server just built.
-ASTPtr parseSortKeyExprList(const String & sort_key_expr_list_sql, const ContextPtr & local_context)
-{
-    auto expr_list = make_intrusive<ASTExpressionList>();
-    if (sort_key_expr_list_sql.empty())
-        return expr_list;
-
-    const auto & settings = local_context->getSettingsRef();
-    ParserExpressionList parser(/*allow_alias_without_as_keyword=*/ false);
-    const char * begin = sort_key_expr_list_sql.data();
-    const char * end = begin + sort_key_expr_list_sql.size();
-
-    auto parsed = parseQuery(
-        parser, begin, end, "patch part sort key expression list",
-        settings[Setting::max_query_size],
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks]);
-
-    /// The parser always produces an ASTExpressionList at the top level; if for some reason it
-    /// doesn't, fall back to wrapping the node so downstream children iteration still works.
-    if (parsed && parsed->as<ASTExpressionList>())
-        return parsed;
-    if (parsed)
-        expr_list->children.push_back(std::move(parsed));
-    return expr_list;
-}
-
 StorageMetadataPtr getPatchPartMetadataV2(
     ColumnsDescription patch_part_desc,
-    const String & sort_key_expr_list_sql,
-    const std::vector<UInt8> & sort_key_reverse_flags,
+    const KeyDescription & main_sorting_key,
     ContextPtr local_context)
 {
     StorageInMemoryMetadata part_metadata;
 
-    /// v2 keeps `_part` and `_part_offset` as on-disk columns for two reasons:
-    ///  - `_part` is the first argument of `__patchPartitionID` that derives the patch's partition id;
-    ///  - `_part_offset` is emitted by the mutation pipeline and must line up with the sink's stream
-    ///    structure (dropping it at metadata time produces a "Block structure mismatch" between
-    ///    `AddDeduplicationInfoTransform` and the sink).
-    /// Both columns are small on disk — `_part` is LowCardinality(String) with at most a handful of
-    /// distinct values, and `_part_offset` is Delta+LZ4 compressed UInt64 that compresses well on
-    /// sorted data. v2 still saves memory vs v1 at apply time, which is the primary goal.
+    /// Keep `_part` on disk — it's the first argument of the partition expression
+    /// `__patchPartitionID(_part, hash(...))` that routes rows to the right
+    /// `patch-<hash>-<original_partition_id>` partition, and dropping it from the stored
+    /// columns breaks the sink's header match against the mutation pipeline (which always
+    /// emits `_part`). In practice `_part` is `LowCardinality(String)` with at most a handful
+    /// of distinct values — a few KB on disk per patch.
+    ///
+    /// Drop `_part_offset` — it was v1's sort-key tie-breaker and is purely dead weight on
+    /// disk for v2 (the apply path keys on sort-key columns + `_block_number`/`_block_offset`,
+    /// never on `_part_offset`). The mutation pipeline still emits the column but the writer
+    /// filters down to the metadata's stored columns (`writeTempPartImpl` filters via
+    /// `metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames())`), so the
+    /// extra block column is silently dropped before anything touches disk.
     auto part_column_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     if (!patch_part_desc.has("_part"))
         patch_part_desc.add(ColumnDescription("_part", part_column_type));
-    if (!patch_part_desc.has("_part_offset"))
-        patch_part_desc.add(ColumnDescription("_part_offset", std::make_shared<DataTypeUInt64>()));
+    if (patch_part_desc.has("_part_offset"))
+        patch_part_desc.remove("_part_offset");
 
     /// Ensure v2 identity + version columns are present (they may be missing when constructing
     /// an empty coverage part via createEmptyPart).
@@ -190,22 +154,28 @@ StorageMetadataPtr getPatchPartMetadataV2(
     ensure_column(BlockOffsetColumn::name, BlockOffsetColumn::type);
     ensure_column(PartDataVersionColumn::name, PartDataVersionColumn::type);
 
-    /// Parse the sort-key expression list SQL into an AST. The children become the tuple
-    /// elements of the ORDER BY expression; `_block_number` and `_block_offset` are appended
-    /// as trailing identity columns.
-    auto sort_key_expr_list = parseSortKeyExprList(sort_key_expr_list_sql, local_context);
-    size_t n_semantic = sort_key_expr_list->children.size();
+    /// Pull the sort-key expression list straight from the target table's KeyDescription.
+    /// Its children become the tuple elements of the ORDER BY expression; `_block_number` and
+    /// `_block_offset` are appended as trailing identity columns. An empty expression list
+    /// (for `ORDER BY tuple()`) leaves only the identity columns, which matches the design's
+    /// degenerate-sort-key case.
+    const auto * sort_key_expr_list = main_sorting_key.expression_list_ast
+        ? main_sorting_key.expression_list_ast->as<ASTExpressionList>()
+        : nullptr;
+    size_t n_semantic = sort_key_expr_list ? sort_key_expr_list->children.size() : 0;
 
-    /// Partition id: `__patchPartitionID(_part, hash(...))`. Hash input includes the on-disk
-    /// column names, the serialized sort-key AST, and a v2 marker. Serializing the AST (not
-    /// just the final column names) ensures that two tables with sort keys that collide in
-    /// their *result* names but differ in expression structure still land in different
-    /// partitions. The v2 marker guarantees that v1 and v2 patches never land in the same
-    /// partition even if they happen to cover identical columns.
+    /// Partition id: `__patchPartitionID(_part, hash(...))`. Hash input uses the *stored*
+    /// column names (including `_part`), a serialized form of the sort-key AST, and a v2
+    /// marker. Serializing the AST (not just the final column names) ensures that two tables
+    /// with sort keys that collide in their *result* names but differ in expression structure
+    /// still land in different partitions. The v2 marker guarantees that v1 and v2 patches
+    /// never land in the same partition even if they happen to cover identical columns.
+    /// After `ALTER MODIFY ORDER BY`, the new AST text changes and pre-ALTER patches end up in
+    /// a different partition than post-ALTER patches — they never co-merge.
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");
 
     Names hash_input = patch_part_desc.getNamesOfPhysical();
-    hash_input.emplace_back(sort_key_expr_list_sql);
+    hash_input.emplace_back(sort_key_expr_list ? sort_key_expr_list->formatWithSecretsOneLine() : String{});
     hash_input.emplace_back(PATCH_FORMAT_V2_HASH_MARKER);
     auto columns_hash = getColumnsHash(std::move(hash_input));
     auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
@@ -222,8 +192,11 @@ StorageMetadataPtr getPatchPartMetadataV2(
     /// (we override the reverse flags from the per-shard DESC info since our AST children are
     /// plain expressions, not ASTStorageOrderByElements).
     auto order_by_expression = makeASTOperator("tuple");
-    for (const auto & child : sort_key_expr_list->children)
-        order_by_expression->arguments->children.push_back(child->clone());
+    if (sort_key_expr_list)
+    {
+        for (const auto & child : sort_key_expr_list->children)
+            order_by_expression->arguments->children.push_back(child->clone());
+    }
     order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockNumberColumn::name));
     order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockOffsetColumn::name));
 
@@ -234,8 +207,8 @@ StorageMetadataPtr getPatchPartMetadataV2(
     /// Honour DESC flags from the main table for the semantic sort-key prefix. The two trailing
     /// identity columns (`_block_number`, `_block_offset`) are always ASC.
     part_metadata.sorting_key.reverse_flags.assign(n_semantic + 2, false);
-    for (size_t i = 0; i < sort_key_reverse_flags.size() && i < n_semantic; ++i)
-        part_metadata.sorting_key.reverse_flags[i] = (sort_key_reverse_flags[i] != 0);
+    for (size_t i = 0; i < main_sorting_key.reverse_flags.size() && i < n_semantic; ++i)
+        part_metadata.sorting_key.reverse_flags[i] = main_sorting_key.reverse_flags[i];
 
     part_metadata.primary_key = part_metadata.sorting_key;
     part_metadata.primary_key.definition_ast = nullptr;
@@ -246,12 +219,11 @@ StorageMetadataPtr getPatchPartMetadataV2(
 
 StorageMetadataPtr getPatchPartMetadataV2(
     Block sample_block,
-    const String & sort_key_expr_list_sql,
-    const std::vector<UInt8> & sort_key_reverse_flags,
+    const KeyDescription & main_sorting_key,
     ContextPtr local_context)
 {
     ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
-    return getPatchPartMetadataV2(std::move(columns_desc), sort_key_expr_list_sql, sort_key_reverse_flags, local_context);
+    return getPatchPartMetadataV2(std::move(columns_desc), main_sorting_key, local_context);
 }
 
 const NamesAndTypesList & getPatchPartKeyColumns()

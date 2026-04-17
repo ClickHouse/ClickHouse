@@ -9955,21 +9955,21 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
 
         Names source_column_names;
         Names result_column_names;
-        std::vector<UInt8> reverse_flags = std::move(patch.sort_key_reverse_flags);
+        std::vector<UInt8> reverse_flags;
         ExpressionActionsPtr sort_key_expression;
 
         if (patch.mode == PatchMode::MergeOnKey)
         {
-            /// Rebuild the patch's KeyDescription from its own persisted sort-key AST. We build
-            /// the metadata snapshot inline (rather than going through `getPatchPartMetadata`)
-            /// because this static helper has no `this` pointer, and the metadata-cache this
-            /// function feeds into is reached later via `patch_for_reader`'s storage anyway —
-            /// there's no correctness gain from warming the cache early.
-            const auto & source_parts_set = original_patch_part->getSourcePartsSet();
+            /// v2 patch metadata is rebuilt from the **current** target-table sort key on every
+            /// open — nothing about the sort key is persisted in `source_parts.dat`. After
+            /// `ALTER MODIFY ORDER BY` the partition-id hash changes (see `getPatchPartMetadataV2`
+            /// for how it folds the sort-key AST text into the hash), so pre-ALTER patches end up
+            /// in their own (unreachable) partition and never mix with post-ALTER ones.
+            auto main_metadata = part->storage.getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
+            const auto & main_sorting_key = main_metadata->getSortingKey();
             auto patch_metadata_snapshot = DB::getPatchPartMetadataV2(
                 original_patch_part->getColumnsDescription(),
-                source_parts_set.getSortKeyExprListSQL(),
-                source_parts_set.getSortKeyReverseFlags(),
+                main_sorting_key,
                 query_context);
             const auto & sk = patch_metadata_snapshot->getSortingKey();
 
@@ -9990,6 +9990,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
                     source_column_names.push_back(input);
             }
 
+            reverse_flags.assign(sk.reverse_flags.begin(), sk.reverse_flags.begin() + n_semantic);
             sort_key_expression = sk.expression;
         }
 
@@ -10015,9 +10016,10 @@ bool MergeTreeData::isV2LightweightUpdateUsable(const ContextPtr & /*query_conte
     if (!(*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches])
         return false;
 
-    /// v2 now supports *all* sort keys — including expression sort keys — because the patch part
-    /// persists the physical **source columns** of the sort-key expression and the sort-key
-    /// `ExpressionActions` is replayed at apply time to materialize the result columns (the same
+    /// v2 supports every sort-key shape — plain, expression, `Nullable`, `LowCardinality`,
+    /// reverse-flag — because the patch part stores the physical **source columns** of the
+    /// sort-key expression on disk, and the sort-key `ExpressionActions` is recovered from the
+    /// target table's current `StorageMetadataPtr` and replayed at apply time (the same
     /// mechanism FINAL uses for base parts). See `getPatchPartMetadataV2` for details.
     return true;
 }
@@ -10034,10 +10036,12 @@ StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart 
     const auto & source_parts_set = patch_part.getSourcePartsSet();
     if (source_parts_set.getFormatVersion() == SourcePartsSetForPatch::V2_FORMAT_VERSION)
     {
+        /// Rebuild v2 metadata from the current main-table sort key rather than from the
+        /// patch's own persisted schema — patches are ephemeral relative to ALTERs.
+        const auto & main_sorting_key = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false)->getSortingKey();
         metadata_snapshot = DB::getPatchPartMetadataV2(
             patch_part.getColumnsDescription(),
-            source_parts_set.getSortKeyExprListSQL(),
-            source_parts_set.getSortKeyReverseFlags(),
+            main_sorting_key,
             local_context);
     }
     else

@@ -105,7 +105,10 @@ struct PatchPartInfoBase
     /// If true convert columns from patch to current data types in table metadata.
     bool perform_alter_conversions = true;
 
-    /// `MergeOnKey` only. Fields describing the patch's sort key. Split into three roles:
+    /// `MergeOnKey` only. Fields describing the patch's sort key. All four are **in-memory**
+    /// only — they are populated by `MergeTreeData::getAlterConversionsForPart` from the
+    /// target table's current `StorageMetadataPtr` (nothing about the sort key is persisted
+    /// in `source_parts.dat`).
     ///  - `sort_key_source_column_names` is the set of **physical columns** the sort-key
     ///    expression reads. These are what gets persisted in the patch on disk and what must
     ///    be read from the regular/main part at SELECT time. For a plain sort key like

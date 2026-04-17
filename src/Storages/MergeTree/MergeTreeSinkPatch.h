@@ -14,20 +14,18 @@ public:
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
         PlainLightweightUpdateHolder update_holder_,
-        String v2_sort_key_expr_list_sql_,
-        std::vector<UInt8> v2_sort_key_reverse_flags_,
+        bool is_v2_format_,
         ContextPtr context_);
 
     String getName() const override { return "MergeTreeSinkPatch"; }
 
 protected:
     PlainLightweightUpdateHolder update_holder;
-    /// Non-empty iff this sink writes v2-format patches. Stored on the sink rather than derived
-    /// from metadata so `writeNewTempPart` can stamp the `SourcePartsSetForPatch` consistently.
-    /// `v2_sort_key_expr_list_sql` is the SQL of the main table's sort-key expression list (e.g.
-    /// `id`, or `cityHash64(id), bucket`); reverse flags are parallel to its top-level children.
-    String v2_sort_key_expr_list_sql;
-    std::vector<UInt8> v2_sort_key_reverse_flags;
+    /// True iff this sink writes v2-format patches. The sort-key expression itself is *not*
+    /// carried on the sink — readers recover it from the target table's current
+    /// `StorageMetadataPtr` at apply time (see `MergeTreeData::getPatchPartMetadata`). All the
+    /// sink needs to do is stamp the format-version byte in the `SourcePartsSetForPatch`.
+    bool is_v2_format = false;
 
     void finishDelayedChunk() override;
     TemporaryPartPtr writeNewTempPart(BlockWithPartition & block) override;
