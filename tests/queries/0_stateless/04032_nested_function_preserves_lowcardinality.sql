@@ -1,6 +1,8 @@
 -- Verify that the nested() function preserves LowCardinality in column types.
 -- See https://github.com/ClickHouse/ClickHouse/issues/95582
 
+SET allow_suspicious_low_cardinality_types = 1; -- Required for LowCardinality(UInt32).
+
 SELECT 'nested with LowCardinality(String)';
 SELECT toTypeName(nested(['name'], cast(['a', 'b'] as Array(LowCardinality(String))) as a));
 
