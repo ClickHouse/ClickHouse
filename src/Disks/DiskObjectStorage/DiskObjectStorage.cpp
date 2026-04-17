@@ -807,8 +807,12 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const bool use_async_buffer = !read_settings.read_scope
         && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     const bool file_cache_enabled = object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache() && read_settings.enable_filesystem_cache;
+    /// When RRM manages prefetch, disable in-memory page cache — RRM already
+    /// holds the data in memory and the page cache would attempt to read
+    /// beyond the prefetched range boundaries.
     const bool use_page_cache =
-        read_settings.page_cache
+        !read_settings.read_scope
+        && read_settings.page_cache
         && (use_distributed_cache ? read_settings.use_page_cache_with_distributed_cache
                                   : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
 

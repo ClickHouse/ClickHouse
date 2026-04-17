@@ -129,11 +129,31 @@ void MergeTreeReaderStream::init()
         /// Some serializations (e.g. LowCardinality) store prefix data
         /// before the first granule.  `deserializeBinaryBulkStatePrefix`
         /// reads this prefix regardless of which marks are requested.
-        /// Always prepend [0, mark0_offset) so the scope covers it.
-        /// For columns without prefix data mark0_offset is 0, producing
-        /// an empty range [0, 0) that RRM skips.
-        reading_ranges.insert(reading_ranges.begin(),
-            {0, marks_getter->getMark(0, 0).offset_in_compressed_file});
+        /// Prepend [0, prefix_end) so the scope covers it.
+        ///
+        /// For regular .bin files, mark 0 has a non-zero offset when
+        /// prefix data (e.g. shared dictionary) is stored before it,
+        /// so [0, mark0_offset) covers exactly the prefix.
+        ///
+        /// For .dict.bin files, mark 0 is at offset 0 — the prefix
+        /// lives inside the first compressed block.  Find the block
+        /// boundary by scanning for the first mark with a different
+        /// `offset_in_compressed_file`.
+        size_t mark0_offset = marks_getter->getMark(0, 0).offset_in_compressed_file;
+        size_t prefix_end = mark0_offset;
+        if (mark0_offset == 0 && marks_count > 1)
+        {
+            for (size_t m = 1; m < marks_count; ++m)
+            {
+                size_t off = marks_getter->getMark(m, 0).offset_in_compressed_file;
+                if (off != 0)
+                {
+                    prefix_end = off;
+                    break;
+                }
+            }
+        }
+        reading_ranges.insert(reading_ranges.begin(), {0, prefix_end});
     }
 
     auto scope = ReadScope::create(
