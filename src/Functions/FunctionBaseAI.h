@@ -6,6 +6,9 @@
 #include <Functions/AI/AIQuotaTracker.h>
 #include <Interpreters/Context.h>
 
+#include <mutex>
+#include <optional>
+
 namespace DB
 {
 
@@ -69,6 +72,13 @@ private:
 
     ResolvedConfig resolveConfig(const ColumnsWithTypeAndName & arguments) const;
     float resolveTemperature(const ColumnsWithTypeAndName & arguments, const ResolvedConfig & config) const;
+
+    /// Quota tracker persists across executeImpl calls (one per block) so that
+    /// per-query limits are enforced for the entire query, not per block.
+    /// Guarded by mutex because the query engine may call executeImpl from
+    /// different threads for different blocks.
+    mutable std::mutex quota_mutex;
+    mutable std::optional<AIQuotaTracker> quota;
 };
 
 }
