@@ -508,7 +508,7 @@ SlotAllocationPtr ConcurrencyControlFairRoundRobinScheduler::allocate(std::uniqu
     // emergency rollback lever only.
     SlotCount limit = max - min;
     SlotCount granted = state.lazy_allocation.load(std::memory_order_relaxed)
-        ? std::min(std::min(SlotCount(1), limit), state.available(lock))
+        ? std::min({SlotCount(1), limit, state.available(lock)})
         : std::min(limit, state.available(lock));
     state.cur_concurrency += granted;
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsGranted, min);
@@ -809,7 +809,7 @@ SlotAllocationPtr ConcurrencyControlMaxMinFairScheduler::allocate(std::unique_lo
     // emergency rollback lever only.
     SlotCount limit = max - min;
     SlotCount granted = state.lazy_allocation.load(std::memory_order_relaxed)
-        ? std::min(std::min(SlotCount(1), limit), state.available(lock))
+        ? std::min({SlotCount(1), limit, state.available(lock)})
         : std::min(limit, state.available(lock));
     state.cur_concurrency += granted;
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsGranted, min);

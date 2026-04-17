@@ -838,7 +838,7 @@ TEST(ConcurrencyControl, LazyGrantingScheduleSkipsUnused)
 
         // A1 has 1 granted (from allocate bootstrap), consuming 1 CC slot.
         // A2 should get the remaining 1 slot.
-        ASSERT_TRUE(a2_acquired.size() >= 1) << "scheduler=" << scheduler << " a2_acquired=" << a2_acquired.size();
+        ASSERT_TRUE(!a2_acquired.empty()) << "scheduler=" << scheduler << " a2_acquired=" << a2_acquired.size();
 
         // A1's granted slot is still there, not acquired
         auto a1_slot = a1->tryAcquire();
