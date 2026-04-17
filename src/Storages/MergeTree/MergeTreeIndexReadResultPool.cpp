@@ -51,6 +51,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     auto ranges = part.ranges;
     [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
 
+    IndexGranulesMap index_granules;
+
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (use_for_disjunctions)
         partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
@@ -64,7 +66,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-        ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+        auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition,
             key_condition_rpn_template,
@@ -77,7 +79,12 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             vector_similarity_index_cache.get(),
             use_for_disjunctions,
             partial_eval_results,
-            log).first;
+            log);
+
+        ranges = std::move(filtered_ranges);
+
+        for (auto & [name, granule] : filtered_hints.index_granules)
+            index_granules[name] = std::move(granule);
 
         LOG_DEBUG(log, "Index {} has dropped {}/{} granules in part {}", index_and_condition.index->index.name,
                         (total_granules - ranges.getNumberOfMarks()), total_granules, part.data_part->name);
@@ -108,6 +115,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         for (auto i = range.begin; i < range.end; ++i)
             (*res).granules_selected[i] = true;
     }
+
+    res->index_granules = std::move(index_granules);
 
     if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
     {

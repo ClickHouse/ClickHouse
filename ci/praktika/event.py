@@ -42,7 +42,7 @@ class Event:
 
 
 # Maximum number of days to retain non-open PRs in the timeline
-MAX_TIMELINE_DAYS = 120
+MAX_TIMELINE_DAYS = 30
 
 
 def _sanitize_s3_key_name(name: str) -> str:
@@ -89,6 +89,33 @@ class EventFeed:
                 if not isinstance(e.ext, dict):
                     e.ext = {}
                 e.ext["is_cancelled"] = True
+
+            # Compact bloated result entries that were stored before the
+            # pruning was added to Result.to_event.  The feed only needs
+            # name+status from each sub-result and report_url from ext.
+            result = getattr(e, "result", None)
+            if isinstance(result, dict):
+                for key in ("start_time", "duration", "files", "assets", "links", "info"):
+                    if key in result:
+                        del result[key]
+                results = result.get("results")
+                if isinstance(results, list) and results:
+                    first = results[0]
+                    if isinstance(first, dict) and len(first) > 2:
+                        result["results"] = [
+                            {
+                                "name": r.get("name", ""),
+                                "status": r.get("status", ""),
+                            }
+                            for r in results
+                            if isinstance(r, dict)
+                        ]
+                ext = result.get("ext")
+                if isinstance(ext, dict) and len(ext) > 1:
+                    report_url = ext.get("report_url", "")
+                    result["ext"] = (
+                        {"report_url": report_url} if report_url else {}
+                    )
 
         # Remove existing events that match the incoming event
         event_pr_number = event.ext.get("pr_number", 0)

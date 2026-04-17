@@ -560,7 +560,7 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>())
+    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
 {
     create_query = getCreateTableQuery()->formatWithSecretsOneLine();
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
@@ -844,7 +844,8 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
     /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
-    /// `true` for `SharedSystemLogFlushPolicy` and `false` for `DefaultSystemLogFlushPolicy`.
+    /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
+    /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
     if (!flush_policy->shouldSkipAliasColumns())
         ordinary_columns.setAliases(alias_columns);
 
