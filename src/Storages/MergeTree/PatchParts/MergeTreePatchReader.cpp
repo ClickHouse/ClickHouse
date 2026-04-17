@@ -346,12 +346,37 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderMergeOnKey::readPatches(
 {
     std::vector<PatchReadResultPtr> results;
 
+    /// When the caller's `patch_results` deque is empty — typically right after `MergeTreeReadersChain`
+    /// evicted every accumulated block on the main cursor advancing — `last_read_patch` is null and
+    /// this loop has to read ranges until `needNewPatch` says the last block's max sort-key has
+    /// caught up with the current main block's max. For a fresh patch reader whose sort-key range
+    /// starts far below the main cursor, that means traversing *every* range whose max is still
+    /// below `main_max`. Retaining each of those blocks in `results` pins ~8 marks of patch data
+    /// per traversed range; for a patch a few million rows wide this alone can hold hundreds of
+    /// MB per patch per thread until the next `readPatches` call gets to evict them from the
+    /// front of the deque (the blow-up the user hit at 96 patches, 60 GiB peak). The blocks are
+    /// also useless — they live entirely below `main_min`, so `MergeTreeReadersChain::readPatches`
+    /// would call `needOldPatch` → false → pop on the very next iteration.
+    ///
+    /// Drop such blocks inline. We still need to track `last_read_patch` so `needNewPatch` can
+    /// decide when to stop, so keep the most recent discarded block alive in a local holder
+    /// across iterations (its dtor runs when this function returns).
+    PatchReadResultPtr last_discarded;
+
     while (!ranges.empty() && (!last_read_patch || needNewPatch(main_result, *last_read_patch, result_header)))
     {
         auto result = readPatch(ranges.front());
         ranges.pop_front();
+
+        /// `needOldPatch` returns false iff the block's max sort-key is strictly below `main_min`,
+        /// which is exactly the "useless to retain" case.
+        const bool keep = needOldPatch(main_result, *result, result_header);
         last_read_patch = result.get();
-        results.push_back(std::move(result));
+
+        if (keep)
+            results.push_back(std::move(result));
+        else
+            last_discarded = std::move(result);  // kept alive only to anchor `last_read_patch`
     }
 
     return results;
