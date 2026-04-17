@@ -17,9 +17,16 @@
 #include <rocksdb/slice.h>
 #include <rocksdb/status.h>
 
+#include <Common/CurrentMetrics.h>
+
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+namespace CurrentMetrics
+{
+    extern const Metric FilesystemCacheRocksDBIndexElements;
+}
 
 namespace DB
 {
@@ -29,8 +36,8 @@ namespace ErrorCodes
     extern const int ROCKSDB_ERROR;
 }
 
-FileCacheRocksDBIndex::FileCacheRocksDBIndex(const std::string & cache_base_path)
-    : log(getLogger("FileCacheRocksDBIndex"))
+FileCacheRocksDBIndex::FileCacheRocksDBIndex(const std::string & cache_base_path, const std::string & cache_name)
+    : log(getLogger("FileCacheRocksDBIndex(" + cache_name + ")"))
 {
     const auto rocksdb_path = fs::path(cache_base_path) / ".metadata_index";
     fs::create_directories(rocksdb_path);
@@ -130,7 +137,7 @@ static void deserializeValue(const rocksdb::Slice & slice, Int64 & size, FileCac
     }
 }
 
-void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 size, const FileCacheOriginInfo & origin)
+void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 size, const FileCacheOriginInfo & origin, bool is_new_entry)
 {
     auto serialized_key = serializeKey(key, offset);
     auto serialized_value = serializeValue(size, origin);
@@ -141,6 +148,12 @@ void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 s
     auto status = db->Put(write_options, serialized_key, serialized_value);
     if (!status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to write to RocksDB index: {}", status.ToString());
+
+    if (is_new_entry)
+    {
+        auto count = element_count.fetch_add(1) + 1;
+        CurrentMetrics::set(CurrentMetrics::FilesystemCacheRocksDBIndexElements, count);
+    }
 }
 
 void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset)
@@ -153,9 +166,13 @@ void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset)
     auto status = db->Delete(write_options, serialized_key);
     if (!status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to delete from RocksDB index: {}", status.ToString());
+
+    auto count = element_count.fetch_sub(1) - 1;
+    chassert(count >= 0);
+    CurrentMetrics::set(CurrentMetrics::FilesystemCacheRocksDBIndexElements, count);
 }
 
-std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::loadAll() const
+std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLoadAll()
 {
     std::vector<Entry> entries;
 
@@ -191,6 +208,9 @@ std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::loadAll() const
 
     if (!it->status().ok())
         LOG_ERROR(log, "RocksDB iteration error: {}", it->status().ToString());
+
+    element_count.store(static_cast<Int64>(entries.size()));
+    CurrentMetrics::set(CurrentMetrics::FilesystemCacheRocksDBIndexElements, entries.size());
 
     LOG_INFO(log, "Loaded {} entries from RocksDB metadata index", entries.size());
     return entries;

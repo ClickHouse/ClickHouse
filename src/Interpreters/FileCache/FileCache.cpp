@@ -310,7 +310,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
 #if USE_ROCKSDB
     if (settings[FileCacheSetting::use_rocksdb_metadata_index])
-        rocksdb_index = std::make_shared<FileCacheRocksDBIndex>(settings[FileCacheSetting::path]);
+        rocksdb_index = std::make_shared<FileCacheRocksDBIndex>(settings[FileCacheSetting::path], cache_name);
 #endif
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, settings[FileCacheSetting::max_size]);
@@ -1607,7 +1607,7 @@ void FileCache::loadMetadata()
 #if USE_ROCKSDB
     if (rocksdb_index)
     {
-        auto entries = rocksdb_index->loadAll();
+        auto entries = rocksdb_index->initializeAndLoadAll();
         LOG_INFO(log, "Loaded {} entries from RocksDB index", entries.size());
         if (!entries.empty())
         {
@@ -1658,10 +1658,26 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
             origin,
             /* is_initial_load */ true);
 
+        auto cleanup_on_failure = [&]()
+        {
+            rocksdb_index->remove(entry.key, entry.offset);
+            /// Clean up the key metadata if it is empty (has no successfully loaded segments).
+            if (key_metadata->sizeUnlocked() == 0)
+                metadata.removeKey(entry.key, /* if_exists */ true, origin.user_id);
+        };
+
         UInt64 size = 0;
         if (entry.size >= 0)
         {
             size = static_cast<UInt64>(entry.size);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+            /// Validate that the file exists and has the expected size.
+            auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
+            std::error_code ec;
+            auto actual_file_size = fs::file_size(path, ec);
+            chassert(!ec && actual_file_size == size);
+#endif
         }
         else
         {
@@ -1672,7 +1688,7 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
             if (ec)
             {
                 LOG_WARNING(log, "Cannot stat {}: {}, removing from index", path, ec.message());
-                rocksdb_index->remove(entry.key, entry.offset);
+                cleanup_on_failure();
                 continue;
             }
             size = file_size;
@@ -1682,7 +1698,7 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
         {
             auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
             fs::remove(path);
-            rocksdb_index->remove(entry.key, entry.offset);
+            cleanup_on_failure();
             continue;
         }
 
@@ -1691,7 +1707,7 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
             auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
             LOG_WARNING(log, "Cannot load file segment {}:{} (size: {}), removing {}", entry.key, entry.offset, size, path);
             fs::remove(path);
-            rocksdb_index->remove(entry.key, entry.offset);
+            cleanup_on_failure();
         }
     }
 
@@ -2172,7 +2188,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                 LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, segment.offset, segment.size, segment.path.string());
 #if USE_ROCKSDB
                 if (rocksdb_index)
-                    rocksdb_index->put(key, segment.offset, static_cast<Int64>(segment.size), origin_info);
+                    rocksdb_index->put(key, segment.offset, static_cast<Int64>(segment.size), origin_info, /* is_new_entry */ true);
 #endif
             }
             else
