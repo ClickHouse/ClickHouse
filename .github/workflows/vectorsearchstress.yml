@@ -128,7 +128,7 @@ jobs:
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   vector_search_stress:
-    runs-on: [self-hosted, arm-medium]
+    runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     name: "Vector Search Stress"
     outputs:
