@@ -168,20 +168,142 @@ MarkRanges getRangesInPatchPartJoin(const PatchPartInfoForReader & patch)
     return optimizeRanges(patch_part_ranges);
 }
 
-/// v2 patches. For now we return every mark range of the patch — the streaming merge loop will
-/// then prune via the primary-index-based `min/max sort-key` comparisons in `needOldPatch` and
-/// `needNewPatch`. A targeted primary-index intersection that shrinks `ranges` up-front is a
-/// follow-up optimisation (tracked in the plan as a Phase-1 perf task).
-MarkRanges getRangesInPatchPartMergeOnKey(const PatchPartInfoForReader & patch)
+/// v2 patches. Find the patch mark ranges whose sort-key values intersect the sort-key range
+/// covered by `original_ranges` on the main part.
+///
+/// Without this, every SELECT task would be handed *every* patch mark range and only prune them
+/// at read time inside the streaming merge loop — which means fully reading and decompressing
+/// patch blocks that can never contribute to the task's main rows. On a 200 M-row table with a
+/// 100 M-row patch that produced ~50 B patch-row reads per `SELECT count()` (read amplification
+/// ~500× because every task under `max_threads > 1` reads the whole patch independently).
+///
+/// Bound the patch read at range-enumeration time: pull `[min_sk, max_sk]` from the main part's
+/// primary index over `original_ranges`, then binary-search the patch's primary index for the
+/// granule range that covers `[min_sk, max_sk]`. Fall through to "every range" in the unusual
+/// cases where we can't get a bound (empty index, mismatched column types, etc.) — correctness
+/// is preserved, only the perf benefit is lost.
+MarkRanges getRangesInPatchPartMergeOnKey(
+    const DataPartPtr & original_part,
+    const PatchPartInfoForReader & patch,
+    const MarkRanges & original_ranges)
 {
     chassert(patch.mode == PatchMode::MergeOnKey);
-    const auto & index_granularity = patch.part->getIndexGranularity();
-    if (index_granularity.getMarksCount() == 0)
+    const auto & patch_index_granularity = patch.part->getIndexGranularity();
+    const size_t patch_marks_count = patch_index_granularity.getMarksCount();
+    if (patch_marks_count == 0)
         return {};
 
-    MarkRanges ranges;
-    ranges.emplace_back(0, index_granularity.getMarksCount());
-    return ranges;
+    auto emit_all_patch_ranges = [&]() -> MarkRanges
+    {
+        MarkRanges all;
+        all.emplace_back(0, patch_marks_count);
+        return all;
+    };
+
+    if (original_ranges.empty())
+        return {};
+
+    auto main_index = original_part->getIndex();
+    auto patch_index = patch.part->getIndexPtr();
+    if (!main_index || main_index->empty() || !patch_index || patch_index->empty())
+        return emit_all_patch_ranges();
+
+    /// Both indexes store the sort-key expression's *result* columns starting at position 0.
+    /// For a plain `ORDER BY a` that's `a`; for `ORDER BY cityHash64(id)` it's the materialized
+    /// `cityHash64(id)` column. Patch column 0 was built by `getPatchPartMetadataV2` so the
+    /// types line up with the main side.
+    if (main_index->empty() || patch_index->empty())
+        return emit_all_patch_ranges();
+
+    const IColumn & main_sk = *(*main_index)[0];
+    const IColumn & patch_sk = *(*patch_index)[0];
+    if (main_sk.empty() || patch_sk.empty())
+        return emit_all_patch_ranges();
+
+    /// Fold `original_ranges` to a single `[min_granule, max_granule_end)` span — the narrowest
+    /// bound on the sort-key range the main side will produce.
+    /// `min_granule` indexes the row in `main_sk` holding the lowest sort-key we'll read; the
+    /// upper bound is harder to pin down because main's index only records *first-of-granule*
+    /// values, so we use `main_sk[max_granule_end]` (i.e. the first row of the next granule) as
+    /// a conservative strict upper bound, or fall through to the last index row if there is no
+    /// next granule.
+    size_t main_marks_count = main_sk.size();
+    size_t min_granule = std::numeric_limits<size_t>::max();
+    size_t max_granule_end = 0;
+    for (const auto & range : original_ranges)
+    {
+        if (range.begin < min_granule)
+            min_granule = range.begin;
+        if (range.end > max_granule_end)
+            max_granule_end = range.end;
+    }
+    if (min_granule >= main_marks_count)
+        return {};
+    if (max_granule_end > main_marks_count)
+        max_granule_end = main_marks_count;
+
+    const size_t n_patch = patch_sk.size();
+
+    /// lower_bound by `compareAt`: first j where patch_sk[j] >= main_sk[min_granule].
+    /// Then back up by 1 to include the granule whose rows span main's min (patch granule j-1
+    /// has `a` values in [patch_sk[j-1], patch_sk[j]) which may include `main_sk[min_granule]`).
+    auto is_less = [&](size_t patch_row, size_t main_row, const IColumn & main_col) -> bool
+    {
+        return patch_sk.compareAt(patch_row, main_row, main_col, /*nan_direction_hint=*/ 1) < 0;
+    };
+    size_t lo = 0;
+    size_t hi = n_patch;
+    while (lo < hi)
+    {
+        size_t mid = lo + (hi - lo) / 2;
+        if (is_less(mid, min_granule, main_sk))
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    const size_t patch_lo = lo > 0 ? lo - 1 : 0;
+
+    /// Upper bound: first patch granule whose first-row sort-key is >= main's exclusive upper.
+    /// When main reads to the end of the part (`max_granule_end == main_marks_count`) there is
+    /// no index row that bounds main's max sort-key from above — main's last granule can contain
+    /// keys arbitrarily greater than `main_sk[main_marks_count - 1]`. In that case every
+    /// remaining patch granule could still match, so keep `patch_hi = n_patch` (full suffix).
+    size_t patch_hi;
+    if (max_granule_end == main_marks_count)
+    {
+        patch_hi = n_patch;
+    }
+    else
+    {
+        /// upper_bound: first j where patch_sk[j] >= main_sk[max_granule_end]. Patch granule
+        /// j's rows cover `[patch_sk[j], patch_sk[j+1])`, so `patch_sk[j] >= main_upper` means
+        /// all of j's keys are outside main's range.
+        lo = patch_lo;
+        hi = n_patch;
+        const size_t upper_main_row = max_granule_end;
+        while (lo < hi)
+        {
+            size_t mid = lo + (hi - lo) / 2;
+            if (is_less(mid, upper_main_row, main_sk))
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        patch_hi = lo;
+    }
+
+    /// Translate patch index rows to patch mark-range bounds. Patch granule j corresponds to
+    /// mark j. We need the mark range covering granules `[patch_lo, patch_hi)`.
+    if (patch_lo >= patch_hi || patch_hi > patch_marks_count)
+    {
+        /// Nothing overlaps; return empty so the reader does zero work on this patch for
+        /// this task.
+        return {};
+    }
+
+    MarkRanges result;
+    result.emplace_back(patch_lo, patch_hi);
+    return result;
 }
 
 MarkRanges getRangesInPatchPart(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & ranges)
@@ -193,7 +315,7 @@ MarkRanges getRangesInPatchPart(const DataPartPtr & original_part, const PatchPa
         case PatchMode::Join:
             return getRangesInPatchPartJoin(patch);
         case PatchMode::MergeOnKey:
-            return getRangesInPatchPartMergeOnKey(patch);
+            return getRangesInPatchPartMergeOnKey(original_part, patch, ranges);
     }
 }
 
