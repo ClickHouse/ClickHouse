@@ -152,8 +152,8 @@ StorageTimeSeries::StorageTimeSeries(
     storage_metadata.setColumns(columns);
     if (!comment.empty())
         storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     has_inner_tables = false;
 

@@ -28,7 +28,6 @@ public:
         , partition_id(part_->info.getPartitionId())
     {
         setInMemoryMetadata(*storage.getInMemoryMetadataPtr(storage.getContext(), false));
-        setVirtuals(*storage.getVirtualsPtr());
     }
 
     /// Used in queries with projection.
@@ -38,12 +37,9 @@ public:
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
         setInMemoryMetadata(*storage.getInMemoryMetadataPtr(storage.getContext(), false));
-        setVirtuals(*storage.getVirtualsPtr());
     }
 
     String getName() const override { return "FromMergeTreeDataPart"; }
-
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override;
 
     void read(
         QueryPlan & query_plan,

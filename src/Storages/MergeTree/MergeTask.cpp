@@ -913,9 +913,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
         global_ctx->compression_codec,
         std::move(index_granularity_ptr),
-        global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
+        global_ctx->txn ? global_ctx->txn->tid : Tx::NonTransactionalTID,
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-        /*reset_columns=*/ true,
+        /*reset_columns=*/true,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams);
@@ -2898,7 +2898,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     if (global_ctx->deduplicate)
     {
-        const auto & virtuals = *global_ctx->data->getVirtualsPtr();
+        const auto & virtuals = global_ctx->metadata_snapshot->virtuals;
 
         /// We don't want to deduplicate by virtual persistent column.
         /// If deduplicate_by_columns is empty, add all columns except virtuals.

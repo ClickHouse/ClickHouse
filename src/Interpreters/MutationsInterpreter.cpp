@@ -387,11 +387,11 @@ bool MutationsInterpreter::Source::isCompactPart() const
     return part && part->getType() == MergeTreeDataPartType::Compact;
 }
 
-static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot, const IStorage & storage)
+static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot)
 {
-    auto all_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
-    auto virtuals = storage.getVirtualsPtr();
-    for (const auto & column : *virtuals)
+    auto all_columns = metadata_snapshot->columns.getNamesOfPhysical();
+    const auto & virtuals = metadata_snapshot->virtuals;
+    for (const auto & column : virtuals)
         all_columns.push_back(column.name);
     return all_columns;
 }
@@ -404,7 +404,7 @@ MutationsInterpreter::MutationsInterpreter(
     Settings settings_)
     : MutationsInterpreter(
         storage_, metadata_snapshot_, std::move(commands_),
-        getAvailableColumnsWithVirtuals(metadata_snapshot_, *storage_),
+        getAvailableColumnsWithVirtuals(metadata_snapshot_),
         std::move(context_), std::move(settings_))
 {
 }
@@ -454,7 +454,7 @@ MutationsInterpreter::MutationsInterpreter(
     }
 
     const auto & part_columns = source_part_->getColumnsDescription();
-    auto persistent_virtuals = storage_.getVirtualsPtr()->getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
+    auto persistent_virtuals = metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
     for (const auto & column : persistent_virtuals)
@@ -524,8 +524,8 @@ static void validateUpdateColumns(
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context, false);
     NameSet key_columns = getKeyColumns(source, metadata_snapshot);
 
-    const auto & storage_columns = storage_snapshot->metadata->getColumns();
-    const auto & virtual_columns = *storage_snapshot->virtual_columns;
+    const auto & storage_columns = storage_snapshot->metadata->columns;
+    const auto & virtual_columns = storage_snapshot->metadata->virtuals;
     for (const auto & column_name : updated_columns)
     {
         if (key_columns.contains(column_name))
