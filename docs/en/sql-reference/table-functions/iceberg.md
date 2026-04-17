@@ -90,12 +90,6 @@ ENGINE = IcebergS3(
   'minio_access_key',
   'minio_secret_key'
 )
-SETTINGS 
-  storage_catalog_type="rest",
-  storage_warehouse="demo",
-  object_storage_endpoint="http://minio:9000/warehouse-rest",
-  storage_region="us-east-1",
-  storage_catalog_url="http://rest:8181/v1"
 ```
 
 Or, using AWS Glue Data Catalog with S3:
@@ -106,12 +100,6 @@ ENGINE = IcebergS3(
   'aws_access_key',
   'aws_secret_key'
 )
-SETTINGS 
-  storage_catalog_type = 'glue',
-  storage_warehouse = 'my_database',
-  object_storage_endpoint = 's3://my-data-bucket/',
-  storage_region = 'us-east-1',
-  storage_catalog_url = 'https://glue.us-east-1.amazonaws.com/iceberg/v1'
 ```
 
 ## Schema Evolution {#schema-evolution}
@@ -649,6 +637,88 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 - Requires the `allow_insert_into_iceberg` setting to be enabled
 - Requires the `allow_experimental_expire_snapshots` setting to be enabled
 - The catalog's own authorization (REST catalog auth, AWS Glue IAM, etc.) is enforced independently when ClickHouse updates the metadata
+:::
+
+### Remove Orphan Files {#iceberg-remove-orphan-files}
+
+Orphan files are files on storage that are not referenced by any snapshot in the Iceberg table metadata. They accumulate from failed writes, partial cleanup after compaction, and interrupted operations, causing unbounded storage growth. The `remove_orphan_files` command identifies and removes these orphan files.
+
+**Syntax:**
+
+```sql
+-- Positional form: single unnamed older_than argument
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files('timestamp')
+
+-- Named form
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    older_than = 'timestamp',
+    location = 'path',
+    dry_run = 0|1
+)
+
+-- No arguments: use all defaults (older_than = 3 days ago)
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `older_than` | `String` (timestamp) | 3 days ago (configurable via `iceberg_orphan_files_older_than_seconds`) | Only consider files with a last-modified time older than this timestamp as orphan candidates. Safety guard against deleting files from in-progress writes. |
+| `location` | `String` | Table location | Restrict the scan to a specific subdirectory under the table location (e.g., `'data/'` or `'metadata/'`). |
+| `dry_run` | `UInt64` | `0` | When `1`, identify orphan files and return the result summary without actually deleting anything. |
+
+**Examples:**
+
+```sql
+-- Remove orphan files older than a specific timestamp
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files('2026-03-01 00:00:00');
+
+-- Dry run: preview which files would be deleted
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(dry_run = 1);
+
+-- Scan only the data directory
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    older_than = '2026-03-01 00:00:00',
+    location = 'data/'
+);
+
+-- Combine positional older_than with named arguments
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    '2026-03-01 00:00:00',
+    dry_run = 1
+);
+```
+
+**Output:**
+
+The command returns a table with `metric_name` and `metric_value` columns showing the count of deleted (or would-be-deleted in dry_run mode) files by category. File categories are classified using best-effort heuristics based on file naming conventions; files that do not match any specific pattern default to `deleted_data_files_count`:
+
+| metric_name | metric_value |
+|---|---|
+| deleted_data_files_count | 5 |
+| deleted_position_delete_files_count | 2 |
+| deleted_equality_delete_files_count | 0 |
+| deleted_manifest_files_count | 3 |
+| deleted_manifest_lists_count | 1 |
+| deleted_metadata_files_count | 0 |
+| deleted_statistics_files_count | 0 |
+| skipped_missing_metadata_count | 0 |
+| failed_deletions_count | 0 |
+
+**Settings:**
+
+| Setting | Type | Default | Description |
+|---|---|---|---|
+| `allow_iceberg_remove_orphan_files` | `Bool` | `false` | Gate setting to enable the feature (experimental). |
+| `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 days) | Default `older_than` threshold in seconds when the argument is omitted. |
+
+:::note
+- **Requires Iceberg format version 2 (or higher).** Version 1 tables are rejected because they lack `manifest-list` pointers in snapshots, which are needed to safely determine the reachable file set. Running the command on a v1 table returns a `BAD_ARGUMENTS` error.
+- Requires both `allow_insert_into_iceberg` and `allow_iceberg_remove_orphan_files` settings to be enabled
+- It is recommended to run `expire_snapshots` before `remove_orphan_files` so that files uniquely referenced by expired snapshots are cleaned up first
+- Use `dry_run = 1` to preview orphan files before deletion
+- The `older_than` threshold protects against deleting files from in-progress writes — the default 3-day threshold provides a generous safety margin
 :::
 
 ## See Also {#see-also}

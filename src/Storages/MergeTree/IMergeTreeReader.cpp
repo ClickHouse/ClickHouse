@@ -95,8 +95,8 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
 
     const auto & data_part = loaded_part_info->getDataPart();
-    const auto & storage_columns = storage_snapshot->metadata->getColumns();
-    const auto & virtual_columns = storage_snapshot->virtual_columns;
+    const auto & storage_columns = storage_snapshot->metadata->columns;
+    const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
     auto it = getColumns().begin();
     for (size_t pos = 0; pos < columns.size(); ++pos, ++it)
@@ -104,7 +104,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         if (columns[pos] || storage_columns.has(it->name))
             continue;
 
-        auto virtual_column = virtual_columns->tryGet(it->name);
+        auto virtual_column = virtual_columns.tryGet(it->name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
         if (!virtual_column)
             continue;
 
@@ -181,6 +181,28 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     }
 }
 
+ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
+{
+    auto context_copy = Context::createCopy(data_part_info_for_read->getContext());
+    /// Default/materialized expressions may contain experimental or suspicious types that can be
+    /// disabled in the current context. We must not perform any checks during reads from existing tables.
+    enableAllExperimentalSettings(context_copy);
+    context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
+    return context_copy;
+}
+
+ColumnsDescription IMergeTreeReader::buildCombinedColumnsForDefaultExpressions() const
+{
+    auto combined_columns = storage_snapshot->metadata->getColumns();
+    if (!storage_snapshot->metadata->virtuals.empty())
+    {
+        for (const auto & virtual_column : storage_snapshot->metadata->virtuals)
+            if (virtual_column.default_desc.expression)
+                combined_columns.add(virtual_column);
+    }
+    return combined_columns;
+}
+
 void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const
 {
     try
@@ -218,24 +240,8 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             }
         }
 
-        auto context_copy = Context::createCopy(data_part_info_for_read->getContext());
-        /// Default/materialized expression can contain experimental/suspicious types that can be disabled in current context.
-        /// We should not perform any checks during reading from an existing table.
-        enableAllExperimentalSettings(context_copy);
-        context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
-
-        /// Create a combined columns description that includes both metadata columns and virtual columns.
-        /// This is needed to evaluate default expressions for virtual columns.
-        auto combined_columns = storage_snapshot->metadata->getColumns();
-
-        if (storage_snapshot->virtual_columns)
-        {
-            for (const auto & virtual_column : *storage_snapshot->virtual_columns)
-            {
-                if (virtual_column.default_desc.expression)
-                    combined_columns.add(virtual_column);
-            }
-        }
+        auto context_copy = createContextForDefaultExpressions();
+        auto combined_columns = buildCombinedColumnsForDefaultExpressions();
 
         auto dag = DB::evaluateMissingDefaults(
             additional_columns,
@@ -572,16 +578,19 @@ MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark);
+    MergeTreeIndexGranulePtr index_granule);
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark)
+    const IndexGranulesMap & index_granules)
 {
     if (index.index->index.type == "text")
-        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, can_skip_mark);
+    {
+        auto it = index_granules.find(index.index->index.name);
+        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, it != index_granules.end() ? it->second : nullptr);
+    }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);
 }
