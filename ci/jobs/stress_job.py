@@ -79,6 +79,9 @@ def get_additional_envs(info, check_name: str) -> List[str]:
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
+    if "serverfuzz" in info.job_name:
+        result.append("ENABLE_SERVER_FUZZER=1")
+
     result.append(
         f"STRESS_GLOBAL_TIME_LIMIT={'3600' if is_extended_run() else '1200'}"
     )
@@ -225,11 +228,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     failed_results = []
     for test_result in test_results:
         if test_result.name == "Server died":
-            # This result from stress.py indicates a server crash - we use it as a flag
-            # to trigger detailed log parsing below, but don't include it in the CI report
-            # since we'll create a more informative result from the parsed logs
             server_died = True
-        elif not test_result.is_ok():
+            continue
+        if not test_result.is_ok():
             failed_results.append(test_result)
 
     if server_died:
@@ -313,6 +314,15 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     )
                 )
 
+    if server_died and not failed_results:
+        failed_results.append(
+            Result.create_from(
+                name="Server died",
+                info="Server died and no specific error was extracted",
+                status=Result.Status.FAILED,
+            )
+        )
+
     if exit_code != 0:
         failed_results.append(
             Result.create_from(
@@ -322,8 +332,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             )
         )
 
+    all_results = failed_results + [r for r in test_results if r.is_ok()]
     r = Result.create_from(
-        results=failed_results,
+        results=all_results,
         status=Result.Status.SUCCESS if not failed_results else "",
         stopwatch=stopwatch,
     )

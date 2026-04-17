@@ -303,6 +303,14 @@ void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
         getData().updateHashWithValue(offset + i, hash);
 }
 
+void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    size_t nested_begin = offsetAt(begin);
+    size_t nested_end = offsetAt(end);
+    getData().updateHashWithValueRange(nested_begin, nested_end, hash);
+    hash.update(reinterpret_cast<const char *>(&getOffsets()[begin]), (end - begin) * sizeof(getOffsets()[0]));
+}
+
 WeakHash32 ColumnArray::getWeakHash32() const
 {
     auto s = offsets->size();

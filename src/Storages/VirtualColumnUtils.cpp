@@ -34,6 +34,7 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunction.h>
@@ -43,6 +44,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/StorageSnapshot.h>
 #include <Common/HashTable/HashSet.h>
 
 
@@ -148,6 +150,7 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
         {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
         {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())},
         {"_iceberg_metadata_file_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
     };
 }
 
@@ -201,7 +204,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
             return;
 
         const auto & type = pair.getTypeInStorage();
-        desc.addEphemeral(name, type, "");
+        desc.addEphemeral(name, type, "", VirtualsMaterializationPlace::Reader);
     };
 
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
@@ -434,6 +437,13 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
+        else if (virtual_column.name == "_table")
+        {
+            if (!virtual_values.storage_id.empty())
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.storage_id.getTableName())->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
         else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
         {
             FormatSettings hive_format_settings;
@@ -543,8 +553,14 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
                 if (!res->result_type->equals(*node->result_type))
                 {
+                    /// Convert to boolean via notEquals(x, 0) instead of a truncating numeric cast.
+                    /// A plain CAST(256, 'UInt8') would give 0 (since 256 % 256 == 0), losing truthiness
+                    /// for values like 256, 512, 65536, 2147483648, etc.  See #101269.
                     ActionsDAG tmp_dag;
-                    res = &tmp_dag.addCast(*res, node->result_type, {}, context);
+                    auto zero_column = res->result_type->createColumnConst(1, res->result_type->getDefault());
+                    const auto & zero_node = tmp_dag.addColumn({zero_column, res->result_type, "0"});
+                    auto ne_func = FunctionFactory::instance().get("notEquals", context);
+                    res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
                     additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
                 }
 
@@ -702,6 +718,58 @@ DataPartsVector filterDataPartsWithExpression(
             filtered_parts.push_back(part);
 
     return filtered_parts;
+}
+
+Names filterVirtualColumns(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsKind & kind_to_filter,
+    const VirtualsMaterializationPlace & place_to_filter)
+{
+    Names result;
+    result.reserve(column_names.size());
+    for (const auto & name : column_names)
+    {
+        if (metadata_snapshot->isVirtualColumn(name))
+            if (metadata_snapshot->virtuals.tryGet(name, kind_to_filter, place_to_filter))
+                continue;
+
+        result.push_back(name);
+    }
+
+    /// If all requested columns were common virtuals, we still need at least one
+    /// physical column so the storage has something to read.
+    if (result.empty())
+        if (const auto & all_physical = metadata_snapshot->getColumns().getAllPhysical(); !all_physical.empty())
+            result.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
+
+    return result;
+}
+
+std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
+{
+    Names physical_names;
+    Names virtual_names;
+    for (const auto & name : column_names)
+    {
+        /// If the column exists in the table schema, treat it as physical even if
+        /// a virtual column with the same name is registered.
+        if (storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name))
+            physical_names.push_back(name);
+        else if (storage_snapshot->metadata->virtuals.tryGetDescription(name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+            virtual_names.push_back(name);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' is neither physical nor virtual", name);
+    }
+
+    /// We must always read at least one physical column to determine the number of rows.
+    if (physical_names.empty())
+    {
+        auto smallest = ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical());
+        physical_names.push_back(smallest.name);
+    }
+
+    return {std::move(physical_names), std::move(virtual_names)};
 }
 
 }

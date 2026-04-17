@@ -163,7 +163,7 @@ UInt64 getMaxSourcePartBytesForMutation(const MergeTreeData & data, String * out
 
 UInt64 getMaxResultPartRowsCount(const MergeTreeData & data)
 {
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
     /// Text index and vector similarity indexes don't support UInt64 indexes of rows.
     bool has_index_with_limit_on_rows = secondary_indices.hasType("text") || secondary_indices.hasType("vector_similarity");

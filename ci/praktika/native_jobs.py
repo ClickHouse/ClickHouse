@@ -1,4 +1,5 @@
 import dataclasses
+import hashlib
 import json
 import platform
 import sys
@@ -26,15 +27,13 @@ assert Settings.CI_CONFIG_RUNS_ON
 
 
 # TODO: find the right place to not dublicate
-def _GH_Auth(workflow, force=False):
+def _GH_Auth(force=False):
     if not Settings.USE_CUSTOM_GH_AUTH:
         return
     from .gh_auth import GHAuth
 
     if force or not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
+        GHAuth.auth_from_settings()
 
 
 _workflow_config_job = Job.Config(
@@ -223,6 +222,68 @@ def _clean_buildx_volumes():
     )
 
 
+def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
+    """Compute a content-addressed hash of submodule SHAs and ensure a cache
+    archive exists in S3.  Stores the hash in workflow_config so that downstream
+    jobs with needs_submodules=True can restore it."""
+    stop_watch = Utils.Stopwatch()
+    info = ""
+    try:
+        submodule_shas = Digest.get_submodule_shas()
+        if not submodule_shas:
+            print("WARNING: No submodules found, skipping submodule cache")
+            return Result.create_from(
+                name="Submodule Cache",
+                status=Result.Status.SUCCESS,
+                stopwatch=stop_watch,
+                info="No submodules",
+            )
+
+        cache_hash = hashlib.sha256(submodule_shas.encode()).hexdigest()[:16]
+        s3_path = f"{Settings.CACHE_S3_PATH}/submodules/{cache_hash}.tar.zst"
+        print(f"Submodule cache hash: {cache_hash}")
+
+        # Check if cache already exists in S3
+        if S3.head_object(s3_path):
+            print(f"Submodule cache hit: {s3_path}")
+            info = f"cache hit: {cache_hash}"
+        else:
+            print(f"Submodule cache miss, creating: {s3_path}")
+            Shell.check("git submodule sync", verbose=True, strict=True)
+            Shell.check("git submodule init", verbose=True, strict=True)
+            Shell.check(
+                "git submodule update --depth=1 --single-branch --jobs 64",
+                verbose=True,
+                strict=True,
+                retries=3,
+            )
+            archive_path = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
+            Shell.check(
+                f"tar -cf - .git/modules | zstd -c -T0 > {archive_path}",
+                verbose=True,
+                strict=True,
+            )
+            S3.copy_file_to_s3(s3_path=s3_path, local_path=archive_path, with_rename=True)
+            Shell.check(f"rm -f {archive_path}")
+            info = f"cache miss, created: {cache_hash}"
+
+        workflow_config.submodule_cache_hash = cache_hash
+        workflow_config.dump()
+        status = Result.Status.SUCCESS
+    except Exception as e:
+        print(f"WARNING: Submodule cache failed: {e}")
+        traceback.print_exc()
+        info = f"{e}\n{traceback.format_exc()}"
+        status = Result.Status.SUCCESS  # non-fatal, jobs fall back to GitHub clone
+
+    return Result.create_from(
+        name="Submodule Cache",
+        status=status,
+        stopwatch=stop_watch,
+        info=info,
+    )
+
+
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # debug info
     GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
@@ -304,7 +365,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         env.dump()
 
     try:
-        _GH_Auth(workflow, force=True)
+        _GH_Auth(force=True)
     except Exception as e:
         print(f"WARNING: Failed to auth with GH: [{e}]")
 
@@ -362,6 +423,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         cache_artifacts={},
         cache_jobs={},
         filtered_jobs={},
+        submodule_cache_hash="",
         custom_data={},
     ).dump()
 
@@ -496,37 +558,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
                 if is_affected:
                     affected_artifacts.extend(job.provides)
-                    if job.provides:
-                        # for cases when artifact report is used instead of real artifacts
-                        affected_artifacts.append(job.name)
-                    # Only add artifact names to all_required_artifacts.
-                    # Job names in requirements are ordering-only dependencies unless
-                    # needs_jobs_from_requires is set, in which case the required job
-                    # must run (cannot be skipped as unaffected).
+                    # Propagate the job name so that downstream jobs
+                    # requiring this job by name are marked as affected
+                    affected_artifacts.append(job.name)
+                    # All items in requires are hard dependencies
                     for req in job.requires:
-                        if req not in job_names:
-                            # Not a job name, must be an artifact name
-                            all_required_artifacts.add(req)
-                        elif job.needs_jobs_from_requires:
-                            print(
-                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as hard dependency"
-                            )
-                            all_required_artifacts.add(req)
-                        else:
-                            print(
-                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as ordering-only dependency"
-                            )
+                        all_required_artifacts.add(req)
                 else:
                     print(f"Job [{job.name}] is not affected by the change")
-                    if not job.provides:
-                        workflow_config.set_job_as_filtered(
-                            job.name, "Not affected by the changed files"
-                        )
-                    else:
-                        print(
-                            f"NOTE: Job [{job.name}] is not affected, but may provide required artifacts"
-                        )
-                        unaffected_jobs_with_artifacts[job.name] = job.provides
+                    unaffected_jobs_with_artifacts[job.name] = job.provides
 
             print(f"All required artifacts [{all_required_artifacts}]")
             print(f"Affected artifacts [{affected_artifacts}]")
@@ -536,12 +576,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                     or job_name in all_required_artifacts
                 ):
                     print(
-                        f"NOTE: Job [{job_name}] provides required artifacts - cannot be skipped"
+                        f"NOTE: Job [{job_name}] is required by affected jobs - cannot be skipped"
                     )
                 else:
                     workflow_config.set_job_as_filtered(
                         job_name,
-                        "Not affected by the changed files, and artifacts are not required",
+                        "Not affected by the changed files and not required",
                     )
 
             workflow_config.dump()
@@ -575,6 +615,10 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 info=info,
             )
         )
+
+    if results[-1].is_ok() and workflow.enable_cache and Settings.ENABLE_SUBMODULE_CACHE:
+        result = _prepare_submodule_cache(workflow_config)
+        results.append(result)
 
     if workflow.enable_slack_feed:
         if env.PR_NUMBER:
@@ -733,7 +777,7 @@ def _finish_workflow(workflow, job_name):
         or workflow.enable_open_issues_check
         or workflow.post_hooks
     ):
-        _GH_Auth(workflow)
+        _GH_Auth()
 
     update_final_report = False
     results = []
@@ -840,6 +884,18 @@ def _finish_workflow(workflow, job_name):
             ready_for_merge_description = f"Failed: {len(failed_results)}"
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
+
+    # Revert PRs should be easy to merge - only Fast test is required
+    if "Reverts ClickHouse/" in env.PR_BODY:
+        fast_test_failed = any(
+            "Fast test" in name for name in failed_results
+        )
+        if not fast_test_failed and ready_for_merge_status != Result.Status.SUCCESS:
+            print(
+                f"NOTE: Revert PR detected - setting merge status to success despite failures"
+            )
+            ready_for_merge_status = Result.Status.SUCCESS
+            ready_for_merge_description = "Revert PR"
 
     if workflow.enable_merge_ready_status:
         if not GH.post_commit_status(
