@@ -269,6 +269,32 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateDatabaseQuery, ParserTest,
         }
 })));
 
+INSTANTIATE_TEST_SUITE_P(ParserCreateTableQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserCreateQuery>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "CREATE TABLE Foo ENGINE = MergeTree AS file('foo') ORDER BY name",
+            "throws Syntax error"
+        },
+        {
+            "ATTACH TABLE foo (f Int64) Engine = MergeTree AS file('test.csv')",
+            "throws Syntax error"
+        },
+        {
+            "ATTACH TABLE foo (f Int64) AS file('test.csv') Engine = MergeTree",
+            "throws Syntax error"
+        },
+        {
+            "ATTACH TABLE foo Engine = MergeTree AS file('test.csv')",
+            "throws Syntax error"
+        },
+        {
+            "ATTACH TABLE foo AS file('test.csv') Engine = MergeTree",
+            "throws Syntax error"
+        }
+})));
+
 INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<ParserCreateUserQuery>()),

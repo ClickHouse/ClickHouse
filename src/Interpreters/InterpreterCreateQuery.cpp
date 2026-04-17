@@ -185,6 +185,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace fs = std::filesystem;
@@ -730,7 +731,6 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
     return ConstraintsDescription{constraints_data};
 }
 
-
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
@@ -758,6 +758,16 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
+            if (create.as_table_function && create.storage && create.storage->engine)
+            {
+                /// 1. In CREATE ... AS table_function() ENGINE = ... queries table_function should be used
+                /// only for table structure inference, so the after the structure is inferred the
+                /// table_function should not be used.
+                /// 2. ATTACH ... ENGINE = ... AS table_function() queries are not allowed.
+                assert(!create.attach);
+                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Columns should be inferred from the table function.");
+            }
+
             properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
         }
 
@@ -1270,20 +1280,31 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
     {
+        if (create.storage && !create.storage->engine)
+        {
+            /// Engine should either be explicitly specified or completely inferred from the table function
+            throw Exception(ErrorCodes::ENGINE_REQUIRED, "Engine required to be specified to override table function's engine");
+        }
+
         if (getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null])
         {
             const auto & factory = TableFunctionFactory::instance();
 
             auto properties = factory.tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
             if (properties && properties->allow_readonly)
+            {
+                if (create.storage && StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
+                {
+                    setNullTableEngine(*create.storage);
+                }
                 return;
+            }
+
             if (!create.storage)
             {
                 auto storage_ast = make_intrusive<ASTStorage>();
                 create.set(create.storage, storage_ast);
             }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
             create.as_table_function = nullptr;
             setNullTableEngine(*create.storage);
         }
@@ -2051,19 +2072,29 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
-        auto table_function_ast = create.as_table_function->ptr();
-        auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
+        if (create.storage)
+        {
+            /// When a specific engine is specified, the table function is used only to infer the table structure.
+            /// Hereafter, this table should not be treated as built from a table function.
+            create.reset(create.as_table_function);
+        }
+        else
+        {
+            /// In case of CREATE AS table_function() query we should use global context
+            /// in storage creation because there will be no query context on server startup
+            /// and because storage lifetime is bigger than query context lifetime.
+            auto table_function_ast = create.as_table_function->ptr();
+            auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
-        if (!table_function->canBeUsedToCreateTable())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function->getName());
+            if (!table_function->canBeUsedToCreateTable())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function->getName());
 
-        /// In case of CREATE AS table_function() query we should use global context
-        /// in storage creation because there will be no query context on server startup
-        /// and because storage lifetime is bigger than query context lifetime.
-        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
-        res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
+            res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
+            res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
+        }
     }
-    else
+
+    if (!res)
     {
         res = StorageFactory::instance().get(create,
             data_path,
