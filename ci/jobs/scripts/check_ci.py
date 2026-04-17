@@ -409,16 +409,16 @@ class CommitStatusCheck:
                 sys.exit(0)
             GH.post_commit_status(
                 CheckStatuses.CH_INC_SYNC,
-                Result.Status.SUCCESS,
+                Result.Status.OK,
                 "Manually overridden",
                 "",
                 sha=sha,
                 repo="ClickHouse/ClickHouse",
             )
             return
-        if commit_status_data.state in (Result.Status.SUCCESS,):
+        if commit_status_data.state in (Result.GHStatus.SUCCESS,):
             pass
-        elif commit_status_data.state in (Result.Status.FAILED,):
+        elif commit_status_data.state in (Result.GHStatus.FAILURE,):
             if commit_status_data.description == "tests failed":
                 print(
                     f"\nCH Sync failed for commit, description: {commit_status_data.description}"
@@ -426,7 +426,7 @@ class CommitStatusCheck:
                 if UserPrompt.confirm("You sure it can be ignored?"):
                     GH.post_commit_status(
                         commit_status_data.context,
-                        Result.Status.SUCCESS,
+                        Result.Status.OK,
                         "Ignored",
                         commit_status_data.url,
                         sha=sha,
@@ -439,7 +439,7 @@ class CommitStatusCheck:
                     f"\nCH Sync commit status state: {commit_status_data.state} and description: {commit_status_data.description} - cannot proceed"
                 )
                 sys.exit(1)
-        elif commit_status_data.state in (Result.Status.PENDING,):
+        elif commit_status_data.state in (Result.GHStatus.PENDING,):
             if commit_status_data.description == "tests started":
                 print(
                     f"\n{commit_status_data.context} is pending with description {commit_status_data.description}"
@@ -447,7 +447,7 @@ class CommitStatusCheck:
                 if UserPrompt.confirm("You sure it can be ignored?"):
                     GH.post_commit_status(
                         commit_status_data.context,
-                        Result.Status.SUCCESS,
+                        Result.Status.OK,
                         "Ignored",
                         commit_status_data.url,
                         sha=sha,
@@ -466,11 +466,11 @@ class CommitStatusCheck:
         commit_status_data: Optional[GH.CommitStatus], sha: str
     ):
         override = False
-        if commit_status_data and commit_status_data.state in (Result.Status.SUCCESS,):
+        if commit_status_data and commit_status_data.state in (Result.GHStatus.SUCCESS,):
             pass
         elif not commit_status_data:
             override = True
-        elif commit_status_data.state in (Result.Status.FAILED,):
+        elif commit_status_data.state in (Result.GHStatus.FAILURE,):
             if UserPrompt.confirm("Do you want to override mergeable check?"):
                 override = True
             else:
@@ -482,7 +482,7 @@ class CommitStatusCheck:
         if override:
             GH.post_commit_status(
                 CheckStatuses.MERGEABLE_CHECK,
-                Result.Status.SUCCESS,
+                Result.Status.OK,
                 "Manually overridden",
                 "",
                 sha=sha,
@@ -872,8 +872,8 @@ def main():
         if (
             status_map[CheckStatuses.PR].state
             not in (
-                Result.Status.SUCCESS,
-                Result.Status.FAILED,
+                Result.GHStatus.SUCCESS,
+                Result.GHStatus.FAILURE,
             )
             and not FORCE_MERGE
         ):
@@ -915,7 +915,7 @@ def main():
     sync_unknown_failures = []
     if (
         sync_status
-        and sync_status.state == Result.Status.FAILED
+        and sync_status.state == Result.GHStatus.FAILURE
         and sync_status.description == "tests failed"
     ):
         print("\n=== Processing Sync PR (CH Inc sync) failures ===")

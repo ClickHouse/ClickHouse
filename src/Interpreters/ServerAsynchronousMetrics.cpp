@@ -3,8 +3,8 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>

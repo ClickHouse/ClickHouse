@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Poco/ConsoleChannel.h>
 #include <absl/log/globals.h>
 #include <boost/program_options.hpp>
 #include <fmt/ranges.h>
@@ -1937,17 +1938,14 @@ struct FunctionsStressTestThread
 
         bool injective = resolved_function->isInjective(valid_args);
         bool resolver_injective = resolver->isInjective(valid_args);
-        if (resolver_injective && !injective)
+        if (resolver_injective != injective)
         {
-            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective is false with arguments but true without; {}", operation.describe()));
-        }
-        else if (!resolver_injective && injective)
-        {
-            /// Skip isInjective mismatch check for Dynamic/Variant/Object types: the resolver doesn't have full
-            /// type information before build(), so it may return a different (default) answer than the resolved function.
+            /// Skip isInjective mismatch for Dynamic/Variant/Object types: the adaptors intentionally
+            /// return false (conservative) because injectivity of the underlying function does not hold
+            /// on the mixed-type domain, and the resolver lacks full type information before build().
             if (!isAnyArgumentDynamicallyTyped(valid_args))
             {
-                stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver and IFunctionBase; {}", operation.describe()));
+                stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver ({}) and IFunctionBase ({}); {}", resolver_injective, injective, operation.describe()));
             }
         }
 
@@ -2103,6 +2101,13 @@ void __tsan_on_report(void * /*report*/) // NOLINT(bugprone-reserved-identifier,
 TEST(FunctionsStress, stress)
 {
     chassert(!logger);
+
+    /// Set up console logging so that LOG_ERROR output is visible in the test log.
+    /// Without this, the root logger has a nullptr channel and all messages are silently discarded.
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("information");
+
     logger = getLogger("stress");
 
     /// (This makes exception stack traces much faster, and this test spends a lot of time throwing and catching exceptions.)

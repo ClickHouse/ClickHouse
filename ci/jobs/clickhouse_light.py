@@ -50,7 +50,7 @@ class TestResult:
     def to_praktika_result(self):
         info = ""
         for idx, query_result in enumerate(self.query_results):
-            if query_result.status != Result.StatusExtended.OK:
+            if query_result.status != Result.Status.OK:
                 info += f"Query ({idx+1}):\n"
                 info += f"{query_result.query}\n\n"
                 if query_result.description.exception:
@@ -218,14 +218,14 @@ class ClickHouseSetup:
                 tag_line = query_stripped[len("-- Tags:") :].strip()
                 tags.update(tag.strip() for tag in tag_line.split(","))
 
-        test_result = TestResult(test_name, status=Result.StatusExtended.OK)
+        test_result = TestResult(test_name, status=Result.Status.OK)
 
         for query in queries:
             query = query.strip()
             if query == "" or query.startswith("--"):
                 continue
 
-            query_result = QueryResult(query, status=Result.StatusExtended.FAIL)
+            query_result = QueryResult(query, status=Result.Status.FAIL)
 
             status_code, stdout, stderr = self.send_query(query)
 
@@ -238,20 +238,20 @@ class ClickHouseSetup:
                     query_result.description.expected_results = expected_lines
                     query_result.description.actual_results = result_lines
                 else:
-                    query_result.status = Result.StatusExtended.OK
+                    query_result.status = Result.Status.OK
 
             test_result.query_results.append(query_result)
-            if query_result.status != Result.StatusExtended.OK:
-                test_result.status = Result.StatusExtended.FAIL
+            if query_result.status != Result.Status.OK:
+                test_result.status = Result.Status.FAIL
 
         # Apply xfail logic: invert status if xfail tag is present
         if "xfail" in tags:
             if "xfail" not in test_result.tags:
                 test_result.tags.append("xfail")
-            if test_result.status == Result.StatusExtended.FAIL:
-                test_result.status = Result.StatusExtended.OK
-            elif test_result.status == Result.StatusExtended.OK:
-                test_result.status = Result.StatusExtended.FAIL
+            if test_result.status == Result.Status.FAIL:
+                test_result.status = Result.Status.OK
+            elif test_result.status == Result.Status.OK:
+                test_result.status = Result.Status.FAIL
 
         return test_result
 

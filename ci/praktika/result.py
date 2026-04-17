@@ -53,19 +53,11 @@ class Result(MetaClasses.Serializable):
         info (str): Additional information about the result. Free-form text.
 
     Inner Class:
-        Status: Defines possible statuses for the task, such as "success", "failure", etc.
+        Status: Defines possible statuses for the result.
     """
 
     class Status:
-        SKIPPED = "skipped"
-        DROPPED = "dropped"
-        SUCCESS = "success"
-        FAILED = "failure"
-        PENDING = "pending"
-        RUNNING = "running"
-        ERROR = "error"
-
-    class StatusExtended:
+        # Outcome statuses (used for both job-level and sub-result/test-level results)
         OK = "OK"
         FAIL = "FAIL"
         SKIPPED = "SKIPPED"
@@ -73,6 +65,18 @@ class Result(MetaClasses.Serializable):
         UNKNOWN = "UNKNOWN"
         XFAIL = "XFAIL"  # expected failure: test failed as expected, not a problem
         XPASS = "XPASS"  # unexpected pass: test was expected to fail but passed
+        # Lifecycle statuses (used for job-level and workflow-level results)
+        PENDING = "PENDING"
+        RUNNING = "RUNNING"
+        DROPPED = "DROPPED"
+
+    class GHStatus:
+        """GitHub commit status API values — the only four strings GH accepts."""
+
+        PENDING = "pending"
+        SUCCESS = "success"
+        FAILURE = "failure"
+        ERROR = "error"
 
     class Label:
         OK_ON_RETRY = "retry_ok"
@@ -106,7 +110,7 @@ class Result(MetaClasses.Serializable):
         labels=None,
     ) -> "Result":
         if isinstance(status, bool):
-            status = Result.Status.SUCCESS if status else Result.Status.FAILED
+            status = Result.Status.OK if status else Result.Status.FAIL
         if not results and not status:
             print(
                 "WARNING: No results and no status provided - setting status to error"
@@ -129,7 +133,7 @@ class Result(MetaClasses.Serializable):
             start_time = stopwatch.start_time
             duration = stopwatch.duration
 
-        result_status = status or Result.Status.SUCCESS
+        result_status = status or Result.Status.OK
         infos = []
         if info:
             if isinstance(info, str):
@@ -139,26 +143,22 @@ class Result(MetaClasses.Serializable):
         if results and not status:
             for result in results:
                 if result.status in (
-                    Result.Status.SUCCESS,
+                    Result.Status.OK,
                     Result.Status.SKIPPED,
-                    Result.StatusExtended.OK,
-                    Result.StatusExtended.SKIPPED,
-                    Result.StatusExtended.XFAIL,
+                    Result.Status.XFAIL,
                 ):
                     continue
                 elif result.status in (
                     Result.Status.ERROR,
-                    Result.StatusExtended.ERROR,
                 ):
                     result_status = Result.Status.ERROR
                     break
                 elif result.status in (
-                    Result.Status.FAILED,
-                    Result.StatusExtended.FAIL,
-                    Result.StatusExtended.UNKNOWN,
-                    Result.StatusExtended.XPASS,
+                    Result.Status.FAIL,
+                    Result.Status.UNKNOWN,
+                    Result.Status.XPASS,
                 ):
-                    result_status = Result.Status.FAILED
+                    result_status = Result.Status.FAIL
                 else:
                     Utils.raise_with_error(
                         f"Unexpected result status [{result.status}] for [{result.name}]"
@@ -208,24 +208,19 @@ class Result(MetaClasses.Serializable):
 
     def is_ok(self):
         return self.status in (
+            Result.Status.OK,
             Result.Status.SKIPPED,
-            Result.Status.SUCCESS,
-            Result.StatusExtended.OK,
-            Result.StatusExtended.SKIPPED,
-            Result.StatusExtended.XFAIL,
+            Result.Status.XFAIL,
         )
 
     def is_success(self):
-        return self.status in (Result.Status.SUCCESS, Result.StatusExtended.OK, Result.StatusExtended.XFAIL)
+        return self.status in (Result.Status.OK, Result.Status.XFAIL)
 
     def is_failure(self):
-        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL, Result.StatusExtended.XPASS)
+        return self.status in (Result.Status.FAIL, Result.Status.XPASS)
 
     def is_error(self):
-        return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
-
-    def is_dropped(self):
-        return self.status in (Result.Status.DROPPED,)
+        return self.status in (Result.Status.ERROR,)
 
     def _dump_if_persisted(self) -> "Result":
         """Dump only if a result file already exists on disk.
@@ -251,10 +246,10 @@ class Result(MetaClasses.Serializable):
         return self
 
     def set_success(self) -> "Result":
-        return self.set_status(Result.Status.SUCCESS)
+        return self.set_status(Result.Status.OK)
 
     def set_failed(self) -> "Result":
-        return self.set_status(Result.Status.FAILED)
+        return self.set_status(Result.Status.FAIL)
 
     def set_error(self) -> "Result":
         return self.set_status(Result.Status.ERROR)
@@ -582,10 +577,10 @@ class Result(MetaClasses.Serializable):
                 has_pending = True
             if result_.status in (
                 self.Status.ERROR,
-                self.Status.FAILED,
                 self.Status.DROPPED,
-                self.StatusExtended.FAIL,
-                self.StatusExtended.UNKNOWN,
+                self.Status.FAIL,
+                self.Status.UNKNOWN,
+                self.Status.XPASS,
             ):
                 has_failed = True
         if has_running:
@@ -593,9 +588,9 @@ class Result(MetaClasses.Serializable):
         elif has_pending:
             self.status = self.Status.PENDING
         elif has_failed:
-            self.status = self.Status.FAILED
+            self.status = self.Status.FAIL
         else:
-            self.status = self.Status.SUCCESS
+            self.status = self.Status.OK
         if (was_pending or was_running) and self.status not in (
             self.Status.PENDING,
             self.Status.RUNNING,
@@ -987,18 +982,35 @@ class Result(MetaClasses.Serializable):
     def to_event(self, info: "Info"):
         result_dict = Result.to_dict(self)
 
-        def _prune_result_info(result):
+        def _prune_result_for_feed(result):
+            """Strip result down to fields used by the Slack feed.
+
+            The feed only needs ``name`` and ``status`` from each sub-result,
+            plus ``report_url`` from the top-level ``ext``.  Everything else
+            (links, storage_usage, files, assets, nested results, …) is dead
+            weight that bloats the per-user JSON on S3.
+            """
             if not isinstance(result, dict):
                 return
-            result.pop("info", None)
+
+            for key in ("info", "start_time", "duration", "files", "assets", "links"):
+                result.pop(key, None)
 
             results = result.get("results")
-            if not isinstance(results, list):
-                return
-            for r in results:
-                _prune_result_info(r)
+            if isinstance(results, list):
+                result["results"] = [
+                    {"name": r.get("name", ""), "status": r.get("status", "")}
+                    for r in results
+                    if isinstance(r, dict)
+                ]
 
-        _prune_result_info(result_dict)
+            # Keep only report_url from ext
+            ext = result.get("ext")
+            if isinstance(ext, dict):
+                report_url = ext.get("report_url", "")
+                result["ext"] = {"report_url": report_url} if report_url else {}
+
+        _prune_result_for_feed(result_dict)
 
         return Event(
             type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
@@ -1374,7 +1386,7 @@ class ResultTranslator:
                 if "failures" in test_case:
                     raw_logs = ""
                     for failure in test_case["failures"]:
-                        raw_logs += failure[Result.Status.FAILED]
+                        raw_logs += failure["failure"]
                     if (
                         "Segmentation fault" in raw_logs  # type: ignore
                         and SEGFAULT not in description
@@ -1386,11 +1398,11 @@ class ResultTranslator:
                     ):
                         description += SIGNAL
                 if test_case["status"] == "NOTRUN":
-                    test_status = "SKIPPED"
+                    test_status = Result.Status.SKIPPED
                 elif raw_logs is None:
-                    test_status = Result.Status.SUCCESS
+                    test_status = Result.Status.OK
                 else:
-                    test_status = Result.Status.FAILED
+                    test_status = Result.Status.FAIL
 
                 test_results.append(
                     Result(
@@ -1401,12 +1413,12 @@ class ResultTranslator:
                     )
                 )
 
-        check_status = Result.Status.SUCCESS
-        test_status = Result.Status.SUCCESS
+        check_status = Result.Status.OK
+        test_status = Result.Status.OK
         tests_time = float(report["time"][:-1])
         if failed_counter:
-            check_status = Result.Status.FAILED
-            test_status = Result.Status.FAILED
+            check_status = Result.Status.FAIL
+            test_status = Result.Status.FAIL
         if error_counter:
             check_status = Result.Status.ERROR
             test_status = Result.Status.ERROR
@@ -1555,7 +1567,7 @@ class ResultTranslator:
                                 # Create a result for the module/node that failed to collect
                                 test_results[node_id or "<collection>"] = Result(
                                     name=node_id or "<collection>",
-                                    status=Result.StatusExtended.ERROR,
+                                    status=Result.Status.ERROR,
                                     duration=None,
                                     info="\n".join([p for p in info_parts if p]),
                                 )
@@ -1721,19 +1733,19 @@ class ResultTranslator:
 
                             # Map pytest outcome to Result status
                             status = {
-                                "passed": Result.StatusExtended.OK,
-                                "failed": Result.StatusExtended.FAIL,
-                                "skipped": Result.StatusExtended.SKIPPED,
-                                "xfailed": Result.StatusExtended.XFAIL,  # expected failure: OK
-                                "xpassed": Result.StatusExtended.XPASS,  # unexpected pass: fails job
-                                "error": Result.StatusExtended.ERROR,
-                            }.get(outcome, Result.StatusExtended.ERROR)
+                                "passed": Result.Status.OK,
+                                "failed": Result.Status.FAIL,
+                                "skipped": Result.Status.SKIPPED,
+                                "xfailed": Result.Status.XFAIL,  # expected failure: OK
+                                "xpassed": Result.Status.XPASS,  # unexpected pass: fails job
+                                "error": Result.Status.ERROR,
+                            }.get(outcome, Result.Status.ERROR)
 
                             # Track failures by phase (XFAIL is not a failure)
                             if status in (
-                                Result.StatusExtended.FAIL,
-                                Result.StatusExtended.ERROR,
-                                Result.StatusExtended.XPASS,
+                                Result.Status.FAIL,
+                                Result.Status.ERROR,
+                                Result.Status.XPASS,
                             ):
                                 if node_id not in test_failures:
                                     test_failures[node_id] = {}
@@ -1778,8 +1790,8 @@ class ResultTranslator:
 
                                 # Always override with a failure, or keep existing failure
                                 _failure_statuses = (
-                                    Result.StatusExtended.FAIL,
-                                    Result.StatusExtended.XPASS,
+                                    Result.Status.FAIL,
+                                    Result.Status.XPASS,
                                 )
                                 if (
                                     status in _failure_statuses
@@ -1798,9 +1810,9 @@ class ResultTranslator:
                                         )
                                 # Only update with non-failure if there's no existing failure
                                 elif test_results[node_id].status not in (
-                                    Result.StatusExtended.FAIL,
-                                    Result.StatusExtended.ERROR,
-                                    Result.StatusExtended.XPASS,
+                                    Result.Status.FAIL,
+                                    Result.Status.ERROR,
+                                    Result.Status.XPASS,
                                 ):
                                     # For non-failures, prefer 'call' phase over others
                                     if when == "call":
@@ -1826,15 +1838,15 @@ class ResultTranslator:
 
             if session_exitstatus == 0:
                 # pytest exit code 0 means all tests passed or xfailed (from pytest's perspective).
-                # We additionally treat XPASS as a failure, so FAILED is also valid here.
+                # We additionally treat XPASS as a failure, so FAIL is also valid here.
                 assert R.status in (
-                    Result.Status.SUCCESS,
-                    Result.Status.FAILED,
+                    Result.Status.OK,
+                    Result.Status.FAIL,
                 ), f"pytest session exit code 0 does not match autogenerated status [{R.status}]"
                 return R
 
             if session_exitstatus == 1:
-                if R.status == Result.Status.SUCCESS:
+                if R.status == Result.Status.OK:
                     print(
                         f"WARNING: Tests are all OK, but exit code is 1; timeout or other runner issue - reset overall status to [{Result.Status.ERROR}]"
                     )

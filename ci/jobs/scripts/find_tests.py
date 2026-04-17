@@ -1532,7 +1532,7 @@ class Targeting:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that were changed or added",
-            status=Result.StatusExtended.OK,
+            status=Result.Status.OK,
             info=info,
         )
 
@@ -1551,7 +1551,7 @@ class Targeting:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that failed in previous runs",
-            status=Result.StatusExtended.OK,
+            status=Result.Status.OK,
             info=info,
         )
 
@@ -1912,7 +1912,7 @@ class Targeting:
             info += f"Bottom test: {bottom} (score={width_score[bottom]:.6f})\n"
 
         return ranked, Result(
-            name="tests found by coverage", status=Result.StatusExtended.OK, info=info
+            name="tests found by coverage", status=Result.Status.OK, info=info
         )
 
     def get_all_relevant_tests_with_info(self):
@@ -1929,12 +1929,12 @@ class Targeting:
                     seen.add(t)
                     ranked.append(t)
 
-        # Integration tests run changed test suboptimally (entire module), it might be too long
-        # limit it to stateless tests only
-        if self.job_type == self.STATELESS_JOB_TYPE:
-            changed_tests, result = self.get_changed_or_new_tests_with_info()
-            add_tests(changed_tests)
-            results.append(result)
+        # Changed/new tests are already covered by the flaky check — skip them
+        # in the targeted check to avoid duplication.
+        # if self.job_type == self.STATELESS_JOB_TYPE:
+        #     changed_tests, result = self.get_changed_or_new_tests_with_info()
+        #     add_tests(changed_tests)
+        #     results.append(result)
 
         previously_failed_tests, result = self.get_previously_failed_tests_with_info()
         add_tests(previously_failed_tests)
@@ -1954,7 +1954,7 @@ class Targeting:
                 results.append(
                     Result(
                         name="tests found by coverage",
-                        status=Result.StatusExtended.OK,
+                        status=Result.Status.OK,
                         info=f"Skipped: {e}",
                     )
                 )
@@ -1962,7 +1962,7 @@ class Targeting:
 
         return ranked, Result(
             name="Fetch relevant tests",
-            status=Result.Status.SUCCESS,
+            status=Result.Status.OK,
             info=f"Found {len(ranked)} relevant tests",
             results=results,
         )
