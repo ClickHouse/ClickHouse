@@ -54,8 +54,6 @@ namespace ProfileEvents
     extern const Event KeeperCommitWaitElapsedMicroseconds;
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
-    extern const Event KeeperReadBatchCount;
-    extern const Event KeeperReadBatchTotalRequests;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
     extern const Event KeeperStaleRequestsSkipped;
     extern const Event KeeperRaftPrecommitMicroseconds;

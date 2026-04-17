@@ -4003,7 +4003,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processLocalRequests(
         const auto & request_for_session = requests[request_idx];
         int64_t session_id = request_for_session.session_id;
         const Coordination::ZooKeeperRequestPtr & zk_request = request_for_session.request;
-        results[request_idx] = KeeperResponseForSession{session_id, nullptr, zk_request};
+        results[request_idx] = KeeperResponseForSession{session_id, nullptr};
 
         /// Bump session expiry times along the way.
         if (session_id != prev_session_id)

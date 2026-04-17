@@ -246,14 +246,10 @@
     M(KeeperStorageSharedLockWaitMicroseconds) \
     M(KeeperChangelogLockWaitMicroseconds) \
     M(KeeperServerWriteLockWaitMicroseconds) \
-    M(KeeperSessionCallbackLockWaitMicroseconds) \
-    M(KeeperReadRequestQueueLockWaitMicroseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
-    M(KeeperReadBatchCount) \
-    M(KeeperReadBatchTotalRequests) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
@@ -331,7 +327,6 @@
 \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
     M(KeeperStaleRequestsSkipped) \
-    M(KeeperLiveSessionsLockWaitMicroseconds) \
 
 namespace ProfileEvents
 {
