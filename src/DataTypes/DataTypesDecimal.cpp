@@ -416,10 +416,13 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
                 return ReturnType(false);
         }
 
-        auto out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
+        /// Round first, then check bounds against the rounded value: a value just past the
+        /// `ToNativeType` limit (e.g. `2147483647.4` for `Decimal(9,0)`) rounds to a
+        /// representable integer and must not be rejected as overflow.
+        auto out = std::round(value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale)));
 
-        if (out <= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::min()) ||
-            out >= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max()))
+        if (out < static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::min()) ||
+            out > static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max()))
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Float is out of Decimal range", ToDataType::family_name);
@@ -427,7 +430,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
                 return ReturnType(false);
         }
 
-        result = static_cast<ToNativeType>(std::round(out));
+        result = static_cast<ToNativeType>(out);
         return ReturnType(true);
     }
     else
@@ -465,15 +468,17 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
         for (size_t i = 0; i < size; ++i)
         {
             bool overflow = !isFinite(from[i]);
-            FromFieldType out = from[i] * multiplier;
+            /// Round first so the bounds check accepts values that would round to a representable
+            /// integer (matches the scalar path in `convertToDecimalImpl`).
+            FromFieldType out = std::round(from[i] * multiplier);
 
-            overflow |= out <= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::min())
-                     || out >= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max());
+            overflow |= out < static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::min())
+                     || out > static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max());
 
             if constexpr (has_nullmap)
             {
                 nullmap[i] = overflow;
-                to[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(std::round(out));
+                to[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(out);
             }
             else
             {
@@ -488,7 +493,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
                             "{} convert overflow. Float is out of Decimal range",
                             ToDataType::family_name);
                 }
-                to[i] = static_cast<ToNativeType>(std::round(out));
+                to[i] = static_cast<ToNativeType>(out);
             }
         }
     }

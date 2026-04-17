@@ -17,3 +17,13 @@ Scale 2 - exact half values:
 0.88	-0.88
 Float32 input:
 1	-1
+Edge values that round to representable limits:
+2147483647	-2147483647
+True overflow still throws:
+Column path matches scalar:
+0.5	1
+1.5	2
+-0.5	-1
+-1.5	-2
+2.7	3
+-2.7	-3

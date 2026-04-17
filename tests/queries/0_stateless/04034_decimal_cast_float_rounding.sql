@@ -28,3 +28,17 @@ SELECT CAST(toFloat64(0.875), 'Decimal(9, 2)') AS d1, CAST(toFloat64(-0.875), 'D
 -- Float32 input
 SELECT 'Float32 input:';
 SELECT CAST(toFloat32(0.5), 'Decimal(9, 0)') AS d1, CAST(toFloat32(-0.5), 'Decimal(9, 0)') AS d2;
+
+-- Representable-edge rounding: values past the native type limit that round back into range must be accepted.
+SELECT 'Edge values that round to representable limits:';
+SELECT CAST(toFloat64(2147483647.4), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-2147483647.4), 'Decimal(9, 0)') AS d2;
+
+-- True overflow must still throw.
+SELECT 'True overflow still throws:';
+SELECT CAST(toFloat64(2147483648.0), 'Decimal(9, 0)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(toFloat64(-2147483649.0), 'Decimal(9, 0)'); -- { serverError DECIMAL_OVERFLOW }
+
+-- Column path (vectorized batch conversion) must match the scalar path.
+SELECT 'Column path matches scalar:';
+WITH arrayJoin([0.5, 1.5, -0.5, -1.5, 2.7, -2.7]) AS x
+SELECT toFloat64(x) AS f, CAST(f, 'Decimal(9, 0)') AS d;
