@@ -16,6 +16,8 @@ SET query_plan_convert_outer_join_to_inner_join = 1; -- CI may inject False; cor
 SET query_plan_merge_filter_into_join_condition = 1; -- CI may inject False; correlated subquery equality condition not pushed into join ON clause; join stays CROSS with Filter above instead of INNER
 SET query_plan_remove_unused_columns = 1; -- CI may inject False; unused columns not pruned → extra INPUT entries and wider Positions lists in EXPLAIN actions output
 
+SET materialize_statistics_on_insert = 1;
+
 CREATE TABLE lineitem (
     l_orderkey       Int32,
     l_partkey        Int32,
