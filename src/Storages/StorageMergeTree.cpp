@@ -411,7 +411,8 @@ void StorageMergeTree::drop()
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & table_lock_holder,
+    DDLGuardPtr & /*ddl_guard*/)
 {
     /// Allow MODIFY_SETTING/RESET_SETTING through even when the table is readonly,
     /// so that the `table_readonly` flag can be toggled back.
@@ -455,14 +456,31 @@ void StorageMergeTree::alter(
         if (statistics_changed)
             setInMemoryMetadata(new_metadata);
 
-        /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            if (statistics_changed)
+                setInMemoryMetadata(old_metadata);
+            throw;
+        }
     }
     else if (commands.isCommentAlter())
     {
         setInMemoryMetadata(new_metadata);
-        /// It is safe to ignore exceptions here as only the comment changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            setInMemoryMetadata(old_metadata);
+            throw;
+        }
     }
     else
     {

@@ -39,6 +39,9 @@ class MutationCommands;
 struct PartitionCommand;
 using PartitionCommands = std::vector<PartitionCommand>;
 
+class DDLGuard;
+using DDLGuardPtr = std::unique_ptr<DDLGuard>;
+
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
@@ -483,8 +486,15 @@ public:
 
     /** ALTER tables in the form of column changes that do not affect the change
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
+      *
+      * `ddl_guard` serializes with RENAME/EXCHANGE TABLES. May be null. Storages that wait on
+      * replicas may `ddl_guard.reset()` once the change is durably submitted.
       */
-    virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
+    virtual void alter(
+        const AlterCommands & params,
+        ContextPtr context,
+        AlterLockHolder & alter_lock_holder,
+        DDLGuardPtr & ddl_guard);
 
     /// Updates metadata that can be changed by other processes
     /// Return true if external metadata exists and was updated.

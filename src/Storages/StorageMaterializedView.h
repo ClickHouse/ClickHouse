@@ -56,7 +56,7 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 

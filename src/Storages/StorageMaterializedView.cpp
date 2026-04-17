@@ -689,7 +689,8 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
 void StorageMaterializedView::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder &)
+    AlterLockHolder &,
+    DDLGuardPtr &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);

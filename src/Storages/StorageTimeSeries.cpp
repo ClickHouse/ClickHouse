@@ -375,9 +375,9 @@ void StorageTimeSeries::checkAlterIsPossible(const AlterCommands & commands, Con
     }
 }
 
-void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder)
+void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard)
 {
-    IStorage::alter(params, local_context, table_lock_holder);
+    IStorage::alter(params, local_context, table_lock_holder, ddl_guard);
 }
 
 

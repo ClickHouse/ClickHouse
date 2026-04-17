@@ -1423,7 +1423,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
 
-void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
 

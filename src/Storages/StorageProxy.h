@@ -102,9 +102,9 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override
     {
-        getNested()->alter(params, context, alter_lock_holder);
+        getNested()->alter(params, context, alter_lock_holder, ddl_guard);
         IStorage::setInMemoryMetadata(*getNested()->getInMemoryMetadataPtr(context, true));
     }
 

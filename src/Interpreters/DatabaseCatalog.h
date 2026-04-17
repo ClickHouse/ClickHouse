@@ -128,6 +128,9 @@ public:
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
+    /// Acquire a DDLGuard for a storage whose StorageID may be concurrently renamed. Retries
+    /// until the storage settles under the guard, or throws TIMEOUT_EXCEEDED.
+    DDLGuardPtr getDDLGuardForStorage(const StoragePtr & storage, const Poco::Timespan & timeout);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
 

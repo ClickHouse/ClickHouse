@@ -66,7 +66,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
 }
 
 
-void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
+void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
 

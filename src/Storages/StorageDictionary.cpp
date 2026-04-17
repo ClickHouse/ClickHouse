@@ -316,9 +316,9 @@ void StorageDictionary::checkAlterIsPossible(const AlterCommands & commands, Con
     }
 }
 
-void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder & lock_holder)
+void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder & lock_holder, DDLGuardPtr & ddl_guard)
 {
-    IStorage::alter(params, alter_context, lock_holder);
+    IStorage::alter(params, alter_context, lock_holder, ddl_guard);
 
     if (location == Location::Custom)
         return;

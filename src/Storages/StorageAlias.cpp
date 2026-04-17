@@ -173,10 +173,11 @@ SinkToStoragePtr StorageAlias::write(
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & table_lock_holder,
+    DDLGuardPtr & ddl_guard)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    target_storage->alter(params, local_context, table_lock_holder);
+    target_storage->alter(params, local_context, table_lock_holder, ddl_guard);
 }
 
 void StorageAlias::truncate(

@@ -117,7 +117,7 @@ void StorageSystemWasmModules::fillData(MutableColumns & res_columns, ContextPtr
     }
 }
 
-void StorageSystemWasmModules::alter(const AlterCommands &, ContextPtr, AlterLockHolder &)
+void StorageSystemWasmModules::alter(const AlterCommands &, ContextPtr, AlterLockHolder &, DDLGuardPtr &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER is not supported by storage {}", getName());
 }

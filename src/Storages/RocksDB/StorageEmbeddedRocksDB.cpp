@@ -1010,9 +1010,9 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
     return estimated_bytes;
 }
 
-void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder)
+void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder, DDLGuardPtr & ddl_guard)
 {
-    IStorage::alter(params, query_context, holder);
+    IStorage::alter(params, query_context, holder, ddl_guard);
     auto new_metadata = getInMemoryMetadataPtr(query_context, false);
     if (new_metadata->settings_changes)
     {

@@ -318,7 +318,7 @@ void StorageMemory::truncate(
     total_size_rows.store(0, std::memory_order_relaxed);
 }
 
-void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/)
+void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/, DB::DDLGuardPtr & /*ddl_guard*/)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);

@@ -473,7 +473,8 @@ bool StorageWindowView::optimize(
 void StorageWindowView::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder &)
+    AlterLockHolder &,
+    DDLGuardPtr &)
 {
     throwIfWindowViewIsDisabled(local_context);
     auto table_id = getStorageID();

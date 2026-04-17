@@ -1072,6 +1072,31 @@ DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String &
     return guard;
 }
 
+DDLGuardPtr DatabaseCatalog::getDDLGuardForStorage(const StoragePtr & storage, const Poco::Timespan & timeout)
+{
+    /// While we hold the guard, a RENAME/EXCHANGE that moves the storage must acquire the same
+    /// guard and is blocked, so the (db, name) pair is stable until we release it.
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
+    while (true)
+    {
+        StorageID before = storage->getStorageID();
+        DDLGuardPtr guard = getDDLGuard(before.database_name, before.table_name, /*expected_database=*/nullptr);
+        StorageID after = storage->getStorageID();
+
+        if (after.database_name == before.database_name
+            && after.table_name == before.table_name
+            && after.uuid == before.uuid)
+            return guard;
+
+        guard.reset();
+
+        if (std::chrono::steady_clock::now() >= deadline)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Failed to acquire a DDL guard for {} because of concurrent renames; last seen name: {}",
+                after.getNameForLogs(), before.getNameForLogs());
+    }
+}
+
 DatabaseCatalog::DatabaseGuard & DatabaseCatalog::getDatabaseGuard(const String & database)
 {
     DDLGuards::iterator db_guard_iter;

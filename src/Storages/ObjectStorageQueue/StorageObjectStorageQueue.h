@@ -56,7 +56,8 @@ public:
     void alter(
         const AlterCommands & commands,
         ContextPtr local_context,
-        AlterLockHolder & table_lock_holder) override;
+        AlterLockHolder & table_lock_holder,
+        DDLGuardPtr & ddl_guard) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
 

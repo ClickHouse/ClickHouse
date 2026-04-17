@@ -1266,7 +1266,7 @@ std::optional<UInt64> StorageBuffer::totalBytes(ContextPtr) const
     return total_writes.bytes;
 }
 
-void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);
