@@ -81,4 +81,12 @@ aiTranslate
 result	String
 -- aiTranslate: with instructions and temperature
 0
+-- aiGenerateSQL: registered
+aiGenerateSQL
+-- aiGenerateSQL: too few arguments
+-- aiGenerateSQL: too many arguments
+-- aiGenerateSQL: return type
+result	String
+-- aiGenerateSQL: with temperature
+0
 -- Re-disabled blocks function
