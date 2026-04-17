@@ -1,4 +1,4 @@
-#include "StorageSQLite.h"
+#include <Storages/StorageSQLite.h>
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
@@ -6,6 +6,7 @@
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -54,7 +55,7 @@ StorageSQLite::StorageSQLite(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
@@ -73,8 +74,17 @@ StorageSQLite::StorageSQLite(
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
-    setInMemoryMetadata(storage_metadata);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
+    setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSQLite::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
@@ -135,7 +145,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         StorageSQLite::SQLitePtr sqlite_db_,
         const String & remote_table_name_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{storage_}
         , metadata_snapshot(metadata_snapshot_)
         , sqlite_db(sqlite_db_)
@@ -219,7 +229,7 @@ void registerStorageSQLite(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessType::SQLITE,
+        .source_access_type = AccessTypeObjects::Source::SQLITE,
     });
 }
 

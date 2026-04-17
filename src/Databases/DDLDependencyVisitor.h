@@ -22,7 +22,8 @@ struct CreateQueryDependencies
 /// Returns a list of all tables explicitly referenced in the create query of a specified table.
 /// For example, a column default expression can use dictGet() and thus reference a dictionary.
 /// Does not validate AST, works a best-effort way.
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw = false);
+/// @param validate_current_database - if false, skips validation that database exists when setting current database (for bootstrap/restore scenarios)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw = false, bool validate_current_database = true);
 
 /// Returns a list of all tables explicitly referenced in the select query specified as a dictionary source.
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw = false);

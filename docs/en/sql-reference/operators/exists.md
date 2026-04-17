@@ -2,6 +2,7 @@
 description: 'Documentation for the `EXISTS` operator'
 slug: /sql-reference/operators/exists
 title: 'EXISTS'
+doc_type: 'reference'
 ---
 
 # EXISTS

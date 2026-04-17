@@ -1,0 +1,22 @@
+all_1_1_0	id	UInt64	['Uniq','MinMax']	100315	0	99999
+all_1_1_0	v1	String	['Uniq']	2	\N	\N
+all_1_1_0	v2	UInt64	['TDigest','Uniq','MinMax']	2	0	1
+all_1_1_0	v3	String	['Uniq']	2	\N	\N
+all_2_2_0	id	UInt64	['Uniq','MinMax']	100315	0	99999
+all_2_2_0	v1	String	['Uniq']	2	\N	\N
+all_2_2_0	v2	UInt64	['TDigest','Uniq','MinMax']	2	5	6
+all_2_2_0	v3	String	['Uniq']	2	\N	\N
+200000
+3	4	4
+all_1_2_1	id	UInt64	['Uniq','MinMax']	100315	0	99999
+all_1_2_1	v1	String	['Uniq']	3	\N	\N
+all_1_2_1	v2	UInt64	['TDigest','Uniq','MinMax']	4	0	6
+all_1_2_1	v3	String	['Uniq']	4	\N	\N
+200000
+3	4	4
+all_1_2_1	id	UInt64	['Uniq','MinMax']	100315	0	99999
+all_1_2_1	v1	String	['Uniq']	3	\N	\N
+all_1_2_1	v2	UInt64	['TDigest','Uniq','MinMax']	4	0	6
+all_1_2_1	v3	String	['Uniq']	4	\N	\N
+200000
+3	4	4

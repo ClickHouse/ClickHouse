@@ -1,3 +1,0 @@
--- { echo }
-EXPLAIN SYNTAX INSERT INTO foo FROM INFILE '/dev/null' COMPRESSION 'gz';
-INSERT INTO foo FROM INFILE \'/dev/null\' COMPRESSION \'gz\'

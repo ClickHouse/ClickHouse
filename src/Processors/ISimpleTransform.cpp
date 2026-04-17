@@ -12,6 +12,14 @@ ISimpleTransform::ISimpleTransform(Block input_header_, Block output_header_, bo
 {
 }
 
+ISimpleTransform::ISimpleTransform(SharedHeader input_header_, SharedHeader output_header_, bool skip_empty_chunks_)
+    : IProcessor({std::move(input_header_)}, {std::move(output_header_)})
+    , input(inputs.front())
+    , output(outputs.front())
+    , skip_empty_chunks(skip_empty_chunks_)
+{
+}
+
 ISimpleTransform::Status ISimpleTransform::prepare()
 {
     /// Check can output.
@@ -19,6 +27,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     if (output.isFinished())
     {
         input.close();
+        onFinish();
         return Status::Finished;
     }
 
@@ -53,6 +62,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
         if (input.isFinished())
         {
             output.finish();
+            onFinish();
             return Status::Finished;
         }
 
@@ -102,7 +112,7 @@ void ISimpleTransform::work()
     if (!skip_empty_chunks || output_data.chunk)
         has_output = true;
 
-    if (has_output && !output_data.chunk && getOutputPort().getHeader())
+    if (has_output && !output_data.chunk && !getOutputPort().getHeader().empty())
         /// Support invariant that chunks must have the same number of columns as header.
         output_data.chunk = Chunk(getOutputPort().getHeader().cloneEmpty().getColumns(), 0);
 }

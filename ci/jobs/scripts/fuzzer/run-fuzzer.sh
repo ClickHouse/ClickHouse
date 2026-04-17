@@ -38,7 +38,20 @@ function configure
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
-    cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/allow-nullable-key.xml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
+
+    if [[ -n "${SERVER_FUZZER_ENABLED:-}" ]]; then
+        cat > $CONFIG_DIR/users.d/serverfuzz-tweaks.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+    fi
 
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>
@@ -59,7 +72,7 @@ EOL
 </clickhouse>
 EOL
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || { echo "Failed to create log export config"; exit 1; }
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
 }
 
 function filter_exists_and_template
@@ -109,12 +122,14 @@ function fuzz
 
     # server.log -> All server logs, including sanitizer
     # stderr.log -> Process logs (sanitizer) only
-    clickhouse-server \
-        --config-file $CONFIG_DIR/config.xml \
-        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
-        --  --path $CONFIG_DIR \
-            --logger.console=0 \
-            --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
+    ( clickhouse-server \
+          --config-file $CONFIG_DIR/config.xml \
+          --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
+          --  --path $CONFIG_DIR \
+              --logger.console=0 \
+              --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1
+      exit "${PIPESTATUS[0]}" ) &
+    server_bg_pid=$!
     for _ in {1..30}
     do
         if clickhouse-client --query "select 1"
@@ -183,31 +198,31 @@ function fuzz
 
     echo 'Server started and responded.'
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_start) || { echo "Failed to start log exports"; exit 1; }
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_start) || echo "Failed to start log exports"
 
     # Setup arguments for the fuzzer
     FUZZER_OUTPUT_SQL_FILE=''
 
     if [[ "$FUZZER_TO_RUN" = "AST Fuzzer" ]];
     then
-        QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
-        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
+        if [[ -n "${TARGETED_QUERIES_FILE:-}" ]] && [[ -f "${TARGETED_QUERIES_FILE}" ]];
+        then
+            QUERIES_FILE="$(cat "${TARGETED_QUERIES_FILE}")"
+            echo "Using targeted AST fuzzer corpus from ${TARGETED_QUERIES_FILE}"
+        else
+            QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
+        fi
+        if [[ -n "${FUZZER_COMPATIBILITY:-}" ]];
+        then
+            COMPAT_ARG="--compatibility=${FUZZER_COMPATIBILITY}"
+            echo "Using AST fuzzer compatibility setting: ${FUZZER_COMPATIBILITY}"
+        else
+            COMPAT_ARG=""
+        fi
+        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 $COMPAT_ARG --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
-        touch fuzzer_out.sql fuzz.json
-        FUZZER_OUTPUT_SQL_FILE=$(realpath fuzzer_out.sql)
-        BUZZHOUSE_CONFIG_FILE=$(realpath fuzz.json)
-cat << EOF > $BUZZHOUSE_CONFIG_FILE
-{
-    "db_file_path": "/var/lib/clickhouse/user_files",
-    "log_path": "$FUZZER_OUTPUT_SQL_FILE",
-    "seed": 0,
-    "read_log": false,
-    "use_dump_table_oracle": false,
-    "time_to_run": 180
-}
-EOF
-        FUZZER_ARGS="--buzz-house-config=$BUZZHOUSE_CONFIG_FILE"
+        FUZZER_ARGS="--buzz-house-config=fuzz.json"
     else
         >&2 echo "Fuzzer \"$FUZZER_TO_RUN\" unknown, provide either \"AST Fuzzer\" or \"BuzzHouse\""
         exit 1
@@ -216,7 +231,7 @@ EOF
     # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
     # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
     # a reasonable time.
-    timeout --verbose --signal TERM --kill-after=5m --preserve-status 30m clickhouse-client \
+    timeout --verbose --signal TERM --kill-after=5m --preserve-status "${FUZZ_TIME_LIMIT:-30m}" clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
@@ -280,6 +295,10 @@ EOF
                 # Give it some time to cool down
                 clickhouse-client --query "SHOW PROCESSLIST"
                 sleep 1
+            elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
+            then
+                # Server is alive but at memory limit, give it time to reclaim
+                sleep 1
             else
                 echo "Server live check returns $?"
                 cat err
@@ -289,79 +308,23 @@ EOF
         fi
     done
 
-    # wait in background to call wait in foreground and ensure that the
-    # process is alive, since w/o job control this is the only way to obtain
-    # the exit code
+    # Stop the server in background so we can wait for the subshell to
+    # finish in the foreground. We wait on server_bg_pid (the subshell running
+    # the server pipeline) rather than server_pid (from the PID file), because
+    # the PID file contains the forked server process which is not a direct
+    # child of this shell, so wait would fail with "not a child of this shell".
+    # The subshell exits with clickhouse-server's exit code via PIPESTATUS.
     stop_server &
     server_exit_code=0
-    wait $server_pid || server_exit_code=$?
+    wait $server_bg_pid || server_exit_code=$?
     echo "Server exit code is $server_exit_code"
 
-    # Make files with status and description we'll show for this check on Github.
-    task_exit_code=$fuzzer_exit_code
-    if [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
-    then
-        echo "BuzzHouse may fail for now. Please inspect the log to find the issues it found."
-
-        task_exit_code=0
-        echo "success" > status.txt
-        echo "OK" > description.txt
-    elif [ "$server_died" == 1 ]
-    then
-        # The server has died.
-        if rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
-        then
-            # Save the stack trace of the server to the description file and preserve in raw text output.
-            rg --text '\s<Fatal>\s' server.log >> fatal.log || :
-        else
-            echo "Lost connection to server. See the logs." > fatal.log
-        fi
-
-        IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
-
-        if [ "${IS_SANITIZED}" -eq "1" ] && rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' description.txt
-        then
-            # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
-            # Why? Because sanitizers have the memory overhead, that is not controllable from inside clickhouse-server.
-            task_exit_code=0
-            echo "success" > status.txt
-        else
-            task_exit_code=210
-            echo "failure" > status.txt
-        fi
-    elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
-    then
-        # Variants of a normal run:
-        # 0 -- fuzzing ended earlier than timeout.
-        # 143 -- SIGTERM -- the fuzzer was killed by timeout.
-        task_exit_code=0
-        echo "success" > status.txt
-        echo "OK" > description.txt
-    elif [ "$fuzzer_exit_code" == "137" ]
-    then
-        # Killed.
-        task_exit_code=$fuzzer_exit_code
-        echo "failure" > status.txt
-        echo "Killed" > description.txt
-    else
-        # The server was alive, but the fuzzer returned some error. This might
-        # be some client-side error detected by fuzzing, or a problem in the
-        # fuzzer itself. Don't grep the server log in this case, because we will
-        # find a message about normal server termination (Received signal 15),
-        # which is confusing.
-        task_exit_code=$fuzzer_exit_code
-        echo "failure" > status.txt
-        echo "Let op!" > description.txt
-        echo "Fuzzer went wrong with error code: ($fuzzer_exit_code). Its process died somehow when the server stayed alive. The server log probably won't tell you much so try to find information in other files." >>description.txt
-        { rg -ao "Found error:.*" fuzzer.log || rg -ao "Exception:.*" fuzzer.log; } | tail -1 >>description.txt
-    fi
+    echo -e "$server_died\t$server_exit_code\t$fuzzer_exit_code" > status.tsv
 
     if test -f core.*; then
         zstd --threads=0 core.*
         mv core.*.zst core.zst
     fi
-
-    dmesg -T | rg -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' && echo "OOM in dmesg" ||:
 }
 
 case "$stage" in
@@ -375,13 +338,4 @@ case "$stage" in
     ;&
 esac
 
-dmesg -T > dmesg.log ||:
-
-zstd --threads=0 --rm server.log
-zstd --threads=0 --rm fuzzer.log
-
-if [ -f $FUZZER_OUTPUT_SQL_FILE ]; then
-    zstd --threads=0 --rm $FUZZER_OUTPUT_SQL_FILE
-fi
-
-exit $task_exit_code
+exit $server_exit_code

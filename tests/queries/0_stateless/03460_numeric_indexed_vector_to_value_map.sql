@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 select 'TEST numericIndexedVectorToMap';
 
 DROP TABLE IF EXISTS uin_value_details_int32_int8;

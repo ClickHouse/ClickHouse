@@ -1,16 +1,9 @@
 import logging
-import os
-import re
-import shutil
-import threading
-import time
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
-from helpers.database_disk import get_database_disk_name, replace_text_in_metadata
+from helpers.test_tools import assert_eq_with_retry
+from helpers.database_disk import move_file
 
 test_recover_staled_replica_run = 1
 
@@ -72,18 +65,23 @@ def test_warn_on_database_ending_broken_replicated_tables(started_cluster):
 
     node1.query(f"SYSTEM SYNC REPLICA {database_name}.rmt_0")
 
-    with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(node2)
-        node2.query_and_get_error(
-            f"RENAME TABLE {database_name}.mt_0 TO {database_name}.mt_x"
+    metadata_path = node2.query(
+        f"SELECT metadata_path FROM system.tables WHERE database='{database_name}' AND name='mt_0'"
+    ).strip()
+
+    node2.stop_clickhouse()
+
+    # This will result in a broken table.
+    logging.debug(f"Moving metadata {metadata_path}")
+    move_file(node2, metadata_path, metadata_path.replace("mt_0", "mt_x"))
+
+    for i in range(0, 8):
+        node1.query(
+            f"RENAME TABLE {database_name}.mt_{i} TO {database_name}.mt_{i+1}",
+            settings=settings,
         )
 
-        for i in range(0, 8):
-            node1.query(
-                f"RENAME TABLE {database_name}.mt_{i} TO {database_name}.mt_{i+1}",
-                settings=settings,
-            )
-
+    node2.start_clickhouse()
     query = (
         f"SELECT name, uuid, create_table_query FROM system.tables WHERE database='{database_name}'"
         "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"

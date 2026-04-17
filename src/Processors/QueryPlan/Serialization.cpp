@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 static void serializeHeader(const Block & header, WriteBuffer & out)
@@ -90,7 +92,8 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         auto & frame = stack.top();
         auto * node = frame.node;
 
-        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get())
+            || typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get()))
         {
             frame.node = node->children.front();
             continue;
@@ -114,7 +117,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         writeStringBinary(node->step->getStepDescription(), out);
 
         if (node->step->hasOutputHeader())
-            serializeHeader(node->step->getOutputHeader(), out);
+            serializeHeader(*node->step->getOutputHeader(), out);
         else
             serializeHeader({}, out);
 
@@ -128,6 +131,30 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
     }
 
     serializeSets(registry, out, flags);
+}
+
+void QueryPlan::ensureSerialized(size_t max_supported_version) const
+{
+    if (serialized_plan)
+        return;  // Already serialized
+
+    serialized_plan = std::make_unique<WriteBufferFromOwnString>();
+    serialize(*serialized_plan, max_supported_version);
+    serialized_plan->finalize();
+}
+
+std::string_view QueryPlan::getSerializedData() const
+{
+    if (!serialized_plan)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Query plan is not serialized. Call ensureSerialized() first.");
+
+    return serialized_plan->stringView();
+}
+
+bool QueryPlan::isSerialized() const
+{
+    return serialized_plan != nullptr;
 }
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context)
@@ -185,31 +212,34 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
-        Header output_header  = deserializeHeader(in);
+        auto output_header  = std::make_shared<const Block>(deserializeHeader(in));
 
         QueryPlanSerializationSettings settings;
         settings.readBinary(in);
 
-        Headers input_headers;
+        SharedHeaders input_headers;
         input_headers.reserve(frame.children.size());
         for (const auto & child : frame.children)
             input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, context, input_headers, &output_header, settings};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())
         {
-            assertCompatibleHeader(step->getOutputHeader(), output_header,
-                 fmt::format("deserialization of query plan {} step", step_name));
+            assertCompatibleHeader(
+                *step->getOutputHeader(), *output_header, fmt::format("deserialization of query plan {} step", step_name));
         }
-        else if (output_header.columns())
+        else if (output_header->columns())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
-                step_name, output_header.dumpStructure());
+                step_name, output_header->dumpStructure());
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
         frame.to_fill = &node;
+
+        for (const auto & storage : ctx.storage_holders)
+            plan.addStorageHolder(storage);
 
         stack.pop();
     }

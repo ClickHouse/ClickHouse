@@ -1,8 +1,8 @@
-#include <Common/MemoryTracker.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
@@ -25,10 +25,9 @@ MemoryTracker * getMemoryTracker()
     if (auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker())
         return thread_memory_tracker;
 
-    /// Once the main thread is initialized,
-    /// total_memory_tracker is initialized too.
-    /// And can be used, since MainThreadStatus is required for profiling.
-    if (DB::MainThreadStatus::get())
+    /// total_memory_tracker can be used before MainThreadStatus is initialized,
+    /// but only after its own initialization and before teardown.
+    if (DB::MainThreadStatus::initialized() || isTotalMemoryTrackerInitialized())
         return &total_memory_tracker;
 
     return nullptr;
@@ -68,17 +67,23 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        Int64 will_be = current_thread->untracked_memory + size;
-        if (will_be > current_thread->untracked_memory_limit)
+        Int64 previous_untracked_memory = current_thread->untracked_memory;
+        current_thread->untracked_memory += size;
+        if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
         {
-            auto res = memory_tracker->allocImpl(will_be, throw_if_memory_exceeded);
+            Int64 current_untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
-            return res;
-        }
 
-        /// Update after successful allocations,
-        /// since failed allocations should not be take into account.
-        current_thread->untracked_memory = will_be;
+            try
+            {
+                return memory_tracker->allocImpl(current_untracked_memory, throw_if_memory_exceeded);
+            }
+            catch (...)
+            {
+                current_thread->untracked_memory += previous_untracked_memory;
+                throw;
+            }
+        }
 
         return AllocationTrace(memory_tracker->getSampleProbability(size));
     }
@@ -94,14 +99,12 @@ void CurrentMemoryTracker::check()
 
 AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
 {
-    bool throw_if_memory_exceeded = true;
-    return allocImpl(size, throw_if_memory_exceeded);
+    return allocImpl(size, /*throw_if_memory_exceeded=*/ true);
 }
 
 AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
 {
-    bool throw_if_memory_exceeded = false;
-    return allocImpl(size, throw_if_memory_exceeded);
+    return allocImpl(size, /*throw_if_memory_exceeded=*/ false);
 }
 
 AllocationTrace CurrentMemoryTracker::free(Int64 size)
@@ -139,4 +142,3 @@ void CurrentMemoryTracker::injectFault()
     if (auto * memory_tracker = getMemoryTracker())
         memory_tracker->injectFault();
 }
-

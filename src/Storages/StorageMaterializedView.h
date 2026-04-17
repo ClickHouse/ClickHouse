@@ -1,17 +1,18 @@
 #pragma once
 
+#include <optional>
 #include <Parsers/IAST_fwd.h>
 
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
 namespace DB
 {
 
-class StorageMaterializedView final : public IStorage, WithMutableContext
+class StorageMaterializedView final : public StorageWithCommonVirtualColumns, WithMutableContext
 {
 public:
     StorageMaterializedView(
@@ -35,7 +36,7 @@ public:
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
-    bool supportsDynamicSubcolumns() const override;
+    bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
@@ -85,9 +86,9 @@ public:
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
+    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -109,6 +110,16 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
+
+    std::optional<String> getCoordinationPath() const
+    {
+        if (!refresher.ptr)
+            return std::nullopt;
+        return refresher.ptr->getCoordinationPath();
+    }
+
+    bool isRefreshable() const { return refresher.ptr != nullptr; }
+    bool isAppendRefreshStrategy() const { return isRefreshable() && fixed_uuid; }
 
 private:
     mutable std::mutex target_table_id_mutex;
@@ -133,7 +144,7 @@ private:
     /// form the insert-select query.
     /// out_temp_table_id may be assigned before throwing an exception, in which case the caller
     /// must drop the temp table before rethrowing.
-    std::tuple<std::shared_ptr<ASTInsertQuery>, std::unique_ptr<CurrentThread::QueryScope>>
+    std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
     prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const;
     std::optional<StorageID> exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context) const;
     void dropTempTable(StorageID table, ContextMutablePtr refresh_context, String & out_exception);

@@ -1,10 +1,13 @@
 #include <Columns/ColumnFixedString.h>
 
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
+
+#include <IO/WriteHelpers.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -48,9 +51,14 @@ bool DataTypeFixedString::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && n == static_cast<const DataTypeFixedString &>(rhs).n;
 }
 
-SerializationPtr DataTypeFixedString::doGetDefaultSerialization() const
+void DataTypeFixedString::updateHashImpl(SipHash & hash) const
 {
-    return std::make_shared<SerializationFixedString>(n);
+    hash.update(n);
+}
+
+SerializationPtr DataTypeFixedString::doGetSerialization(const SerializationInfoSettings &) const
+{
+    return SerializationFixedString::create(n);
 }
 
 

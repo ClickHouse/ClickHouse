@@ -331,6 +331,27 @@ bool MultipleAccessStorage::isReadOnly(const UUID & id) const
 }
 
 
+bool MultipleAccessStorage::isEphemeral() const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (!storage->isEphemeral())
+            return false;
+    }
+    return true;
+}
+
+
+bool MultipleAccessStorage::isEphemeral(const UUID & id) const
+{
+    auto storage = findStorage(id);
+    if (storage)
+        return storage->isEphemeral(id);
+    return false;
+}
+
+
 void MultipleAccessStorage::startPeriodicReloading()
 {
     auto storages = getStoragesInternal();

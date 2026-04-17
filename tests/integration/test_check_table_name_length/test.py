@@ -36,7 +36,7 @@ def start_cluster():
 
 
 def generate_random_name(length):
-    return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(length))
+    return ''.join(random.choice(string.ascii_letters) for _ in range(length))
 
 
 def test_backward_compatibility(start_cluster):

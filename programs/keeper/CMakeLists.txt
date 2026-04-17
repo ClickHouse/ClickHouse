@@ -13,8 +13,11 @@ set (CLICKHOUSE_KEEPER_LINK
         clickhouse-keeper-converter-lib
         clickhouse-keeper-client-lib
         clickhouse_functions
-        dbms
 )
+
+# Track dependencies for #embed directives so that changes to embedded files trigger recompilation.
+set_source_files_properties(Keeper.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/keeper_embedded.xml")
 
 clickhouse_program_add(keeper)
 

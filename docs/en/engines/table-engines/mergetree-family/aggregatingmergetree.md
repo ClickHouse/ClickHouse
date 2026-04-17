@@ -6,10 +6,11 @@ description: 'Replaces all rows with the same primary key (or more accurately, w
 sidebar_label: 'AggregatingMergeTree'
 sidebar_position: 60
 slug: /engines/table-engines/mergetree-family/aggregatingmergetree
-title: 'AggregatingMergeTree'
+title: 'AggregatingMergeTree table engine'
+doc_type: 'reference'
 ---
 
-# AggregatingMergeTree
+# AggregatingMergeTree table engine
 
 The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
@@ -22,12 +23,12 @@ You can see an example of how to use the AggregatingMergeTree and Aggregate func
 
 The engine processes all columns with the following types:
 
-## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) {#aggregatefunction}
-## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md) {#simpleaggregatefunction}
+- [`AggregateFunction`](../../../sql-reference/data-types/aggregatefunction.md)
+- [`SimpleAggregateFunction`](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -76,7 +77,7 @@ When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and
 
 In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. For example, if you dump data into `TabSeparated` format with a `SELECT` query, then this dump can be loaded back using an `INSERT` query.
 
-## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
+## Example of an aggregated materialized view {#example-of-an-aggregated-materialized-view}
 
 The following example assumes that you have a database named `test`. Create it if it doesn't already exist using the command below:
 
@@ -168,7 +169,7 @@ Run the `SELECT` query again, which will return the following output:
 
 In some cases, you might want to avoid pre-aggregating rows at insert time to shift the cost of aggregation from insert time
 to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY` 
-clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation) 
+clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeAggregation) 
 function with setting `optimize_on_insert = 0` (it is turned on by default) to achieve this. Use of `GROUP BY` 
 is no longer required in this case:
 
@@ -188,6 +189,6 @@ Each source row produces one row in the materialized view, and the actual aggreg
 `AggregatingMergeTree` merges parts. This is only true if `optimize_on_insert = 0`.
 :::
 
-## Related Content {#related-content}
+## Related content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

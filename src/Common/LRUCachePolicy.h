@@ -62,6 +62,11 @@ public:
         return max_size_in_bytes;
     }
 
+    size_t maxCount() const override
+    {
+        return max_count;
+    }
+
     void setMaxCount(size_t max_count_) override
     {
         max_count = max_count_;
@@ -243,7 +248,9 @@ private:
 
             current_size_in_bytes -= cell.size;
             current_weight_lost += cell.size;
-            on_remove_entry_function(cell.size, cell.value);
+            /// Update cache-specific metrics.
+            if (on_remove_entry_function)
+                on_remove_entry_function(cell.size, cell.value);
 
             cells.erase(it);
             queue.pop_front();

@@ -74,7 +74,7 @@ void PatternFormatter::format(const Message& msg, std::string& text)
 		case 'T': text.append(msg.getThread()); break;
 		case 'I': NumberFormatter::append(text, msg.getTid()); break;
 		case 'N': text.append(Environment::nodeName()); break;
-		case 'U': text.append(msg.getSourceFile() ? msg.getSourceFile() : ""); break;
+		case 'U': text.append(msg.getSourceFile()); break;
 		case 'u': NumberFormatter::append(text, msg.getSourceLine()); break;
 		case 'w': text.append(DateTimeFormat::WEEKDAY_NAMES[dateTime.dayOfWeek()], 0, 3); break;
 		case 'W': text.append(DateTimeFormat::WEEKDAY_NAMES[dateTime.dayOfWeek()]); break;
@@ -109,13 +109,6 @@ void PatternFormatter::format(const Message& msg, std::string& text)
 				text.append(msg.getSource());
 			break;
 		case 'x':
-			try
-			{
-				text.append(msg[ip->property]);
-			}
-			catch (...)
-			{
-			}
 			break;
 		case 'L':
 			if (!localTime)

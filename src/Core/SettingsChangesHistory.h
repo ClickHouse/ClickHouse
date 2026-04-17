@@ -1,26 +1,14 @@
 #pragma once
 
 #include <Core/Field.h>
+
+#include <Common/ClickHouseVersion.h>
+
 #include <map>
 #include <vector>
 
-
 namespace DB
 {
-
-class ClickHouseVersion
-{
-public:
-    explicit ClickHouseVersion(std::string_view version);
-
-    String toString() const;
-
-    bool operator<(const ClickHouseVersion & other) const { return components < other.components; }
-    bool operator>=(const ClickHouseVersion & other) const { return components >= other.components; }
-
-private:
-    std::vector<size_t> components;
-};
 
 namespace SettingsChangesHistory
 {

@@ -6,6 +6,7 @@ keywords: ['TabSeparatedWithNames']
 output_format: true
 slug: /interfaces/formats/TabSeparatedWithNames
 title: 'TabSeparatedWithNames'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias                          |
@@ -24,9 +25,9 @@ the columns from the input data will be mapped to the columns of the table by th
 Otherwise, the first row will be skipped.
 :::
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 Using the following tsv file, named as `football.tsv`:
 
@@ -57,7 +58,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparatedWithNames;
 ```
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Read data using the `TabSeparatedWithNames` format:
 
@@ -90,4 +91,4 @@ date    season  home_team       away_team       home_team_goals away_team_goals
 2022-05-07      2021    Walsall Swindon Town    0       3
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

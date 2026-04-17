@@ -1,4 +1,4 @@
-#include "DictionarySourceFactory.h"
+#include <Dictionaries/DictionarySourceFactory.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionaryStructure.h>
 
 namespace DB
 {
@@ -73,6 +73,15 @@ void DictionarySourceFactory::registerSource(const std::string & source_type, Cr
 {
     if (!registered_sources.emplace(source_type, std::move(create_source)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionarySourceFactory: the source name '{}' is not unique", source_type);
+}
+
+std::vector<String> DictionarySourceFactory::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
+{
+    std::vector<String> result; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    result.reserve(registered_sources.size());
+    for (const auto & pair : registered_sources)
+        result.push_back(pair.first);
+    return result;
 }
 
 DictionarySourcePtr DictionarySourceFactory::create(

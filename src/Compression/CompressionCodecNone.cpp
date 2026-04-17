@@ -27,13 +27,14 @@ UInt32 CompressionCodecNone::doCompressData(const char * source, UInt32 source_s
     return source_size;
 }
 
-void CompressionCodecNone::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecNone::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size != uncompressed_size)
         throw Exception(decompression_error_code, "Wrong data for compression codec NONE: source_size ({}) != uncompressed_size ({})",
             source_size, uncompressed_size);
 
     memcpy(dest, source, uncompressed_size);
+    return uncompressed_size;
 }
 
 void registerCodecNone(CompressionCodecFactory & factory)

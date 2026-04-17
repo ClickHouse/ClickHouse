@@ -48,7 +48,7 @@ public:
 
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
-    virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents) = 0;
+    virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents) = 0;
 
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & file_name) = 0;
 
@@ -60,8 +60,9 @@ public:
     /// Parameters:
     /// `start_pos` and `length` specify a part of the file on `src_disk` to copy to the backup.
     /// `copy_encrypted` specify whether this function should copy encrypted data of the file `src_path` to the backup.
-    virtual void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                  bool copy_encrypted, UInt64 start_pos, UInt64 length) = 0;
+    virtual void copyFileFromDisk(
+        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
+        = 0;
 
     virtual void copyFile(const String & destination, const String & source, size_t size) = 0;
 

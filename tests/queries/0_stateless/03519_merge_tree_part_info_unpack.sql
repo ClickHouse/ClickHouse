@@ -3,6 +3,15 @@ SET enable_analyzer = 1;
 WITH mergeTreePartInfo('all_12_25_7_4') AS info
 SELECT info.partition_id, info.min_block, info.max_block, info.level, info.mutation;
 
+WITH mergeTreePartInfo('merge-not-byte-identical_all_12_25_7_4_try100') AS info
+SELECT info.partition_id, info.prefix, info.suffix, info.min_block, info.max_block, info.level, info.mutation;
+
+WITH mergeTreePartInfo('all_12_25_7_4_try100') AS info
+SELECT info.partition_id, info.prefix, info.suffix, info.min_block, info.max_block, info.level, info.mutation;
+
+WITH mergeTreePartInfo('broken-on-start_all_12_25_7_4') AS info
+SELECT info.partition_id, info.prefix, info.suffix, info.min_block, info.max_block, info.level, info.mutation;
+
 CREATE TABLE mt(key UInt64, value String)
 ENGINE = MergeTree
 ORDER BY key;

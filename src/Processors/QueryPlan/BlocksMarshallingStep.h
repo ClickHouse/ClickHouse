@@ -9,7 +9,7 @@ namespace DB
 class BlocksMarshallingStep : public ITransformingStep
 {
 public:
-    explicit BlocksMarshallingStep(const Header & input_header_);
+    explicit BlocksMarshallingStep(const SharedHeader & input_header_);
 
     String getName() const override { return "BlocksMarshalling"; }
 
@@ -18,7 +18,7 @@ public:
     void serialize(Serialization &) const override { }
     bool isSerializable() const override { return true; }
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override;

@@ -23,16 +23,12 @@ protected:
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const override;
 
     bool isCompression() const override;
     bool isGenericCompression() const override { return false; }
 
-    std::string getDescription() const override
-    {
-        return "Apply multiple codecs consecutively defined by user.";
-    }
-
+    String getDescription() const override { return "Apply multiple codecs consecutively defined by user."; }
 
 private:
     Codecs codecs;

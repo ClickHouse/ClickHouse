@@ -10,6 +10,9 @@ from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain_wi
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node_default",
+    main_configs=[
+        "configs/config.xml",
+    ],
     stay_alive=True,
 )
 
@@ -33,7 +36,6 @@ def test_system_logs_exists():
         ("system.trace_log", 1),
         ("system.metric_log", 1),
         ("system.error_log", 1),
-        ("system.latency_log", 1),
     ]
 
     for table, exists in system_logs:

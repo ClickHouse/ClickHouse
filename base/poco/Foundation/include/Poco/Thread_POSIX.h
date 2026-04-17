@@ -124,6 +124,7 @@ private:
         std::size_t stackSize;
         bool started;
         bool joined;
+        mutable FastMutex mutex;
     };
 
     AutoPtr<ThreadData> _pData;
@@ -154,6 +155,7 @@ inline int ThreadImpl::getOSPriorityImpl() const
 
 inline bool ThreadImpl::isRunningImpl() const
 {
+    FastMutex::ScopedLock l(_pData->mutex);
     return !_pData->pRunnableTarget.isNull();
 }
 

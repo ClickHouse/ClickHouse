@@ -1,0 +1,33 @@
+-- add_minmax_index_for_numeric_columns=0: Different plan
+set serialize_query_plan = 0;
+set enable_analyzer=1;
+set enable_parallel_replicas=0;
+set prefer_localhost_replica=1;
+-- disable statistics-based part pruning to keep EXPLAIN output stable
+SET use_statistics_for_part_pruning = 0;
+set optimize_skip_unused_shards = 0;
+SET optimize_skip_unused_shards_rewrite_in = 1;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
+
+create table tab0 (x UInt32, y UInt32) engine = MergeTree order by x settings index_granularity=8192, min_bytes_for_wide_part=1e9, index_granularity_bytes=10e6, add_minmax_index_for_numeric_columns=0;
+insert into tab0 select number, number from numbers(8192 * 123);
+
+-- { echo }
+select sum(y) from (select * from remote('127.0.0.1', currentDatabase(), tab0)) where x in (select number + 42 from numbers(1));
+select sum(y) from (select * from remote('127.0.0.1', currentDatabase(), tab0)) where x global in (select number + 42 from numbers(1));
+select sum(y) from (select * from remote('127.0.0.2', currentDatabase(), tab0)) where x in (select number + 42 from numbers(1));
+select sum(y) from (select * from remote('127.0.0.2', currentDatabase(), tab0)) where x global in (select number + 42 from numbers(1));
+select sum(y) from (select * from remote('127.0.0.{1,2}', currentDatabase(), tab0)) where x in (select number + 42 from numbers(1));
+select sum(y) from (select * from remote('127.0.0.{1,2}', currentDatabase(), tab0)) where x global in (select number + 42 from numbers(1));
+select sum(y) from (select * from remote('127.0.0.{2,3}', currentDatabase(), tab0)) where x in (select number + 42 from numbers(1));
+select sum(y) from (select * from remote('127.0.0.{2,3}', currentDatabase(), tab0)) where x global in (select number + 42 from numbers(1));
+select * from (explain indexes=1
+    select sum(y) from (select * from remote('127.0.0.1', currentDatabase(), tab0)) where x global in (select number + 42 from numbers(1))
+);
+select * from (explain indexes=1, distributed=1
+    select sum(y) from (select * from remote('127.0.0.2', currentDatabase(), tab0)) where x global in (select number + 42 from numbers(1))
+);
+system flush logs query_log;
+-- SKIP: current_database = currentDatabase()
+select normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 and log_comment like '%' || currentDatabase() || '%' and not is_initial_query and type != 'QueryStart' and query_kind = 'Select' order by event_time_microseconds;
