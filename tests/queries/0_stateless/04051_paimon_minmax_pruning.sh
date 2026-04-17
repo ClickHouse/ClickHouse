@@ -162,7 +162,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM FLUSH LOGS query_log;
 "
 
-# Verify file counts: pruning queries (3,5,7) should read fewer files than their baselines (2,4,6)
+# Verify file counts: pruning queries (3,5,7,9,B,D,F) should read fewer files than their baselines (2,4,6,8,A,C,E)
 $CLICKHOUSE_CLIENT --query "
     SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log
     WHERE initial_query_id like '%test_04051%' and initial_query_id like '%$CLICKHOUSE_TEST_UNIQUE_NAME%' AND
