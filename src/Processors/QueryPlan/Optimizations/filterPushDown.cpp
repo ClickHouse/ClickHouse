@@ -927,13 +927,15 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (filter->getExpression().hasStatefulFunctions())
         return 0;
 
-    /// When the child is an ExpressionStep, merge it into the FilterStep so that
-    /// the filter can see through to the step below (e.g., TotalsHavingStep) and
-    /// potentially be pushed down further on the next optimization pass.
-    /// This is the same transformation as tryMergeExpressions for FilterStep -> ExpressionStep,
-    /// but it is needed here regardless of the query_plan_merge_expressions setting to ensure
-    /// consistent filter push-down behavior.
-    if (auto * child_expression = typeid_cast<ExpressionStep *>(child.get()))
+    /// Specifically for the `FilterStep -> ExpressionStep -> TotalsHavingStep` shape:
+    /// when `query_plan_merge_expressions=0` leaves an `ExpressionStep` sitting between the
+    /// filter and `TotalsHavingStep`, the filter cannot see through and stays above `TotalsHavingStep`,
+    /// producing wrong TOTALS. Merge the expression into the filter so that the next
+    /// optimization pass can push the filter below `TotalsHavingStep`. Restrict this to the
+    /// `TotalsHavingStep` grandchild to avoid changing the query plan structure in unrelated cases.
+    if (auto * child_expression = typeid_cast<ExpressionStep *>(child.get());
+        child_expression && !child_node->children.empty()
+        && typeid_cast<TotalsHavingStep *>(child_node->children.front()->step.get()))
     {
         auto & child_actions = child_expression->getExpression();
         auto & parent_actions = filter->getExpression();
