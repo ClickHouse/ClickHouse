@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationNullableWithParentNullMap.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
@@ -120,7 +121,15 @@ DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
 {
     if (prev_type && !canExtractedSubcolumnsBeInsideNullable(prev_type))
+    {
+        /// The extracted subcolumn is itself Nullable, nested inside an outer Nullable, so both null
+        /// maps need to be considered: the outer and the subcolumn's nullmap. Return a serialization
+        /// that reads both null maps and combines them with a bitwise OR.
+        if (prev_type->isNullable())
+            return SerializationNullableWithParentNullMap::create(prev_serialization);
         return prev_serialization;
+    }
+
     return SerializationNullable::create(prev_serialization);
 }
 
@@ -128,6 +137,21 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 {
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
+
+    /// Combine the outer null map with the inner null map.
+    if (null_map)
+    {
+        if (const auto * inner_nullable = checkAndGetColumn<ColumnNullable>(prev.get()))
+        {
+            auto combined_null_map = IColumn::mutate(inner_nullable->getNullMapColumnPtr());
+            auto & combined_null_map_data = assert_cast<ColumnUInt8 &>(*combined_null_map).getData();
+            const auto & outer_null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
+            for (size_t i = 0; i < combined_null_map_data.size(); ++i)
+                combined_null_map_data[i] |= outer_null_map_data[i];
+            return ColumnNullable::create(inner_nullable->getNestedColumnPtr(), std::move(combined_null_map));
+        }
+    }
+
     return prev;
 }
 
