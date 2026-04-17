@@ -19,7 +19,6 @@ from pyiceberg.types import (
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.test_tools import TSV
-from helpers.config_cluster import minio_secret_key
 
 BASE_URL = "http://rest:8181/v1"
 
