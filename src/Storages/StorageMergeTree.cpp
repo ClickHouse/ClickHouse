@@ -412,7 +412,7 @@ void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
     AlterLockHolder & table_lock_holder,
-    DDLGuardPtr & /*ddl_guard*/)
+    DDLGuardPtr & ddl_guard)
 {
     /// Allow MODIFY_SETTING/RESET_SETTING through even when the table is readonly,
     /// so that the `table_readonly` flag can be toggled back.
@@ -531,6 +531,11 @@ void StorageMergeTree::alter(
             if (!maybe_mutation_commands.empty())
                 mutation_version = startMutation(maybe_mutation_commands, local_context);
         }
+
+        /// Schema is committed and the mutation (if any) is queued; don't hold DDLGuard across
+        /// the wait, otherwise a blocked mutation (e.g. after SYSTEM STOP MERGES) would block
+        /// any concurrent DROP/RENAME on this table.
+        ddl_guard.reset();
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
             waitForMutation(mutation_version, false);
