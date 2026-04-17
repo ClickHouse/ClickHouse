@@ -2213,6 +2213,8 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                         chassert(false);
                     }
                 }
+#else
+                UNUSED(file_segment_ptr);
 #endif
             }
             else
