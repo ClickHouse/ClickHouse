@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Columns/ColumnTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
@@ -6,6 +7,9 @@
 #include <Common/SharedMutex.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 
 namespace ProfileEvents
 {
@@ -104,6 +108,97 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 
+namespace
+{
+
+struct PreparedRuntimeFilterColumn
+{
+    ColumnPtr full_column;
+    const IColumn * key_column = nullptr;
+    ConstNullMapPtr null_map = nullptr;
+    ColumnPtr null_map_holder;
+};
+
+bool addNullMapFromColumn(const IColumn & column, PaddedPODArray<UInt8> & null_map)
+{
+    bool has_nulls = false;
+
+    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
+    {
+        const auto & column_null_map = column_nullable->getNullMapData();
+        for (size_t i = 0; i < null_map.size(); ++i)
+        {
+            null_map[i] |= column_null_map[i];
+            has_nulls |= static_cast<bool>(column_null_map[i]);
+        }
+
+        has_nulls |= addNullMapFromColumn(column_nullable->getNestedColumn(), null_map);
+        return has_nulls;
+    }
+
+    if (const auto * tuple = checkAndGetColumn<ColumnTuple>(&column))
+    {
+        for (const auto & element : tuple->getColumns())
+            has_nulls |= addNullMapFromColumn(*element, null_map);
+        return has_nulls;
+    }
+
+    if (column.getDataType() == TypeIndex::Variant || column.getDataType() == TypeIndex::Dynamic)
+    {
+        for (size_t i = 0; i < null_map.size(); ++i)
+        {
+            const bool is_null = column.isNullAt(i);
+            null_map[i] |= is_null;
+            has_nulls |= is_null;
+        }
+    }
+
+    return has_nulls;
+}
+
+PreparedRuntimeFilterColumn prepareRuntimeFilterColumn(const ColumnPtr & column, bool extract_null_map)
+{
+    PreparedRuntimeFilterColumn prepared;
+    prepared.full_column = column->convertToFullColumnIfConst()->convertToFullIfNeeded();
+    prepared.key_column = prepared.full_column.get();
+
+    if (!extract_null_map || prepared.key_column->empty())
+        return prepared;
+
+    auto null_map_holder = ColumnUInt8::create(prepared.key_column->size(), static_cast<UInt8>(0));
+    auto & null_map = null_map_holder->getData();
+
+    if (addNullMapFromColumn(*prepared.key_column, null_map))
+    {
+        prepared.null_map_holder = std::move(null_map_holder);
+        prepared.null_map = &assert_cast<const ColumnUInt8 &>(*prepared.null_map_holder).getData();
+    }
+
+    return prepared;
+}
+
+void forceResultForNullRows(ColumnPtr & result, ConstNullMapPtr null_map, bool value_for_null_rows)
+{
+    if (!null_map)
+        return;
+
+    auto mutable_result = IColumn::mutate(std::move(result));
+    auto * result_vector = typeid_cast<ColumnUInt8 *>(mutable_result.get());
+    if (!result_vector)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected `UInt8` column as runtime filter result");
+
+    auto & result_data = result_vector->getData();
+    for (size_t i = 0; i < result_data.size(); ++i)
+    {
+        if ((*null_map)[i])
+            result_data[i] = value_for_null_rows;
+    }
+
+    result = std::move(mutable_result);
+}
+
+}
+
 void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 {
     if (inserts_are_finished)
@@ -146,7 +241,8 @@ bool ApproximateRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type
 {
     /// Current BloomFilter implementation relies on IColumn::getDataAt method that returns a string_view of contiguous
     /// memory chunk containing the value
-    return data_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+    auto bloom_filter_value_type = removeNullableOrLowCardinalityNullable(recursiveRemoveLowCardinality(data_type));
+    return bloom_filter_value_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
 
 ApproximateRuntimeFilter::ApproximateRuntimeFilter(
@@ -261,6 +357,14 @@ ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & valu
         case ValuesCount::MANY:
         {
             auto result = exact_values->execute({values}, negate);
+            if constexpr (!negate)
+            {
+                if (argument_can_have_nulls)
+                {
+                    auto prepared_values = prepareRuntimeFilterColumn(values.column, true);
+                    forceResultForNullRows(result, prepared_values.null_map, false);
+                }
+            }
             updateStats(values.column->size(), countPassedStats(result));
             return result;
         }
@@ -274,15 +378,23 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
 
     if (bloom_filter)
     {
+        auto prepared_values = prepareRuntimeFilterColumn(values.column, true);
+
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
-        dst_data.resize(values.column->size());
+        dst_data.resize(prepared_values.key_column->size());
 
         size_t found_count = 0;
-        for (size_t row = 0; row < values.column->size(); ++row)
+        for (size_t row = 0; row < prepared_values.key_column->size(); ++row)
         {
+            if (prepared_values.null_map && (*prepared_values.null_map)[row])
+            {
+                dst_data[row] = false;
+                continue;
+            }
+
             /// TODO: optimize: consider replacing hash calculation with vectorized version
-            const auto & value = values.column->getDataAt(row);
+            const auto & value = prepared_values.key_column->getDataAt(row);
             const bool found = bloom_filter->find(value.data(), value.size());
             found_count += found ? 1 : 0;
             dst_data[row] = found;
@@ -299,11 +411,16 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
 
 void ApproximateRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
 {
-    const size_t num_rows = values->size();
+    auto prepared_values = prepareRuntimeFilterColumn(values, true);
+
+    const size_t num_rows = prepared_values.key_column->size();
     for (size_t row = 0; row < num_rows; ++row)
     {
+        if (prepared_values.null_map && (*prepared_values.null_map)[row])
+            continue;
+
         /// TODO: make this efficient: compute hashes in vectorized manner
-        auto value = values->getDataAt(row);
+        auto value = prepared_values.key_column->getDataAt(row);
         bloom_filter->add(value.data(), value.size());
     }
 }

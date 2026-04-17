@@ -111,7 +111,9 @@ public:
             WhichDataType(filter_column_target_type).isVariant())
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
-        , exact_values(std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls))
+        /// For positive runtime filters we skip NULL rows.
+        /// For exclusion runtime filters keep old behavior and preserve NULLs in `Set`.
+        , exact_values(std::make_shared<Set>(SizeLimits{}, -1, negate && argument_can_have_nulls))
     {
         ColumnsWithTypeAndName set_header = { ColumnWithTypeAndName(filter_column_target_type, String()) };
         exact_values->setHeader(set_header);
@@ -142,7 +144,7 @@ public:
         }
 
         /// If only 1 element in the set then use " == const" instead of set lookup
-        /// But if the argument is Nullable we cannot use "==" so fallback to Set because it can handle NULLs
+        /// But if argument can have NULLs we cannot use "==" so fallback to Set
         if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls)
         {
             values_count = ValuesCount::ONE;
