@@ -285,6 +285,16 @@ void MergeTreeReadersChain::addPatchVirtuals(ReadResult & result, const Block & 
         return;
 
     auto result_block = header.cloneWithColumns(result.columns);
+    /// Prewhere may project away columns that aren't needed by later read steps but
+    /// are still needed at patch-apply time — e.g. the sort-key source columns of a
+    /// v2 `MergeOnKey` patch when the query filters on them (`WHERE id = ...`). Those
+    /// projected-away columns live on in `result.additional_columns`; fold them in so
+    /// `addPatchVirtuals` below can cache them in `result.columns_for_patches`.
+    for (const auto & col : result.additional_columns)
+    {
+        if (!result_block.has(col.name))
+            result_block.insert(col);
+    }
     addPatchVirtuals(result.columns_for_patches, result_block);
 }
 
