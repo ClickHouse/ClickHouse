@@ -4,9 +4,11 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <base/types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadHelpersArena.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <IO/WriteHelpers.h>
@@ -30,21 +32,21 @@ namespace
         using Map = HashMapWithStackMemory<Key, UInt64, DefaultHash<Key>, 4>;
         using Self = AggregateFunctionDistinctByNumericKeyData;
         Map map;
+        size_t value_size = 0;
 
         void add(const IColumn ** columns, size_t arg_num, size_t row_num, Arena *)
         {
             const auto & key_vec = assert_cast<const ColumnVector<Key> &>(*columns[arg_num]).getData();
             auto ref = columns[arg_num - 1]->getDataAt(row_num);
-
             UInt64 raw = 0;
-            std::memcpy(&raw, ref.data, ref.size);
+            std::memcpy(&raw, ref.data(), ref.size());
             map[key_vec[row_num]] = raw;
         }
 
         void merge(const Self & rhs, Arena *)
         {
             auto & mutable_rhs_map = const_cast<Map &>(rhs.map);
-            mutable_rhs_map.mergeToViaEmplace(map,[&](UInt64 & dst, UInt64 & src, bool found)
+            mutable_rhs_map.mergeToViaEmplace(map, [&](UInt64 & dst, UInt64 & src, bool found)
             {
                 if (!found)
                     dst = src;
@@ -53,27 +55,38 @@ namespace
 
         void serialize(WriteBuffer & buf) const
         {
-            map.write(buf);
+            writeVarUInt(map.size(), buf);
+            for (const auto & [key, raw_value] : map)
+            {
+                writeBinaryLittleEndian(key, buf);
+                buf.write(reinterpret_cast<const char *>(&raw_value), value_size);
+            }
         }
 
         void deserialize(ReadBuffer & buf, Arena *)
         {
-            map.read(buf);
+            size_t size;
+            readVarUInt(size, buf);
+            for (size_t i = 0; i < size; ++i)
+            {
+                Key key;
+                readBinaryLittleEndian(key, buf);
+                UInt64 raw = 0;
+                buf.readStrict(reinterpret_cast<char *>(&raw), value_size);
+                map[key] = raw;
+            }
         }
 
         MutableColumns getArguments(const DataTypes & argument_types, size_t /* arg_num */) const
         {
             MutableColumns argument_columns;
             argument_columns.emplace_back(argument_types[0]->createColumn());
-            const auto & type = *argument_types[0];
-            const size_t value_size = type.getSizeOfValueInMemory();
-
+            const size_t actual_value_size = argument_types[0]->getSizeOfValueInMemory();
             for (const auto & [_, raw_value] : map)
             {
-                char buffer[sizeof(UInt64)];
-                std::memcpy(buffer, &raw_value, sizeof(UInt64));
-
-                argument_columns[0]->insertData(buffer, value_size);
+                char buffer[sizeof(UInt64)] = {};
+                std::memcpy(buffer, &raw_value, actual_value_size);
+                argument_columns[0]->insertData(buffer, actual_value_size);
             }
             return argument_columns;
         }
@@ -90,7 +103,7 @@ namespace
         void add(const IColumn ** columns, size_t arg_num, size_t row_num, Arena *)
         {
             const auto & key_vec = assert_cast<const ColumnVector<T> &>(*columns[arg_num]).getData();
-            const auto & val_vec = assert_cast<const ColumnVector<T> &>(*columns[arg_num]).getData();
+            const auto & val_vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
             map[key_vec[row_num]] = val_vec[row_num];
         }
 
@@ -106,12 +119,26 @@ namespace
 
         void serialize(WriteBuffer & buf) const
         {
-            map.write(buf);
+            writeVarUInt(map.size(), buf);
+            for (const auto & [key, value] : map)
+            {
+                writeBinaryLittleEndian(key, buf);
+                writeBinaryLittleEndian(value, buf);
+            }
         }
 
         void deserialize(ReadBuffer & buf, Arena *)
         {
-            map.read(buf);
+            size_t size;
+            readVarUInt(size, buf);
+            for (size_t i = 0; i < size; ++i)
+            {
+                T key;
+                readBinaryLittleEndian(key, buf);
+                T value;
+                readBinaryLittleEndian(value, buf);
+                map[key] = value;
+            }
         }
 
         MutableColumns getArguments(const DataTypes & argument_types, size_t /* arg_num */) const
@@ -127,7 +154,7 @@ namespace
 
 struct AggregateFunctionDistinctByGenericData
 {
-    using Map = HashMapWithSavedHash<StringRef, StringRef, StringRefHash>;
+    using Map = HashMapWithSavedHash<std::string_view, std::string_view, StringViewHash>;
     using Self = AggregateFunctionDistinctByGenericData;
     Map map;
 
@@ -135,7 +162,7 @@ struct AggregateFunctionDistinctByGenericData
     {
         const IColumn * key_column = columns[arg_num];
         const char * begin = nullptr;
-        StringRef key = key_column->serializeValueIntoArena(row_num, *arena, begin);
+        std::string_view key = key_column->serializeValueIntoArena(row_num, *arena, begin, nullptr);
 
         typename Map::LookupResult it;
         bool inserted;
@@ -143,14 +170,13 @@ struct AggregateFunctionDistinctByGenericData
         if (inserted)
         {
             const char * val_begin = nullptr;
-            StringRef value(val_begin, 0);
+            size_t total_size = 0;
             for (size_t i = 0; i < arg_num; ++i)
             {
-                auto cur = columns[i]->serializeValueIntoArena(row_num, *arena, val_begin);
-                value.data = cur.data - value.size;
-                value.size += cur.size;
+                auto cur = columns[i]->serializeValueIntoArena(row_num, *arena, val_begin, nullptr);
+                total_size += cur.size();
             }
-            it->getMapped() = value;
+            it->getMapped() = std::string_view(val_begin, total_size);
             //nested_func->add(nested_place, columns, row_num, arena);
         }
     }
@@ -158,10 +184,10 @@ struct AggregateFunctionDistinctByGenericData
     void merge(const Self & rhs, Arena * arena)
     {
         auto & mutable_rhs_map = const_cast<Map &>(rhs.map);
-        mutable_rhs_map.mergeToViaEmplace(map,[&](StringRef dst, StringRef src, bool found)
+        mutable_rhs_map.mergeToViaEmplace(map, [&](std::string_view & dst, std::string_view & src, bool found)
         {
             if (!found)
-                dst = StringRef(arena->insert(src.data, src.size));
+                dst = std::string_view(arena->insert(src.data(), src.size()), src.size());
         });
     }
 
@@ -181,8 +207,8 @@ struct AggregateFunctionDistinctByGenericData
         readVarUInt(size, buf);
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef key = readStringBinaryInto(*arena, buf);
-            StringRef value = readStringBinaryInto(*arena, buf);
+            std::string_view key = readStringBinaryInto(*arena, buf);
+            std::string_view value = readStringBinaryInto(*arena, buf);
             typename Map::LookupResult it;
             bool inserted;
             map.emplace(ArenaKeyHolder{key, *arena}, it, inserted);
@@ -198,9 +224,10 @@ struct AggregateFunctionDistinctByGenericData
 
         for (const auto & elem : map)
         {
-            const char * begin = elem.getMapped().data;
+            auto mapped = elem.getMapped();
+            ReadBufferFromMemory buf(mapped.data(), mapped.size());
             for (size_t i = 0; i < arg_num; ++i)
-                begin = argument_columns[i]->deserializeAndInsertFromArena(begin);
+                argument_columns[i]->deserializeAndInsertFromArena(buf, nullptr);
         }
         return argument_columns;
     }
@@ -264,7 +291,8 @@ public:
     void create(AggregateDataPtr __restrict place) const override
     {
         new (place) Data;
-        nested_func->create(place);
+        if constexpr (requires (Data & d) { d.value_size; })
+            this->data(place).value_size = this->argument_types[0]->getSizeOfValueInMemory();
     }
 
     void destroy(AggregateDataPtr place) const noexcept override
@@ -361,8 +389,7 @@ public:
                 res.reset(createWithNumericType<
                     AggregateFunctionDistinctBy,
                     AggregateFunctionDistinctByNumericData>(*arguments[1], nested_function, arguments, params));
-
-            if (arguments[0]->getSizeOfValueInMemory() <= sizeof(UInt64))
+            else if (arguments[0]->getSizeOfValueInMemory() <= sizeof(UInt64))
                 res.reset(createWithNumericType<
                     AggregateFunctionDistinctBy,
                     AggregateFunctionDistinctByNumericKeyData>(*arguments[1], nested_function, arguments, params));
