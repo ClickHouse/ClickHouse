@@ -2,6 +2,8 @@ import csv
 import logging
 import os
 import shutil
+import threading
+import time
 import uuid
 from email.errors import HeaderParseError
 
@@ -654,3 +656,135 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_par
     )
     cluster_optimized_traffic = int(cluster_optimized_traffic)
     assert cluster_optimized_traffic == optimized_traffic
+
+
+# --- Kill-query regression test (GitHub issue #98165) ---
+#
+# Before the fix, RemoteQueryExecutor::read() and readAsync() held
+# was_cancelled_mutex while calling processReadTaskRequest().  For
+# icebergS3Cluster (and any other cluster table-function where the task
+# iterator does slow I/O), this caused cancel() to block on that mutex,
+# making the initiator query unkillable.
+#
+# The fix releases was_cancelled_mutex before calling processReadTaskRequest().
+#
+# The key observable difference:
+#   KILL QUERY calls RemoteQueryExecutor::cancel() SYNCHRONOUSLY (the KILL
+#   QUERY command itself blocks until cancel() returns).  Therefore:
+#
+#   Without fix: KILL QUERY blocks for the entire duration of the slow S3
+#                listing, because cancel() must wait for was_cancelled_mutex
+#                which is held by processReadTaskRequest().
+#   With fix:    cancel() acquires was_cancelled_mutex immediately (it is no
+#                longer held during processReadTaskRequest()), so KILL QUERY
+#                returns in a fraction of a second.
+#
+# The test measures how long KILL QUERY itself takes.  If it finishes before
+# the S3 listing delay expires, the fix is working.
+
+_listing_delay_mock_started = False
+_DELAY_MOCK_PORT = "8082"
+_DELAY_MOCK_HOST = "resolver"
+# How long the mock delays every listing request.
+# Must be large enough to clearly distinguish fast (fixed) vs slow (broken).
+_LISTING_DELAY_S = 20
+# Maximum acceptable duration for KILL QUERY to complete with the fix.
+# Must be less than _LISTING_DELAY_S.
+_MAX_KILL_DURATION_S = 5
+
+
+def _start_listing_delay_mock(cluster):
+    global _listing_delay_mock_started
+    if _listing_delay_mock_started:
+        return
+    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
+    start_mock_servers(
+        cluster,
+        script_dir,
+        [("s3_listing_delay_mock.py", "resolver", _DELAY_MOCK_PORT)],
+    )
+    _listing_delay_mock_started = True
+
+
+def test_kill_query_when_task_iterator_is_slow(started_cluster):
+    """Regression test for https://github.com/ClickHouse/ClickHouse/issues/98165
+
+    Before the fix, was_cancelled_mutex was held throughout
+    processReadTaskRequest(), so KILL QUERY would block while waiting for
+    cancel() to acquire that mutex.  Because processReadTaskRequest() was
+    stuck waiting for a slow S3 listing (simulated here by a mock with a
+    _LISTING_DELAY_S-second delay), KILL QUERY itself would hang for the
+    entire delay duration.
+
+    KILL QUERY calls RemoteQueryExecutor::cancel() synchronously from the
+    KILL QUERY thread (InterpreterKillQuery → ProcessList::sendCancelToQuery
+    → QueryStatus::cancelQuery → ... → RemoteQueryExecutor::cancel()).
+    Therefore, if cancel() blocks on was_cancelled_mutex, the KILL QUERY
+    command blocks too.
+
+    After the fix, was_cancelled_mutex is released before calling
+    processReadTaskRequest(), so cancel() runs immediately and KILL QUERY
+    returns well before the S3 listing delay expires.
+    """
+    _start_listing_delay_mock(started_cluster)
+
+    node = started_cluster.instances["s0_0_0"]
+    query_id = str(uuid.uuid4())
+    error_container = []
+
+    def run_query():
+        _, error = node.query_and_get_answer_with_error(
+            f"""
+            SELECT count(*) FROM s3Cluster(
+                'cluster_simple',
+                'http://{_DELAY_MOCK_HOST}:{_DELAY_MOCK_PORT}/test-bucket/data/*.csv',
+                'CSV', 'value UInt64')
+            SETTINGS receive_timeout=120, send_timeout=120
+            """,
+            query_id=query_id,
+        )
+        error_container.append(error)
+
+    query_thread = threading.Thread(target=run_query, daemon=True)
+    query_thread.start()
+
+    # Wait for the query to reach processReadTaskRequest() and block on the
+    # slow S3 listing.  Workers connect and immediately send ReadTaskRequest,
+    # so a 2-second pause is sufficient.
+    time.sleep(2)
+
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.processes WHERE query_id='{query_id}'"
+            ).strip()
+        )
+        == 1
+    ), "Query should still be running (stuck in processReadTaskRequest()) before KILL QUERY"
+
+    # Time KILL QUERY.
+    #
+    # KILL QUERY → ProcessList::sendCancelToQuery → QueryStatus::cancelQuery
+    #            → RemoteQueryExecutor::cancel()
+    #
+    # Without fix: cancel() tries to acquire was_cancelled_mutex, which is
+    #   held by processReadTaskRequest().  It blocks for the remaining mock
+    #   delay (~_LISTING_DELAY_S - 2 seconds ≈ 18 seconds).
+    # With fix:    cancel() acquires the mutex immediately (released before
+    #   processReadTaskRequest()) and returns in milliseconds.
+    kill_start = time.time()
+    node.query(f"KILL QUERY WHERE query_id='{query_id}'")
+    kill_duration = time.time() - kill_start
+
+    assert kill_duration < _MAX_KILL_DURATION_S, (
+        f"KILL QUERY took {kill_duration:.1f}s — expected < {_MAX_KILL_DURATION_S}s. "
+        f"Without the fix, cancel() is blocked by was_cancelled_mutex held in "
+        f"processReadTaskRequest() for the full {_LISTING_DELAY_S}s mock delay. "
+        f"See GitHub issue #98165."
+    )
+
+    # Let the mock delay expire so the query thread finishes naturally.
+    query_thread.join(timeout=_LISTING_DELAY_S + 10)
+    assert not query_thread.is_alive(), (
+        "Query thread did not terminate after mock delay expired"
+    )
