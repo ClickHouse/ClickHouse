@@ -44,6 +44,9 @@ public:
     /// Remove a segment's entry. Called BEFORE the file is deleted from disk (in detach).
     void remove(const FileCacheKey & key, size_t offset);
 
+    /// Check if an entry exists in the index.
+    bool exists(const FileCacheKey & key, size_t offset) const;
+
     struct Entry
     {
         FileCacheKey key;
@@ -59,7 +62,6 @@ public:
 private:
     std::unique_ptr<rocksdb::DB> db;
     LoggerPtr log;
-    std::atomic<Int64> element_count{0};
 
     static std::string serializeKey(const FileCacheKey & key, size_t offset);
     static void deserializeKey(std::string_view slice, FileCacheKey & key, size_t & offset);

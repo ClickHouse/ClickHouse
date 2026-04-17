@@ -622,8 +622,18 @@ bool FileSegment::reserve(
     /// so deferring avoids redundant contention on creation/removal of empty segments.
     if (is_first_reservation)
     {
-        if (auto index = cache->getRocksDBIndex())
-            index->put(file_key, offset(), /* size */ -1, getKeyMetadata()->origin, /* is_new_entry */ true);
+        try
+        {
+            if (auto index = cache->getRocksDBIndex())
+            {
+                index->put(file_key, offset(), /* size */ -1, getKeyMetadata()->origin, /* is_new_entry */ true);
+                added_to_rocksdb = true;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to add entry to RocksDB index");
+        }
     }
 #endif
 
@@ -650,11 +660,18 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
     chassert(fs::file_size(getPath()) == downloaded_size);
 
 #if USE_ROCKSDB
-    if (!cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
-
-    if (auto index = cache->getRocksDBIndex())
-        index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin, /* is_new_entry */ false);
+    try
+    {
+        if (auto index = cache->getRocksDBIndex())
+        {
+            index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin, /* is_new_entry */ !added_to_rocksdb);
+            added_to_rocksdb = true;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to update entry in RocksDB index");
+    }
 #endif
 }
 
@@ -752,11 +769,18 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         setDownloadState(State::DOWNLOADED, lock);
 
 #if USE_ROCKSDB
-        if (!cache)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
-
-        if (auto index = cache->getRocksDBIndex())
-            index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin, /* is_new_entry */ false);
+        try
+        {
+            if (auto index = cache->getRocksDBIndex())
+            {
+                index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin, /* is_new_entry */ !added_to_rocksdb);
+                added_to_rocksdb = true;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to update entry in RocksDB index");
+        }
 #endif
     }
     else
@@ -1125,6 +1149,26 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         }
     }
 
+#if USE_ROCKSDB
+    if (cache)
+    {
+        if (auto index = cache->getRocksDBIndex())
+        {
+            bool in_rocksdb = index->exists(file_key, offset());
+
+            if (reserved_size == 0)
+                chassert(!in_rocksdb);
+            else if (added_to_rocksdb)
+                chassert(in_rocksdb);
+            else
+                chassert(!in_rocksdb);
+
+            if (download_state == State::DETACHED)
+                chassert(!in_rocksdb);
+        }
+    }
+#endif
+
     return true;
 }
 
@@ -1219,16 +1263,17 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     /// If a crash happens between index removal and file deletion,
     /// the worst case is an orphaned file (leaked disk space),
     /// which is safer than a stale index entry pointing to a missing file.
-    ///
-    /// Only remove if the segment was ever reserved (i.e. has a RocksDB entry).
-    /// Segments that were created but never reserved have no index entry.
-    if (reserved_size > 0)
+    if (added_to_rocksdb)
     {
-        if (!cache)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
-
-        if (auto index = cache->getRocksDBIndex())
-            index->remove(file_key, offset());
+        try
+        {
+            if (auto index = cache->getRocksDBIndex())
+                index->remove(file_key, offset());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove entry from RocksDB index");
+        }
     }
 #endif
 }

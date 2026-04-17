@@ -488,7 +488,6 @@ cache_storage_properties = {
     "use_split_cache": true_false_lambda,
     "split_cache_ratio": threshold_generator(0.2, 0.2, 0.01, 0.99),
     "write_cache_per_user_id_directory": true_false_lambda,
-    "use_rocksdb_metadata_index": true_false_lambda,
 }
 
 

@@ -1687,11 +1687,15 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
             auto file_size = fs::file_size(path, ec);
             if (ec)
             {
+                chassert(ec != std::errc::no_such_file_or_directory);
                 LOG_WARNING(log, "Cannot stat {}: {}, removing from index", path, ec.message());
                 cleanup_on_failure();
                 continue;
             }
             size = file_size;
+
+            /// Update RocksDB with the actual size so next startup does not need to stat again.
+            rocksdb_index->put(entry.key, entry.offset, static_cast<Int64>(size), origin, /* is_new_entry */ false);
         }
 
         if (!size)
@@ -1702,7 +1706,7 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
             continue;
         }
 
-        if (!loadFileSegment(entry.key, entry.offset, size, key_metadata, origin))
+        if (!loadFileSegment(entry.key, entry.offset, size, key_metadata, origin, /* is_in_rocksdb_index */ true))
         {
             auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
             LOG_WARNING(log, "Cannot load file segment {}:{} (size: {}), removing {}", entry.key, entry.offset, size, path);
@@ -2004,7 +2008,8 @@ bool FileCache::loadFileSegment(
     size_t offset,
     size_t size,
     const KeyMetadataPtr & key_metadata,
-    const OriginInfo & origin)
+    const OriginInfo & origin,
+    bool is_in_rocksdb_index)
 {
     bool limits_satisfied;
     IFileCachePriority::IteratorPtr cache_it;
@@ -2031,6 +2036,12 @@ bool FileCache::loadFileSegment(
             this,
             key_metadata,
             cache_it);
+
+#if USE_ROCKSDB
+        file_segment->added_to_rocksdb = is_in_rocksdb_index;
+#else
+        UNUSED(is_in_rocksdb_index);
+#endif
 
         bool inserted = key_metadata->emplaceUnlocked(
             offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
@@ -2162,6 +2173,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         if (segment.cache_it)
         {
             bool inserted = false;
+            FileSegment * file_segment_ptr = nullptr;
             try
             {
                 auto file_segment = std::make_shared<FileSegment>(
@@ -2175,6 +2187,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                     key_metadata,
                     segment.cache_it);
 
+                file_segment_ptr = file_segment.get();
                 inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
             }
             catch (...)
@@ -2188,7 +2201,18 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                 LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, segment.offset, segment.size, segment.path.string());
 #if USE_ROCKSDB
                 if (rocksdb_index)
-                    rocksdb_index->put(key, segment.offset, static_cast<Int64>(segment.size), origin_info, /* is_new_entry */ true);
+                {
+                    try
+                    {
+                        rocksdb_index->put(key, segment.offset, static_cast<Int64>(segment.size), origin_info, /* is_new_entry */ true);
+                        file_segment_ptr->added_to_rocksdb = true;
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        chassert(false);
+                    }
+                }
 #endif
             }
             else
