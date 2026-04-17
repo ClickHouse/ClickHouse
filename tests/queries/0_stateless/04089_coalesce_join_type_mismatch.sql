@@ -14,7 +14,10 @@ CREATE TABLE t3_04089 (x UInt32) ENGINE = Memory;
 INSERT INTO t3_04089 VALUES (1);
 
 SET query_plan_use_new_logical_join_step = 0;
-SELECT coalesce(t2_04089.x, t1_04089.x) FROM t1_04089 FULL OUTER JOIN t2_04089 USING (x) FULL OUTER JOIN t3_04089 USING (x);
+-- Chained `FULL OUTER JOIN ... USING` across three tables is not supported by the old analyzer,
+-- so pin the query to the new analyzer.
+SELECT coalesce(t2_04089.x, t1_04089.x) FROM t1_04089 FULL OUTER JOIN t2_04089 USING (x) FULL OUTER JOIN t3_04089 USING (x)
+SETTINGS enable_analyzer = 1;
 
 DROP TABLE t1_04089;
 DROP TABLE t2_04089;
