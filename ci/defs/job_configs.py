@@ -710,7 +710,12 @@ class JobConfigs:
         True
     ).parametrize(
         Job.ParamSet(
-            parameter="arm_asan, azure, parallel",
+            parameter="arm_asan, azure, parallel, 1/2",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_ASAN],
+        ),
+        Job.ParamSet(
+            parameter="arm_asan, azure, parallel, 2/2",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
             requires=[ArtifactNames.CH_ARM_ASAN],
         ),
