@@ -331,8 +331,17 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
     };
 
     QueryPlan::Node * stats_node = build_filter_node;
+    const ActionsDAG::Node * filter_node = nullptr;
     while (stats_node)
     {
+        if (const auto * filter_step = typeid_cast<const FilterStep *>(stats_node->step.get()))
+        {
+            const auto & dag = filter_step->getExpression();
+            const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+            if (predicate)
+                filter_node = predicate;
+        }
+
         if (const auto * join_step = typeid_cast<const JoinStepLogical *>(stats_node->step.get()))
         {
             UInt64 n = 0;
@@ -444,7 +453,12 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
             if (!estimator)
                 return std::nullopt;
 
-            auto profile = estimator->estimateRelationProfile();
+            const auto * prewhere_info = merge_tree_step->getPrewhereInfo().get();
+            const auto * prewhere_node = prewhere_info
+                ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+                : nullptr;
+
+            auto profile = estimator->estimateRelationProfile(merge_tree_step->getStorageMetadata(), filter_node, prewhere_node);
 
             /// --- Determining 'n' (Estimated Number of Distinct Values) ---
 
