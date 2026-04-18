@@ -1,3 +1,4 @@
+#include <Core/CompareHelper.h>
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -13,6 +14,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <absl/container/flat_hash_map.h>
+#include <base/types.h>
 #include <shared_mutex>
 
 namespace ProfileEvents
@@ -554,6 +556,73 @@ ALWAYS_INLINE int compareSortKeyRows(
     return 0;
 }
 
+/// Galloping (exponential) lower-bound on the main side: find the smallest `i` in `[begin, end)`
+/// such that `compareSortKeyRows(main[i], patch[p_row]) >= 0`. When `patch_rows ≪ main_rows`, this
+/// collapses merge complexity from `O(m + p)` to `O(p log(m/p))` comparisons, matching the
+/// information-theoretic optimum for merging unbalanced sorted streams. With `gap = 1` (dense
+/// patches) it degrades to 1–2 extra comparisons per step vs. linear scan, so no adaptive
+/// fallback is needed.
+ALWAYS_INLINE size_t gallopingLowerBound(
+    const SortKeyColumns & m_sk,
+    size_t begin,
+    size_t end,
+    const SortKeyColumns & p_sk,
+    size_t p_row,
+    const std::vector<UInt8> & reverse_flags)
+{
+    size_t prev = 0;
+    size_t step = 1;
+    while (begin + step <= end && compareSortKeyRows(m_sk, begin + step - 1, p_sk, p_row, reverse_flags) < 0)
+    {
+        prev = step;
+        step = step < (std::numeric_limits<size_t>::max() >> 1) ? step << 1 : std::numeric_limits<size_t>::max();
+    }
+
+    size_t lo = begin + prev;
+    size_t hi = std::min(end, begin + step);
+    while (lo < hi)
+    {
+        size_t mid = lo + (hi - lo) / 2;
+        if (compareSortKeyRows(m_sk, mid, p_sk, p_row, reverse_flags) < 0)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
+/// Galloping upper-bound on the main side: first `i` in `[begin, end)` with
+/// `compareSortKeyRows(main[i], patch[p_row]) > 0`. Used to find the exclusive end of the
+/// equal-sort-key run on the main side without a linear probe.
+ALWAYS_INLINE size_t gallopingUpperBound(
+    const SortKeyColumns & m_sk,
+    size_t begin,
+    size_t end,
+    const SortKeyColumns & p_sk,
+    size_t p_row,
+    const std::vector<UInt8> & reverse_flags)
+{
+    size_t prev = 0;
+    size_t step = 1;
+    while (begin + step <= end && compareSortKeyRows(m_sk, begin + step - 1, p_sk, p_row, reverse_flags) <= 0)
+    {
+        prev = step;
+        step = step < (std::numeric_limits<size_t>::max() >> 1) ? step << 1 : std::numeric_limits<size_t>::max();
+    }
+
+    size_t lo = begin + prev;
+    size_t hi = std::min(end, begin + step);
+    while (lo < hi)
+    {
+        size_t mid = lo + (hi - lo) / 2;
+        if (compareSortKeyRows(m_sk, mid, p_sk, p_row, reverse_flags) <= 0)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
 /// Pack `(block_number, block_offset)` into a `UInt128`: `block_offset` in the low 64 bits,
 /// `block_number` in the high 64 bits. `UInt128TrivialHash` takes the low limb as the hash,
 /// so putting the per-row-unique `block_offset` there keeps buckets well spread.
@@ -612,45 +681,30 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     size_t m = 0;
     size_t p = 0;
 
+    /// The patch stream is typically much smaller than the main stream, so we drive the merge
+    /// from the patch side using galloping search into main. This skips over long runs of main
+    /// rows below the current patch key in `O(log gap)` comparisons per patch row.
     while (m < m_rows && p < p_rows)
     {
-        int cmp = sort_key_names.empty() ? 0 : compareSortKeyRows(m_sk, m, p_sk, p, reverse_flags);
+        m = gallopingLowerBound(m_sk, m, m_rows, p_sk, p, reverse_flags);
+        if (m == m_rows)
+            break;
 
-        if (cmp < 0)
-        {
-            ++m;
-            continue;
-        }
+        int cmp = compareSortKeyRows(m_sk, m, p_sk, p, reverse_flags);
         if (cmp > 0)
         {
+            /// `main[m] > patch[p]`: the current patch row has no match in main. Advance past it.
             ++p;
             continue;
         }
 
-        /// Equal-sort-key run on both sides. Find the run extents.
-        size_t m_run_end = m + 1;
-        if (!sort_key_names.empty())
-        {
-            while (m_run_end < m_rows
-                && compareSortKeyRows(m_sk, m_run_end, p_sk, p, reverse_flags) == 0)
-                ++m_run_end;
-        }
-        else
-        {
-            m_run_end = m_rows;
-        }
+        /// `cmp == 0`: equal-sort-key run on both sides. Find the run extents. Gallop on the main
+        /// side; the patch side is scanned linearly because `p_rows` is small.
+        size_t m_run_end = gallopingUpperBound(m_sk, m + 1, m_rows, p_sk, p, reverse_flags);
 
         size_t p_run_end = p + 1;
-        if (!sort_key_names.empty())
-        {
-            while (p_run_end < p_rows
-                && compareSortKeyRows(p_sk, p_run_end, p_sk, p, reverse_flags) == 0)
-                ++p_run_end;
-        }
-        else
-        {
-            p_run_end = p_rows;
-        }
+        while (p_run_end < p_rows && compareSortKeyRows(p_sk, p_run_end, p_sk, p, reverse_flags) == 0)
+            ++p_run_end;
 
         if (m_run_end - m == 1 && p_run_end - p == 1)
         {

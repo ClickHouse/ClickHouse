@@ -10013,19 +10013,6 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     return std::make_shared<AlterConversions>(commands, patches_for_reader, query_context);
 }
 
-bool MergeTreeData::isV2LightweightUpdateUsable(const ContextPtr & /*query_context*/) const
-{
-    if (!(*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches])
-        return false;
-
-    /// v2 supports every sort-key shape — plain, expression, `Nullable`, `LowCardinality`,
-    /// reverse-flag — because the patch part stores the physical **source columns** of the
-    /// sort-key expression on disk, and the sort-key `ExpressionActions` is recovered from the
-    /// target table's current `StorageMetadataPtr` and replayed at apply time (the same
-    /// mechanism FINAL uses for base parts). See `getPatchPartMetadataV2` for details.
-    return true;
-}
-
 StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const
 {
     std::lock_guard lock(patch_parts_metadata_mutex);
@@ -10116,7 +10103,7 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     /// by `MutationsInterpreter::validateUpdateColumns`, so there's no conflict with `commands`.
     /// Deduplicate against `system_columns` since `_block_number`/`_block_offset` could
     /// technically be inputs to the sort-key expression for tables that reference them.
-    if (isV2LightweightUpdateUsable(query_context))
+    if ((*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches])
     {
         auto main_metadata = getInMemoryMetadataPtr(query_context, false);
         const auto & main_columns = main_metadata->getColumns();
@@ -10168,7 +10155,7 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     /// unconditionally (since v1 patches need it as the sort-key tie-breaker), but v2's sink
     /// header excludes it, and the pipeline-builder would otherwise bail with a "Block structure
     /// mismatch". Project it out here so the sink sees exactly what it declared.
-    if (isV2LightweightUpdateUsable(query_context))
+    if ((*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches])
     {
         const auto & pipeline_header = *pipeline_builder.getSharedHeader();
         if (pipeline_header.has("_part_offset"))

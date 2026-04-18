@@ -1359,13 +1359,6 @@ public:
     /// never share a partition by construction of the partition-id hash).
     StorageMetadataPtr getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
 
-    /// Returns true iff the `enable_v2_lightweight_update_patches` setting is on AND the table's
-    /// sort key consists only of plain column references (no expressions). v2 patches must carry
-    /// the sort-key columns as physical storage, which is impossible for expression sort keys like
-    /// `ORDER BY cityHash64(id)` without persisting + replaying the expression on read. Falls back
-    /// to v1 for such tables.
-    bool isV2LightweightUpdateUsable(const ContextPtr & query_context) const;
-
     static MergingParams getMergingParamsForPatchParts();
 
     std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override;

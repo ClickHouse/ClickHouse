@@ -890,13 +890,7 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
-
-    /// Decide patch-part on-disk format (v1 vs v2) based on the MergeTree setting. For v2 the
-    /// sort key is pulled straight from the target table's current `StorageMetadataPtr` — both
-    /// here, when building the patch's write-time metadata, and later in
-    /// `MergeTreeData::getPatchPartMetadata` when readers reopen the patch. Nothing about the
-    /// sort key is persisted in `source_parts.dat`.
-    const bool v2_patches_enabled = isV2LightweightUpdateUsable(context_copy);
+    const bool v2_patches_enabled = (*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches];
     StorageMetadataPtr patch_metadata;
 
     if (v2_patches_enabled)

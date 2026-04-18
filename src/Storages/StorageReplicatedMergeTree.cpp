@@ -234,6 +234,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
+    extern const MergeTreeSettingsBool enable_v2_lightweight_update_patches;
 }
 
 namespace FailPoints
@@ -8431,11 +8432,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     }
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
-
-    /// See the matching block in `StorageMergeTree::updateLightweight`: v2 patches pull their
-    /// sort key from the target table's current `StorageMetadataPtr`; nothing about the sort
-    /// key is persisted in `source_parts.dat`.
-    const bool v2_patches_enabled = isV2LightweightUpdateUsable(context_copy);
+    bool v2_patches_enabled = (*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches];
     StorageMetadataPtr patch_metadata;
 
     if (v2_patches_enabled)
