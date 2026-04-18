@@ -3,6 +3,7 @@
 -- containment assumption (min of the two input sizes)
 
 SET enable_analyzer = 1;
+SET enable_parallel_replicas = 0;
 SET use_statistics = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_join_swap_table = 'auto';
