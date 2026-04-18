@@ -231,6 +231,17 @@ int saveMetaData(const char* filenames[], int count, int output_fd, const MetaDa
         memcpy(output + pointer, reinterpret_cast<char*>(files_data + i), sizeof(FileData));
         pointer += sizeof(FileData);
 
+        /// Validate name_length against the actual filename length to prevent
+        /// out-of-bounds reads (heap overflow) from a crafted name_length value.
+        size_t actual_name_length = strlen(filenames[i]);
+        if (files_data[i].name_length > actual_name_length)
+        {
+            fprintf(stderr, "Error: name_length (%zu) exceeds actual filename length (%zu) for file '%s'\n",
+                static_cast<size_t>(files_data[i].name_length), actual_name_length, filenames[i]);
+            munmap(output, pointer + count * sizeof(FileData) + sum_file_size + sizeof(MetaData));
+            return 1;
+        }
+
         /// Save file name
         memcpy(output + pointer, filenames[i], files_data[i].name_length);
         pointer += files_data[i].name_length;
