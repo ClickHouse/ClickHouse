@@ -792,17 +792,12 @@ class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasCo
         /// positions in the query would end up with different expressions (one plain, one wrapped
         /// in `identity`) for the same alias, triggering `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
         if (auto it = alias_wrapped_in_identity.find(alias_name); it != alias_wrapped_in_identity.end())
-        {
-            column_expression->setAlias(alias_name);
-            return it->second ? wrapInIdentity(column_expression, alias_name) : column_expression;
-        }
+            return finalizeExpansion(column_expression, alias_name, it->second);
 
         /// Compute the tree hash BEFORE setting the alias so that two `ALIAS` columns that
         /// share the same underlying expression are recognized as duplicates.
         auto expression_hash = column_expression->getTreeHash(
             {.compare_aliases = false, .compare_types = true, .ignore_cte = false});
-
-        column_expression->setAlias(alias_name);
 
         /// First alias gets the bare expression; every subsequent distinct alias that shares the
         /// same expression tree is wrapped in `identity` so the Planner keeps them as separate
@@ -810,13 +805,26 @@ class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasCo
         /// header loses a column — see #85895).
         const bool already_used = !seen_expression_hashes.emplace(expression_hash).second;
         alias_wrapped_in_identity.emplace(alias_name, already_used);
-        return already_used ? wrapInIdentity(column_expression, alias_name) : column_expression;
+        return finalizeExpansion(column_expression, alias_name, already_used);
     }
 
-    QueryTreeNodePtr wrapInIdentity(const QueryTreeNodePtr & inner, const String & alias_name)
+    /// Attaches the alias to exactly one node — either the bare expression or the `identity`
+    /// wrapper, never both. Setting the alias on the inner expression *and* on the wrapper
+    /// produces `identity(X AS e) AS e`, which the analyzer rejects with
+    /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS` because the same alias is bound to two distinct trees.
+    QueryTreeNodePtr finalizeExpansion(const QueryTreeNodePtr & column_expression, const String & alias_name, bool wrap)
     {
+        if (!wrap)
+        {
+            column_expression->setAlias(alias_name);
+            return column_expression;
+        }
+
+        /// Make sure no stale alias is lingering on the inner node before wrapping.
+        column_expression->removeAlias();
+
         auto identity_function_node = std::make_shared<FunctionNode>("identity");
-        identity_function_node->getArguments().getNodes().push_back(inner);
+        identity_function_node->getArguments().getNodes().push_back(column_expression);
         auto identity_function = FunctionFactory::instance().get("identity", context);
         identity_function_node->resolveAsFunction(identity_function->build(identity_function_node->getArgumentColumns()));
         identity_function_node->setAlias(alias_name);
