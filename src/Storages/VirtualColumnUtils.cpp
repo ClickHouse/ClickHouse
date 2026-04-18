@@ -214,9 +214,13 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
         if (!partition_strategy.has_value())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected partition strategy to be specified");
 
-        /// If partition_strategy == none, we add hive columns, if present, to virtual columns.
-        if (context->getSettingsRef()[Setting::use_hive_partitioning]
-            && partition_strategy == PartitionStrategyFactory::StrategyType::NONE)
+        /// If `partition_strategy == none`, we expose hive-style partition columns (`key=value`
+        /// segments in the file path) as virtual columns whenever we can detect them. The set of
+        /// virtual columns has to be fixed at CREATE TABLE / DESCRIBE time, so we do *not* gate
+        /// this on the `use_hive_partitioning` session setting — that setting still controls
+        /// whether hive columns participate in physical schema inference and whether they get
+        /// populated at read time, but the column *existence* must be stable across queries.
+        if (partition_strategy == PartitionStrategyFactory::StrategyType::NONE)
         {
             auto hive_columns = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
             for (const auto & column : hive_columns)
