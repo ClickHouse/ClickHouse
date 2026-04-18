@@ -492,8 +492,28 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(
                 max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
             }
         }
-        if (has_left && has_right && max_ndv > 0)
+        if (!has_left || !has_right)
+            continue;
+
+        if (max_ndv > 0)
+        {
             info.value = std::min(info.value, 1.0 / static_cast<double>(max_ndv));
+        }
+        else
+        {
+            /// Transitive-only equi-join with unknown NDVs along the class.
+            /// Apply the same PK-FK containment fallback as for direct edges
+            /// (see computeSelectivity(edge)): selectivity = 1 / max(lhs_rows, rhs_rows).
+            info.trusted = false;
+            auto lhs_rows = getEstimatedRows(left);
+            auto rhs_rows = getEstimatedRows(right);
+            if (lhs_rows && rhs_rows)
+            {
+                UInt64 max_rows = std::max(*lhs_rows, *rhs_rows);
+                if (max_rows > 0)
+                    info.value = std::min(info.value, 1.0 / static_cast<double>(max_rows));
+            }
+        }
     }
 
     return info;
