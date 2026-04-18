@@ -301,9 +301,12 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
+        /// Only propagate when the inner DP used real NDVs. Untrusted estimates
+        /// underestimate (selection bias) and would mislead the parent swap.
+        bool trusted = join_step->isResultRowsEstimateTrusted();
         return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = join_step->getResultColumnStats(),
+            .estimated_rows = trusted ? join_step->getResultRowsEstimation() : std::nullopt,
+            .column_stats = trusted ? join_step->getResultColumnStats() : std::unordered_map<String, ColumnStats>{},
             .table_name = join_step->getReadableRelationName()};
     }
 
@@ -971,9 +974,15 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             auto lhs_estimation = entry->left->estimated_rows;
             auto rhs_estimation = entry->right->estimated_rows;
 
+            /// Only trust the DP cardinalities when both sides were estimated
+            /// from real stats. An untrusted "small" side is usually much larger
+            /// in reality and would build a huge hash table.
+            bool sides_trustworthy = entry->left->rows_estimate_trusted && entry->right->rows_estimate_trusted;
+
             bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
                 ? optimization_settings.join_swap_table.value()
                 : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
+                    && sides_trustworthy
                     && lhs_estimation.value() < rhs_estimation.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
@@ -1150,7 +1159,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
             relation_names[entry->relations] = join_step->getReadableRelationName();
 
-            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats);
+            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats, entry->rows_estimate_trusted);
 
             auto right_table_key = query_graph_builder.context->statistics_context.getCachedKey(right_child_node);
             if (right_table_key)

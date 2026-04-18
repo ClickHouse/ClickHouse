@@ -135,18 +135,21 @@ public:
 
     bool isOptimized() const { return optimized; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
+    bool isResultRowsEstimateTrusted() const { return result_rows_estimate_trusted; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
         std::optional<UInt64> left_rows_ = {},
         std::optional<UInt64> right_rows_ = {},
-        std::unordered_map<String, ColumnStats> column_stats_ = {})
+        std::unordered_map<String, ColumnStats> column_stats_ = {},
+        bool result_rows_estimate_trusted_ = false)
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
         left_rows_estimation = left_rows_;
         right_rows_estimation = right_rows_;
         result_column_stats = std::move(column_stats_);
+        result_rows_estimate_trusted = result_rows_estimate_trusted_;
     }
 
     void setInputLabels(String left_table_label_, String right_table_label_)
@@ -203,6 +206,10 @@ protected:
     std::optional<UInt64> left_rows_estimation = {};
     std::optional<UInt64> right_rows_estimation = {};
     std::unordered_map<String, ColumnStats> result_column_stats = {};
+    /// Default false so any code path that reads this without calling setOptimized
+    /// stays on the conservative side. The flag only becomes meaningful once
+    /// setOptimized is invoked from the join-order optimizer.
+    bool result_rows_estimate_trusted = false;
     UInt64 right_hash_table_cache_key = 0;
 
     String left_table_label;

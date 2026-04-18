@@ -42,6 +42,7 @@ DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_m
     , cost(0.0)
     , estimated_rows(rows)
     , column_stats(std::move(column_stats_))
+    , rows_estimate_trusted(rows.has_value())
     , relation_id(static_cast<int>(id))
 {
     relations.set(id);
@@ -51,6 +52,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         DPJoinEntryPtr rhs,
         double cost_,
         std::optional<UInt64> cardinality_,
+        bool rows_estimate_trusted_,
         JoinOperator join_operator_,
         JoinMethod join_method_)
     : relations(lhs->relations | rhs->relations)
@@ -58,6 +60,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , right(std::move(rhs))
     , cost(cost_)
     , estimated_rows(cardinality_)
+    , rows_estimate_trusted(rows_estimate_trusted_)
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
@@ -282,6 +285,14 @@ String DPJoinEntry::dump() const
     return fmt::format("Join({})", fmt::join(relations, ","));
 }
 
+/// Selectivity with a `trusted` flag that is false when the NDV-unknown fallback
+/// fired. Consumed by estimateJoinCardinality and the build-side swap heuristic.
+struct SelectivityInfo
+{
+    double value = 1.0;
+    bool trusted = true;
+};
+
 class JoinOrderOptimizer
 {
 public:
@@ -307,11 +318,22 @@ private:
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
     std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
 
-    double computeSelectivity(const JoinActionRef & edge);
-    double computeSelectivity(const std::vector<JoinActionRef *> & edges);
-    double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
+    SelectivityInfo computeSelectivity(const JoinActionRef & edge);
+    SelectivityInfo computeSelectivity(const std::vector<JoinActionRef *> & edges);
+    SelectivityInfo computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
     size_t getColumnStats(BitSet rels, const String & column_name);
     std::optional<UInt64> getEstimatedRows(const BitSet & rels);
+
+    /// Build a DP entry; shared by greedy and DPsize so cardinality and trust
+    /// propagation go through one code path.
+    DPJoinEntryPtr buildDPEntry(
+        DPJoinEntryPtr left,
+        DPJoinEntryPtr right,
+        double cost,
+        SelectivityInfo selectivity,
+        JoinKind join_kind,
+        JoinOperator join_operator,
+        JoinMethod join_method = JoinMethod::Hash);
 
     /// Peridically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
@@ -320,7 +342,7 @@ private:
 
     QueryGraph query_graph;
     std::unordered_map<JoinActionRef, bool> applied;
-    std::unordered_map<JoinActionRef, double> expression_selectivity;
+    std::unordered_map<JoinActionRef, SelectivityInfo> expression_selectivity;
     std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
 
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
@@ -372,57 +394,62 @@ std::optional<UInt64> JoinOrderOptimizer::getEstimatedRows(const BitSet & rels)
     return {};
 }
 
-double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
+SelectivityInfo JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
 {
-    auto [it, inserted] = expression_selectivity.try_emplace(edge, 1.0);
-    auto & selectivity = it->second;
+    auto [it, inserted] = expression_selectivity.try_emplace(edge, SelectivityInfo{});
+    auto & info = it->second;
     if (!inserted)
-        return selectivity;
+        return info;
 
     auto [op, lhs, rhs] = edge.asBinaryPredicate();
 
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-        return 1.0;
+        return SelectivityInfo{};
 
     UInt64 lhs_ndv = getColumnStats(lhs.getSourceRelations(), lhs.getColumnName());
     UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());
     UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
     if (max_ndv > 0)
     {
-        selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+        info.value = std::min(info.value, 1.0 / static_cast<double>(max_ndv));
     }
     else
     {
-        /// Both NDVs unknown — use containment assumption: 1 / min(left_rows, right_rows).
-        /// This preserves the larger side's cardinality, which is the standard heuristic
-        /// for equi-joins without column statistics (e.g. star-schema fact-dimension joins).
+        /// Both NDVs unknown. Fall back to PK-FK containment: output size is
+        /// the smaller side, i.e. selectivity = 1 / max(lhs_rows, rhs_rows).
+        /// Matches the previous implicit behavior of value_or(0) in getColumnStats.
+        info.trusted = false;
         auto lhs_rows = getEstimatedRows(lhs.getSourceRelations());
         auto rhs_rows = getEstimatedRows(rhs.getSourceRelations());
         if (lhs_rows && rhs_rows)
         {
-            UInt64 min_rows = std::min(*lhs_rows, *rhs_rows);
-            if (min_rows > 0)
-                selectivity = std::min(selectivity, 1.0 / static_cast<double>(min_rows));
+            UInt64 max_rows = std::max(*lhs_rows, *rhs_rows);
+            if (max_rows > 0)
+                info.value = std::min(info.value, 1.0 / static_cast<double>(max_rows));
         }
     }
-    return selectivity;
+    return info;
 }
 
-double JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *> & edges)
+SelectivityInfo JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *> & edges)
 {
-    double selectivity = 1.0;
+    SelectivityInfo combined;
     for (const auto & edge : edges)
-        selectivity = std::min(selectivity, computeSelectivity(*edge));
-    return selectivity;
+    {
+        auto edge_info = computeSelectivity(*edge);
+        combined.value = std::min(combined.value, edge_info.value);
+        combined.trusted = combined.trusted && edge_info.trusted;
+    }
+    return combined;
 }
 
 /// Compute selectivity combining direct edges and transitive equivalence classes.
 /// Direct edges and transitive equivalences may cover different columns between
 /// the two relation sets, so both contribute to the overall selectivity.
-double JoinOrderOptimizer::computeSelectivity(
+SelectivityInfo JoinOrderOptimizer::computeSelectivity(
     const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
 {
-    double selectivity = computeSelectivity(edges);
+    SelectivityInfo info = computeSelectivity(edges);
 
     /// Also account for transitively-equivalent columns spanning both sides.
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
@@ -462,26 +489,39 @@ double JoinOrderOptimizer::computeSelectivity(
             }
         }
         if (has_left && has_right && max_ndv > 0)
-            selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+            info.value = std::min(info.value, 1.0 / static_cast<double>(max_ndv));
     }
 
-    return selectivity;
+    return info;
 }
 
 
-static std::optional<UInt64> estimateJoinCardinality(
-    const std::shared_ptr<DPJoinEntry> & left,
-    const std::shared_ptr<DPJoinEntry> & right,
-    double selectivity,
+/// Cardinality estimate plus whether it was derived from trusted NDVs end-to-end.
+struct JoinCardinalityEstimate
+{
+    std::optional<UInt64> cardinality;
+    bool trusted = true;
+};
+
+/// Estimate output cardinality of `left JOIN right`. For inner/cross joins
+/// with untrusted inputs, floor at min(lhs_rows, rhs_rows) (PK-FK lower bound)
+/// so the DP's selection bias does not propagate underestimates that would
+/// flip build/probe onto huge relations.
+static JoinCardinalityEstimate estimateJoinCardinality(
+    const DPJoinEntryPtr & left,
+    const DPJoinEntryPtr & right,
+    SelectivityInfo selectivity,
     JoinKind join_kind = JoinKind::Inner)
 {
+    bool trusted = left->rows_estimate_trusted && right->rows_estimate_trusted && selectivity.trusted;
+
     if (!left->estimated_rows || !right->estimated_rows)
-        return {};
+        return {std::nullopt, trusted};
 
     double lhs = static_cast<double>(left->estimated_rows.value());
     double rhs = static_cast<double>(right->estimated_rows.value());
 
-    double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
+    double joined_rows = std::max(selectivity.value * lhs * rhs, 1.0);
 
     if (join_kind == JoinKind::Left)
         joined_rows = std::max(joined_rows, lhs);
@@ -490,22 +530,39 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (join_kind == JoinKind::Full)
         joined_rows = std::max(joined_rows, lhs + rhs);
 
+    if (!trusted && (isInner(join_kind) || isCrossOrComma(join_kind)))
+        joined_rows = std::max(joined_rows, std::min(lhs, rhs));
+
     /// Use >= to avoid undefined behavior when joined_rows is very close to max UInt64
     /// Due to floating point precision, a value slightly less than max when compared
     /// as double could still overflow when cast to UInt64
     if (joined_rows >= static_cast<double>(std::numeric_limits<UInt64>::max()))
-        return std::numeric_limits<UInt64>::max();
+        return {std::numeric_limits<UInt64>::max(), trusted};
     if (joined_rows < 1)
-        return 1;
-    return static_cast<UInt64>(joined_rows);
+        return {UInt64{1}, trusted};
+    return {static_cast<UInt64>(joined_rows), trusted};
 }
 
 static double computeJoinCost(
-    const std::shared_ptr<DPJoinEntry> & left,
-    const std::shared_ptr<DPJoinEntry> & right,
+    const DPJoinEntryPtr & left,
+    const DPJoinEntryPtr & right,
     double selectivity)
 {
     return left->cost + right->cost + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
+}
+
+DPJoinEntryPtr JoinOrderOptimizer::buildDPEntry(
+    DPJoinEntryPtr left,
+    DPJoinEntryPtr right,
+    double cost,
+    SelectivityInfo selectivity,
+    JoinKind join_kind,
+    JoinOperator join_operator,
+    JoinMethod join_method)
+{
+    auto [cardinality, trusted] = estimateJoinCardinality(left, right, selectivity, join_kind);
+    return std::make_shared<DPJoinEntry>(
+        std::move(left), std::move(right), cost, cardinality, trusted, std::move(join_operator), join_method);
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
@@ -613,17 +670,16 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto selectivity = computeSelectivity(edge, left->relations, right->relations);
-                auto current_cost = computeJoinCost(left, right, selectivity);
+                auto current_cost = computeJoinCost(left, right, selectivity.value);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
                     if (connected && join_kind == JoinKind::Cross)
                         join_kind = JoinKind::Inner;
-                    auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(
                         join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
                         std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
                     applied_edge = std::move(edge);
-                    best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
+                    best_plan = buildDPEntry(left, right, current_cost, selectivity, join_kind.value(), std::move(join_operator));
                     best_i = i;
                     best_j = j;
                 }
@@ -660,11 +716,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Join restriction violated");
 
             auto cost = computeJoinCost(components[best_i], components[best_j], 1.0);
-            auto cardinality = estimateJoinCardinality(components[best_i], components[best_j], 1.0);
+            auto & left_comp = components[std::min(best_i, best_j)];
+            auto & right_comp = components[std::max(best_i, best_j)];
             JoinOperator join_operator(JoinKind::Cross, JoinStrictness::All, JoinLocality::Unspecified);
             /// Use left: min idx, right: max idx to keep original order order of joins
             /// We will swap tables later if needed
-            best_plan = std::make_shared<DPJoinEntry>(components[std::min(best_i, best_j)], components[std::max(best_i, best_j)], cost, cardinality, join_operator);
+            best_plan = buildDPEntry(left_comp, right_comp, cost, SelectivityInfo{}, JoinKind::Cross, std::move(join_operator));
             applied_edge.clear();
         }
 
@@ -784,18 +841,17 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         continue;
 
                     auto selectivity = computeSelectivity(edge, left->relations, right->relations);
-                    auto new_cost = computeJoinCost(left, right, selectivity);
+                    auto new_cost = computeJoinCost(left, right, selectivity.value);
 
                     auto current_best = dp_table.find(combined_relations);
                     if (current_best == dp_table.end() || new_cost < current_best->second->cost)
                     {
                         if (connected && join_kind == JoinKind::Cross)
                             join_kind = JoinKind::Inner;
-                        auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                         JoinOperator join_operator(
                             join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
                             std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
-                        auto new_best_plan = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
+                        auto new_best_plan = buildDPEntry(left, right, new_cost, selectivity, join_kind.value(), std::move(join_operator));
 
                         LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
                             new_best_plan->dump(), new_best_plan->left->dump(), new_best_plan->right->dump(),

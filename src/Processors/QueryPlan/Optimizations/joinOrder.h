@@ -31,6 +31,11 @@ struct DPJoinEntry
     std::optional<UInt64> estimated_rows = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
+    /// True when every NDV along the DP path was known; false once any edge
+    /// fell back to row-count containment. Gates decisions that misfire on
+    /// untrusted estimates: propagation to parent optimizer and build-side swap.
+    bool rows_estimate_trusted = true;
+
     /// For join nodes
     JoinOperator join_operator;
     JoinMethod join_method = JoinMethod::None;
@@ -46,6 +51,7 @@ struct DPJoinEntry
                 DPJoinEntryPtr rhs,
                 double cost_,
                 std::optional<UInt64> cardinality_,
+                bool rows_estimate_trusted_,
                 JoinOperator join_operator_,
                 JoinMethod join_method_ = JoinMethod::Hash);
 
