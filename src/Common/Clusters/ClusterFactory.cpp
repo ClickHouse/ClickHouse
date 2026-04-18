@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -362,35 +363,38 @@ void ClusterFactory::reloadFromConfig(
 
 void ClusterFactory::initialize(const String & data_path)
 {
-    std::lock_guard lock(mutex);
-    if (initialized)
-        return;
-
-    auto global_context = Context::getGlobalContextInstance();
-    if (!global_context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory::initialize called before global context exists");
-
-    const String metadata_root = (std::filesystem::path(data_path) / "cluster_metadata").string();
-    shards_metadata_storage = ShardsMetadataStorage::create(
-        global_context, (std::filesystem::path(metadata_root) / "shards").string());
-    clusters_metadata_storage = ClustersMetadataStorage::create(
-        global_context, (std::filesystem::path(metadata_root) / "clusters").string());
-    reloadSQLDefinitionsLocked();
-    initialized = true;
-    LOG_INFO(log, "ClusterFactory initialized at {}", metadata_root);
-
-    if ((shards_metadata_storage->isReplicated() || clusters_metadata_storage->isReplicated()) && !sql_catalog_update_task)
     {
-        sql_catalog_update_task = global_context->getSchedulePool().createTask(
-            StorageID::createEmpty(),
-            "ClusterFactoryClusterCatalogBackend",
-            [this]
-            {
-                updateFunc();
-            });
-        sql_catalog_update_task->activate();
-        sql_catalog_update_task->schedule();
+        std::lock_guard lock(mutex);
+        if (initialized)
+            return;
+
+        auto global_context = Context::getGlobalContextInstance();
+        if (!global_context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory::initialize called before global context exists");
+
+        const String metadata_root = (std::filesystem::path(data_path) / "cluster_metadata").string();
+        shards_metadata_storage = ShardsMetadataStorage::create(
+            global_context, (std::filesystem::path(metadata_root) / "shards").string());
+        clusters_metadata_storage = ClustersMetadataStorage::create(
+            global_context, (std::filesystem::path(metadata_root) / "clusters").string());
+        reloadSQLDefinitionsLocked();
+        initialized = true;
+        LOG_INFO(log, "ClusterFactory initialized at {}", metadata_root);
+
+        if ((shards_metadata_storage->isReplicated() || clusters_metadata_storage->isReplicated()) && !sql_catalog_update_task)
+        {
+            sql_catalog_update_task = global_context->getSchedulePool().createTask(
+                StorageID::createEmpty(),
+                "ClusterFactoryClusterCatalogBackend",
+                [this]
+                {
+                    updateFunc();
+                });
+            sql_catalog_update_task->activate();
+            sql_catalog_update_task->schedule();
+        }
     }
+    refreshSQLCatalogClustersInContextAfterReload({});
 }
 
 void ClusterFactory::shutdown()
@@ -415,10 +419,62 @@ void ClusterFactory::shutdown()
 
 void ClusterFactory::reloadFromSQL()
 {
-    std::lock_guard lock(mutex);
-    if (!initialized || !shards_metadata_storage || !clusters_metadata_storage)
+    std::unordered_set<String> sql_clusters_before_reload;
+    {
+        std::lock_guard lock(mutex);
+        if (!initialized || !shards_metadata_storage || !clusters_metadata_storage)
+            return;
+        for (const auto & [name, _] : loaded_sql_clusters)
+            sql_clusters_before_reload.insert(name);
+        reloadSQLDefinitionsLocked();
+    }
+    refreshSQLCatalogClustersInContextAfterReload(sql_clusters_before_reload);
+}
+
+void ClusterFactory::refreshSQLCatalogClustersInContextAfterReload(const std::unordered_set<String> & sql_clusters_before_reload)
+{
+    auto global_context_instance = Context::getGlobalContextInstance();
+    if (!global_context_instance)
         return;
-    reloadSQLDefinitionsLocked();
+
+    /// `getGlobalContextInstance()` is `ContextPtr` (`shared_ptr<const Context>`); cluster updates require a mutable `Context`.
+    auto global_context = std::const_pointer_cast<Context>(global_context_instance);
+
+    std::vector<String> sql_clusters_after_reload;
+    std::unordered_set<String> sql_clusters_after_reload_set;
+    {
+        std::lock_guard lock(mutex);
+        if (!initialized)
+            return;
+        sql_clusters_after_reload.reserve(loaded_sql_clusters.size());
+        for (const auto & [name, _] : loaded_sql_clusters)
+        {
+            sql_clusters_after_reload.push_back(name);
+            sql_clusters_after_reload_set.insert(name);
+        }
+    }
+
+    for (const auto & cluster_name : sql_clusters_after_reload)
+    {
+        auto reg = getClusterRegistration(cluster_name);
+        if (reg && reg->source == ClusterDefinitionSource::RemoteServersConfig)
+            continue;
+
+        if (auto cluster = tryMaterializeCluster(cluster_name, global_context))
+            global_context->setCluster(cluster_name, cluster);
+    }
+
+    for (const auto & name : sql_clusters_before_reload)
+    {
+        if (sql_clusters_after_reload_set.contains(name))
+            continue;
+
+        auto reg = getClusterRegistration(name);
+        if (reg && reg->source == ClusterDefinitionSource::RemoteServersConfig)
+            continue;
+
+        global_context->removeCluster(name);
+    }
 }
 
 void ClusterFactory::updateFunc()

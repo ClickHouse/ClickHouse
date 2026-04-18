@@ -79,7 +79,7 @@ TEST(AccessRights, GrantWildcard)
     root = {};
     root.grant(AccessType::SELECT, "test");
     root.grantWildcard(AccessType::CREATE_TABLE, "test");
-    ASSERT_EQ(root.toString(), "GRANT CREATE TABLE ON test*.*, GRANT SELECT ON test.*");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON test.*, GRANT CREATE TABLE ON test*.*");
 
     root = {};
     root.grant(AccessType::SELECT, "test");

@@ -19,6 +19,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace Poco::Util
@@ -147,6 +148,10 @@ private:
 
     BackgroundSchedulePoolTaskHolder sql_catalog_update_task;
     void updateFunc();
+
+    /// After `reloadSQLDefinitionsLocked`, push SQL catalog topology into `Context::shared->clusters`
+    /// so `system.clusters` / `tryGetCluster` match Keeper-backed catalog on every node (not only the DDL initiator).
+    void refreshSQLCatalogClustersInContextAfterReload(const std::unordered_set<String> & sql_clusters_before_reload);
 
     static void loadNamedCollectionsIfNeeded();
     static bool namedCollectionExists(const String & name);
