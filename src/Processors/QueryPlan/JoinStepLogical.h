@@ -145,7 +145,9 @@ public:
         bool result_rows_estimate_trusted_ = false)
     {
         optimized = true;
-        result_rows_estimation = estimated_rows_;
+        /// Trust boundary: expose the estimate upstream only when it is trusted,
+        /// so outer cost models fall back to unknown instead of to a fabricated number.
+        result_rows_estimation = result_rows_estimate_trusted_ ? estimated_rows_ : std::nullopt;
         left_rows_estimation = left_rows_;
         right_rows_estimation = right_rows_;
         result_column_stats = std::move(column_stats_);

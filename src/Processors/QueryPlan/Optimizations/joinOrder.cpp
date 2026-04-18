@@ -419,19 +419,16 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edg
     }
     else
     {
-        /// Both NDVs unknown. Fall back to PK-FK containment: FK values are a subset
-        /// of PK values, so every FK-side row matches exactly one PK-side row and the
-        /// result cardinality equals the larger side, i.e. selectivity = 1 / min(rows).
-        /// Star-schema fact-dimension joins are the common case; min-rows would
-        /// collapse to the dimension size and severely underestimate.
+        /// NDV unknown: fall back to `1 / max(rows)` (PostgreSQL-style eqjoinsel).
+        /// Marked untrusted so it cannot leak past the trust boundary.
         info.trusted = false;
         auto lhs_rows = getEstimatedRows(lhs.getSourceRelations());
         auto rhs_rows = getEstimatedRows(rhs.getSourceRelations());
         if (lhs_rows && rhs_rows)
         {
-            UInt64 min_rows = std::min(*lhs_rows, *rhs_rows);
-            if (min_rows > 0)
-                info.value = std::min(info.value, 1.0 / static_cast<double>(min_rows));
+            UInt64 max_rows = std::max(*lhs_rows, *rhs_rows);
+            if (max_rows > 0)
+                info.value = std::min(info.value, 1.0 / static_cast<double>(max_rows));
         }
     }
     return info;
@@ -504,16 +501,15 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(
         else
         {
             /// Transitive-only equi-join with unknown NDVs along the class.
-            /// Apply the same PK-FK containment fallback as for direct edges
-            /// (see computeSelectivity(edge)): selectivity = 1 / min(lhs_rows, rhs_rows).
+            /// Same fallback as for direct edges (see computeSelectivity(edge)).
             info.trusted = false;
             auto lhs_rows = getEstimatedRows(left);
             auto rhs_rows = getEstimatedRows(right);
             if (lhs_rows && rhs_rows)
             {
-                UInt64 min_rows = std::min(*lhs_rows, *rhs_rows);
-                if (min_rows > 0)
-                    info.value = std::min(info.value, 1.0 / static_cast<double>(min_rows));
+                UInt64 max_rows = std::max(*lhs_rows, *rhs_rows);
+                if (max_rows > 0)
+                    info.value = std::min(info.value, 1.0 / static_cast<double>(max_rows));
             }
         }
     }
@@ -540,6 +536,11 @@ static JoinCardinalityEstimate estimateJoinCardinality(
     JoinKind join_kind = JoinKind::Inner)
 {
     bool trusted = left->rows_estimate_trusted && right->rows_estimate_trusted && selectivity.trusted;
+
+    /// Untrusted inputs: return unknown rather than a fabricated number.
+    /// Fabricated values leak into outer cost models via value_or(...) and mislead plan choice.
+    if (!trusted)
+        return {std::nullopt, false};
 
     if (!left->estimated_rows || !right->estimated_rows)
         return {std::nullopt, trusted};
@@ -620,8 +621,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
         throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
             "Failed to find a valid join order, try adding 'greedy' algorithm as fallback to query_plan_optimize_join_order_algorithm setting.");
 
-    LOG_TRACE(log, "Optimized join order in {:.2f} ms, best plan cost: {}, estimated cardinality: {}",
-        static_cast<double>(watch.elapsed()) / 1000.0, best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown");
+    LOG_TRACE(log, "Optimized join order in {:.2f} ms, best plan cost: {}, estimated cardinality: {} (trusted={})",
+        static_cast<double>(watch.elapsed()) / 1000.0,
+        best_plan->cost,
+        best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown",
+        best_plan->rows_estimate_trusted);
     return best_plan;
 }
 

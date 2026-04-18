@@ -1184,6 +1184,13 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
             join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats, entry->rows_estimate_trusted);
 
+            LOG_TRACE(getLogger("optimizeJoin"),
+                "Join {} cardinality: {} (trust={}) -> exposed to upstream as {}",
+                join_step->getReadableRelationName(),
+                entry->estimated_rows ? toString(*entry->estimated_rows) : "unknown",
+                entry->rows_estimate_trusted,
+                join_step->getResultRowsEstimation() ? toString(*join_step->getResultRowsEstimation()) : "unknown");
+
             auto right_table_key = query_graph_builder.context->statistics_context.getCachedKey(right_child_node);
             if (right_table_key)
                 join_step->setRightHashTableCacheKey(right_table_key);
