@@ -879,7 +879,7 @@ def main():
             test_results.results.append(
                 Result.create_from(
                     name="clickhouse-test",
-                    status=Result.StatusExtended.FAIL,
+                    status=Result.Status.FAIL,
                     info="clickhouse-test error",
                 )
             )
@@ -899,7 +899,7 @@ def main():
 
     CH.terminate(force=True)
 
-    status = Result.Status.SUCCESS if args.set_status_success else ""
+    status = Result.Status.OK if args.set_status_success else ""
     Result.create_from(
         results=results, status=status, stopwatch=stop_watch, files=attach_files, info=job_info
     ).complete_job()
