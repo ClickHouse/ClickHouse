@@ -126,7 +126,7 @@ def post():
 
 
 if __name__ == "__main__":
-    status = Result.Status.SUCCESS
+    status = Result.Status.OK
     info = ""
     if "--pre" in sys.argv:
         try:
@@ -135,7 +135,7 @@ if __name__ == "__main__":
             info = f"ERROR: {e}"
             print(info)
             traceback.print_exc()
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
     elif "--post" in sys.argv:
         try:
             post()
@@ -143,7 +143,7 @@ if __name__ == "__main__":
             info = f"ERROR: {e}"
             print(info)
             traceback.print_exc()
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
     else:
         print("Usage: copilot_review_job.py --pre | --post")
         sys.exit(1)

@@ -22,6 +22,7 @@
 #include <Processors/Sinks/NullSink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -32,6 +33,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode set_overflow_mode;
@@ -288,7 +290,7 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     if (set.empty())
         return;
 
-    auto metadata = external_table_->getInMemoryMetadataPtr();
+    auto metadata = external_table_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     const auto & expected_columns = metadata->getColumns().getAllPhysical();
 
     Columns set_elements = set.getSetElements();
@@ -396,6 +398,12 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
+    if (context->hasQueryContext())
+    {
+        if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+    }
+
     bool skip_inplace_build = false;
     fiu_do_on(FailPoints::future_set_from_subquery_skip_inplace_build, skip_inplace_build = true;);
     if (!skip_inplace_build)
@@ -472,6 +480,12 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
+    if (context->hasQueryContext())
+    {
+        if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+    }
+
     bool skip_inplace_build = false;
     fiu_do_on(FailPoints::future_set_from_subquery_skip_inplace_build, skip_inplace_build = true;);
     if (!skip_inplace_build)
