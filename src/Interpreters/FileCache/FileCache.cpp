@@ -1671,13 +1671,19 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
         {
             size = static_cast<UInt64>(entry.size);
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
             /// Validate that the file exists and has the expected size.
+            /// A missing file or a size mismatch is a legitimate crash-recovery scenario
+            /// (e.g. process killed between index write and disk flush), so drop the stale row.
             auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
             std::error_code ec;
             auto actual_file_size = fs::file_size(path, ec);
-            chassert(!ec && actual_file_size == size);
-#endif
+            if (ec || actual_file_size != size)
+            {
+                LOG_WARNING(log, "File {} does not match index entry (size={}, actual={}, error={}), removing from index",
+                            path, size, ec ? 0 : actual_file_size, ec.message());
+                cleanup_on_failure();
+                continue;
+            }
         }
         else
         {
@@ -1687,7 +1693,9 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
             auto file_size = fs::file_size(path, ec);
             if (ec)
             {
-                chassert(ec != std::errc::no_such_file_or_directory);
+                /// A missing file is a legitimate crash-recovery scenario:
+                /// the index entry may have been written just before a crash that prevented the file creation.
+                /// Drop the stale index row and continue.
                 LOG_WARNING(log, "Cannot stat {}: {}, removing from index", path, ec.message());
                 cleanup_on_failure();
                 continue;

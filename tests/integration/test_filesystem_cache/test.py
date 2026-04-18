@@ -133,7 +133,8 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
             boundary_alignment = '1Ki',
             max_size = '1Gi',
             max_elements = 10000000,
-            load_metadata_threads = 30);
+            load_metadata_threads = 30,
+            use_rocksdb_metadata_index = 0);
         """
     )
 

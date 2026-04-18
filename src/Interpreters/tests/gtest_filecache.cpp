@@ -1751,6 +1751,10 @@ TEST_F(FileCacheTest, LoadMetadataParallelism)
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
     settings[FileCacheSetting::load_metadata_threads] = 1;
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    /// The test asserts on log output emitted by `loadMetadataImpl` (filesystem directory scan).
+    /// With `use_rocksdb_metadata_index` enabled, phase 2 would load from the RocksDB index populated
+    /// in phase 1 and skip the scan, so disable it to always exercise the scan code path.
+    settings[FileCacheSetting::use_rocksdb_metadata_index] = false;
 
     /// Use diverse paths so keys hash to many different 3-char prefix directories,
     /// exercising parallel listing across multiple prefix dirs.

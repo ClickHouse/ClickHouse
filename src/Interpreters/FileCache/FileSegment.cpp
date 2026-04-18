@@ -625,6 +625,10 @@ bool FileSegment::reserve(
         {
             if (auto index = cache->getRocksDBIndex())
             {
+                /// Put the index entry and set `added_to_rocksdb` atomically under `FileSegmentGuard::Lock`
+                /// so concurrent readers (e.g. `assertCorrectnessUnlocked`) never observe
+                /// the RocksDB row without the matching in-memory flag.
+                auto lk = lock();
                 index->put(file_key, offset(), /* size */ -1, getKeyMetadata()->origin, /* is_new_entry */ true);
                 added_to_rocksdb = true;
             }
