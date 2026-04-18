@@ -13,6 +13,8 @@
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
+#include <unordered_set>
+
 
 namespace CurrentMetrics
 {
@@ -36,85 +38,65 @@ namespace ErrorCodes
 namespace
 {
 
-    /// Parse a setting string like 'col_a: 1, col_b: 2, col_c: 3' into a map.
-    std::optional<std::unordered_map<String, Int64>> parseColumnFieldIds(const String & str)
+    /// Build the per-column Parquet `field_id` map from the user-facing settings.
+    /// Returns nullopt when the output should carry no field_ids (both overrides empty
+    /// and auto-assign disabled).
+    ///
+    ///   1. Every entry in `overrides` is applied verbatim. Unknown columns are rejected
+    ///      so users get a clear signal when the setting drifts from the query's schema.
+    ///   2. If `auto_assign` is true, the remaining columns are given the smallest unused
+    ///      positive IDs (Iceberg writers conventionally start at 1 and go up).
+    ///   3. Duplicate IDs across overrides / auto-assigned columns are rejected.
+    std::optional<std::unordered_map<String, Int64>> buildColumnFieldIds(
+        const Block & header,
+        const std::vector<std::pair<String, Int32>> & overrides,
+        bool auto_assign)
     {
-        if (str.empty())
+        if (overrides.empty() && !auto_assign)
             return std::nullopt;
+
+        const auto column_names = header.getNames();
+        std::unordered_set<String> known_columns(column_names.begin(), column_names.end());
 
         std::unordered_map<String, Int64> result;
-        size_t pos = 0;
-        while (pos < str.size())
+        std::unordered_set<Int32> used_ids;
+
+        for (const auto & [name, id] : overrides)
         {
-            /// Skip whitespace.
-            while (pos < str.size() && str[pos] == ' ')
-                ++pos;
-            if (pos >= str.size())
-                break;
-
-            /// Read column name.
-            size_t name_start = pos;
-            while (pos < str.size() && str[pos] != ':' && str[pos] != ',')
-                ++pos;
-
-            if (pos >= str.size() || str[pos] != ':')
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid output_format_parquet_column_field_ids: expected 'column_name: field_id' pair, got '{}'",
-                    str.substr(name_start));
-
-            /// Trim trailing whitespace from name.
-            size_t name_end = pos;
-            while (name_end > name_start && str[name_end - 1] == ' ')
-                --name_end;
-
-            String name = str.substr(name_start, name_end - name_start);
-            if (name.empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid output_format_parquet_column_field_ids: empty column name");
-
-            ++pos; /// Skip ':'.
-
-            /// Skip whitespace.
-            while (pos < str.size() && str[pos] == ' ')
-                ++pos;
-
-            /// Read field_id.
-            size_t id_start = pos;
-            while (pos < str.size() && str[pos] != ',' && str[pos] != ' ')
-                ++pos;
-
-            Int64 field_id;
-            try
-            {
-                field_id = std::stoll(str.substr(id_start, pos - id_start));
-            }
-            catch (...)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid output_format_parquet_column_field_ids: cannot parse field_id for column '{}'",
-                    name);
-            }
-
-            if (!result.emplace(name, field_id).second)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid output_format_parquet_column_field_ids: duplicate column name '{}'",
-                    name);
-
-            /// Skip whitespace.
-            while (pos < str.size() && str[pos] == ' ')
-                ++pos;
-
-            /// Skip comma.
-            if (pos < str.size() && str[pos] == ',')
-                ++pos;
+            if (!known_columns.contains(name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids references unknown column '{}'", name);
+            if (!result.emplace(name, id).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids has duplicate column '{}'", name);
+            if (!used_ids.insert(id).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids assigns id {} to more than one column", id);
         }
 
-        if (result.empty())
-            return std::nullopt;
+        if (auto_assign)
+        {
+            Int32 next_id = 1;
+            for (const auto & name : column_names)
+            {
+                if (result.contains(name))
+                    continue;
+                while (used_ids.contains(next_id))
+                    ++next_id;
+                result.emplace(name, next_id);
+                used_ids.insert(next_id);
+                ++next_id;
+            }
+        }
+        else
+        {
+            /// If auto-assign is off we require the map to cover every column so that the
+            /// resulting Parquet file isn't a mix of "has field_id" and "no field_id" columns.
+            if (result.size() != column_names.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids is non-empty but does not cover every output column "
+                    "(enable output_format_parquet_auto_assign_field_ids to fill the gaps automatically)");
+        }
 
         return result;
     }
@@ -165,8 +147,13 @@ namespace
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
 {
-    /// Parse user-specified field IDs from the setting.
-    column_field_ids = parseColumnFieldIds(format_settings.parquet.column_field_ids);
+    /// Resolve Parquet field_ids from the user-facing settings (explicit overrides and/or
+    /// the Iceberg-style auto-assign toggle). The result, if present, is later merged with
+    /// any datalake-provided mapping — user settings win on conflict.
+    column_field_ids = buildColumnFieldIds(
+        *header_,
+        format_settings.parquet.column_field_ids,
+        format_settings.parquet.auto_assign_field_ids);
 
     if (format_settings.parquet.use_custom_encoder)
     {
@@ -430,7 +417,8 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
             CHColumnToArrowColumn::Settings
             {
                 .output_string_as_string = format_settings.parquet.output_string_as_string,
-                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array
+                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array,
+                .output_unsupported_types_as_binary = format_settings.parquet.output_unsupported_types_as_binary,
             });
     }
 

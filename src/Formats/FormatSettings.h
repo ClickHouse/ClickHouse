@@ -169,6 +169,7 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
+        bool output_unsupported_types_as_binary = true;
     } arrow{};
 
     struct
@@ -351,7 +352,15 @@ struct FormatSettings
         bool allow_geoparquet_parser = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
-        String column_field_ids;
+        bool output_unsupported_types_as_binary = false;
+        /// Explicit per-column Parquet `field_id` overrides (column name -> field_id).
+        /// Any column not listed here is either left without a field_id (default) or
+        /// given a fresh sequential id, depending on `auto_assign_field_ids`.
+        std::vector<std::pair<String, Int32>> column_field_ids;
+        /// When true, every output column is assigned a unique, sequential Parquet
+        /// `field_id` starting from 1 (Iceberg-style). Entries from
+        /// `column_field_ids` take precedence; remaining columns fill in around them.
+        bool auto_assign_field_ids = false;
     } parquet{};
 
     struct Pretty

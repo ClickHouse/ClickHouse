@@ -21,6 +21,7 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Core/Field.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 
@@ -221,6 +222,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.max_dictionary_size = settings[Setting::output_format_parquet_max_dictionary_size];
     format_settings.parquet.output_enum_as_byte_array = settings[Setting::output_format_parquet_enum_as_byte_array];
     format_settings.parquet.write_checksums = settings[Setting::output_format_parquet_write_checksums];
+    format_settings.parquet.output_unsupported_types_as_binary = settings[Setting::output_format_parquet_unsupported_types_as_binary];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
@@ -240,7 +242,45 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
-    format_settings.parquet.column_field_ids = settings[Setting::output_format_parquet_column_field_ids].toString();
+    {
+        /// Convert the `Map(String, Int32)` setting into a plain vector of pairs that the
+        /// output format can consume without depending on Field / Map types. Basic structural
+        /// validation happens here; semantic checks (uniqueness of IDs, etc.) happen at
+        /// parquet-output time where we also know the header.
+        const auto & raw = settings[Setting::output_format_parquet_column_field_ids].value;
+        format_settings.parquet.column_field_ids.clear();
+        format_settings.parquet.column_field_ids.reserve(raw.size());
+        for (const auto & entry : raw)
+        {
+            if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids must be a Map(String, Int32)");
+
+            const auto & tuple = entry.safeGet<Tuple>();
+            if (tuple.at(0).getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids keys must be Strings");
+
+            const auto & id_field = tuple.at(1);
+            Int64 id_value = 0;
+            switch (id_field.getType())
+            {
+                case Field::Types::Int64:  id_value = id_field.safeGet<Int64>();  break;
+                case Field::Types::UInt64: id_value = static_cast<Int64>(id_field.safeGet<UInt64>()); break;
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "output_format_parquet_column_field_ids values must be integers");
+            }
+
+            if (id_value < 0 || id_value > std::numeric_limits<Int32>::max())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids value out of Int32 range");
+
+            format_settings.parquet.column_field_ids.emplace_back(
+                tuple.at(0).safeGet<String>(), static_cast<Int32>(id_value));
+        }
+    }
+    format_settings.parquet.auto_assign_field_ids = settings[Setting::output_format_parquet_auto_assign_field_ids];
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
     format_settings.pretty.glue_chunks = settings[Setting::output_format_pretty_glue_chunks].valueOr(2);
@@ -314,6 +354,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_arrow_fixed_string_as_fixed_byte_array];
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
+    format_settings.arrow.output_unsupported_types_as_binary = settings[Setting::output_format_arrow_unsupported_types_as_binary];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];

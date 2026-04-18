@@ -168,7 +168,7 @@ public:
         /// See issue: https://github.com/ClickHouse/ClickHouse/issues/37671
         if (!generate_chunk_from_metadata && !to_read_block.columns())
         {
-            const auto & metadata = storage.getInMemoryMetadataPtr();
+            const auto metadata = storage.getInMemoryMetadataPtr(getContext(), false);
             for (const auto & column : metadata->getColumns().getAllPhysical())
             {
                 bool is_partition_column = false;
@@ -429,13 +429,13 @@ StorageHive::StorageHive(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment_);
-    storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
+    storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, {}, getContext());
 
     VirtualColumnsDescription virtuals_desc;
-    virtuals_desc.addEphemeral("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    virtuals_desc.addEphemeral("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    virtuals_desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    setVirtuals(std::move(virtuals_desc));
+    virtuals_desc.addEphemeral("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    virtuals_desc.addEphemeral("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    virtuals_desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    storage_metadata.setVirtuals(std::move(virtuals_desc));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -495,7 +495,7 @@ void StorageHive::lazyInitialize()
 
 void StorageHive::initMinMaxIndexExpression()
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     ASTPtr partition_key_expr_list = extractKeyExpressionList(partition_by_ast);
     if (!partition_key_expr_list->children.empty())
     {
@@ -858,7 +858,7 @@ void StorageHive::read(
     };
     Block requested_columns_header;
     Block requested_virtuals_header;
-    auto virtuals_ptr = getVirtualsPtr();
+    const auto & virtuals_ptr = storage_snapshot->metadata->virtuals;
     NestedColumnExtractHelper nested_columns_extractor(header_block, case_insensitive_matching());
     for (const auto & column : column_names)
     {
@@ -875,7 +875,7 @@ void StorageHive::read(
             continue;
         }
 
-        if (auto virt = virtuals_ptr->tryGet(column))
+        if (auto virt = virtuals_ptr.tryGet(column, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
             requested_virtuals_header.insert({virt->type->createColumn(), virt->type, virt->name});
     }
 

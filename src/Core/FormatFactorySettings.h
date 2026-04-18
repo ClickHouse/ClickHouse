@@ -1208,6 +1208,9 @@ Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
     DECLARE(Bool, output_format_parquet_write_checksums, true, R"(
 Put crc32 checksums in parquet page headers.
 )", 0) \
+    DECLARE(Bool, output_format_parquet_unsupported_types_as_binary, false, R"(
+Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
+)", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
 )", 0) \
@@ -1408,6 +1411,9 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
     DECLARE(Bool, output_format_arrow_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0) \
+    DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
+Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
+)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
@@ -1563,10 +1569,17 @@ Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/Mult
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0) \
-    DECLARE(String, output_format_parquet_column_field_ids, "", R"(
-Specify Parquet field IDs for output columns. This is useful for producing Parquet files compatible with Apache Iceberg, which identifies columns by `field_id` rather than by name.
+    DECLARE(Map, output_format_parquet_column_field_ids, "", R"(
+Explicit Parquet `field_id` overrides for output columns, keyed by column name. Useful for producing Parquet files compatible with Apache Iceberg, which identifies columns by `field_id` rather than by name.
 
-The value is a comma-separated list of `column_name: field_id` pairs, for example: `'col_a: 1, col_b: 2, col_c: 3'`. Field IDs must be integers. All columns in the output must have a corresponding entry when this setting is non-empty.
+Takes precedence over `output_format_parquet_auto_assign_field_ids` for any column that appears in the map. Field IDs must be non-negative integers and must be unique.
+
+Example: `SET output_format_parquet_column_field_ids = '{"col_a": 1, "col_b": 2, "col_c": 3}'`.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_auto_assign_field_ids, false, R"(
+When enabled, every output column is assigned a unique Parquet `field_id` automatically (sequential, starting at 1), matching the convention used by Apache Iceberg writers. Columns with an explicit override in `output_format_parquet_column_field_ids` keep the overridden value; remaining columns fill in around those overrides.
+
+Disabled by default so that existing Parquet output is unchanged.
 )", 0) \
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.

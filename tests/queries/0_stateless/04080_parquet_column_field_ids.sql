@@ -1,36 +1,55 @@
 -- Tags: no-fasttest
--- Verify that output_format_parquet_column_field_ids writes field IDs into Parquet metadata
--- and does not break data roundtrip. Covers both the custom encoder and the Arrow encoder paths.
+-- Reason: Parquet read/write path is not built in the Fast test image.
+-- Verify that `output_format_parquet_column_field_ids` (Map override) and
+-- `output_format_parquet_auto_assign_field_ids` (Iceberg-style auto assign) write Parquet
+-- field_ids and don't break data roundtrip. Covers both the custom encoder and the
+-- Arrow encoder paths.
 
--- Custom encoder path (default).
+-- Custom encoder path (default): explicit per-column overrides.
 INSERT INTO FUNCTION file('04080_field_ids_custom.parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
-SETTINGS output_format_parquet_column_field_ids = 'a: 10, b: 20, c: 30';
+SETTINGS output_format_parquet_column_field_ids = '{"a": 10, "b": 20, "c": 30}';
 
 SELECT a, b, c FROM file('04080_field_ids_custom.parquet');
 
--- Arrow encoder path.
+-- Arrow encoder path: same override, different codepath.
 INSERT INTO FUNCTION file('04080_field_ids_arrow.parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
-SETTINGS output_format_parquet_column_field_ids = 'a: 100, b: 200, c: 300',
+SETTINGS output_format_parquet_column_field_ids = '{"a": 100, "b": 200, "c": 300}',
          output_format_parquet_use_custom_encoder = 0;
 
 SELECT a, b, c FROM file('04080_field_ids_arrow.parquet');
 
--- Verify that writing without field IDs still works.
+-- Auto-assign only (no overrides): every column gets a sequential field_id starting at 1.
+INSERT INTO FUNCTION file('04080_field_ids_auto.parquet')
+SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
+SETTINGS output_format_parquet_auto_assign_field_ids = 1;
+
+SELECT a, b, c FROM file('04080_field_ids_auto.parquet');
+
+-- Auto-assign + partial override: overrides win; auto-assign fills remaining columns and
+-- skips the ids already claimed.
+INSERT INTO FUNCTION file('04080_field_ids_mixed.parquet')
+SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
+SETTINGS output_format_parquet_auto_assign_field_ids = 1,
+         output_format_parquet_column_field_ids = '{"b": 1}';
+
+SELECT a, b, c FROM file('04080_field_ids_mixed.parquet');
+
+-- Default path (neither setting): writing still works, no field_ids emitted.
 INSERT INTO FUNCTION file('04080_field_ids_none.parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c;
 
 SELECT a, b, c FROM file('04080_field_ids_none.parquet');
 
--- Error: missing colon.
+-- Error: override references a column that isn't in the output.
 SELECT 1 AS a INTO OUTFILE '04080_field_ids_err.parquet' FORMAT Parquet
-SETTINGS output_format_parquet_column_field_ids = 'a 10'; -- { serverError BAD_ARGUMENTS }
+SETTINGS output_format_parquet_column_field_ids = '{"missing": 1}'; -- { serverError BAD_ARGUMENTS }
 
--- Error: duplicate column name.
-SELECT 1 AS a INTO OUTFILE '04080_field_ids_err.parquet' FORMAT Parquet
-SETTINGS output_format_parquet_column_field_ids = 'a: 10, a: 20'; -- { serverError BAD_ARGUMENTS }
+-- Error: override doesn't cover every column when auto-assign is off.
+SELECT 1 AS a, 2 AS b INTO OUTFILE '04080_field_ids_err.parquet' FORMAT Parquet
+SETTINGS output_format_parquet_column_field_ids = '{"a": 1}'; -- { serverError BAD_ARGUMENTS }
 
--- Error: non-numeric field_id.
-SELECT 1 AS a INTO OUTFILE '04080_field_ids_err.parquet' FORMAT Parquet
-SETTINGS output_format_parquet_column_field_ids = 'a: abc'; -- { serverError BAD_ARGUMENTS }
+-- Error: two overrides claim the same id.
+SELECT 1 AS a, 2 AS b INTO OUTFILE '04080_field_ids_err.parquet' FORMAT Parquet
+SETTINGS output_format_parquet_column_field_ids = '{"a": 1, "b": 1}'; -- { serverError BAD_ARGUMENTS }
