@@ -13,7 +13,6 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -30,37 +29,19 @@ private:
     size_t num_arguments;
 
 public:
-    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_, createResultType(nested_))
+    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & /*params_*/)
+        /// Use the nested function's parameters rather than the user-supplied `params_` so
+        /// that the `Array` wrapper's type stays consistent with the nested function.
+        /// Most aggregate functions preserve the params verbatim, in which case the two are
+        /// identical. A few (e.g. the `timeSeries*ToGrid` family) normalize their parameters
+        /// internally (e.g. to `Decimal64` with the column's timestamp scale, or with an
+        /// implicit `predict_offset`). Using `nested_->getParameters()` here preserves that
+        /// normalization on the wrapper side too — which is what makes
+        /// `timeSeries*ToGridArray(...)` states byte-compatible across equivalent inputs
+        /// of different scales, matching the behaviour of the unwrapped functions.
+        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, nested_->getParameters(), createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
-        if (parameters != nested_func->getParameters())
-        {
-            /// This invariant should always hold: the Array combinator does not transform
-            /// parameters, so the wrapped function must have been created with the same
-            /// parameter set. If this fires, it means some code path in
-            /// AggregateFunctionFactory or a combinator wrapper lost/modified parameters.
-            /// The diagnostic info below will identify the exact mismatch.
-            String outer_params_str;
-            String nested_params_str;
-            for (const auto & p : parameters)
-            {
-                if (!outer_params_str.empty()) outer_params_str += ", ";
-                outer_params_str += p.dump();
-            }
-            for (const auto & p : nested_func->getParameters())
-            {
-                if (!nested_params_str.empty()) nested_params_str += ", ";
-                nested_params_str += p.dump();
-            }
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "AggregateFunctionArray: parameters mismatch between Array wrapper '{}' "
-                "and nested function '{}'. Wrapper has {} parameter(s): [{}], "
-                "nested function has {} parameter(s): [{}]",
-                getName(), nested_func->getName(),
-                parameters.size(), outer_params_str,
-                nested_func->getParameters().size(), nested_params_str);
-        }
         for (const auto & type : arguments)
             if (!isArray(type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for aggregate function {} must be arrays", getName());
