@@ -545,12 +545,21 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
     if (!extracted_something)
         return;
 
-    auto and_function_node = std::make_shared<FunctionNode>("and");
-    and_function_node->markAsOperator();
-    and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
-    auto and_function_resolver = FunctionFactory::instance().get("and", context);
-    and_function_node->resolveAsFunction(and_function_resolver);
-    QueryTreeNodePtr new_root_node = and_function_node;
+    QueryTreeNodePtr new_root_node;
+
+    if (new_top_level_arguments.size() == 1)
+    {
+        new_root_node = std::move(new_top_level_arguments.front());
+    }
+    else
+    {
+        auto and_function_node = std::make_shared<FunctionNode>("and");
+        and_function_node->markAsOperator();
+        and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
+        auto and_function_resolver = FunctionFactory::instance().get("and", context);
+        and_function_node->resolveAsFunction(and_function_resolver);
+        new_root_node = std::move(and_function_node);
+    }
 
     if (!new_root_node->getResultType()->equals(*node->getResultType()))
         new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
