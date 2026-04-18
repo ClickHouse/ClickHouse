@@ -460,8 +460,8 @@ InputFormatPtr FormatFactory::getInputImpl(
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size_rows = max_block_size;
-    row_input_format_params.max_block_size_bytes = row_input_format_params.max_block_size_bytes =
-    (max_block_size_bytes && *max_block_size_bytes > 0)? *max_block_size_bytes : format_settings.max_block_size_bytes;
+    row_input_format_params.max_block_size_bytes =
+        (max_block_size_bytes && *max_block_size_bytes > 0) ? *max_block_size_bytes : format_settings.max_block_size_bytes;
     row_input_format_params.min_block_size_rows = min_block_size_rows.value_or(0);
     row_input_format_params.min_block_size_bytes = min_block_size_bytes.value_or(0);
     row_input_format_params.max_block_wait_ms = format_settings.max_block_wait_ms;
