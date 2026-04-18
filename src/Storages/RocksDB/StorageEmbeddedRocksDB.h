@@ -35,6 +35,8 @@ class StorageEmbeddedRocksDB final : public StorageWithCommonVirtualColumns, pub
     friend class EmbeddedRocksDBBulkSink;
     friend class ReadFromEmbeddedRocksDB;
 
+    static VirtualColumnsDescription createVirtuals();
+
 public:
     StorageEmbeddedRocksDB(
         const StorageID & table_id_,
