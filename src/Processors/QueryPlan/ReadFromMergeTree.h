@@ -409,7 +409,7 @@ private:
     const MergeTreeData & data;
     ExpressionActionsSettings actions_settings;
 
-    const MergeTreeReadTask::BlockSizeParams block_size;
+    MergeTreeReadTask::BlockSizeParams block_size;
 
     SortDescription result_sort_description;
 
