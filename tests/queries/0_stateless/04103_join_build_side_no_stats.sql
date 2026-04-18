@@ -17,9 +17,7 @@ CREATE TABLE t_dim_04103 (k UInt64) ORDER BY k SETTINGS auto_statistics_types = 
 INSERT INTO t_fact_04103 SELECT number % 100 FROM numbers(1000000);
 INSERT INTO t_dim_04103 SELECT number FROM numbers(100);
 
--- Expected: ResultRows: 100 (min of 1000000 and 100).
--- Without the fix the fallback gives ResultRows: 1000000 (max), which then
--- misleads parent build/probe swap decisions on multi-way joins.
+-- Expected: ResultRows: 100 (the smaller side).
 SELECT trimBoth(explain) FROM (
     EXPLAIN actions=1, keep_logical_steps=1
     SELECT count() FROM t_fact_04103 f JOIN t_dim_04103 d ON f.k = d.k
