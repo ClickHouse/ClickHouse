@@ -272,13 +272,13 @@ def test_url_wildcard_uses_head_for_metadata_probe():
 def test_url_wildcard_resets_headers_between_files():
     result = node1.query(
         with_url_wildcard_setting(
-            "SELECT _file, any(_headers['X-Source-File']) "
+            "SELECT _file, any(_headers['X-Source-File']), any(_headers['X-Probe-Method']) "
             "FROM url('http://resolver:8087/data/mixed_headers/part*.tsv', 'TSV', 'x UInt64') "
             "GROUP BY _file "
             "ORDER BY _file"
         )
     )
-    assert result == "part1.tsv\tpart1.tsv\npart2.tsv\tpart2.tsv\n"
+    assert result == "part1.tsv\tpart1.tsv\tGET\npart2.tsv\tpart2.tsv\tGET\n"
 
 
 def test_url_wildcard_limits_directory_traversal():

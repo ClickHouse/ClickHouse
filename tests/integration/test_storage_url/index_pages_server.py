@@ -94,7 +94,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", str(len(data)))
             if path.startswith("/data/mixed_headers/"):
-                self.send_header("X-Source-File", path.rsplit("/", 1)[-1])
+                self.send_header("X-Probe-Method", "HEAD")
             self.end_headers()
             return
         if path in (
@@ -247,6 +247,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             if path.startswith("/data/mixed_headers/"):
                 self.send_header("X-Source-File", path.rsplit("/", 1)[-1])
+                self.send_header("X-Probe-Method", "GET")
             self.end_headers()
             self.wfile.write(data)
             return

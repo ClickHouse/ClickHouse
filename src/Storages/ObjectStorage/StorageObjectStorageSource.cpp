@@ -13,6 +13,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
@@ -88,6 +89,19 @@ namespace
             result.emplace_back(std::move(element));
         }
         return result;
+    }
+
+    std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)
+    {
+        const auto * metadata_provider = dynamic_cast<const IReadBufferMetadataProvider *>(read_buffer);
+        if (!metadata_provider)
+            return std::nullopt;
+
+        auto headers = metadata_provider->getMetadata("headers");
+        if (!headers.has_value())
+            return std::nullopt;
+
+        return headers->safeGet<Map>();
     }
 
     String getPathComponentForGlobMatching(const String & path)
@@ -462,9 +476,11 @@ Chunk StorageObjectStorageSource::generate()
                     std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                     std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
 
+                const Map headers = tryGetHeadersFromReadBuffer(reader.readBuffer()).value_or(objectAttributesToMap(object_metadata->attributes));
+
                 chunk.addColumn(type->createColumnConst(
                     chunk.getNumRows(),
-                    objectAttributesToMap(object_metadata->attributes))->convertToFullColumnIfConst());
+                    headers)->convertToFullColumnIfConst());
             }
 
 #if USE_PARQUET
