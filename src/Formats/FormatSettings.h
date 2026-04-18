@@ -169,6 +169,7 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
+        bool output_unsupported_types_as_binary = true;
     } arrow{};
 
     struct
@@ -351,6 +352,7 @@ struct FormatSettings
         bool allow_geoparquet_parser = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
+        bool output_unsupported_types_as_binary = false;
     } parquet{};
 
     struct Pretty
