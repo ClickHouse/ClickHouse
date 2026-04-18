@@ -172,6 +172,19 @@ public:
 
         if (multi_if_args.size() == 1)
         {
+            /// `result_type` was computed during analysis from the full original argument list
+            /// (see `getReturnTypeImpl` above). By the time we get here the planner may have
+            /// replaced some of those arguments with `onlyNull` constants — a frequent case is
+            /// `FULL OUTER JOIN` over columns of different widths (e.g. `UInt16` vs `UInt32`),
+            /// where the non-matching side of the join is materialised as a const-null column
+            /// whose declared type is `Nullable(Nothing)`. The loop above filters every
+            /// `onlyNull` argument out, so we can arrive here with a single surviving argument
+            /// whose type is narrower than the declared `result_type` (e.g. `Nullable(UInt16)`
+            /// vs `Nullable(UInt32)`). Returning the surviving column verbatim would break the
+            /// contract that the returned column matches `result_type`, and downstream code
+            /// (or the assertion in the executor) raises `Unexpected return type from coalesce`.
+            /// Cast to the declared result type when they differ — it's a no-op fast path when
+            /// they already match.
             const auto & src = multi_if_args.front();
             if (!src.type->equals(*result_type))
                 return castColumn(src, result_type);
