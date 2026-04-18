@@ -631,7 +631,16 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
-        stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
+    {
+        UInt64 prior_estimate = stats.estimated_rows.value_or(MAX_ROWS);
+        UInt64 clamped = std::min<UInt64>(prior_estimate, num_rows_from_cache.value());
+        stats.estimated_rows = clamped;
+        /// The cache value is `source_rows` from a prior execution, biased downward by runtime filters
+        /// that were applied then but are not part of the cache key. Safe for algorithm sizing, not
+        /// trustworthy for structural decisions like build-side swap.
+        if (clamped < prior_estimate)
+            stats.rows_estimate_trusted = false;
+    }
 
     if (!label.empty())
         stats.table_name = label;
