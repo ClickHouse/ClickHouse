@@ -188,23 +188,16 @@ PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::Abs
     return path_getter;
 }
 
-void PathGetter::initialize(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
+void PathGetter::initialize(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
 {
+    if (!parent_paths.empty() && !list_children)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "`children_of` paths requested but no list callback provided to PathGetter");
+
     for (const auto & parent_path : parent_paths)
     {
-        auto list_promise = std::make_shared<std::promise<ListResponse>>();
-        auto list_future = list_promise->get_future();
-        auto callback = [list_promise] (const ListResponse & response)
-        {
-            if (response.error != Coordination::Error::ZOK)
-                list_promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-            else
-                list_promise->set_value(response);
-        };
-        zookeeper.list(parent_path, ListRequestType::ALL, std::move(callback), {}, false, false);
-        auto list_response = list_future.get();
-
-        for (const auto & child : list_response.names)
+        for (const auto & child : list_children(parent_path))
             paths.push_back(std::filesystem::path(parent_path) / child);
     }
 
@@ -364,10 +357,10 @@ std::string RequestGetter::description() const
     return description + guard;
 }
 
-void RequestGetter::startup(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
+void RequestGetter::startup(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
 {
     for (const auto & request_generator : request_generators)
-        request_generator->startup(zookeeper, tagged_paths);
+        request_generator->startup(list_children, tagged_paths);
 }
 
 void RequestGetter::setSeed(uint64_t seed)
@@ -410,9 +403,9 @@ ZooKeeperRequestWithCallbacks RequestGenerator::generate(const Coordination::ACL
     return generateImpl(acls);
 }
 
-void RequestGenerator::startup(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
+void RequestGenerator::startup(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
 {
-    startupImpl(zookeeper, tagged_paths);
+    startupImpl(list_children, tagged_paths);
 }
 
 void RequestGenerator::setSeed(uint64_t seed)
@@ -474,9 +467,9 @@ std::string CreateRequestGenerator::descriptionImpl()
         remove_factor_string);
 }
 
-void CreateRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
+void CreateRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
 {
-    parent_path.initialize(zookeeper, tagged_paths);
+    parent_path.initialize(list_children, tagged_paths);
 }
 
 void CreateRequestGenerator::setSeedImpl(uint64_t seed)
@@ -591,9 +584,9 @@ ZooKeeperRequestWithCallbacks SetRequestGenerator::generateImpl(const Coordinati
     return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
 }
 
-void SetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
+void SetRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
 {
-    path.initialize(zookeeper, tagged_paths);
+    path.initialize(list_children, tagged_paths);
 }
 
 void SetRequestGenerator::setSeedImpl(uint64_t seed)
@@ -636,9 +629,9 @@ ZooKeeperRequestWithCallbacks GetRequestGenerator::generateImpl(const Coordinati
     return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
 }
 
-void GetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
+void GetRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
 {
-    path.initialize(zookeeper, tagged_paths);
+    path.initialize(list_children, tagged_paths);
 }
 
 void GetRequestGenerator::setSeedImpl(uint64_t seed)
@@ -681,9 +674,9 @@ ZooKeeperRequestWithCallbacks ListRequestGenerator::generateImpl(const Coordinat
     return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
 }
 
-void ListRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
+void ListRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
 {
-    path.initialize(zookeeper, tagged_paths);
+    path.initialize(list_children, tagged_paths);
 }
 
 void ListRequestGenerator::setSeedImpl(uint64_t seed)
@@ -765,9 +758,9 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordina
         .on_failure_callbacks = std::move(on_failure_callbacks)};
 }
 
-void MultiRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
+void MultiRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
 {
-    request_getter.startup(zookeeper, tagged_paths);
+    request_getter.startup(list_children, tagged_paths);
 }
 
 void MultiRequestGenerator::setWatchCallbackImpl(Coordination::WatchCallbackPtr callback)
@@ -785,7 +778,7 @@ void MultiRequestGenerator::setSeedImpl(uint64_t seed)
         size->setSeed(seed + 100003);
 }
 
-void Generator::startup(const Poco::Util::AbstractConfiguration & config, Coordination::ZooKeeper & zookeeper, size_t thread_idx, const TaggedPaths * tagged_paths)
+void Generator::startup(const Poco::Util::AbstractConfiguration & config, const ListChildrenFn & list_children, size_t thread_idx, const TaggedPaths * tagged_paths)
 {
     if (config.has("generator.seed"))
         seed = config.getUInt64("generator.seed") + thread_idx;
@@ -804,7 +797,7 @@ void Generator::startup(const Poco::Util::AbstractConfiguration & config, Coordi
         std::cerr << request_getter.description() << std::endl;
     }
 
-    request_getter.startup(zookeeper, tagged_paths);
+    request_getter.startup(list_children, tagged_paths);
 }
 
 void Generator::setWatchCallback(Coordination::WatchCallbackPtr callback)

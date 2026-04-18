@@ -255,7 +255,21 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
     auto generator = std::make_shared<Generator>();
     const auto * tagged_paths = benchmark_context.getTaggedPaths().empty() ? nullptr : &benchmark_context.getTaggedPaths();
-    generator->startup(*config_ptr, *zookeepers[0], thread_state.thread_idx, tagged_paths);
+    auto list_children = [&zk = *zookeepers[0]](const std::string & parent_path) -> std::vector<std::string>
+    {
+        auto list_promise = std::make_shared<std::promise<Coordination::ListResponse>>();
+        auto list_future = list_promise->get_future();
+        auto callback = [list_promise] (const Coordination::ListResponse & response)
+        {
+            if (response.error != Coordination::Error::ZOK)
+                list_promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
+            else
+                list_promise->set_value(response);
+        };
+        zk.list(parent_path, Coordination::ListRequestType::ALL, std::move(callback), {}, false, false);
+        return list_future.get().names;
+    };
+    generator->startup(*config_ptr, list_children, thread_state.thread_idx, tagged_paths);
     generator->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
         [stats = info](const Coordination::WatchResponse &)
         {
