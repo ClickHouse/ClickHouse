@@ -3,7 +3,6 @@
 #include <Common/Priority.h>
 #include <Common/Stopwatch.h>
 #include <Core/NamesAndAliases.h>
-#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 

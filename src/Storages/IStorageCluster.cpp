@@ -187,7 +187,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             Tables(),
             processed_stage,
             nullptr,
-            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
+            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)},
+            shard_info.pool);
 
         remote_query_executor->setLogger(log);
         Pipe pipe{std::make_shared<RemoteSource>(
