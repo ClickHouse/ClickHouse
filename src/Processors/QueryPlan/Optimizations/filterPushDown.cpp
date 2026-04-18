@@ -927,34 +927,53 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (filter->getExpression().hasStatefulFunctions())
         return 0;
 
-    /// Specifically for the `FilterStep -> ExpressionStep -> TotalsHavingStep` shape:
-    /// when `query_plan_merge_expressions=0` leaves an `ExpressionStep` sitting between the
-    /// filter and `TotalsHavingStep`, the filter cannot see through and stays above `TotalsHavingStep`,
-    /// producing wrong TOTALS. Merge the expression into the filter so that the next
-    /// optimization pass can push the filter below `TotalsHavingStep`. Restrict this to the
-    /// `TotalsHavingStep` grandchild to avoid changing the query plan structure in unrelated cases.
-    if (auto * child_expression = typeid_cast<ExpressionStep *>(child.get());
-        child_expression && !child_node->children.empty()
-        && typeid_cast<TotalsHavingStep *>(child_node->children.front()->step.get()))
+    /// Specifically for the `FilterStep -> ExpressionStep(...) -> TotalsHavingStep` shape:
+    /// when `query_plan_merge_expressions=0` leaves one or more `ExpressionStep` nodes sitting
+    /// between the filter and `TotalsHavingStep`, the filter cannot see through and stays above
+    /// `TotalsHavingStep`, producing wrong TOTALS. Merge the immediate `ExpressionStep` child into
+    /// the filter so that the next optimization pass can descend further; on repeated passes the
+    /// filter eventually reaches `TotalsHavingStep` and the existing push-through handler there
+    /// does the right thing. Only trigger this when a `TotalsHavingStep` is actually reachable
+    /// through the `ExpressionStep` chain — touching plans without TOTALS would reshape tests that
+    /// assert exact `EXPLAIN` output.
+    if (auto * child_expression = typeid_cast<ExpressionStep *>(child.get()))
     {
-        auto & child_actions = child_expression->getExpression();
-        auto & parent_actions = filter->getExpression();
+        auto has_totals_having_descendant_through_expression_chain = [](QueryPlan::Node * start) -> bool
+        {
+            /// Walk straight-line descendants; stop at the first non-`ExpressionStep` to keep the
+            /// walk bounded and avoid spelunking into unrelated subtrees.
+            for (QueryPlan::Node * cur = start; cur && !cur->children.empty(); cur = cur->children.front())
+            {
+                auto * step = cur->children.front()->step.get();
+                if (typeid_cast<TotalsHavingStep *>(step))
+                    return true;
+                if (!typeid_cast<ExpressionStep *>(step))
+                    return false;
+            }
+            return false;
+        };
 
-        if (child_actions.hasArrayJoin() && parent_actions.hasStatefulFunctions())
-            return 0;
+        if (has_totals_having_descendant_through_expression_chain(child_node))
+        {
+            auto & child_actions = child_expression->getExpression();
+            auto & parent_actions = filter->getExpression();
 
-        auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
+            if (child_actions.hasArrayJoin() && parent_actions.hasStatefulFunctions())
+                return 0;
 
-        auto new_filter = std::make_unique<FilterStep>(
-            child_expression->getInputHeaders().front(),
-            std::move(merged),
-            filter->getFilterColumnName(),
-            filter->removesFilterColumn());
-        new_filter->setStepDescription(*filter);
+            auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
-        parent_node->step = std::move(new_filter);
-        parent_node->children.swap(child_node->children);
-        return 1;
+            auto new_filter = std::make_unique<FilterStep>(
+                child_expression->getInputHeaders().front(),
+                std::move(merged),
+                filter->getFilterColumnName(),
+                filter->removesFilterColumn());
+            new_filter->setStepDescription(*filter);
+
+            parent_node->step = std::move(new_filter);
+            parent_node->children.swap(child_node->children);
+            return 1;
+        }
     }
 
     const auto * merging_aggregated = typeid_cast<MergingAggregatedStep *>(child.get());
