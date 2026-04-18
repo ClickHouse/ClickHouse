@@ -19,7 +19,12 @@ Float32 input:
 1	-1
 Edge values that round to representable limits:
 2147483647	-2147483647
+Negative edge rounding:
+-2147483648
 True overflow still throws:
+Float32 non-half rounding:
+3	-3
+2	-2
 Column path matches scalar:
 0.5	1
 1.5	2

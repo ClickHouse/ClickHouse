@@ -33,10 +33,22 @@ SELECT CAST(toFloat32(0.5), 'Decimal(9, 0)') AS d1, CAST(toFloat32(-0.5), 'Decim
 SELECT 'Edge values that round to representable limits:';
 SELECT CAST(toFloat64(2147483647.4), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-2147483647.4), 'Decimal(9, 0)') AS d2;
 
+-- Negative edge toward INT32_MIN: a value rounding into the lower limit must be accepted;
+-- anything past the limit must still throw. Decimal(9,0) holds -2147483648 exactly.
+SELECT 'Negative edge rounding:';
+SELECT CAST(toFloat64(-2147483647.9), 'Decimal(9, 0)');
+SELECT CAST(toFloat64(-2147483648.5), 'Decimal(9, 0)'); -- { serverError DECIMAL_OVERFLOW }
+
 -- True overflow must still throw.
 SELECT 'True overflow still throws:';
 SELECT CAST(toFloat64(2147483648.0), 'Decimal(9, 0)'); -- { serverError DECIMAL_OVERFLOW }
 SELECT CAST(toFloat64(-2147483649.0), 'Decimal(9, 0)'); -- { serverError DECIMAL_OVERFLOW }
+
+-- Float32 non-half rounding: verify the scalar/batch contract at values that Float32 can
+-- represent cleanly (no boundary-precision concerns).
+SELECT 'Float32 non-half rounding:';
+SELECT CAST(toFloat32(2.75), 'Decimal(9, 0)') AS d1, CAST(toFloat32(-2.75), 'Decimal(9, 0)') AS d2;
+SELECT CAST(toFloat32(2.25), 'Decimal(9, 0)') AS d1, CAST(toFloat32(-2.25), 'Decimal(9, 0)') AS d2;
 
 -- Column path (vectorized batch conversion) must match the scalar path.
 SELECT 'Column path matches scalar:';
