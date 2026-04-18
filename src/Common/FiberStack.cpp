@@ -73,12 +73,12 @@ boost::context::stack_context FiberStack::allocate() const
         }
     }
 
-    /// Mark the fiber stack memory as initialized for MSan.
-    /// Unlike the program's main stack (which the OS zero-initializes), fiber stacks are
-    /// heap-allocated via aligned_alloc, so MSan considers them uninitialized.
-    /// This causes false positives when stack slots are reused across function calls within
-    /// the fiber. Unpoisoning is safe because MSan's per-variable lifetime tracking
-    /// (__lifetime.start / __lifetime.end) still properly detects real uninitialized variables.
+    /// MSan doesn't track shadow for struct padding bytes through return values
+    /// (the LLVM IR shadow is per-field, not per-byte of the padded representation).
+    /// Any struct with padding returned by value will have uninitialized padding shadow
+    /// in the caller. On the main thread stack this is harmless (OS zero-inits pages),
+    /// but on heap-allocated fiber stacks the dirty shadow can propagate via stack slot
+    /// reuse and eventually trigger false positives in unrelated code.
     __msan_unpoison(data, num_bytes);
 
     boost::context::stack_context sctx;

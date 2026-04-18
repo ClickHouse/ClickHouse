@@ -15,6 +15,15 @@ class CIDBCluster:
     PASSWD_SECRET = Settings.SECRET_CI_DB_PASSWORD
     USER_SECRET = Settings.SECRET_CI_DB_USER
 
+    @staticmethod
+    def _get_secret_or_raise(info, secret_name):
+        try:
+            return info.get_secret(secret_name)
+        except Exception as ex:
+            raise RuntimeError(
+                f"Failed to resolve CIDB secret [{secret_name}]"
+            ) from ex
+
     def __init__(self, url=None, user=None, pwd=None):
         info = Info()
         if url and user is not None and pwd is not None:
@@ -25,9 +34,9 @@ class CIDBCluster:
             self.user = user
             self.pwd = pwd
         else:
-            self.user_secret = info.get_secret(self.USER_SECRET)
-            self.url_secret = info.get_secret(self.URL_SECRET)
-            self.pwd_secret = info.get_secret(self.PASSWD_SECRET)
+            self.user_secret = self._get_secret_or_raise(info, self.USER_SECRET)
+            self.url_secret = self._get_secret_or_raise(info, self.URL_SECRET)
+            self.pwd_secret = self._get_secret_or_raise(info, self.PASSWD_SECRET)
             self.user = None
             self.url = None
             self.pwd = None

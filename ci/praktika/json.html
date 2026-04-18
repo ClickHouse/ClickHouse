@@ -64,8 +64,8 @@
             --job-name-color: var(--text-color);
             --link-color: #FAFF69;
             --link-hover-color: #e6eb5e;
-            --file-link-color: #7ab3ff;
-            --file-link-hover-color: #a3cbff;
+            --file-link-color: #FAFF69;
+            --file-link-hover-color: #e6eb5e;
             --footer-background: #151515;
             --footer-text-color: #F9F9F9;
         }
@@ -131,7 +131,12 @@
             max-width: 100%;              /* make sure it doesn’t overflow parent */
         }
 
-        .file-link:hover {
+        .file-link a {
+            color: var(--file-link-color);
+            text-decoration: none;
+        }
+
+        .file-link a:hover, .file-link:hover {
             color: var(--file-link-hover-color);
             text-decoration: none;
         }
@@ -235,14 +240,31 @@
             color: #606060;
         }
 
-        #theme-toggle, #status-filter-toggle, #sort-toggle {
+        #theme-toggle, #status-filter-toggle, #sort-toggle, #proxy-toggle {
             cursor: pointer;
             color: var(--footer-text-color);
             margin-left: 10px;
         }
 
-        #theme-toggle:hover, #sort-toggle:hover {
+        #theme-toggle:hover, #sort-toggle:hover, #proxy-toggle:hover {
             color: #FAFF69;
+        }
+
+        tr.downstream-row {
+            background-color: color-mix(in srgb, var(--tile-background) 50%, #e0d8f0);
+        }
+        .night-theme tr.downstream-row {
+            background-color: #2a2820;
+        }
+
+        .downstream-info {
+            padding: 8px 16px;
+            margin: 8px 0;
+            font-size: 13px;
+            border-radius: 4px;
+            background-color: var(--info-background);
+            color: var(--text-color);
+            opacity: 0.8;
         }
 
         #footer a:hover {
@@ -261,12 +283,16 @@
         }
 
         th.name-column, td.name-column,
-        th.status-column, td.status-column,
         td.dur-column, th.dur-column {
             width: 1px;
             max-width: fit-content;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        th.status-column, td.status-column {
+            width: 1px;
+            max-width: fit-content;
+            text-align: center;
         }
 
         td.dur-column {
@@ -358,14 +384,15 @@
 <body>
     <div id="status-container"></div>
     <div id="result-container"></div>
-    <button id="toggle-status-bar">‖</button>
+    <button id="toggle-status-bar" title="Toggle sidebar">‖</button>
     <footer id="footer">
         <div class="left"></div>
         <div class="right"></div>
         <div class="settings">
-            <span id="status-filter-toggle"></span>
-            <span id="sort-toggle">🔼</span>
-            <span id="theme-toggle">🔆️</span>
+            <span id="proxy-toggle" title="Configure downstream proxy URL">🔗</span>
+            <span id="status-filter-toggle" title="Filter by status"></span>
+            <span id="sort-toggle" title="Sort by status">🔼</span>
+            <span id="theme-toggle" title="Toggle day/night theme">🔆️</span>
         </div>
     </footer>
     <script>
@@ -509,11 +536,43 @@
     document.getElementById('status-filter-toggle').addEventListener('click', toggleStatusFilter);
     document.getElementById('sort-toggle').addEventListener('click', toggleSortByStatus);
     document.getElementById('toggle-status-bar').addEventListener('click', toggleStatusBar);
+    document.getElementById('proxy-toggle').addEventListener('click', toggleProxy);
+
+    function toggleProxy() {
+        const current = localStorage.getItem('privateBaseUrl') || '';
+        const value = prompt('Downstream proxy base URL (leave empty to disable):', current);
+        if (value === null) return; // cancelled
+        if (value.trim()) {
+            try {
+                new URL(value.trim());
+            } catch {
+                alert('Invalid URL. Please enter a full URL starting with https://');
+                return;
+            }
+            localStorage.setItem('privateBaseUrl', value.trim().replace(/\/+$/, ''));
+        } else {
+            localStorage.removeItem('privateBaseUrl');
+        }
+        updateProxyToggleIcon();
+        location.reload();
+    }
+
+    function updateProxyToggleIcon() {
+        const toggle = document.getElementById('proxy-toggle');
+        const hasProxy = !!localStorage.getItem('privateBaseUrl');
+        if (toggle) {
+            toggle.style.opacity = hasProxy ? '1' : '0.4';
+            toggle.title = hasProxy
+                ? 'Downstream proxy: ' + localStorage.getItem('privateBaseUrl')
+                : 'Configure downstream proxy URL';
+        }
+    }
 
     function toggleSortByStatus() {
         const current = localStorage.getItem('sortByStatus');
         const newValue = current === 'true' ? 'false' : 'true';
         localStorage.setItem('sortByStatus', newValue);
+        columnSortActive = false;
 
         // Update the visual indicator
         updateSortToggleIcon();
@@ -546,13 +605,16 @@
 
     function getStatusPriority(status) {
         const statusLower = (status || '').toLowerCase();
-        // Priority order: errors/failures first, then warnings, then success, then others
-        if (statusLower === 'xpass') return 0;  // unexpected pass: treat as failure
-        if (statusLower === 'xfail') return 2;  // expected failure: treat as success
-        if (statusLower.includes('error') || statusLower.includes('fail') || statusLower.includes('dropped')) return 0;
-        if (statusLower.includes('pending') || statusLower.includes('running')) return 1;
-        if (statusLower.includes('success') || statusLower === 'ok') return 2;
-        return 3; // other statuses
+        if (statusLower.includes('error')) return 0;
+        if (statusLower.includes('fail') && statusLower !== 'xfail') return 1;
+        if (statusLower === 'xpass') return 2;
+        if (statusLower.includes('running')) return 3;
+        if (statusLower.includes('dropped')) return 4;
+        if (statusLower.includes('pending')) return 5;
+        if (statusLower === 'ok' || statusLower.includes('success')) return 6;
+        if (statusLower === 'xfail') return 7;
+        if (statusLower.includes('skipped')) return 8;
+        return 9;
     }
 
     function formatTimestamp(timestamp, showDate = true) {
@@ -629,6 +691,58 @@
         const saturation = dark ? 90 : 60; // Higher = more vivid
         const lightness = dark ? 45 : 60;  // Slightly darker = more contrast
         return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+    }
+
+    // Normalize ext.labels (and legacy ext.hlabels) into a list of
+     // {name, link?, hint?} entries. Accepts the unified dict format as well as
+     // legacy formats: a bare string in ext.labels, or [name, link] in ext.hlabels.
+    function normalizeLabels(labels, hlabels) {
+        const out = [];
+        const indexByName = new Map();
+        const upsert = (entry) => {
+            const existingIdx = indexByName.get(entry.name);
+            if (existingIdx === undefined) {
+                indexByName.set(entry.name, out.length);
+                out.push(entry);
+            } else {
+                out[existingIdx] = {...out[existingIdx], ...entry};
+            }
+        };
+        if (Array.isArray(labels)) {
+            labels.forEach(item => {
+                if (typeof item === 'string') {
+                    upsert({name: item});
+                } else if (item && typeof item === 'object' && item.name) {
+                    upsert({
+                        name: item.name,
+                        ...(item.link ? {link: item.link} : {}),
+                        ...(item.hint ? {hint: item.hint} : {}),
+                    });
+                }
+            });
+        }
+        if (Array.isArray(hlabels)) {
+            hlabels.forEach(item => {
+                if (Array.isArray(item) && item[0]) {
+                    upsert({name: item[0], ...(item[1] ? {link: item[1]} : {})});
+                }
+            });
+        }
+        return out;
+    }
+
+    // Apply common pill styling to a label element.
+    function applyLabelStyles(element, text) {
+        element.textContent = text;
+        element.style.marginLeft = '6px';
+        element.style.padding = '2px 8px';
+        element.style.backgroundColor = stringToColor(text, true);
+        element.style.color = 'white';
+        element.style.fontSize = '12px';
+        element.style.borderRadius = '8px';
+        element.style.fontWeight = 'bold';
+        element.style.display = 'inline-block';
+        element.style.verticalAlign = 'middle';
     }
 
     function addFileLinksWidget(links) {
@@ -1076,7 +1190,7 @@
             return;
         }
 
-        const lineWidth = 5;
+        const lineWidth = 1;
         const padding = 1;
         const totalHeight = (lineWidth + padding) * results.length;
 
@@ -1143,7 +1257,8 @@
                     x = 0;
                     width = canvas.width;
                     const getCss = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
-                    color = task.status === "pending" ? getCss('--pending-bar-color') : getCss('--skipped-bar-color');
+                    const sl = (task.status || '').toLowerCase();
+                    color = sl === "pending" ? getCss('--pending-bar-color') : getCss('--skipped-bar-color');
                 } else if (task.duration === null) {
                     x = (task.start_time - minStartTime) * scaleX;
                     width = (maxTime - (task.start_time - minStartTime)) * scaleX;
@@ -1160,15 +1275,22 @@
                 taskRects.push({ x, y, width, height, task });
 
                 // Save failure marker position for second pass
-                if (task.status === "failure" || task.status === "error" || task.status === "dropped") {
+                const tsl = (task.status || '').toLowerCase();
+                if (tsl === "fail" || tsl === "failure" || tsl === "error" || tsl === "dropped") {
                     failedMarkers.push({ x: x + width, y: y + height / 2 });
                 }
             });
 
             // Draw failure markers on top
             failedMarkers.forEach(({ x, y }) => {
-                ctx.font = "8px sans-serif";
-                ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
+                ctx.fillStyle = "#ff3333";
+                ctx.beginPath();
+                const s = 3;
+                ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s);
+                ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s);
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = "#ff3333";
+                ctx.stroke();
             });
         }
 
@@ -1344,8 +1466,9 @@
         const filter = localStorage.getItem('filter');
         const lastColumn = existingColumnsList[existingColumnsList.length - 1];
 
-        // Sort results by status if the feature is enabled
-        const sortByStatus = localStorage.getItem('sortByStatus') === 'true';
+        // Sort results by status if the feature is enabled.
+        // Skip if user clicked a column header (columnSortActive) — reset on next fresh render.
+        const sortByStatus = !columnSortActive && localStorage.getItem('sortByStatus') === 'true';
 
         // Work with a copy so we don't mutate the original
         let displayResults = [...results];
@@ -1359,8 +1482,10 @@
 
         displayResults.forEach((result, _index) => {
             const row = document.createElement('tr');
-            const labels = result?.ext?.labels;
-            const linklabels = result?.ext?.hlabels;
+            if (result._downstreamHref) row.classList.add('downstream-row');
+            // Unified labels: list of {name, link?, hint?} (or legacy strings).
+            // Legacy ext.hlabels (list of [name, link]) is merged in for backward compat.
+            const labels = normalizeLabels(result?.ext?.labels, result?.ext?.hlabels);
 
             existingColumnsList.forEach(column => {
                 const td = document.createElement('td');
@@ -1370,11 +1495,12 @@
                 if (column === lastColumn) td.classList.add('time-column');
 
                 if (column === 'status') {
+                    const value_ = value ? value.toLowerCase() : "";
                     const span = document.createElement('span');
-                    span.className = getStatusClass(value);
-                    span.textContent = value;
+                    span.className = getStatusClass(value_);
+                    span.textContent = value_;
                     td.classList.add('status-column');
-                    row.dataset.status = value ? value.toLowerCase() : "";
+                    row.dataset.status = value_;
                     if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
                         span.style.cursor = "pointer";
                         span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
@@ -1384,7 +1510,15 @@
                 } else if (column === 'name') {
                     const statusValue = result["status"] ? result["status"].toLowerCase() : "";
 
-                    if (
+                    if (result._downstreamHref) {
+                        // Downstream result: link to private json.html via proxy
+                        const link = document.createElement('a');
+                        link.href = result._downstreamHref;
+                        link.textContent = '🔗 ' + value;
+                        link.target = '_blank';
+                        td.classList.add('name-column');
+                        td.appendChild(link);
+                    } else if (
                         (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
                         (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0) ||
                             nest_level === 0)
@@ -1405,56 +1539,22 @@
                         td.appendChild(link);
                     }
 
-                    // Helper to apply common label styling
-                    const applyLabelStyles = (element, text) => {
-                        element.textContent = text;
-                        element.style.marginLeft = '6px';
-                        element.style.padding = '2px 8px';
-                        element.style.backgroundColor = stringToColor(text, true);
-                        element.style.color = 'white';
-                        element.style.fontSize = '12px';
-                        element.style.borderRadius = '8px';
-                        element.style.fontWeight = 'bold';
-                        element.style.display = 'inline-block';
-                        element.style.verticalAlign = 'middle';
-                    };
-
-                    // Add whitespace before labels if any exist
-                    if ((labels && labels.length > 0) || (linklabels && linklabels.length > 0)) {
+                    // Render unified labels: plain span, or <a> if link present.
+                    // The hint (when set) becomes the title attribute -> hover tooltip.
+                    if (labels.length > 0) {
                         td.appendChild(document.createTextNode(' '));
-                    }
-
-                    // Render plain labels
-                    if (Array.isArray(labels)) {
-                        labels.forEach(labelStr => {
-                            const label = document.createElement('span');
-                            applyLabelStyles(label, labelStr);
-                            td.appendChild(label);
-                        });
-                    }
-
-                    // Render link labels
-                    if (Array.isArray(linklabels)) {
-                        linklabels.forEach(item => {
-                            let text, href;
-                            if (Array.isArray(item)) {
-                                [text, href] = item;
-                            } else if (item && typeof item === 'object') {
-                                text = item.text || item.label || '';
-                                href = item.href || item.url || '';
-                            } else if (typeof item === 'string') {
-                                text = item;
-                                href = '';
-                            }
-                            if (!text) return;
-
-                            const element = href ? document.createElement('a') : document.createElement('span');
-                            if (href) {
-                                element.href = href;
+                        labels.forEach(({name, link, hint}) => {
+                            const element = link ? document.createElement('a') : document.createElement('span');
+                            if (link) {
+                                element.href = link;
                                 element.target = '_blank';
                                 element.rel = 'noopener noreferrer';
                             }
-                            applyLabelStyles(element, text);
+                            applyLabelStyles(element, name);
+                            if (hint) {
+                                element.title = hint;
+                                element.style.cursor = link ? 'pointer' : 'help';
+                            }
                             td.appendChild(element);
                         });
                     }
@@ -1547,6 +1647,9 @@
         }
     }
 
+    // When true, populateTableRows skips its own sort-by-status (column header sort takes over)
+    let columnSortActive = false;
+
     function sortTable(results, column, key, tbody, nest_level, existingColumnsList) {
         // Find the table header element for the given key
         const tableHeaders = document.querySelectorAll('th');
@@ -1560,9 +1663,17 @@
         const ascending = th.getAttribute('data-sort-direction') === 'asc';
         th.setAttribute('data-sort-direction', ascending ? 'desc' : 'asc');
 
+        // Suppress populateTableRows auto-sort until next re-render
+        columnSortActive = true;
+
         results.sort((a, b) => {
-            if (a[column] < b[column]) return ascending ? -1 : 1;
-            if (a[column] > b[column]) return ascending ? 1 : -1;
+            let va = a[column], vb = b[column];
+            if (column === 'status') {
+                va = getStatusPriority(va);
+                vb = getStatusPriority(vb);
+            }
+            if (va < vb) return ascending ? -1 : 1;
+            if (va > vb) return ascending ? 1 : -1;
             return 0;
         });
 
@@ -1611,7 +1722,10 @@
         prLink: null,
         commitLink: null,
         runLink: null,
-        sha: null
+        sha: null,
+        downstreamResults: null,
+        downstreamSha: null,
+        downstreamError: null
     };
 
     function storeLink(link) {
@@ -1742,11 +1856,19 @@
             resultsDiv.appendChild(textDiv);
         }
 
-        const resultsData = result.results;
+        // Merge cached downstream results if available and matching current SHA
+        let resultsData = result.results;
+        const resolvedSha = (sha === 'latest' && runtimeCache.commits)
+            ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha
+            : sha;
+        if (nameParams.length === 1 && runtimeCache.downstreamResults
+                && runtimeCache.downstreamSha === resolvedSha) {
+            resultsData = [...resultsData, ...runtimeCache.downstreamResults];
+        }
         if (Array.isArray(resultsData) && resultsData.length > 0) {
             const table = createResultsTable(resultsData, i);
             if (table) {
-                resultsDiv.appendChild(table); // Appends table correctly
+                resultsDiv.appendChild(table);
             }
         }
         addDetailsWidget(runtimeCache, sha, PR)
@@ -1897,15 +2019,92 @@
         return hasNewData;
     }
 
+    // Fetch downstream (private sync) results via proxy.
+    // Returns { data: [...results], error: null } or { data: null, error: "message" }
+    async function fetchDownstreamData(sha, privateBaseUrl) {
+        // Step 1: Fetch sync metadata
+        let metaResult;
+        try {
+            metaResult = await fetchJson(`${privateBaseUrl}/sync_metadata/${sha}.json`);
+        } catch (e) {
+            return { data: null, error: 'Downstream: proxy unreachable' };
+        }
+        if (metaResult.status === 0) {
+            return { data: null, error: 'Downstream: proxy unreachable' };
+        }
+        if (metaResult.status === 403 || !metaResult.data) {
+            return { data: null, error: 'Downstream: no sync metadata for this commit' };
+        }
+
+        const { private_pr_number, private_sha } = metaResult.data;
+        if (!private_pr_number || !private_sha) {
+            return { data: null, error: 'Downstream: invalid sync metadata' };
+        }
+
+        // Step 2: Fetch private PR result
+        let resultResult;
+        try {
+            resultResult = await fetchJson(
+                `${privateBaseUrl}/PRs/${encodeURIComponent(private_pr_number)}/${encodeURIComponent(private_sha)}/result_pr.json`
+            );
+        } catch (e) {
+            return { data: null, error: 'Downstream: proxy unreachable' };
+        }
+        if (resultResult.status === 0) {
+            return { data: null, error: 'Downstream: proxy unreachable' };
+        }
+        if (resultResult.status === 403 || !resultResult.data) {
+            return { data: null, error: 'Downstream: sync PR results not available yet' };
+        }
+
+        const privateResults = resultResult.data.results || [];
+
+        // Step 3: Transform results — prefix names, add downstream href, rewrite links
+        const transformed = privateResults.map(r => {
+            const originalName = r.name;
+            const copy = Object.assign({}, r);
+            copy.name = originalName;
+            copy._downstreamHref = `${privateBaseUrl}/json.html?PR=${encodeURIComponent(private_pr_number)}&sha=${encodeURIComponent(private_sha)}&name_0=PR&name_1=${encodeURIComponent(originalName)}`;
+
+            // Rewrite links: replace origin+bucket prefix with proxy base URL.
+            // privateBaseUrl is e.g. https://proxy/bucket-name, extract /bucket-name
+            const bucketPath = new URL(privateBaseUrl).pathname;
+            if (Array.isArray(copy.links)) {
+                copy.links = copy.links.map(link => {
+                    const re = new RegExp('^https?://[^/]+' + bucketPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                    return link.replace(re, privateBaseUrl);
+                });
+            }
+            return copy;
+        });
+
+        return { data: transformed, error: null };
+    }
+
+    function showDownstreamInfo(message) {
+        const container = document.getElementById('result-container');
+        // Remove any existing downstream info bar
+        const existing = container.querySelector('.downstream-info');
+        if (existing) existing.remove();
+
+        const bar = document.createElement('div');
+        bar.className = 'downstream-info';
+        bar.textContent = message;
+        container.insertBefore(bar, container.firstChild);
+    }
+
     // Track for autorefresh toggle
     let openedInfoCnt = 0;
     let closedInfoCnt = 0;
 
-    async function renderResultsAuto(PR, REF, sha, nameParams, base_url) {
+    async function renderResultsAuto(PR, REF, sha, nameParams, base_url, privateBaseUrl) {
         function clearPage() {
             // First, clean up any existing timers and event listeners
             activeTimers.clearAll();
             activeListeners.removeAll();
+
+            // Reset column sort override so toggle takes effect again
+            columnSortActive = false;
 
             // Then clear the DOM content
             document.getElementById('result-container').innerHTML = '';
@@ -1924,11 +2123,11 @@
 
                 if (nameParams?.length === 1) {
                     // For single-level results, check json0 status
-                    shouldContinue = ["running", "pending"].includes(runtimeCache?.json0?.status);
+                    shouldContinue = ["running", "pending"].includes((runtimeCache?.json0?.status || '').toLowerCase());
                 } else if (nameParams?.length === 2) {
                     // For two-level results, check json1 status (or json0 if json1 is null)
                     if (runtimeCache?.json1) {
-                        shouldContinue = ["running", "pending"].includes(runtimeCache?.json1?.status);
+                        shouldContinue = ["running", "pending"].includes((runtimeCache?.json1?.status || '').toLowerCase());
                     } else {
                         // If json1 is null, we might still be loading, so continue
                         shouldContinue = true;
@@ -1957,19 +2156,66 @@
                 return;
             }
 
+            // Render upstream immediately (+ cached downstream if available)
             if (fetchResult) {
-                // Clear timers, event listeners, and DOM before refreshing content
                 clearPage();
-
-                // Rebuild the page with new data
                 await renderResults(PR, sha, nameParams);
 
-                // Restore scroll position
                 if (statusContainer) {
                     statusContainer.scrollTop = scrollTop;
                 }
 
+                if (runtimeCache.downstreamError) {
+                    showDownstreamInfo(runtimeCache.downstreamError);
+                }
+
                 console.log(`Data refreshed at ${new Date().toLocaleTimeString()}`);
+            }
+
+            // Fetch downstream asynchronously. Only for PRs to main trunk.
+            // On first load this adds downstream after a brief delay.
+            // On subsequent refreshes, cached data is already merged above.
+            if (nameParams.length === 1 && nameParams[0] === 'PR' && privateBaseUrl) {
+                const resolvedSha = runtimeCache.commits
+                    ? ((sha === 'latest')
+                        ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha
+                        : sha)
+                    : sha;
+                if (resolvedSha) {
+                    fetchDownstreamData(resolvedSha, privateBaseUrl).then(result => {
+                        if (result.error) {
+                            const hadDownstream = runtimeCache.downstreamResults !== null;
+                            runtimeCache.downstreamResults = null;
+                            runtimeCache.downstreamSha = null;
+                            runtimeCache.downstreamError = result.error;
+                            // Re-render to clear stale downstream rows
+                            if (hadDownstream) {
+                                clearPage();
+                                renderResults(PR, sha, nameParams);
+                            }
+                            showDownstreamInfo(result.error);
+                        } else if (result.data && result.data.length > 0) {
+                            runtimeCache.downstreamResults = result.data;
+                            runtimeCache.downstreamSha = resolvedSha;
+                            runtimeCache.downstreamError = null;
+                            // Re-render with merged data (only if not already merged)
+                            if (!document.querySelector('.downstream-row')) {
+                                clearPage();
+                                renderResults(PR, sha, nameParams);
+                            }
+                        } else if (result.data && result.data.length === 0) {
+                            // Empty results — clear any stale cached downstream rows
+                            const hadDownstream = runtimeCache.downstreamResults !== null;
+                            runtimeCache.downstreamResults = null;
+                            runtimeCache.downstreamSha = null;
+                            runtimeCache.downstreamError = null;
+                            if (hadDownstream) {
+                                clearPage();
+                                renderResults(PR, sha, nameParams);
+                            }
+                        }
+                    });
+                }
             }
         }
 
@@ -2006,6 +2252,14 @@
         const REF = urlParams.get('REF');
         const sha = urlParams.get('sha');
         const base_url = urlParams.get('base_url');
+
+        // Proxy URL: from URL param (persisted) or localStorage
+        const proxyParam = urlParams.get('proxy');
+        if (proxyParam) {
+            localStorage.setItem('privateBaseUrl', proxyParam.replace(/\/+$/, ''));
+        }
+        const privateBaseUrl = localStorage.getItem('privateBaseUrl') || null;
+
         const nameParams = [];
         urlParams.forEach((value, key) => {
             if (key.startsWith('name_')) {
@@ -2013,7 +2267,7 @@
                 nameParams[index] = value;
             }
         });
-        await renderResultsAuto(PR, REF, sha, nameParams, base_url);
+        await renderResultsAuto(PR, REF, sha, nameParams, base_url, privateBaseUrl);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
         fetchStatistics(nameParams[0])
@@ -2031,6 +2285,7 @@
         await init();
         toggleStatusFilter(true);
         updateSortToggleIcon();
+        updateProxyToggleIcon();
     });
 
     function createFavicon() {

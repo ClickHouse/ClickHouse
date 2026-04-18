@@ -170,21 +170,21 @@ class FTResultsProcessor:
         return s
 
     def run(self, task_name="Tests"):
-        state = Result.Status.SUCCESS
+        state = Result.Status.OK
         s = self._process_test_output()
         test_results = s.test_results
 
         if s.failed != 0 or s.unknown != 0:
-            state = Result.Status.FAILED
+            state = Result.Status.FAIL
 
         info = ""
         if s.hung:
-            state = Result.Status.FAILED
+            state = Result.Status.FAIL
             test_results.append(
-                Result("Some queries hung", "FAIL", info="Some queries hung")
+                Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
         elif s.server_died:
-            state = Result.Status.FAILED
+            state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
                 # Multiple tests failed when the server died - this is a parallel
@@ -193,17 +193,17 @@ class FTResultsProcessor:
                 # The actual failure is captured by the "Server died" / LOGICAL_ERROR
                 # entry added from the server log.
                 for result in failed_results:
-                    result.status = Result.StatusExtended.UNKNOWN
+                    result.status = Result.Status.UNKNOWN
             elif len(failed_results) == 1:
                 # Single test failed - sequential run, this test is the culprit.
-                failed_results[0].status = Result.StatusExtended.ERROR
-            test_results.append(Result("Server died", "FAIL", info="Server died"))
+                failed_results[0].status = Result.Status.ERROR
+            test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
         elif not s.success_finish:
             state = Result.Status.ERROR
             info = "The test runner was terminated unexpectedly"
         elif s.retries:
             test_results.append(
-                Result("Some tests restarted", "SKIPPED", info="Some tests restarted")
+                Result("Some tests restarted", Result.Status.SKIPPED, info="Some tests restarted")
             )
         else:
             pass
