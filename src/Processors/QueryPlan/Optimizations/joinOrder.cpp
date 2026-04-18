@@ -37,12 +37,16 @@ namespace ErrorCodes
     extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
+DPJoinEntry::DPJoinEntry(
+    size_t id,
+    std::optional<UInt64> rows,
+    bool rows_estimate_trusted_,
+    std::unordered_map<String, ColumnStats> column_stats_)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
     , column_stats(std::move(column_stats_))
-    , rows_estimate_trusted(rows.has_value())
+    , rows_estimate_trusted(rows_estimate_trusted_ && rows.has_value())
     , relation_id(static_cast<int>(id))
 {
     relations.set(id);
@@ -640,7 +644,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
+        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.rows_estimate_trusted, rel.column_stats));
     }
 
     std::vector<JoinActionRef *> applied_edge;
@@ -656,8 +660,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         {
             for (size_t j = i + 1; j < components.size(); j++)
             {
-                auto left = components[i];
-                auto right = components[j];
+                const auto & left = components[i];
+                const auto & right = components[j];
 
                 auto join_kind = isValidJoinOrder(left->relations, right->relations);
                 if (!join_kind)
@@ -773,7 +777,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     for (size_t i = 0; i < total_relations_count; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.rows_estimate_trusted, rel.column_stats);
         components[1][entry->relations] = entry;
         dp_table[entry->relations] = entry;
     }

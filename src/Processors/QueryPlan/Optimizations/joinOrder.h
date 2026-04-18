@@ -44,7 +44,10 @@ struct DPJoinEntry
     int relation_id = -1;
 
     /// Constructor for a leaf node (base relation)
-    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {});
+    DPJoinEntry(size_t id,
+                std::optional<UInt64> rows,
+                bool rows_estimate_trusted_,
+                std::unordered_map<String, ColumnStats> column_stats_ = {});
 
     /// Constructor for a join node
     DPJoinEntry(DPJoinEntryPtr lhs,
@@ -64,6 +67,12 @@ struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
+
+    /// True if estimated_rows comes from a real count/stats source and should
+    /// drive decisions like build-side swap. False when derived from an untrusted
+    /// child join (selection bias), in which case the value is still useful for
+    /// cost model / algorithm sizing but should not drive structural choices.
+    bool rows_estimate_trusted = false;
 
     String table_name;
 };

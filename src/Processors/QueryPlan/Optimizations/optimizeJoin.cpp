@@ -222,6 +222,7 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
         total_number_of_distinct_values = input_stats.estimated_rows;
 
     aggregation_stats.estimated_rows = total_number_of_distinct_values;
+    aggregation_stats.rows_estimate_trusted = input_stats.rows_estimate_trusted;
 
     return aggregation_stats;
 }
@@ -242,7 +243,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
-                RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
+                RelationStats stats {
+                    .estimated_rows = relation_profile.rows,
+                    .column_stats = relation_profile.column_stats,
+                    .rows_estimate_trusted = true,
+                    .table_name = table_display_name};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
             }
@@ -284,14 +289,20 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (has_filter && !is_filtered_by_index)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
-        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
+        return RelationStats{
+            .estimated_rows = analyzed_result->selected_rows,
+            .rows_estimate_trusted = true,
+            .table_name = table_display_name};
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
+        return RelationStats{
+            .estimated_rows = estimated_rows,
+            .rows_estimate_trusted = true,
+            .table_name = table_display_name};
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
@@ -301,12 +312,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
-        /// Only propagate when the inner DP used real NDVs. Untrusted estimates
-        /// underestimate (selection bias) and would mislead the parent swap.
+        /// Propagate the inner DP's cardinality so downstream sizing (e.g. hash-join
+        /// algorithm selection) still has a number to work with. The trust flag is
+        /// propagated separately and gates structural decisions (like build-side
+        /// swap) that misfire on untrusted estimates.
         bool trusted = join_step->isResultRowsEstimateTrusted();
         return RelationStats{
-            .estimated_rows = trusted ? join_step->getResultRowsEstimation() : std::nullopt,
+            .estimated_rows = join_step->getResultRowsEstimation(),
             .column_stats = trusted ? join_step->getResultColumnStats() : std::unordered_map<String, ColumnStats>{},
+            .rows_estimate_trusted = trusted,
             .table_name = join_step->getReadableRelationName()};
     }
 

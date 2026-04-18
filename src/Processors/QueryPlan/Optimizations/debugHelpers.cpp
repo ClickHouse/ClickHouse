@@ -54,6 +54,7 @@ RelationStats getDummyStats(const String & dummy_stats_str, const String & table
 
         RelationStats stats;
         stats.table_name = table_name;
+        stats.rows_estimate_trusted = true;
 
         if (stat_object->has("cardinality"))
             stats.estimated_rows = stat_object->getValue<UInt64>("cardinality");
@@ -94,6 +95,7 @@ RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const Strin
 
     RelationStats stats;
     stats.table_name = table_name;
+    stats.rows_estimate_trusted = true;
     stats.estimated_rows = 1 + (hash % 10'000'000);
 
     pcg64 rng(hash);
