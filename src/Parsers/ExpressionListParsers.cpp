@@ -309,6 +309,18 @@ ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
     return makeASTOperator("and", f_left_expr, f_right_expr);
 }
 
+ASTPtr makeOverlapsOperator(ASTs arguments)
+{
+    // (s1, e1) OVERLAPS (s2, e2) is equivalent to s1 < e2 AND s2 < e1
+    auto s1 = makeASTOperator("tupleElement", arguments[0]->clone(), make_intrusive<ASTLiteral>(UInt64(1)));
+    auto e1 = makeASTOperator("tupleElement", arguments[0], make_intrusive<ASTLiteral>(UInt64(2)));
+    auto s2 = makeASTOperator("tupleElement", arguments[1]->clone(), make_intrusive<ASTLiteral>(UInt64(1)));
+    auto e2 = makeASTOperator("tupleElement", arguments[1], make_intrusive<ASTLiteral>(UInt64(2)));
+    auto left_cond = makeASTOperator("less", ASTPtr(s1), ASTPtr(e2));
+    auto right_cond = makeASTOperator("less", ASTPtr(s2), ASTPtr(e1));
+    return makeASTOperator("and", ASTPtr(left_cond), ASTPtr(right_cond));
+}
+
 ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function, bool allow_trailing_commas)
     : impl(std::make_unique<ParserWithOptionalAlias>(
         is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>(allow_trailing_commas)),
@@ -494,6 +506,7 @@ enum class OperatorType : uint8_t
     StartBetween,
     StartNotBetween,
     FinishBetween,
+    Overlaps,
     StartIf,
     FinishIf,
     Cast,
@@ -692,6 +705,14 @@ public:
                     return false;
 
                 function = makeBetweenOperator(negative, arguments);
+            }
+            else if (cur_op.type == OperatorType::Overlaps)
+            {
+                ASTs arguments;
+                if (!popLastNOperands(arguments, 2))
+                    return false;
+
+                function = makeOverlapsOperator(arguments);
             }
             else
             {
@@ -2982,6 +3003,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},
     {toStringView(Keyword::NOT_BETWEEN),   Operator("",                7,  0, OperatorType::StartNotBetween)},
+    {toStringView(Keyword::OVERLAPS),      Operator("",                7,  2, OperatorType::Overlaps)},
     {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
     {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
     {"<=>",           Operator("isNotDistinctFrom", 9, 2, OperatorType::Comparison)},
