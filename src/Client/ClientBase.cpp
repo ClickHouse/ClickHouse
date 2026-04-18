@@ -520,8 +520,9 @@ void ClientBase::adjustQueryEnd(
 void ClientBase::sendExternalTables(ASTPtr parsed_query)
 {
     const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
-    if (!select && !external_tables.empty() && !is_interactive)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
+    const auto * explain = parsed_query->as<ASTExplainQuery>();
+    if (!select && !explain && !external_tables.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select or explain query");
 
     if (isEmbeeddedClient() && !external_tables.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External tables are not allowed in embedded more");
@@ -1340,7 +1341,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                     query_processing_stage,
                     &client_context->getSettingsRef(),
                     &client_context->getClientInfo(),
-                    true,
+                    send_external_tables,
                     {},
                     [&](const Progress & progress) { onProgress(progress); });
 
@@ -2388,6 +2389,10 @@ void ClientBase::processParsedSingleQuery(
         const auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
+
+        const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
+        const auto * explain = parsed_query->as<ASTExplainQuery>();
+        send_external_tables = !external_tables.empty() && (!is_interactive || select || explain);
 
         /// Update async_insert after applying settings from server
         is_async_insert_with_inlined_data = client_context->getSettingsRef()[Setting::async_insert] && insert && insert->hasInlinedData();

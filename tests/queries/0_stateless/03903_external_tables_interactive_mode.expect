@@ -48,6 +48,10 @@ send -- "SELECT count() FROM users;\r"
 expect "3"
 expect ":) "
 
+send -- "EXPLAIN SELECT * FROM numbers() WHERE number IN (SELECT id FROM users) LIMIT 1;\r"
+expect "ReadFromMemoryStorage"
+expect ":) "
+
 # ctrl+D
 send -- "\4"
 expect eof
