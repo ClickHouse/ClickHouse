@@ -96,13 +96,14 @@ private:
             batch.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
-                    static_cast<uint64_t>(blob.BlobSize),
-                    Poco::Timestamp::fromEpochTime(
+                    .size_bytes = static_cast<uint64_t>(blob.BlobSize),
+                    .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    blob.Details.ETag.ToString(),
-                    {},
-                    {}}));
+                    .etag = blob.Details.ETag.ToString(),
+                    .tags = {},
+                    .attributes = {},
+                }));
         }
 
         if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
@@ -204,13 +205,14 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
-                    static_cast<uint64_t>(blob.BlobSize),
-                    Poco::Timestamp::fromEpochTime(
+                    .size_bytes = static_cast<uint64_t>(blob.BlobSize),
+                    .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    blob.Details.ETag.ToString(),
-                    {},
-                    {}}));
+                    .etag = blob.Details.ETag.ToString(),
+                    .tags = {},
+                    .attributes = {},
+                }));
         }
 
         if (max_keys && children.size() >= max_keys)
@@ -573,12 +575,10 @@ void AzureObjectStorage::applyNewSettings(
 
     bool is_client_for_disk = client.get()->IsClientForDisk();
 
-    AzureBlobStorage::ConnectionParams params
-    {
-        .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
-        .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-        .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk),
-    };
+    AzureBlobStorage::ConnectionParams params;
+    params.endpoint = AzureBlobStorage::processEndpoint(config, config_prefix);
+    params.auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix);
+    params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk);
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
     client.set(std::move(new_client));
