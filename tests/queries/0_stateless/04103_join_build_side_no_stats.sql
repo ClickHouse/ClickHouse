@@ -1,6 +1,7 @@
 -- Tests the NDV-unknown fallback for equi-join cardinality. Without column
--- statistics the join optimizer must estimate the output size via the PK-FK
--- containment assumption (min of the two input sizes)
+-- statistics the join optimizer falls back to the PK-FK containment assumption:
+-- every FK-side row matches exactly one PK-side row, so the output cardinality
+-- is the larger input size (typical star-schema fact-dimension join).
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
@@ -18,7 +19,7 @@ CREATE TABLE t_dim_04103 (k UInt64) ORDER BY k SETTINGS auto_statistics_types = 
 INSERT INTO t_fact_04103 SELECT number % 100 FROM numbers(1000000);
 INSERT INTO t_dim_04103 SELECT number FROM numbers(100);
 
--- Expected: ResultRows: 100 (the smaller side).
+-- Expected: ResultRows: 1000000 (the larger side, matching the actual count()).
 SELECT trimBoth(explain) FROM (
     EXPLAIN actions=1, keep_logical_steps=1
     SELECT count() FROM t_fact_04103 f JOIN t_dim_04103 d ON f.k = d.k

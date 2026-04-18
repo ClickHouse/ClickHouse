@@ -419,17 +419,19 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edg
     }
     else
     {
-        /// Both NDVs unknown. Fall back to PK-FK containment: output size is
-        /// the smaller side, i.e. selectivity = 1 / max(lhs_rows, rhs_rows).
-        /// Matches the previous implicit behavior of value_or(0) in getColumnStats.
+        /// Both NDVs unknown. Fall back to PK-FK containment: FK values are a subset
+        /// of PK values, so every FK-side row matches exactly one PK-side row and the
+        /// result cardinality equals the larger side, i.e. selectivity = 1 / min(rows).
+        /// Star-schema fact-dimension joins are the common case; min-rows would
+        /// collapse to the dimension size and severely underestimate.
         info.trusted = false;
         auto lhs_rows = getEstimatedRows(lhs.getSourceRelations());
         auto rhs_rows = getEstimatedRows(rhs.getSourceRelations());
         if (lhs_rows && rhs_rows)
         {
-            UInt64 max_rows = std::max(*lhs_rows, *rhs_rows);
-            if (max_rows > 0)
-                info.value = std::min(info.value, 1.0 / static_cast<double>(max_rows));
+            UInt64 min_rows = std::min(*lhs_rows, *rhs_rows);
+            if (min_rows > 0)
+                info.value = std::min(info.value, 1.0 / static_cast<double>(min_rows));
         }
     }
     return info;
@@ -503,15 +505,15 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(
         {
             /// Transitive-only equi-join with unknown NDVs along the class.
             /// Apply the same PK-FK containment fallback as for direct edges
-            /// (see computeSelectivity(edge)): selectivity = 1 / max(lhs_rows, rhs_rows).
+            /// (see computeSelectivity(edge)): selectivity = 1 / min(lhs_rows, rhs_rows).
             info.trusted = false;
             auto lhs_rows = getEstimatedRows(left);
             auto rhs_rows = getEstimatedRows(right);
             if (lhs_rows && rhs_rows)
             {
-                UInt64 max_rows = std::max(*lhs_rows, *rhs_rows);
-                if (max_rows > 0)
-                    info.value = std::min(info.value, 1.0 / static_cast<double>(max_rows));
+                UInt64 min_rows = std::min(*lhs_rows, *rhs_rows);
+                if (min_rows > 0)
+                    info.value = std::min(info.value, 1.0 / static_cast<double>(min_rows));
             }
         }
     }
