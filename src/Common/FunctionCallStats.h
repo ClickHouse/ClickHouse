@@ -27,6 +27,8 @@ struct FunctionCallStats
 
     bool empty() const { return data.empty(); }
 
+    void clear() { data.clear(); }
+
     void merge(const FunctionCallStats & other)
     {
         for (const auto & [name, stats] : other.data)
