@@ -338,11 +338,17 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values,
-    ContextPtr context)
+    ContextPtr /*context*/)
 {
-    HivePartitioningUtils::HivePartitioningKeysAndValues hive_map;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
+    /// Parse the hive `key=value` segments from the path regardless of the `use_hive_partitioning`
+    /// session setting. The virtual-column set is fixed at CREATE TABLE (see
+    /// `getVirtualsForFileLikeStorage`), so a user who disables the setting at *query* time can
+    /// still reference a hive virtual that was registered at CREATE; the chunk must contain a
+    /// column for it. Otherwise the `else if (hive_map.find(...))` branch below silently drops
+    /// the column and downstream code sees a Block-structure mismatch. Parsing is a single linear
+    /// scan over the path, cheap enough to not justify gating.
+    HivePartitioningUtils::HivePartitioningKeysAndValues hive_map
+        = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
