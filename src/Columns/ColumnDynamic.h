@@ -192,6 +192,12 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
+    /// Used for deduplication: hashes the raw in-memory representation of the variant column.
+    /// The hash is the same for the same INSERT data, but NOT necessarily the same for
+    /// logically equivalent data with different variant layouts (e.g. value stored in a typed
+    /// variant vs the shared variant).
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
+
     WeakHash32 getWeakHash32() const override
     {
         return variant_column_ptr->getWeakHash32();

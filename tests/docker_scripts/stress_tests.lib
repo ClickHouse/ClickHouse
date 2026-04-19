@@ -144,9 +144,6 @@ EOL
 
             <table_function_remote_max_addresses>200</table_function_remote_max_addresses>
 
-            <ast_fuzzer_runs>5</ast_fuzzer_runs>
-            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
-
             <constraints>
                 <max_execution_time>
                     <max>60</max>
@@ -162,7 +159,7 @@ EOL
 
                 <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
                 <enable_analyzer>
-                    <readonly/>
+                    <min>1</min>
                 </enable_analyzer>
 
                 <!-- Prevent stack overflow -->
@@ -186,6 +183,19 @@ EOL
     </profiles>
 </clickhouse>
 EOL
+
+    if [[ -n "${ENABLE_SERVER_FUZZER:-}" ]]; then
+        cat > /etc/clickhouse-server/users.d/stress_test_serverfuzz.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+    fi
 
     cat > /etc/clickhouse-server/config.d/core.xml <<EOL
 <clickhouse>
@@ -227,7 +237,7 @@ function stop_server()
     #
     # Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
     for i in {1..30}; do
-        if clickhouse client -q "SYSTEM STOP DISTRIBUTED SENDS"; then
+        if clickhouse client --receive_timeout=10 -q "SYSTEM STOP DISTRIBUTED SENDS"; then
             break
         fi
     done

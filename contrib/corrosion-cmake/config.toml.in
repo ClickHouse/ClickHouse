@@ -1,6 +1,7 @@
 [profile.release]
 debug = false
 strip = true
+@RUST_RELEASE_PROFILE_EXTRA@
 
 # We use LTO to slightly decrease binary size
 [profile.release-thinlto]

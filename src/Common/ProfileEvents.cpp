@@ -125,6 +125,7 @@
     M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \
     M(TextIndexUseHint, "Number of index granules where a direct reading from the text index was added as hint and was used.", ValueType::Number) \
     M(TextIndexDiscardHint, "Number of index granules where a direct reading from the text index was added as hint and was discarded due to low selectivity.", ValueType::Number) \
+    M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
@@ -192,7 +193,7 @@
     M(AzureReadRequestsErrors, "Number of Azure read request errors.", ValueType::Number) \
     M(AzureReadRequestsThrottling, "Number of Azure read requests throttled.", ValueType::Number) \
     M(AzureReadRequestsRedirects, "Number of Azure read request redirects.", ValueType::Number) \
-    M(AzureWriteMicroseconds, "Total time spent waiting for Azure read requests.", ValueType::Microseconds) \
+    M(AzureWriteMicroseconds, "Total time spent waiting for Azure write requests.", ValueType::Microseconds) \
     M(AzureWriteRequestsCount, "Number of Azure write requests.", ValueType::Number) \
     M(AzureWriteRequestsErrors, "Number of Azure write request errors.", ValueType::Number) \
     M(AzureWriteRequestsThrottling, "Number of Azure write requests throttled.", ValueType::Number) \
@@ -301,6 +302,7 @@
     M(ZooKeeperInit, "Number of times connection with ZooKeeper has been established.", ValueType::Number) \
     M(ZooKeeperTransactions, "Number of ZooKeeper operations, which include both read and write operations as well as multi-transactions.", ValueType::Number) \
     M(ZooKeeperList, "Number of 'list' (getChildren) requests to ZooKeeper.", ValueType::Number) \
+    M(ZooKeeperListRecursive, "Number of 'listRecursive' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperCreate, "Number of 'create' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperRemove, "Number of 'remove' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperExists, "Number of 'exists' requests to ZooKeeper.", ValueType::Number) \
@@ -388,6 +390,7 @@
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
     M(LoadedDataParts, "Number of data parts loaded by MergeTree tables during initialization.", ValueType::Number) \
     M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.", ValueType::Microseconds) \
+    M(FilteringMarksWithPrimaryKeyProcessedMarks, "Total marks processed during PK analysis.", ValueType::Number) \
     M(FilteringMarksWithPrimaryKeyMicroseconds, "Time spent filtering parts by PK.", ValueType::Microseconds) \
     M(FilteringMarksWithSecondaryKeysMicroseconds, "Time spent filtering parts by skip indexes.", ValueType::Microseconds) \
     M(DistributedIndexAnalysisMicroseconds, "Total time spent during distributed index analysis", ValueType::Microseconds) \
@@ -537,9 +540,7 @@
     M(DictCacheRequestTimeNs, "Number of nanoseconds spend in querying the external data sources for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
     M(DictCacheRequests, "Number of bulk requests to the external data sources for the dictionaries of 'cache' types.", ValueType::Number) \
     M(DictCacheLockWriteNs, "Number of nanoseconds spend in waiting for write lock to update the data for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
-    M(DictCacheLockWriteHoldNs, "Number of nanoseconds spent holding write lock for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
     M(DictCacheLockReadNs, "Number of nanoseconds spend in waiting for read lock to lookup the data for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
-    M(DictCacheLockReadHoldNs, "Number of nanoseconds spent holding read lock for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
     \
     M(DistributedSyncInsertionTimeoutExceeded, "A timeout has exceeded while waiting for shards during synchronous insertion into a Distributed table (with 'distributed_foreground_insert' = 1)", ValueType::Number) \
     M(DistributedAsyncInsertionFailures, "Number of failures for asynchronous insertion into a Distributed table (with 'distributed_foreground_insert' = 0)", ValueType::Number) \
@@ -952,29 +953,29 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperProcessElapsedMicroseconds, "Keeper commit latency for a single request", ValueType::Microseconds) \
     M(KeeperPreprocessElapsedMicroseconds, "Keeper preprocessing latency for a single request", ValueType::Microseconds) \
     M(KeeperStorageLockWaitMicroseconds, "Time spent waiting for acquiring Keeper storage lock", ValueType::Microseconds) \
-    M(KeeperStorageLockHoldMicroseconds, "Time spent holding Keeper storage lock", ValueType::Microseconds) \
     M(KeeperStorageSharedLockWaitMicroseconds, "Time spent waiting for acquiring Keeper storage shared lock", ValueType::Microseconds) \
-    M(KeeperStorageSharedLockHoldMicroseconds, "Time spent holding Keeper storage shared lock", ValueType::Microseconds) \
     M(KeeperChangelogLockWaitMicroseconds, "Time spent waiting for acquiring Keeper changelog lock", ValueType::Microseconds) \
-    M(KeeperChangelogLockHoldMicroseconds, "Time spent holding Keeper changelog lock", ValueType::Microseconds) \
     M(KeeperServerWriteLockWaitMicroseconds, "Time spent waiting for acquiring Keeper server write lock", ValueType::Microseconds) \
-    M(KeeperServerWriteLockHoldMicroseconds, "Time spent holding Keeper server write lock", ValueType::Microseconds) \
     M(KeeperSessionCallbackLockWaitMicroseconds, "Time spent waiting for acquiring Keeper session callback lock", ValueType::Microseconds) \
-    M(KeeperSessionCallbackLockHoldMicroseconds, "Time spent holding Keeper session callback lock", ValueType::Microseconds) \
     M(KeeperReadRequestQueueLockWaitMicroseconds, "Time spent waiting for acquiring Keeper read request queue lock", ValueType::Microseconds) \
-    M(KeeperReadRequestQueueLockHoldMicroseconds, "Time spent holding Keeper read request queue lock", ValueType::Microseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds, "Time spent waiting for acquiring Keeper process and responses lock", ValueType::Microseconds) \
-    M(KeeperProcessAndResponsesLockHoldMicroseconds, "Time spent holding Keeper process and responses lock", ValueType::Microseconds) \
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
     M(KeeperBatchMaxCount, "Number of times the size of batch was limited by the amount", ValueType::Number) \
     M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size", ValueType::Number) \
+    M(KeeperReadBatchCount, "Number of read request batches processed by Keeper", ValueType::Number) \
+    M(KeeperReadBatchTotalRequests, "Total number of read requests processed in batches by Keeper", ValueType::Number) \
     M(KeeperCommits, "Number of successful commits", ValueType::Number) \
     M(KeeperCommitsFailed, "Number of failed commits", ValueType::Number) \
     M(KeeperSnapshotCreations, "Number of snapshots creations", ValueType::Number) \
     M(KeeperSnapshotCreationsFailed, "Number of failed snapshot creations", ValueType::Number) \
     M(KeeperSnapshotApplys, "Number of snapshot applying", ValueType::Number) \
     M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying", ValueType::Number) \
-    M(KeeperReadSnapshot, "Number of snapshot read(serialization)", ValueType::Number) \
+    M(KeeperReadSnapshot, "Number of completed snapshot reads", ValueType::Number) \
+    M(KeeperReadSnapshotObject, "Number of snapshot objects sent to followers", ValueType::Number) \
+    M(KeeperReadSnapshotFailed, "Number of failed snapshot reads", ValueType::Number) \
+    M(KeeperSnapshotRemoteLoaderErrors, "Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower", ValueType::Number) \
+    M(KeeperSaveSnapshotObject, "Number of snapshot objects received from leader", ValueType::Number) \
+    M(KeeperSaveSnapshotFailed, "Number of failed snapshot saves", ValueType::Number) \
     M(KeeperSaveSnapshot, "Number of snapshot save", ValueType::Number) \
     M(KeeperCreateRequest, "Number of create requests", ValueType::Number) \
     M(KeeperRemoveRequest, "Number of remove requests", ValueType::Number) \
@@ -985,6 +986,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperMultiReadRequest, "Number of multi read requests", ValueType::Number) \
     M(KeeperGetRequest, "Number of get requests", ValueType::Number) \
     M(KeeperListRequest, "Number of list requests", ValueType::Number) \
+    M(KeeperListRecursiveRequest, "Number of get children recursive requests", ValueType::Number) \
     M(KeeperExistsRequest, "Number of exists requests", ValueType::Number) \
     M(KeeperSetWatchesRequest, "Number of set watches requests", ValueType::Number) \
     M(KeeperAddWatchRequest, "Number of add watches requests", ValueType::Number) \
@@ -993,7 +995,6 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
     M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session is no longer live", ValueType::Number) \
     M(KeeperLiveSessionsLockWaitMicroseconds, "Time spent waiting to acquire Keeper live sessions lock", ValueType::Microseconds) \
-    M(KeeperLiveSessionsLockHoldMicroseconds, "Time spent holding Keeper live sessions lock", ValueType::Microseconds) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \
@@ -1085,9 +1086,14 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheRangeResetBackward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheRangeResetForward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheReconnectsAfterTimeout, "Distributed Cache read buffer event. The number of reconnects after timeout", ValueType::Number) \
-    M(DistrCacheServerUpdates, "Distributed Cache read buffer event. The number of server updates because server is not longer registered in keeper", ValueType::Number) \
+    M(DistrCacheServerUpdates, "Distributed Cache event. The number of server switches during read or write because the hash-chosen server changed (e.g. due to server deregistration)", ValueType::Number) \
     M(DistrCacheReadErrors, "Distributed Cache read buffer event. Number of distributed cache errors during read", ValueType::Number) \
     M(DistrCacheWriteErrors, "Distributed Cache write buffer event. Number of distributed cache errors during write", ValueType::Number) \
+    M(DistrCacheWriteReconnectsAfterTimeout, "Distributed Cache write buffer event. The number of reconnects after timeout", ValueType::Number) \
+    M(DistrCacheWriteMicroseconds, "Distributed Cache write buffer event. Time spent in WriteBufferFromDistributedCache::writeToFileSegment", ValueType::Microseconds) \
+    M(DistrCacheWriteBytes, "Distributed Cache write buffer event. Number of bytes written to distributed cache", ValueType::Bytes) \
+    M(DistrCacheObjectStorageWriteMicroseconds, "Distributed Cache write buffer event. Time spent writing to object storage", ValueType::Microseconds) \
+    M(DistrCacheObjectStorageWriteBytes, "Distributed Cache write buffer event. Number of bytes written to object storage", ValueType::Bytes) \
     \
     M(DistrCacheGetResponseMicroseconds, "Distributed Cache client event. Time spend to wait for response from distributed cache", ValueType::Microseconds) \
     M(DistrCacheMakeRequestErrors, "Distributed Cache client event. Number of distributed cache errors when making a request", ValueType::Number) \
@@ -1381,7 +1387,15 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterRowsChecked, "Number of rows checked by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsPassed, "Number of rows that passed (not filtered out by) JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsSkipped, "Number of rows in blocks that were skipped by JOIN Runtime Filters", ValueType::Number) \
-
+    \
+    M(JoinBuildPostProcessingMicroseconds, "Elapsed time of post-processing steps after building the right JOIN side.", ValueType::Microseconds) \
+    \
+    M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query.", ValueType::Number) \
+    M(AIOutputTokens, "Total completion tokens consumed across all AI function calls in the query.", ValueType::Number) \
+    M(AIAPICalls, "Number of HTTP requests dispatched to AI providers.", ValueType::Number) \
+    M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
+    M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
+    \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
@@ -1403,9 +1417,9 @@ namespace ProfileEvents
 constexpr Event END = Event(__COUNTER__);
 
 /// Global variable, initialized by zeros.
-static Counter global_counters_array[END] {};
-/// Initialize global counters statically
-Counters global_counters(global_counters_array);
+static constinit Counter global_counters_array[END] {};
+/// Constant-initialized so it is ready before any dynamic initializer can allocate memory.
+constinit Counters global_counters(global_counters_array);
 
 const Event Counters::num_counters = END;
 

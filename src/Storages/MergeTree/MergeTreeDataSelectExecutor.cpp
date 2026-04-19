@@ -1,4 +1,5 @@
 #include <optional>
+#include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
 #include <unordered_set>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
@@ -61,6 +62,7 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
+extern const Event FilteringMarksWithPrimaryKeyProcessedMarks;
 extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
@@ -835,12 +837,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::vector<IndexStat> useful_indices_stat(stat_size);
 
-    /// Tracks granules dropped by each skip index, keyed by index identity (not loop position).
-    /// Used to report only indices that actually filtered something in query_log.skip_indices.
-    std::vector<std::atomic<size_t>> index_dropped_granules(skip_indexes.useful_indices.size());
-    for (auto & counter : index_dropped_granules)
-        counter.store(0, std::memory_order_relaxed);
-
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
     std::atomic<size_t> top_k_elapsed_us = 0;
@@ -906,9 +902,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithPrimaryKeyMicroseconds);
 
-                size_t total_marks_count = ranges.data_part->index_granularity->getMarksCountWithoutFinal();
+                const size_t total_marks_count = ranges.getMarksCount();
+                ProfileEvents::increment(ProfileEvents::FilteringMarksWithPrimaryKeyProcessedMarks, total_marks_count);
                 pk_stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-                pk_stat.total_granules.fetch_add(ranges.data_part->index_granularity->getMarksCountWithoutFinal(), std::memory_order_relaxed);
+                pk_stat.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
 
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
@@ -921,7 +918,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     log);
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
-                pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
                 if (ranges.ranges.empty())
                     pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                 pk_stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
@@ -991,7 +988,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     auto & stat = useful_indices_stat[index_stat_idx];
 
                     stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-                    size_t total_granules = ranges.ranges.getNumberOfMarks();
+                    size_t total_granules = ranges.getMarksCount();
                     stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
                     if (auto index_result = can_use_index(index_and_condition.index); !index_result)
@@ -1018,9 +1015,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             log);
                     }
 
-                    const size_t dropped = total_granules - ranges.ranges.getNumberOfMarks();
-                    stat.granules_dropped.fetch_add(dropped, std::memory_order_relaxed);
-                    index_dropped_granules[index_idx].fetch_add(dropped, std::memory_order_relaxed);
+                    stat.granules_dropped.fetch_add(total_granules - ranges.getMarksCount(), std::memory_order_relaxed);
                     if (ranges.ranges.empty())
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
@@ -1035,7 +1030,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
-           }
+
+            }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
             if (perform_top_k_optimization)
@@ -1148,7 +1144,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (!parts_with_ranges[part_index].ranges.empty())
             {
                 sum_parts_after_top_k++;
-                sum_marks_after_top_k += parts_with_ranges[part_index].ranges.getNumberOfMarks();
+                sum_marks_after_top_k += parts_with_ranges[part_index].getMarksCount();
             }
         }
     }
@@ -1176,16 +1172,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const auto num_indices = skip_indexes.useful_indices.size();
-
-    if (!skip_indexes.useful_indices.empty() && context->hasQueryContext())
-    {
-        auto query_context = context->getQueryContext();
-        for (size_t idx = 0; idx < num_indices; ++idx)
-            if (index_dropped_granules[idx].load(std::memory_order_relaxed) > 0)
-                query_context->addSkipIndexAccessInfo(
-                    filter_context.storage_id.getFullTableName(),
-                    skip_indexes.useful_indices[idx].index->index.name);
-    }
 
     const auto part_stats_granularity = settings[Setting::per_part_index_stats] ? original_num_parts : 1;
     for (size_t part_index = 0; part_index < part_stats_granularity; ++part_index)
@@ -2029,6 +2015,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 }
             }
         }
+
+        read_hints.index_granules[index_helper->index.name] = std::move(granule);
     }
     else if (bulk_filtering)
     {

@@ -15,9 +15,9 @@
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
@@ -32,6 +32,7 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -40,7 +41,6 @@
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <Disks/IO/ReadBufferFromDistributedCache.h>
@@ -91,6 +91,23 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+}
+
+void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
+{
+#if USE_AVRO
+    if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
+    {
+        const auto & info = iceberg_object->info;
+        if (info.record_count.has_value())
+            LOG_TEST(log, "Iceberg record_count for '{}': {}", object_info->getPath(), *info.record_count);
+        if (info.file_size_in_bytes.has_value())
+            LOG_TEST(log, "Iceberg file_size_in_bytes for '{}': {}", object_info->getPath(), *info.file_size_in_bytes);
+    }
+#else
+    UNUSED(object_info);
+    UNUSED(log);
+#endif
 }
 
 StorageObjectStorageSource::StorageObjectStorageSource(
@@ -397,6 +414,7 @@ Chunk StorageObjectStorageSource::generate()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
+                    .storage_id = storage_snapshot->storage.getStorageID(),
                     .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_metadata->size_bytes,
                     .filename = &filename,
                     .last_modified = object_metadata->last_modified,
@@ -576,7 +594,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             else
                 object_info->setObjectMetadata(object_storage->getObjectMetadata(path, with_tags));
         }
-    } while (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0);
+    } while (query_settings.skip_empty_files
+             && object_info->getObjectMetadata()->size_bytes == 0
+             && object_info->getObjectMetadata()->is_size_known);
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
@@ -668,13 +688,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             object_info->getObjectMetadata()->size_bytes,
             object_info->getFileFormat().value_or(configuration->format));
 
+        logIcebergFileStats(object_info, log);
+
         bool use_native_reader_v3 = format_settings.has_value()
             ? format_settings->parquet.use_native_reader_v3
             : context_->getSettingsRef()[Setting::input_format_parquet_use_native_reader_v3];
 
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] && use_native_reader_v3
-            && (object_info->getFileFormat().value_or(configuration->format) == "Parquet")
+            && (Poco::toLower(object_info->getFileFormat().value_or(configuration->format)) == "parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
             const std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
@@ -841,8 +863,19 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     }
 
     const auto & object_size = object_info.metadata->size_bytes;
+    const bool is_size_known = object_info.metadata->is_size_known;
 
-    auto modified_read_settings = effective_read_settings.adjustBufferSize(object_size);
+    /// when Content-Length is missing from HEAD, size is 0 but it is
+    /// unreliable to use these features (file might exist and have contents)
+    if (!is_size_known)
+    {
+        use_filesystem_cache = false;
+        use_page_cache = false;
+    }
+
+    auto modified_read_settings = is_size_known
+        ? effective_read_settings.adjustBufferSize(object_size)
+        : effective_read_settings;
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     modified_read_settings.remote_read_min_bytes_for_seek = modified_read_settings.remote_fs_buffer_size;
     /// User's object may change, don't cache it.
@@ -852,7 +885,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
+    const bool object_too_small = is_size_known
+        && object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
     const bool use_prefetch = object_too_small
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_prefetch;
