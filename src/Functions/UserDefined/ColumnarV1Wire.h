@@ -43,6 +43,11 @@ constexpr uint32_t COL_FIXED64      = 6;
 constexpr uint32_t COL_NULL_FIXED64 = 7;
 constexpr uint32_t COL_COMPLEX      = 8;  // Array(T) / Tuple(T...) — recursive format
 constexpr uint32_t COL_IS_CONST     = 0x80u;
+// COL_IS_REPEAT: column is cyclic with period R.  Row i maps to stored_row[i % R].
+// offsets_offset field carries R (not a byte offset).
+// For string columns the R+1 wire offsets are embedded at the start of the data block.
+// Cuts wire size from N*elem_size to R*elem_size when a JOIN repeats R unique values.
+constexpr uint32_t COL_IS_REPEAT    = 0x40u;
 
 constexpr uint32_t COLUMNAR_HEADER_BYTES = 8;
 constexpr uint32_t COLUMNAR_DESC_BYTES   = 20;
@@ -57,6 +62,26 @@ struct ColDescriptor
 };
 static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
 
+// Find the smallest period R such that col[i] == col[i % R] for all scanned rows.
+// Returns 0 if no period is found within budget.
+// Budget: scan at most PERIOD_SCAN_LIMIT elements; period must not exceed MAX_PERIOD.
+inline uint32_t detectPeriod(const IColumn * col, uint32_t num_rows)
+{
+    constexpr uint32_t PERIOD_SCAN_LIMIT = 8192;
+    constexpr uint32_t MAX_PERIOD        = 4096;
+    uint32_t scan = std::min(num_rows, PERIOD_SCAN_LIMIT);
+    for (uint32_t R = 1; R <= std::min(scan / 2, MAX_PERIOD); ++R)
+    {
+        bool ok = true;
+        for (uint32_t i = R; i < scan; ++i)
+        {
+            if (col->compareAt(i, i % R, *col, 1) != 0) { ok = false; break; }
+        }
+        if (ok) return R;
+    }
+    return 0;
+}
+
 // Compute byte layout for a single column and fill in desc.
 // Returns the next free offset in the output buffer.
 inline uint32_t buildColDescriptor(
@@ -67,6 +92,9 @@ inline uint32_t buildColDescriptor(
     uint32_t write_cursor,
     ColDescriptor & desc)
 {
+    // Budget for COL_IS_REPEAT: only encode if the R unique rows fit under this limit.
+    constexpr uint64_t REPEAT_DATA_LIMIT = 64u * 1024u * 1024u;  // 64 MB
+
     // ── Array column → COL_COMPLEX ────────────────────────────────────────────
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col))
     {
@@ -106,6 +134,33 @@ inline uint32_t buildColDescriptor(
     if (str_col)
     {
         uint32_t base_type = is_nullable ? COL_NULL_BYTES : COL_BYTES;
+
+        // COL_IS_REPEAT detection for non-const string columns.
+        // offsets_offset stores R (the period); string offsets + chars live in the data block.
+        if (!is_const && num_rows > 1)
+        {
+            uint32_t R = detectPeriod(str_col, num_rows);
+            if (R > 0 && R < num_rows)
+            {
+                // Compute bytes needed for the R unique strings.
+                // CH ColumnString stores all chars concatenated; the R-th string ends at
+                // str_col->getOffsets()[R-1].  Add R null terminators for wire format.
+                uint64_t unique_chars = static_cast<uint64_t>(str_col->getOffsets()[R - 1]) + R;
+                uint64_t unique_data  = (R + 1u) * sizeof(uint32_t) + unique_chars;
+                if (unique_data < REPEAT_DATA_LIMIT)
+                {
+                    desc.type           = base_type | COL_IS_REPEAT;
+                    desc.null_offset    = 0;  // nullable repeat not yet supported
+                    desc.offsets_offset = R;  // period, NOT a byte offset
+                    write_cursor        = (write_cursor + 3u) & ~3u;
+                    desc.data_offset    = write_cursor;
+                    desc.data_size      = static_cast<uint32_t>(unique_data);
+                    write_cursor       += desc.data_size;
+                    return write_cursor;
+                }
+            }
+        }
+
         desc.type = base_type | (is_const ? COL_IS_CONST : 0u);
 
         if (is_nullable)
@@ -137,6 +192,27 @@ inline uint32_t buildColDescriptor(
     if      (wire_elem_size == 1) base_type = is_nullable ? COL_NULL_FIXED8  : COL_FIXED8;
     else if (wire_elem_size == 4) base_type = is_nullable ? COL_NULL_FIXED32 : COL_FIXED32;
     else                          base_type = is_nullable ? COL_NULL_FIXED64 : COL_FIXED64;
+
+    // COL_IS_REPEAT detection for non-const fixed-width columns.
+    if (!is_const && num_rows > 1)
+    {
+        uint32_t R = detectPeriod(col, num_rows);
+        if (R > 0 && R < num_rows)
+        {
+            uint64_t unique_data = static_cast<uint64_t>(R) * wire_elem_size;
+            if (unique_data < REPEAT_DATA_LIMIT)
+            {
+                desc.type           = base_type | COL_IS_REPEAT;
+                desc.null_offset    = 0;
+                desc.offsets_offset = R;  // period
+                desc.data_offset    = write_cursor;
+                desc.data_size      = R * wire_elem_size;
+                write_cursor       += R * wire_elem_size;
+                return write_cursor;
+            }
+        }
+    }
+
     desc.type         = base_type | (is_const ? COL_IS_CONST : 0u);
     desc.null_offset  = 0;
     desc.offsets_offset = 0;
@@ -210,12 +286,22 @@ inline void writeColData(
     {
         const auto & ch_offsets = str_col->getOffsets();
         const auto & chars = str_col->getChars();
-        uint32_t * wire_offsets = reinterpret_cast<uint32_t *>(buf.data() + desc.offsets_offset);
-        uint8_t * data_dst = buf.data() + desc.data_offset;
+
+        // COL_IS_REPEAT: write only the R unique rows; offsets embedded in data block.
+        bool is_repeat = (desc.type & COL_IS_REPEAT) != 0;
+        uint32_t write_rows = is_repeat ? desc.offsets_offset : num_rows;
+
+        uint32_t * wire_offsets = is_repeat
+            ? reinterpret_cast<uint32_t *>(buf.data() + desc.data_offset)
+            : reinterpret_cast<uint32_t *>(buf.data() + desc.offsets_offset);
+        uint8_t * data_dst = is_repeat
+            ? buf.data() + desc.data_offset + (write_rows + 1u) * sizeof(uint32_t)
+            : buf.data() + desc.data_offset;
+
         wire_offsets[0] = 0;
         uint32_t wire_pos = 0;
         uint32_t ch_pos = 0;
-        for (uint32_t i = 0; i < num_rows; ++i)
+        for (uint32_t i = 0; i < write_rows; ++i)
         {
             uint32_t str_end = static_cast<uint32_t>(ch_offsets[i]);
             uint32_t str_len = str_end - ch_pos;
@@ -231,15 +317,20 @@ inline void writeColData(
     const auto * raw      = col->getRawData().data();
     uint32_t     src_elem = static_cast<uint32_t>(col->sizeOfValueIfFixed());
     uint32_t     dst_elem = (src_elem == 2) ? 4u : src_elem;
+
+    // COL_IS_REPEAT: write only the R unique rows.
+    bool is_repeat = (desc.type & COL_IS_REPEAT) != 0;
+    uint32_t write_rows = is_repeat ? desc.offsets_offset : num_rows;
+
     if (src_elem == dst_elem)
     {
-        std::memcpy(buf.data() + desc.data_offset, raw, desc.data_size);
+        std::memcpy(buf.data() + desc.data_offset, raw, write_rows * dst_elem);
     }
     else
     {
         // 2-byte → 4-byte promotion: zero-pad each element to 4 bytes.
         uint8_t * dst = buf.data() + desc.data_offset;
-        for (uint32_t i = 0; i < num_rows; ++i)
+        for (uint32_t i = 0; i < write_rows; ++i)
         {
             uint32_t v = 0;
             std::memcpy(&v, raw + i * src_elem, src_elem);
@@ -273,7 +364,7 @@ inline MutableColumnPtr readColumnarOutput(
     ColDescriptor desc;
     std::memcpy(&desc, buf.data() + COLUMNAR_HEADER_BYTES, sizeof(desc));
 
-    uint32_t raw_type = desc.type & ~COL_IS_CONST;
+    uint32_t raw_type = desc.type & ~(COL_IS_CONST | COL_IS_REPEAT);
 
     if (raw_type == COL_BYTES || raw_type == COL_NULL_BYTES)
     {

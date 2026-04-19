@@ -16,6 +16,9 @@
 ///   2. Array(String) encoder: verify correct wire bytes written by buildColDescriptor+writeColData
 ///   3. Array(UInt64) encoder: verify correct wire bytes
 ///   4. COL_COMPLEX decoder: Array(Tuple(UInt64, Float64)) with manually-crafted WASM-output bytes
+///   5. COL_IS_REPEAT string: encode a periodic string column, check wire layout
+///   6. COL_IS_REPEAT fixed: encode a periodic UInt64 column, check wire layout
+///   7. COL_IS_REPEAT no-repeat: column with no period stays as plain COL_BYTES
 
 #include <gtest/gtest.h>
 #include <cstring>
@@ -258,4 +261,87 @@ TEST(ColumnarV1Wire, DecodeArrayOfTupleUInt64Float64)
     EXPECT_DOUBLE_EQ(col_f64.getData()[0], 1.5);
     EXPECT_DOUBLE_EQ(col_f64.getData()[1], 2.5);
     EXPECT_DOUBLE_EQ(col_f64.getData()[2], 3.5);
+}
+
+// ── COL_IS_REPEAT: periodic String column ────────────────────────────────────
+//
+// 6 rows, pattern ["foo", "bar", "foo", "bar", "foo", "bar"] — period = 2.
+// Wire should carry only 2 strings, with:
+//   desc.type           = COL_BYTES | COL_IS_REPEAT
+//   desc.offsets_offset = 2   (period, not a byte offset)
+//   data block          = uint32[3]{0,4,8} + "foo\0bar\0"  (R+1 offsets + R strings)
+
+TEST(ColumnarV1Wire, RepeatStringEncoding)
+{
+    auto col = ColumnString::create();
+    for (int i = 0; i < 6; ++i)
+        col->insertData(i % 2 == 0 ? "foo" : "bar", 3);
+
+    auto buf = encodeCHColumn(col.get(), 6);
+    ColDescriptor desc = readDesc(buf);
+
+    EXPECT_EQ(desc.type & ~COL_IS_REPEAT, COL_BYTES);
+    EXPECT_EQ(desc.type & COL_IS_REPEAT,  COL_IS_REPEAT);
+    EXPECT_EQ(desc.offsets_offset, 2u);      // period = 2
+
+    // Data block: 3 uint32 offsets + 8 bytes of strings
+    const uint32_t * wire_offs = reinterpret_cast<const uint32_t *>(buf.data() + desc.data_offset);
+    EXPECT_EQ(wire_offs[0], 0u);
+    EXPECT_EQ(wire_offs[1], 4u);   // "foo\0"
+    EXPECT_EQ(wire_offs[2], 8u);   // "bar\0"
+
+    const uint8_t * chars = buf.data() + desc.data_offset + 3 * sizeof(uint32_t);
+    EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars), 3), "foo");
+    EXPECT_EQ(chars[3], '\0');
+    EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars + 4), 3), "bar");
+    EXPECT_EQ(chars[7], '\0');
+
+    // Total data_size = 3*4 + 8 = 20 bytes (not 6*4 + 24 = 48 that normal would need)
+    EXPECT_EQ(desc.data_size, 3u * sizeof(uint32_t) + 8u);
+}
+
+// ── COL_IS_REPEAT: periodic UInt64 column ────────────────────────────────────
+//
+// 9 rows, pattern [10, 20, 30, 10, 20, 30, 10, 20, 30] — period = 3.
+// Wire carries only 3 uint64 values.
+
+TEST(ColumnarV1Wire, RepeatFixed64Encoding)
+{
+    auto col = ColumnUInt64::create();
+    for (int rep = 0; rep < 3; ++rep)
+        for (uint64_t v : {10ULL, 20ULL, 30ULL})
+            col->getData().push_back(v);
+
+    auto buf = encodeCHColumn(col.get(), 9);
+    ColDescriptor desc = readDesc(buf);
+
+    EXPECT_EQ(desc.type & ~COL_IS_REPEAT, COL_FIXED64);
+    EXPECT_EQ(desc.type & COL_IS_REPEAT,  COL_IS_REPEAT);
+    EXPECT_EQ(desc.offsets_offset, 3u);          // period = 3
+    EXPECT_EQ(desc.data_size, 3u * sizeof(uint64_t));  // only 3 values stored
+
+    const uint64_t * data = reinterpret_cast<const uint64_t *>(buf.data() + desc.data_offset);
+    EXPECT_EQ(data[0], 10u);
+    EXPECT_EQ(data[1], 20u);
+    EXPECT_EQ(data[2], 30u);
+}
+
+// ── COL_IS_REPEAT: non-periodic column stays as COL_BYTES ────────────────────
+//
+// 4 unique strings — no period → wire must use normal COL_BYTES encoding.
+
+TEST(ColumnarV1Wire, RepeatStringNoRepeat)
+{
+    auto col = ColumnString::create();
+    col->insertData("a", 1);
+    col->insertData("b", 1);
+    col->insertData("c", 1);
+    col->insertData("d", 1);
+
+    auto buf = encodeCHColumn(col.get(), 4);
+    ColDescriptor desc = readDesc(buf);
+
+    // Must NOT have COL_IS_REPEAT set.
+    EXPECT_EQ(desc.type & COL_IS_REPEAT, 0u);
+    EXPECT_EQ(desc.type, COL_BYTES);
 }
