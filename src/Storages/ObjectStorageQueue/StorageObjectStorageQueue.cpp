@@ -366,7 +366,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
+    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
     zk_path = chooseZooKeeperPath(
@@ -823,7 +823,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
 
@@ -1279,7 +1279,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         }
     }
 
-    StorageInMemoryMetadata old_metadata(getInMemoryMetadata());
+    StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
     SettingsChanges * old_settings = nullptr;
     if (old_metadata.settings_changes)
     {
@@ -1352,7 +1352,7 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
         auto alter_commands = normalizeAlterCommands(commands);
 
-        StorageInMemoryMetadata old_metadata(getInMemoryMetadata());
+        StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
         SettingsChanges * old_settings = nullptr;
         if (old_metadata.settings_changes)
         {
@@ -1579,7 +1579,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         getStorageID(),
         list_objects_batch_size_copy,
         predicate,
-        getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        getInMemoryMetadataPtr(local_context, false)->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
@@ -1745,7 +1745,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     const bool is_ordered = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
 
     auto file_metadata = files_metadata->getFileMetadata(path);
-    const auto & effective_processed_watch_path = file_metadata->getProcessedWatchPath();
+    const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
 
     LOG_DEBUG(log, "Waiting for path '{}' to be processed by {}", path, getStorageID().getNameForLogs());
@@ -1814,14 +1814,14 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 ///              when the node is first created.
                 std::string dummy_data;
                 Coordination::Stat dummy_stat{};
-                const bool node_exists = zk->tryGetWatch(effective_processed_watch_path, dummy_data, &dummy_stat, event);
+                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, event);
                 if (!node_exists)
-                    zk->existsWatch(effective_processed_watch_path, nullptr, event);
+                    zk->existsWatch(processed_node_path, nullptr, event);
             }
             else
             {
                 /// Unordered: each file gets its own processed node; watch for its creation.
-                zk->existsWatch(effective_processed_watch_path, nullptr, event);
+                zk->existsWatch(processed_node_path, nullptr, event);
             }
 
             /// Per-file failed node: watch for creation regardless of mode.

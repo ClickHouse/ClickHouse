@@ -148,8 +148,8 @@ StorageMerge::StorageMerge(
         ? getColumnsDescriptionFromSourceTables(context_)
         : columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 StorageMerge::StorageMerge(
@@ -173,8 +173,8 @@ StorageMerge::StorageMerge(
         ? getColumnsDescriptionFromSourceTables(context_)
         : columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(ContextPtr context_) const
@@ -212,7 +212,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     size_t table_num = 0;
     ColumnsDescription res;
 
-    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look](auto && t)
+    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context](auto && t)
     {
         if (!t)
             return false;
@@ -222,7 +222,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
             return false;
 
         access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
-        auto structure = t->getInMemoryMetadataPtr()->getColumns();
+        auto structure = t->getInMemoryMetadataPtr(query_context, false)->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
         {
@@ -316,8 +316,8 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
 {
     bool supports_prewhere = true;
 
-    const auto & metadata = getInMemoryMetadata();
-    const auto & columns = metadata.getColumns();
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto & columns = metadata_snapshot->getColumns();
 
     NameSet supported_columns;
 
@@ -333,7 +333,7 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
 
     forEachTable([&](const StoragePtr & table)
     {
-        const auto & table_metadata_ptr = table->getInMemoryMetadataPtr();
+        const auto table_metadata_ptr = table->getInMemoryMetadataPtr(getContext(), false);
         if (!table_metadata_ptr)
             supports_prewhere = false;
         if (!supports_prewhere)
@@ -394,7 +394,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                 stage_in_source_tables = std::max(
                     stage_in_source_tables,
                     table->getQueryProcessingStage(local_context, to_stage,
-                        table->getStorageSnapshot(table->getInMemoryMetadataPtr(), local_context), query_info));
+                        table->getStorageSnapshot(table->getInMemoryMetadataPtr(local_context, false), local_context), query_info));
             }
 
             iterator->next();
@@ -414,33 +414,42 @@ VirtualColumnsDescription StorageMerge::createVirtuals()
     return desc;
 }
 
-StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+StorageMetadataPtr StorageMerge::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
-    static const auto common_virtuals = createVirtuals();
-    const auto & access = query_context->getAccess();
+    auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    if (!query_context)
+        return base_metadata;
 
-    auto virtuals = common_virtuals;
-    if (auto first_table = traverseTablesUntil([access](auto && table)
+    auto virtuals = createVirtuals();
+    try
     {
-        if (!table)
-            return false;
-
-        auto id = table->getStorageID();
-        return access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name);
-    }))
-    {
-        auto table_virtuals = first_table->getVirtualsPtr();
-        for (const auto & column : *table_virtuals)
+        const auto & access = query_context->getAccess();
+        if (auto first_table = traverseTablesUntil([access](auto && table)
         {
-            if (virtuals.has(column.name))
-                continue;
+            if (!table)
+                return false;
 
-            virtuals.add(column);
+            auto id = table->getStorageID();
+            return access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name);
+        }))
+        {
+            const auto source_table_metadata = first_table->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+            for (const auto & column : source_table_metadata->virtuals)
+            {
+                if (virtuals.has(column.name))
+                    continue;
+
+                virtuals.add(column);
+            }
         }
     }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+            throw;
+    }
 
-    auto virtuals_ptr = std::make_shared<VirtualColumnsDescription>(std::move(virtuals));
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(virtuals_ptr));
+    return std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(std::move(virtuals)));
 }
 
 void StorageMerge::read(
@@ -627,7 +636,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
         {
             auto storage_ptr = std::get<1>(*it);
-            auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
+            auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
             auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, context);
             if (it == selected_tables.begin())
                 input_sorting_info = current_info;
@@ -669,7 +678,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Aliases aliases;
             RowPolicyDataOpt row_policy_data_opt;
-            auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
+            auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
             if (storage_metadata_snapshot->getColumns().empty())
             {
@@ -1209,7 +1218,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     std::shared_ptr<DB::IStorage> storage,
     ContextPtr local_context)
 {
-    storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
+    storage_metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
     auto storage_columns = storage_metadata_snapshot->getColumns();
     auto needed_columns = storage_columns.getAll();
 
@@ -1274,7 +1283,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     DatabaseTablesIterators database_table_iterators = assert_cast<StorageMerge &>(*storage_merge).getDatabaseIterators(query_context);
 
     std::function<bool(const String&,const String&)> table_filter;
-    if (filter_actions_dag && storage_merge->isVirtualColumn("_database", merge_storage_snapshot->metadata) && storage_merge->isVirtualColumn("_table", merge_storage_snapshot->metadata))
+    if (filter_actions_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
     {
         auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
         Block sample_block = {
@@ -1321,7 +1330,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                     {
                         if  (!granted_select_on_all_tables)
                         {
-                            const auto columns_to_check = VirtualColumnUtils::filterVirtualColumns(all_column_names, storage_snapshot->metadata, storage_snapshot->virtual_columns, VirtualsKind::All, VirtualsMaterializationPlace::All);
+                            const auto columns_to_check = VirtualColumnUtils::filterVirtualColumns(all_column_names, storage_snapshot->metadata, VirtualsKind::All, VirtualsMaterializationPlace::All);
                             access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), columns_to_check);
                         }
 
@@ -1419,11 +1428,11 @@ void StorageMerge::alter(
 {
     auto table_id = getStorageID();
 
-    StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata storage_metadata = *getInMemoryMetadataPtr(local_context, false);
     params.apply(storage_metadata, local_context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata, /*validate_new_create_query=*/true);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 void ReadFromMerge::convertAndFilterSourceStream(

@@ -1,13 +1,14 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+
+#include <Core/Settings.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Core/Settings.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
-
 
 namespace DB
 {
@@ -62,8 +63,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     /// NOTE do not pass context for writing to system.transactions_info_log,
     /// because part may have temporary name (with temporary block numbers). Will write it later.
-    data_part->version.setCreationTID(tid, nullptr);
-    data_part->storeVersionMetadata();
+    data_part->version->setAndStoreCreationTID(tid, nullptr);
 
     writer = createMergeTreeDataPartWriter(data_part->getType(),
         data_part->name,
@@ -75,7 +75,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         columns_list,
         data_part->getColumnPositions(),
         metadata_snapshot,
-        data_part->storage.getVirtualsPtr(),
         skip_indices,
         data_part->getMarksFileExtension(),
         default_codec,
