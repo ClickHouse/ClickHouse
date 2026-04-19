@@ -28,7 +28,7 @@ workflow = Workflow.Config(
         *JobConfigs.build_llvm_coverage_job,
         *JobConfigs.release_build_jobs,
         *[
-            job.set_dependency(
+            job.set_run_after(
                 REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
             )
             for job in JobConfigs.special_build_jobs
@@ -42,14 +42,18 @@ workflow = Workflow.Config(
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs,
         *JobConfigs.functional_test_llvm_coverage_jobs,
+        *JobConfigs.functional_test_excluded_from_llvm_job,
         *JobConfigs.functional_tests_jobs_azure,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
         *JobConfigs.integration_test_llvm_coverage_jobs,
+        *JobConfigs.integration_test_excluded_from_llvm_job,
         *JobConfigs.stress_test_jobs,
         *JobConfigs.stress_test_azure_jobs,
+        *JobConfigs.stress_test_serverfuzz_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
+        *JobConfigs.buzz_fuzzer_serverfuzz_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,
         *JobConfigs.performance_comparison_with_release_base_jobs,
         *JobConfigs.clickbench_master_jobs,

@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
