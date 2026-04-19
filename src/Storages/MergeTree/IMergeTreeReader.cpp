@@ -83,6 +83,15 @@ const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 
 bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
 {
+    /// Projection parts use a fake data_version of 0 (FAKE_RESULT_PART_FOR_PROJECTION),
+    /// which causes all mutations to appear as "pending" even if the parent part
+    /// has already had them applied. Skip the dropped-column check for projection parts
+    /// to avoid incorrectly discarding valid column data during projection merges.
+    /// This is consistent with `injectRequiredColumns` in MergeTreeBlockReadUtils.cpp
+    /// which also skips alter_conversions for projection parts.
+    if (data_part_info_for_read->isProjectionPart())
+        return false;
+
     return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage());
 }
 
@@ -95,8 +104,8 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
 
     const auto & data_part = loaded_part_info->getDataPart();
-    const auto & storage_columns = storage_snapshot->metadata->getColumns();
-    const auto & virtual_columns = storage_snapshot->virtual_columns;
+    const auto & storage_columns = storage_snapshot->metadata->columns;
+    const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
     auto it = getColumns().begin();
     for (size_t pos = 0; pos < columns.size(); ++pos, ++it)
@@ -104,7 +113,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         if (columns[pos] || storage_columns.has(it->name))
             continue;
 
-        auto virtual_column = virtual_columns->tryGet(it->name);
+        auto virtual_column = virtual_columns.tryGet(it->name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
         if (!virtual_column)
             continue;
 
@@ -194,9 +203,9 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
 ColumnsDescription IMergeTreeReader::buildCombinedColumnsForDefaultExpressions() const
 {
     auto combined_columns = storage_snapshot->metadata->getColumns();
-    if (storage_snapshot->virtual_columns)
+    if (!storage_snapshot->metadata->virtuals.empty())
     {
-        for (const auto & virtual_column : *storage_snapshot->virtual_columns)
+        for (const auto & virtual_column : storage_snapshot->metadata->virtuals)
             if (virtual_column.default_desc.expression)
                 combined_columns.add(virtual_column);
     }
@@ -578,16 +587,19 @@ MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark);
+    MergeTreeIndexGranulePtr index_granule);
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark)
+    const IndexGranulesMap & index_granules)
 {
     if (index.index->index.type == "text")
-        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, can_skip_mark);
+    {
+        auto it = index_granules.find(index.index->index.name);
+        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, it != index_granules.end() ? it->second : nullptr);
+    }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);
 }
