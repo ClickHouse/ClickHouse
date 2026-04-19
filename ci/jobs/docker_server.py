@@ -101,7 +101,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument("--push", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--os", default=["ubuntu", "alpine"], help=argparse.SUPPRESS)
+    parser.add_argument("--os", default=["ubuntu", "alpine", "distroless"], help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-ubuntu",
         action=DelOS,
@@ -115,6 +115,13 @@ def parse_args() -> argparse.Namespace:
         nargs=0,
         default=argparse.SUPPRESS,
         help="don't build alpine image",
+    )
+    parser.add_argument(
+        "--no-distroless",
+        action=DelOS,
+        nargs=0,
+        default=argparse.SUPPRESS,
+        help="don't build distroless image",
     )
     parser.add_argument(
         "--allow-build-reuse",
@@ -215,10 +222,25 @@ def build_and_push_image(
         cmd_args = list(init_args)
         urls = []
         if direct_urls:
-            if os == "ubuntu" and "clickhouse-server" in image.name:
-                urls = [url for url in direct_urls[arch] if ".deb" in url]
+            # distroless and ubuntu-server use an Ubuntu builder with dpkg, so they
+            # need .deb packages. alpine and ubuntu-keeper use .tgz packages.
+            uses_deb = os == "distroless" or (
+                os == "ubuntu" and "clickhouse-server" in image.name
+            )
+            if uses_deb:
+                urls = [
+                    url
+                    for url in direct_urls[arch]
+                    if ".deb" in url and "-dbg" not in url
+                ]
             else:
-                urls = [url for url in direct_urls[arch] if ".tgz" in url]
+                # For keeper/alpine tgz builds, only pass the keeper tgz.
+                # Excluding clickhouse-common-static.tgz avoids a large unnecessary download.
+                tgz_urls = [url for url in direct_urls[arch] if ".tgz" in url]
+                if "keeper" in image.name:
+                    urls = [url for url in tgz_urls if "clickhouse-keeper" in url]
+                else:
+                    urls = tgz_urls
         cmd_args.extend(
             buildx_args(
                 repo_urls,
@@ -299,7 +321,7 @@ def test_docker_library(test_results) -> None:
         test_results.append(
             Result(
                 name=test_name,
-                status=Result.Status.FAILED,
+                status=Result.Status.FAIL,
                 info=f"Exception while testing docker library: {traceback.format_exc()}",
             )
         )
@@ -384,7 +406,16 @@ def main():
                     "clickhouse-common-static",
                 ]
             elif "clickhouse-keeper" in image_repo:
-                PACKAGES = ["clickhouse-keeper"]
+                # Both packages are needed to cover all three keeper image variants:
+                #   distroless: installs from .deb via dpkg; clickhouse-common-static
+                #               provides the clickhouse multi-tool binary (clickhouse-keeper
+                #               is a symlink to it). clickhouse-keeper .deb is not published
+                #               separately, so the common-static .deb is the only source.
+                #   alpine/ubuntu: installs from .tgz; clickhouse-keeper provides the
+                #               standalone keeper binary and its symlinks. The common-static
+                #               .tgz is implicitly excluded because the url filter below
+                #               keeps only urls containing "clickhouse-keeper" in the name.
+                PACKAGES = ["clickhouse-common-static", "clickhouse-keeper"]
             else:
                 assert False, "BUG"
             urls = read_build_urls(build_name)
