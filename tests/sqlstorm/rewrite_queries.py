@@ -478,28 +478,34 @@ def rewrite_any_comparison(sql):
 
         # Extract the LHS from what we've accumulated so far.
         # Only match simple identifiers (possibly qualified with table/db prefix),
-        # not arbitrary expressions like "a + b" — rewriting those would change semantics.
+        # not arbitrary expressions like `a + b` or `a::integer` — rewriting those
+        # would produce invalid SQL (e.g. `a + has(arr, b)` or `a::has(arr, integer)`).
         accumulated = ''.join(result)
         lhs_match = re.search(r'((?:\w+\.)*\w+)\s*$', accumulated)
+        # Determine whether the LHS is a self-contained simple identifier, i.e.
+        # the character preceding it is a clean boundary rather than an operator
+        # or part of a cast (`::`).
+        safe_to_rewrite = False
         if lhs_match:
-            # Verify the identifier is standalone: the character before it must not be
-            # an arithmetic/bitwise operator, which would mean it's part of a larger
-            # expression (e.g. "a + b = ANY(...)"). In that case, keep the original.
-            before_lhs = accumulated[:lhs_match.start()].rstrip()
-            if before_lhs and before_lhs[-1] in '+-*/%|&^~':
-                # Part of a compound expression, keep original to avoid changing semantics
-                result.append(sql[m.start():paren_end + 1])
+            preceding = accumulated[:lhs_match.start()].rstrip()
+            if not preceding:
+                safe_to_rewrite = True
             else:
-                lhs = lhs_match.group(1)
-                # Remove the LHS from accumulated result
-                accumulated = accumulated[:lhs_match.start()]
-                if op == '=':
-                    replacement = f"has({array_expr}, {lhs})"
-                else:
-                    replacement = f"NOT has({array_expr}, {lhs})"
-                result = [accumulated, replacement]
+                last_char = preceding[-1]
+                # Reject operator, cast, or closing-paren boundaries
+                if last_char not in ":+-*/%.<>=!^|~)":
+                    safe_to_rewrite = True
+        if safe_to_rewrite:
+            lhs = lhs_match.group(1)
+            # Remove the LHS from accumulated result
+            accumulated = accumulated[:lhs_match.start()]
+            if op == '=':
+                replacement = f"has({array_expr}, {lhs})"
+            else:
+                replacement = f"NOT has({array_expr}, {lhs})"
+            result = [accumulated, replacement]
         else:
-            # Can't find LHS, keep original
+            # LHS is part of a larger expression, keep original unchanged
             result.append(sql[m.start():paren_end + 1])
 
         i = paren_end + 1
