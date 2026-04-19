@@ -130,16 +130,19 @@ inline uint32_t buildColDescriptor(
     }
 
     uint32_t elem_size = static_cast<uint32_t>(col->sizeOfValueIfFixed());
+    // 2-byte types (UInt16/Int16) are promoted to FIXED32 (4 bytes, zero-padded)
+    // so WASM reads a clean 4-byte value without touching adjacent memory.
+    uint32_t wire_elem_size = (elem_size == 2) ? 4u : elem_size;
     uint32_t base_type;
-    if      (elem_size == 1) base_type = is_nullable ? COL_NULL_FIXED8  : COL_FIXED8;
-    else if (elem_size == 4) base_type = is_nullable ? COL_NULL_FIXED32 : COL_FIXED32;
-    else                     base_type = is_nullable ? COL_NULL_FIXED64 : COL_FIXED64;
+    if      (wire_elem_size == 1) base_type = is_nullable ? COL_NULL_FIXED8  : COL_FIXED8;
+    else if (wire_elem_size == 4) base_type = is_nullable ? COL_NULL_FIXED32 : COL_FIXED32;
+    else                          base_type = is_nullable ? COL_NULL_FIXED64 : COL_FIXED64;
     desc.type         = base_type | (is_const ? COL_IS_CONST : 0u);
     desc.null_offset  = 0;
     desc.offsets_offset = 0;
     desc.data_offset  = write_cursor;
-    desc.data_size    = num_rows * elem_size;
-    write_cursor     += num_rows * elem_size;
+    desc.data_size    = num_rows * wire_elem_size;
+    write_cursor     += num_rows * wire_elem_size;
     return write_cursor;
 }
 
@@ -225,8 +228,24 @@ inline void writeColData(
         return;
     }
 
-    const auto * raw = col->getRawData().data();
-    std::memcpy(buf.data() + desc.data_offset, raw, desc.data_size);
+    const auto * raw      = col->getRawData().data();
+    uint32_t     src_elem = static_cast<uint32_t>(col->sizeOfValueIfFixed());
+    uint32_t     dst_elem = (src_elem == 2) ? 4u : src_elem;
+    if (src_elem == dst_elem)
+    {
+        std::memcpy(buf.data() + desc.data_offset, raw, desc.data_size);
+    }
+    else
+    {
+        // 2-byte → 4-byte promotion: zero-pad each element to 4 bytes.
+        uint8_t * dst = buf.data() + desc.data_offset;
+        for (uint32_t i = 0; i < num_rows; ++i)
+        {
+            uint32_t v = 0;
+            std::memcpy(&v, raw + i * src_elem, src_elem);
+            std::memcpy(dst + i * dst_elem, &v, dst_elem);
+        }
+    }
 }
 
 // Decode a single-column COLUMNAR_V1 output buffer into a MutableColumnPtr.

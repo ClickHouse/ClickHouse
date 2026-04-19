@@ -678,8 +678,15 @@ public:
             if (arguments[i]->equals(*expected_arguments[i]))
                 continue;
 
+            /// When useDefaultImplementationForNulls() returns false (non-nullable return
+            /// types such as Array), CH passes Nullable-wrapped argument types.
+            /// Strip Nullable and retry the exact-match check.
+            const DataTypePtr & stripped = removeNullable(arguments[i]);
+            if (stripped->equals(*expected_arguments[i]))
+                continue;
+
             /// Allow implicit coercions: same kind, i32→i64, any int→any float, f32→f64.
-            auto actual_kind = wasmKindForDataType(arguments[i].get());
+            auto actual_kind = wasmKindForDataType(stripped.get());
             auto expected_kind = wasmKindForDataType(expected_arguments[i].get());
             if (actual_kind && expected_kind && canCoerce(*actual_kind, *expected_kind))
                 continue;
@@ -703,6 +710,14 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
 
     bool isSuitableForConstantFolding() const override { return user_defined_function->getIsDeterministic(); }
+
+    /// Don't let the framework wrap the result in Nullable when inputs are nullable —
+    /// Array/Tuple return types cannot be inside Nullable.  WASM UDFs handle null
+    /// propagation themselves via the COL_NULL_* column types.
+    bool useDefaultImplementationForNulls() const override
+    {
+        return user_defined_function->getResultType()->canBeInsideNullable();
+    }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
