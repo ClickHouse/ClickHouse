@@ -1713,37 +1713,31 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
         /// `required_right_keys`, and there can also be duplicates within the left block.
         /// The result_sample_block deduplicates such columns, so compare unique name sets
         /// rather than raw column counts.
-        NameSet expected_names;
+        Names left_block_names;
         if (canRemoveColumnsFromLeftBlock())
-            for (const auto & col : table_join->getOutputColumns(JoinTableSide::Left))
-                expected_names.insert(col.name);
+            std::ranges::copy(
+                table_join->getOutputColumns(JoinTableSide::Left) | std::views::transform([](const auto & column) { return column.name; }),
+                std::back_inserter(left_block_names));
         else
-            for (const auto & name : left_sample_block.getNames())
-                expected_names.insert(name);
+            left_block_names = left_sample_block.getNames();
 
+        NameSet expected_names(left_block_names.begin(), left_block_names.end());
         for (size_t i = 0; i < required_right_keys.columns(); ++i)
             expected_names.insert(required_right_keys.getByPosition(i).name);
-
         for (size_t i = 0; i < sample_block_with_columns_to_add.columns(); ++i)
             expected_names.insert(sample_block_with_columns_to_add.getByPosition(i).name);
 
-        NameSet result_names(result_sample_block.getNames().begin(), result_sample_block.getNames().end());
+        const Names result_names_vec = result_sample_block.getNames();
+        const NameSet result_names(result_names_vec.begin(), result_names_vec.end());
 
         if (expected_names != result_names)
         {
-            Names left_block_names;
-            if (canRemoveColumnsFromLeftBlock())
-                std::ranges::copy(
-                    table_join->getOutputColumns(JoinTableSide::Left) | std::views::transform([](const auto & column) { return column.name; }),
-                    std::back_inserter(left_block_names));
-            else
-                left_block_names = left_sample_block.getNames();
-
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected number of columns in result sample block: {} expected {} ([{}] = [{}] + [{}] + [{}])",
-                            result_sample_block.columns(), expected_names.size(),
-                            result_sample_block.dumpNames(), fmt::join(left_block_names, ", "),
-                            required_right_keys.dumpNames(), sample_block_with_columns_to_add.dumpNames());
+                            "Unexpected columns in result sample block: got [{}], expected union of [{}] + [{}] + [{}]",
+                            fmt::join(result_names_vec, ", "),
+                            fmt::join(left_block_names, ", "),
+                            required_right_keys.dumpNames(),
+                            sample_block_with_columns_to_add.dumpNames());
         }
     }
 
