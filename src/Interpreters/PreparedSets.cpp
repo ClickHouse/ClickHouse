@@ -254,7 +254,8 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::createQueryPlanForRetry(const 
         catch (...)
         {
             if (!query_plan_builder)
-                return nullptr;
+                throw;
+            /// The original plan could not be cloned; fall through and rebuild it via `query_plan_builder`.
         }
     }
 
