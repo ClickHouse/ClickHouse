@@ -111,6 +111,75 @@ String highlightDigitGroups(String source)
 }
 
 
+String escapeNonPrintableCharacters(String source, bool color)
+{
+    /// Check if there are any non-printable characters first.
+    bool has_non_printable = false;
+    for (unsigned char c : source)
+    {
+        if (c < 32 || c == 127)
+        {
+            has_non_printable = true;
+            break;
+        }
+    }
+
+    if (!has_non_printable)
+        return source;
+
+    String result;
+    result.reserve(source.size());
+
+    for (unsigned char c : source)
+    {
+        if (c < 32 || c == 127)
+        {
+            String escaped;
+            switch (c)
+            {
+                case '\0': escaped = "\\0"; break;
+                case '\a': escaped = "\\a"; break;
+                case '\b': escaped = "\\b"; break;
+                case '\t': escaped = "\\t"; break;
+                case '\n': escaped = "\\n"; break;
+                case '\v': escaped = "\\v"; break;
+                case '\f': escaped = "\\f"; break;
+                case '\r': escaped = "\\r"; break;
+                case '\x1b': escaped = "\\e"; break;
+                case 127: escaped = "\\x7F"; break;
+                default:
+                {
+                    /// Use hex escape for other control characters.
+                    escaped.resize(4);
+                    escaped[0] = '\\';
+                    escaped[1] = 'x';
+                    escaped[2] = "0123456789ABCDEF"[c >> 4];
+                    escaped[3] = "0123456789ABCDEF"[c & 0xF];
+                    break;
+                }
+            }
+
+            if (color)
+            {
+                result += RED_COLOR;
+                result += escaped;
+                result += RESET_COLOR;
+            }
+            else
+            {
+                result += escaped;
+            }
+        }
+        else
+        {
+            result += static_cast<char>(c);
+        }
+    }
+
+    return result;
+}
+
+
 String highlightTrailingSpaces(String source)
 {
     if (source.empty())
