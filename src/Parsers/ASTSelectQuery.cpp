@@ -468,7 +468,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>(table_id);
+    table_expression->setOrReplace(table_expression->database_and_table_name, make_intrusive<ASTTableIdentifier>(table_id));
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);
@@ -492,8 +492,8 @@ void ASTSelectQuery::addTableFunction(const ASTPtr & table_function_ptr)
 
     String table_alias = getTableExpressionAlias(table_expression);
     /// Maybe need to modify the alias, so we should clone new table_function node
-    table_expression->table_function = table_function_ptr->clone();
-    table_expression->database_and_table_name = nullptr;
+    table_expression->setOrReplace(table_expression->table_function, table_function_ptr->clone());
+    table_expression->reset(table_expression->database_and_table_name);
 
     if (table_alias.empty())
         table_expression->table_function->setAlias(table_alias);

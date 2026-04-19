@@ -58,6 +58,9 @@ public:
             res->children.push_back(res->parts_list);
         }
 
+        cloneOutputOptions(*res);
+        cloneTableOptions(*res);
+
         return res;
     }
 

@@ -33,8 +33,6 @@ class _Settings:
     ENABLED_WORKFLOWS: Optional[List[str]] = None
     DEFAULT_LOCAL_TEST_WORKFLOW: str = ""
 
-    ENABLE_ARTIFACTS_REPORT: bool = False
-
     ######################################
     #    Runtime Settings                #
     ######################################
@@ -66,6 +64,7 @@ class _Settings:
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
     SECRET_GH_APP_INSTALLATION_ID: str = ""
+    SECRET_GH_APP_REGION: str = ""
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
     WORKFLOW_JOB_FILE: str = f"{TEMP_DIR}/workflow_job.json"
@@ -174,11 +173,11 @@ _USER_DEFINED_SETTINGS = [
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
     "SECRET_GH_APP_INSTALLATION_ID",
+    "SECRET_GH_APP_REGION",
     "MAIN_BRANCH",
     "DISABLED_WORKFLOWS",
     "ENABLED_WORKFLOWS",
     "PYTHONPATHS",
-    "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
     "ENABLE_SUBMODULE_CACHE",

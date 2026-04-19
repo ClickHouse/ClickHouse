@@ -412,7 +412,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << quoteString(snapshot_name);
         if (snapshot_desc != nullptr)
         {
-            ostr << "FROM ";
+            ostr << " FROM ";
             snapshot_desc->format(ostr, settings, state, frame);
         }
     }
@@ -836,6 +836,9 @@ ASTPtr ASTAlterQuery::clone() const
 
     if (command_list)
         res->set(res->command_list, command_list->clone());
+
+    cloneOutputOptions(*res);
+    cloneTableOptions(*res);
 
     return res;
 }

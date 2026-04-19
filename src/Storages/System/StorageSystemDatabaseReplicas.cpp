@@ -273,8 +273,8 @@ StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & t
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemDatabaseReplicas::createVirtuals()

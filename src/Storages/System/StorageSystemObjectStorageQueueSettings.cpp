@@ -30,8 +30,8 @@ ColumnsDescription StorageSystemObjectStorageQueueSettings<type>::getColumnsDesc
         {"description", std::make_shared<DataTypeString>(), "Setting description."},
         {"alterable",    std::make_shared<DataTypeUInt8>(),
             "Shows whether the current user can change the setting via ALTER TABLE MODIFY SETTING: "
-            "0 — Current user can change the setting, "
-            "1 — Current user can't change the setting."
+            "0 — Current user can't change the setting, "
+            "1 — Current user can change the setting."
         },
     };
 }

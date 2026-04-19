@@ -1,6 +1,5 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
-#include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -65,32 +64,16 @@ String ASTSystemQuery::getTable() const
 
 void ASTSystemQuery::setDatabase(const String & name)
 {
-    if (database)
-    {
-        std::erase(children, database);
-        database.reset();
-    }
-
+    reset(database);
     if (!name.empty())
-    {
-        database = make_intrusive<ASTIdentifier>(name);
-        children.push_back(database);
-    }
+        set(database, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTSystemQuery::setTable(const String & name)
 {
-    if (table)
-    {
-        std::erase(children, table);
-        table.reset();
-    }
-
+    reset(table);
     if (!name.empty())
-    {
-        table = make_intrusive<ASTIdentifier>(name);
-        children.push_back(table);
-    }
+        set(table, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -389,7 +372,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::UNLOCK_SNAPSHOT:
         {
-            ostr << quoteString(backup_name);
+            ostr << " " << quoteString(backup_name);
             if (backup_source)
             {
                 print_keyword(" FROM ");
