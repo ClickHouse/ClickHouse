@@ -123,6 +123,23 @@ def test_local_absolute_path_outside_disks_rejected():
         )
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../../etc/passwd",
+        "foo/../../../etc/passwd",
+        "./../../etc/passwd",
+        "/test_user_files_disk1/../../../etc/passwd",
+    ],
+)
+def test_local_path_traversal_rejected(path):
+    """Test that disk-relative '..' traversal is rejected (does not escape the disk root)."""
+    with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|escapes"):
+        node_local.query(
+            f"SELECT * FROM file('{path}', 'CSV', 'x String')"
+        )
+
+
 def test_local_insert_into_file():
     """Test that writing files uses the first disk by default."""
     node_local.query(
@@ -185,3 +202,32 @@ def test_s3_glob_pattern():
         "SELECT * FROM file('s3_glob_*.csv', 'CSV', 'x UInt64') ORDER BY x"
     )
     assert result.strip() == "1\n2"
+
+
+def test_local_time_virtual_column():
+    """Test that _time virtual column returns a real timestamp for disk-backed files."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'mtime_test' > /test_user_files_disk1/mtime_test.csv",
+        ]
+    )
+
+    result = node_local.query(
+        "SELECT _time > toDateTime('2000-01-01') "
+        "FROM file('mtime_test.csv', 'CSV', 'x String')"
+    )
+    assert result.strip() == "1"
+
+
+def test_s3_time_virtual_column():
+    """Same as above but for S3-backed disk (covers the DiskObjectStorage path)."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_mtime.csv', 'CSV', 'x UInt64') SELECT 7"
+    )
+    result = node_s3.query(
+        "SELECT _time > toDateTime('2000-01-01') "
+        "FROM file('s3_mtime.csv', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "1"

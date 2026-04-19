@@ -64,7 +64,7 @@ public:
         String path_for_partitioned_write;
         std::optional<String> format_from_filenames; /// Set if we managed to figure out which file format is used from the names of the file(s).
         std::optional<ArchiveInfo> archive_info; /// Set if the archive syntax is used.
-        VolumePtr user_files_volume; /// When set, paths are disk-relative and I/O goes through the volume's disks.
+        VolumePtr user_files_volume; /// When set, `paths` holds absolute paths of the form `<disk_path>/<relative>` and I/O goes through the volume's disks.
 
         static FileSource parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax = {});
     };
@@ -184,7 +184,7 @@ private:
 
     std::string base_path;
     std::vector<std::string> paths;
-    VolumePtr user_files_volume; /// When set, paths are disk-relative and I/O goes through the volume's disks.
+    VolumePtr user_files_volume; /// When set, `paths` holds absolute paths of the form `<disk_path>/<relative>` and I/O goes through the volume's disks.
 
     std::optional<ArchiveInfo> archive_info;
 

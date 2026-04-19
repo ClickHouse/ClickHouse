@@ -130,7 +130,29 @@ public:
         /// When user_files_policy is set, use disk-based I/O
         if (user_files_volume)
         {
-            auto disks = user_files_volume->getDisks();
+            const auto disks = user_files_volume->getDisks();
+
+            auto disk_path_with_slash = [](const DiskPtr & d)
+            {
+                String p = d->getPath();
+                if (p.empty() || p.back() != '/')
+                    p += '/';
+                return p;
+            };
+
+            auto normalize_relative = [](const String & rel) -> String
+            {
+                if (!rel.empty() && rel[0] == '/')
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "Path `{}` must be relative to user files disk", rel);
+                String normalized = fs::path(rel).lexically_normal().generic_string();
+                if (normalized == ".")
+                    return "";
+                if (normalized == ".." || normalized.starts_with("../"))
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "Path `{}` escapes user files directory", rel);
+                return normalized;
+            };
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {
@@ -140,17 +162,19 @@ public:
                 try
                 {
                     DiskPtr found_disk;
+                    String relative_path;
 
                     if (!file_path_str.empty() && file_path_str[0] == '/')
                     {
-                        /// For absolute paths, find the matching disk by path prefix.
+                        /// Match the matching disk by path prefix, then validate the remaining
+                        /// disk-relative portion (no '..' escape).
                         for (const auto & disk : disks)
                         {
-                            String disk_path = disk->getPath();
-                            if (file_path_str.starts_with(disk_path))
+                            const String prefix = disk_path_with_slash(disk);
+                            if (file_path_str.starts_with(prefix))
                             {
-                                file_path_str = file_path_str.substr(disk_path.size());
                                 found_disk = disk;
+                                relative_path = normalize_relative(file_path_str.substr(prefix.size()));
                                 break;
                             }
                         }
@@ -160,10 +184,10 @@ public:
                     }
                     else
                     {
-                        /// For relative paths, find the file on one of the disks.
+                        relative_path = normalize_relative(file_path_str);
                         for (const auto & disk : disks)
                         {
-                            if (disk->existsFile(file_path_str))
+                            if (disk->existsFile(relative_path))
                             {
                                 found_disk = disk;
                                 break;
@@ -175,7 +199,7 @@ public:
                         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File not found on any user files disk");
 
                     auto read_settings = context->getReadSettings();
-                    auto in = found_disk->readFile(file_path_str, read_settings);
+                    auto in = found_disk->readFile(relative_path, read_settings);
                     auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
                     copyData(*in, out);
                 }

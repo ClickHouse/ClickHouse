@@ -345,25 +345,57 @@ void listFilesWithRegexpMatchingOnDisk(
     }
 }
 
-/// Top-level wrapper for disk-based glob matching.
-std::vector<std::string> listFilesWithRegexpMatchingOnDisk(
-    const DiskPtr & disk,
-    const std::string & for_match,
-    size_t & total_bytes_to_read)
+/// Returns disk path with a trailing slash. `disk->getPath()` is not required to
+/// end with a slash, so normalize it so that `prefix + relative` produces a valid
+/// absolute path and `absolute.starts_with(prefix)` tests are unambiguous.
+String getDiskPathWithSlash(const DiskPtr & disk)
 {
-    std::vector<std::string> result;
-    Strings for_match_paths_expanded = expandSelectionGlob(for_match);
+    String p = disk->getPath();
+    if (p.empty() || p.back() != '/')
+        p += '/';
+    return p;
+}
 
-    for (const auto & for_match_expanded : for_match_paths_expanded)
-    {
-        /// Remove leading slash if present (disk paths are relative)
-        std::string normalized = for_match_expanded;
-        if (!normalized.empty() && normalized[0] == '/')
-            normalized = normalized.substr(1);
-        listFilesWithRegexpMatchingOnDisk(disk, "", normalized, total_bytes_to_read, result, false);
-    }
+/// Normalizes a disk-relative path and rejects paths that escape the disk root
+/// via '..' segments. The input must not be absolute.
+String normalizeDiskRelativePath(const String & input)
+{
+    if (!input.empty() && input[0] == '/')
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+            "Path `{}` must be relative to user files disk", input);
+
+    String result = fs::path(input).lexically_normal().generic_string();
+    if (result == ".")
+        return "";
+
+    if (result == ".." || result.starts_with("../"))
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+            "Path `{}` escapes user files directory", input);
 
     return result;
+}
+
+/// Splits an absolute path into (disk, disk-relative-path) by matching the
+/// configured disk path prefix. Returns {nullptr, ""} if no disk matches.
+std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_path, const Disks & disks)
+{
+    for (const auto & disk : disks)
+    {
+        String disk_prefix = getDiskPathWithSlash(disk);
+        if (absolute_path.starts_with(disk_prefix))
+            return {disk, absolute_path.substr(disk_prefix.size())};
+    }
+    return {nullptr, {}};
+}
+
+/// Returns true if the given absolute user-files path points to an existing file
+/// or directory on the volume.
+bool userFilesPathExists(const String & absolute_path, const Disks & disks)
+{
+    auto [disk, relative] = splitUserFilesAbsolutePath(absolute_path, disks);
+    if (!disk)
+        return false;
+    return disk->existsFile(relative) || disk->existsDirectory(relative);
 }
 
 std::string getTablePath(const std::string & table_dir_path, const std::string & format_name)
@@ -544,131 +576,97 @@ Strings getPathsList(const String & path_with_globs, const Strings & user_files_
     return all_paths;
 }
 
-/// Resolves an absolute path to a disk-relative path by stripping the matching disk's path prefix.
-/// Returns the disk and the relative path, or {nullptr, ""} if no disk matches.
-std::pair<DiskPtr, String> resolveAbsolutePathOnDisk(const String & absolute_path, const Disks & disks)
-{
-    for (const auto & disk : disks)
-    {
-        String disk_path = disk->getPath();
-        if (absolute_path.starts_with(disk_path))
-            return {disk, absolute_path.substr(disk_path.size())};
-    }
-    return {nullptr, {}};
-}
-
-/// Finds which disk in the volume contains the given disk-relative path.
-DiskPtr findDiskForPath(const String & relative_path, const Disks & disks)
-{
-    for (const auto & disk : disks)
-    {
-        if (disk->existsFile(relative_path) || disk->existsDirectory(relative_path))
-            return disk;
-    }
-    return nullptr;
-}
-
-/// Disk-based version of getPathsList. Paths are disk-relative.
+/// Finds files matching a specified pattern on a user-files volume.
+///
+/// Returns full absolute paths of the form `disk->getPath() + relative`. Keeping
+/// the disk path prefix in each returned path preserves disk identity for later
+/// read/write operations — otherwise the same relative path can refer to files
+/// on different disks (e.g. `abs_test.csv` living on both disk1 and disk2) and
+/// later lookups would pick the wrong one.
 Strings getPathsListOnDisk(
     const String & path_with_globs,
     const VolumePtr & volume,
     size_t & total_bytes_to_read)
 {
-    bool is_glob = path_with_globs.find_first_of("*?{") != std::string::npos;
-    auto disks = volume->getDisks();
+    const Disks disks = volume->getDisks();
+    const bool is_absolute = !path_with_globs.empty() && path_with_globs[0] == '/';
+    const bool has_globs = path_with_globs.find_first_of("*?{") != std::string::npos;
 
-    bool is_absolute = !path_with_globs.empty() && path_with_globs[0] == '/';
-
-    if (!is_glob)
+    DiskPtr assigned_disk;
+    String relative_pattern;
+    if (is_absolute)
     {
-        String normalized;
-        DiskPtr target_disk;
-
-        if (is_absolute)
-        {
-            /// For absolute paths, find which disk it belongs to by matching the disk path prefix.
-            auto [disk, relative] = resolveAbsolutePathOnDisk(path_with_globs, disks);
-            if (disk)
-            {
-                target_disk = disk;
-                normalized = relative;
-            }
-            else
-            {
-                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                    "File `{}` is not inside any user files disk", path_with_globs);
-            }
-        }
-        else
-        {
-            /// Relative path - just use as-is.
-            normalized = path_with_globs;
-        }
-
-        if (target_disk)
-        {
-            /// We know which disk the file is on.
-            if (target_disk->existsFile(normalized))
-            {
-                total_bytes_to_read += target_disk->getFileSize(normalized);
-                return {normalized};
-            }
-            if (target_disk->existsDirectory(normalized))
-            {
-                Strings paths;
-                for (auto it = target_disk->iterateDirectory(normalized); it->isValid(); it->next())
-                {
-                    String entry_path = normalized + "/" + it->name();
-                    if (target_disk->existsFile(entry_path))
-                    {
-                        total_bytes_to_read += target_disk->getFileSize(entry_path);
-                        paths.push_back(entry_path);
-                    }
-                }
-                return paths;
-            }
-            return {normalized};
-        }
-
-        /// Search across all disks for the file.
-        for (const auto & disk : disks)
-        {
-            if (disk->existsFile(normalized))
-            {
-                total_bytes_to_read += disk->getFileSize(normalized);
-                return {normalized};
-            }
-            if (disk->existsDirectory(normalized))
-            {
-                Strings paths;
-                for (auto it = disk->iterateDirectory(normalized); it->isValid(); it->next())
-                {
-                    String entry_path = normalized + "/" + it->name();
-                    if (disk->existsFile(entry_path))
-                    {
-                        total_bytes_to_read += disk->getFileSize(entry_path);
-                        paths.push_back(entry_path);
-                    }
-                }
-                return paths;
-            }
-        }
-
-        /// Not found on any disk - return the path as-is (for write operations, will use first disk)
-        return {normalized};
+        auto [disk, relative] = splitUserFilesAbsolutePath(path_with_globs, disks);
+        if (!disk)
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                "Path `{}` is not inside any user files disk", path_with_globs);
+        assigned_disk = disk;
+        relative_pattern = normalizeDiskRelativePath(relative);
     }
     else
     {
-        /// For glob patterns, search across all disks and merge results.
-        Strings all_paths;
-        for (const auto & disk : disks)
+        relative_pattern = normalizeDiskRelativePath(path_with_globs);
+    }
+
+    Strings absolute_paths;
+
+    if (has_globs)
+    {
+        const Disks disks_to_search = assigned_disk ? Disks{assigned_disk} : disks;
+        for (const auto & disk : disks_to_search)
         {
-            auto listed = listFilesWithRegexpMatchingOnDisk(disk, path_with_globs, total_bytes_to_read);
-            all_paths.insert(all_paths.end(), listed.begin(), listed.end());
+            const Strings expanded_patterns = expandSelectionGlob(relative_pattern);
+            Strings relative_matches;
+            for (const auto & pattern : expanded_patterns)
+                listFilesWithRegexpMatchingOnDisk(disk, "", pattern, total_bytes_to_read, relative_matches, false);
+
+            const String disk_prefix = getDiskPathWithSlash(disk);
+            for (const auto & rel : relative_matches)
+                absolute_paths.push_back(disk_prefix + rel);
         }
 
-        return all_paths;
+        return absolute_paths;
     }
+
+    /// Non-glob: find the disk holding the file (or, for writes, default to the assigned/first disk).
+    DiskPtr target_disk = assigned_disk;
+    if (!target_disk)
+    {
+        for (const auto & disk : disks)
+        {
+            if (disk->existsFile(relative_pattern) || disk->existsDirectory(relative_pattern))
+            {
+                target_disk = disk;
+                break;
+            }
+        }
+        /// Fall back to the first disk (for writes of new files, or to surface a missing-file error at read time).
+        if (!target_disk)
+            target_disk = disks.front();
+    }
+
+    const String disk_prefix = getDiskPathWithSlash(target_disk);
+    if (target_disk->existsDirectory(relative_pattern))
+    {
+        /// Expand directory into its files.
+        for (auto it = target_disk->iterateDirectory(relative_pattern); it->isValid(); it->next())
+        {
+            const String entry_rel = relative_pattern.empty()
+                ? String(it->name())
+                : (relative_pattern + "/" + it->name());
+            if (target_disk->existsFile(entry_rel))
+            {
+                total_bytes_to_read += target_disk->getFileSize(entry_rel);
+                absolute_paths.push_back(disk_prefix + entry_rel);
+            }
+        }
+        return absolute_paths;
+    }
+
+    if (target_disk->existsFile(relative_pattern))
+        total_bytes_to_read += target_disk->getFileSize(relative_pattern);
+    absolute_paths.push_back(disk_prefix + relative_pattern);
+    return absolute_paths;
 }
 
 /// Gathers information about one or multiple files located in one or multiple archives.
@@ -1906,18 +1904,19 @@ Chunk StorageFileSource::generate()
             {
                 if (storage->user_files_volume)
                 {
-                    /// Use disk-based I/O - find which disk has this file
-                    auto disk = findDiskForPath(current_path, storage->user_files_volume->getDisks());
+                    /// `current_path` is an absolute path `<disk_path>/<relative>`; split it back
+                    /// to recover the disk and the disk-relative form used by disk-side APIs.
+                    auto [disk, relative_path] = splitUserFilesAbsolutePath(current_path, storage->user_files_volume->getDisks());
                     if (!disk)
-                        disk = storage->user_files_volume->getDisks().front();
+                        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", current_path);
 
-                    current_file_size = disk->getFileSize(current_path);
-                    current_file_last_modified = Poco::Timestamp::fromEpochTime(0); /// Modification time not easily available on all disks
+                    current_file_size = disk->getFileSize(relative_path);
+                    current_file_last_modified = disk->getLastModified(relative_path);
 
                     if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_file_size == 0)
                         continue;
 
-                    read_buf = createReadBufferFromDisk(disk, current_path, storage->compression_method, getContext());
+                    read_buf = createReadBufferFromDisk(disk, relative_path, storage->compression_method, getContext());
                 }
                 else
                 {
@@ -2157,7 +2156,7 @@ void StorageFile::read(
             p = &paths;
 
         if (p->size() == 1 && !(user_files_volume
-            ? findDiskForPath(p->at(0), user_files_volume->getDisks()) != nullptr
+            ? userFilesPathExists(p->at(0), user_files_volume->getDisks())
             : fs::exists(p->at(0))))
         {
             if (!context->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
@@ -2326,7 +2325,9 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
         const ContextPtr & context_,
-        int flags_)
+        int flags_,
+        DiskPtr user_files_disk_ = nullptr,
+        String user_files_disk_relative_path_ = {})
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -2339,6 +2340,8 @@ public:
         , format_settings(format_settings_)
         , flags(flags_)
         , lock(std::move(lock_))
+        , user_files_disk(std::move(user_files_disk_))
+        , user_files_disk_relative_path(std::move(user_files_disk_relative_path_))
     {
         if (!lock)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
@@ -2365,12 +2368,15 @@ public:
         }
         else if (user_files_disk)
         {
-            /// Use disk-based write (supports S3, etc.)
-            /// Check if file already has content for prefix handling
-            if (user_files_disk->existsFile(path))
-                do_not_write_prefix = user_files_disk->getFileSize(path) > 0;
-            WriteMode mode = WriteMode::Append;
-            naked_buffer = user_files_disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, mode);
+            /// Use disk-based write (supports S3, etc.). `path` is the absolute display path
+            /// of the form `<disk_path>/<relative>`; disk APIs expect the disk-relative form.
+            ///
+            /// Some object storages (e.g. S3) do not support append mode, so we always
+            /// rewrite. Callers relying on append semantics have already been caught upstream
+            /// by the `checkIfFormatSupportAppend` guard in `StorageFile::write`, which either
+            /// throws `CANNOT_APPEND_TO_FILE` or routes the write to a fresh indexed file.
+            naked_buffer = user_files_disk->writeFile(
+                user_files_disk_relative_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         }
         else
         {
@@ -2462,9 +2468,7 @@ private:
     int flags;
     std::unique_lock<std::shared_timed_mutex> lock;
     DiskPtr user_files_disk; /// When set, write through this disk.
-
-public:
-    void setUserFilesDisk(DiskPtr disk) { user_files_disk = std::move(disk); }
+    String user_files_disk_relative_path; /// Disk-relative form of `path`, used for disk I/O.
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -2585,8 +2589,12 @@ SinkToStoragePtr StorageFile::write(
     }
 
     String path;
-    /// For writes, always use the first disk in the volume.
-    DiskPtr write_disk = user_files_volume ? user_files_volume->getDisks().front() : nullptr;
+    /// For user_files_volume writes, split the absolute path stored in `paths` into its
+    /// disk and relative portions. The disk is the one matched during path resolution —
+    /// unconditionally picking the first disk would route writes to the wrong backend
+    /// when the user supplied an absolute path to a non-first disk (e.g. S3 vs local).
+    DiskPtr write_disk;
+    String write_relative_path;
     if (!paths.empty())
     {
         if (is_path_with_globs)
@@ -2595,10 +2603,20 @@ SinkToStoragePtr StorageFile::write(
                             getStorageID().getNameForLogs());
 
         path = paths.front();
+        if (user_files_volume)
+        {
+            auto [disk, relative] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+            if (!disk)
+                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "Path `{}` is not inside any user files disk", path);
+            write_disk = disk;
+            write_relative_path = relative;
+        }
+
         if (write_disk)
         {
             /// Create parent directories on disk
-            auto parent_path = fs::path(path).parent_path().string();
+            auto parent_path = fs::path(write_relative_path).parent_path().string();
             if (!parent_path.empty() && !write_disk->existsDirectory(parent_path))
                 write_disk->createDirectories(parent_path);
         }
@@ -2611,9 +2629,9 @@ SinkToStoragePtr StorageFile::write(
         bool got_file_size = false;
         if (write_disk)
         {
-            if (write_disk->existsFile(path))
+            if (write_disk->existsFile(write_relative_path))
             {
-                existing_file_size = write_disk->getFileSize(path);
+                existing_file_size = write_disk->getFileSize(write_relative_path);
                 got_file_size = true;
             }
         }
@@ -2633,14 +2651,23 @@ SinkToStoragePtr StorageFile::write(
                 auto pos = path.find_first_of('.', path.find_last_of('/'));
                 size_t index = paths.size();
                 String new_path;
+                String new_relative_path;
                 do
                 {
                     new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
+                    if (write_disk)
+                    {
+                        auto rel_pos = write_relative_path.find_first_of('.', write_relative_path.find_last_of('/'));
+                        new_relative_path = write_relative_path.substr(0, rel_pos) + "." + std::to_string(index)
+                            + (rel_pos == std::string::npos ? "" : write_relative_path.substr(rel_pos));
+                    }
                     ++index;
                 }
-                while (write_disk ? write_disk->existsFileOrDirectory(new_path) : fs::exists(new_path));
+                while (write_disk ? write_disk->existsFileOrDirectory(new_relative_path) : fs::exists(new_path));
                 paths.push_back(new_path);
                 path = new_path;
+                if (write_disk)
+                    write_relative_path = new_relative_path;
             }
             else
                 throw Exception(
@@ -2653,7 +2680,7 @@ SinkToStoragePtr StorageFile::write(
         }
     }
 
-    auto sink = std::make_shared<StorageFileSink>(
+    return std::make_shared<StorageFileSink>(
         metadata_snapshot,
         getStorageID().getNameForLogs(),
         std::unique_lock{rwlock, getLockTimeout(context)},
@@ -2665,10 +2692,9 @@ SinkToStoragePtr StorageFile::write(
         format_settings,
         format_name,
         context,
-        flags);
-    if (write_disk)
-        sink->setUserFilesDisk(write_disk);
-    return sink;
+        flags,
+        write_disk,
+        write_relative_path);
 }
 
 bool StorageFile::storesDataOnDisk() const
