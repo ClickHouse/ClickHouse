@@ -56,10 +56,13 @@ private:
 
     mutable std::vector<ParsedManifestFileEntryPtr> parsed_manifest_file_entries TSA_GUARDED_BY(cache_mutex);
 
-    Int64 getFormatVersionFromManifestFileMetadata() const;
-
     ParsedManifestFileEntryPtr createParsedManifestFileEntry(size_t row_index) const;
 public:
+    /// Returns the Iceberg format version stored in the manifest file's own Avro metadata
+    /// (the "format-version" key). Falls back to 1 when not present, which matches the
+    /// Iceberg specification — v1 manifests were written before the key was introduced.
+    Int64 getFormatVersionFromManifestFileMetadata() const;
+
     AvroForIcebergDeserializer(
         std::unique_ptr<DB::ReadBufferFromFileBase> buffer_,
         const Iceberg::IcebergPathFromMetadata & manifest_file_path_,
