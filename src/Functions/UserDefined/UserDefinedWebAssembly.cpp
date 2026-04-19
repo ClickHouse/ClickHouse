@@ -1,4 +1,5 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Functions/UserDefined/ColumnarV1Wire.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
@@ -14,6 +15,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnTuple.h>
 
 #include <Functions/IFunction.h>
@@ -66,6 +68,7 @@ namespace DB
 {
 
 using namespace WebAssembly;
+using namespace ColumnarV1;
 
 namespace Setting
 {
@@ -387,242 +390,6 @@ public:
 // fills it, then invokes the function.  The function returns a handle to an
 // output buffer (same layout, 1 column) which CH reads and frees.
 // ─────────────────────────────────────────────────────────────────────────────
-
-namespace
-{
-
-constexpr uint32_t COL_BYTES        = 0;
-constexpr uint32_t COL_NULL_BYTES   = 1;
-constexpr uint32_t COL_FIXED8       = 2;
-constexpr uint32_t COL_NULL_FIXED8  = 3;
-constexpr uint32_t COL_FIXED32      = 4;
-constexpr uint32_t COL_NULL_FIXED32 = 5;
-constexpr uint32_t COL_FIXED64      = 6;
-constexpr uint32_t COL_NULL_FIXED64 = 7;
-constexpr uint32_t COL_IS_CONST     = 0x80u;
-
-constexpr uint32_t COLUMNAR_HEADER_BYTES  = 8;
-constexpr uint32_t COLUMNAR_DESC_BYTES    = 20;
-
-struct ColDescriptor
-{
-    uint32_t type;
-    uint32_t null_offset;
-    uint32_t offsets_offset;
-    uint32_t data_offset;
-    uint32_t data_size;
-};
-static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
-
-// Compute the byte offset where column i's data blocks start and fill in desc.
-// Returns the offset after all data for this column (= start of next column's data).
-uint32_t buildColDescriptor(
-    const IColumn * col,       // already stripped of ColumnConst
-    bool is_const,
-    bool is_nullable,
-    uint32_t num_rows,         // logical row count (1 if const)
-    uint32_t write_cursor,     // current byte offset in output buffer
-    ColDescriptor & desc)
-{
-    const ColumnString * str_col = typeid_cast<const ColumnString *>(col);
-    const ColumnNullable * null_col = typeid_cast<const ColumnNullable *>(col);
-
-    if (null_col)
-        str_col = typeid_cast<const ColumnString *>(&null_col->getNestedColumn());
-
-    if (str_col)
-    {
-        uint32_t base_type = is_nullable ? COL_NULL_BYTES : COL_BYTES;
-        desc.type = base_type | (is_const ? COL_IS_CONST : 0u);
-
-        // null_map
-        if (is_nullable)
-        {
-            desc.null_offset = write_cursor;
-            write_cursor += num_rows;
-        }
-        else
-        {
-            desc.null_offset = 0;
-        }
-
-        // offsets: align to 4
-        write_cursor = (write_cursor + 3u) & ~3u;
-        desc.offsets_offset = write_cursor;
-        write_cursor += (num_rows + 1u) * sizeof(uint32_t);
-
-        // data — ColumnString in CH 26.4+ has no null terminators; we add one per string
-        // in the wire format so WASM can use the get_bytes(-1) formula unchanged.
-        desc.data_offset = write_cursor;
-        uint32_t total_chars = static_cast<uint32_t>(str_col->getChars().size()) + num_rows;
-        desc.data_size = total_chars;
-        write_cursor += total_chars;
-        return write_cursor;
-    }
-
-    // Fixed-width column: use element size
-    uint32_t elem_size = static_cast<uint32_t>(col->sizeOfValueIfFixed());
-    uint32_t base_type;
-    if      (elem_size == 1) base_type = is_nullable ? COL_NULL_FIXED8  : COL_FIXED8;
-    else if (elem_size == 4) base_type = is_nullable ? COL_NULL_FIXED32 : COL_FIXED32;
-    else                     base_type = is_nullable ? COL_NULL_FIXED64 : COL_FIXED64;
-    desc.type = base_type | (is_const ? COL_IS_CONST : 0u);
-    desc.null_offset = 0; // TODO: nullable fixed columns if needed
-    desc.offsets_offset = 0;
-    desc.data_offset = write_cursor;
-    desc.data_size = num_rows * elem_size;
-    write_cursor += num_rows * elem_size;
-    return write_cursor;
-}
-
-// Write column data into the WASM buffer span.
-void writeColData(
-    const IColumn * col,
-    bool is_nullable,
-    uint32_t num_rows,
-    const ColDescriptor & desc,
-    std::span<uint8_t> buf)
-{
-    const ColumnNullable * null_col = typeid_cast<const ColumnNullable *>(col);
-    if (null_col)
-        col = &null_col->getNestedColumn();
-
-    // null_map
-    if (is_nullable && null_col && desc.null_offset)
-    {
-        const auto & nm = null_col->getNullMapData();
-        std::memcpy(buf.data() + desc.null_offset, nm.data(), num_rows);
-    }
-
-    const ColumnString * str_col = typeid_cast<const ColumnString *>(col);
-    if (str_col)
-    {
-        // CH 26.4+ ColumnString has NO null terminators; offsets[i] = cumulative byte count.
-        // Wire format requires null terminators so WASM get_bytes() formula (end-start-1) works.
-        // Write each string followed by an explicit '\0', build cumulative wire offsets.
-        const auto & ch_offsets = str_col->getOffsets();
-        const auto & chars = str_col->getChars();
-        uint32_t * wire_offsets = reinterpret_cast<uint32_t *>(buf.data() + desc.offsets_offset);
-        uint8_t * data_dst = buf.data() + desc.data_offset;
-        wire_offsets[0] = 0;
-        uint32_t wire_pos = 0;
-        uint32_t ch_pos = 0;
-        for (uint32_t i = 0; i < num_rows; ++i)
-        {
-            uint32_t str_end = static_cast<uint32_t>(ch_offsets[i]);
-            uint32_t str_len = str_end - ch_pos;
-            std::memcpy(data_dst + wire_pos, chars.data() + ch_pos, str_len);
-            wire_pos += str_len;
-            data_dst[wire_pos++] = '\0';
-            wire_offsets[i + 1] = wire_pos;
-            ch_pos = str_end;
-        }
-        return;
-    }
-
-    // Fixed-width: raw byte copy.
-    const auto * raw = col->getRawData().data();
-    std::memcpy(buf.data() + desc.data_offset, raw, desc.data_size);
-}
-
-// Read a single-column columnar output buffer back into a MutableColumnPtr.
-MutableColumnPtr readColumnarOutput(std::span<const uint8_t> buf, const DataTypePtr & result_type, size_t expected_rows)
-{
-    if (buf.size() < COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES)
-        throw Exception(ErrorCodes::WASM_ERROR, "COLUMNAR_V1 output buffer too small: {} bytes", buf.size());
-
-    uint32_t num_rows, num_cols;
-    std::memcpy(&num_rows, buf.data(),     4);
-    std::memcpy(&num_cols, buf.data() + 4, 4);
-
-    if (num_rows != expected_rows)
-        throw Exception(ErrorCodes::WASM_ERROR,
-            "COLUMNAR_V1 output row count mismatch: expected {}, got {}", expected_rows, num_rows);
-    if (num_cols != 1)
-        throw Exception(ErrorCodes::WASM_ERROR,
-            "COLUMNAR_V1 output must have exactly 1 column, got {}", num_cols);
-
-    ColDescriptor desc;
-    std::memcpy(&desc, buf.data() + COLUMNAR_HEADER_BYTES, sizeof(desc));
-
-    uint32_t raw_type = desc.type & ~COL_IS_CONST;
-
-    // Bytes column → ColumnString
-    if (raw_type == COL_BYTES || raw_type == COL_NULL_BYTES)
-    {
-        const uint32_t * wire_offsets = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
-        const uint8_t * data = buf.data() + desc.data_offset;
-
-        auto col_str = ColumnString::create();
-        auto & chars = col_str->getChars();
-        auto & offsets = col_str->getOffsets();
-
-        // WASM output has null terminators in wire format (ColBytesWriter adds '\0').
-        // CH 26.4+ ColumnString has NO null terminators; offsets are cumulative without nulls.
-        // Strip the null terminators when building the output column.
-        offsets.resize(num_rows);
-        uint32_t ch_pos = 0;
-        for (uint32_t i = 0; i < num_rows; ++i)
-        {
-            uint32_t wire_end = wire_offsets[i + 1];           // includes '\0'
-            uint32_t wire_start = wire_offsets[i];
-            uint32_t str_len = wire_end - wire_start;
-            if (str_len > 0) str_len--;                        // strip null terminator
-            chars.resize(ch_pos + str_len);
-            std::memcpy(chars.data() + ch_pos, data + wire_start, str_len);
-            ch_pos += str_len;
-            offsets[i] = ch_pos;
-        }
-
-        if (raw_type == COL_NULL_BYTES && desc.null_offset)
-        {
-            auto null_col = ColumnUInt8::create(num_rows);
-            std::memcpy(null_col->getData().data(), buf.data() + desc.null_offset, num_rows);
-            return ColumnNullable::create(std::move(col_str), std::move(null_col));
-        }
-        return col_str;
-    }
-
-    // Fixed8 → ColumnUInt8
-    if (raw_type == COL_FIXED8 || raw_type == COL_NULL_FIXED8)
-    {
-        auto col_u8 = ColumnUInt8::create(num_rows);
-        std::memcpy(col_u8->getData().data(), buf.data() + desc.data_offset, num_rows);
-        if (raw_type == COL_NULL_FIXED8 && desc.null_offset)
-        {
-            auto null_col = ColumnUInt8::create(num_rows);
-            std::memcpy(null_col->getData().data(), buf.data() + desc.null_offset, num_rows);
-            return ColumnNullable::create(std::move(col_u8), std::move(null_col));
-        }
-        return col_u8;
-    }
-
-    // Fixed64 — create column matching the declared return type (Float64, UInt64, Int64, etc.)
-    if (raw_type == COL_FIXED64 || raw_type == COL_NULL_FIXED64)
-    {
-        const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED64)
-            ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
-            : result_type;
-        auto col64 = base_type->createColumn();
-        col64->insertManyDefaults(num_rows);
-        // ColumnVector<T> stores data as a contiguous POD array starting at offset 0.
-        // getRawData() returns std::string_view; the column is freshly created (not const),
-        // so const_cast on the underlying pointer is safe.
-        std::memcpy(const_cast<char *>(col64->getRawData().data()),
-                    buf.data() + desc.data_offset, num_rows * 8);
-        if (raw_type == COL_NULL_FIXED64 && desc.null_offset)
-        {
-            auto null_col = ColumnUInt8::create(num_rows);
-            std::memcpy(null_col->getData().data(), buf.data() + desc.null_offset, num_rows);
-            return ColumnNullable::create(std::move(col64), std::move(null_col));
-        }
-        return col64;
-    }
-
-    throw Exception(ErrorCodes::WASM_ERROR, "COLUMNAR_V1: unsupported output ColType {}", raw_type);
-}
-
-} // anonymous namespace
 
 class UserDefinedWebAssemblyFunctionColumnarV1 : public UserDefinedWebAssemblyFunction
 {
