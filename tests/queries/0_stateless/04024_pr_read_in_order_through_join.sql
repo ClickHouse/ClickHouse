@@ -17,6 +17,7 @@ SET enable_analyzer = 1;
 SET query_plan_read_in_order = 1, optimize_read_in_order = 1;
 SET query_plan_read_in_order_through_join = 1;
 SET optimize_aggregation_in_order = 1;
+SET read_in_order_max_primary_key_ratio = 1.0;
 
 SET enable_parallel_replicas = 0;
 

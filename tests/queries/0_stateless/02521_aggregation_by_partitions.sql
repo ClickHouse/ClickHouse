@@ -1,6 +1,7 @@
 -- Tags: long, no-object-storage, no-msan
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+SET read_in_order_max_primary_key_ratio = 1.0;
 
 set max_threads = 16;
 set allow_aggregate_partitions_independently = 1;

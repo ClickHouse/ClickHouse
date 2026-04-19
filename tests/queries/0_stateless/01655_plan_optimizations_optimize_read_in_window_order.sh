@@ -24,9 +24,9 @@ echo '  optimize_read_in_window_order=0, enable_analyzer=1'
 $CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n SETTINGS optimize_read_in_order=0,optimize_read_in_window_order=0,enable_analyzer=0" | grep -i "sort description"
 
 echo '  optimize_read_in_window_order=1'
-$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n SETTINGS optimize_read_in_order=1,enable_analyzer=0" | grep -i "sort description"
+$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n SETTINGS optimize_read_in_order=1,read_in_order_max_primary_key_ratio=1.0,enable_analyzer=0" | grep -i "sort description"
 echo '  optimize_read_in_window_order=1, enable_analyzer=1'
-$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n SETTINGS optimize_read_in_order=1,enable_analyzer=1" | grep -i "sort description"
+$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n SETTINGS optimize_read_in_order=1,read_in_order_max_primary_key_ratio=1.0,enable_analyzer=1" | grep -i "sort description"
 
 echo 'No sorting plan'
 echo '  optimize_read_in_window_order=0'
@@ -35,9 +35,9 @@ echo '  optimize_read_in_window_order=0, enable_analyzer=1'
 $CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n_x SETTINGS optimize_read_in_order=0,optimize_read_in_window_order=0,enable_analyzer=1" | grep -i "sort description"
 
 echo '  optimize_read_in_window_order=1'
-$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n_x SETTINGS optimize_read_in_order=1,enable_analyzer=0" | grep -i "sort description"
+$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n_x SETTINGS optimize_read_in_order=1,read_in_order_max_primary_key_ratio=1.0,enable_analyzer=0" | grep -i "sort description"
 echo '  optimize_read_in_window_order=1, enable_analyzer=1'
-$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n_x SETTINGS optimize_read_in_order=1,enable_analyzer=1" | grep -i "sort description"
+$CLICKHOUSE_CLIENT -q "explain plan actions=1, description=1 select n, sum(x) OVER (ORDER BY n, x ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) from ${name}_n_x SETTINGS optimize_read_in_order=1,read_in_order_max_primary_key_ratio=1.0,enable_analyzer=1" | grep -i "sort description"
 
 echo 'Complex ORDER BY'
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${name}_complex (unique1 Int32, unique2 Int32, ten Int32) ENGINE=MergeTree ORDER BY tuple()"
@@ -45,7 +45,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO ${name}_complex VALUES (1, 2, 3), (2, 3, 4), 
 echo '  optimize_read_in_window_order=0'
 $CLICKHOUSE_CLIENT -q "SELECT ten, sum(unique1) + sum(unique2) AS res, rank() OVER (ORDER BY sum(unique1) + sum(unique2) ASC) AS rank FROM ${name}_complex GROUP BY ten ORDER BY ten ASC SETTINGS optimize_read_in_order=0,optimize_read_in_window_order=0"
 echo '  optimize_read_in_window_order=1'
-$CLICKHOUSE_CLIENT -q "SELECT ten, sum(unique1) + sum(unique2) AS res, rank() OVER (ORDER BY sum(unique1) + sum(unique2) ASC) AS rank FROM ${name}_complex GROUP BY ten ORDER BY ten ASC SETTINGS optimize_read_in_order=1"
+$CLICKHOUSE_CLIENT -q "SELECT ten, sum(unique1) + sum(unique2) AS res, rank() OVER (ORDER BY sum(unique1) + sum(unique2) ASC) AS rank FROM ${name}_complex GROUP BY ten ORDER BY ten ASC SETTINGS optimize_read_in_order=1,read_in_order_max_primary_key_ratio=1.0"
 
 $CLICKHOUSE_CLIENT -q "drop table ${name}"
 $CLICKHOUSE_CLIENT -q "drop table ${name}_n"

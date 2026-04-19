@@ -1,4 +1,4 @@
-SET optimize_read_in_order = 1, query_plan_read_in_order = 1, enable_analyzer = 0, query_plan_optimize_lazy_materialization = 0, optimize_sorting_by_input_stream_properties = 1;
+SET optimize_read_in_order = 1, query_plan_read_in_order = 1, enable_analyzer = 0, query_plan_optimize_lazy_materialization = 0, optimize_sorting_by_input_stream_properties = 1, read_in_order_max_primary_key_ratio = 1.0;
 SET optimize_monotonous_functions_in_order_by = 1, optimize_redundant_functions_in_order_by = 1;
 SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
 

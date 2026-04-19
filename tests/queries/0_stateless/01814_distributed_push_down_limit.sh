@@ -54,6 +54,7 @@ function test_distributed_push_down_limit_with_query_log()
 
         --max_block_size 20
         --optimize_aggregation_in_order 1
+        --read_in_order_max_primary_key_ratio 1.0
         --log_queries 1
         --log_queries_min_type 'QUERY_FINISH'
 
@@ -106,6 +107,7 @@ function test_distributed_push_down_limit_1_offset()
         --distributed_push_down_limit 1
         --optimize_skip_unused_shards 1
         --optimize_distributed_group_by_sharding_key 1
+        --read_in_order_max_primary_key_ratio 1.0
     )
 
     $CLICKHOUSE_CLIENT "${settings_and_opts[@]}" -q "select * from remote('127.{2,3}', $CLICKHOUSE_DATABASE, data_01814, key) group by key order by key desc limit 5, 10"
