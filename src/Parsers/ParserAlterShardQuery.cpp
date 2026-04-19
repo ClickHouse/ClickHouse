@@ -289,5 +289,3 @@ bool ParserAlterShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 }
 
 }
-
-

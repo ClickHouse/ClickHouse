@@ -44,7 +44,6 @@ namespace ErrorCodes
     extern const int BAD_CLUSTER_DEFINITION;
     extern const int CLUSTER_DEFINITION_NAME_AMBIGUOUS;
     extern const int LOGICAL_ERROR;
-    extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
