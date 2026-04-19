@@ -17,3 +17,19 @@ FROM numbers(5)
 GROUP BY number
 WITH CUBE
 ORDER BY number ASC NULLS FIRST;
+
+-- Correlated subquery in HAVING exercises the `FilterStep` reconciliation path.
+SELECT number, sum(number) AS val
+FROM numbers(10)
+GROUP BY number
+WITH ROLLUP
+HAVING val > (SELECT number - 1)
+ORDER BY number ASC NULLS FIRST;
+
+-- Correlated subquery in WHERE (pre-aggregation filter) under `group_by_use_nulls` + ROLLUP.
+SELECT number, sum(number) AS val
+FROM numbers(10)
+WHERE number >= (SELECT number - 1)
+GROUP BY number
+WITH ROLLUP
+ORDER BY number ASC NULLS FIRST;

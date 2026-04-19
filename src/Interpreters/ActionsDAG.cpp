@@ -1779,19 +1779,51 @@ void ActionsDAG::reconcileInputTypesAfterDecorrelation(const Block & actual_head
             if (!mismatch)
                 continue;
 
+            /// Non-factory functions (e.g. `FunctionCapture` for lambda captures) cannot be rebuilt here.
+            /// Leave the node untouched; those scenarios are not covered by this reconciliation and
+            /// will surface as a clear execution-time error if they occur.
             auto resolver = FunctionFactory::instance().tryGet(node.function_base->getName(), context);
             if (!resolver)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Cannot rebuild function '{}' after input type reconciliation: "
-                    "function not found in FunctionFactory",
-                    node.function_base->getName());
+                continue;
 
             auto [arguments, all_const] = getFunctionArguments(node.children);
             auto new_function_base = resolver->build(arguments);
             node.result_type = new_function_base->getResultType();
             node.function = new_function_base->prepare(arguments);
             node.function_base = std::move(new_function_base);
+
+            /// Invalidate any precomputed constant-folding result: the old `node.column`
+            /// was computed under the previous signature (for example, non-Nullable args) and may no longer
+            /// be valid. Recompute constant folding here the same way `addFunctionImpl` does.
+            node.column = nullptr;
+            if (node.function_base->isSuitableForConstantFolding())
+            {
+                ColumnPtr column;
+                if (all_const)
+                {
+                    size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
+                    column = node.function->execute(arguments, node.result_type, num_rows, true);
+                }
+                else
+                {
+                    column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
+                }
+
+                if (column && !columnMatchesType(*column, *node.result_type))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected return type from {}. Expected {}. Got {}",
+                        node.function->getName(),
+                        node.result_type->getName(),
+                        column->getName());
+
+                if (column && isColumnConst(*column))
+                {
+                    if (column->empty())
+                        column = column->cloneResized(1);
+                    node.column = std::move(column);
+                }
+            }
         }
         else if (node.type == ActionType::ALIAS && !node.children.empty())
         {
