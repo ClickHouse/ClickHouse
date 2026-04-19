@@ -1094,7 +1094,8 @@ CREATE TABLE system.stack_trace
     `thread_name` String,
     `thread_id` UInt64,
     `query_id` String,
-    `trace` Array(UInt64)
+    `trace` Array(UInt64),
+    `untracked_memory` Int64
 )
 ENGINE = SystemStackTrace
 COMMENT 'Allows to obtain an unsymbolized stacktrace from all the threads of the server process.'
