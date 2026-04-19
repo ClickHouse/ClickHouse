@@ -6,17 +6,15 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
-#include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -30,12 +28,7 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
-
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-
-#include <Storages/StorageMemory.h>
 
 #include <algorithm>
 #include <limits>

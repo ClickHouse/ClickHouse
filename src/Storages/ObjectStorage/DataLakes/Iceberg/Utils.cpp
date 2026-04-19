@@ -103,6 +103,36 @@ namespace DB::Iceberg
 {
 
 using namespace DB;
+
+/// Best-effort heuristic based on ClickHouse naming conventions.
+/// Files produced by other engines (Spark, Flink, Trino) may use different
+/// patterns and fall through to DATA_FILE; this only affects per-category
+/// reporting metrics, not deletion safety.
+FileCategory inspectFileCategory(const String & relative_path)
+{
+    if (relative_path.find("/metadata/") != String::npos || relative_path.starts_with("metadata/"))
+    {
+        if (relative_path.find(".metadata.json") != String::npos)
+            return FileCategory::METADATA_JSON;
+        if (relative_path.ends_with(".avro"))
+        {
+            if (relative_path.find("snap-") != String::npos)
+                return FileCategory::MANIFEST_LIST;
+            return FileCategory::MANIFEST_FILE;
+        }
+        if (relative_path.ends_with(".puffin") || relative_path.ends_with(".stats"))
+            return FileCategory::STATISTICS_FILE;
+    }
+
+    if (relative_path.find("eq-del") != String::npos)
+        return FileCategory::EQUALITY_DELETE_FILE;
+
+    if (relative_path.find("-deletes.parquet") != String::npos || relative_path.find("-delete-") != String::npos)
+        return FileCategory::POSITION_DELETE_FILE;
+
+    return FileCategory::DATA_FILE;
+}
+
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
 {
     constexpr std::string_view metadata_suffix = ".metadata.json";
@@ -953,7 +983,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
     if (order_by)
     {
-        auto sort_columns_key_description = KeyDescription::getSortingKeyFromAST(order_by, columns, context, std::nullopt);
+        auto sort_columns_key_description = KeyDescription::getKeyFromAST(order_by, columns, {}, context);
 
         SortDescription sort_description;
         Names sort_columns = sort_columns_key_description.column_names;
@@ -1328,7 +1358,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     if (order_by_str.empty())
         return KeyDescription{};
     order_by_str.pop_back();
-    return KeyDescription::parse(order_by_str, column_description, local_context, true);
+    return KeyDescription::parse(order_by_str, column_description, {}, local_context, true);
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)

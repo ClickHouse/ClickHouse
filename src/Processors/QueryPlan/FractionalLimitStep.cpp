@@ -7,6 +7,7 @@
 #include <Processors/LimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -56,7 +57,7 @@ void FractionalLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, con
 
 void FractionalLimitStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Fractional Limit " << limit_fraction << '\n';
     settings.out << prefix << "Fractional Offset " << offset_fraction << '\n';
 

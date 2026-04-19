@@ -129,8 +129,8 @@ StorageNATS::StorageNATS(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals((*nats_settings)[NATSSetting::nats_handle_error_mode]));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals((*nats_settings)[NATSSetting::nats_handle_error_mode]));
 
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
@@ -166,13 +166,13 @@ StorageNATS::~StorageNATS()
 VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
     }
 
     return desc;
@@ -709,7 +709,7 @@ bool StorageNATS::streamToViews()
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
     auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 

@@ -113,6 +113,7 @@ private:
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
+    bool post_build_phase = false;
 };
 
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>

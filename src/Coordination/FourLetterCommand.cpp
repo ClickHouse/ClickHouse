@@ -247,9 +247,9 @@ bool FourLetterCommandFactory::supportArguments(int32_t code) const
 
 void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
 {
-    const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
+    const auto & server_config = keeper_dispatcher.getKeeperConfiguration();
     auto log = getLogger("FourLetterCommandFactory");
-    String list_str = keeper_settings->four_letter_word_allow_list;
+    String list_str = server_config->four_letter_word_allow_list;
     std::vector<std::string_view> tokens;
     splitInto<','>(tokens, list_str);
 
@@ -372,7 +372,7 @@ String ConfCommand::run()
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
-    keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
+    keeper_dispatcher.getKeeperConfiguration()->dump(buf);
     keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }

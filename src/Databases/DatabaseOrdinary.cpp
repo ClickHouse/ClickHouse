@@ -32,16 +32,10 @@
 #include <Storages/StorageTableProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 #include <Common/AsyncLoader.h>
 #include <Interpreters/TransactionLog.h>
-
-#include <boost/algorithm/string/replace.hpp>
 
 namespace fs = std::filesystem;
 
