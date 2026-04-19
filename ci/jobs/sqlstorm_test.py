@@ -56,9 +56,22 @@ class ClickHouseBinary:
         time.sleep(2)
         retcode = self.proc.poll()
         if retcode is not None:
-            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
-            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
-            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
+            # `Popen` was started with `stdout=self.log_fd` and
+            # `stderr=subprocess.STDOUT`, so `self.proc.stdout/stderr` are always
+            # `None`. Read the tail of the log file instead so startup failures
+            # report actionable diagnostics.
+            log_tail = ""
+            try:
+                self.log_fd.flush()
+                with open(self.log_file, "r", errors="replace") as f:
+                    log_tail = "".join(f.readlines()[-100:])
+            except OSError as e:
+                log_tail = f"(could not read {self.log_file}: {e})"
+            Utils.print_formatted_error(
+                f"Failed to start ClickHouse (exit code {retcode})",
+                log_tail,
+                "",
+            )
             return False
         print("ClickHouse server process started -> wait ready")
         res = self.wait_ready()
@@ -245,14 +258,15 @@ def main():
     if results[-1].is_ok():
         print("Clone SQLStorm repo")
 
-        # Use the ClickHouse fork with queries rewritten for ClickHouse dialect
-        sqlstorm_commit = "clickhouse-compat"
+        # Use the ClickHouse fork with queries rewritten for ClickHouse dialect.
+        # Pin to an immutable commit SHA so reruns are reproducible and historical
+        # failures remain debuggable, matching the pattern used for `olapbench_commit`.
+        sqlstorm_commit = "31952876e628817190c8a787a21afea08ca2bf87"
 
         def clone_sqlstorm():
             if not Path(sqlstorm_repo).is_dir():
                 if not Shell.check(
-                    f"git clone --branch {sqlstorm_commit}"
-                    f" https://github.com/ClickHouse/SQLStorm.git {sqlstorm_repo}",
+                    f"git clone https://github.com/ClickHouse/SQLStorm.git {sqlstorm_repo}",
                     verbose=True,
                 ):
                     return False
@@ -262,12 +276,10 @@ def main():
                     verbose=True,
                 ):
                     return False
-                if not Shell.check(
-                    f"git -C {sqlstorm_repo} checkout {sqlstorm_commit}",
-                    verbose=True,
-                ):
-                    return False
-            return True
+            return Shell.check(
+                f"git -C {sqlstorm_repo} checkout {sqlstorm_commit}",
+                verbose=True,
+            )
 
         results.append(
             Result.from_commands_run(
