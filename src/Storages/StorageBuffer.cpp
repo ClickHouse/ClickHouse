@@ -175,15 +175,15 @@ StorageBuffer::StorageBuffer(
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr()->getColumns());
+        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr(context_, false)->getColumns());
     }
     else
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (num_shards > 1)
     {
@@ -223,7 +223,6 @@ public:
         : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
         , buffer(buffer_)
         , storage_id(storage_id_)
-        , virtual_columns(storage_snapshot->virtual_columns)
         , metadata_version(storage_snapshot->metadata->metadata_version) {}
 
     String getName() const override { return "Buffer"; }
@@ -261,7 +260,6 @@ protected:
 private:
     StorageBuffer::Buffer & buffer;
     StorageID storage_id;
-    VirtualsDescriptionPtr virtual_columns;
     int32_t metadata_version;
     bool has_been_read = false;
 };
@@ -275,7 +273,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
-        const auto & destination_metadata = destination->getInMemoryMetadataPtr();
+        const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
         return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
     }
 
@@ -330,7 +328,7 @@ void StorageBuffer::read(
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
         auto destination_columns = destination_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
         auto our_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
@@ -497,7 +495,7 @@ void StorageBuffer::read(
                     getStorageID(),
                     storage_snapshot->getAllColumnsDescription(),
                     std::move(pipe_from_buffers),
-                    *getVirtualsPtr());
+                    storage_snapshot->metadata->virtuals);
 
             auto interpreter
                 = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
@@ -852,7 +850,7 @@ void StorageBuffer::flushAndPrepareForShutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(getContext(), false), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
     }
     catch (...)
     {
@@ -1085,7 +1083,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         LOG_ERROR(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
-    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
 
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
@@ -1272,7 +1270,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
     optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);

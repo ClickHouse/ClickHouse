@@ -1,4 +1,5 @@
 #include <Access/ViewDefinerDependencies.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -20,6 +21,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
@@ -162,8 +164,8 @@ StorageView::StorageView(
 
     is_parameterized_view = is_parameterized_view_ || query.isParameterizedView();
     storage_metadata.setSelectQuery(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 void StorageView::readImpl(
@@ -240,7 +242,7 @@ void StorageView::drop()
 {
     auto table_id = getStorageID();
 
-    if (getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
+    if (getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->sql_security_type == SQLSecurityType::DEFINER)
         ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 }
 
@@ -250,8 +252,8 @@ void StorageView::alter(
     AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
     DatabaseCatalog::instance()

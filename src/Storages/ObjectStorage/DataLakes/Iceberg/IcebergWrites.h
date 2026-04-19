@@ -1,7 +1,6 @@
 #pragma once
 
 #include <unordered_map>
-#include <Columns/IColumn.h>
 #include <Core/Range.h>
 #include <Core/SortDescription.h>
 #include <Databases/DataLake/ICatalog.h>
