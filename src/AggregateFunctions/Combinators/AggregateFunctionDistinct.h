@@ -3,7 +3,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
-#include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpersArena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
