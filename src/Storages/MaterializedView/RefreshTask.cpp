@@ -231,6 +231,11 @@ void RefreshTask::shutdown()
     set_handle.reset();
 
     view = nullptr;
+
+    /// Wake up any threads blocked in wait(), so they can see !view and throw TABLE_IS_DROPPED.
+    /// Without this, wait() would block forever after deactivate() prevents the background task
+    /// from running (and therefore from ever notifying refresh_cv).
+    refresh_cv.notify_all();
 }
 
 void RefreshTask::drop(ContextPtr context)
@@ -406,8 +411,10 @@ void RefreshTask::wait()
 
     std::unique_lock lock(mutex);
     refresh_cv.wait(lock, [&] {
-        return state != RefreshState::Running && state != RefreshState::Scheduling &&
-            state != RefreshState::RunningOnAnotherReplica && (state == RefreshState::Disabled || !scheduling.out_of_schedule_refresh_requested);
+        return !view
+            || (state != RefreshState::Running && state != RefreshState::Scheduling
+                && state != RefreshState::RunningOnAnotherReplica
+                && (state == RefreshState::Disabled || !scheduling.out_of_schedule_refresh_requested));
     });
     throw_if_error();
 

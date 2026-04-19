@@ -471,7 +471,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true});
 }
 
 }

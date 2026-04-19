@@ -664,7 +664,7 @@ void TCPHandler::runImpl()
                 if (context != query_state->query_context)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
-                auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
+                auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
 
                 std::lock_guard lock(*callback_mutex);
 
@@ -961,6 +961,27 @@ void TCPHandler::runImpl()
 
             if (exception_code == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
             {
+                query_state->cancelOut(out);
+                return;
+            }
+
+            /// If the exception happened during initial query parsing (before
+            /// `query_context` was created at the end of `processQuery`), the
+            /// input buffer is in an unknown state: the failing read may have
+            /// consumed only part of the packet, leaving trailing bytes that
+            /// will be misinterpreted as the next packet on this connection.
+            /// The only safe option is to close the connection.
+            if (!query_state->query_context)
+            {
+                try
+                {
+                    std::lock_guard lock(*callback_mutex);
+                    sendException(*exception, send_exception_with_stack_trace);
+                }
+                catch (...) // NOLINT(bugprone-empty-catch)
+                {
+                    /// Ok: failed to send the exception, but we're closing anyway.
+                }
                 query_state->cancelOut(out);
                 return;
             }
@@ -2557,7 +2578,7 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
             storage = temporary_table.getTable();
             state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
         }
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(state.query_context, false);
         /// The data will be written directly to the table.
         QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);

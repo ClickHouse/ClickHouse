@@ -122,6 +122,8 @@ void setCollectLocalProfileSamplesInTraceLog(bool value);
 
 std::string_view getLastFlushProfileForThread();
 
+/// Capture malloc_stats_print output as a string.
+std::string getStats();
 
 }
 

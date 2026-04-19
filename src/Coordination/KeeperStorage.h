@@ -610,11 +610,7 @@ public:
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version, bool update_digest);
 
-    /// 3 modes:
-    ///  * !is_local - we're in the append thread, look at uncommitted state.
-    ///  * is_local && !is_reconfig - we're executing read requests, the caller holds storage_mutex, look at committed state.
-    ///  * is_local && is_reconfig - the callee locks storage_mutex and looks at committed state.
-    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool is_reconfig = false);
+    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool should_lock_storage);
 
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
     ~KeeperStorage();

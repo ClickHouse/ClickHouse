@@ -2023,7 +2023,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         try
         {
-            auto metadata = storage->getInMemoryMetadataPtr();
+            auto metadata = storage->getInMemoryMetadataPtr(client_context, false);
             QueryPlan plan;
             storage->read(
                 plan,

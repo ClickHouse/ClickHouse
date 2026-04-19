@@ -2,6 +2,7 @@
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>

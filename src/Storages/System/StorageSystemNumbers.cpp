@@ -28,8 +28,8 @@ StorageSystemNumbers::StorageSystemNumbers(
     /// This column doesn't have a comment, because otherwise it will be added to all the tables which were created via
     /// CREATE TABLE test as numbers(5)
     storage_metadata.setColumns(ColumnsDescription({{column_name_, std::make_shared<DataTypeUInt64>()}}));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemNumbers::createVirtuals()

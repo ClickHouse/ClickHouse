@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -106,7 +107,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr();
+    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr(context, false);
     auto id_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::ID).type;
     auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
     auto scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
@@ -142,6 +143,7 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
     const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_)
     : StorageWithCommonVirtualColumns{table_id_}
     , config(config_)
+    , log(getLogger("StorageTimeSeriesSelector"))
 {
     const auto * node = config.selector.getRoot();
     if (!node || (node->node_type != PrometheusQueryTree::NodeType::InstantSelector))
@@ -153,8 +155,8 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
@@ -460,6 +462,9 @@ void StorageTimeSeriesSelector::readImpl(
         config.id_data_type,
         config.timestamp_data_type,
         config.scalar_data_type);
+
+    LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
+    LOG_DEBUG(log, "Will execute query:\n{}", select_query_from_data_table->formatForLogging());
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 

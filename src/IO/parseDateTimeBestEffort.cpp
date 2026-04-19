@@ -867,6 +867,15 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             res = *res_maybe;
             adjust_time_zone();
+
+            /// After timezone adjustment, the value may have shifted outside the valid range.
+            /// For example, "2106-02-07 06:28:15-01:00" is within range before adjustment,
+            /// but after converting to UTC it exceeds UINT32_MAX.
+            if constexpr (!is_64)
+            {
+                if (res < 0 || static_cast<uint64_t>(res) > UINT32_MAX)
+                    return false;
+            }
         }
         else
         {

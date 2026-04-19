@@ -5,7 +5,6 @@
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
-#include <DataTypes/Serializations/ISerialization.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>

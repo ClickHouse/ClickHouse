@@ -369,7 +369,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
         context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, {}, context, false).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
     , storage_limits(query_info.storage_limits)

@@ -202,7 +202,7 @@ namespace
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    return getID(storage.getInMemoryMetadataPtr()->getPartitionKey().sample_block);
+    return getID(storage.getInMemoryMetadataPtr(storage.getContext(), false)->getPartitionKey().sample_block);
 }
 
 /// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
@@ -486,7 +486,7 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
     /// calculated according to previous version - `moduloLegacy`.
     if (KeyDescription::moduloToModuloLegacyRecursive(ast_copy))
     {
-        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, context);
+        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, metadata_snapshot->virtuals, context);
         return adjusted_partition_key;
     }
 

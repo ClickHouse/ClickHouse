@@ -734,11 +734,11 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             if (def.frame_begin_type == WindowFrame::BoundaryType::Offset)
             {
                 // The offsets are fuzzed normally through 'children'.
-                def.frame_begin_offset = make_intrusive<ASTLiteral>(getRandomField(0));
+                def.setOrReplace(def.frame_begin_offset, make_intrusive<ASTLiteral>(getRandomField(0)));
             }
             else
             {
-                def.frame_begin_offset = nullptr;
+                def.reset(def.frame_begin_offset);
             }
             break;
         }
@@ -750,11 +750,11 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 
             if (def.frame_end_type == WindowFrame::BoundaryType::Offset)
             {
-                def.frame_end_offset = make_intrusive<ASTLiteral>(getRandomField(0));
+                def.setOrReplace(def.frame_end_offset, make_intrusive<ASTLiteral>(getRandomField(0)));
             }
             else
             {
-                def.frame_end_offset = nullptr;
+                def.reset(def.frame_end_offset);
             }
             break;
         }
@@ -843,13 +843,13 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             if (startsWith(engine_name, "Replicated"))
             {
                 engine_name = engine_name.substr(strlen("Replicated"));
-                if (auto & arguments = create.storage->engine->arguments)
+                auto * engine = create.storage->engine;
+                if (engine->arguments)
                 {
-                    auto & children = arguments->children;
-                    if (children.size() <= 2)
-                        arguments.reset();
+                    if (engine->arguments->children.size() <= 2)
+                        engine->reset(engine->arguments);
                     else
-                        children.erase(children.begin(), children.begin() + 2);
+                        engine->arguments->children.erase(engine->arguments->children.begin(), engine->arguments->children.begin() + 2);
                 }
             }
 
