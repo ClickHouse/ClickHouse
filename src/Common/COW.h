@@ -171,6 +171,7 @@ public:
     Ptr getPtr() const { return static_cast<Ptr>(derived()); }
     MutablePtr getPtr() { return static_cast<MutablePtr>(derived()); }
 
+protected:
     MutablePtr shallowMutate() const
     {
         if (this->use_count() > 1)
@@ -178,6 +179,7 @@ public:
         return assumeMutable();
     }
 
+public:
     static MutablePtr mutate(Ptr ptr)
     {
         return ptr->shallowMutate();
@@ -194,7 +196,6 @@ public:
         chassert(this->use_count() == 1);
         return const_cast<Derived &>(*derived());
     }
-
 
 protected:
     /// It works as immutable_ptr if it is const and as mutable_ptr if it is non const.
