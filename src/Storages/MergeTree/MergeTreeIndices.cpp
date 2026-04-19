@@ -1,6 +1,9 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
+#if USE_USEARCH
+#include <Storages/MergeTree/MergeTreeIndexVectorSpann.h>
+#endif
 
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
@@ -190,6 +193,9 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 #if USE_USEARCH
     registerCreator("vector_similarity", vectorSimilarityIndexCreator);
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
+
+    registerCreator("vector_spann", spannIndexCreator);
+    registerValidator("vector_spann", spannIndexValidator);
 #endif
 
     registerCreator("text", textIndexCreator);

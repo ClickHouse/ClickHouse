@@ -357,6 +357,9 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 #if USE_USEARCH
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
+
+MergeTreeIndexPtr spannIndexCreator(const IndexDescription & index);
+void spannIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
 MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);

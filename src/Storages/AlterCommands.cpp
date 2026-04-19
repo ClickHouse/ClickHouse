@@ -1293,7 +1293,7 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        if (index.type == "vector_similarity")
+        if (index.type == "vector_similarity" || index.type == "vector_spann")
             return true;
     }
     return false;
