@@ -20,7 +20,6 @@ if (NOT TARGET ch_contrib::icu)
     list(REMOVE_ITEM storages_system_sources StorageSystemUnicode.cpp)
 endif()
 
-
 add_custom_target(generate-contributors
     ./StorageSystemContributors.sh
     SOURCES StorageSystemContributors.sh
