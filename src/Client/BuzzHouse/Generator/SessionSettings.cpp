@@ -451,6 +451,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"any_join_distinct_right_table_keys", trueOrFalseSetting},
     {"asterisk_include_alias_columns", trueOrFalseSettingNoOracle},
     {"asterisk_include_materialized_columns", trueOrFalseSettingNoOracle},
+    {"asterisk_include_virtual_columns", trueOrFalseSettingNoOracle},
     {"async_insert", trueOrFalseSettingNoOracle},
     {"async_insert_deduplicate", trueOrFalseSettingNoOracle},
     {"async_insert_threads", threadSetting},
