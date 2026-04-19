@@ -4,6 +4,8 @@
 # when a column name appeared in both left and right sides after the swap.
 # https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=100378&sha=ce356689f6a6d126e078f5cbfcbab8b3849de673&name_0=PR&name_1=AST%20fuzzer%20%28amd_tsan%29
 
+set -e
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -11,9 +13,23 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test_table"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test_table (k UInt64) ENGINE = MergeTree ORDER BY k"
 
-# The query should not cause a LOGICAL_ERROR (server crash in debug builds).
-# It may return an error or empty result — either is acceptable.
-${CLICKHOUSE_CLIENT} --query="
+# Capture stderr and assert the specific LOGICAL_ERROR from `HashJoin::getNonJoinedBlocks`
+# is absent. Other errors (e.g., type mismatch, syntax) from these fuzzer-style queries
+# are acceptable — only the regressed exception must not reappear.
+# `run_and_check` fails the test if the guarded pattern appears on stderr.
+run_and_check()
+{
+    local out
+    out=$(${CLICKHOUSE_CLIENT} --query="$1" 2>&1 >/dev/null) || true
+    if echo "$out" | grep -qE 'LOGICAL_ERROR|Unexpected columns in result sample block|Unexpected number of columns in result sample block'
+    then
+        echo "FAIL: unexpected LOGICAL_ERROR:"
+        echo "$out"
+        return 1
+    fi
+}
+
+run_and_check "
 SELECT
     (k GLOBAL NOT IN concat(*, modulo(-2 <=> (NULL IN (k)), multiply(toUInt32(*), (k IN (*)))))) > NULL,
     k GLOBAL NOT IN (SELECT DISTINCT 9223372036854775807)
@@ -30,7 +46,7 @@ WHERE ((NULL >= (multiply((* GLOBAL IN (k)), 257) NOT IN (k)))
     <= toInt64(materialize(9223372036854775807))
 FORMAT Null
 SETTINGS enable_analyzer = 1
-" >/dev/null 2>&1 ||:
+"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test_table"
 
@@ -38,7 +54,7 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE test_table"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE temp (x Decimal(38, 2), y Nullable(Decimal(38, 2))) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO temp VALUES (32, 32), (64, 64), (128, 128), (256, 256)"
 
-${CLICKHOUSE_CLIENT} --query="
+run_and_check "
 SELECT *, '2149-06-062149-06-062149-06-062149-06-062149-06-062149-06-062149-06-062149-06-06'
 FROM temp
 WHERE toUInt8(multiIf(
@@ -57,7 +73,7 @@ WHERE toUInt8(multiIf(
     IN (1025, toInt128(materialize(9223372036854775806)))
 FORMAT Null
 SETTINGS enable_analyzer = 1
-" >/dev/null 2>&1 ||:
+"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS temp"
 
