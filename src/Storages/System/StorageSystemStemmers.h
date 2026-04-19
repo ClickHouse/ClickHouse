@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_NLP
+#if USE_LIBSTEMMER
 
 #include <Storages/System/IStorageSystemOneBlock.h>
 
@@ -24,4 +24,4 @@ protected:
 
 }
 
-#endif
+#endif /// USE_LIBSTEMMER
