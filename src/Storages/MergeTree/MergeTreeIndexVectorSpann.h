@@ -13,11 +13,12 @@
 namespace DB
 {
 
+/// Defaults for `vector_spann` index parameters (see `spannIndexCreator` for SQL argument mapping).
 static constexpr float default_vector_spann_centroid_ratio = 0.16f;
 static constexpr float default_vector_spann_closure_epsilon = 10.0f;
 static constexpr UInt32 default_vector_spann_max_replicas = 8;
 
-/// Parsed from SQL `INDEX ... TYPE vector_spann(...)` (factory side; not wired yet).
+/// Runtime parameters for MergeTree `vector_spann` secondary index (`TYPE vector_spann(...)`).
 struct SpannParams
 {
     UInt64 dimensions = 0;
@@ -25,18 +26,20 @@ struct SpannParams
     unum::usearch::scalar_kind_t scalar_kind{};
     UsearchHnswParams usearch_hnsw_params;
     float centroid_ratio = default_vector_spann_centroid_ratio;
+    /// Not read from index SQL in M1; reserved for future closure-expansion tuning.
     float closure_epsilon = default_vector_spann_closure_epsilon;
+    /// Not read from index SQL in M1; reserved for future posting-list replica limits.
     UInt32 max_replicas = default_vector_spann_max_replicas;
 };
 
-/// One posting-list entry: row offset inside the granule + vector (materialized as Float32 for the skeleton).
+/// One posting-list entry: row offset inside the skip-index granule plus the vector in `Float32`.
 struct SpannPostingEntry
 {
     UInt64 row_id = 0;
     std::vector<Float32> vector;
 };
 
-/// Centroid id -> byte range in the `SpannPostingLists` substream (`*.pl.idx`).
+/// Centroid id -> byte range in the `SpannPostingLists` substream (filename suffix `.pl`, data extension `.idx`).
 struct SpannCentroidOffset
 {
     UInt64 offset = 0;
@@ -69,7 +72,7 @@ struct MergeTreeIndexGranuleVectorSpann final : public IMergeTreeIndexGranule
 
     USearchIndexWithSerializationPtr centroid_index;
     std::vector<SpannCentroidOffset> centroid_offsets;
-    /// Built during insert/merge; serialized into the `.pl.idx` stream. After load, may be empty if search reads postings lazily.
+    /// Built during insert/merge; serialized into the posting substream. After deserialize, holds all postings for the granule (M1 loads eagerly).
     std::vector<std::vector<SpannPostingEntry>> postings_by_centroid;
 
 private:
