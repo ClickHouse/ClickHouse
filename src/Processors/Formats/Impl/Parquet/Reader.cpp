@@ -6,6 +6,11 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
@@ -350,8 +355,20 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "KeyCondition uses PREWHERE output");
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
-            if (output_info.is_primitive)
-                primitive_columns[output_info.primitive_start].used_by_key_condition = true;
+            if (!output_info.is_primitive)
+                continue;
+
+            /// Dynamic, Object (JSON), and Variant columns can hold values of different types,
+            /// so Parquet physical-type statistics and bloom filters are not meaningful for filtering.
+            DataTypePtr output_type = output_info.output_type;
+            if (output_type->lowCardinality())
+                output_type = assert_cast<const DataTypeLowCardinality &>(*output_type).getDictionaryType();
+            if (output_type->isNullable())
+                output_type = assert_cast<const DataTypeNullable &>(*output_type).getNestedType();
+            if (isDynamic(*output_type) || isObject(*output_type) || isVariant(*output_type))
+                continue;
+
+            primitive_columns[output_info.primitive_start].used_by_key_condition = true;
         }
     }
 

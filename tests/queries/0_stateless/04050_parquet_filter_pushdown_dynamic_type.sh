@@ -77,3 +77,32 @@ ${CLICKHOUSE_CLIENT} "${opts[@]}" --query="
 ${CLICKHOUSE_CLIENT} "${opts[@]}" --query="
     SELECT count() FROM file('04050_json_${CLICKHOUSE_DATABASE}.parquet', Parquet, 'c0 JSON') WHERE c0 IS NOT NULL
 "
+
+# Object (JSON): verify that stats-based pruning is skipped.
+# Write 2 row groups of valid JSON with disjoint string ranges so that stats-based
+# pruning would incorrectly skip row groups if applied to Object (JSON) columns.
+# Before the fix, String stats compared with a JSON predicate would throw
+# BAD_TYPE_OF_FIELD in FieldVisitorAccurateLess. After the fix, stats-based filtering
+# is skipped and no row groups are pruned.
+${CLICKHOUSE_CLIENT} "${opts[@]}" --query="
+    INSERT INTO FUNCTION file('04050_json2_${CLICKHOUSE_DATABASE}.parquet')
+    SELECT concat('{\"v\":\"', if(number < 50, 'a', 'b'), '\"}') AS c0 FROM numbers(100)
+    SETTINGS output_format_parquet_row_group_size = 50, engine_file_truncate_on_insert = 1
+"
+
+query_id_json="${CLICKHOUSE_DATABASE}_04050_json_prune_${RANDOM}"
+${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id="${query_id_json}" --query="
+    SELECT count() FROM file('04050_json2_${CLICKHOUSE_DATABASE}.parquet', Parquet, 'c0 JSON') WHERE c0 = '{\"v\":\"z\"}'::JSON
+"
+
+${CLICKHOUSE_CLIENT} -nq "
+    SYSTEM FLUSH LOGS query_log;
+
+    SELECT ProfileEvents['ParquetPrunedRowGroups']
+    FROM system.query_log
+    WHERE event_date >= yesterday()
+      AND event_time >= now() - 600
+      AND query_id = '${query_id_json}'
+      AND type = 'QueryFinish'
+      AND current_database = currentDatabase();
+"

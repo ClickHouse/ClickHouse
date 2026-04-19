@@ -793,8 +793,27 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         {
             bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, bf_reader_properties, nullptr);
 
+            const auto & header = getPort().getHeader();
+
+            /// Dynamic, Object (JSON), and Variant columns can hold values of different types,
+            /// so Parquet physical-type bloom filters are not meaningful for filtering.
+            auto is_dynamic_like_column = [&](size_t column_idx) -> bool
+            {
+                if (column_idx >= header.columns())
+                    return false;
+                DataTypePtr type = header.getByPosition(column_idx).type;
+                if (type->lowCardinality())
+                    type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+                if (type->isNullable())
+                    type = assert_cast<const DataTypeNullable &>(*type).getNestedType();
+                return isDynamic(*type) || isObject(*type) || isVariant(*type);
+            };
+
             auto hash_one = [&](size_t column_idx, const Field & f) -> std::optional<uint64_t>
             {
+                if (is_dynamic_like_column(column_idx))
+                    return std::nullopt;
+
                 const auto * parquet_column_descriptor
                     = getColumnDescriptorIfBloomFilterIsPresent(metadata->RowGroup(0), index_mapping, column_idx);
 
@@ -808,6 +827,9 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
             auto hash_many = [&](size_t column_idx, const ColumnPtr & column) -> std::optional<std::vector<uint64_t>>
             {
+                if (is_dynamic_like_column(column_idx))
+                    return std::nullopt;
+
                 const auto * parquet_column_descriptor
                     = getColumnDescriptorIfBloomFilterIsPresent(metadata->RowGroup(0), index_mapping, column_idx);
 
