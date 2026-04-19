@@ -68,8 +68,8 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
@@ -924,11 +924,22 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "moves executor", moves_executor, wait());
         SHUTDOWN(log, "common executor", common_executor, wait());
 
+        /// Deactivate FileCache background threads before shutting down the database catalog.
+        /// DatabaseCatalog::shutdown() can throw (e.g. ZooKeeper timeout in replicated DDL worker).
+        /// If it throws, deactivateBackgroundOperations() would be skipped, leaving FileCache
+        /// download/cleanup threads stuck on GlobalThreadPool, which causes
+        /// GlobalThreadPool::shutdown() to deadlock.
+        LOG_TRACE(log, "Shutting down caches");
+        for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
+            cache_data->cache->deactivateBackgroundOperations();
+
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown([this]()
         {
             SHUTDOWN(log, "system logs", TSA_SUPPRESS_WARNING_FOR_READ(system_logs), flushAndShutdown());
         });
+
+        FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
 
@@ -957,13 +968,6 @@ struct ContextSharedPart : boost::noncopyable
 
         scope_guard delete_dictionaries_xmls;
         scope_guard delete_user_defined_executable_functions_xmls;
-
-        /// Background operations in cache use background schedule pool.
-        /// Deactivate them before destructing it.
-        LOG_TRACE(log, "Shutting down caches");
-        for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
-            cache_data->cache->deactivateBackgroundOperations();
-        FileCacheFactory::instance().clear();
 
         {
             std::lock_guard lock(clusters_mutex);
@@ -2588,10 +2592,19 @@ void Context::addQueryAccessInfo(const Names & partition_names)
 void Context::addViewAccessInfo(const String & view_name)
 {
     if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have view access info");
 
     std::lock_guard<std::mutex> lock(query_access_info->mutex);
     query_access_info->views.emplace(view_name);
+}
+
+void Context::addUsedRowPolicy(const String & policy_name)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have used row policies info");
+
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->row_policies.emplace(policy_name);
 }
 
 void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)
@@ -2705,7 +2718,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
-            auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+            auto query = table->getInMemoryMetadataPtr(getQueryContext(), false)->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
             StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
@@ -2960,7 +2973,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     if (!storage_view || !storage_view->isParameterizedView())
         return nullptr;
 
-    auto original_view_metadata = original_view->getInMemoryMetadataPtr();
+    auto original_view_metadata = original_view->getInMemoryMetadataPtr(getQueryContext(), false);
     auto query = original_view_metadata->getSelectQuery().inner_query->clone();
     StorageView::replaceQueryParametersIfParameterizedView(query, param_values);
 

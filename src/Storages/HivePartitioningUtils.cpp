@@ -1,4 +1,5 @@
 #include <Storages/HivePartitioningUtils.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>

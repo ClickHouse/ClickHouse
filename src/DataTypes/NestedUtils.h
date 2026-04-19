@@ -62,6 +62,13 @@ namespace Nested
     /// Convert old-style nested (single arrays with same prefix, `n.a`, `n.b`...) to subcolumns of data type Nested.
     NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types);
 
+    /// Unwrap Nullable(Tuple(...)) into Tuple(...) by propagating the struct-level null map
+    /// to each element. Scalar elements become Nullable(T), already-Nullable elements get merged
+    /// null maps, and non-nullable-compatible elements (Array, Map) get defaults at null positions.
+    /// When there are no actual nulls, simply strips the Nullable wrapper.
+    /// Used by format readers (Arrow, ORC) to convert Nullable struct elements for Nested flattening.
+    ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column);
+
     /// Check that sizes of arrays - elements of nested data structures - are equal.
     void validateArraySizes(const Block & block);
 
