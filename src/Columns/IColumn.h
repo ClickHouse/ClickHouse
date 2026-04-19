@@ -189,8 +189,8 @@ public:
         bool notFull(WriteBufferFromOwnString & buf) const;
     };
 
-    virtual void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
-    String getValueName(size_t n, const Options & options) const;
+    virtual DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const Options & options) const;
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
@@ -375,6 +375,14 @@ public:
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
+    /// Update state of hash function with values in range [begin, end).
+    /// Used for deduplication: the hash must be the same for the same INSERT data producing
+    /// the same in-memory representation. It does NOT guarantee the same hash for logically
+    /// equivalent data stored differently in memory (e.g. different dynamic/shared path layout
+    /// in ColumnObject, or different variant layout in ColumnDynamic).
+    /// Default implementation calls updateHashWithValue for each element.
+    virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
+
     /// Get hash function value. Hash is calculated for each element.
     /// It's a fast weak hash function. Mainly need to scatter data between threads.
     /// WeakHash32 must have the same size as column.
@@ -433,15 +441,6 @@ public:
         return doCompareAt(n, m, rhs, nan_direction_hint);
     }
 #endif
-
-    /** Compares and returns inequal track. It extends compareAt() to return how many values are not equal.
-      * Returns -N if current N left values are less then the right comparing value.
-      * Returns N if current N right values are less then the left comparing value.
-      * Returns 0 if current left and right values are equal.
-      *
-      * The main reason for the function is compareAt() devirtualization.
-      */
-    [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
 
 #if USE_EMBEDDED_COMPILER
 

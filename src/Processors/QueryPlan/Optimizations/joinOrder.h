@@ -28,7 +28,6 @@ struct DPJoinEntry
 
     double cost = 0.0;
     std::optional<UInt64> estimated_rows = {};
-    std::unordered_map<String, ColumnStats> column_stats = {};
 
     /// For join nodes
     JoinOperator join_operator;
@@ -38,7 +37,7 @@ struct DPJoinEntry
     int relation_id = -1;
 
     /// Constructor for a leaf node (base relation)
-    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {});
+    explicit DPJoinEntry(size_t id, std::optional<UInt64> rows);
 
     /// Constructor for a join node
     DPJoinEntry(DPJoinEntryPtr lhs,

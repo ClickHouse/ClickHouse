@@ -13,7 +13,6 @@ env:
   PYTHONUNBUFFERED: 1
   CHECKOUT_REF: ""
 
-
 jobs:
 
   config_workflow:

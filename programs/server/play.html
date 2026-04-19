@@ -884,6 +884,11 @@ class QueryResultElement extends HTMLElement
         this.attachShadow({ mode: 'open' });
         this.shadowRoot.innerHTML = `
             <style>
+                *
+                {
+                    box-sizing: border-box;
+                }
+
                 :host
                 {
                     display: block;

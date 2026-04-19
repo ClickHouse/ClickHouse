@@ -299,7 +299,6 @@ enum class Dialect : uint8_t
     kusto,
     prql,
     promql,
-    polyglot,
 };
 
 DECLARE_SETTING_ENUM(Dialect)

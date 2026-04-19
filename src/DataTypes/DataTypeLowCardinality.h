@@ -64,7 +64,7 @@ public:
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
-    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
 
     template <typename ... Params>
     using SerializeFunctionPtr = void (IDataType::*)(const IColumn &, size_t, Params ...) const;

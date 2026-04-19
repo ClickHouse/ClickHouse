@@ -94,11 +94,4 @@ void SerializationNamed::addToPath(SubstreamPath & path) const
     path.back().name_of_substream = name;
 }
 
-SerializationPtr removeNamedSerialization(const SerializationPtr & serialization)
-{
-    if (const auto * named = typeid_cast<const SerializationNamed *>(serialization.get()))
-        return named->getNested();
-    return serialization;
-}
-
 }

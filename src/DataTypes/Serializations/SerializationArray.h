@@ -92,8 +92,6 @@ public:
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
-    const SerializationPtr & getNestedSerialization() const { return nested; }
-
 private:
     template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;

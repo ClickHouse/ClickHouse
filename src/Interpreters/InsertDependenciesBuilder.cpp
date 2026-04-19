@@ -131,6 +131,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_RECURSION;
+    extern const int DEPENDENCIES_NOT_FOUND;
 }
 
 
@@ -234,7 +235,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         patch.addMessage("while pushing to view {}", storage.getNameForLogs());
         return std::make_exception_ptr(std::move(patch));
     }
-    catch (const std::exception &)
+    catch (...)
     {
         return ptr;
     }
@@ -461,7 +462,7 @@ private:
         {
             return {true, wrapped.origin_exception};
         }
-        catch (...) // Ok: exception is not wrapped, return as-is
+        catch (...)
         {
             return {false, e};
         }
@@ -916,12 +917,9 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
     }
 
     if (skip_destination_table && result.empty())
-    {
-        /// This can happen when a Kafka/FileLog/etc. engine table has no materialized views attached.
-        /// Instead of throwing, just discard the data, matching the old behavior.
-        LOG_WARNING(logger, "Table '{}' doesn't have any dependencies, data will be discarded", init_table_id);
-        result.addSink(std::make_shared<NullSinkToStorage>(output_headers.at(root_view)));
-    }
+        throw Exception(ErrorCodes::DEPENDENCIES_NOT_FOUND,
+            "Table '{}' doesn't have any dependencies.",
+            init_table_id);
 
     result.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
     result.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);

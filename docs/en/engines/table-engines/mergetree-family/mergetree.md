@@ -399,10 +399,10 @@ see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexe
 - [`MinMax`](#minmax) index
 - [`Set`](#set) index
 - [`bloom_filter`](#bloom-filter) index
-- [`ngrambf_v1`](#n-gram-bloom-filter) index *(Deprecated)*
-- [`tokenbf_v1`](#token-bloom-filter) index *(Deprecated)*
-- [`text`](#text) index
-- [`vector_similarity`](#vector-similarity) index
+- [`ngrambf_v1`](#n-gram-bloom-filter) index
+- [`tokenbf_v1`](#token-bloom-filter) index
+- [`text`]({#text}) index
+- [`vector_similarity`]({#vector-similarity}) index
 
 #### MinMax skip index {#minmax}
 
@@ -450,13 +450,7 @@ The following data types are supported:
 For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
 :::
 
-#### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
-
-:::note
-With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `ngrambf_v1` index is no longer recommended for full text search.
-
-See page ["Full-text search with text indexes"](./textindexes.md) for details.
-:::
+#### N-gram bloom filter {#n-gram-bloom-filter}
 
 For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
 
@@ -524,11 +518,7 @@ The functions above refer to the bloom filter calculator [here](https://hur.st/b
 
 #### Token bloom filter {#token-bloom-filter}
 
-:::note
-With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `tokenbf_v1` index is no longer recommended for full text search.
-
-See page ["Full-text search with text indexes"](./textindexes.md) for details.
-:::
+The token bloom filter is the same as `ngrambf_v1`, but stores tokens (sequences separated by non-alphanumeric characters) instead of ngrams.
 
 ```text title="Syntax"
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
@@ -583,7 +573,6 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
 | [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [pointInPolygon](/sql-reference/functions/geo/coordinates.md#pointinpolygon)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            |  ✗    |
 | [mapContains (mapContainsKey)](/sql-reference/functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
@@ -1139,9 +1128,10 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Column statistics {#column-statistics}
 
+<ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family:
+The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 
 ```sql
 CREATE TABLE tab
@@ -1153,7 +1143,7 @@ ENGINE = MergeTree
 ORDER BY a
 ```
 
-We can also manipulate statistics with `ALTER` statements:
+We can also manipulate statistics with `ALTER` statements.
 
 ```sql
 ALTER TABLE tab ADD STATISTICS b TYPE TDigest, Uniq;

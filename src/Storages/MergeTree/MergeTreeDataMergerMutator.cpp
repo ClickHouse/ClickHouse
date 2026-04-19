@@ -166,10 +166,9 @@ String getBestPartitionToOptimizeEntire(
     if (!(*settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
         return {};
 
-    Int64 occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
-    Int64 max_tasks_count = context->getMergeMutateExecutor()->getMaxTasksCount();
-    Int64 optimize_entire_partition_threshold = (*settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition];
-    if (occupied > 1 && max_tasks_count - occupied < optimize_entire_partition_threshold)
+    size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
+    size_t max_tasks_count = context->getMergeMutateExecutor()->getMaxTasksCount();
+    if (occupied > 1 && max_tasks_count - occupied < (*settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition])
     {
         LOG_INFO(log,
             "Not enough idle threads to execute optimizing entire partition. See settings "
@@ -308,7 +307,7 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
             case MergeType::TTLDrop:
             {
                 /// Do not update anything for regular and drop merges.
-                break;
+                return;
             }
             case MergeType::TTLDelete:
             {
@@ -321,12 +320,12 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
                                backQuote(storage.database_name),
                                partition_id,
                                toString(next_delete_ttl_merge_times_by_partition[partition_id]));
-                break;
+                return;
             }
             case MergeType::TTLRecompress:
             {
                 next_recompress_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout];
-                break;
+                return;
             }
         }
     }

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <map>
-
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 
@@ -97,9 +95,7 @@ private:
 
     /// Create compressed stream for every different codec. All streams write to
     /// a single file on disk.
-    /// Use std::map for deterministic iteration order — the order affects
-    /// the uncompressed_hash computation in addToChecksums.
-    std::map<UInt64, CompressedStreamPtr> streams_by_codec;
+    std::unordered_map<UInt64, CompressedStreamPtr> streams_by_codec;
 
     /// Stream for each column's substreams path (look at addStreams).
     std::unordered_map<String, CompressedStreamPtr> compressed_streams;

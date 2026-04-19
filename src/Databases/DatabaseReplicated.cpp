@@ -1,5 +1,4 @@
 #include <Core/UUID.h>
-#include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <atomic>
@@ -50,12 +49,10 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Common/AsyncLoader.h>
-#include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -97,7 +94,6 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsString default_replica_path;
     extern const DatabaseReplicatedSettingsString default_replica_shard_name;
     extern const DatabaseReplicatedSettingsString default_replica_name;
-    extern const DatabaseReplicatedSettingsBool internal_replication;
 }
 
 namespace ErrorCodes
@@ -134,7 +130,7 @@ static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_datab
 
 ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
-    return getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
+    return getContext()->getZooKeeper();
 }
 
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
@@ -195,14 +191,12 @@ DatabaseReplicated::DatabaseReplicated(
     const String & name_,
     const String & metadata_path_,
     UUID uuid,
-    const String & zookeeper_name_,
     const String & zookeeper_path_,
     const String & shard_name_,
     const String & replica_name_,
     DatabaseReplicatedSettings db_settings_,
     ContextPtr context_)
     : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
-    , zookeeper_name(zookeeper_name_)
     , zookeeper_path(normalizeZooKeeperPath(zookeeper_path_))
     , shard_name(shard_name_)
     , replica_name(replica_name_)
@@ -220,7 +214,7 @@ DatabaseReplicated::DatabaseReplicated(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
 
     if (!db_settings[DatabaseReplicatedSetting::collection_name].value.empty())
-        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value);
+        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value, context_->getConfigRef());
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
 
@@ -375,7 +369,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     Strings hosts;
     Strings host_ids;
 
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getContext()->getZooKeeper();
     constexpr int max_retries = 10;
     int iteration = 0;
     bool success = false;
@@ -461,7 +455,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
             shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
-        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}});
+        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
     }
 
     if (shards.empty())
@@ -492,7 +486,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         cluster_name,
         cluster_auth_info.cluster_secret};
 
-    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params, db_settings[DatabaseReplicatedSetting::internal_replication]);
+    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
 }
 
 ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
@@ -563,14 +557,17 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
 }
 
-void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
+void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config_ref)
 {
-    auto collection = NamedCollectionFactory::instance().get(collection_name);
+    const auto & config_prefix = fmt::format("named_collections.{}", collection_name);
 
-    cluster_auth_info.cluster_username = collection->getOrDefault<String>("cluster_username", "");
-    cluster_auth_info.cluster_password = collection->getOrDefault<String>("cluster_password", "");
-    cluster_auth_info.cluster_secret = collection->getOrDefault<String>("cluster_secret", "");
-    cluster_auth_info.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
+    if (!config_ref.has(config_prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
+
+    cluster_auth_info.cluster_username = config_ref.getString(config_prefix + ".cluster_username", "");
+    cluster_auth_info.cluster_password = config_ref.getString(config_prefix + ".cluster_password", "");
+    cluster_auth_info.cluster_secret = config_ref.getString(config_prefix + ".cluster_secret", "");
+    cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
@@ -1171,7 +1168,7 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
             args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
             args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
         }
-        catch (const Exception &) // NOLINT(bugprone-empty-catch)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
     }
@@ -1423,13 +1420,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     }
 
 
-    return getQueryStatus(
-        zookeeper_name,
-        node_path,
-        fs::path(zookeeper_path) / "replicas",
-        query_context,
-        hosts_to_wait,
-        std::move(database_guard));
+    return getQueryStatus(node_path, fs::path(zookeeper_path) / "replicas", query_context, hosts_to_wait, std::move(database_guard));
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
@@ -1591,9 +1582,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("cloud_mode", false);
         query_context->setCurrentQueryId({});
         {
-            QueryScope query_scope;
+            CurrentThread::QueryScope query_scope;
             if (!CurrentThread::getGroup())
-                query_scope = QueryScope::create(query_context);
+                query_scope = CurrentThread::QueryScope::create(query_context);
 
             executeQuery(query, query_context, QueryFlags{.internal = true});
         }
@@ -1607,9 +1598,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("cloud_mode", false);
         query_context->setCurrentQueryId({});
         {
-            QueryScope query_scope;
+            CurrentThread::QueryScope query_scope;
             if (!CurrentThread::getGroup())
-                query_scope = QueryScope::create(query_context);
+                query_scope = CurrentThread::QueryScope::create(query_context);
 
             executeQuery(query, query_context, QueryFlags{.internal = true});
         }
@@ -2018,12 +2009,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_nam
 }
 
 void DatabaseReplicated::dropReplica(
-    DatabaseReplicated * database,
-    const String & zookeeper_name,
-    const String & database_zookeeper_path,
-    const String & shard,
-    const String & replica,
-    bool throw_if_noop)
+    DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::dropReplica");
     chassert(!database || database_zookeeper_path == database->zookeeper_path);
@@ -2033,7 +2019,7 @@ void DatabaseReplicated::dropReplica(
     if (full_replica_name.contains('/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
 
-    auto zookeeper = Context::getGlobalContextInstance()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
+    auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
 
     String database_mark;
     bool db_path_exists = zookeeper->tryGet(database_zookeeper_path, database_mark);
@@ -2092,7 +2078,7 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     initDatabaseReplica(zookeeper, LoadingStrictnessLevel::CREATE);
 
     /// Force the database to recover to update the restored metadata
-    auto current_zookeeper = getZooKeeper();
+    auto current_zookeeper = getContext()->getZooKeeper();
     current_zookeeper->set(replica_path + "/digest", DatabaseReplicatedDDLWorker::FORCE_AUTO_RECOVERY_DIGEST);
     reinitializeDDLWorker();
 }
@@ -2423,7 +2409,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
 
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getContext()->getZooKeeper();
     UInt32 snapshot_version = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
     auto snapshot = getConsistentMetadataSnapshotImpl(zookeeper, filter, /* max_retries= */ 20, snapshot_version);
 
@@ -2625,8 +2611,6 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         if (allow_uuid_macro)
             info.table_id.uuid = args.uuid;
         zookeeper_path = args.context->getMacros()->expand(zookeeper_path, info);
-        auto zookeeper_name = zkutil::extractZooKeeperName(zookeeper_path);
-        zookeeper_path = zkutil::extractZooKeeperPath(zookeeper_path, /*check_starts_with_slash*/false);
 
         info.level = 0;
         info.table_id.uuid = UUIDHelpers::Nil;
@@ -2644,7 +2628,6 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             args.database_name,
             args.metadata_path,
             args.uuid,
-            zookeeper_name,
             zookeeper_path,
             shard_name,
             replica_name,
@@ -2654,18 +2637,13 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
 }
 
 BlockIO DatabaseReplicated::getQueryStatus(
-    const String & zookeeper_name,
-    const String & node_path,
-    const String & replicas_path,
-    ContextPtr context_,
-    const Strings & hosts_to_wait,
-    DDLGuardPtr && database_guard)
+    const String & node_path, const String & replicas_path, ContextPtr context_, const Strings & hosts_to_wait, DDLGuardPtr && database_guard)
 {
     BlockIO io;
     if (context_->getSettingsRef()[Setting::distributed_ddl_task_timeout] == 0)
         return io;
 
-    auto source = std::make_shared<ReplicatedDatabaseQueryStatusSource>(zookeeper_name, node_path, replicas_path, context_, hosts_to_wait, std::move(database_guard));
+    auto source = std::make_shared<ReplicatedDatabaseQueryStatusSource>(node_path, replicas_path, context_, hosts_to_wait, std::move(database_guard));
     io.pipeline = QueryPipeline(std::move(source));
 
     if (context_->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE
