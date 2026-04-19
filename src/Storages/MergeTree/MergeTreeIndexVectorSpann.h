@@ -23,7 +23,6 @@ struct SpannParams
     float centroid_ratio = 0.16f;
     float closure_epsilon = 10.0f;
     UInt32 max_replicas = 8;
-    UInt64 max_posting_bytes = 49152;
 };
 
 /// One posting-list entry: row offset inside the granule + vector (materialized as Float32 for the skeleton).

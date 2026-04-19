@@ -386,9 +386,9 @@ std::pair<std::vector<SpannCentroidOffset>, std::vector<std::vector<SpannPosting
         if (search_result.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "vector_spann centroid search expected one neighbour");
 
-        std::vector<UInt64> centroid_key_storage(1);
+        std::vector<unum::usearch::index_dense_t::vector_key_t> centroid_key_storage(1);
         search_result.dump_to(centroid_key_storage.data());
-        const UInt64 centroid_key = centroid_key_storage[0];
+        const size_t centroid_key = static_cast<size_t>(centroid_key_storage[0]);
         if (centroid_key >= k)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "vector_spann centroid key out of range");
 
@@ -407,23 +407,17 @@ std::pair<std::vector<SpannCentroidOffset>, std::vector<std::vector<SpannPosting
     for (size_t i = 0; i < k; ++i)
     {
         offsets[i].offset = pos;
+        if (postings_by_centroid[i].size() > 65536)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "vector_spann posting list for centroid {} has too many entries ({}), consider increasing centroid_ratio",
+                i,
+                postings_by_centroid[i].size());
         const size_t len = postingListSerializedBytes(postings_by_centroid[i].size(), params.dimensions);
         if (len > std::numeric_limits<UInt32>::max())
             throw Exception(ErrorCodes::INCORRECT_DATA, "vector_spann posting list for centroid {} is too large", i);
         offsets[i].length = static_cast<UInt32>(len);
         pos += len;
-    }
-
-    if (!offsets.empty())
-    {
-        const UInt64 total_posting_bytes = offsets.back().offset + offsets.back().length;
-        if (total_posting_bytes > params.max_posting_bytes)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "vector_spann serialized posting lists size ({}) exceeds max_posting_bytes ({}) for index {}",
-                total_posting_bytes,
-                params.max_posting_bytes,
-                backQuote(index_name));
     }
 
     return {std::move(offsets), std::move(postings_by_centroid)};
@@ -604,13 +598,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
     std::vector<Candidate> candidates;
     candidates.reserve(search_centroids.size() * 4);
 
-    std::vector<UInt64> centroid_keys(search_centroids.size());
+    std::vector<unum::usearch::index_dense_t::vector_key_t> centroid_keys(search_centroids.size());
     if (!centroid_keys.empty())
         search_centroids.dump_to(centroid_keys.data());
 
     for (size_t ci = 0; ci < search_centroids.size(); ++ci)
     {
-        const UInt64 centroid_idx = centroid_keys[ci];
+        const size_t centroid_idx = static_cast<size_t>(centroid_keys[ci]);
         if (centroid_idx >= granule->postings_by_centroid.size())
             continue;
         for (const auto & entry : granule->postings_by_centroid[centroid_idx])
