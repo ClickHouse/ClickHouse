@@ -5,12 +5,19 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
+#include <base/EnumReflection.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
     using Kind = ASTBackupQuery::Kind;
@@ -362,7 +369,11 @@ void ASTBackupQuery::writeJSON(WriteBuffer & out) const
 void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    kind = static_cast<Kind>(r.getInt("kind"));
+    Int64 kind_value = r.getInt("kind");
+    auto kind_opt = magic_enum::enum_cast<Kind>(static_cast<std::underlying_type_t<Kind>>(kind_value));
+    if (!kind_opt || static_cast<Int64>(*kind_opt) != kind_value)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE kind: {}", kind_value);
+    kind = *kind_opt;
     auto backup_name_child = r.readChild("backup_name");
     if (backup_name_child)
         set(backup_name, backup_name_child);

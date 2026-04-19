@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int BAD_ARGUMENTS;
 }
 
 String ASTAlterCommand::getID(char delim) const
@@ -145,7 +146,11 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    type = static_cast<Type>(r.getInt("command_type"));
+    Int64 command_type_value = r.getInt("command_type");
+    auto command_type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(command_type_value));
+    if (!command_type_opt || static_cast<Int64>(*command_type_opt) != command_type_value)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ALTER command_type: {}", command_type_value);
+    type = *command_type_opt;
 
     detach = r.getBool("detach");
     part = r.getBool("part");
