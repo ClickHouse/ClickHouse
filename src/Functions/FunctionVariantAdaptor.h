@@ -63,8 +63,6 @@ public:
 
     bool isDeterministicInScopeOfQuery() const override { return function_overload_resolver->isDeterministicInScopeOfQuery(); }
 
-    bool isInjective(const ColumnsWithTypeAndName & columns) const override { return function_overload_resolver->isInjective(columns); }
-
     bool isServerConstant() const override { return function_overload_resolver->isServerConstant(); }
 
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function_overload_resolver->isShortCircuit(settings, number_of_arguments); }
