@@ -7,4 +7,4 @@ ResultRows: 1000
 Join: o[100] ⋈ sub
 ResultRows: unknown
 Join: a[1000] ⋈ b[1000]
-ResultRows: unknown
+ResultRows: 1000

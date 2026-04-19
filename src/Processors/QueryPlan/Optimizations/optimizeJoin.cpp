@@ -312,13 +312,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
-        /// Propagate the inner DP's cardinality so downstream sizing (e.g. hash-join
-        /// algorithm selection) still has a number to work with. The trust flag is
-        /// propagated separately and gates structural decisions (like build-side
-        /// swap) that misfire on untrusted estimates.
+        /// Use the trusted accessor so a fabricated inner estimate cannot mislead
+        /// the outer DP; EXPLAIN keeps reading the raw value.
         bool trusted = join_step->isResultRowsEstimateTrusted();
         return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
+            .estimated_rows = join_step->getTrustedResultRowsEstimation(),
             .column_stats = trusted ? join_step->getResultColumnStats() : std::unordered_map<String, ColumnStats>{},
             .rows_estimate_trusted = trusted,
             .table_name = join_step->getReadableRelationName()};
@@ -1189,7 +1187,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 join_step->getReadableRelationName(),
                 entry->estimated_rows ? toString(*entry->estimated_rows) : "unknown",
                 entry->rows_estimate_trusted,
-                join_step->getResultRowsEstimation() ? toString(*join_step->getResultRowsEstimation()) : "unknown");
+                join_step->getTrustedResultRowsEstimation() ? toString(*join_step->getTrustedResultRowsEstimation()) : "unknown");
 
             auto right_table_key = query_graph_builder.context->statistics_context.getCachedKey(right_child_node);
             if (right_table_key)

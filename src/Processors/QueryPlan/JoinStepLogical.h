@@ -134,7 +134,14 @@ public:
     std::unordered_set<JoinTableSide> typeChangingSides() const;
 
     bool isOptimized() const { return optimized; }
+    /// Raw DP estimate, for diagnostics only; may be fabricated when untrusted.
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
+    /// Estimate for outer optimizers: `nullopt` unless trusted, so cost models
+    /// cannot consume a fabricated number.
+    std::optional<UInt64> getTrustedResultRowsEstimation() const
+    {
+        return result_rows_estimate_trusted ? result_rows_estimation : std::nullopt;
+    }
     bool isResultRowsEstimateTrusted() const { return result_rows_estimate_trusted; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     void setOptimized(
@@ -145,9 +152,7 @@ public:
         bool result_rows_estimate_trusted_ = false)
     {
         optimized = true;
-        /// Trust boundary: expose the estimate upstream only when it is trusted,
-        /// so outer cost models fall back to unknown instead of to a fabricated number.
-        result_rows_estimation = result_rows_estimate_trusted_ ? estimated_rows_ : std::nullopt;
+        result_rows_estimation = estimated_rows_;
         left_rows_estimation = left_rows_;
         right_rows_estimation = right_rows_;
         result_column_stats = std::move(column_stats_);

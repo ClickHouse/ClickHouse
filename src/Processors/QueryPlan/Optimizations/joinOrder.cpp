@@ -537,11 +537,9 @@ static JoinCardinalityEstimate estimateJoinCardinality(
 {
     bool trusted = left->rows_estimate_trusted && right->rows_estimate_trusted && selectivity.trusted;
 
-    /// Untrusted inputs: return unknown rather than a fabricated number.
-    /// Fabricated values leak into outer cost models via value_or(...) and mislead plan choice.
-    if (!trusted)
-        return {std::nullopt, false};
-
+    /// Keep the fabricated cardinality inside the DP so `computeJoinCost` can still
+    /// compare plans; the trust boundary to outer optimizers is enforced in
+    /// `JoinStepLogical::getTrustedResultRowsEstimation`.
     if (!left->estimated_rows || !right->estimated_rows)
         return {std::nullopt, trusted};
 
