@@ -32,7 +32,6 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
-from helpers.config_cluster import minio_secret_key
 from helpers.network import PartitionManager
 from helpers.client import QueryRuntimeException
 
@@ -137,37 +136,31 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+    """,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
     show_result = node.query(f"SHOW DATABASE {name}")
     assert minio_secret_key not in show_result
     assert "HIDDEN" in show_result
 
-
 def create_clickhouse_iceberg_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
 ):
-    settings = {
-        "storage_catalog_type": "rest",
-        "storage_warehouse": "demo",
-        "object_storage_endpoint": "http://minio:9000/warehouse-rest",
-        "storage_region": "us-east-1",
-        "storage_catalog_url" : BASE_URL,
-    }
-
-    settings.update(additional_settings)
-
+    settings_suffix = "" if len(additional_settings) == 0 else f"SETTINGS {",".join((k+"="+repr(v) for k, v in additional_settings.items()))}"
     node.query(
         f"""
-SET allow_experimental_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
 CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
-SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+{settings_suffix}
+    """,
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
 
 def drop_clickhouse_iceberg_table(
@@ -193,7 +186,11 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/backups.xml","configs/cluster.xml"],
+            main_configs=[
+                "configs/backups.xml",
+                "configs/cluster.xml",
+                "configs/text_log.xml",
+            ],
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
@@ -201,7 +198,11 @@ def started_cluster():
 
         cluster.add_instance(
             "node2",
-            main_configs=["configs/backups.xml","configs/cluster.xml"],
+            main_configs=[
+                "configs/backups.xml",
+                "configs/cluster.xml",
+                "configs/text_log.xml",
+            ],
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
@@ -283,6 +284,70 @@ def test_list_tables(started_cluster):
     assert expected == node.query(
         f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
     )
+
+
+def test_check_database(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace_1 = f"{root_namespace}.testA.A"
+    namespace_2 = f"{root_namespace}.testB.B"
+    namespace_1_tables = ["tableA", "tableB"]
+    namespace_2_tables = ["tableC", "tableD"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in [namespace_1, namespace_2]:
+        catalog.create_namespace(namespace)
+
+    for namespace in [namespace_1, namespace_2]:
+        assert len(catalog.list_tables(namespace)) == 0
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    tables_list = ""
+    for table in namespace_1_tables:
+        create_table(catalog, namespace_1, table)
+        if len(tables_list) > 0:
+            tables_list += "\n"
+        tables_list += f"{namespace_1}.{table}"
+
+    for table in namespace_2_tables:
+        create_table(catalog, namespace_2, table)
+        if len(tables_list) > 0:
+            tables_list += "\n"
+        tables_list += f"{namespace_2}.{table}"
+
+    assert (
+            tables_list
+            == node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
+    ).strip()
+    )
+    node.restart_clickhouse()
+    assert (
+            tables_list
+            == node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
+    ).strip()
+    )
+
+    node.query(
+        f"CHECK DATABASE {CATALOG_NAME}"
+    )
+
+    try:
+        node.query(
+            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+        )
+    
+        assert "fault when checking database" in node.query_and_get_error(
+            f"CHECK DATABASE {CATALOG_NAME}"
+        )
+    finally:
+        node.query(
+            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+        )
 
 
 def test_many_namespaces(started_cluster):
@@ -385,9 +450,94 @@ def test_hide_sensitive_info(started_cluster):
         started_cluster,
         node,
         CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
+        additional_settings={"auth_header": "Authorization: SECRET_2"},
     )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
+
+def test_no_secrets_in_logs(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"iceberg_query_log_{uuid.uuid4().hex}"
+    root_namespace = f"log_check_ns_{uuid.uuid4().hex}"
+    table_name = f"log_check_tbl_{uuid.uuid4().hex}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    db_settings = {
+        "catalog_type": "rest",
+        "warehouse": "demo",
+        "storage_endpoint": "http://minio:9000/warehouse-rest",
+    }
+    qid_db = uuid.uuid4().hex
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
+        query_id=qid_db,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    qid_table = uuid.uuid4().hex
+    node.query(
+        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
+        query_id=qid_table,
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    qid_show_db = uuid.uuid4().hex
+    show_db_result = node.query(
+        f"SHOW CREATE DATABASE {db_name}", query_id=qid_show_db
+    )
+    assert minio_secret_key not in show_db_result
+    assert "[HIDDEN]" in show_db_result
+
+    qid_show_table = uuid.uuid4().hex
+    show_table_result = node.query(
+        f"SHOW CREATE TABLE {db_name}.`{root_namespace}.{table_name}`",
+        query_id=qid_show_table,
+    )
+    assert minio_secret_key not in show_table_result
+    assert "[HIDDEN]" in show_table_result
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    node.query("SYSTEM FLUSH LOGS system.text_log")
+
+    for qid in (qid_db, qid_table, qid_show_db, qid_show_table):
+        assert (
+            int(
+                node.query(
+                    f"SELECT count() FROM system.query_log WHERE query_id = '{qid}' AND type = 'QueryFinish'"
+                ).strip()
+            )
+            >= 1
+        )
+        query_text = node.query(
+            f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log WHERE query_id = '{qid}' AND type = 'QueryFinish'"
+        ).strip()
+        assert minio_secret_key not in query_text
+
+    text_log_rows = node.query(
+        f"""
+SELECT message, value1, value2, value3, value4, value5, value6, value7, value8, value9, value10
+FROM system.text_log
+WHERE query_id IN ('{qid_db}', '{qid_table}', '{qid_show_db}', '{qid_show_table}')
+FORMAT JSONEachRow
+"""
+    ).strip()
+    assert text_log_rows
+    for line in text_log_rows.split("\n"):
+        row = json.loads(line)
+        for val in row.values():
+            if isinstance(val, str):
+                assert minio_secret_key not in val
 
 
 def test_tables_with_same_location(started_cluster):
@@ -443,6 +593,29 @@ def test_backup_database(started_cluster):
         node.query("SHOW CREATE DATABASE backup_database")
         == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://rest:8181/v1\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'demo\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
     )
+
+
+def test_restore_database_replace_external_to_null(started_cluster):
+    node = started_cluster.instances["node1"]
+    db_name = "backup_database_null"
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+    node.query(f"BACKUP DATABASE {db_name} TO {backup_name}")
+    node.query(f"DROP DATABASE {db_name} SYNC")
+    assert db_name not in node.query("SHOW DATABASES")
+
+    node.query(
+        f"RESTORE DATABASE {db_name} FROM {backup_name}",
+        settings={
+            "restore_replace_external_engines_to_null": 1,
+            "restore_replace_external_table_functions_to_null": 1,
+            "restore_replace_external_dictionary_source_to_null": 1,
+        },
+    )
+    assert db_name not in node.query("SHOW DATABASES")
 
 
 def test_non_existing_tables(started_cluster):
@@ -662,7 +835,7 @@ def test_cluster_select(started_cluster):
         assert len(cluster_secondary_queries) == 1
 
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
-    
+
 def test_not_specified_catalog_type(started_cluster):
     node = started_cluster.instances["node1"]
     settings = {
@@ -673,11 +846,13 @@ def test_not_specified_catalog_type(started_cluster):
     node.query(
         f"""
     DROP DATABASE IF EXISTS {CATALOG_NAME};
-    SET allow_database_iceberg=true;
-    SET write_full_path_in_iceberg_metadata=1;
     CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
     SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+    """,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
     assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
@@ -770,12 +945,7 @@ def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 
     node.query("SYSTEM ENABLE FAILPOINT database_iceberg_gcs")
-    node.query(
-        f"""
-        DROP DATABASE IF EXISTS {CATALOG_NAME};
-        SET allow_database_iceberg = 1;
-        """
-    )
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
 
     with pytest.raises(Exception) as err:
         node.query(
@@ -785,6 +955,26 @@ def test_gcs(started_cluster):
             SETTINGS
                 catalog_type = 'rest',
                 warehouse = 'demo',
-            """
+            """,
+            settings={"allow_database_iceberg": 1},
         )
         assert "Google cloud storage converts to S3" in str(err.value)
+
+
+def test_invalid_auth_header_format(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            SET allow_database_iceberg = 1;
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'demo',
+                auth_header = 'wrong.header'
+            """
+        )
+    assert "Invalid auth header format" in str(err.value)

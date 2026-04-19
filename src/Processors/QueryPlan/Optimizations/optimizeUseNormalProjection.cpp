@@ -1,8 +1,11 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -17,12 +20,14 @@
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
 }
+
 }
 
 namespace DB::QueryPlanOptimizations
@@ -77,6 +82,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
     bool is_parallel_replicas_initiator_with_projection_support,
     size_t max_step_description_length)
 {
@@ -223,12 +229,11 @@ std::optional<String> optimizeUseNormalProjections(
 
     auto logger = getLogger("optimizeUseNormalProjections");
 
-    auto projection_virtuals = reading->getMergeTreeData().getProjectionVirtualsPtr();
     auto has_all_required_columns = [&](const ProjectionDescription * projection)
     {
         for (const auto & col : required_columns)
         {
-            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection_virtuals->has(col))
+            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection->metadata->virtuals.has(col))
                 return false;
         }
 
@@ -238,6 +243,7 @@ std::optional<String> optimizeUseNormalProjections(
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
+    projection_query_info.row_level_filter = nullptr;
     if (query.dag)
         projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
@@ -466,8 +472,11 @@ std::optional<String> optimizeUseNormalProjections(
         iter->node->children[iter->next_child - 1] = &union_node;
     }
 
+    /// Now the projection is used, re-do optimizeReadInOrder
+    if (optimization_settings.read_in_order && typeid_cast<SortingStep *>(iter->node->step.get()))
+        optimizeReadInOrder(*iter->node, nodes, optimization_settings);
+
     /// Here we remove last steps from stack to be able to optimize again.
-    /// In theory, read-in-order can be applied to projection.
     stack.resize(iter.base() - stack.begin());
     return best_candidate->projection->name;
 }

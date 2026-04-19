@@ -79,6 +79,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ObjectFilterStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -91,6 +92,7 @@
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 #include <Storages/ReadInOrderOptimizer.h>
+#include <Storages/IStorageCluster.h>
 
 #include <Columns/Collator.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -209,6 +211,7 @@ namespace Setting
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ServerSetting
@@ -608,7 +611,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
-            metadata_snapshot = storage->getInMemoryMetadataPtr();
+            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
         if (options.only_analyze)
             storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
@@ -717,7 +720,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)
+    {
         row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && context->hasQueryContext())
+        {
+            for (const auto & row_policy : row_policy_filter->policies)
+                context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
+        }
+    }
 
     StorageView * view = nullptr;
     if (storage)
@@ -743,7 +753,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     {settings[Setting::parallel_replicas_mode],
                      settings[Setting::parallel_replicas_custom_key_range_lower],
                      settings[Setting::parallel_replicas_custom_key_range_upper]},
-                    storage->getInMemoryMetadataPtr()->columns,
+                    storage->getInMemoryMetadataPtr(context, false)->columns,
                     context);
             }
             else if (settings[Setting::parallel_replica_offset] > 0)
@@ -838,9 +848,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                         parts_for_estimator = *parts;
                 }
 
-                /// Just attempting to read statistics files on disk can increase query latencies
-                /// First check the in-memory metadata if statistics are present at all
-                auto estimator = storage_snapshot->metadata->hasStatistics()
+                /// Just attempting to read statistics files on disk can increase query latencies.
+                /// First check the in-memory metadata if statistics are present at all.
+                /// Also, statistics are only used to reorder conditions, so skip if there is just one.
+                const auto * where_function = query.where()->as<ASTFunction>();
+                const bool has_multiple_conditions = where_function && where_function->name == "and";
+                const bool has_statistics = storage_snapshot->metadata->hasStatistics();
+                auto estimator = (has_statistics && has_multiple_conditions)
                                     ? storage->getConditionSelectivityEstimator(parts_for_estimator, queried_columns, context)
                                     : nullptr;
 
@@ -2088,6 +2102,22 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
         if (expressions.second_stage || from_aggregation_stage)
         {
+            if (settings[Setting::use_hive_partitioning]
+                && !expressions.first_stage
+                && expressions.hasWhere())
+            {
+                if (typeid_cast<ReadFromCluster *>(query_plan.getRootNode()->step.get()))
+                {
+                    auto object_filter_step = std::make_unique<ObjectFilterStep>(
+                        query_plan.getCurrentHeader(),
+                        expressions.before_where->dag.clone(),
+                        getSelectQuery().where()->getColumnName());
+
+                    object_filter_step->setStepDescription("WHERE");
+                    query_plan.addStep(std::move(object_filter_step));
+                }
+            }
+
             if (from_aggregation_stage)
             {
                 /// No need to aggregate anything, since this was done on remote shards.
@@ -2213,7 +2243,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 apply_prelimit = apply_prelimit && (lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0);
             }
 
-            bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+            /// `isToAggregationState` covers both `WithMergeableStateAfterAggregation` (stage 3) and
+            /// `WithMergeableStateAfterAggregationAndLimit` (stage 4). OFFSET must not be applied at
+            /// either stage because OFFSET means skipping rows from the entire query result, not from each
+            /// shard individually.
+            bool apply_offset = options.to_stage < QueryProcessingStage::WithMergeableStateAfterAggregation;
             if (apply_prelimit)
             {
                 executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
@@ -2361,18 +2395,6 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
 RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 {
     return row_policy_filter;
-}
-
-void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
-{
-    if (row_policy_filter)
-    {
-        for (const auto & row_policy : row_policy_filter->policies)
-        {
-            auto name = row_policy->getFullName().toString();
-            elem.used_row_policies.emplace(std::move(name));
-        }
-    }
 }
 
 bool InterpreterSelectQuery::shouldMoveToPrewhere() const

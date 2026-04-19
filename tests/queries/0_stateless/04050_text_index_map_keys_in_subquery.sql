@@ -6,6 +6,9 @@
 -- to execute it, but the Set from the subquery is not built yet at that point.
 
 SET enable_analyzer = 1;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_functions_to_subcolumns = 1;
+SET optimize_use_projections = 1;
 
 DROP TABLE IF EXISTS tab;
 

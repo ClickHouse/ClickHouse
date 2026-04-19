@@ -1,6 +1,9 @@
 -- Tags: no-parallel-replicas
 
 SET use_statistics = 0;
+SET query_plan_join_swap_table = 'auto';
+SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 

@@ -360,8 +360,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
-        if (meta->num_rows <= 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has <= 0 rows: {}", row_group_idx, meta->num_rows);
+        if (meta->num_rows < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has negative row count: {}", row_group_idx, meta->num_rows);
+        if (meta->num_rows == 0)
+            continue; /// Empty row groups are valid in Parquet; skip them.
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
@@ -802,7 +804,10 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     size_t base_offset = column.meta->meta_data.bloom_filter_offset + header_size;
     for (size_t block_idx : block_idxs)
         subranges.emplace_back(base_offset + block_idx * bytes_per_block, bytes_per_block);
-    auto prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
+
+    std::vector<PrefetchHandle> prefetches;
+    if (!subranges.empty()) // can be empty e.g. if `WHERE x IN ()`
+        prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
 
     column.bloom_filter_blocks.reserve(block_idxs.size());
     for (size_t i = 0; i < block_idxs.size(); ++i)
