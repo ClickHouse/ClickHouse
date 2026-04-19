@@ -262,9 +262,17 @@ def run_queries(query_dir, port, database, timeout, out_dir, schema=None, data_d
     """Run all SQL query files and collect results."""
     results = []
 
+    def _sort_key(f):
+        stem = os.path.splitext(f)[0]
+        # Numeric stems sort first in numeric order; non-numeric stems sort after
+        # lexicographically. Using a homogeneous (int, str) tuple avoids the
+        # `TypeError: '<' not supported between 'int' and 'str'` that Python 3
+        # raises when mixing types in a sort key.
+        return (0, int(stem), "") if stem.isdigit() else (1, 0, stem)
+
     query_files = sorted(
         [f for f in os.listdir(query_dir) if f.endswith(".sql")],
-        key=lambda f: int(os.path.splitext(f)[0]) if os.path.splitext(f)[0].isdigit() else f,
+        key=_sort_key,
     )
 
     total = len(query_files)
@@ -277,10 +285,11 @@ def run_queries(query_dir, port, database, timeout, out_dir, schema=None, data_d
         query_path = os.path.join(query_dir, qf)
         query_name = os.path.splitext(qf)[0]
 
-        # Check for ClickHouse-specific override
+        # Check for ClickHouse-specific override — when present, the query is
+        # hand-authored for ClickHouse and must be executed verbatim.
         ch_override = query_path + ".clickhouse"
-        use_override = os.path.isfile(ch_override)
-        if use_override:
+        is_override = os.path.isfile(ch_override)
+        if is_override:
             query_path = ch_override
 
         with open(query_path, "r") as f:
@@ -289,9 +298,8 @@ def run_queries(query_dir, port, database, timeout, out_dir, schema=None, data_d
         if not query:
             continue
 
-        # Apply PostgreSQL -> ClickHouse dialect rewrites only to non-override queries.
-        # Override files are already hand-authored for ClickHouse and should run verbatim.
-        if not use_override:
+        if not is_override:
+            # Apply PostgreSQL -> ClickHouse dialect rewrites
             query = rewrite_query(query)
 
         ok, stdout, stderr, elapsed_ms = run_clickhouse_query(
