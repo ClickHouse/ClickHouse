@@ -1,3 +1,4 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
 -- Test that read-in-order optimization is rejected when primary key selectivity is poor.
 -- When the WHERE clause cannot use the primary key (e.g., LIKE '%...'),
 -- the optimizer should not apply read-in-order because it kills parallelism.
@@ -8,8 +9,10 @@ DROP TABLE IF EXISTS t_read_in_order_pk;
 -- (the check requires total_marks > requested_num_streams).
 CREATE TABLE t_read_in_order_pk (path String, value UInt64)
 ENGINE = MergeTree ORDER BY path
-SETTINGS index_granularity = 64
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0
 AS SELECT concat('path/', toString(number % 1000), '/file.log'), number FROM numbers(100000);
+
+SET max_threads = 4;
 
 -- With poor primary key selectivity (leading wildcard LIKE), read-in-order should be rejected.
 -- The SortingStep should do a full sort (PartialSortingTransform + MergeSortingTransform)
