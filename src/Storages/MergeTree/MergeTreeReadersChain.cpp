@@ -319,7 +319,7 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
         const auto & patch = patch_reader->getPatchPart();
         if (patch.mode != PatchMode::MergeOnKey)
             continue;
-        for (const auto & name : patch.sort_key_source_column_names)
+        for (const auto & name : patch.sort_key.source_column_names)
         {
             if (!to.has(name) && from.has(name))
                 to.insert(from.getByName(name));

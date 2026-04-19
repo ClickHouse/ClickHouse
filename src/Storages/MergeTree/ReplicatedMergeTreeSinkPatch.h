@@ -2,6 +2,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -12,7 +14,7 @@ public:
         StorageReplicatedMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
         LightweightUpdateHolderInKeeper update_holder_,
-        bool is_v2_format_,
+        std::optional<UInt64> v2_sort_key_prefix_size_,
         ContextPtr context_);
 
     ~ReplicatedMergeTreeSinkPatch() override;
@@ -25,8 +27,8 @@ private:
     UInt64 getDataVersionInPartition(const String & original_partition_id) const;
 
     LightweightUpdateHolderInKeeper update_holder;
-    /// True iff this sink writes v2-format patches. See `MergeTreeSinkPatch` for details.
-    bool is_v2_format = false;
+    /// Semantic sort-key prefix length for v2 patches, unset for v1. See `MergeTreeSinkPatch`.
+    std::optional<UInt64> v2_sort_key_prefix_size;
 };
 
 }

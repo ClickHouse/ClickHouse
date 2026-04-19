@@ -323,17 +323,18 @@ PatchReadResultPtr MergeTreePatchReaderMergeOnKey::readPatch(const MarkRange & r
     /// re-executing the expression. Safe because `sorting_key.expression` is built with
     /// `project_result=false` — it *adds* output columns without dropping input columns the apply
     /// path needs.
-    if (patch_part.sort_key_expression)
-        patch_part.sort_key_expression->execute(patch_read_result->block);
+    const auto & sort_key = patch_part.sort_key;
+    if (sort_key.expression)
+        sort_key.expression->execute(patch_read_result->block);
 
-    if (patch_part.sort_key_result_column_names.empty())
+    if (sort_key.result_column_names.empty())
         return patch_read_result;
 
     /// Project the 1-row min/max tuples from the now-augmented block. We key min/max on the
     /// sort-key *result* column names, which the expression just materialized.
     const auto & aug_block = patch_read_result->block;
-    patch_read_result->min_sort_key_row = makeSortKeyRowBlock(aug_block, aug_block.getColumns(), 0, patch_part.sort_key_result_column_names);
-    patch_read_result->max_sort_key_row = makeSortKeyRowBlock(aug_block, aug_block.getColumns(), aug_block.rows() - 1, patch_part.sort_key_result_column_names);
+    patch_read_result->min_sort_key_row = makeSortKeyRowBlock(aug_block, aug_block.getColumns(), 0, sort_key.result_column_names);
+    patch_read_result->max_sort_key_row = makeSortKeyRowBlock(aug_block, aug_block.getColumns(), aug_block.rows() - 1, sort_key.result_column_names);
 
     return patch_read_result;
 }
@@ -385,7 +386,7 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderMergeOnKey::readPatches(
 std::vector<PatchToApplyPtr> MergeTreePatchReaderMergeOnKey::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
 {
     const auto & patch_data = typeid_cast<const PatchMergeOnKeyReadResult &>(patch_result);
-    return {applyPatchMergeOnKey(result_block, patch_data.block, patch_part)};
+    return {applyPatchMergeOnKey(result_block, patch_data.block, patch_part.sort_key)};
 }
 
 static int compareMainMaxVsPatchMax(
@@ -420,6 +421,22 @@ static Block buildMainBlockWithSortKey(const Block & result_header, const Column
     return block;
 }
 
+/// Returns true iff `result_header` contains every sort-key source column the MergeOnKey apply
+/// path needs to evaluate the sort-key expression and the result comparator. When the main-side
+/// pipeline has been reduced to a column-less placeholder (e.g. `_dummy` under
+/// `query_plan_optimize_lazy_materialization` with `LIMIT N`), the sort-key compare can't run;
+/// we fall back on conservative answers in `needOldPatch` / `needNewPatch` in that case instead
+/// of throwing from `Block::getByName`.
+static bool mainBlockHasSortKeyColumns(const Block & result_header, const PatchSortKey & sort_key)
+{
+    for (const auto & name : sort_key.source_column_names)
+    {
+        if (!result_header.has(name))
+            return false;
+    }
+    return true;
+}
+
 bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & result_header) const
 {
     /// Need a new patch block if main's max sort-key has advanced past the last-read patch block's
@@ -433,19 +450,27 @@ bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result
     if (old.block.rows() == 0)
         return true;
 
-    if (patch_part.sort_key_result_column_names.empty())
+    const auto & sort_key = patch_part.sort_key;
+    if (sort_key.result_column_names.empty())
         return true;  /// No key — always read next mark if one exists.
 
     if (main_result.num_rows == 0)
         return false;
 
-    auto result_block = buildMainBlockWithSortKey(result_header, main_result.columns, patch_part.sort_key_expression);
+    /// Lazy-materialization paths can strip the main reader down to a `_dummy`-only block —
+    /// the sort-key source columns we need to compare on aren't in the result header. Be
+    /// conservative and request another patch block; the apply loop itself runs on a fully
+    /// materialized main block later and filters per row.
+    if (!mainBlockHasSortKeyColumns(result_header, sort_key))
+        return true;
+
+    auto result_block = buildMainBlockWithSortKey(result_header, main_result.columns, sort_key.expression);
     int cmp = compareMainMaxVsPatchMax(
         result_block,
         main_result.num_rows - 1,
         old.max_sort_key_row,
-        patch_part.sort_key_result_column_names,
-        patch_part.sort_key_reverse_flags);
+        sort_key.result_column_names,
+        sort_key.reverse_flags);
     return cmp > 0;
 }
 
@@ -458,19 +483,26 @@ bool MergeTreePatchReaderMergeOnKey::needOldPatch(const ReadResult & main_result
     if (old.block.rows() == 0)
         return false;
 
-    if (patch_part.sort_key_result_column_names.empty())
+    const auto & sort_key = patch_part.sort_key;
+    if (sort_key.result_column_names.empty())
         return true;  /// Single global run — never evict.
 
     if (main_result.num_rows == 0)
         return true;
 
-    auto result_block = buildMainBlockWithSortKey(result_header, main_result.columns, patch_part.sort_key_expression);
+    /// Same guard as `needNewPatch`: when the main reader returned a column-less placeholder
+    /// (lazy materialization), we can't run the sort-key compare. Keep the old patch so the
+    /// apply loop can still run once columns are materialized.
+    if (!mainBlockHasSortKeyColumns(result_header, sort_key))
+        return true;
+
+    auto result_block = buildMainBlockWithSortKey(result_header, main_result.columns, sort_key.expression);
     int cmp = compareMainMaxVsPatchMax(
         result_block,
         /*main_row=*/ 0,  // first row = min sort-key on main side
         old.max_sort_key_row,
-        patch_part.sort_key_result_column_names,
-        patch_part.sort_key_reverse_flags);
+        sort_key.result_column_names,
+        sort_key.reverse_flags);
     return cmp <= 0;
 }
 

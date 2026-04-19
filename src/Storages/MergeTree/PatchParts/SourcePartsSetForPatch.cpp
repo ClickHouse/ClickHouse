@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -84,10 +86,12 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
     }
 
     /// v2 patches apply with a single `MergeOnKey` pass that handles both the same-lineage case
-    /// (`has_merge`) and the cross-lineage case (`names_for_join`) uniformly. Emit one `PatchPartInfo`
-    /// with the union of all covered source parts. The sort-key columns / expression / reverse
-    /// flags are filled in later — by `MergeTreeData::getAlterConversionsForPart`, which pulls
-    /// them from the target table's current in-memory metadata snapshot.
+    /// (`has_merge`) and the cross-lineage case (`names_for_join`) uniformly. Emit one
+    /// `PatchPartInfo` with the union of all covered source parts. Populate `sort_key` here —
+    /// the patch part's rebuilt metadata (cached on `IMergeTreeDataPart`) together with the
+    /// persisted prefix length give us the complete sort-key view; downstream consumers
+    /// (reader, applyPatchMergeOnKey, getVirtualsRequiredForPatch) read it straight off
+    /// `PatchPartInfo::sort_key` without touching the target-table metadata again.
     if (format_version == V2_FORMAT_VERSION)
     {
         Names all_source_parts(names_for_join.begin(), names_for_join.end());
@@ -96,6 +100,10 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
 
         if (!all_source_parts.empty())
         {
+            PatchSortKey sort_key = makePatchSortKey(
+                patch_part->getMetadataSnapshot()->getSortingKey(),
+                sort_key_prefix_size);
+
             patch_parts.push_back(PatchPartInfo
             {
                 .mode = PatchMode::MergeOnKey,
@@ -103,10 +111,7 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
                 .source_parts = std::move(all_source_parts),
                 .source_data_version = original_part.getDataVersion(),
                 .perform_alter_conversions = true,
-                .sort_key_source_column_names = {},
-                .sort_key_result_column_names = {},
-                .sort_key_reverse_flags = {},
-                .sort_key_expression = nullptr,
+                .sort_key = std::move(sort_key),
             });
         }
         return patch_parts;
@@ -121,10 +126,7 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
             .source_parts = {part_name},
             .source_data_version = original_part.getDataVersion(),
             .perform_alter_conversions = true,
-            .sort_key_source_column_names = {},
-            .sort_key_result_column_names = {},
-            .sort_key_reverse_flags = {},
-            .sort_key_expression = nullptr,
+            .sort_key = {},
         });
     }
 
@@ -137,10 +139,7 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
             .source_parts = Names(names_for_join.begin(), names_for_join.end()),
             .source_data_version = original_part.getDataVersion(),
             .perform_alter_conversions = true,
-            .sort_key_source_column_names = {},
-            .sort_key_result_column_names = {},
-            .sort_key_reverse_flags = {},
-            .sort_key_expression = nullptr,
+            .sort_key = {},
         });
     }
 
@@ -177,15 +176,20 @@ SourcePartsSetForPatch SourcePartsSetForPatch::merge(const DataPartsVector & sou
         const auto & set = part->getSourcePartsSet();
 
         /// v1 and v2 patches live in different partitions (their partition-id hash differs), so
-        /// inputs to a patch-on-patch merge always share the same format version.
+        /// inputs to a patch-on-patch merge always share the same format version. For v2 the
+        /// sort-key prefix length is derived from the sort-key AST text, which is itself hashed
+        /// into the partition id — so two v2 patches in the same partition also have equal
+        /// prefix lengths.
         if (!format_version_set)
         {
             merged_set.format_version = set.format_version;
+            merged_set.sort_key_prefix_size = set.sort_key_prefix_size;
             format_version_set = true;
         }
         else
         {
             chassert(merged_set.format_version == set.format_version);
+            chassert(merged_set.sort_key_prefix_size == set.sort_key_prefix_size);
         }
 
         for (const auto & [part_name, min_max] : set.min_max_versions_by_part)
@@ -208,6 +212,12 @@ SourcePartsSetForPatch SourcePartsSetForPatch::merge(const DataPartsVector & sou
 void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
 {
     writeBinaryLittleEndian(format_version, out);
+
+    /// v2 adds the semantic sort-key prefix length right after the version byte, so readers can
+    /// recover it without a round-trip through the target table's in-memory metadata.
+    if (format_version == V2_FORMAT_VERSION)
+        writeBinaryLittleEndian(sort_key_prefix_size, out);
+
     writeBinaryLittleEndian(min_max_versions_by_part.size(), out);
 
     for (const auto & [part_name, min_max] : min_max_versions_by_part)
@@ -227,6 +237,9 @@ void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of SourcePartsSetForPatch: {}", std::to_string(version));
 
     format_version = version;
+
+    if (format_version == V2_FORMAT_VERSION)
+        readBinaryLittleEndian(sort_key_prefix_size, in);
 
     UInt64 num_parts;
     readBinaryLittleEndian(num_parts, in);

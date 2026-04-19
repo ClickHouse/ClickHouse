@@ -16,7 +16,7 @@ MergeTreeSinkPatch::MergeTreeSinkPatch(
     StorageMergeTree & storage_,
     StorageMetadataPtr metadata_snapshot_,
     PlainLightweightUpdateHolder update_holder_,
-    bool is_v2_format_,
+    std::optional<UInt64> v2_sort_key_prefix_size_,
     ContextPtr context_)
     : MergeTreeSink(
         storage_,
@@ -24,7 +24,7 @@ MergeTreeSinkPatch::MergeTreeSinkPatch(
         /*max_parts_per_block=*/ 0,
         std::move(context_))
     , update_holder(std::move(update_holder_))
-    , is_v2_format(is_v2_format_)
+    , v2_sort_key_prefix_size(v2_sort_key_prefix_size_)
 {
 }
 
@@ -68,11 +68,15 @@ TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block
 
     auto source_parts_set = buildSourceSetForPatch(*block.block, block_number);
 
-    /// Stamp the v2 format-version byte so readers know to dispatch to `MergeOnKey` apply. The
-    /// sort-key AST itself is *not* persisted — v2 readers fetch it from the target table's
-    /// current in-memory metadata snapshot.
-    if (is_v2_format)
+    /// Stamp the v2 format-version byte so readers know to dispatch to `MergeOnKey` apply, and
+    /// record the length of the semantic sort-key prefix captured at the UPDATE's callsite —
+    /// this lets readers slice the target table's sort key to the patch's shape without
+    /// re-deriving the length from the rebuilt patch metadata.
+    if (v2_sort_key_prefix_size.has_value())
+    {
         source_parts_set.setFormatVersion(SourcePartsSetForPatch::V2_FORMAT_VERSION);
+        source_parts_set.setSortKeyPrefixSize(*v2_sort_key_prefix_size);
+    }
 
     return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);
 }

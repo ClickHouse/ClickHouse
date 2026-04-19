@@ -16,7 +16,7 @@ ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
     StorageReplicatedMergeTree & storage_,
     StorageMetadataPtr metadata_snapshot_,
     LightweightUpdateHolderInKeeper update_holder_,
-    bool is_v2_format_,
+    std::optional<UInt64> v2_sort_key_prefix_size_,
     ContextPtr context_)
     : ReplicatedMergeTreeSink(
         /*async_insert=*/ false,
@@ -29,7 +29,7 @@ ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
         /*majority_quorum=*/ false,
         std::move(context_))
     , update_holder(std::move(update_holder_))
-    , is_v2_format(is_v2_format_)
+    , v2_sort_key_prefix_size(v2_sort_key_prefix_size_)
 {
     deduplicate = false;
 }
@@ -86,8 +86,11 @@ TemporaryPartPtr ReplicatedMergeTreeSinkPatch::writeNewTempPart(BlockWithPartiti
 
     auto source_parts_set = buildSourceSetForPatch(*block.block, data_version);
 
-    if (is_v2_format)
+    if (v2_sort_key_prefix_size.has_value())
+    {
         source_parts_set.setFormatVersion(SourcePartsSetForPatch::V2_FORMAT_VERSION);
+        source_parts_set.setSortKeyPrefixSize(*v2_sort_key_prefix_size);
+    }
 
     return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);
 }

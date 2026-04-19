@@ -8432,13 +8432,16 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     }
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
-    bool v2_patches_enabled = (*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches];
+    const bool v2_patches_enabled = (*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches];
     StorageMetadataPtr patch_metadata;
+    std::optional<UInt64> v2_sort_key_prefix_size;
 
     if (v2_patches_enabled)
     {
         auto main_metadata = getInMemoryMetadataPtr(context_copy, false);
-        patch_metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), main_metadata->getSortingKey(), context_copy);
+        const auto & main_sort_key = main_metadata->getSortingKey();
+        v2_sort_key_prefix_size = main_sort_key.column_names.size();
+        patch_metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), main_sort_key, *v2_sort_key_prefix_size, context_copy);
     }
     else
     {
@@ -8449,7 +8452,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
         *this,
         std::move(patch_metadata),
         std::move(update_holder),
-        v2_patches_enabled,
+        v2_sort_key_prefix_size,
         context_copy);
 
     chassert(!pipeline.completed());

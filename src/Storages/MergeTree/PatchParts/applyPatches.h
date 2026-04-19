@@ -7,6 +7,8 @@
 namespace DB
 {
 
+struct KeyDescription;
+
 /// Represents a patch that can be applied to the result block to update the data.
 struct PatchToApply
 {
@@ -71,6 +73,14 @@ struct PatchMergeOnKeyReadResult : public PatchReadResult
     bool empty() const override { return block.rows() == 0; }
 };
 
+/// Build a `PatchSortKey` from the v2 patch's rebuilt `KeyDescription` and its persisted prefix
+/// length (see `SourcePartsSetForPatch::getSortKeyPrefixSize`). Slices the result/reverse arrays
+/// to `prefix_size` (dropping the trailing `_block_number` / `_block_offset` identity columns) and
+/// trims those two names out of the source-column set. Typically called once per patch at
+/// `PatchPartInfo` construction; the result is stashed on the info struct and re-used by every
+/// reader / apply / planning consumer.
+PatchSortKey makePatchSortKey(const KeyDescription & sort_key, UInt64 prefix_size);
+
 /// Applies patch. Returns indices in result and patch blocks for rows that should be updated.
 PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch);
 PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & join_entry);
@@ -78,7 +88,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 /// Applies a v2 (MergeOnKey) patch. Two-cursor merge on the main table's sort-key columns; within
 /// each equal-sort-key run, uses `(_block_number, _block_offset)` to identify which main-side row
 /// matches which patch-side row. Memory bounded by the largest equal-sort-key run (usually 1).
-PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch);
+PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const PatchSortKey & sort_key);
 
 /// Updates rows in result_block from patch_block at specified indices.
 /// versions_block is a shared block with current versions of rows for each updated column.

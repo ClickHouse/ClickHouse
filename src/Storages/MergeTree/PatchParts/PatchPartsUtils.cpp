@@ -120,6 +120,7 @@ static constexpr auto PATCH_FORMAT_V2_HASH_MARKER = "__patch_format_v2__";
 StorageMetadataPtr getPatchPartMetadataV2(
     ColumnsDescription patch_part_desc,
     const KeyDescription & main_sorting_key,
+    UInt64 sort_key_prefix_size,
     ContextPtr local_context)
 {
     StorageInMemoryMetadata part_metadata;
@@ -154,24 +155,34 @@ StorageMetadataPtr getPatchPartMetadataV2(
     ensure_column(BlockOffsetColumn::name, BlockOffsetColumn::type);
     ensure_column(PartDataVersionColumn::name, PartDataVersionColumn::type);
 
-    /// Pull the sort-key expression list straight from the target table's KeyDescription.
-    /// Its children become the tuple elements of the ORDER BY expression; `_block_number` and
-    /// `_block_offset` are appended as trailing identity columns. An empty expression list
-    /// (for `ORDER BY tuple()`) leaves only the identity columns, which matches the design's
-    /// degenerate-sort-key case.
+    /// Pull the sort-key expression list from the target table's KeyDescription and take only
+    /// the first `sort_key_prefix_size` children — that's exactly the shape the patch was
+    /// written with (see `SourcePartsSetForPatch::getSortKeyPrefixSize`). Slicing decouples the
+    /// patch's on-disk layout from later additions to the target table's sort key; it also lets
+    /// `ORDER BY tuple()` (or any shorter prefix) produce a sort key with only the two identity
+    /// columns, matching the design's degenerate-sort-key case.
     const auto * sort_key_expr_list = main_sorting_key.expression_list_ast
         ? main_sorting_key.expression_list_ast->as<ASTExpressionList>()
         : nullptr;
-    size_t n_semantic = sort_key_expr_list ? sort_key_expr_list->children.size() : 0;
+    const size_t main_sort_key_children = sort_key_expr_list ? sort_key_expr_list->children.size() : 0;
+
+    if (sort_key_prefix_size > main_sort_key_children)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Patch's persisted sort-key prefix size ({}) exceeds the main table's current sort-key children count ({})",
+            sort_key_prefix_size, main_sort_key_children);
 
     /// Partition id: `__patchPartitionID(_part, hash(...))`. Hash input uses the *stored*
-    /// column names (including `_part`), a serialized form of the sort-key AST, and a v2
-    /// marker. Serializing the AST (not just the final column names) ensures that two tables
-    /// with sort keys that collide in their *result* names but differ in expression structure
-    /// still land in different partitions. The v2 marker guarantees that v1 and v2 patches
-    /// never land in the same partition even if they happen to cover identical columns.
-    /// After `ALTER MODIFY ORDER BY`, the new AST text changes and pre-ALTER patches end up in
-    /// a different partition than post-ALTER patches — they never co-merge.
+    /// column names (including `_part`), a serialized form of the target table's sort-key AST,
+    /// and a v2 marker. Serializing the AST (not just the final column names) ensures that two
+    /// tables with sort keys that collide in their *result* names but differ in expression
+    /// structure still land in different partitions. The v2 marker guarantees that v1 and v2
+    /// patches never land in the same partition even if they happen to cover identical columns.
+    /// After `ALTER MODIFY ORDER BY`, the new AST text changes and pre-ALTER patches end up in a
+    /// different partition than post-ALTER patches — they never co-merge. We hash the full
+    /// main-table AST rather than the sliced prefix so the hash is stable against incidental
+    /// reconstruction differences (fresh `ASTExpressionList` vs the parsed one) — any real
+    /// change to the sort-key prefix already shows up in the main AST text.
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");
 
     Names hash_input = patch_part_desc.getNamesOfPhysical();
@@ -183,31 +194,31 @@ StorageMetadataPtr getPatchPartMetadataV2(
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
     part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, {}, local_context);
 
-    /// Sort key: `(<sort_key_expr_children>..., _block_number, _block_offset)`. Primary key
-    /// equals sort key — the widened sparse index subsumes the v1 per-granule minmax index on
-    /// `_block_number` and `_block_offset`, so no secondary indices are needed here.
-    /// Building via `KeyDescription::getKeyFromAST` gives us `expression` (an ExpressionActions
-    /// that materializes the result columns from physical source columns — the same way FINAL
-    /// does for base parts), `column_names` (the result column names), and `reverse_flags`
-    /// (we override the reverse flags from the per-shard DESC info since our AST children are
-    /// plain expressions, not ASTStorageOrderByElements).
+    /// Sort key: `(<sort_key_expr_children[0..sort_key_prefix_size]>..., _block_number,
+    /// _block_offset)`. Primary key equals sort key — the widened sparse index subsumes the v1
+    /// per-granule minmax index on `_block_number` and `_block_offset`, so no secondary indices
+    /// are needed here. Building via `KeyDescription::getKeyFromAST` gives us `expression` (an
+    /// ExpressionActions that materializes the result columns from physical source columns — the
+    /// same way FINAL does for base parts), `column_names` (the result column names), and
+    /// `reverse_flags` (we override the reverse flags from the per-shard DESC info since our AST
+    /// children are plain expressions, not ASTStorageOrderByElements).
     auto order_by_expression = makeASTOperator("tuple");
     if (sort_key_expr_list)
     {
-        for (const auto & child : sort_key_expr_list->children)
-            order_by_expression->arguments->children.push_back(child->clone());
+        for (size_t i = 0; i < sort_key_prefix_size; ++i)
+            order_by_expression->arguments->children.push_back(sort_key_expr_list->children[i]->clone());
     }
+
     order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockNumberColumn::name));
     order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockOffsetColumn::name));
 
     addCodecsForPatchSystemColumns(patch_part_desc);
-
     part_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, {}, local_context);
 
     /// Honour DESC flags from the main table for the semantic sort-key prefix. The two trailing
     /// identity columns (`_block_number`, `_block_offset`) are always ASC.
-    part_metadata.sorting_key.reverse_flags.assign(n_semantic + 2, false);
-    for (size_t i = 0; i < main_sorting_key.reverse_flags.size() && i < n_semantic; ++i)
+    part_metadata.sorting_key.reverse_flags.assign(sort_key_prefix_size + 2, false);
+    for (size_t i = 0; i < main_sorting_key.reverse_flags.size() && i < sort_key_prefix_size; ++i)
         part_metadata.sorting_key.reverse_flags[i] = main_sorting_key.reverse_flags[i];
 
     part_metadata.primary_key = part_metadata.sorting_key;
@@ -220,10 +231,11 @@ StorageMetadataPtr getPatchPartMetadataV2(
 StorageMetadataPtr getPatchPartMetadataV2(
     Block sample_block,
     const KeyDescription & main_sorting_key,
+    UInt64 sort_key_prefix_size,
     ContextPtr local_context)
 {
     ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
-    return getPatchPartMetadataV2(std::move(columns_desc), main_sorting_key, local_context);
+    return getPatchPartMetadataV2(std::move(columns_desc), main_sorting_key, sort_key_prefix_size, local_context);
 }
 
 const NamesAndTypesList & getPatchPartKeyColumns()
@@ -335,10 +347,10 @@ Names getVirtualsRequiredForPatch(const PatchPartInfoForReader & patch)
             /// the two identity columns. For a plain sort key the source set equals the result
             /// set; for an expression sort key (e.g. `ORDER BY cityHash64(id)`) the source set
             /// is just `{id}` and the result column `cityHash64(id)` is materialized by
-            /// `sort_key_expression` at apply time. The source-column set is derived from the
-            /// patch part's own metadata in `MergeTreeData::getAlterConversionsForPart`, so
-            /// ALTER MODIFY ORDER BY after the patch was written doesn't invalidate it.
-            columns = patch.sort_key_source_column_names;
+            /// `sort_key.expression` at apply time. Read straight off `patch.sort_key`, which
+            /// was populated at `PatchPartInfo` construction from the patch's own rebuilt
+            /// metadata sliced to the persisted prefix length (see `makePatchSortKey`).
+            columns = patch.sort_key.source_column_names;
             columns.emplace_back(BlockNumberColumn::name);
             columns.emplace_back(BlockOffsetColumn::name);
             break;

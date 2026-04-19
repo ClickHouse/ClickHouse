@@ -9948,53 +9948,14 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     auto patches = mutations->getPatchesForPart(part);
     PatchPartsForReader patches_for_reader;
 
+    /// `PatchPartInfo::sort_key` was populated by `SourcePartsSetForPatch::getPatchParts`
+    /// straight from the patch part's rebuilt metadata. Here we just move it across into the
+    /// reader-shaped info; no extra metadata fetch and no prefix-length arithmetic needed.
     for (auto & patch : patches)
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
         auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context);
-        auto original_patch_part = patch.part;
         auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(std::move(patch.part), std::move(patch_conversions));
-
-        Names source_column_names;
-        Names result_column_names;
-        std::vector<UInt8> reverse_flags;
-        ExpressionActionsPtr sort_key_expression;
-
-        if (patch.mode == PatchMode::MergeOnKey)
-        {
-            /// v2 patch metadata is rebuilt from the **current** target-table sort key on every
-            /// open — nothing about the sort key is persisted in `source_parts.dat`. After
-            /// `ALTER MODIFY ORDER BY` the partition-id hash changes (see `getPatchPartMetadataV2`
-            /// for how it folds the sort-key AST text into the hash), so pre-ALTER patches end up
-            /// in their own (unreachable) partition and never mix with post-ALTER ones.
-            auto main_metadata = part->storage.getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
-            const auto & main_sorting_key = main_metadata->getSortingKey();
-            auto patch_metadata_snapshot = DB::getPatchPartMetadataV2(
-                original_patch_part->getColumnsDescription(),
-                main_sorting_key,
-                query_context);
-            const auto & sk = patch_metadata_snapshot->getSortingKey();
-
-            constexpr size_t n_appended = 2;
-            size_t n_full = sk.column_names.size();
-            size_t n_semantic = n_full > n_appended ? n_full - n_appended : 0;
-
-            result_column_names.assign(sk.column_names.begin(), sk.column_names.begin() + n_semantic);
-
-            /// Source columns: inputs to the sort-key expression, minus the two identity
-            /// columns (they're already plumbed through as system virtuals).
-            NameSet seen;
-            for (const auto & input : sk.expression->getRequiredColumns())
-            {
-                if (input == BlockNumberColumn::name || input == BlockOffsetColumn::name)
-                    continue;
-                if (seen.insert(input).second)
-                    source_column_names.push_back(input);
-            }
-
-            reverse_flags.assign(sk.reverse_flags.begin(), sk.reverse_flags.begin() + n_semantic);
-            sort_key_expression = sk.expression;
-        }
 
         patches_for_reader.push_back(PatchPartInfoForReader
         {
@@ -10003,10 +9964,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
             .source_parts = std::move(patch.source_parts),
             .source_data_version = patch.source_data_version,
             .perform_alter_conversions = patch.perform_alter_conversions,
-            .sort_key_source_column_names = std::move(source_column_names),
-            .sort_key_result_column_names = std::move(result_column_names),
-            .sort_key_reverse_flags = std::move(reverse_flags),
-            .sort_key_expression = std::move(sort_key_expression),
+            .sort_key = std::move(patch.sort_key),
         });
     }
 
@@ -10025,12 +9983,15 @@ StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart 
     const auto & source_parts_set = patch_part.getSourcePartsSet();
     if (source_parts_set.getFormatVersion() == SourcePartsSetForPatch::V2_FORMAT_VERSION)
     {
-        /// Rebuild v2 metadata from the current main-table sort key rather than from the
-        /// patch's own persisted schema — patches are ephemeral relative to ALTERs.
+        /// Rebuild v2 metadata from the current main-table sort key, sliced to the prefix
+        /// length the patch was written with (persisted in `source_parts.dat`). The partition
+        /// hash already isolates pre-ALTER-MODIFY-ORDER-BY patches in a different partition, so
+        /// the current main sort key's first `prefix_size` children match the patch's shape.
         const auto & main_sorting_key = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false)->getSortingKey();
         metadata_snapshot = DB::getPatchPartMetadataV2(
             patch_part.getColumnsDescription(),
             main_sorting_key,
+            source_parts_set.getSortKeyPrefixSize(),
             local_context);
     }
     else

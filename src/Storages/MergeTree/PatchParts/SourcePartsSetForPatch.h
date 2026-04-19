@@ -36,6 +36,13 @@ public:
     UInt8 getFormatVersion() const { return format_version; }
     void setFormatVersion(UInt8 new_format_version) { format_version = new_format_version; }
 
+    /// Number of semantic sort-key columns in the v2 patch's sort key — i.e. the length of the
+    /// sort-key prefix, excluding the two trailing identity columns `_block_number` and
+    /// `_block_offset`. Captured from the target table's sort key at write time and persisted
+    /// alongside the format-version byte; zero for v1 patches.
+    UInt64 getSortKeyPrefixSize() const { return sort_key_prefix_size; }
+    void setSortKeyPrefixSize(UInt64 size) { sort_key_prefix_size = size; }
+
     void addSourcePart(const String & name, UInt64 data_version);
     PatchParts getPatchParts(const MergeTreePartInfo & original_part, const DataPartPtr & patch_part) const;
 
@@ -61,12 +68,21 @@ private:
 
     /// Format version of the patch part on disk. Populated on read from the version byte;
     /// set explicitly by the sink before write. See `V1_FORMAT_VERSION` / `V2_FORMAT_VERSION`.
-    /// The sort-key AST itself is not persisted: v2 patches recover it at apply time from the
-    /// target table's current `StorageMetadataPtr` (see `MergeTreeData::getPatchPartMetadata` and
-    /// `MergeTreeData::getAlterConversionsForPart`). The partition-id hash — computed over the
-    /// sort-key AST text at write time and embedded in the patch's partition name — keeps v1 and
-    /// v2 patches, and post-ALTER-MODIFY-ORDER-BY patches, isolated from each other's merges.
+    /// Only the prefix *length* is persisted (`sort_key_prefix_size` below), not the sort-key
+    /// AST itself; v2 readers rebuild the AST from the target table's current
+    /// `StorageMetadataPtr` and slice it to that length (see `MergeTreeData::getPatchPartMetadata`
+    /// and `MergeTreeData::getAlterConversionsForPart`). The partition-id hash — computed over
+    /// the sort-key AST-prefix text at write time and embedded in the patch's partition name —
+    /// keeps v1 and v2 patches, and pre/post-`ALTER MODIFY ORDER BY` patches, isolated from each
+    /// other's merges.
     UInt8 format_version = V1_FORMAT_VERSION;
+
+    /// Length of the semantic sort-key prefix persisted on the v2 patch. Written to
+    /// `source_parts.dat` right after `format_version`; zero and unused for v1 patches. Stored
+    /// so that readers can directly slice the target table's sort key to the shape the patch was
+    /// written with, instead of deriving `n_semantic = n_full - 2` by subtracting the two
+    /// identity columns after a `getPatchPartMetadataV2` rebuild.
+    UInt64 sort_key_prefix_size = 0;
 };
 
 /// Returns set with source parts with _part column from block and data_version.
