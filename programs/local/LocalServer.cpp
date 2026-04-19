@@ -77,6 +77,8 @@
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/ThreadPool.h>
 
+#include <algorithm>
+
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -532,6 +534,22 @@ void LocalServer::startServers(const ServerType & server_type)
     http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings()[ServerSetting::max_keep_alive_requests]));
     http_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
 
+    /// Treat a repeated SYSTEM START LISTEN as a no-op when a matching listener is already active,
+    /// matching `clickhouse-server` behavior. We only throw below if neither a new server was
+    /// created nor a matching listener was already running.
+    auto matches_requested_type = [&](const ProtocolServerAdapter & s)
+    {
+        if (s.isStopping())
+            return false;
+        const std::string & name = s.getPortName();
+        if (server_type.shouldStart(ServerType::Type::TCP) && name == "tcp_port")
+            return true;
+        if (server_type.shouldStart(ServerType::Type::HTTP) && name == "http_port")
+            return true;
+        return false;
+    };
+    bool had_active_matching_server = std::any_of(servers.begin(), servers.end(), matches_requested_type);
+
     size_t servers_before = servers.size();
 
     for (const auto & listen_host : listen_hosts)
@@ -591,7 +609,7 @@ void LocalServer::startServers(const ServerType & server_type)
         }
     }
 
-    if (servers.size() == servers_before)
+    if (servers.size() == servers_before && !had_active_matching_server)
         throw Exception(ErrorCodes::NETWORK_ERROR, "No listeners started — check listen_host and port configuration");
 }
 

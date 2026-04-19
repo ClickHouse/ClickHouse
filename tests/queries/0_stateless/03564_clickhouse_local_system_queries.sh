@@ -21,17 +21,42 @@ $CLICKHOUSE_LOCAL --query "SYSTEM STOP LISTEN TCP;"
 $CLICKHOUSE_LOCAL --http_port 0 --query "SYSTEM START LISTEN HTTP;"
 $CLICKHOUSE_LOCAL --tcp_port 0 --query "SYSTEM START LISTEN TCP;"
 
-# Test that a started TCP listener is actually reachable:
-# start clickhouse-local with a blocking query to keep it alive, then connect from outside.
-LOCAL_TCP_PORT=$((RANDOM % 10000 + 40000))
+# Test that a started TCP listener is actually reachable from outside the process.
+# We use port 0 (OS-assigned) to avoid collisions with other tests running in parallel,
+# and read the actual bound port from clickhouse-local's stdout via `getServerPort`.
+LOCAL_STDOUT=$(mktemp --tmpdir clickhouse-local-stdout.XXXXXX)
+LOCAL_STDERR=$(mktemp --tmpdir clickhouse-local-stderr.XXXXXX)
+trap 'rm -f "$LOCAL_STDOUT" "$LOCAL_STDERR"' EXIT
 
-$CLICKHOUSE_LOCAL --listen_host 127.0.0.1 --tcp_port "$LOCAL_TCP_PORT" --query "
+$CLICKHOUSE_LOCAL --listen_host 127.0.0.1 --tcp_port 0 --query "
     SYSTEM START LISTEN TCP;
+    SELECT getServerPort('tcp_port') FORMAT TSV;
     SELECT sleepEachRow(1) FROM numbers(30) SETTINGS max_block_size = 1 FORMAT Null;
-" &
+" > "$LOCAL_STDOUT" 2> "$LOCAL_STDERR" &
 LOCAL_PID=$!
 
-# Wait for the TCP listener to become reachable (up to 5 seconds)
+# Wait for the bound port to appear on stdout (up to 5 seconds).
+LOCAL_TCP_PORT=""
+for _ in $(seq 1 50); do
+    if [[ -s "$LOCAL_STDOUT" ]]; then
+        LOCAL_TCP_PORT=$(head -n 1 "$LOCAL_STDOUT")
+        break
+    fi
+    if ! kill -0 "$LOCAL_PID" 2>/dev/null; then
+        break
+    fi
+    sleep 0.1
+done
+
+if [[ -z "$LOCAL_TCP_PORT" || "$LOCAL_TCP_PORT" -eq 0 ]]; then
+    echo "Failed to discover TCP listener port (clickhouse-local stderr below):" >&2
+    cat "$LOCAL_STDERR" >&2
+    kill "$LOCAL_PID" 2>/dev/null
+    wait "$LOCAL_PID" 2>/dev/null || true
+    exit 1
+fi
+
+# Connect from outside to confirm the listener is actually reachable.
 CONNECTED=0
 for _ in $(seq 1 50); do
     if $CLICKHOUSE_CLIENT_BINARY --host 127.0.0.1 --port "$LOCAL_TCP_PORT" --query "SELECT 1" >/dev/null 2>&1; then
@@ -44,7 +69,10 @@ done
 if [[ "$CONNECTED" -eq 1 ]]; then
     $CLICKHOUSE_CLIENT_BINARY --host 127.0.0.1 --port "$LOCAL_TCP_PORT" --query "SELECT 'connected_ok'"
 else
-    echo "Failed to connect to TCP listener on port $LOCAL_TCP_PORT" >&2
+    echo "Failed to connect to TCP listener on port $LOCAL_TCP_PORT (clickhouse-local stderr below):" >&2
+    cat "$LOCAL_STDERR" >&2
+    kill "$LOCAL_PID" 2>/dev/null
+    wait "$LOCAL_PID" 2>/dev/null || true
     exit 1
 fi
 
