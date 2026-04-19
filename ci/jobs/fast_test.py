@@ -47,7 +47,7 @@ def clone_submodules():
         "contrib/croaring",
         "contrib/miniselect",
         "contrib/xz",
-        "contrib/dragonbox",
+        "contrib/zmij",
         "contrib/fast_float",
         "contrib/NuRaft",
         "contrib/jemalloc",
@@ -68,16 +68,30 @@ def clone_submodules():
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
-    res = res and Shell.check("git submodule init", verbose=True, strict=True)
     res = res and Shell.check(
-        # NOTE: max-procs was 10 before, increased to 20 to speed up checkout.
-        # Roll back to 10 if this starts hitting GitHub rate limits.
-        command=f"xargs --max-procs={min([Utils.cpu_count(), 20])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
-        stdin_str="\0".join(submodules_to_update) + "\0",
-        timeout=300,
-        retries=3,
+        # Init only the needed submodules, not all 129
+        command="git submodule init -- " + " ".join(submodules_to_update),
         verbose=True,
+        strict=True,
     )
+
+    if os.path.isdir(".git/modules/contrib") and os.listdir(".git/modules/contrib"):
+        # Submodule cache was restored by runner.py — just populate working trees
+        print("Submodule cache detected, populating working trees from cache")
+        res = res and Shell.check(
+            command="git submodule update --depth 1 --single-branch -- " + " ".join(submodules_to_update),
+            timeout=300,
+            retries=3,
+            verbose=True,
+        )
+    else:
+        res = res and Shell.check(
+            command=f"xargs --max-procs={min([Utils.cpu_count(), 20])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
+            stdin_str="\0".join(submodules_to_update) + "\0",
+            timeout=300,
+            retries=3,
+            verbose=True,
+        )
     # NOTE: the three "git submodule foreach" cleanup commands (reset --hard,
     # checkout @ -f, clean -xfd) that used to run here were removed because
     # "git submodule update" already checks out the correct commit into a
@@ -865,7 +879,7 @@ def main():
             test_results.results.append(
                 Result.create_from(
                     name="clickhouse-test",
-                    status=Result.StatusExtended.FAIL,
+                    status=Result.Status.FAIL,
                     info="clickhouse-test error",
                 )
             )
@@ -885,7 +899,7 @@ def main():
 
     CH.terminate(force=True)
 
-    status = Result.Status.SUCCESS if args.set_status_success else ""
+    status = Result.Status.OK if args.set_status_success else ""
     Result.create_from(
         results=results, status=status, stopwatch=stop_watch, files=attach_files, info=job_info
     ).complete_job()

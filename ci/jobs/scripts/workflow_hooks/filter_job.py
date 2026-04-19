@@ -229,12 +229,7 @@ def should_skip_job(job_name):
             except Exception as e:
                 print(f"Warning: failed to fetch previously-failed tests: {e}")
                 previously_failed = []
-            try:
-                relevant_tests, _ = targeter.get_most_relevant_tests()
-            except Exception as e:
-                print(f"Warning: failed to fetch relevant tests: {e}")
-                relevant_tests = []
-            if not changed_tests and not previously_failed and not relevant_tests:
+            if not changed_tests and not previously_failed:
                 return True, "Skipped, no tests to run"
         if "integration" in job_name.lower() and not has_new_integration_tests(
             changed_files
