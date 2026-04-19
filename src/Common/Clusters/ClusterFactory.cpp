@@ -16,12 +16,16 @@
 #include <Parsers/ASTCreateClusterQuery.h>
 #include <Parsers/ASTCreateShardQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/XMLConfiguration.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
 #include <boost/algorithm/string/trim.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -132,7 +136,22 @@ UInt64 getUIntField(const NamedCollection & coll, const String & key, UInt64 def
     if (auto v = tryGetNamedCollectionScalar<bool>(coll, key))
         return static_cast<UInt64>(*v);
     if (auto v = tryGetNamedCollectionScalar<Float64>(coll, key))
-        return static_cast<UInt64>(*v);
+    {
+        /// All call sites (`weight`, `priority`, `port`, `secure`, `internal_replication`) are conceptually
+        /// non-negative integers, so reject NaN / Inf, negatives, out-of-range, and fractional values instead
+        /// of silently rounding / wrapping through `static_cast<UInt64>`.
+        const Float64 f = *v;
+        if (!std::isfinite(f))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection key `{}` must be finite (got {})", key, f);
+        if (f < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection key `{}` must be non-negative (got {})", key, f);
+        /// `2^64` is the first value not representable as `UInt64`; `static_cast<UInt64>(f)` is UB at or above it.
+        if (f >= std::ldexp(Float64(1), 64))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection key `{}` value {} is out of UInt64 range", key, f);
+        if (std::trunc(f) != f)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection key `{}` must be an integer (got {})", key, f);
+        return static_cast<UInt64>(f);
+    }
     if (auto v = tryGetNamedCollectionScalar<String>(coll, key))
         return parse<UInt64>(*v);
 
@@ -278,88 +297,9 @@ void ClusterFactory::reloadSQLDefinitionsLocked()
 {
     loaded_sql_shards = shards_metadata_storage->getAll();
     loaded_sql_clusters = clusters_metadata_storage->getAll();
-
-    LOG_INFO(
-        log,
-        "Reloaded SQL catalog definitions from metadata storage: {} shard(s), {} cluster(s)",
-        loaded_sql_shards.size(),
-        loaded_sql_clusters.size());
-
-    for (const auto & [shard_name, shard_def] : loaded_sql_shards)
-    {
-        String replica_collections_str;
-        for (size_t i = 0; i < shard_def.replica_collections.size(); ++i)
-        {
-            if (i)
-                replica_collections_str += ", ";
-            replica_collections_str += "`" + shard_def.replica_collections[i] + "`";
-        }
-        LOG_INFO(
-            log,
-            "SQL shard `{}`: weight={}, internal_replication={}, replica_named_collections=[{}]",
-            shard_name,
-            shard_def.weight,
-            shard_def.internal_replication,
-            replica_collections_str);
-    }
-
-    for (const auto & [cluster_name, cluster_def] : loaded_sql_clusters)
-    {
-        String members_str;
-        for (size_t i = 0; i < cluster_def.members.size(); ++i)
-        {
-            if (i)
-                members_str += ", ";
-            members_str += "`" + cluster_def.members[i] + "`";
-        }
-        LOG_INFO(log, "SQL cluster `{}`: members=[{}]", cluster_name, members_str);
-    }
-
-    rebuildSQLClusterRegistrationsLocked();
+    ++sql_catalog_mutation_counter;
 }
 
-void ClusterFactory::rebuildSQLClusterRegistrationsLocked()
-{
-    std::erase_if(cluster_registrations, [](const auto & entry)
-    {
-        return entry.second.source == ClusterDefinitionSource::SQLCatalog;
-    });
-
-    UInt64 version = ++sql_catalog_mutation_counter;
-    for (const auto & [name, _] : loaded_sql_clusters)
-    {
-        auto reg_it = cluster_registrations.find(name);
-        if (reg_it != cluster_registrations.end() && reg_it->second.source == ClusterDefinitionSource::RemoteServersConfig)
-            continue;
-        cluster_registrations[name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SQLCatalog, version};
-    }
-}
-
-void ClusterFactory::reloadFromConfig(
-    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt64 remote_servers_definition_version)
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
-
-    std::lock_guard lock(mutex);
-
-    std::erase_if(cluster_registrations, [](const auto & entry)
-    {
-        return entry.second.source == ClusterDefinitionSource::RemoteServersConfig;
-    });
-
-    for (const auto & key : keys)
-    {
-        if (key.contains('.'))
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cluster names with dots are not supported: '{}'", key);
-
-        if (config.has(config_prefix + "." + key + ".discovery"))
-            continue;
-
-        cluster_registrations[key]
-            = ClusterDefinitionRegistration{ClusterDefinitionSource::RemoteServersConfig, remote_servers_definition_version};
-    }
-}
 
 void ClusterFactory::initialize(const String & data_path)
 {
@@ -394,7 +334,7 @@ void ClusterFactory::initialize(const String & data_path)
             sql_catalog_update_task->schedule();
         }
     }
-    refreshSQLCatalogClustersInContextAfterReload({});
+    refreshSQLCatalogClusters({});
 }
 
 void ClusterFactory::shutdown()
@@ -413,8 +353,12 @@ void ClusterFactory::shutdown()
     initialized = false;
     loaded_sql_shards.clear();
     loaded_sql_clusters.clear();
-    cluster_registrations.clear();
     sql_catalog_mutation_counter = 0;
+
+    {
+        std::lock_guard clusters_lock(clusters_mutex);
+        clusters.reset();
+    }
 }
 
 void ClusterFactory::reloadFromSQL()
@@ -428,17 +372,14 @@ void ClusterFactory::reloadFromSQL()
             sql_clusters_before_reload.insert(name);
         reloadSQLDefinitionsLocked();
     }
-    refreshSQLCatalogClustersInContextAfterReload(sql_clusters_before_reload);
+    refreshSQLCatalogClusters(sql_clusters_before_reload);
 }
 
-void ClusterFactory::refreshSQLCatalogClustersInContextAfterReload(const std::unordered_set<String> & sql_clusters_before_reload)
+void ClusterFactory::refreshSQLCatalogClusters(const std::unordered_set<String> & sql_clusters_before_reload)
 {
     auto global_context_instance = Context::getGlobalContextInstance();
     if (!global_context_instance)
         return;
-
-    /// `getGlobalContextInstance()` is `ContextPtr` (`shared_ptr<const Context>`); cluster updates require a mutable `Context`.
-    auto global_context = std::const_pointer_cast<Context>(global_context_instance);
 
     std::vector<String> sql_clusters_after_reload;
     std::unordered_set<String> sql_clusters_after_reload_set;
@@ -456,12 +397,12 @@ void ClusterFactory::refreshSQLCatalogClustersInContextAfterReload(const std::un
 
     for (const auto & cluster_name : sql_clusters_after_reload)
     {
-        auto reg = getClusterRegistration(cluster_name);
-        if (reg && reg->source == ClusterDefinitionSource::RemoteServersConfig)
+        /// Config `remote_servers` entries win over SQL catalog definitions for the same name.
+        if (isClusterDefinedOnlyInRemoteServers(cluster_name))
             continue;
 
-        if (auto cluster = tryMaterializeCluster(cluster_name, global_context))
-            global_context->setCluster(cluster_name, cluster);
+        if (auto cluster = tryMaterializeCluster(cluster_name, global_context_instance))
+            setCluster(cluster_name, cluster, ClusterDefinitionSource::SQLCatalog);
     }
 
     for (const auto & name : sql_clusters_before_reload)
@@ -469,11 +410,11 @@ void ClusterFactory::refreshSQLCatalogClustersInContextAfterReload(const std::un
         if (sql_clusters_after_reload_set.contains(name))
             continue;
 
-        auto reg = getClusterRegistration(name);
-        if (reg && reg->source == ClusterDefinitionSource::RemoteServersConfig)
+        /// Same precedence rule: a config-defined cluster with this name must not be wiped on SQL catalog drop.
+        if (isClusterDefinedOnlyInRemoteServers(name))
             continue;
 
-        global_context->removeCluster(name);
+        removeCluster(name, ClusterDefinitionSource::SQLCatalog);
     }
 }
 
@@ -533,15 +474,15 @@ void ClusterFactory::createShard(
 
     loadNamedCollectionsIfNeeded();
 
+    std::lock_guard lock(mutex);
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
+
     if (namedCollectionExists(shard_name))
         throw Exception(
             ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS,
             "Cannot create SQL SHARD `{}` because a named collection with the same name already exists",
             shard_name);
-
-    std::lock_guard lock(mutex);
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
 
     if (loaded_sql_shards.contains(shard_name))
         throw Exception(ErrorCodes::SHARD_ALREADY_EXISTS, "SQL SHARD `{}` already exists", shard_name);
@@ -615,47 +556,77 @@ void ClusterFactory::checkSQLClusterMemberNameLocked(const String & m) const
             m);
 }
 
-void ClusterFactory::createCluster(
+bool ClusterFactory::createCluster(
     const String & cluster_name,
     const std::vector<String> & members,
     const String & cluster_secret,
-    bool allow_distributed_ddl_queries)
+    bool allow_distributed_ddl_queries,
+    bool if_not_exists)
 {
     if (members.empty())
         throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "CREATE CLUSTER requires at least one shard member");
 
     loadNamedCollectionsIfNeeded();
 
-    std::lock_guard lock(mutex);
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
+    /// Snapshot the unified registry once — enough to reject names already claimed by `remote_servers` / discovery
+    /// / an older materialised SQL entry. We don't need to hold `clusters_mutex` across the whole SQL-catalog
+    /// critical section: a config reload racing with us would at worst end up publishing a duplicate into
+    /// `clusters`, where `setCluster` rejects the lower-priority SQL source in `publishMaterializedSQLClusterAfterCatalogChange`.
+    std::shared_ptr<Clusters> registry_snapshot;
+    {
+        std::lock_guard lock_clusters(clusters_mutex);
+        registry_snapshot = clusters;
+    }
 
-    if (loaded_sql_clusters.contains(cluster_name))
-        throw Exception(ErrorCodes::CLUSTER_DEFINITION_ALREADY_EXISTS, "SQL CLUSTER `{}` already exists", cluster_name);
+    {
+        /// SQL catalog writes are serialised by `mutex`; `IF NOT EXISTS` atomicity is preserved because the
+        /// second writer always sees the first writer's `loaded_sql_clusters` insert under this same lock.
+        std::lock_guard lock(mutex);
 
-    if (loaded_sql_shards.contains(cluster_name))
-        throw Exception(ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS, "Name `{}` is already used as SQL SHARD", cluster_name);
+        if (!initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
 
-    if (namedCollectionExists(cluster_name))
-        throw Exception(
-            ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS,
-            "Cannot create SQL CLUSTER `{}` because a named collection with the same name already exists",
-            cluster_name);
+        if (registry_snapshot && registry_snapshot->getCluster(cluster_name))
+        {
+            if (if_not_exists)
+                return false;
+            throw Exception(
+                ErrorCodes::CLUSTER_DEFINITION_ALREADY_EXISTS,
+                "Cluster {} already exists",
+                backQuoteIfNeed(cluster_name));
+        }
 
-    for (const auto & m : members)
-        checkSQLClusterMemberNameLocked(m);
+        if (loaded_sql_clusters.contains(cluster_name))
+        {
+            if (if_not_exists)
+                return false;
+            throw Exception(ErrorCodes::CLUSTER_DEFINITION_ALREADY_EXISTS, "SQL CLUSTER `{}` already exists", cluster_name);
+        }
 
-    ClusterCatalogDefinition record;
-    record.members = members;
-    record.secret = cluster_secret;
-    record.allow_distributed_ddl_queries = allow_distributed_ddl_queries;
-    String create_sql = formatCreateClusterStatement(cluster_name, members, cluster_secret, allow_distributed_ddl_queries);
-    clusters_metadata_storage->writeCreateStatement(cluster_name, create_sql, false);
-    loaded_sql_clusters[cluster_name] = std::move(record);
-    UInt64 version = ++sql_catalog_mutation_counter;
-    auto reg_it = cluster_registrations.find(cluster_name);
-    if (reg_it == cluster_registrations.end() || reg_it->second.source != ClusterDefinitionSource::RemoteServersConfig)
-        cluster_registrations[cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SQLCatalog, version};
+        if (loaded_sql_shards.contains(cluster_name))
+            throw Exception(ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS, "Name `{}` is already used as SQL SHARD", cluster_name);
+
+        if (namedCollectionExists(cluster_name))
+            throw Exception(
+                ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS,
+                "Cannot create SQL CLUSTER `{}` because a named collection with the same name already exists",
+                cluster_name);
+
+        for (const auto & m : members)
+            checkSQLClusterMemberNameLocked(m);
+
+        ClusterCatalogDefinition record;
+        record.members = members;
+        record.secret = cluster_secret;
+        record.allow_distributed_ddl_queries = allow_distributed_ddl_queries;
+        String create_sql = formatCreateClusterStatement(cluster_name, members, cluster_secret, allow_distributed_ddl_queries);
+        clusters_metadata_storage->writeCreateStatement(cluster_name, create_sql, false);
+        loaded_sql_clusters[cluster_name] = std::move(record);
+        ++sql_catalog_mutation_counter;
+    }
+
+    publishMaterializedSQLClusterAfterCatalogChange(cluster_name);
+    return true;
 }
 
 bool ClusterFactory::dropCluster(const String & cluster_name, bool if_exists)
@@ -671,13 +642,15 @@ bool ClusterFactory::dropCluster(const String & cluster_name, bool if_exists)
             throw Exception(ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "SQL CLUSTER `{}` does not exist", cluster_name);
         return false;
     }
-    auto reg_it = cluster_registrations.find(cluster_name);
     LOG_INFO(log, "Removing SQL CLUSTER catalog definition for `{}` from clusters catalog storage", cluster_name);
     clusters_metadata_storage->remove(cluster_name);
     LOG_INFO(log, "Removed SQL CLUSTER catalog definition for `{}` from clusters catalog storage", cluster_name);
     loaded_sql_clusters.erase(it);
-    if (reg_it != cluster_registrations.end() && reg_it->second.source == ClusterDefinitionSource::SQLCatalog)
-        cluster_registrations.erase(reg_it);
+    ++sql_catalog_mutation_counter;
+
+    /// Evict the materialized entry from the in-memory `Clusters` container so that subsequent
+    /// lookups don't return a stale `Cluster`. Uses a separate `clusters_mutex`, so no re-entrancy.
+    removeCluster(cluster_name, ClusterDefinitionSource::SQLCatalog);
     return true;
 }
 
@@ -691,43 +664,44 @@ bool ClusterFactory::addClusterMembersFromSQL(const ASTAlterClusterQuery & query
 
     loadNamedCollectionsIfNeeded();
 
-    std::lock_guard lock(mutex);
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
-
-    if (!loaded_sql_clusters.contains(query.cluster_name))
     {
-        if (query.if_exists)
-            return false;
-        throw Exception(
-            ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", query.cluster_name);
-    }
+        std::lock_guard lock(mutex);
+        if (!initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
 
-    ClusterCatalogDefinition record = loaded_sql_clusters.at(query.cluster_name);
-
-    for (const auto & name : query.add_shard_members)
-    {
-        checkSQLClusterMemberNameLocked(name);
-        if (std::find(record.members.begin(), record.members.end(), name) != record.members.end())
+        if (!loaded_sql_clusters.contains(query.cluster_name))
         {
+            if (query.if_exists)
+                return false;
             throw Exception(
-                ErrorCodes::BAD_CLUSTER_DEFINITION,
-                "SQL CLUSTER member `{}` is already listed in SQL CLUSTER `{}`",
-                name,
-                query.cluster_name);
+                ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", query.cluster_name);
         }
-        record.members.push_back(name);
+
+        ClusterCatalogDefinition record = loaded_sql_clusters.at(query.cluster_name);
+
+        for (const auto & name : query.add_shard_members)
+        {
+            checkSQLClusterMemberNameLocked(name);
+            if (std::find(record.members.begin(), record.members.end(), name) != record.members.end())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_CLUSTER_DEFINITION,
+                    "SQL CLUSTER member `{}` is already listed in SQL CLUSTER `{}`",
+                    name,
+                    query.cluster_name);
+            }
+            record.members.push_back(name);
+        }
+
+        String create_sql = formatCreateClusterStatement(
+            query.cluster_name, record.members, record.secret, record.allow_distributed_ddl_queries);
+        clusters_metadata_storage->writeCreateStatement(query.cluster_name, create_sql, true);
+        loaded_sql_clusters[query.cluster_name] = std::move(record);
+
+        ++sql_catalog_mutation_counter;
     }
 
-    String create_sql = formatCreateClusterStatement(
-        query.cluster_name, record.members, record.secret, record.allow_distributed_ddl_queries);
-    clusters_metadata_storage->writeCreateStatement(query.cluster_name, create_sql, true);
-    loaded_sql_clusters[query.cluster_name] = std::move(record);
-
-    UInt64 version = ++sql_catalog_mutation_counter;
-    auto reg_it = cluster_registrations.find(query.cluster_name);
-    if (reg_it == cluster_registrations.end() || reg_it->second.source != ClusterDefinitionSource::RemoteServersConfig)
-        cluster_registrations[query.cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SQLCatalog, version};
+    publishMaterializedSQLClusterAfterCatalogChange(query.cluster_name);
     return true;
 }
 
@@ -741,47 +715,48 @@ bool ClusterFactory::dropClusterMembersFromSQL(const ASTAlterClusterQuery & quer
 
     loadNamedCollectionsIfNeeded();
 
-    std::lock_guard lock(mutex);
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
-
-    if (!loaded_sql_clusters.contains(query.cluster_name))
     {
-        if (query.if_exists)
-            return false;
-        throw Exception(
-            ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", query.cluster_name);
-    }
+        std::lock_guard lock(mutex);
+        if (!initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
 
-    ClusterCatalogDefinition record = loaded_sql_clusters.at(query.cluster_name);
-    auto & mems = record.members;
-
-    for (const auto & name : query.drop_shard_members)
-    {
-        auto it = std::find(mems.begin(), mems.end(), name);
-        if (it == mems.end())
+        if (!loaded_sql_clusters.contains(query.cluster_name))
         {
+            if (query.if_exists)
+                return false;
             throw Exception(
-                ErrorCodes::BAD_CLUSTER_DEFINITION,
-                "SQL CLUSTER member `{}` is not listed in SQL CLUSTER `{}`",
-                name,
-                query.cluster_name);
+                ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", query.cluster_name);
         }
-        mems.erase(it);
+
+        ClusterCatalogDefinition record = loaded_sql_clusters.at(query.cluster_name);
+        auto & mems = record.members;
+
+        for (const auto & name : query.drop_shard_members)
+        {
+            auto it = std::find(mems.begin(), mems.end(), name);
+            if (it == mems.end())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_CLUSTER_DEFINITION,
+                    "SQL CLUSTER member `{}` is not listed in SQL CLUSTER `{}`",
+                    name,
+                    query.cluster_name);
+            }
+            mems.erase(it);
+        }
+
+        if (mems.empty())
+            throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cannot DROP all members from SQL CLUSTER `{}`", query.cluster_name);
+
+        String create_sql = formatCreateClusterStatement(
+            query.cluster_name, record.members, record.secret, record.allow_distributed_ddl_queries);
+        clusters_metadata_storage->writeCreateStatement(query.cluster_name, create_sql, true);
+        loaded_sql_clusters[query.cluster_name] = std::move(record);
+
+        ++sql_catalog_mutation_counter;
     }
 
-    if (mems.empty())
-        throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cannot DROP all members from SQL CLUSTER `{}`", query.cluster_name);
-
-    String create_sql = formatCreateClusterStatement(
-        query.cluster_name, record.members, record.secret, record.allow_distributed_ddl_queries);
-    clusters_metadata_storage->writeCreateStatement(query.cluster_name, create_sql, true);
-    loaded_sql_clusters[query.cluster_name] = std::move(record);
-
-    UInt64 version = ++sql_catalog_mutation_counter;
-    auto reg_it = cluster_registrations.find(query.cluster_name);
-    if (reg_it == cluster_registrations.end() || reg_it->second.source != ClusterDefinitionSource::RemoteServersConfig)
-        cluster_registrations[query.cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SQLCatalog, version};
+    publishMaterializedSQLClusterAfterCatalogChange(query.cluster_name);
     return true;
 }
 
@@ -795,115 +770,116 @@ bool ClusterFactory::replaceClusterMembersFromSQL(const ASTAlterClusterQuery & q
 
     loadNamedCollectionsIfNeeded();
 
-    std::lock_guard lock(mutex);
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
-
-    if (!loaded_sql_clusters.contains(query.cluster_name))
     {
-        if (query.if_exists)
-            return false;
-        throw Exception(
-            ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", query.cluster_name);
-    }
+        std::lock_guard lock(mutex);
+        if (!initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
 
-    ClusterCatalogDefinition record = loaded_sql_clusters.at(query.cluster_name);
-
-    std::unordered_map<String, String> repl_map;
-    for (const auto & cl : query.member_replace_clauses)
-    {
-        if (cl.from_members.size() != cl.to_members.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "REPLACE FROM/TO lists must have equal length");
-
-        for (size_t i = 0; i < cl.from_members.size(); ++i)
+        if (!loaded_sql_clusters.contains(query.cluster_name))
         {
-            const String & from_name = cl.from_members[i];
-            const String & to_name = cl.to_members[i];
+            if (query.if_exists)
+                return false;
+            throw Exception(
+                ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", query.cluster_name);
+        }
 
-            checkSQLClusterMemberNameLocked(to_name);
+        ClusterCatalogDefinition record = loaded_sql_clusters.at(query.cluster_name);
 
-            auto [it, inserted] = repl_map.emplace(from_name, to_name);
-            if (!inserted && it->second != to_name)
+        std::unordered_map<String, String> repl_map;
+        for (const auto & cl : query.member_replace_clauses)
+        {
+            if (cl.from_members.size() != cl.to_members.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "REPLACE FROM/TO lists must have equal length");
+
+            for (size_t i = 0; i < cl.from_members.size(); ++i)
+            {
+                const String & from_name = cl.from_members[i];
+                const String & to_name = cl.to_members[i];
+
+                checkSQLClusterMemberNameLocked(to_name);
+
+                auto [it, inserted] = repl_map.emplace(from_name, to_name);
+                if (!inserted && it->second != to_name)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_CLUSTER_DEFINITION,
+                        "Conflicting REPLACE mappings for member `{}` on SQL CLUSTER `{}`",
+                        from_name,
+                        query.cluster_name);
+                }
+            }
+        }
+
+        for (const auto & [from_name, to_name] : repl_map)
+        {
+            (void)to_name;
+            if (std::find(record.members.begin(), record.members.end(), from_name) == record.members.end())
             {
                 throw Exception(
                     ErrorCodes::BAD_CLUSTER_DEFINITION,
-                    "Conflicting REPLACE mappings for member `{}` on SQL CLUSTER `{}`",
+                    "SQL CLUSTER member `{}` is not listed in SQL CLUSTER `{}`",
                     from_name,
                     query.cluster_name);
             }
         }
-    }
 
-    for (const auto & [from_name, to_name] : repl_map)
-    {
-        (void)to_name;
-        if (std::find(record.members.begin(), record.members.end(), from_name) == record.members.end())
+        for (String & m : record.members)
         {
-            throw Exception(
-                ErrorCodes::BAD_CLUSTER_DEFINITION,
-                "SQL CLUSTER member `{}` is not listed in SQL CLUSTER `{}`",
-                from_name,
-                query.cluster_name);
+            if (auto it = repl_map.find(m); it != repl_map.end())
+                m = it->second;
         }
-    }
 
-    for (String & m : record.members)
-    {
-        if (auto it = repl_map.find(m); it != repl_map.end())
-            m = it->second;
-    }
-
-    std::unordered_set<String> seen;
-    for (const auto & m : record.members)
-    {
-        if (!seen.insert(m).second)
+        std::unordered_set<String> seen;
+        for (const auto & m : record.members)
         {
-            throw Exception(
-                ErrorCodes::BAD_CLUSTER_DEFINITION,
-                "Duplicate member `{}` after REPLACE on SQL CLUSTER `{}`",
-                m,
-                query.cluster_name);
-        }
-    }
-
-    if (!query.cluster_definition_properties.empty())
-    {
-        SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(query.cluster_definition_properties);
-
-        for (const auto & ch : query.cluster_definition_properties)
-        {
-            if (ch.name == "secret")
-            {
-                if (ch.value.getType() != Field::Types::String)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `secret` must be a string");
-                record.secret = ch.value.safeGet<String>();
-            }
-            else if (ch.name == "allow_distributed_ddl_queries")
-            {
-                if (ch.value.getType() == Field::Types::Bool)
-                    record.allow_distributed_ddl_queries = ch.value.safeGet<bool>();
-                else
-                    record.allow_distributed_ddl_queries = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), ch.value) != 0;
-            }
-            else
+            if (!seen.insert(m).second)
             {
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Unknown property `{}` in ALTER CLUSTER ... REPLACE ... MODIFY PROPERTIES (allowed: secret, allow_distributed_ddl_queries)",
-                    ch.name);
+                    ErrorCodes::BAD_CLUSTER_DEFINITION,
+                    "Duplicate member `{}` after REPLACE on SQL CLUSTER `{}`",
+                    m,
+                    query.cluster_name);
             }
         }
+
+        if (!query.cluster_definition_properties.empty())
+        {
+            SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(query.cluster_definition_properties);
+
+            for (const auto & ch : query.cluster_definition_properties)
+            {
+                if (ch.name == "secret")
+                {
+                    if (ch.value.getType() != Field::Types::String)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `secret` must be a string");
+                    record.secret = ch.value.safeGet<String>();
+                }
+                else if (ch.name == "allow_distributed_ddl_queries")
+                {
+                    if (ch.value.getType() == Field::Types::Bool)
+                        record.allow_distributed_ddl_queries = ch.value.safeGet<bool>();
+                    else
+                        record.allow_distributed_ddl_queries = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), ch.value) != 0;
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Unknown property `{}` in ALTER CLUSTER ... REPLACE ... MODIFY PROPERTIES (allowed: secret, allow_distributed_ddl_queries)",
+                        ch.name);
+                }
+            }
+        }
+
+        String create_sql = formatCreateClusterStatement(
+            query.cluster_name, record.members, record.secret, record.allow_distributed_ddl_queries);
+        clusters_metadata_storage->writeCreateStatement(query.cluster_name, create_sql, true);
+        loaded_sql_clusters[query.cluster_name] = std::move(record);
+
+        ++sql_catalog_mutation_counter;
     }
 
-    String create_sql = formatCreateClusterStatement(
-        query.cluster_name, record.members, record.secret, record.allow_distributed_ddl_queries);
-    clusters_metadata_storage->writeCreateStatement(query.cluster_name, create_sql, true);
-    loaded_sql_clusters[query.cluster_name] = std::move(record);
-
-    UInt64 version = ++sql_catalog_mutation_counter;
-    auto reg_it = cluster_registrations.find(query.cluster_name);
-    if (reg_it == cluster_registrations.end() || reg_it->second.source != ClusterDefinitionSource::RemoteServersConfig)
-        cluster_registrations[query.cluster_name] = ClusterDefinitionRegistration{ClusterDefinitionSource::SQLCatalog, version};
+    publishMaterializedSQLClusterAfterCatalogChange(query.cluster_name);
     return true;
 }
 
@@ -917,47 +893,48 @@ bool ClusterFactory::updateShardPropertiesFromSQL(const ASTAlterShardQuery & que
 
     loadNamedCollectionsIfNeeded();
 
-    std::lock_guard lock(mutex);
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
-
-    if (!loaded_sql_shards.contains(query.shard_name))
     {
-        if (query.if_exists)
-            return false;
-        throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
+        std::lock_guard lock(mutex);
+        if (!initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
+
+        if (!loaded_sql_shards.contains(query.shard_name))
+        {
+            if (query.if_exists)
+                return false;
+            throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
+        }
+
+        ShardCatalogDefinition record = loaded_sql_shards.at(query.shard_name);
+
+        SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(query.shard_definition_properties);
+
+        for (const auto & ch : query.shard_definition_properties)
+        {
+            if (ch.name == "weight")
+                record.weight = parseShardCatalogWeightValue(ch.value);
+            else if (ch.name == "internal_replication")
+                parseShardCatalogInternalReplicationValue(ch.value, record.internal_replication);
+            else
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unknown property `{}` in ALTER SHARD ... MODIFY PROPERTIES (allowed: weight, internal_replication)",
+                    ch.name);
+            }
+        }
+
+        String create_sql = formatCreateShardStatement(
+            query.shard_name,
+            record.replica_collections,
+            record.weight,
+            record.internal_replication);
+        shards_metadata_storage->writeCreateStatement(query.shard_name, create_sql, true);
+        loaded_sql_shards[query.shard_name] = std::move(record);
     }
 
-    ShardCatalogDefinition record = loaded_sql_shards.at(query.shard_name);
-
-    SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(query.shard_definition_properties);
-
-    for (const auto & ch : query.shard_definition_properties)
-    {
-        if (ch.name == "weight")
-        {
-            record.weight = static_cast<UInt32>(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), ch.value));
-            if (record.weight == 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `weight` must be greater than zero");
-        }
-        else if (ch.name == "internal_replication")
-            parseShardCatalogInternalReplicationValue(ch.value, record.internal_replication);
-        else
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unknown property `{}` in ALTER SHARD ... MODIFY PROPERTIES (allowed: weight, internal_replication)",
-                ch.name);
-        }
-    }
-
-    String create_sql = formatCreateShardStatement(
-        query.shard_name,
-        record.replica_collections,
-        record.weight,
-        record.internal_replication);
-    shards_metadata_storage->writeCreateStatement(query.shard_name, create_sql, true);
-    loaded_sql_shards[query.shard_name] = std::move(record);
+    for (const auto & cluster_name : listSQLClustersContainingMember(query.shard_name))
+        publishMaterializedSQLClusterAfterCatalogChange(cluster_name);
     return true;
 }
 
@@ -971,63 +948,68 @@ bool ClusterFactory::addReplicaToShardFromSQL(const ASTAlterShardQuery & query)
 
     loadNamedCollectionsIfNeeded();
 
-    std::lock_guard lock(mutex);
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
-
-    if (!loaded_sql_shards.contains(query.shard_name))
     {
-        if (query.if_exists)
-            return false;
-        throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
-    }
+        std::lock_guard lock(mutex);
+        if (!initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
 
-    if (!namedCollectionExists(query.replica_name))
-        throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Replica named collection `{}` does not exist", query.replica_name);
-
-    ShardCatalogDefinition record = loaded_sql_shards.at(query.shard_name);
-    if (std::find(record.replica_collections.begin(), record.replica_collections.end(), query.replica_name)
-        != record.replica_collections.end())
-    {
-        throw Exception(
-            ErrorCodes::BAD_CLUSTER_DEFINITION,
-            "Replica named collection `{}` is already listed on SQL SHARD `{}`",
-            query.replica_name,
-            query.shard_name);
-    }
-
-    const auto new_collection = getNamedCollection(query.replica_name);
-    const auto new_endpoint = tryExtractSQLCatalogReplicaHostPort(*new_collection);
-    if (new_endpoint.valid)
-    {
-        for (const auto & existing_name : record.replica_collections)
+        if (!loaded_sql_shards.contains(query.shard_name))
         {
-            const auto existing_collection = getNamedCollection(existing_name);
-            const auto existing_endpoint = tryExtractSQLCatalogReplicaHostPort(*existing_collection);
-            if (existing_endpoint.valid && existing_endpoint.host == new_endpoint.host
-                && existing_endpoint.port == new_endpoint.port)
+            if (query.if_exists)
+                return false;
+            throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
+        }
+
+        if (!namedCollectionExists(query.replica_name))
+            throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Replica named collection `{}` does not exist", query.replica_name);
+
+        ShardCatalogDefinition record = loaded_sql_shards.at(query.shard_name);
+        if (std::find(record.replica_collections.begin(), record.replica_collections.end(), query.replica_name)
+            != record.replica_collections.end())
+        {
+            throw Exception(
+                ErrorCodes::BAD_CLUSTER_DEFINITION,
+                "Replica named collection `{}` is already listed on SQL SHARD `{}`",
+                query.replica_name,
+                query.shard_name);
+        }
+
+        const auto new_collection = getNamedCollection(query.replica_name);
+        const auto new_endpoint = tryExtractSQLCatalogReplicaHostPort(*new_collection);
+        if (new_endpoint.valid)
+        {
+            for (const auto & existing_name : record.replica_collections)
             {
-                LOG_WARNING(
-                    log,
-                    "Replica {} points to same endpoint as {} ({}:{})",
-                    query.replica_name,
-                    existing_name,
-                    new_endpoint.host,
-                    new_endpoint.port);
-                break;
+                const auto existing_collection = getNamedCollection(existing_name);
+                const auto existing_endpoint = tryExtractSQLCatalogReplicaHostPort(*existing_collection);
+                if (existing_endpoint.valid && existing_endpoint.host == new_endpoint.host
+                    && existing_endpoint.port == new_endpoint.port)
+                {
+                    LOG_WARNING(
+                        log,
+                        "Replica {} points to same endpoint as {} ({}:{})",
+                        query.replica_name,
+                        existing_name,
+                        new_endpoint.host,
+                        new_endpoint.port);
+                    break;
+                }
             }
         }
+
+        record.replica_collections.push_back(query.replica_name);
+
+        String create_sql = formatCreateShardStatement(
+            query.shard_name,
+            record.replica_collections,
+            record.weight,
+            record.internal_replication);
+        shards_metadata_storage->writeCreateStatement(query.shard_name, create_sql, true);
+        loaded_sql_shards[query.shard_name] = std::move(record);
     }
 
-    record.replica_collections.push_back(query.replica_name);
-
-    String create_sql = formatCreateShardStatement(
-        query.shard_name,
-        record.replica_collections,
-        record.weight,
-        record.internal_replication);
-    shards_metadata_storage->writeCreateStatement(query.shard_name, create_sql, true);
-    loaded_sql_shards[query.shard_name] = std::move(record);
+    for (const auto & cluster_name : listSQLClustersContainingMember(query.shard_name))
+        publishMaterializedSQLClusterAfterCatalogChange(cluster_name);
     return true;
 }
 
@@ -1039,39 +1021,44 @@ bool ClusterFactory::dropReplicaFromShardFromSQL(const ASTAlterShardQuery & quer
     if (query.replica_name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DROP REPLICA requires a named collection name");
 
-    std::lock_guard lock(mutex);
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
-
-    if (!loaded_sql_shards.contains(query.shard_name))
     {
-        if (query.if_exists)
-            return false;
-        throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
+        std::lock_guard lock(mutex);
+        if (!initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
+
+        if (!loaded_sql_shards.contains(query.shard_name))
+        {
+            if (query.if_exists)
+                return false;
+            throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
+        }
+
+        ShardCatalogDefinition record = loaded_sql_shards.at(query.shard_name);
+        auto & reps = record.replica_collections;
+        auto it = std::find(reps.begin(), reps.end(), query.replica_name);
+        if (it == reps.end())
+            throw Exception(
+                ErrorCodes::BAD_CLUSTER_DEFINITION,
+                "Replica named collection `{}` is not listed on SQL SHARD `{}`",
+                query.replica_name,
+                query.shard_name);
+
+        if (reps.size() <= 1)
+            throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cannot DROP the last replica from SQL SHARD `{}`", query.shard_name);
+
+        reps.erase(it);
+
+        String create_sql = formatCreateShardStatement(
+            query.shard_name,
+            record.replica_collections,
+            record.weight,
+            record.internal_replication);
+        shards_metadata_storage->writeCreateStatement(query.shard_name, create_sql, true);
+        loaded_sql_shards[query.shard_name] = std::move(record);
     }
 
-    ShardCatalogDefinition record = loaded_sql_shards.at(query.shard_name);
-    auto & reps = record.replica_collections;
-    auto it = std::find(reps.begin(), reps.end(), query.replica_name);
-    if (it == reps.end())
-        throw Exception(
-            ErrorCodes::BAD_CLUSTER_DEFINITION,
-            "Replica named collection `{}` is not listed on SQL SHARD `{}`",
-            query.replica_name,
-            query.shard_name);
-
-    if (reps.size() <= 1)
-        throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cannot DROP the last replica from SQL SHARD `{}`", query.shard_name);
-
-    reps.erase(it);
-
-    String create_sql = formatCreateShardStatement(
-        query.shard_name,
-        record.replica_collections,
-        record.weight,
-        record.internal_replication);
-    shards_metadata_storage->writeCreateStatement(query.shard_name, create_sql, true);
-    loaded_sql_shards[query.shard_name] = std::move(record);
+    for (const auto & cluster_name : listSQLClustersContainingMember(query.shard_name))
+        publishMaterializedSQLClusterAfterCatalogChange(cluster_name);
     return true;
 }
 
@@ -1085,108 +1072,109 @@ bool ClusterFactory::replaceShardReplicasFromSQL(const ASTAlterShardQuery & quer
 
     loadNamedCollectionsIfNeeded();
 
-    std::lock_guard lock(mutex);
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
-
-    if (!loaded_sql_shards.contains(query.shard_name))
     {
-        if (query.if_exists)
-            return false;
-        throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
-    }
+        std::lock_guard lock(mutex);
+        if (!initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
 
-    ShardCatalogDefinition record = loaded_sql_shards.at(query.shard_name);
-
-    std::unordered_map<String, String> repl_map;
-    for (const auto & cl : query.replica_replace_clauses)
-    {
-        if (cl.from_collections.size() != cl.to_collections.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "REPLACE clause list lengths mismatch");
-
-        for (size_t i = 0; i < cl.from_collections.size(); ++i)
+        if (!loaded_sql_shards.contains(query.shard_name))
         {
-            const String & from_name = cl.from_collections[i];
-            const String & to_name = cl.to_collections[i];
+            if (query.if_exists)
+                return false;
+            throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
+        }
 
-            if (!namedCollectionExists(to_name))
+        ShardCatalogDefinition record = loaded_sql_shards.at(query.shard_name);
+
+        std::unordered_map<String, String> repl_map;
+        for (const auto & cl : query.replica_replace_clauses)
+        {
+            if (cl.from_collections.size() != cl.to_collections.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "REPLACE clause list lengths mismatch");
+
+            for (size_t i = 0; i < cl.from_collections.size(); ++i)
+            {
+                const String & from_name = cl.from_collections[i];
+                const String & to_name = cl.to_collections[i];
+
+                if (!namedCollectionExists(to_name))
+                    throw Exception(
+                        ErrorCodes::BAD_CLUSTER_DEFINITION,
+                        "Named collection `{}` does not exist (REPLACE ... TO target must exist)",
+                        to_name);
+
+                auto [it, inserted] = repl_map.emplace(from_name, to_name);
+                if (!inserted && it->second != to_name)
+                    throw Exception(
+                        ErrorCodes::BAD_CLUSTER_DEFINITION,
+                        "Conflicting REPLACE mappings for named collection `{}` on SQL SHARD `{}`",
+                        from_name,
+                        query.shard_name);
+            }
+        }
+
+        for (const auto & [from_name, to_name] : repl_map)
+        {
+            (void)to_name;
+            if (std::find(record.replica_collections.begin(), record.replica_collections.end(), from_name)
+                == record.replica_collections.end())
+            {
                 throw Exception(
                     ErrorCodes::BAD_CLUSTER_DEFINITION,
-                    "Named collection `{}` does not exist (REPLACE ... TO target must exist)",
-                    to_name);
-
-            auto [it, inserted] = repl_map.emplace(from_name, to_name);
-            if (!inserted && it->second != to_name)
-                throw Exception(
-                    ErrorCodes::BAD_CLUSTER_DEFINITION,
-                    "Conflicting REPLACE mappings for named collection `{}` on SQL SHARD `{}`",
+                    "Named collection `{}` is not a replica of SQL SHARD `{}`",
                     from_name,
                     query.shard_name);
-        }
-    }
-
-    for (const auto & [from_name, to_name] : repl_map)
-    {
-        (void)to_name;
-        if (std::find(record.replica_collections.begin(), record.replica_collections.end(), from_name)
-            == record.replica_collections.end())
-        {
-            throw Exception(
-                ErrorCodes::BAD_CLUSTER_DEFINITION,
-                "Named collection `{}` is not a replica of SQL SHARD `{}`",
-                from_name,
-                query.shard_name);
-        }
-    }
-
-    for (String & coll : record.replica_collections)
-    {
-        if (auto it = repl_map.find(coll); it != repl_map.end())
-            coll = it->second;
-    }
-
-    std::unordered_set<String> seen;
-    for (const auto & c : record.replica_collections)
-    {
-        if (!seen.insert(c).second)
-            throw Exception(
-                ErrorCodes::BAD_CLUSTER_DEFINITION,
-                "Duplicate replica `{}` after REPLACE on SQL SHARD `{}`",
-                c,
-                query.shard_name);
-    }
-
-    if (!query.shard_definition_properties.empty())
-    {
-        SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(query.shard_definition_properties);
-
-        for (const auto & ch : query.shard_definition_properties)
-        {
-            if (ch.name == "weight")
-            {
-                record.weight = static_cast<UInt32>(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), ch.value));
-                if (record.weight == 0)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `weight` must be greater than zero");
             }
-            else if (ch.name == "internal_replication")
-                parseShardCatalogInternalReplicationValue(ch.value, record.internal_replication);
-            else
-            {
+        }
+
+        for (String & coll : record.replica_collections)
+        {
+            if (auto it = repl_map.find(coll); it != repl_map.end())
+                coll = it->second;
+        }
+
+        std::unordered_set<String> seen;
+        for (const auto & c : record.replica_collections)
+        {
+            if (!seen.insert(c).second)
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Unknown property `{}` in ALTER SHARD ... REPLACE ... MODIFY PROPERTIES (allowed: weight, internal_replication)",
-                    ch.name);
+                    ErrorCodes::BAD_CLUSTER_DEFINITION,
+                    "Duplicate replica `{}` after REPLACE on SQL SHARD `{}`",
+                    c,
+                    query.shard_name);
+        }
+
+        if (!query.shard_definition_properties.empty())
+        {
+            SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(query.shard_definition_properties);
+
+            for (const auto & ch : query.shard_definition_properties)
+            {
+                if (ch.name == "weight")
+                    record.weight = parseShardCatalogWeightValue(ch.value);
+                else if (ch.name == "internal_replication")
+                    parseShardCatalogInternalReplicationValue(ch.value, record.internal_replication);
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Unknown property `{}` in ALTER SHARD ... REPLACE ... MODIFY PROPERTIES (allowed: weight, internal_replication)",
+                        ch.name);
+                }
             }
         }
+
+        String create_sql = formatCreateShardStatement(
+            query.shard_name,
+            record.replica_collections,
+            record.weight,
+            record.internal_replication);
+        shards_metadata_storage->writeCreateStatement(query.shard_name, create_sql, true);
+        loaded_sql_shards[query.shard_name] = std::move(record);
     }
 
-    String create_sql = formatCreateShardStatement(
-        query.shard_name,
-        record.replica_collections,
-        record.weight,
-        record.internal_replication);
-    shards_metadata_storage->writeCreateStatement(query.shard_name, create_sql, true);
-    loaded_sql_shards[query.shard_name] = std::move(record);
+    for (const auto & cluster_name : listSQLClustersContainingMember(query.shard_name))
+        publishMaterializedSQLClusterAfterCatalogChange(cluster_name);
     return true;
 }
 
@@ -1198,8 +1186,10 @@ bool ClusterFactory::hasShard(const String & name) const
 
 bool ClusterFactory::hasCluster(const String & name) const
 {
-    std::lock_guard lock(mutex);
-    return loaded_sql_clusters.contains(name);
+    /// Reads from the unified materialized registry, which covers every source
+    /// (`<remote_servers>`, SQL catalog, cluster discovery).
+    std::lock_guard lock(clusters_mutex);
+    return clusters && clusters->getCluster(name) != nullptr;
 }
 
 std::vector<String> ClusterFactory::listClusterNames() const
@@ -1302,6 +1292,7 @@ ClusterPtr ClusterFactory::tryMaterializeCluster(const String & cluster_name, Co
     loadNamedCollectionsIfNeeded();
 
     ClusterCatalogDefinition record;
+    UInt64 version_snapshot = 0;
     {
         std::lock_guard lock(mutex);
         if (!initialized)
@@ -1310,6 +1301,7 @@ ClusterPtr ClusterFactory::tryMaterializeCluster(const String & cluster_name, Co
         if (it == loaded_sql_clusters.end())
             return nullptr;
         record = it->second;
+        version_snapshot = sql_catalog_mutation_counter;
     }
 
     auto global_context = context->getGlobalContext();
@@ -1347,8 +1339,10 @@ ClusterPtr ClusterFactory::tryMaterializeCluster(const String & cluster_name, Co
         }
     }
 
-    return std::make_shared<Cluster>(
+    auto cluster = std::make_shared<Cluster>(
         settings, cluster_name, record.secret, std::move(specs), record.allow_distributed_ddl_queries);
+    cluster->setDefinitionMetadata(ClusterDefinitionSource::SQLCatalog, version_snapshot);
+    return cluster;
 }
 
 std::optional<String> ClusterFactory::tryGetMessageIfNamedCollectionReferencedByClusterCatalog(const String & collection_name) const
@@ -1378,13 +1372,217 @@ std::optional<String> ClusterFactory::tryGetMessageIfNamedCollectionReferencedBy
     return std::nullopt;
 }
 
-std::optional<ClusterDefinitionRegistration> ClusterFactory::getClusterRegistration(const String & cluster_name) const
+UInt64 ClusterFactory::getSQLCatalogMutationCounter() const
 {
     std::lock_guard lock(mutex);
-    auto it = cluster_registrations.find(cluster_name);
-    if (it == cluster_registrations.end())
-        return std::nullopt;
-    return it->second;
+    return sql_catalog_mutation_counter;
+}
+
+bool ClusterFactory::isDefinedByRemoteServersConfigLocked(const String & cluster_name) const
+{
+    if (!clusters)
+        return false;
+    auto existing = clusters->getCluster(cluster_name);
+    return existing && existing->getDefinitionSource() == ClusterDefinitionSource::RemoteServersConfig;
+}
+
+std::shared_ptr<Clusters> ClusterFactory::ensureClustersLocked(const Settings & settings, MultiVersion<Macros>::Version macros_snapshot)
+{
+    if (!clusters)
+    {
+        /// Bootstrap with an empty XML config; consumers update entries via the `setCluster` / `applyClustersConfig` paths.
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> empty_config(new Poco::Util::XMLConfiguration);
+        clusters = std::make_shared<Clusters>(*empty_config, settings, macros_snapshot, "");
+    }
+    return clusters;
+}
+
+void ClusterFactory::setCluster(const String & cluster_name, ClusterPtr cluster, ClusterDefinitionSource source)
+{
+    if (!cluster)
+        return;
+
+    auto global_context = Context::getGlobalContextInstance();
+    if (!global_context)
+        return;
+
+    /// Priority check and storage update under `clusters_mutex`.
+    std::lock_guard lock(clusters_mutex);
+    ensureClustersLocked(global_context->getSettingsRef(), global_context->getMacros());
+
+    if (source != ClusterDefinitionSource::RemoteServersConfig && isDefinedByRemoteServersConfigLocked(cluster_name))
+    {
+        LOG_DEBUG(
+            log,
+            "Refusing to upsert cluster `{}` from source `{}`: already defined in `<remote_servers>` config",
+            cluster_name,
+            static_cast<int>(source));
+        return;
+    }
+
+    cluster->setDefinitionMetadata(source, /*version*/ 0);
+    clusters->setCluster(cluster_name, cluster);
+}
+
+void ClusterFactory::removeCluster(const String & cluster_name, ClusterDefinitionSource source)
+{
+    std::lock_guard lock(clusters_mutex);
+    if (!clusters)
+        return;
+    auto existing = clusters->getCluster(cluster_name);
+    /// Only evict entries owned by the requesting source — prevents a stale Discovery watch from deleting
+    /// e.g. a config-defined or SQL-catalog cluster that happens to share a name with the old dynamic one.
+    if (existing && existing->getDefinitionSource() != source)
+        return;
+    clusters->removeCluster(cluster_name);
+}
+
+void ClusterFactory::publishMaterializedSQLClusterAfterCatalogChange(const String & cluster_name)
+{
+    auto global_context = Context::getGlobalContextInstance();
+    if (!global_context)
+        return;
+    auto cluster = tryMaterializeCluster(cluster_name, global_context);
+    if (!cluster)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Failed to materialize SQL CLUSTER `{}` after catalog change",
+            cluster_name);
+    setCluster(cluster_name, cluster, ClusterDefinitionSource::SQLCatalog);
+}
+
+void ClusterFactory::removeCluster(const String & cluster_name)
+{
+    std::lock_guard lock(clusters_mutex);
+    if (clusters)
+        clusters->removeCluster(cluster_name);
+}
+
+size_t ClusterFactory::getClustersVersion() const
+{
+    std::lock_guard lock(clusters_mutex);
+    return clusters_version;
+}
+
+bool ClusterFactory::isClusterDefinedOnlyInRemoteServers(const String & cluster_name) const
+{
+    std::lock_guard lock(clusters_mutex);
+    if (!clusters)
+        return false;
+    auto cluster = clusters->getCluster(cluster_name);
+    return cluster && cluster->getDefinitionSource() == ClusterDefinitionSource::RemoteServersConfig;
+}
+
+void ClusterFactory::registerCatalogClustersLocked(ContextPtr context)
+{
+    if (!clusters || !context)
+        return;
+
+    /// `listClusterNames` locks `mutex`; called here without holding it (the caller holds only `clusters_mutex`).
+    auto names = listClusterNames();
+    for (const auto & cluster_name : names)
+    {
+        if (clusters->getCluster(cluster_name))
+            continue;
+        if (auto cluster = tryMaterializeCluster(cluster_name, context))
+            clusters->setCluster(cluster_name, cluster);
+    }
+}
+
+ClusterPtr ClusterFactory::tryGetCluster(const String & cluster_name) const
+{
+    std::lock_guard lock(clusters_mutex);
+    if (!clusters)
+        return nullptr;
+    return clusters->getCluster(cluster_name);
+}
+
+std::map<String, ClusterPtr> ClusterFactory::getClusters() const
+{
+    std::lock_guard lock(clusters_mutex);
+    if (!clusters)
+        return {};
+    return clusters->getContainer();
+}
+
+void ClusterFactory::applyClustersConfig(
+    const ConfigurationPtr & config,
+    const Settings & settings,
+    MultiVersion<Macros>::Version macros_snapshot,
+    const String & config_name,
+    ContextPtr context)
+{
+    std::lock_guard lock(clusters_mutex);
+
+    /// Skip rebuild when the new config snapshot is byte-identical to the last-applied one — mirrors the old
+    /// `isSameConfiguration` short-circuit in `Context::setClustersConfig`.
+    if (clusters && clusters_config && isSameConfiguration(*config, *clusters_config, config_name))
+        return;
+
+    auto old_clusters_config = clusters_config;
+    clusters_config = config;
+
+    if (!clusters)
+        clusters = std::make_shared<Clusters>(*clusters_config, settings, macros_snapshot, config_name);
+    else
+        clusters->updateClusters(*clusters_config, settings, config_name, old_clusters_config);
+
+    ++clusters_version;
+
+    registerCatalogClustersLocked(context);
+}
+
+void ClusterFactory::reloadClustersConfig(ContextPtr context)
+{
+    if (!context)
+        return;
+
+    /// Purpose: refresh only clusters sourced from `<remote_servers>` (e.g. to pick up DNS updates from
+    /// `DNSCacheUpdater` or a `SYSTEM RELOAD CONFIG`). Structural additions/removals of config clusters
+    /// go through `applyClustersConfig`. SQL catalog and cluster-discovery entries are left untouched.
+    static constexpr std::string_view config_prefix = "remote_servers";
+
+    ConfigurationPtr pinned_config;
+    std::vector<String> config_cluster_names;
+    {
+        std::lock_guard lock(clusters_mutex);
+        pinned_config = clusters_config;
+        if (clusters)
+        {
+            for (const auto & [name, cluster] : clusters->getContainer())
+            {
+                if (cluster && cluster->getDefinitionSource() == ClusterDefinitionSource::RemoteServersConfig)
+                    config_cluster_names.push_back(name);
+            }
+        }
+    }
+
+    const auto & config = pinned_config ? *pinned_config : context->getConfigRef();
+    const auto & settings = context->getSettingsRef();
+
+    /// Rebuild each config cluster outside the lock — the `Cluster` constructor resolves DNS and can be slow.
+    std::vector<std::pair<String, std::shared_ptr<Cluster>>> rebuilt;
+    rebuilt.reserve(config_cluster_names.size());
+    for (const auto & name : config_cluster_names)
+    {
+        if (!config.has(String(config_prefix) + "." + name))
+            continue;
+        rebuilt.emplace_back(name, std::make_shared<Cluster>(config, settings, String(config_prefix), name));
+    }
+
+    std::lock_guard lock(clusters_mutex);
+    if (clusters_config.get() != pinned_config.get() || !clusters)
+        return;
+
+    /// Swap in the rebuilt cluster only if the slot is still a config-defined entry; between the two lock
+    /// windows another thread may have replaced it via SQL catalog / cluster discovery (`setCluster(..., source)`).
+    for (auto & [name, cluster] : rebuilt)
+    {
+        auto existing = clusters->getCluster(name);
+        if (!existing || existing->getDefinitionSource() != ClusterDefinitionSource::RemoteServersConfig)
+            continue;
+        clusters->setCluster(name, std::move(cluster));
+    }
 }
 
 void ClusterFactory::loadNamedCollectionsIfNeeded()

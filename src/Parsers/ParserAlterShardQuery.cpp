@@ -224,11 +224,8 @@ bool ParserAlterShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         auto query = make_intrusive<ASTAlterShardQuery>();
         query->command = AlterShardCommand::AddReplica;
         tryGetIdentifierNameInto(rep_ast, query->replica_name);
-        if (s_properties.ignore(pos, expected))
-        {
-            if (!parseSQLClusterCatalogPropertiesAssignments(query->replica_properties, pos, expected))
-                return false;
-        }
+        /// `ADD REPLICA` only attaches an existing `TYPE REPLICA` named collection to the shard — it does NOT
+        /// mutate the collection's own properties. Use `ALTER REPLICA name PROPERTIES (...)` for that.
         String cluster_str;
         if (s_on.ignore(pos, expected))
         {

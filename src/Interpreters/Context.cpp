@@ -684,16 +684,11 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for trace_collector modified only during initialization
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
 
-    /// Clusters for distributed tables and `ON CLUSTER` DDL.
-    /// `Clusters` holds clusters from `remote_servers` plus materialized SQL catalog clusters (`CREATE CLUSTER`),
-    /// all in one map. `ClusterFactory` records definition source/version; SQL DDL is in shard/cluster metadata storages.
-    /// Lookup: `tryGetCluster` uses `Clusters`, then `cluster_discovery`, then replicated-database cluster.
-    /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
-    mutable std::mutex clusters_mutex;                       /// Guards clusters, clusters_config and cluster_discovery
-    std::shared_ptr<Clusters> clusters TSA_GUARDED_BY(clusters_mutex);
-    ConfigurationPtr clusters_config TSA_GUARDED_BY(clusters_mutex);                        /// Stores updated configs
+    /// Materialized cluster state (`<remote_servers>` config, SQL catalog DDL, and ClusterDiscovery entries) lives in
+    /// `ClusterFactory::clusters`. Only `cluster_discovery` is kept here because its lifetime is tied to `Context`:
+    /// it is created in `setClustersConfig` and reset in this struct's destructor before shutting `ClusterFactory` down.
+    mutable std::mutex clusters_mutex;
     std::unique_ptr<ClusterDiscovery> cluster_discovery TSA_GUARDED_BY(clusters_mutex);
-    size_t clusters_version TSA_GUARDED_BY(clusters_mutex) = 0;
 
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
@@ -935,6 +930,20 @@ struct ContextSharedPart : boost::noncopyable
 
         NamedCollectionFactory::instance().shutdown();
 
+        /// `cluster_discovery` pushes into `ClusterFactory::clusters` on every ZK watch fire. Reset it before the
+        /// factory shuts down so we can't race a stale watch callback against the factory's shutdown.
+        {
+            std::lock_guard lock(clusters_mutex);
+            if (cluster_discovery)
+            {
+                LOG_TRACE(log, "Shutting down ClusterDiscovery");
+                /// Some classes (such as ZooKeeper, ReplicatedAccessStorage) will finalize the keeper session while
+                /// deconstructing, which will trigger the callback and make ClusterDiscovery reconnect to keeper again
+                /// (unnecessary).
+                cluster_discovery.reset();
+            }
+        }
+
         ClusterFactory::instance().shutdown();
 
         delete_async_insert_queue.reset();
@@ -969,18 +978,6 @@ struct ContextSharedPart : boost::noncopyable
         for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
             cache_data->cache->deactivateBackgroundOperations();
         FileCacheFactory::instance().clear();
-
-        {
-            std::lock_guard lock(clusters_mutex);
-            if (cluster_discovery)
-            {
-                LOG_TRACE(log, "Shutting down ClusterDiscovery");
-                /// Reset cluster_discovery if any.
-                /// Some classes (such as ZooKeeper, ReplicatedAccessStorage) will finalize the keeper session while deconstructing,
-                /// which will trigger the callback and make ClusterDiscovery reconnect to keeper again (unnecessary).
-                cluster_discovery.reset();
-            }
-        }
 
         {
             // Disk selector might not be initialized if there was some error during
@@ -5640,25 +5637,6 @@ void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
     shared->server_settings.set("s3queue_disable_streaming", s3queue_disable_streaming);
 }
 
-namespace
-{
-
-void registerCatalogClustersIntoLoadedClusters(const std::shared_ptr<Clusters> & clusters, ContextPtr global_context)
-{
-    if (!clusters || !global_context)
-        return;
-
-    for (const auto & cluster_name : ClusterFactory::instance().listClusterNames())
-    {
-        if (clusters->getCluster(cluster_name))
-            continue;
-        if (auto cluster = ClusterFactory::instance().tryMaterializeCluster(cluster_name, global_context))
-            clusters->setCluster(cluster_name, cluster);
-    }
-}
-
-}
-
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     if (auto res = tryGetCluster(cluster_name))
@@ -5669,84 +5647,21 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
-    std::shared_ptr<Cluster> res = nullptr;
-
-    {
-        std::lock_guard lock(shared->clusters_mutex);
-        /// Config and SQL catalog clusters both live in `Clusters`; discovery is consulted next.
-        res = getClustersImpl(lock)->getCluster(cluster_name);
-
-        if (res == nullptr && shared->cluster_discovery)
-            res = shared->cluster_discovery->getCluster(cluster_name);
-    }
-
-    if (res == nullptr && !cluster_name.empty())
-        res = ClusterFactory::instance().tryMaterializeCluster(cluster_name, getGlobalContext());
-
+    auto res = ClusterFactory::instance().tryGetCluster(cluster_name);
     if (res == nullptr && !cluster_name.empty())
         res = tryGetReplicatedDatabaseCluster(cluster_name);
-
     return res;
 }
 
 
 void Context::reloadClusterConfig() const
 {
-    while (true)
-    {
-        ConfigurationPtr cluster_config;
-        {
-            std::lock_guard lock(shared->clusters_mutex);
-            cluster_config = shared->clusters_config;
-        }
-
-        const auto & config = cluster_config ? *cluster_config : getConfigRef();
-        auto new_clusters = std::make_shared<Clusters>(config, *settings, getMacros());
-
-        {
-            std::lock_guard lock(shared->clusters_mutex);
-            if (shared->clusters_config.get() == cluster_config.get())
-            {
-                shared->clusters = std::move(new_clusters);
-                ClusterFactory::instance().reloadFromConfig(config, "remote_servers", shared->clusters_version);
-                registerCatalogClustersIntoLoadedClusters(shared->clusters, getGlobalContext());
-                return;
-            }
-
-            // Clusters config has been suddenly changed, recompute clusters
-        }
-    }
+    ClusterFactory::instance().reloadClustersConfig(getGlobalContext());
 }
 
 std::map<String, ClusterPtr> Context::getClusters() const
 {
-    std::lock_guard lock(shared->clusters_mutex);
-
-    auto clusters_holder = getClustersImpl(lock);
-    registerCatalogClustersIntoLoadedClusters(clusters_holder, getGlobalContext());
-    auto clusters = clusters_holder->getContainer();
-
-    if (shared->cluster_discovery)
-    {
-        const auto & cluster_discovery_map = shared->cluster_discovery->getClusters();
-        for (const auto & [name, cluster] : cluster_discovery_map)
-            clusters.emplace(name, cluster);
-    }
-
-    return clusters;
-}
-
-std::shared_ptr<Clusters> Context::getClustersImpl(std::lock_guard<std::mutex> & /* lock */) const TSA_REQUIRES(shared->clusters_mutex)
-{
-    if (!shared->clusters)
-    {
-        const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-        shared->clusters = std::make_shared<Clusters>(config, *settings, getMacros());
-        ClusterFactory::instance().reloadFromConfig(config, "remote_servers", shared->clusters_version);
-        registerCatalogClustersIntoLoadedClusters(shared->clusters, getGlobalContext());
-    }
-
-    return shared->clusters;
+    return ClusterFactory::instance().getClusters();
 }
 
 void Context::startClusterDiscovery()
@@ -5767,28 +5682,12 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         {
             shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
         }
-
-        /// Do not update clusters if this part of config wasn't changed.
-        if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
-            return;
-
-        auto old_clusters_config = shared->clusters_config;
-        shared->clusters_config = config;
-
-        if (!shared->clusters)
-        {
-            shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
-            registerCatalogClustersIntoLoadedClusters(shared->clusters, getGlobalContext());
-        }
-        else
-        {
-            shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
-            registerCatalogClustersIntoLoadedClusters(shared->clusters, getGlobalContext());
-        }
-
-        ++shared->clusters_version;
-        ClusterFactory::instance().reloadFromConfig(*shared->clusters_config, config_name, shared->clusters_version);
     }
+
+    /// Actual cluster bookkeeping lives in `ClusterFactory` — it owns `clusters` / `clusters_config` /
+    /// `clusters_version`. `Context` only coordinates the discovery lifecycle above and DDL-worker notification below.
+    ClusterFactory::instance().applyClustersConfig(config, *settings, getMacros(), config_name, getGlobalContext());
+
     {
         SharedLockGuard lock(shared->mutex);
         if (shared->ddl_worker)
@@ -5798,31 +5697,13 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
 
 size_t Context::getClustersVersion() const
 {
-    std::lock_guard lock(shared->clusters_mutex);
-    return shared->clusters_version;
+    return ClusterFactory::instance().getClustersVersion();
 }
 
-
-void Context::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
-{
-    std::lock_guard lock(shared->clusters_mutex);
-    getClustersImpl(lock)->setCluster(cluster_name, cluster);
-}
 
 void Context::removeCluster(const String & cluster_name) const
 {
-    std::lock_guard lock(shared->clusters_mutex);
-    if (shared->clusters)
-        shared->clusters->removeCluster(cluster_name);
-}
-
-bool Context::isClusterDefinedOnlyInRemoteServers(const String & cluster_name) const
-{
-    if (ClusterFactory::instance().hasCluster(cluster_name))
-        return false;
-
-    std::lock_guard lock(shared->clusters_mutex);
-    return getClustersImpl(lock)->getCluster(cluster_name) != nullptr;
+    ClusterFactory::instance().removeCluster(cluster_name);
 }
 
 void Context::initializeSystemLogs()

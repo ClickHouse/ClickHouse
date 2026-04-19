@@ -71,22 +71,6 @@ void ASTAlterShardQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         }
         case AlterShardCommand::AddReplica:
             ostr << " ADD REPLICA " << backQuoteIfNeed(replica_name);
-            if (!replica_properties.empty())
-            {
-                ostr << " PROPERTIES (";
-                for (size_t i = 0; i < replica_properties.size(); ++i)
-                {
-                    if (i)
-                        ostr << ", ";
-                    const auto & ch = replica_properties[i];
-                    formatSettingName(ch.name, ostr);
-                    if (s.show_secrets)
-                        ostr << " = " << applyVisitor(FieldVisitorToString(), ch.value);
-                    else
-                        ostr << " = '[HIDDEN]'";
-                }
-                ostr << ")";
-            }
             break;
         case AlterShardCommand::DropReplica:
             ostr << " DROP REPLICA " << backQuoteIfNeed(replica_name);

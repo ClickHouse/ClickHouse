@@ -35,6 +35,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Where the definition of a resolvable cluster name comes from.
+/// Used by the unified `Clusters` registry (owned by `ClusterFactory`) to tell entries from different upstreams apart
+/// so reloads from one upstream only touch clusters of that source.
+enum class ClusterDefinitionSource : uint8_t
+{
+    RemoteServersConfig,
+    SQLCatalog,
+    Discovery,
+};
+
 struct DatabaseReplicaInfo
 {
     String hostname;
@@ -311,6 +321,23 @@ public:
 
     const String & getName() const { return name; }
 
+    /// Where this cluster was defined (config file, SQL catalog, or cluster discovery).
+    /// Default `RemoteServersConfig` matches the common case: `Cluster` built from `<remote_servers>` XML.
+    /// SQL catalog and cluster discovery call `setDefinitionMetadata` right after construction.
+    ClusterDefinitionSource getDefinitionSource() const { return definition_source; }
+
+    /// Version tag tied to the upstream that defined this cluster:
+    /// - `RemoteServersConfig` → `Context::getClustersVersion()` at the time config was applied
+    /// - `SQLCatalog` → `ClusterFactory::sql_catalog_mutation_counter` snapshot at materialization time
+    /// - `Discovery` → currently 0 (watch state carries its own freshness)
+    UInt64 getDefinitionVersion() const { return definition_version; }
+
+    void setDefinitionMetadata(ClusterDefinitionSource source, UInt64 version)
+    {
+        definition_source = source;
+        definition_version = version;
+    }
+
 private:
     SlotToShard slot_to_shard;
 
@@ -357,6 +384,9 @@ private:
     size_t local_shard_count = 0;
 
     String name;
+
+    ClusterDefinitionSource definition_source = ClusterDefinitionSource::RemoteServersConfig;
+    UInt64 definition_version = 0;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;

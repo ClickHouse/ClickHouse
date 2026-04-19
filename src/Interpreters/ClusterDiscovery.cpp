@@ -20,6 +20,7 @@
 
 #include <Core/ServerUUID.h>
 
+#include <Common/Clusters/ClusterFactory.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/Context.h>
@@ -406,6 +407,9 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         context->getSettingsRef(),
         shards,
         params);
+    /// Tag as `Discovery` so the unified registry can distinguish it from config/SQL-defined entries with the same name.
+    /// Version is left at 0: `ClusterDiscovery` already tracks freshness via its per-cluster `ClusterInfo::last_zk_state`.
+    cluster->setDefinitionMetadata(ClusterDefinitionSource::Discovery, 0);
     return cluster;
 }
 
@@ -477,18 +481,14 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
     }
 
     auto cluster = makeCluster(cluster_info);
-    std::lock_guard lock(mutex);
-    cluster_impls[cluster_info.name] = cluster;
+    ClusterFactory::instance().setCluster(cluster_info.name, cluster, ClusterDefinitionSource::Discovery);
 
     return true;
 }
 
 void ClusterDiscovery::removeCluster(const String & name)
 {
-    {
-        std::lock_guard lock(mutex);
-        cluster_impls.erase(name);
-    }
+    ClusterFactory::instance().removeCluster(name, ClusterDefinitionSource::Discovery);
     clusters_to_update->remove(name);
     get_nodes_callbacks.erase(name);
     LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
@@ -785,22 +785,6 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     }
     LOG_DEBUG(log, "Worker thread stopped");
     return finished;
-}
-
-ClusterPtr ClusterDiscovery::getCluster(const String & cluster_name) const
-{
-    std::lock_guard lock(mutex);
-    auto expanded_cluster_name = macros->expand(cluster_name);
-    auto it = cluster_impls.find(expanded_cluster_name);
-    if (it == cluster_impls.end())
-        return nullptr;
-    return it->second;
-}
-
-std::unordered_map<String, ClusterPtr> ClusterDiscovery::getClusters() const
-{
-    std::lock_guard lock(mutex);
-    return cluster_impls;
 }
 
 void ClusterDiscovery::shutdown()

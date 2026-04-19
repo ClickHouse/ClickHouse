@@ -11,16 +11,9 @@
 #include <Parsers/ASTCreateClusterQuery.h>
 
 #include <Common/Exception.h>
-#include <Common/quoteString.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CLUSTER_DEFINITION_ALREADY_EXISTS;
-    extern const int LOGICAL_ERROR;
-}
 
 namespace Setting
 {
@@ -39,6 +32,21 @@ BlockIO InterpreterCreateClusterQuery::execute()
     bool allow_distributed_ddl_queries = true;
     validateAndExtractClusterLevelProperties(query.cluster_properties, cluster_secret, allow_distributed_ddl_queries);
 
+    /// Members are either existing SQL `SHARD` definitions or whole-shard named collections (`replicas` key).
+    /// `ClusterFactory::createCluster` loads the latter from `NamedCollectionFactory`; `CREATE_CLUSTER` alone
+    /// must not let the caller reference collections they are not allowed to use.
+    ///
+    /// `hasShard` uses an unlocked snapshot, so member classification here is best-effort: between this check
+    /// and the factory's critical section another session could `DROP SHARD` / `CREATE NAMED COLLECTION` with
+    /// the same name. Existence and name-ambiguity are re-validated inside `ClusterFactory::createCluster`
+    /// under its lock (`checkSQLClusterMemberNameLocked` + `namedCollectionExists`), which is what ultimately
+    /// guards the catalog — this pre-check simply rejects unauthorised NC references early.
+    for (const auto & member : query.members)
+    {
+        if (!ClusterFactory::instance().hasShard(member))
+            current_context->checkAccess(AccessType::NAMED_COLLECTION, member);
+    }
+
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
@@ -53,29 +61,14 @@ BlockIO InterpreterCreateClusterQuery::execute()
         return executeDDLQueryOnCluster(updated_query, ddl_context, params);
     }
 
-    auto global_context = current_context->getGlobalContext();
-
-    if (global_context->isClusterDefinedOnlyInRemoteServers(query.cluster_name))
-    {
-        if (!query.if_not_exists)
-            throw Exception(
-                ErrorCodes::CLUSTER_DEFINITION_ALREADY_EXISTS,
-                "Cannot create SQL CLUSTER {} because a cluster with the same name is already defined in the server configuration (remote_servers)",
-                backQuoteIfNeed(query.cluster_name));
-        return {};
-    }
-
-    if (query.if_not_exists && ClusterFactory::instance().hasCluster(query.cluster_name))
-        return {};
-
+    /// Existence (`remote_servers`, discovery, SQL catalog row, materialized registry) is enforced inside
+    /// `ClusterFactory::createCluster` under one critical section — avoids `IF NOT EXISTS` races with concurrent DDL.
     ClusterFactory::instance().createCluster(
-        query.cluster_name, query.members, cluster_secret, allow_distributed_ddl_queries);
-
-    auto cluster = ClusterFactory::instance().tryMaterializeCluster(query.cluster_name, global_context);
-    if (!cluster)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to materialize SQL CLUSTER `{}` after create", query.cluster_name);
-
-    global_context->setCluster(query.cluster_name, cluster);
+        query.cluster_name,
+        query.members,
+        cluster_secret,
+        allow_distributed_ddl_queries,
+        query.if_not_exists);
     return {};
 }
 

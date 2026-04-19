@@ -30,6 +30,8 @@ BlockIO InterpreterCreateShardQuery::execute()
     bool internal_replication = false;
     validateAndExtractShardLevelProperties(query.shard_properties, weight, internal_replication);
 
+    /// Each replica names an existing `TYPE REPLICA` collection resolved in `ClusterFactory::createShard`.
+    /// `CREATE_SHARD` alone must not let the caller reference collections they are not allowed to use.
     for (const auto & replica_name : query.replicas)
         current_context->checkAccess(AccessType::NAMED_COLLECTION, replica_name);
 

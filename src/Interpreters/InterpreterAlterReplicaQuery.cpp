@@ -28,7 +28,6 @@ BlockIO InterpreterAlterReplicaQuery::execute()
     const auto & query = updated_query->as<const ASTAlterReplicaQuery &>();
 
     current_context->checkAccess(AccessType::ALTER_NAMED_COLLECTION, query.replica_name);
-    validateReplicaLevelPropertyKeys(query.properties);
 
     if (!query.cluster.empty())
     {
@@ -52,6 +51,12 @@ BlockIO InterpreterAlterReplicaQuery::execute()
             "Named collection `{}` is not TYPE `REPLICA`, cannot use ALTER REPLICA",
             query.replica_name);
     }
+
+    /// Enforce the same allowed-key set as `CREATE REPLICA` so `ALTER REPLICA` cannot smuggle keys that
+    /// would be rejected at creation time. This preserves the SQL-replica property model invariants that
+    /// shard materialisation relies on. Does not prevent `ALTER NAMED COLLECTION` with the same target —
+    /// that path deliberately bypasses SQL-cluster semantics.
+    validateReplicaLevelPropertyKeys(query.properties);
 
     auto alter_named_collection_ast = make_intrusive<ASTAlterNamedCollectionQuery>();
     alter_named_collection_ast->collection_name = query.replica_name;

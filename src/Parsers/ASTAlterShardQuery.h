@@ -49,7 +49,8 @@ public:
     String replica_name;
     /// `RenameReplica` — new collection name.
     String rename_replica_to;
-    /// `AddReplica` / `ModifyReplica` — optional per-replica parameters (validated later).
+    /// `ModifyReplica` — per-replica parameters (validated later). `AddReplica` does not accept `PROPERTIES`:
+    /// the replica named collection must be created beforehand via `CREATE REPLICA` / `CREATE NAMED COLLECTION`.
     SettingsChanges replica_properties;
 
     String getID(char) const override { return "AlterShardQuery"; }

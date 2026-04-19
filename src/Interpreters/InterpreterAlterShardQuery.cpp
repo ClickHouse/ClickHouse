@@ -5,9 +5,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/Clusters/ClusterFactory.h>
 #include <Common/Clusters/SQLClusterCatalogPropertyValidation.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTAlterShardQuery.h>
 
 #include <Common/Exception.h>
@@ -36,14 +34,26 @@ BlockIO InterpreterAlterShardQuery::execute()
             validateShardLevelPropertyPatchAssignments(query.shard_definition_properties);
             break;
         case AlterShardCommand::AddReplica:
-            if (!query.replica_properties.empty())
-                validateReplicaLevelPropertyKeys(query.replica_properties);
+            /// `ADD REPLICA` only attaches an existing `TYPE REPLICA` named collection — no property patch is
+            /// accepted here (the parser rejects `PROPERTIES`). Use `ALTER REPLICA` to mutate replica properties.
+            /// `CREATE_SHARD` alone must not let the caller bring in a named collection they are not entitled
+            /// to use, so check `NAMED_COLLECTION` access up-front — before the `ON CLUSTER` dispatch — to
+            /// match the contract of `CREATE SHARD`, `CREATE CLUSTER`, and `ALTER CLUSTER`.
+            current_context->checkAccess(AccessType::NAMED_COLLECTION, query.replica_name);
             break;
         case AlterShardCommand::DropReplica:
             break;
         case AlterShardCommand::ReplaceReplicas:
             if (!query.shard_definition_properties.empty())
                 validateShardLevelPropertyPatchAssignments(query.shard_definition_properties);
+            /// `REPLACE ... TO <new>` introduces named collections `<new>` as shard replicas — the factory
+            /// resolves them against `NamedCollectionFactory`. Check `NAMED_COLLECTION` per target name
+            /// up-front (same contract as `CREATE SHARD` and `ALTER SHARD ADD REPLICA`). `from_collections`
+            /// are existing attachments of this shard and are looked up in the shard's own state, not
+            /// re-read from the named collection factory, so they do not need an additional check here.
+            for (const auto & clause : query.replica_replace_clauses)
+                for (const auto & to_name : clause.to_collections)
+                    current_context->checkAccess(AccessType::NAMED_COLLECTION, to_name);
             break;
         default:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER SHARD: this variant is not implemented yet");
@@ -58,39 +68,19 @@ BlockIO InterpreterAlterShardQuery::execute()
     switch (query.command)
     {
         case AlterShardCommand::ModifyShardProperties:
-            if (!ClusterFactory::instance().updateShardPropertiesFromSQL(query))
-                return {};
+            ClusterFactory::instance().updateShardPropertiesFromSQL(query);
             break;
         case AlterShardCommand::AddReplica:
-            current_context->checkAccess(AccessType::NAMED_COLLECTION, query.replica_name);
-            if (!query.replica_properties.empty())
-            {
-                current_context->checkAccess(AccessType::ALTER_NAMED_COLLECTION, query.replica_name);
-                auto alter_nc = make_intrusive<ASTAlterNamedCollectionQuery>();
-                alter_nc->collection_name = query.replica_name;
-                alter_nc->changes = query.replica_properties;
-                NamedCollectionFactory::instance().updateFromSQL(*alter_nc);
-            }
-            if (!ClusterFactory::instance().addReplicaToShardFromSQL(query))
-                return {};
+            ClusterFactory::instance().addReplicaToShardFromSQL(query);
             break;
         case AlterShardCommand::DropReplica:
-            if (!ClusterFactory::instance().dropReplicaFromShardFromSQL(query))
-                return {};
+            ClusterFactory::instance().dropReplicaFromShardFromSQL(query);
             break;
         case AlterShardCommand::ReplaceReplicas:
-            if (!ClusterFactory::instance().replaceShardReplicasFromSQL(query))
-                return {};
+            ClusterFactory::instance().replaceShardReplicasFromSQL(query);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ALTER SHARD: unsupported command after validation");
-    }
-
-    auto global_context = current_context->getGlobalContext();
-    for (const auto & cluster_name : ClusterFactory::instance().listSQLClustersContainingMember(query.shard_name))
-    {
-        if (auto cluster = ClusterFactory::instance().tryMaterializeCluster(cluster_name, global_context))
-            global_context->setCluster(cluster_name, cluster);
     }
 
     return {};

@@ -38,9 +38,11 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 #include <Common/formatIPv6.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Core/Field.h>
 
 #include <cctype>
+#include <limits>
 #include <string_view>
 #include <unordered_set>
 
@@ -67,23 +69,25 @@ inline void assertNoDuplicatePropertyNames(const SettingsChanges & changes)
 
 inline UInt64 parseUnsignedIntegerPropertyValue(const Field & value, std::string_view property_name)
 {
-    if (value.getType() == Field::Types::String)
+    switch (value.getType())
     {
-        const auto & text = value.safeGet<String>();
-        if (text.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` must not be empty", property_name);
-
-        UInt64 result = 0;
-        for (const auto ch : text)
+        case Field::Types::UInt64:
+            return value.safeGet<UInt64>();
+        case Field::Types::Int64:
         {
-            if (!std::isdigit(static_cast<unsigned char>(ch)))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` must be an unsigned integer, got `{}`", property_name, text);
-            result = result * 10 + static_cast<UInt64>(ch - '0');
+            const auto i = value.safeGet<Int64>();
+            if (i < 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Property `{}` must be a non-negative integer, got {}", property_name, i);
+            return static_cast<UInt64>(i);
         }
-        return result;
+        default:
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Property `{}` must be an unsigned integer literal (not a string, float, or boolean), got {}",
+                property_name,
+                applyVisitor(FieldVisitorToString(), value));
     }
-
-    return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value);
 }
 
 inline bool isIPv4(const std::string & host)
@@ -154,6 +158,26 @@ inline bool isValidHost(const std::string & host)
 {
     return isIPv4(host) || isIPv6(host) || isValidHostname(host);
 }
+}
+
+/// Parse shard-level `weight` and validate it against `UInt32` range **before** narrowing.
+///
+/// `Cluster::ShardInfo::weight` is a `UInt32`, but parsed property values arrive as `UInt64` / `Int64` / `Float64` /
+/// `String`. A naive `static_cast<UInt32>(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value))` silently
+/// wraps, so e.g. `weight = 4294967297` becomes `1` and passes the `weight == 0` check. Validate the full-width
+/// value here, then narrow.
+inline UInt32 parseShardCatalogWeightValue(const Field & value)
+{
+    const UInt64 raw = SQLClusterCatalogPropertyValidationDetail::parseUnsignedIntegerPropertyValue(value, "weight");
+    if (raw == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `weight` must be greater than zero");
+    if (raw > std::numeric_limits<UInt32>::max())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Property `weight` must fit in a 32-bit unsigned integer (got {}, max {})",
+            raw,
+            std::numeric_limits<UInt32>::max());
+    return static_cast<UInt32>(raw);
 }
 
 /// Parse shard-level `internal_replication` only from boolean literals, integer 0 or 1, or string `true` / `false`.
@@ -261,11 +285,7 @@ inline void validateAndExtractShardLevelProperties(
     for (const auto & ch : changes)
     {
         if (ch.name == "weight")
-        {
-            weight = static_cast<UInt32>(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), ch.value));
-            if (weight == 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `weight` in shard-level PROPERTIES must be greater than zero");
-        }
+            weight = parseShardCatalogWeightValue(ch.value);
         else if (ch.name == "internal_replication")
             parseShardCatalogInternalReplicationValue(ch.value, internal_replication);
         else
@@ -406,7 +426,7 @@ inline void validateAndExtractClusterLevelProperties(
 }
 
 /// For optional cluster-level `MODIFY PROPERTIES` tail on `ALTER CLUSTER ... REPLACE ...`: non-empty list, known keys only (merge semantics in `ClusterFactory::replaceClusterMembersFromSQL`).
-inline void validateClusterLevelPropertyPatchAssignments(const SettingsChanges & changes)
+inline void validateClusterLevelProperties(const SettingsChanges & changes)
 {
     if (changes.empty())
         throw Exception(

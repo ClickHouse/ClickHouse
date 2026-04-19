@@ -56,7 +56,7 @@ CREATE REPLICA nc_replica_missing_port
 PROPERTIES (host = '127.0.0.1', secure = 1); -- { serverError BAD_ARGUMENTS }
 
 CREATE REPLICA nc_replica_for_type_mix
-PROPERTIES (host = '127.0.0.3', port = '9001', secure = true, compression = 1, priority = '3');
+PROPERTIES (host = '127.0.0.3', port = 9001, secure = true, compression = 1, priority = '3');
 
 CREATE REPLICA nc_replica_for_hostname
 PROPERTIES (host = 'host1', port = 9002, secure = 0);

@@ -24,8 +24,7 @@ BlockIO InterpreterDropClusterQuery::execute()
         return executeDDLQueryOnCluster(updated_query, current_context, params);
     }
 
-    if (ClusterFactory::instance().dropCluster(query.cluster_name, query.if_exists))
-        current_context->getGlobalContext()->removeCluster(query.cluster_name);
+    ClusterFactory::instance().dropCluster(query.cluster_name, query.if_exists);
     return {};
 }
 
