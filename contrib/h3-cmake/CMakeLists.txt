@@ -11,9 +11,11 @@ endif()
 # Default to ON: when Rust is available, use the faster h3o backend.
 option(ENABLE_H3O "Enable h3o (Rust H3 implementation)" ON)
 
-# Skip the C H3 backend when h3o is enabled, but only if Rust can actually build
-# (FreeBSD lacks the required sysroot, so rust/workspace returns early there).
-if(ENABLE_H3O AND NOT OS_FREEBSD)
+# Skip the C H3 backend when h3o is enabled, but only if Rust can actually
+# build: `ENABLE_RUST` is forced OFF for some cross-compilation targets
+# (RISC-V, S390X, LOONGARCH64; see `cmake/target.cmake`), and FreeBSD lacks
+# the required sysroot, so `rust/workspace` returns early there.
+if(ENABLE_H3O AND ENABLE_RUST AND NOT OS_FREEBSD)
     message(STATUS "Not using C H3 library (Rust h3o is enabled instead)")
     return()
 endif()
