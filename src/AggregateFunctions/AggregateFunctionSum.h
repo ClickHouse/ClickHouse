@@ -7,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 

@@ -3,7 +3,6 @@
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -122,6 +121,8 @@ public:
     {
         /// Show header of output ports.
         bool header = false;
+        /// Show remote pipelines for distributed query.
+        bool distributed = false;
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;

@@ -15,9 +15,9 @@
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
@@ -594,7 +594,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             else
                 object_info->setObjectMetadata(object_storage->getObjectMetadata(path, with_tags));
         }
-    } while (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0);
+    } while (query_settings.skip_empty_files
+             && object_info->getObjectMetadata()->size_bytes == 0
+             && object_info->getObjectMetadata()->is_size_known);
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
@@ -694,7 +696,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] && use_native_reader_v3
-            && (object_info->getFileFormat().value_or(configuration->format) == "Parquet")
+            && (Poco::toLower(object_info->getFileFormat().value_or(configuration->format)) == "parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
             const std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
@@ -861,8 +863,19 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     }
 
     const auto & object_size = object_info.metadata->size_bytes;
+    const bool is_size_known = object_info.metadata->is_size_known;
 
-    auto modified_read_settings = effective_read_settings.adjustBufferSize(object_size);
+    /// when Content-Length is missing from HEAD, size is 0 but it is
+    /// unreliable to use these features (file might exist and have contents)
+    if (!is_size_known)
+    {
+        use_filesystem_cache = false;
+        use_page_cache = false;
+    }
+
+    auto modified_read_settings = is_size_known
+        ? effective_read_settings.adjustBufferSize(object_size)
+        : effective_read_settings;
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     modified_read_settings.remote_read_min_bytes_for_seek = modified_read_settings.remote_fs_buffer_size;
     /// User's object may change, don't cache it.
@@ -872,7 +885,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
+    const bool object_too_small = is_size_known
+        && object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
     const bool use_prefetch = object_too_small
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_prefetch;

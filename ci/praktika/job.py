@@ -43,14 +43,15 @@ class Job:
         # Job Run Command
         command: str
 
-        # What job requires
-        #   May be `Artifact.Config.name` (for physical artifacts) or `Job.Config.name` (for ordering only)
+        # Hard dependencies: Artifact.Config.name or Job.Config.name.
+        # Artifacts are downloaded; for job names the artifact report is
+        # downloaded. Dependencies affect job digest and filtering.
         requires: List[str] = field(default_factory=list)
 
-        # If True, jobs listed in `requires` by `Job.Config.name` are treated as
-        # hard dependencies: they must run (and cannot be skipped as unaffected)
-        # unless their artifacts are already cached by CI.
-        needs_jobs_from_requires: bool = False
+        # Ordering-only dependencies (job names). The listed jobs will run
+        # before this one, but nothing is downloaded and they do not affect
+        # the job digest or cache key.
+        run_after: List[str] = field(default_factory=list)
 
         # What job provides
         #   May be only `Artifact.Config.name`
@@ -81,6 +82,9 @@ class Job:
 
         # Per-job secrets (exported only for this job, not all jobs in the workflow)
         secrets: list = field(default_factory=list)
+
+        # If True, runner.py restores the submodule cache from S3 before the job starts
+        needs_submodules: bool = False
 
         # List of commands to call before job starts
         pre_hooks: List[str] = field(default_factory=list)
@@ -152,7 +156,7 @@ class Job:
             res.name = name
             return res
 
-        def set_dependency(self, job, reset=False):
+        def set_requires(self, job, reset=False):
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
                 job = [job]
@@ -163,6 +167,21 @@ class Job:
                     res.requires.append(job_)
                 elif isinstance(job_, Job.Config):
                     res.requires.append(job_.name)
+                else:
+                    Utils.raise_with_error(f"Invalid dependency type [{job_}]")
+            return res
+
+        def set_run_after(self, job, reset=False):
+            res = copy.deepcopy(self)
+            if not (isinstance(job, list) or isinstance(job, tuple)):
+                job = [job]
+            if reset:
+                res.run_after = []
+            for job_ in job:
+                if isinstance(job_, str):
+                    res.run_after.append(job_)
+                elif isinstance(job_, Job.Config):
+                    res.run_after.append(job_.name)
                 else:
                     Utils.raise_with_error(f"Invalid dependency type [{job_}]")
             return res
@@ -263,11 +282,15 @@ class Job:
             # Optionally check for submodule changes
             if self.digest_config.with_git_submodules:
                 try:
-                    submodule_paths_str = Shell.get_output(
-                        command="git config --file .gitmodules --get-regexp path | awk '{print $2}'",
-                        verbose=True,
-                    )
-                    if any(file in submodule_paths_str for file in normalized_files):
+                    if not hasattr(Job.Config, "_submodule_paths_cache"):
+                        Job.Config._submodule_paths_cache = Shell.get_output(
+                            command="git config --file .gitmodules --get-regexp path | awk '{print $2}'",
+                            verbose=True,
+                        )
+                    if any(
+                        file in Job.Config._submodule_paths_cache
+                        for file in normalized_files
+                    ):
                         return True
                 except Exception as e:
                     print(f"Warning: failed to check git submodules: {e}")
