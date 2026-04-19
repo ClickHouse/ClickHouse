@@ -799,6 +799,12 @@ try
 
         output_format->setAutoFlush();
 
+        /// Replay progress that was accumulated before the output format was created
+        /// (e.g. from scalar subqueries evaluated during query analysis on the server).
+        auto replayed = pending_progress.fetchAndResetPiecewiseAtomically();
+        if (replayed.read_rows || replayed.read_bytes)
+            output_format->onProgress(replayed);
+
         if ((!select_into_file || select_into_file_and_stdout)
             && stdout_is_a_tty
             && stdin_is_a_tty
@@ -1319,6 +1325,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+            /// Allow cancellation during query analysis (e.g. scalar subqueries).
+            /// For TCP connections this is handled by receivePacketsExpectCancel;
+            /// for local connections this callback checks the signal handler flag.
+            connection->setCancelCallback([this]() { return query_interrupt_handler.cancelled(); });
+
             try
             {
                 connection->sendQuery(
@@ -1542,6 +1553,8 @@ void ClientBase::onProgress(const Progress & value)
 
     if (output_format)
         output_format->onProgress(value);
+    else
+        pending_progress.incrementPiecewiseAtomically(value);
 
     if (need_render_progress && tty_buf)
     {
@@ -1720,6 +1733,7 @@ void ClientBase::resetOutput()
     }
 
     output_format.reset();
+    pending_progress.reset();
 
     logs_out_stream.reset();
 
@@ -2009,7 +2023,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         try
         {
-            auto metadata = storage->getInMemoryMetadataPtr();
+            auto metadata = storage->getInMemoryMetadataPtr(client_context, false);
             QueryPlan plan;
             storage->read(
                 plan,
@@ -3548,7 +3562,10 @@ void ClientBase::runInteractive()
     initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    /// AI SQL generation is disabled for the embedded client (SSH and WebSocket protocols)
+    /// because it accesses the environment (API keys) which could be a security concern.
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -3805,7 +3822,8 @@ void ClientBase::runNonInteractive()
         initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     if (!buzz_house && !queries_files.empty())
