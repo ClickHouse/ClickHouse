@@ -16,9 +16,10 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ProcessList.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -146,7 +147,7 @@ namespace ActionLocks
 static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutationEntry & mutation, LoggerPtr log = nullptr)
 {
     assert(!mutation.tid.isEmpty());
-    if (mutation.tid.isPrehistoric())
+    if (mutation.tid.isNonTransactional())
         return {};
 
     auto txn = TransactionLog::instance().tryGetRunningTransaction(mutation.tid.getHash());
@@ -336,7 +337,7 @@ void StorageMergeTree::read(
                 query_plan,
                 getStorageID(),
                 std::move(modified_query_info),
-                getInMemoryMetadataPtr()->getColumns(),
+                getInMemoryMetadataPtr(local_context, false)->getColumns(),
                 storage_snapshot,
                 processed_stage,
                 query_info.query,
@@ -428,8 +429,8 @@ void StorageMergeTree::alter(
     auto old_storage_settings = getSettings();
     const auto & query_settings = local_context->getSettingsRef();
 
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
 
     auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context);
     if (!maybe_mutation_commands.empty())
@@ -440,7 +441,7 @@ void StorageMergeTree::alter(
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
-    auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
+    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
@@ -644,7 +645,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = getStoragePolicy()->getAnyDisk();
-    TransactionID current_tid = Tx::PrehistoricTID;
+    TransactionID current_tid = Tx::NonTransactionalTID;
     String additional_info;
     auto txn = query_context->getCurrentTransaction();
     if (txn)
@@ -896,6 +897,11 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     return pipeline;
 }
 
+bool StorageMergeTree::hasLightweightDeletedMask() const
+{
+    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
+}
+
 namespace
 {
 
@@ -934,7 +940,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     auto txn = tryGetTransactionForMutation(mutation_entry, log.load());
     /// There's no way a transaction may finish before a mutation that was started by the transaction.
     /// But sometimes we need to check status of an unrelated mutation, in this case we don't care about transactions.
-    assert(txn || mutation_entry.tid.isPrehistoric() || from_another_mutation);
+    assert(txn || mutation_entry.tid.isNonTransactional() || from_another_mutation);
 
     /// Check deadlock: if this mutation belongs to a transaction, check if there are
     /// intermediate mutations between it and an earlier mutation from the same transaction
@@ -997,7 +1003,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             else if (txn && !from_another_mutation)
             {
                 /// Part is locked by concurrent transaction, most likely it will never be mutated
-                TIDHash part_locked = data_part->version.removal_tid_lock.load();
+                TIDHash part_locked = data_part->version->getRemovalTIDLockHash();
                 if (part_locked && part_locked != mutation_entry.tid.getHash())
                 {
                     result.latest_failed_part = data_part->name;
@@ -1197,7 +1203,7 @@ void StorageMergeTree::loadMutations()
                 UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
-                if (!entry.tid.isPrehistoric() && !entry.csn)
+                if (!entry.tid.isNonTransactional() && !entry.csn)
                 {
                     if (auto csn = TransactionLog::getCSN(entry.tid))
                     {
@@ -1420,7 +1426,7 @@ bool StorageMergeTree::merge(
     bool optimize_skip_merged_partitions)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
 
     auto merge_select_result = [&]()
     {
@@ -1538,7 +1544,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             continue;
         }
 
-        if (!first_mutation_tid.isPrehistoric())
+        if (!first_mutation_tid.isNonTransactional())
         {
 
             /// Mutate visible parts only
@@ -1547,7 +1553,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
             /// It's possible that both mutation and transaction are already finished,
             /// because that part should not be mutated because it was not visible for that transaction.
-            if (!part->version.isVisible(first_mutation_tid.start_csn, first_mutation_tid))
+            if (!part->version->isVisible(first_mutation_tid.start_csn, first_mutation_tid))
             {
                 current_parts_postpone_reasons[part->name] = PostponeReasons::VERSION_NOT_VISIBLE;
                 continue;
@@ -1580,7 +1586,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             /// Mutate visible parts only (similar to mutation with transaction)
             /// NOTE Do not mutate parts in an active transaction.
             /// Mutation without transaction should wait for the transaction to commit or rollback.
-            if (!part->version.isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID))
+            if (!part->version->isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID))
             {
                 LOG_DEBUG(log, "Cannot mutate part {} because it's not visible (outdated, being created or removed "
                           "in an active transaction) to mutation {}.",
@@ -1719,7 +1725,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     cleanup_thread.wakeupEarlierIfNeeded();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     MergeMutateSelectedEntryPtr merge_entry;
     MergeMutateSelectedEntryPtr mutate_entry;
 
@@ -1802,7 +1808,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
         /// which is equal or more fresh than commands themselves. In extremely rare case it can happen that we will have alter
         /// in between we took snapshot above and selected commands. That is why we take new snapshot here.
-        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, getInMemoryMetadataPtr(), mutate_entry, shared_lock, common_assignee_trigger);
+        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, getInMemoryMetadataPtr(getContext(), false), mutate_entry, shared_lock, common_assignee_trigger);
         return assignee.scheduleMergeMutateTask(task);
     }
     if (has_mutations)
@@ -1855,7 +1861,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         {
             auto & entry = it->second;
 
-            if (!entry.tid.isPrehistoric())
+            if (!entry.tid.isNonTransactional())
             {
                 end_it = it;
                 break;
@@ -1879,7 +1885,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             const auto & tid = it->second.tid;
-            if (!tid.isPrehistoric() && !TransactionLog::getCSN(tid))
+            if (!tid.isNonTransactional() && !TransactionLog::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
 
@@ -1938,7 +1944,7 @@ bool StorageMergeTree::optimize(
     assertNotReadonly();
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
-    if (deduplicate && getInMemoryMetadataPtr()->hasProjections()
+    if (deduplicate && getInMemoryMetadataPtr(local_context, false)->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
@@ -2342,7 +2348,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         if (txn)
         {
             if (auto part = outdatePart(txn.get(), part_name, /*force=*/ true))
-                dropPartsImpl({part}, detach);
+                dropPartsImpl({part}, detach, query_context);
         }
         else
         {
@@ -2356,7 +2362,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
             if (detach)
             {
-                auto metadata_snapshot = getInMemoryMetadataPtr();
+                auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
                 String part_dir = part->getDataPartStorage().getPartDirectory();
                 LOG_INFO(log, "Detaching {}", part_dir);
                 auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
@@ -2417,7 +2423,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 }
                 removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
             }
-            dropPartsImpl(std::move(parts_to_remove), detach);
+            dropPartsImpl(std::move(parts_to_remove), detach, query_context);
         }
         else
         {
@@ -2441,7 +2447,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             {
                 for (const auto & part : parts)
                 {
-                    auto metadata_snapshot = getInMemoryMetadataPtr();
+                    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
                     String part_dir = part->getDataPartStorage().getPartDirectory();
                     LOG_INFO(log, "Detaching {}", part_dir);
                     auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
@@ -2473,9 +2479,9 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
     clearEmptyParts();
 }
 
-void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach)
+void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr query_context)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
 
     if (detach)
     {
@@ -2514,9 +2520,8 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_dir);
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         auto txn = local_context->getCurrentTransaction();
-        TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-        loaded_parts[i]->version.setCreationTID(tid, nullptr);
-        loaded_parts[i]->storeVersionMetadata();
+        TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
+        loaded_parts[i]->version->setAndStoreCreationTID(tid, nullptr);
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
@@ -2572,8 +2577,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
 
-    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
-    auto my_metadata_snapshot = getInMemoryMetadataPtr();
+    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
+    auto my_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
@@ -2692,7 +2697,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
 }
 
-void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr local_context)
+/// `std::lock` + `std::adopt_lock` pattern for two mutexes is correct but opaque to
+/// Clang's thread-safety analyzer, which cannot track mutex ownership across `std::lock`.
+void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr local_context) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)
@@ -2728,8 +2735,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     OperationDataPartsLock operation_data_parts_lock_src(operation_with_data_parts_mutex, std::adopt_lock);
     OperationDataPartsLock operation_data_parts_lock_dest(dest_table_storage->operation_with_data_parts_mutex, std::adopt_lock);
 
-    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 
