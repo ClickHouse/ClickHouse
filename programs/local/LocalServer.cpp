@@ -1,3 +1,6 @@
+/// musl defines `stderr` as `(stderr)` which triggers `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+
 #include <LocalServer.h>
 
 #include <sys/resource.h>
