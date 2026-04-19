@@ -181,6 +181,14 @@ struct QueryPlanOptimizationSettings
 
     bool is_explain;
 
+    /// Query context captured at settings construction time. Needed when an
+    /// optimization pass wants to synchronously build and execute a
+    /// sub-pipeline (e.g. materializing a CTE inside
+    /// `DelayedMaterializingCTEsStep::makePlansForCTEs`). Populated by the
+    /// `ContextPtr` constructor; left null in the explicit constructor used by
+    /// remote-plan deserialization paths.
+    ContextPtr query_context;
+
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
