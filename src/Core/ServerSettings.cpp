@@ -1892,6 +1892,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "distributed_cache_log",
         "distributed_cache_server_log",
         "instrumentation_trace_log",
+        "default_system_log_flush_policy",
 
         /// Other logging
         "query_masking_rules",
@@ -1916,6 +1917,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "core_path",
         "resources",
         "resources_and_workloads",
+        "workload_classifiers",
         "top_level_domains_lists",
         "url_scheme_mappers",
         "dashboards",
@@ -1988,6 +1990,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// Command-line options injected into config by argsToConfig (with hyphens)
         /// and their hyphen-less variants (argsToConfig stores raw CLI key names,
         /// so --pidfile becomes "pidfile" in config).
+        /// Poco accepts abbreviations of full option names (e.g. --config matches --config-file),
+        /// and argsToConfig stores the abbreviated form verbatim, so we allow the short variants too.
         "config-file",
         "pid-file",
         "log-file",
@@ -1996,6 +2000,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "configfile",
         "logfile",
         "errorlogfile",
+        "config",
 
         /// Poco ServerApplication options (--daemon, --umask, --pidfile).
         /// These are defined by Poco::Util::ServerApplication::defineOptions
