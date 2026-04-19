@@ -300,7 +300,7 @@ public:
           */
         using ScaledValueType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
 
-        Int64 scaled_value;
+        Int64 scaled_value = 0;
         if constexpr (std::is_floating_point_v<ValueType>)
         {
             UInt64 scaling = 1ULL << fraction_bit_num;
@@ -1322,7 +1322,7 @@ public:
         using ScaledValueType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
         UInt64 scaling = 1ULL << lhs.fraction_bit_num;
 
-        Int64 scaled_value;
+        Int64 scaled_value = 0;
         if constexpr (std::is_floating_point_v<ValueType>)
         {
             auto scaled = static_cast<Float64>(rhs * static_cast<ValueType>(scaling));
