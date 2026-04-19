@@ -263,11 +263,17 @@ MarkRanges getRangesInPatchPartMergeOnKey(
     }
     const size_t patch_lo = lo > 0 ? lo - 1 : 0;
 
-    /// Upper bound: first patch granule whose first-row sort-key is >= main's exclusive upper.
+    /// Upper bound: first patch granule whose first-row sort-key is STRICTLY greater than main's
+    /// max sort-key. `main_sk[max_granule_end]` is the primary-index value at row
+    /// `max_granule_end`. For an interior granule (not the final mark), that's the next granule's
+    /// first row — a strict upper bound on the current granule's keys. For the FINAL mark, the
+    /// writer stores `last_index_block.rows() - 1`, i.e. the *last row's* value — so the final
+    /// mark equals the last granule's max key, not a past-the-end sentinel. Using a non-strict
+    /// `>=` compare would then exclude patch granules whose first key equals that last-row value,
+    /// even though main has a matching row. Always use STRICT `>` so equal values are kept; at
+    /// worst we over-read one patch granule, and the apply loop filters per row.
     /// When main reads to the end of the part (`max_granule_end == main_marks_count`) there is
-    /// no index row that bounds main's max sort-key from above — main's last granule can contain
-    /// keys arbitrarily greater than `main_sk[main_marks_count - 1]`. In that case every
-    /// remaining patch granule could still match, so keep `patch_hi = n_patch` (full suffix).
+    /// no index row available at all — keep `patch_hi = n_patch` (full suffix).
     size_t patch_hi;
     if (max_granule_end == main_marks_count)
     {
@@ -275,16 +281,19 @@ MarkRanges getRangesInPatchPartMergeOnKey(
     }
     else
     {
-        /// upper_bound: first j where patch_sk[j] >= main_sk[max_granule_end]. Patch granule
-        /// j's rows cover `[patch_sk[j], patch_sk[j+1])`, so `patch_sk[j] >= main_upper` means
-        /// all of j's keys are outside main's range.
+        /// is_le: patch_sk[j] <= main_sk[upper_main_row]. We want first j where this is false
+        /// (i.e. patch_sk[j] > main_sk[upper_main_row]).
+        auto is_le = [&](size_t patch_row, size_t main_row, const IColumn & main_col) -> bool
+        {
+            return patch_sk.compareAt(patch_row, main_row, main_col, /*nan_direction_hint=*/ 1) <= 0;
+        };
         lo = patch_lo;
         hi = n_patch;
         const size_t upper_main_row = max_granule_end;
         while (lo < hi)
         {
             size_t mid = lo + (hi - lo) / 2;
-            if (is_less(mid, upper_main_row, main_sk))
+            if (is_le(mid, upper_main_row, main_sk))
                 lo = mid + 1;
             else
                 hi = mid;
