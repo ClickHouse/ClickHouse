@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if USE_NLP
+#if USE_LIBSTEMMER
 
 #include <Storages/System/StorageSystemStemmers.h>
 #include <DataTypes/DataTypeString.h>
@@ -33,4 +33,4 @@ void StorageSystemStemmers::fillData(MutableColumns & res_columns, ContextPtr, c
 
 }
 
-#endif
+#endif /// USE_LIBSTEMMER
