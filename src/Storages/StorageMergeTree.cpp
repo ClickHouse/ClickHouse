@@ -241,13 +241,21 @@ void StorageMergeTree::startup()
     if (isStaticStorage())
         return;
 
-    clearEmptyParts();
+    /// When `leader_election` is enabled, data lives on shared object storage and only
+    /// the leader may mutate it. Defer startup cleanup (`clearEmptyParts`,
+    /// `clearOldTemporaryDirectories`) until leadership is acquired — otherwise a follower
+    /// would delete parts or temp directories of the real leader during its own startup.
+    /// The cleanup thread will run both periodically after the leadership callback starts it.
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+    {
+        clearEmptyParts();
 
-    /// Temporary directories contain incomplete results of merges (after forced restart)
-    ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+        /// Temporary directories contain incomplete results of merges (after forced restart)
+        ///  and don't allow to reinitialize them, so delete each of them immediately
+        clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
-    /// NOTE background task will also do the above cleanups periodically.
+        /// NOTE background task will also do the above cleanups periodically.
+    }
 
     if ((*getSettings())[MergeTreeSetting::leader_election])
     {
