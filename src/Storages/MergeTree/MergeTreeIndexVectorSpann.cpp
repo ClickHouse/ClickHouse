@@ -73,6 +73,10 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr size_t vector_spann_centroid_assignment_top_k = 1;
+constexpr size_t vector_spann_max_entries_per_posting_list = 65536;
+constexpr float vector_spann_cosine_norm_epsilon = 1e-24f;
+
 const std::set<String> spann_methods = {"spann"};
 
 const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
@@ -113,7 +117,7 @@ Float32 distanceToQuery(unum::usearch::metric_kind_t metric_kind, const Float32 
             nq += q * q;
             nv += v * v;
         }
-        Float64 denom = std::sqrt(std::max(nq * nv, 1e-24));
+        Float64 denom = std::sqrt(std::max(nq * nv, static_cast<Float64>(vector_spann_cosine_norm_epsilon)));
         return static_cast<Float32>(1.0 - dot / denom);
     }
     if (metric_kind == unum::usearch::metric_kind_t::ip_k)
@@ -379,14 +383,15 @@ std::pair<std::vector<SpannCentroidOffset>, std::vector<std::vector<SpannPosting
     for (size_t i = 0; i < accumulated_vectors.size(); ++i)
     {
         const auto & vec = accumulated_vectors[i];
-        auto search_result = centroid_index->search(vec.data(), 1, unum::usearch::index_dense_t::any_thread(), false, default_expansion_search);
+        auto search_result = centroid_index->search(
+            vec.data(), vector_spann_centroid_assignment_top_k, unum::usearch::index_dense_t::any_thread(), false, default_expansion_search);
         if (!search_result)
             throw Exception(ErrorCodes::INCORRECT_DATA, "vector_spann centroid search failed: {}", search_result.error.release());
 
-        if (search_result.size() != 1)
+        if (search_result.size() != vector_spann_centroid_assignment_top_k)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "vector_spann centroid search expected one neighbour");
 
-        std::vector<unum::usearch::index_dense_t::vector_key_t> centroid_key_storage(1);
+        std::vector<unum::usearch::index_dense_t::vector_key_t> centroid_key_storage(vector_spann_centroid_assignment_top_k);
         search_result.dump_to(centroid_key_storage.data());
         const size_t centroid_key = static_cast<size_t>(centroid_key_storage[0]);
         if (centroid_key >= k)
@@ -407,7 +412,7 @@ std::pair<std::vector<SpannCentroidOffset>, std::vector<std::vector<SpannPosting
     for (size_t i = 0; i < k; ++i)
     {
         offsets[i].offset = pos;
-        if (postings_by_centroid[i].size() > 65536)
+        if (postings_by_centroid[i].size() > vector_spann_max_entries_per_posting_list)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "vector_spann posting list for centroid {} has too many entries ({}), consider increasing centroid_ratio",

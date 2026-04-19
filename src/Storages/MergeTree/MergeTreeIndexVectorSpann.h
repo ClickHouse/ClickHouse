@@ -13,6 +13,10 @@
 namespace DB
 {
 
+static constexpr float default_vector_spann_centroid_ratio = 0.16f;
+static constexpr float default_vector_spann_closure_epsilon = 10.0f;
+static constexpr UInt32 default_vector_spann_max_replicas = 8;
+
 /// Parsed from SQL `INDEX ... TYPE vector_spann(...)` (factory side; not wired yet).
 struct SpannParams
 {
@@ -20,9 +24,9 @@ struct SpannParams
     unum::usearch::metric_kind_t metric_kind{};
     unum::usearch::scalar_kind_t scalar_kind{};
     UsearchHnswParams usearch_hnsw_params;
-    float centroid_ratio = 0.16f;
-    float closure_epsilon = 10.0f;
-    UInt32 max_replicas = 8;
+    float centroid_ratio = default_vector_spann_centroid_ratio;
+    float closure_epsilon = default_vector_spann_closure_epsilon;
+    UInt32 max_replicas = default_vector_spann_max_replicas;
 };
 
 /// One posting-list entry: row offset inside the granule + vector (materialized as Float32 for the skeleton).
