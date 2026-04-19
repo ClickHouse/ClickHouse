@@ -462,11 +462,12 @@ void ClusterFactory::updateFunc()
     LOG_TRACE(log, "SQL shard/cluster catalog background update thread finished");
 }
 
-void ClusterFactory::createShard(
+bool ClusterFactory::createShard(
     const String & shard_name,
     const std::vector<String> & replica_collections,
     UInt32 weight,
-    bool internal_replication)
+    bool internal_replication,
+    bool if_not_exists)
 {
     if (replica_collections.empty())
         throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "CREATE SHARD requires at least one replica collection");
@@ -484,7 +485,11 @@ void ClusterFactory::createShard(
             shard_name);
 
     if (loaded_sql_shards.contains(shard_name))
+    {
+        if (if_not_exists)
+            return false;
         throw Exception(ErrorCodes::SHARD_ALREADY_EXISTS, "SQL SHARD `{}` already exists", shard_name);
+    }
 
     if (loaded_sql_clusters.contains(shard_name))
         throw Exception(ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS, "Name `{}` is already used as SQL CLUSTER", shard_name);
@@ -503,6 +508,7 @@ void ClusterFactory::createShard(
     String create_sql = formatCreateShardStatement(shard_name, replica_collections, weight, internal_replication);
     shards_metadata_storage->writeCreateStatement(shard_name, create_sql, false);
     loaded_sql_shards[shard_name] = std::move(record);
+    return true;
 }
 
 void ClusterFactory::dropShard(const String & shard_name, bool if_exists)
@@ -1580,7 +1586,7 @@ void ClusterFactory::reloadClustersConfig(ContextPtr context)
         auto existing = clusters->getCluster(name);
         if (!existing || existing->getDefinitionSource() != ClusterDefinitionSource::RemoteServersConfig)
             continue;
-        clusters->setCluster(name, std::move(cluster));
+        clusters->setCluster(name, cluster);
     }
 }
 

@@ -70,11 +70,13 @@ public:
 
     void reloadFromSQL();
 
-    void createShard(
+    /// Returns false when `if_not_exists` is true and the SQL shard catalog row already exists (no-op).
+    bool createShard(
         const String & shard_name,
         const std::vector<String> & replica_collections,
         UInt32 weight,
-        bool internal_replication);
+        bool internal_replication,
+        bool if_not_exists = false);
     void dropShard(const String & shard_name, bool if_exists);
     /// `ALTER SHARD name MODIFY PROPERTIES (...)` — merge into existing catalog row; returns false if `IF EXISTS` and shard missing.
     bool updateShardPropertiesFromSQL(const ASTAlterShardQuery & query);

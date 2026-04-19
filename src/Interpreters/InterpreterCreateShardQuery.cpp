@@ -50,10 +50,8 @@ BlockIO InterpreterCreateShardQuery::execute()
         return executeDDLQueryOnCluster(updated_query, ddl_context, params);
     }
 
-    if (query.if_not_exists && ClusterFactory::instance().hasShard(query.shard_name))
-        return {};
-
-    ClusterFactory::instance().createShard(query.shard_name, query.replicas, weight, internal_replication);
+    /// Existence is enforced inside `ClusterFactory::createShard` under its mutex — avoids `IF NOT EXISTS` races with concurrent DDL.
+    ClusterFactory::instance().createShard(query.shard_name, query.replicas, weight, internal_replication, query.if_not_exists);
     return {};
 }
 
