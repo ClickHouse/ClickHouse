@@ -37,7 +37,7 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_lwu_deletes_3' AND column = '_row_exists' AND active AND startsWith(name, 'patch');
 
 SYSTEM START MERGES t_lwu_deletes_3;
-OPTIMIZE TABLE t_lwu_deletes_3 PARTITION ID 'patch-f18f7271629a324b0d26b6ad0b83a6c2-all' FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE t_lwu_deletes_3 PARTITION ID 'patch-59b7611c2f54436e293b58112d725550-all' FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT 'after merge patch';
 SELECT count(), sum(v1), sum(notEmpty(v2)) FROM t_lwu_deletes_3;
