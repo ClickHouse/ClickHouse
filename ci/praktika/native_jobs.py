@@ -113,7 +113,7 @@ def _build_dockers(workflow, job_name):
     dockers = workflow.dockers
     ready = []
     results = []
-    job_status = Result.Status.SUCCESS
+    job_status = Result.Status.OK
     job_info = ""
     dockers = Docker.sort_in_build_order(dockers)
     for d in dockers:
@@ -144,19 +144,19 @@ def _build_dockers(workflow, job_name):
             "docker buildx create --use --name mybuilder --driver docker-container",
             verbose=True,
         ):
-            job_status = Result.Status.FAILED
+            job_status = Result.Status.FAIL
             job_info = "Failed to install docker buildx driver"
 
-    if job_status == Result.Status.SUCCESS:
+    if job_status == Result.Status.OK:
         if not Info().is_local_run and not Docker.login(
             Settings.DOCKERHUB_USERNAME,
             user_password=workflow.get_secret(Settings.DOCKERHUB_SECRET).get_value(),
         ):
-            job_status = Result.Status.FAILED
+            job_status = Result.Status.FAIL
             job_info = "Failed to login to dockerhub"
 
     if (
-        job_status == Result.Status.SUCCESS
+        job_status == Result.Status.OK
         and job_name != Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
     ):
         for docker in dockers:
@@ -189,11 +189,11 @@ def _build_dockers(workflow, job_name):
             if results[-1].is_ok():
                 ready.append(docker.name)
             else:
-                job_status = Result.Status.FAILED
+                job_status = Result.Status.FAIL
                 break
 
     if (
-        job_status == Result.Status.SUCCESS
+        job_status == Result.Status.OK
         and job_name == Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
     ):
         print("Start docker manifest merge")
@@ -234,7 +234,7 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
             print("WARNING: No submodules found, skipping submodule cache")
             return Result.create_from(
                 name="Submodule Cache",
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 stopwatch=stop_watch,
                 info="No submodules",
             )
@@ -269,12 +269,12 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
 
         workflow_config.submodule_cache_hash = cache_hash
         workflow_config.dump()
-        status = Result.Status.SUCCESS
+        status = Result.Status.OK
     except Exception as e:
         print(f"WARNING: Submodule cache failed: {e}")
         traceback.print_exc()
         info = f"{e}\n{traceback.format_exc()}"
-        status = Result.Status.SUCCESS  # non-fatal, jobs fall back to GitHub clone
+        status = Result.Status.OK  # non-fatal, jobs fall back to GitHub clone
 
     return Result.create_from(
         name="Submodule Cache",
@@ -315,7 +315,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         info = "\n".join(infos)
         return Result(
             name="Check Secrets",
-            status=(Result.Status.FAILED if infos else Result.Status.SUCCESS),
+            status=(Result.Status.FAIL if infos else Result.Status.OK),
             start_time=stop_watch.start_time,
             duration=stop_watch.duration,
             info=info,
@@ -330,7 +330,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         ).check()
         return Result(
             name="Check CI DB",
-            status=(Result.Status.FAILED if not res else Result.Status.SUCCESS),
+            status=(Result.Status.FAIL if not res else Result.Status.OK),
             start_time=stop_watch.start_time,
             duration=stop_watch.duration,
             info=info,
@@ -446,7 +446,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # checks:
     if not results or results[-1].is_ok():
         result_ = _check_yaml_up_to_date()
-        if result_.status != Result.Status.SUCCESS:
+        if result_.status != Result.Status.OK:
             print("ERROR: yaml files are outdated - regenerate, commit and push")
         results.append(result_)
 
@@ -454,7 +454,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     #       An error occurred (ThrottlingException) when calling the GetParameter operation (reached max retries: 2): Rate exceeded
     # if results[-1].is_ok() and workflow.secrets:
     #     result_ = _check_secrets(workflow.secrets)
-    #     if result_.status != Result.Status.SUCCESS:
+    #     if result_.status != Result.Status.OK:
     #         print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
     #     results.append(result_)
 
@@ -481,7 +481,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(
                 name="Calculate docker digests",
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 stopwatch=sw_,
             )
         )
@@ -500,7 +500,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                         )
                         workflow_config.set_job_as_filtered(job.name, reason)
                         continue
-            status = Result.Status.SUCCESS
+            status = Result.Status.OK
             workflow_config.dump()
             info = ""
         except Exception as e:
@@ -558,37 +558,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
                 if is_affected:
                     affected_artifacts.extend(job.provides)
-                    if job.provides:
-                        # for cases when artifact report is used instead of real artifacts
-                        affected_artifacts.append(job.name)
-                    # Only add artifact names to all_required_artifacts.
-                    # Job names in requirements are ordering-only dependencies unless
-                    # needs_jobs_from_requires is set, in which case the required job
-                    # must run (cannot be skipped as unaffected).
+                    # Propagate the job name so that downstream jobs
+                    # requiring this job by name are marked as affected
+                    affected_artifacts.append(job.name)
+                    # All items in requires are hard dependencies
                     for req in job.requires:
-                        if req not in job_names:
-                            # Not a job name, must be an artifact name
-                            all_required_artifacts.add(req)
-                        elif job.needs_jobs_from_requires:
-                            print(
-                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as hard dependency"
-                            )
-                            all_required_artifacts.add(req)
-                        else:
-                            print(
-                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as ordering-only dependency"
-                            )
+                        all_required_artifacts.add(req)
                 else:
                     print(f"Job [{job.name}] is not affected by the change")
-                    if not job.provides:
-                        workflow_config.set_job_as_filtered(
-                            job.name, "Not affected by the changed files"
-                        )
-                    else:
-                        print(
-                            f"NOTE: Job [{job.name}] is not affected, but may provide required artifacts"
-                        )
-                        unaffected_jobs_with_artifacts[job.name] = job.provides
+                    unaffected_jobs_with_artifacts[job.name] = job.provides
 
             print(f"All required artifacts [{all_required_artifacts}]")
             print(f"Affected artifacts [{affected_artifacts}]")
@@ -598,12 +576,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                     or job_name in all_required_artifacts
                 ):
                     print(
-                        f"NOTE: Job [{job_name}] provides required artifacts - cannot be skipped"
+                        f"NOTE: Job [{job_name}] is required by affected jobs - cannot be skipped"
                     )
                 else:
                     workflow_config.set_job_as_filtered(
                         job_name,
-                        "Not affected by the changed files, and artifacts are not required",
+                        "Not affected by the changed files and not required",
                     )
 
             workflow_config.dump()
@@ -631,7 +609,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result(
                 name="Cache Lookup",
-                status=Result.Status.SUCCESS if res else Result.Status.FAILED,
+                status=Result.Status.OK if res else Result.Status.FAIL,
                 start_time=stop_watch.start_time,
                 duration=stop_watch.duration,
                 info=info,
@@ -725,7 +703,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result(
                 name="Init Report",
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 start_time=stop_watch.start_time,
                 duration=stop_watch.duration,
             )
@@ -818,7 +796,7 @@ def _finish_workflow(workflow, job_name):
             Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
         )
 
-    ready_for_merge_status = Result.Status.SUCCESS
+    ready_for_merge_status = Result.Status.OK
     ready_for_merge_description = ""
     failed_results = []
     dropped_results = []
@@ -829,7 +807,7 @@ def _finish_workflow(workflow, job_name):
     for result in workflow_result.results:
         if result.name == job_name:
             continue
-        if result.status == Result.Status.SUCCESS:
+        if result.status == Result.Status.OK:
             continue
         if result.status == Result.Status.SKIPPED:
             continue
@@ -874,7 +852,7 @@ def _finish_workflow(workflow, job_name):
                 print(
                     f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to success"
                 )
-                result.status = Result.Status.SUCCESS
+                result.status = Result.Status.OK
                 workflow_result.dump()
                 update_final_report = True
                 continue
@@ -898,7 +876,7 @@ def _finish_workflow(workflow, job_name):
             failed_results.append(result.name)
 
     if failed_results or dropped_results:
-        ready_for_merge_status = Result.Status.FAILED
+        ready_for_merge_status = Result.Status.FAIL
         failed_jobs_csv = ",".join(failed_results)
         if failed_jobs_csv and len(failed_jobs_csv) < 80:
             ready_for_merge_description = f"Failed: {failed_jobs_csv}"
@@ -912,11 +890,11 @@ def _finish_workflow(workflow, job_name):
         fast_test_failed = any(
             "Fast test" in name for name in failed_results
         )
-        if not fast_test_failed and ready_for_merge_status != Result.Status.SUCCESS:
+        if not fast_test_failed and ready_for_merge_status != Result.Status.OK:
             print(
                 f"NOTE: Revert PR detected - setting merge status to success despite failures"
             )
-            ready_for_merge_status = Result.Status.SUCCESS
+            ready_for_merge_status = Result.Status.OK
             ready_for_merge_description = "Revert PR"
 
     if workflow.enable_merge_ready_status:
@@ -939,7 +917,7 @@ def _finish_workflow(workflow, job_name):
         )
     else:
         return Result.create_from(
-            name=job_name, status=Result.Status.SUCCESS, stopwatch=stop_watch
+            name=job_name, status=Result.Status.OK, stopwatch=stop_watch
         )
 
 
