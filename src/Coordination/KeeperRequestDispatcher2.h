@@ -6,7 +6,6 @@
 
 #include <Common/CacheLine.h>
 #include <Common/NonblockingBoundedQueue.h>
-#include <Coordination/KeeperAppendStream.h>
 #include <Coordination/KeeperServer.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
@@ -31,7 +30,7 @@ namespace DB
 ///  * Ordering. Requests from one client session must be executed in the order they arrived.
 ///    To preserve order even when multiple requests are executed concurrently, we rely on nuraft
 ///    leader not reordering requests, on tcp not reordering messages, and on all the plumbing in
-///    between also preserving order. See KeeperAppendStream.
+///    between also preserving order. See nuraft::client_req_stream.
 ///    If leader changes or we lose connection to it, we fail all in-flight requests (their outcome
 ///    is unknown) and open a new stream.
 ///  * Executing reads locally. Read requests don't need to go through raft, and don't even have to
@@ -284,10 +283,12 @@ private:
     /// head_idx is incremented after the slot is fully vacated.
     std::vector<InFlightBatch> in_flight_batches;
 
-    std::shared_ptr<KeeperAppendStream> stream;
+    nuraft::ptr<nuraft::client_req_stream> stream;
 
-    /// True if no requests sent through the current `stream` succeeded yet.
-    std::atomic<bool> current_stream_is_suspect {};
+    /// True if we should sleep for a bit before trying to create a new stream, to avoid spamming
+    /// retries when the leader not ready to process requests.
+    /// Set to false when any request succeeds.
+    std::atomic<bool> current_stream_is_suspect {false};
 
     NonblockingBoundedQueue<KeeperRequestForSession> requests_queue;
     std::atomic<int64_t> requests_queue_bytes {};
@@ -318,6 +319,7 @@ private:
     void popBatch(size_t batch_idx);
     bool tryPopRequest(KeeperRequestForSession & request); // call instead of requests_queue.tryPop
 
+    void recreateStreamWithBackoff();
     void dropInFlightRequests();
 
     void addErrorResponse(const KeeperRequestForSession & request_for_session, Coordination::Error error);

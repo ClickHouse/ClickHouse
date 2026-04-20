@@ -8,6 +8,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/HistogramMetrics.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
 template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
 template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
@@ -175,6 +176,8 @@ void KeeperRequestDispatcher2::shutdown(bool closed_all_connections)
     dispatch_thread.join();
     response_thread.join();
 
+    stream.reset();
+
     /// Drain queues just to check for counter leaks.
     /// Don't bother sending replies because client connections should already be closed by now
     /// (or stuck and timed out, if closed_all_connections is false).
@@ -222,21 +225,27 @@ void KeeperRequestDispatcher2::shutdown(bool closed_all_connections)
     if (!close_requests.empty())
     {
         LOG_INFO(log, "Trying to close {} session(s)", close_requests.size());
-        auto sessions_closing_done_promise = std::make_shared<std::promise<bool>>();
-        auto sessions_closing_done = sessions_closing_done_promise->get_future();
-        KeeperAppendStream temp_stream(server);
-        temp_stream.putRequestBatch(
-            close_requests,
-            [my_sessions_closing_done_promise = std::move(sessions_closing_done_promise)](bool ok)
-            {
-                my_sessions_closing_done_promise->set_value(ok);
-            });
-
-        /// Wait for the requests to reach the leader, don't wait for commit.
-        int64_t session_shutdown_timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::session_shutdown_timeout].totalMilliseconds();
+        uint64_t timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::session_shutdown_timeout].totalMilliseconds();
+        bool sent = false;
         auto start_time = std::chrono::steady_clock::now();
-        if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready ||
-            !sessions_closing_done.get())
+        auto temp_stream = server->raft_instance->open_client_req_stream(timeout_ms);
+        if (temp_stream)
+        {
+            std::vector<nuraft::ptr<nuraft::buffer>> entries;
+            entries.reserve(close_requests.size());
+            for (const auto & r : close_requests)
+                entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
+
+            temp_stream->append(std::move(entries));
+
+            /// Wait for the request to reach the leader, don't wait for commit.
+            while (!temp_stream->is_idle() && std::chrono::steady_clock::now() - start_time < std::chrono::milliseconds(timeout_ms))
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+            sent = temp_stream->is_idle();
+        }
+
+        if (!sent)
             LOG_WARNING(
                 log,
                 "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",
@@ -412,63 +421,71 @@ void KeeperRequestDispatcher2::finishSession(int64_t session_id)
     }
 }
 
+void KeeperRequestDispatcher2::recreateStreamWithBackoff()
+{
+    /// After we lost connection to leader, we want to sleep for multiple reasons:
+    ///  1. If there are requests in flight, wait in hopes that they get committed.
+    ///     (E.g. during graceful leader migration.)
+    ///     After the sleep we'll have to fail the remaining in-flight requests and
+    ///     close their client sessions.
+    ///  2. If there's no healthy leader, we can't do much and can as well wait for
+    ///     leader election to complete before proceeding. This may also give more
+    ///     chance for in-flight requests to get committed and removed from in_flight_batches.
+    ///  3. If streams fail to open or get closed quickly without making any progress,
+    ///     we don't want to spam reconnects very quickly.
+    auto sleep_start = std::chrono::steady_clock::now();
+    while (!shutting_down.load())
+    {
+        auto slept = std::chrono::steady_clock::now() - sleep_start;
+        if (slept >= std::chrono::milliseconds(keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+            break;
+
+        auto is_delaying_reconnect = [&]
+        {
+            return current_stream_is_suspect.load() && slept < std::chrono::milliseconds(
+                keeper_context->getCoordinationSettings()[CoordinationSetting::stream_suspect_retry_delay_ms].totalMilliseconds());
+        };
+        auto is_waiting_for_in_flight_requests = [&]
+        {
+            return head_idx.load() < tail_idx.load() && slept < std::chrono::milliseconds(
+                keeper_context->getCoordinationSettings()[CoordinationSetting::stream_in_flight_drain_timeout_ms].totalMilliseconds());
+        };
+        if (server->isLeaderAlive() && !is_delaying_reconnect() && !is_waiting_for_in_flight_requests())
+            break;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    dropInFlightRequests();
+    stream.reset();
+
+    if (!shutting_down.load())
+    {
+        current_stream_is_suspect.store(true);
+        /// May return nullptr.
+        stream = server->raft_instance->open_client_req_stream(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
+    }
+}
+
 void KeeperRequestDispatcher2::dispatchThread()
 {
     try
     {
         DB::setThreadName(ThreadName::KEEPER_REQUEST);
 
+        int64_t operation_timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+
         auto last_stuck_check_time = std::chrono::steady_clock::now();
         while (!shutting_down.load())
         {
-            int64_t operation_timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
-
             auto now = std::chrono::steady_clock::now();
 
-            /// If stream is broken, drop in-flight requests.
-            if (stream && stream->isBroken())
+            if (!stream || stream->is_abandoned())
             {
-                /// After we lost connection to leader, we want to sleep for multiple reasons:
-                ///  1. If there are requests in flight, wait in hopes that they get committed.
-                ///     (E.g. during graceful leader migration.)
-                ///     After the sleep we'll have to fail the remaining in-flight requests and
-                ///     close their client sessions.
-                ///  2. If there's no healthy leader, we can't do much and can as well wait for
-                ///     leader election to complete before proceeding. This may also give more
-                ///     chance for in-flight requests to get committed and removed from in_flight_batches.
-                ///  3. If there's no healthy leader, we don't want to spam reconnects very quickly.
-                auto sleep_start = now;
-                while (true)
-                {
-                    auto slept = std::chrono::steady_clock::now() - sleep_start;
-                    if (slept >= std::chrono::milliseconds(operation_timeout_ms) || shutting_down.load())
-                        break;
-
-                    auto is_delaying_reconnect = [&]
-                    {
-                        return current_stream_is_suspect.load() && slept < std::chrono::milliseconds(
-                            keeper_context->getCoordinationSettings()[CoordinationSetting::stream_suspect_retry_delay_ms].totalMilliseconds());
-                    };
-                    auto is_waiting_for_in_flight_requests = [&]
-                    {
-                        return head_idx.load() < tail_idx.load() && slept < std::chrono::milliseconds(
-                            keeper_context->getCoordinationSettings()[CoordinationSetting::stream_in_flight_drain_timeout_ms].totalMilliseconds());
-                    };
-                    if (server->isLeaderAlive() && !is_delaying_reconnect() && !is_waiting_for_in_flight_requests())
-                        break;
-
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                }
-
-                dropInFlightRequests();
-                stream.reset();
+                /// If stream is broken, report errors for in-flight requests and create a new stream.
+                recreateStreamWithBackoff();
                 continue;
-            }
-
-            if (!stream)
-            {
-                current_stream_is_suspect.store(true);
-                stream = std::make_shared<KeeperAppendStream>(server);
             }
 
             /// Periodically check that we don't have stuck requests.
@@ -483,7 +500,7 @@ void KeeperRequestDispatcher2::dispatchThread()
                 {
                     if (server->isLeaderAlive())
                         LOG_ERROR(log, "Detected stuck or reordered requests. Dropping. This may indicate a bug.");
-                    stream->markAsBroken();
+                    stream.reset();
                     continue;
                 }
             }
@@ -499,7 +516,9 @@ void KeeperRequestDispatcher2::dispatchThread()
             size_t cur_head_idx = head_idx.load();
             size_t num_batches_in_flight = batch_idx - cur_head_idx;
             int64_t max_response_queue_bytes = int64_t(keeper_context->getCoordinationSettings()[CoordinationSetting::max_response_queue_bytes_size]);
-            if (num_batches_in_flight >= in_flight_batches.size() || response_bytes_in_all_queues.load() > max_response_queue_bytes / 2)
+            if (num_batches_in_flight >= in_flight_batches.size() ||
+                response_bytes_in_all_queues.load() > max_response_queue_bytes / 2 ||
+                !stream->is_ready())
             {
                 /// Too many batches in flight. Busy-wait.
                 ///
@@ -670,7 +689,7 @@ void KeeperRequestDispatcher2::dispatchThread()
 
                     if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
                     {
-                        /// Reconfig requests go through a separate pipeline, can't be fed into KeeperAppendStream.
+                        /// Reconfig requests go through a separate pipeline, can't be fed into client_req_stream.
                         reconfig_requests.push_back(std::move(request));
                         break; // (just to not add a separate limit for number of reconfigs in a batch)
                     }
@@ -784,7 +803,12 @@ void KeeperRequestDispatcher2::dispatchThread()
 
                 /// Finally send the requests to leader.
 
-                stream->putRequestBatch(batch.requests);
+                std::vector<nuraft::ptr<nuraft::buffer>> entries;
+                entries.reserve(batch.requests.size());
+                for (const auto & r : batch.requests)
+                    entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
+
+                stream->append(std::move(entries));
             }
 
             /// Ordering between Reconfig requests and other requests is not very important.
@@ -879,7 +903,7 @@ void KeeperRequestDispatcher2::onCommit(const KeeperRequestForSession & request_
         if (batch.committed_requests > 0)
         {
             chassert(false);
-            LOG_ERROR(log, "Requests that were passed to KeeperAppendStream as one batch ended up not all committed consecutively. This should be impossible!");
+            LOG_ERROR(log, "Requests that were passed to client_req_stream as one batch ended up not all committed consecutively. This should be impossible!");
         }
         return;
     }

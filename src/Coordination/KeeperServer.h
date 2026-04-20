@@ -30,7 +30,7 @@ public:
     };
 
 private:
-    friend class KeeperAppendStream;
+    friend class KeeperRequestDispatcher2;
 
     /**
      * Tiny wrapper around nuraft::raft_server which adds some functions

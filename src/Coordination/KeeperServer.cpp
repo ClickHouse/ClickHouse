@@ -86,6 +86,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsBool nuraft_streaming_mode;
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
+    extern const CoordinationSettingsBool use_new_dispatcher;
 }
 
 namespace ErrorCodes
