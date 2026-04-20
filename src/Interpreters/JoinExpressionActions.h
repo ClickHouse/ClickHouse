@@ -227,13 +227,9 @@ public:
     bool fromLeft() const;
     bool fromRight() const;
     bool fromNone() const;
-    bool isFromSameActions(const JoinActionRef & other) const;
 
     bool isFunction(JoinConditionOperator op) const;
     std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> asBinaryPredicate() const;
-
-    /// Follow alias chain to the underlying non-alias node.
-    JoinActionRef resolveAliases() const;
 
     String dump() const;
 

@@ -5,7 +5,6 @@
 #include <mutex>
 #include <unordered_set>
 
-#include <Common/Logger_fwd.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Interpreters/Context_fwd.h>
 

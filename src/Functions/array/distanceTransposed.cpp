@@ -14,8 +14,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
-#include <IO/WriteHelpers.h>
-
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
 #if USE_SIMSIMD
 #    if defined(__x86_64__) || defined(__i386__)

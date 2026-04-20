@@ -4,7 +4,6 @@
 #include <sys/time.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 
 
 namespace DB

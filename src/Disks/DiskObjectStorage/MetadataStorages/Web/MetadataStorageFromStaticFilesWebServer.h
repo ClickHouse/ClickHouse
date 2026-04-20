@@ -5,8 +5,11 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 
+
 namespace DB
 {
+
+struct PartitionCommand;
 
 class MetadataStorageFromStaticFilesWebServer final : public IMetadataStorage
 {

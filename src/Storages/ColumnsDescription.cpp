@@ -551,12 +551,6 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
     NamesAndTypesList subcolumns_list;
     for (const auto & col : source_list)
     {
-        /// Skip subcolumns of EPHEMERAL columns: they have no physical data
-        /// and no expression to compute them during SELECT.
-        auto it = columns.get<1>().find(col.name);
-        if (it != columns.get<1>().end() && it->default_desc.kind == ColumnDefaultKind::Ephemeral)
-            continue;
-
         auto range = subcolumns.get<1>().equal_range(col.name);
         if (range.first != range.second)
             subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);
@@ -756,7 +750,7 @@ std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescripti
     if (options.with_subcolumns)
     {
         auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & options.kind))
+        if (jt != subcolumns.get<0>().end())
             return ColumnDescription{jt->name, jt->type};
     }
 
@@ -1204,7 +1198,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
-    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
     QueryAnalyzer analyzer(/* only_analyze */ true);

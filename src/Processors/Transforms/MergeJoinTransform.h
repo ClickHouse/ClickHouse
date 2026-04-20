@@ -13,6 +13,8 @@
 
 #include <boost/core/noncopyable.hpp>
 
+#include <Common/PODArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/ReadBuffer.h>
@@ -194,7 +196,7 @@ public:
     FullMergeJoinCursor & operator=(const FullMergeJoinCursor &) = delete;
 
     bool fullyCompleted() const;
-    void setCompleted() { received_all_blocks = true; }
+    void setCompleted() { recieved_all_blocks = true; }
     const Chunk & getCurrent() const;
     void setChunk(Chunk && chunk);
 
@@ -215,7 +217,7 @@ public:
 
 private:
     Chunk current_chunk;
-    bool received_all_blocks = false;
+    bool recieved_all_blocks = false;
 
     std::vector<size_t> key_indices;
     bool is_asof = false;

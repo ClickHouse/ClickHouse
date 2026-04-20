@@ -1,10 +1,6 @@
--- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
--- EXPLAIN output may differ
-
 -- { echo }
 
 SET optimize_read_in_order = 1;
-SET query_plan_read_in_order = 1;
 
 DROP TABLE IF EXISTS test_nullable_order_by;
 CREATE TABLE test_nullable_order_by (x UInt32, y UInt32) ENGINE=MergeTree ORDER BY x;

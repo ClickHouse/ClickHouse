@@ -49,16 +49,6 @@ class _Environment(MetaClasses.Serializable):
     name = "environment"
 
     @classmethod
-    def _load_workflow_job_data(cls) -> dict:
-        if Path(Settings.WORKFLOW_JOB_FILE).is_file():
-            with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
-                return json.load(f)
-        print(
-            f"NOTE: Workflow job file [{Settings.WORKFLOW_JOB_FILE}] does not exist"
-        )
-        return {}
-
-    @classmethod
     def from_env(cls) -> "_Environment":
         WORKFLOW_NAME = os.getenv("GITHUB_WORKFLOW", "")
         JOB_NAME = os.getenv("JOB_NAME", "")
@@ -81,7 +71,14 @@ class _Environment(MetaClasses.Serializable):
         EVENT_TIME = ""
         COMMIT_MESSAGE = ""
 
-        WORKFLOW_JOB_DATA = cls._load_workflow_job_data()
+        if Path(Settings.WORKFLOW_JOB_FILE).is_file():
+            with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
+                WORKFLOW_JOB_DATA = json.load(f)
+        else:
+            print(
+                f"NOTE: Workflow job file [{Settings.WORKFLOW_JOB_FILE}] does not exist"
+            )
+            WORKFLOW_JOB_DATA = {}
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
@@ -257,6 +254,9 @@ class _Environment(MetaClasses.Serializable):
 
     @classmethod
     def from_workflow_data(cls) -> "_Environment":
+        assert Path(
+            Settings.WORKFLOW_STATUS_FILE
+        ).is_file(), f"File not found: {Settings.WORKFLOW_STATUS_FILE}"
         with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
             workflow_status_data = json.load(f)
         # Access the config job data and parse the JSON string in "data" field
@@ -265,31 +265,6 @@ class _Environment(MetaClasses.Serializable):
         config_job_data = workflow_status_data.get(normalized_job_name, {})
         data_str = config_job_data.get("outputs", {}).get("data", "{}")
         env_dict = json.loads(data_str) if isinstance(data_str, str) else data_str
-
-        # Reread instance metadata from the host
-        env_dict["INSTANCE_TYPE"] = (
-            os.getenv("INSTANCE_TYPE", None)
-            or Shell.get_output("ec2metadata --instance-type")
-            or ""
-        )
-        env_dict["INSTANCE_ID"] = (
-            os.getenv("INSTANCE_ID", None)
-            or Shell.get_output("ec2metadata --instance-id")
-            or ""
-        )
-        env_dict["INSTANCE_LIFE_CYCLE"] = (
-            os.getenv("INSTANCE_LIFE_CYCLE", None)
-            or Shell.get_output(
-                "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
-            )
-            or ""
-        )
-
-        # Override WORKFLOW_JOB_DATA with the current job's data so that
-        # check_run_id refers to this job rather than to the config job whose
-        # serialised environment we loaded above.
-        env_dict["WORKFLOW_JOB_DATA"] = cls._load_workflow_job_data()
-
         return cls.from_dict(env_dict)
 
     def add_info(self, info):
@@ -318,25 +293,6 @@ class _Environment(MetaClasses.Serializable):
         self.JOB_NAME = job_name
         self.dump()
         return self
-
-    def set_pr_labels(self, labels: List[str], reset: bool = False) -> None:
-        if reset:
-            self.PR_LABELS = list(labels)
-        else:
-            for label in labels:
-                if label not in self.PR_LABELS:
-                    self.PR_LABELS.append(label)
-        self.dump()
-
-    def add_pr_label(self, label: str) -> None:
-        if label not in self.PR_LABELS:
-            self.PR_LABELS.append(label)
-            self.dump()
-
-    def remove_pr_label(self, label: str) -> None:
-        if label in self.PR_LABELS:
-            self.PR_LABELS.remove(label)
-            self.dump()
 
     @staticmethod
     def get_needs_statuses():

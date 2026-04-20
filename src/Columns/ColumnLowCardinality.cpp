@@ -3,7 +3,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/NumberTraits.h>
-#include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/WeakHash.h>
@@ -21,11 +20,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-}
-
-void throwUnexpectedLowCardinalityIndexType(size_t size)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column: {}", size);
 }
 
 namespace
@@ -350,11 +344,13 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
 {
-    if (nestedIsNullable())
-        return cloneFinalized();
-
     auto res = cloneFinalized();
-    assert_cast<ColumnLowCardinality &>(*res).compactInplaceToNullable();
+    /* Compact required not to share dictionary.
+     * If `shared` flag is not set `cloneFinalized` will return shallow copy
+     * and `nestedToNullable` will mutate source column.
+     */
+    assert_cast<ColumnLowCardinality &>(*res).compactInplace();
+    assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
     return res;
 }
 
@@ -405,7 +401,7 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     /// TODO: optimize with sse.
 
     /// Get indexes per row in column_unique.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> indexes_per_row(getDictionary().size());
+    std::vector<std::vector<size_t>> indexes_per_row(getDictionary().size());
     size_t indexes_size = getIndexes().size();
     for (size_t row = 0; row < indexes_size; ++row)
         indexes_per_row[getIndexes().getUInt(row)].push_back(row);
@@ -571,7 +567,7 @@ size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutatio
     return elements.size();
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
+std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
 {
     auto columns = getIndexes().scatter(num_columns, selector);
     ColumnPtr global_unique_ptr = IColumn::mutate(dictionary.getColumnUniquePtr());
@@ -605,13 +601,6 @@ void ColumnLowCardinality::compactInplace()
 {
     auto indexes = idx.detachIndexes();
     dictionary.compact(indexes);
-    idx.attachIndexes(std::move(indexes));
-}
-
-void ColumnLowCardinality::compactInplaceToNullable()
-{
-    auto indexes = idx.detachIndexes();
-    dictionary.compactToNullable(indexes);
     idx.attachIndexes(std::move(indexes));
 }
 
@@ -672,28 +661,9 @@ void ColumnLowCardinality::Dictionary::compact(MutableColumnPtr & indexes)
     shared = false;
 }
 
-void ColumnLowCardinality::Dictionary::compactToNullable(MutableColumnPtr & indexes)
-{
-    column_unique = compactToNullable(getColumnUnique(), indexes);
-    shared = false;
-}
-
 MutableColumnPtr ColumnLowCardinality::Dictionary::compact(const IColumnUnique & unique, MutableColumnPtr & indexes)
 {
     auto new_column_unique = unique.cloneEmpty();
-    auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
-
-    auto unique_indexes = mapUniqueIndex(*indexes);
-    auto sub_keys = unique.getNestedColumn()->index(*unique_indexes, 0);
-    auto new_indexes = new_unique.uniqueInsertRangeFrom(*sub_keys, 0, sub_keys->size());
-
-    indexes = IColumn::mutate(new_indexes->index(*indexes, 0));
-    return new_column_unique;
-}
-
-MutableColumnPtr ColumnLowCardinality::Dictionary::compactToNullable(const IColumnUnique & unique, MutableColumnPtr & indexes)
-{
-    auto new_column_unique = unique.cloneEmptyNullable();
     auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
 
     auto unique_indexes = mapUniqueIndex(*indexes);
