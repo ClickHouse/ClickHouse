@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 
 SET enable_time_time64_type = 1;
+SET session_timezone = 'UTC';
 
 -- Time from numeric value (45045 = 12:30:45 as seconds since midnight)
 SELECT 'Time from Int64 numeric';
