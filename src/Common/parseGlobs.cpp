@@ -165,7 +165,8 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             if (i + 2 < almost_res.size() && almost_res[i + 2] == '/')
             {
                 /// `**/` → match zero or more path segments (each ending with `/`).
-                buf_final_processing << "([^{}]*/)*";
+                /// Use `[^/]` so directory names containing `{` or `}` are still matched.
+                buf_final_processing << "([^/]*/)*";
                 i += 2;
             }
             else

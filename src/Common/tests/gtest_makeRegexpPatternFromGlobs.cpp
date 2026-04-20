@@ -48,9 +48,9 @@ TEST(Common, makeRegexpPatternFromGlobs)
 
     /// `**` (double-star / globstar) tests
     /// `**/` matches zero or more directory components
-    EXPECT_EQ(makeRegexpPatternFromGlobs("**/file.txt"), "([^{}]*/)*file\\.txt");
-    EXPECT_EQ(makeRegexpPatternFromGlobs("data/**/file.txt"), "data/([^{}]*/)*file\\.txt");
-    EXPECT_EQ(makeRegexpPatternFromGlobs("data/**/sub/**/file.txt"), "data/([^{}]*/)*sub/([^{}]*/)*file\\.txt");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("**/file.txt"), "([^/]*/)*file\\.txt");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("data/**/file.txt"), "data/([^/]*/)*file\\.txt");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("data/**/sub/**/file.txt"), "data/([^/]*/)*sub/([^/]*/)*file\\.txt");
     /// `**` at end (not followed by `/`) keeps old behavior
     EXPECT_EQ(makeRegexpPatternFromGlobs("data/**"), "data/[^/]*[^{}]*");
 
@@ -61,7 +61,9 @@ TEST(Common, makeRegexpPatternFromGlobs)
         EXPECT_TRUE(RE2::FullMatch("data/sub1/part1.tsv", re));       /// one directory level
         EXPECT_TRUE(RE2::FullMatch("data/a/b/part1.tsv", re));        /// two directory levels
         EXPECT_TRUE(RE2::FullMatch("data/a/b/c/part1.tsv", re));      /// three directory levels
-        EXPECT_FALSE(RE2::FullMatch("data/part2.tsv", re));            /// wrong filename
-        EXPECT_FALSE(RE2::FullMatch("other/part1.tsv", re));           /// wrong prefix
+        EXPECT_TRUE(RE2::FullMatch("data/{a}/part1.tsv", re));        /// directory name with braces
+        EXPECT_TRUE(RE2::FullMatch("data/{a}/{b}/part1.tsv", re));    /// multiple brace-containing segments
+        EXPECT_FALSE(RE2::FullMatch("data/part2.tsv", re));           /// wrong filename
+        EXPECT_FALSE(RE2::FullMatch("other/part1.tsv", re));          /// wrong prefix
     }
 }
