@@ -24,7 +24,7 @@ function check_rows_read_client_json()
         result=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT ${fmt} SETTINGS ${SETTINGS}" | grep -o '"rows_read": [0-9]*' | grep -o '[0-9]*')
         if [ -z "$result" ] || [ "$result" -eq 0 ]; then
             echo "${fmt} FAIL: rows_read=${result}"
-            return
+            return 1
         fi
     done
     echo "${fmt} OK"
@@ -36,7 +36,7 @@ function check_rows_read_client_xml()
         result=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT XML SETTINGS ${SETTINGS}" | grep -o '<rows_read>[0-9]*</rows_read>' | grep -o '[0-9]*')
         if [ -z "$result" ] || [ "$result" -eq 0 ]; then
             echo "XML FAIL: rows_read=${result}"
-            return
+            return 1
         fi
     done
     echo "XML OK"
@@ -49,7 +49,7 @@ function check_rows_read_http_json()
         result=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT ${fmt} SETTINGS ${SETTINGS}" | grep -o '"rows_read": [0-9]*' | grep -o '[0-9]*')
         if [ -z "$result" ] || [ "$result" -eq 0 ]; then
             echo "${fmt} HTTP FAIL: rows_read=${result}"
-            return
+            return 1
         fi
     done
     echo "${fmt} HTTP OK"
@@ -61,22 +61,26 @@ function check_rows_read_http_xml()
         result=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT XML SETTINGS ${SETTINGS}" | grep -o '<rows_read>[0-9]*</rows_read>' | grep -o '[0-9]*')
         if [ -z "$result" ] || [ "$result" -eq 0 ]; then
             echo "XML HTTP FAIL: rows_read=${result}"
-            return
+            return 1
         fi
     done
     echo "XML HTTP OK"
 }
 
+status=0
+
 # Verify rows_read > 0 for each format via clickhouse-client
 for fmt in JSON JSONCompact JSONColumnsWithMetadata; do
-    check_rows_read_client_json "$fmt"
+    check_rows_read_client_json "$fmt" || status=1
 done
-check_rows_read_client_xml
+check_rows_read_client_xml || status=1
 
 # Same via HTTP
 for fmt in JSON JSONCompact JSONColumnsWithMetadata; do
-    check_rows_read_http_json "$fmt"
+    check_rows_read_http_json "$fmt" || status=1
 done
-check_rows_read_http_xml
+check_rows_read_http_xml || status=1
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS ${TABLE_NAME}"
+
+exit $status
