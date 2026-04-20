@@ -19,14 +19,12 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -39,7 +37,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/getMostSubtype.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/DivisionUtils.h>
@@ -826,6 +823,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division = IsOperation<Op>::division;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
+    static constexpr bool is_positive_modulo = IsOperation<Op>::positive_modulo;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
@@ -1062,10 +1060,10 @@ class FunctionBinaryArithmetic : public IFunction
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
         /// We construct another function (example: tupleMultiplyByNumber) and call it.
 
-        if constexpr (!is_multiply && !is_division)
+        if constexpr (!is_multiply && !is_division && !is_positive_modulo)
             return {};
 
-        if (isNumber(type0) && is_division)
+        if (isNumber(type0) && (is_division || is_positive_modulo))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
                                                                   "argument of numeric type cannot be first", name);
 
@@ -1073,6 +1071,10 @@ class FunctionBinaryArithmetic : public IFunction
         if constexpr (is_multiply)
         {
             function_name = "tupleMultiplyByNumber";
+        }
+        else if constexpr (is_positive_modulo)
+        {
+            function_name = "tuplePositiveModuloByNumber";
         }
         else // is_division
         {

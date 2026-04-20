@@ -1199,6 +1199,14 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
         fillDistanceColumnAndFilterForVectorSearch(columns, result, part_offsets_auto_column);
     }
+    else if (read_sample_block.has("_distance"))
+    {
+        /// Fill `_distance` with a default value when vector search is not active
+        /// but the column was requested (e.g. via SELECT * with asterisk_include_virtual_columns).
+        auto pos = read_sample_block.getPositionByName("_distance");
+        if (!columns[pos])
+            columns[pos] = ColumnFloat32::create(result.total_rows_per_granule, Float32(0));
+    }
 
     /// Always compute min/max part offset from granule offsets.
     /// Patch parts reading (MergeTreePatchReaderMerge) requires these values

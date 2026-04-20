@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <DataTypes/DataTypesNumber.h>
 #include <csignal>
 #include <filesystem>
 #include <utility>
@@ -22,8 +23,8 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>

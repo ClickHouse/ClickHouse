@@ -39,6 +39,7 @@ def get_run_command(
     buzzhouse: bool,
     targeted_queries_file: Path | None = None,
     compatibility_setting: str | None = None,
+    enable_server_fuzzer: bool = False,
 ) -> str:
     from ci.jobs.ci_utils import is_extended_run
 
@@ -47,6 +48,8 @@ def get_run_command(
         f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
         f"-e FUZZ_TIME_LIMIT='{minutes}m'",
     ]
+    if enable_server_fuzzer:
+        envs.append("-e SERVER_FUZZER_ENABLED=1")
     if targeted_queries_file:
         container_queries_file = f"/workspace/{targeted_queries_file.name}"
         envs.append(f"-e TARGETED_QUERIES_FILE='{container_queries_file}'")
@@ -94,7 +97,7 @@ def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
     except Exception as e:
         logging.warning("[targeted-fuzzer] Step 3 — failed to fetch coverage-relevant tests: %s", e)
         relevant_tests = []
-        relevant_tests_result = Result(name="tests found by coverage", status=Result.StatusExtended.OK, info=f"Skipped: {e}")
+        relevant_tests_result = Result(name="tests found by coverage", status=Result.Status.OK, info=f"Skipped: {e}")
     logging.info("[targeted-fuzzer] Step 3 — coverage-relevant tests (%d)", len(relevant_tests))
 
     # Merge all three sets preserving priority order (changed first)
@@ -160,6 +163,7 @@ def run_fuzz_job(check_name: str):
     WORKSPACE_PATH.mkdir(parents=True, exist_ok=True)
 
     info = Info()
+    job_name = info.job_name
     extra_results = []
     targeted_queries_file: Path | None = None
 
@@ -198,6 +202,7 @@ def run_fuzz_job(check_name: str):
         buzzhouse,
         targeted_queries_file=targeted_queries_file,
         compatibility_setting=compatibility_setting,
+        enable_server_fuzzer="serverfuzz" in job_name,
     )
     logging.info("Going to run %s", run_command)
 
@@ -247,7 +252,7 @@ def run_fuzz_job(check_name: str):
         Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
 
     # parse runner script exit status
-    status = Result.Status.FAILED
+    status = Result.Status.FAIL
     info = []
     is_failed = True
     if server_died:
@@ -256,7 +261,7 @@ def run_fuzz_job(check_name: str):
     elif fuzzer_exit_code in (0, 137, 143):
         # normal exit with timeout or OOM kill
         is_failed = False
-        status = Result.Status.SUCCESS
+        status = Result.Status.OK
         if fuzzer_exit_code == 0:
             info.append("Fuzzer exited with success")
         elif fuzzer_exit_code == 137:
@@ -296,7 +301,7 @@ def run_fuzz_job(check_name: str):
             if sanitizer_oom:
                 print("Sanitizer OOM")
                 info.append("WARNING: Sanitizer OOM - test considered passed")
-                status = Result.Status.SUCCESS
+                status = Result.Status.OK
                 is_failed = False
         else:
             # Check for OOM in dmesg for non-sanitized builds
@@ -327,7 +332,7 @@ def run_fuzz_job(check_name: str):
                 Result(
                     name=parsed_name,
                     info=parsed_info,
-                    status=Result.StatusExtended.FAIL,
+                    status=Result.Status.FAIL,
                     files=files,
                 )
             )

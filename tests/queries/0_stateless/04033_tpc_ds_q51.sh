@@ -4,8 +4,6 @@
 # no-random-settings: random session_timezone, query_plan_join_swap_table, etc. change query results.
 # no-replicated-database: the `tpcds` database is not created in DatabaseReplicated mode.
 # no-flaky-check: TPC-DS queries are too expensive for thread fuzzer.
-# Known issue: NULL may render as ᴺᵁᴸᴸ instead of empty on cached results (https://github.com/ClickHouse/ClickHouse/issues/95168).
-# Once the issue is fixed, update the .reference file.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
