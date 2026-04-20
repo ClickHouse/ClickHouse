@@ -54,8 +54,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
             {"query_plan_optimize_join_order_randomize", 0, 0, "New setting to randomize join order statistics for testing."},
             {"enable_materialized_cte", false, false, "New setting"},
+            {"s3_uri_style", "auto", "auto", "New setting."},
             {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
+            {"parallel_replicas_allow_view_over_mergetree", false, false, "New setting"},
             {"read_in_order_use_virtual_row_per_block", false, false, "Emit virtual row after each block during read-in-order to allow more frequent source reprioritization in MergingSortedTransform."},
             {"distributed_plan_prefer_replicas_over_workers", false, false, "New setting to serialize distributed plan for replicas"},
             {"use_text_index_like_evaluation_by_dictionary_scan", true, true, "New setting"},
@@ -77,6 +79,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_throw_on_quota_exceeded", true, true, "New setting"},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
+            {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
+            {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

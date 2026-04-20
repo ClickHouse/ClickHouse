@@ -5348,7 +5348,7 @@ ORDER BY (test_name, callee_offset)
                 FORMAT Vertical
 
                 See also at
-                - MemoryTrackerDebugBlockerInThread
+                - MemoryTrackerUntrackedAllocationsBlockerInThread
                 - AllocatorWithMemoryTracking
                 """)
         except Exception as e:
