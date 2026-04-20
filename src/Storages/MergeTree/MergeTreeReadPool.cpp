@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <base/range.h>
 #include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
@@ -198,11 +199,22 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
                 data_part->index_granularity_info.fixed_index_granularity,
                 data_part->index_granularity_info.index_granularity_bytes);
 
+            const size_t pre_narrow_marks = batch->ranges.getNumberOfMarks();
             batch->ranges = narrowMarkRangesByProjectionIndex(
                 getCachedPartIndexResult(batch->part_idx),
                 *data_part->index_granularity,
                 std::move(batch->ranges),
                 min_marks_for_seek);
+
+            /// Account for any marks the narrowing dropped so `part_remaining_marks` in
+            /// `MergeTreeIndexBuildContext` still reaches zero on the part's last batch.
+            /// Without this, parts whose marks are pruned pre-task never trigger
+            /// `index_reader_pool->clear`, keeping per-part index state alive for the
+            /// query lifetime.
+            index_build_context->accountForNarrowedMarks(
+                per_part_infos[batch->part_idx]->part_index_in_query,
+                data_part,
+                pre_narrow_marks - batch->ranges.getNumberOfMarks());
 
             /// All marks in this batch are absent from the projection bitmap -- fetch the next batch.
             if (batch->ranges.empty())

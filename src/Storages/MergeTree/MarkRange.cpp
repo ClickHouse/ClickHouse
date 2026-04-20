@@ -163,8 +163,8 @@ MarkRanges intersectMarkRanges(const MarkRanges & a, const MarkRanges & b, size_
 #endif
 
     MarkRanges result;
-    auto it_a = a.begin();
-    auto it_b = b.begin();
+    const auto * it_a = a.begin();
+    const auto * it_b = b.begin();
 
     while (it_a != a.end() && it_b != b.end())
     {

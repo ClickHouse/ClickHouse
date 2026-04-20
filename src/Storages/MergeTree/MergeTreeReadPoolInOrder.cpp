@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
@@ -115,11 +116,19 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
                 data_part->index_granularity_info.fixed_index_granularity,
                 data_part->index_granularity_info.index_granularity_bytes);
 
+            const size_t pre_narrow_marks = mark_ranges_for_task.getNumberOfMarks();
             mark_ranges_for_task = narrowMarkRangesByProjectionIndex(
                 getCachedPartIndexResult(task_idx),
                 *data_part->index_granularity,
                 std::move(mark_ranges_for_task),
                 min_marks_for_seek);
+
+            /// See MergeTreeReadPool::getTask: account for pre-task pruning so the
+            /// per-part index entry is released when the part drains.
+            index_build_context->accountForNarrowedMarks(
+                per_part_infos[task_idx]->part_index_in_query,
+                data_part,
+                pre_narrow_marks - mark_ranges_for_task.getNumberOfMarks());
 
             if (mark_ranges_for_task.empty())
                 continue;

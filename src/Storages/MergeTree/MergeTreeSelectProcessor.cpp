@@ -19,6 +19,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
@@ -126,6 +127,42 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
         index_reader_pool->clear(task.getInfo().data_part);
 
     return index_read_result;
+}
+
+void MergeTreeIndexBuildContext::accountForNarrowedMarks(size_t part_index_in_query, const DataPartPtr & data_part, size_t dropped_marks) const
+{
+    if (dropped_marks == 0)
+        return;
+
+    auto & remaining_marks = part_remaining_marks.at(part_index_in_query).value;
+    /// CAS loop to saturate at zero: `dropped_marks` must correspond to marks the
+    /// pool previously handed out for this part, so the counter should never go
+    /// below zero. `fetch_sub` would wrap on an unsigned underflow and the part's
+    /// index state would leak for the rest of the query. `chassert` is the
+    /// primary tripwire; this loop is cheap insurance for release builds where
+    /// double-accounting could otherwise be silent.
+    size_t before = remaining_marks.load(std::memory_order_acquire);
+    size_t desired = 0;
+    do
+    {
+        if (before < dropped_marks)
+        {
+            chassert(before >= dropped_marks);
+            LOG_ERROR(
+                getLogger("MergeTreeIndexBuildContext"),
+                "accountForNarrowedMarks underflow: part_index_in_query={} remaining_before={} dropped={} (clamping to 0)",
+                part_index_in_query, before, dropped_marks);
+            desired = 0;
+        }
+        else
+        {
+            desired = before - dropped_marks;
+        }
+    }
+    while (!remaining_marks.compare_exchange_weak(before, desired, std::memory_order_acq_rel));
+
+    if (desired == 0)
+        index_reader_pool->clear(data_part);
 }
 
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(

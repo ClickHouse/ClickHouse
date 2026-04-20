@@ -92,6 +92,13 @@ struct MergeTreeIndexBuildContext
         PartRemainingMarks part_remaining_marks_);
 
     MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+
+    /// Account for marks that were pruned by a pool-level narrowing hook before a task
+    /// was created (e.g. by `projection_index_narrow_marks`). Decrements the per-part
+    /// remaining-mark counter by `dropped_marks`; if that brings the counter to zero,
+    /// cleans up the per-part index entry from the reader pool, matching the cleanup
+    /// `getPreparedIndexReadResult` performs when the last task for a part finishes.
+    void accountForNarrowedMarks(size_t part_index_in_query, const DataPartPtr & data_part, size_t dropped_marks) const;
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
