@@ -18,20 +18,29 @@ INSERT INTO t3 SELECT number, toString(number) FROM numbers(100);
 -- Join followed by LIMIT
 SELECT count(*) FROM (
     SELECT * FROM t1 JOIN t2 ON t1.a = t2.a LIMIT 5
-) SETTINGS query_plan_optimize_join_lazy_indexing = 0;
+) SETTINGS query_plan_min_columns_for_join_lazy_indexing = 0;
 
 SELECT count(*) FROM (
     SELECT * FROM t1 JOIN t2 ON t1.a = t2.a LIMIT 5
-) SETTINGS query_plan_optimize_join_lazy_indexing = 1;
+) SETTINGS query_plan_min_columns_for_join_lazy_indexing = 1;
+
+-- Join followed by ORDER BY + LIMIT
+SELECT count(*) FROM (
+    SELECT * FROM t1 JOIN t2 ON t1.a = t2.a ORDER BY t1.a LIMIT 5
+) SETTINGS query_plan_min_columns_for_join_lazy_indexing = 0;
+
+SELECT count(*) FROM (
+    SELECT * FROM t1 JOIN t2 ON t1.a = t2.a ORDER BY t1.a LIMIT 5
+) SETTINGS query_plan_min_columns_for_join_lazy_indexing = 1;
 
 -- Two joins followed by LIMIT
 SELECT count(*) FROM (
     SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a == t3.a LIMIT 5
-) SETTINGS query_plan_optimize_join_lazy_indexing = 0;
+) SETTINGS query_plan_min_columns_for_join_lazy_indexing = 0;
 
 SELECT count(*) FROM (
     SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a == t3.a LIMIT 5
-) SETTINGS query_plan_optimize_join_lazy_indexing = 1;
+) SETTINGS query_plan_min_columns_for_join_lazy_indexing = 1;
 
 -- Limit between joins
 SELECT count() FROM (
@@ -40,7 +49,7 @@ SELECT count() FROM (
         SELECT * FROM t1 JOIN t2 ON t1.a = t2.a LIMIT 5
     ) sub
     JOIN t3 ON sub.a = t3.a
-) SETTINGS query_plan_optimize_join_lazy_indexing = 0;
+) SETTINGS query_plan_min_columns_for_join_lazy_indexing = 0;
 
 SELECT count() FROM (
     SELECT *
@@ -48,7 +57,7 @@ SELECT count() FROM (
         SELECT * FROM t1 JOIN t2 ON t1.a = t2.a LIMIT 5
     ) sub
     JOIN t3 ON sub.a = t3.a
-) SETTINGS query_plan_optimize_join_lazy_indexing = 1;
+) SETTINGS query_plan_min_columns_for_join_lazy_indexing = 1;
 
 DROP TABLE t1;
 DROP TABLE t2;
