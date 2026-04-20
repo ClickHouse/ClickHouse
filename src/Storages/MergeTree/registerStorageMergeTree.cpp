@@ -17,6 +17,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StatisticsDescription.h>
 
 #include <Parsers/ASTCreateQuery.h>
@@ -649,7 +650,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// Partition key may be undefined, but despite this we store it's empty
         /// value in partition_key structure. MergeTree checks this case and use
         /// single default partition with name "all".
-        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, context);
+        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, MergeTreeData::createVirtuals(nullptr), context);
+        metadata.virtuals = MergeTreeData::createVirtuals(&metadata.partition_key);
 
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
@@ -676,8 +678,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// NOTE: store merging_param_key_arg as additional key column. We do it
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
-            args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
+        NamesAndTypesList additional_columns;
+        if (merging_param_key_arg)
+            additional_columns.emplace_back(*merging_param_key_arg, metadata.columns.getPhysical(*merging_param_key_arg).type);
+
+        metadata.sorting_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, metadata.virtuals, context, additional_columns);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
@@ -685,11 +690,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, context);
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, metadata.virtuals, context);
         }
-        else /// Otherwise we don't have explicit primary key and copy it from order by
+        else /// Otherwise we don't have explicit primary key and copy it from order by.
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, context);
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, metadata.virtuals, context);
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
             /// will return false but hasPrimaryKey() will return true.
             metadata.primary_key.definition_ast = nullptr;
@@ -702,7 +707,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
 
         if (args.storage_def->sample_by)
-            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
+            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, metadata.virtuals, context);
 
         bool allow_suspicious_ttl
             = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings[Setting::allow_suspicious_ttl_expressions];
@@ -765,7 +770,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
-        if (!statistics_types_str.empty())
+        if (!statistics_types_str.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         {
             addImplicitStatistics(metadata.columns, statistics_types_str);
         }
@@ -813,15 +818,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Date column name must be an unquoted string{}", verbose_help_message);
 
         auto partition_by_ast = makeASTFunction("toYYYYMM", make_intrusive<ASTIdentifier>(date_column_name));
-
-        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, context);
+        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, MergeTreeData::createVirtuals(nullptr), context);
+        metadata.virtuals = MergeTreeData::createVirtuals(&metadata.partition_key);
 
         ++arg_num;
 
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
-            metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);
+            metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context);
             ++arg_num;
         }
 
@@ -830,14 +835,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// NOTE: store merging_param_key_arg as additional key column. We do it
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
-        metadata.sorting_key
-            = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, context, merging_param_key_arg);
+        NamesAndTypesList additional_columns;
+        if (merging_param_key_arg)
+            additional_columns.emplace_back(*merging_param_key_arg, metadata.columns.getPhysical(*merging_param_key_arg).type);
+
+        metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context, additional_columns);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// In old syntax primary_key always equals to sorting key.
-        metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);
+        metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context);
         /// But it's not explicitly defined, so we evaluate definition to
         /// nullptr
         metadata.primary_key.definition_ast = nullptr;
