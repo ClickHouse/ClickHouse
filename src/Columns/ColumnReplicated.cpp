@@ -591,10 +591,10 @@ void ColumnReplicated::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 
 void ColumnReplicated::rollback(const ColumnCheckpoint & checkpoint)
 {
-    const auto & nested = *assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested;
+    const auto & with_nested = assert_cast<const ColumnCheckpointWithNested &>(checkpoint);
 
-    nested_column->rollback(nested);
-    indexes.resizeAssumeReserve(nested.size);
+    nested_column->rollback(*with_nested.nested);
+    indexes.resizeAssumeReserve(with_nested.size);
 }
 
 void ColumnReplicated::forEachMutableSubcolumn(MutableColumnCallback callback)
