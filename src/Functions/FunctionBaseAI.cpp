@@ -131,11 +131,15 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
 
-    AIQuotaTracker quota(
-        settings[Setting::ai_function_max_input_tokens_per_query].value,
-        settings[Setting::ai_function_max_output_tokens_per_query].value,
-        settings[Setting::ai_function_max_api_calls_per_query].value,
-        settings[Setting::ai_function_throw_on_quota_exceeded].value);
+    {
+        std::lock_guard lock(quota_mutex);
+        if (!quota)
+            quota.emplace(
+                settings[Setting::ai_function_max_input_tokens_per_query].value,
+                settings[Setting::ai_function_max_output_tokens_per_query].value,
+                settings[Setting::ai_function_max_api_calls_per_query].value,
+                settings[Setting::ai_function_throw_on_quota_exceeded].value);
+    }
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -153,7 +157,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        if (quota.checkQuotas())
+        if (quota->checkQuotas())
         {
             result_col->insertDefault();
             ++rows_skipped;
@@ -179,7 +183,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 auto ai_response = provider->call(ai_request, timeouts);
                 ++total_api_calls;
 
-                quota.recordResponse(ai_response.input_tokens, ai_response.output_tokens);
+                quota->recordResponse(ai_response.input_tokens, ai_response.output_tokens);
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
 
