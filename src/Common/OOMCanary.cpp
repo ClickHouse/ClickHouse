@@ -28,6 +28,15 @@
 namespace DB
 {
 
+namespace
+{
+#if defined(SI_KERNEL)
+constexpr Int32 OOM_CANARY_SIGNAL_CODE = SI_KERNEL;
+#else
+constexpr Int32 OOM_CANARY_SIGNAL_CODE = 0;
+#endif
+}
+
 OOMCanary::OOMCanary(ContextMutablePtr context_)
     : context(std::move(context_))
     , log(getLogger("OOMCanary"))
@@ -273,12 +282,26 @@ void OOMCanary::monitorThread()
     {
         int status = 0;
         pid_t current_pid = canary_pid.load(std::memory_order_relaxed);
+
+        if (current_pid <= 0)
+        {
+            LOG_WARNING(log, "OOM canary monitor thread has no valid child pid, exiting");
+            break;
+        }
+
         pid_t result = ::waitpid(current_pid, &status, 0);
 
         if (result < 0)
         {
             if (errno == EINTR)
                 continue;
+
+            if (errno == ECHILD)
+            {
+                LOG_WARNING(log, "OOM canary child pid {} is not waitable (`ECHILD`), exiting monitor thread", current_pid);
+                canary_pid.store(-1, std::memory_order_relaxed);
+                break;
+            }
 
             LOG_ERROR(log, "waitpid() failed for OOM canary pid {}: {}", current_pid, errnoToString());
             break;
@@ -433,7 +456,7 @@ void OOMCanary::onCanaryDied()
         FramePointers empty_frames{};
         collectCrashLog(
             /*signal=*/9,
-            /*signal_code=*/0,
+            /*signal_code=*/OOM_CANARY_SIGNAL_CODE,
             /*thread_id=*/0,
             /*query_id=*/"",
             /*query=*/"",

@@ -63,6 +63,7 @@ CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY \
     --tmp_path "$test_dir/tmp" \
     --user_files_path "$test_dir/user_files" \
     --format_schema_path "$test_dir/format_schemas" \
+    --allow_experimental_oom_canary true \
     --oom_canary_enable false \
     --logger.log "$server_log" \
     --logger.errorlog "$test_dir/error.log" \
