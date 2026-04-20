@@ -2108,10 +2108,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
         LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
 
-        /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
-        context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
-        context->setCurrentTransaction(NO_TRANSACTION_PTR);
-
         /// Declare contexts outside try block so we can reset transactions on all paths.
         /// MergeTreeTransactionHolder destructor calls rollbackTransaction (noexcept),
         /// which uses getCurrentExceptionCode with bare `throw;` - that only works
@@ -2131,6 +2127,16 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         {
             fuzz_session_context = Context::createCopy(context);
             fuzz_session_context->makeSessionContext();
+            /// Reset the transaction (if any) on the fuzz session context to isolate
+            /// fuzzed queries from the caller's transaction state. The transaction pointer
+            /// was copied as a shared_ptr in the copy constructor (see `InterpreterTransactionControlQuery::executeBegin`
+            /// which stores it in both session and query contexts).
+            /// We clear it on the copy, not on the parent `context`: mutating the caller's
+            /// `merge_tree_transaction` races with concurrent readers of the same `Context`
+            /// (e.g. `RESTORE ASYNC` background workers calling `Context::createCopy` under
+            /// the shared `Context::mutex`), and it also has the surprising side effect of
+            /// silently clearing the user's active transaction on the caller session.
+            fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
