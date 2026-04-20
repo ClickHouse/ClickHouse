@@ -18,7 +18,7 @@
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/DeltaMetadataLog.h>
-#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/DistributedCacheServerLog.h>
@@ -79,9 +79,9 @@ void SystemLogQueue<LogElement>::push(LogElement && element)
 
 
     /// Queue resize can allocate memory
-    /// - MemoryTrackerUntrackedAllocationsBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
+    /// - MemoryTrackerDebugBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
     /// - MemoryTrackerBlockerInThread here because this allocation should not be take into account in the query scope (since it will be freed outside of it)
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
@@ -212,7 +212,7 @@ void SystemLogQueue<LogElement>::confirm(SystemLogQueue<LogElement>::Index last_
 template <typename LogElement>
 typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
 {
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
 
     PopResult result;
     size_t prev_ignored_logs = 0;
