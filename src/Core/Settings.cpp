@@ -5226,6 +5226,11 @@ If the number of rows to read from the projection index is less than or equal to
     DECLARE(UInt64, min_table_rows_to_use_projection_index, 1'000'000, R"(
 If the estimated number of rows to read from the table is greater than or equal to this threshold, ClickHouse will try to use the projection index during query execution.
 )", 0) \
+    DECLARE(Bool, projection_index_narrow_marks, false, R"(
+Use the projection index bitmap to narrow main-table mark ranges before distributing work across reading threads.
+
+Avoids loading marks and iterating granules for parts that have no matching rows according to the projection. Most effective for highly selective point lookups on large tables.
+)", 0) \
     DECLARE(Bool, async_socket_for_remote, true, R"(
 Enables asynchronous read from socket while executing remote query.
 

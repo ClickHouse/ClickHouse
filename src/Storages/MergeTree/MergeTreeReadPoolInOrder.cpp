@@ -1,7 +1,16 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool projection_index_narrow_marks;
+}
 
 namespace ErrorCodes
 {
@@ -24,7 +33,8 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    MergeTreeIndexBuildContextPtr index_build_context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
         std::move(mutations_snapshot_),
@@ -42,6 +52,7 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     , has_limit_below_one_block(has_limit_below_one_block_)
     , read_type(read_type_)
     , updater(std::move(updater_))
+    , index_build_context(context_->getSettingsRef()[Setting::projection_index_narrow_marks] ? std::move(index_build_context_) : nullptr)
 {
     per_part_mark_ranges.reserve(parts_ranges.size());
     for (const auto & part_with_ranges : parts_ranges)
@@ -56,28 +67,64 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
             task_idx, per_part_infos.size());
 
     auto & all_mark_ranges = per_part_mark_ranges[task_idx];
-    if (all_mark_ranges.empty())
-        return nullptr;
 
-    MarkRanges mark_ranges_for_task;
-    if (read_type == MergeTreeReadType::InReverseOrder)
+    /// When the projection index narrows a popped range to empty, loop back to pop the
+    /// next range rather than returning nullptr -- nullptr means "no more work for this
+    /// part" and would prematurely terminate reading of remaining ranges. The InOrder
+    /// path has a consume-all branch that leaves `all_mark_ranges` moved-from; when
+    /// that branch narrows to empty there is nothing left to pop, so we return nullptr
+    /// immediately rather than re-entering the loop with a moved-from container.
+    while (true)
     {
-        /// Read ranges from right to left.
-        mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.back()));
-        all_mark_ranges.pop_back();
-    }
-    else if (has_limit_below_one_block)
-    {
-        /// If we need to read few rows, set one range per task to reduce number of read data.
-        mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.front()));
-        all_mark_ranges.pop_front();
-    }
-    else
-    {
-        mark_ranges_for_task = std::move(all_mark_ranges);
-    }
+        if (all_mark_ranges.empty())
+            return nullptr;
 
-    return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);
+        MarkRanges mark_ranges_for_task;
+        bool consumed_all_ranges = false;
+        if (read_type == MergeTreeReadType::InReverseOrder)
+        {
+            /// Read ranges from right to left.
+            mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.back()));
+            all_mark_ranges.pop_back();
+        }
+        else if (has_limit_below_one_block)
+        {
+            /// If we need to read few rows, set one range per task to reduce number of read data.
+            mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.front()));
+            all_mark_ranges.pop_front();
+        }
+        else
+        {
+            mark_ranges_for_task = std::move(all_mark_ranges);
+            consumed_all_ranges = true;
+        }
+
+        if (index_build_context)
+        {
+            const auto & data_part = per_part_infos[task_idx]->data_part;
+            const size_t min_marks_for_seek = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
+                reader_settings.merge_tree_min_rows_for_seek,
+                reader_settings.merge_tree_min_bytes_for_seek,
+                data_part->index_granularity_info.fixed_index_granularity,
+                data_part->index_granularity_info.index_granularity_bytes);
+
+            mark_ranges_for_task = narrowMarkRangesByProjectionIndex(
+                *index_build_context,
+                per_part_infos[task_idx]->part_index_in_query,
+                *data_part->index_granularity,
+                std::move(mark_ranges_for_task),
+                min_marks_for_seek);
+
+            if (mark_ranges_for_task.empty())
+            {
+                if (consumed_all_ranges)
+                    return nullptr;
+                continue;
+            }
+        }
+
+        return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);
+    }
 }
 
 }

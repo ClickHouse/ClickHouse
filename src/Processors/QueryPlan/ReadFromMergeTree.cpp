@@ -472,6 +472,11 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     Names required_columns,
     PoolSettings pool_settings)
 {
+    /// `projection_index_narrow_marks` is a no-op on this path: the parallel-replicas
+    /// pool coordinates mark ranges across replicas via the coordinator and never
+    /// consults `index_build_context` in its `getTask`. Wire narrowing into
+    /// `MergeTreeReadPoolParallelReplicas` before enabling it by default for queries
+    /// that hit this branch.
     const auto & client_info = context->getClientInfo();
 
     auto extension = ParallelReadingExtension{
@@ -602,7 +607,8 @@ Pipe ReadFromMergeTree::readFromPool(
             pool_settings,
             block_size,
             context,
-            dataflow_cache_updater);
+            dataflow_cache_updater,
+            index_build_context);
     }
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
@@ -651,6 +657,9 @@ Pipe ReadFromMergeTree::readInOrder(
 
     if (is_parallel_reading_from_replicas)
     {
+        /// As in `readFromPoolParallelReplicas`, `projection_index_narrow_marks` is a
+        /// no-op here: the parallel-replicas in-order pool doesn't consult
+        /// `index_build_context` in its `getTask` either.
         const auto & client_info = context->getClientInfo();
         ParallelReadingExtension extension{
             all_ranges_callback.value(),
@@ -699,7 +708,8 @@ Pipe ReadFromMergeTree::readInOrder(
             pool_settings,
             block_size,
             context,
-            dataflow_cache_updater);
+            dataflow_cache_updater,
+            index_build_context);
     }
 
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan

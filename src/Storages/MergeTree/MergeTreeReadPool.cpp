@@ -1,7 +1,9 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <base/range.h>
 #include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
@@ -21,6 +23,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool projection_index_narrow_marks;
     extern const SettingsUInt64 read_backoff_max_throughput;
     extern const SettingsUInt64 read_backoff_min_concurrency;
     extern const SettingsMilliseconds read_backoff_min_interval_between_events_ms;
@@ -49,7 +52,8 @@ MergeTreeReadPool::MergeTreeReadPool(
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    MergeTreeIndexBuildContextPtr index_build_context_)
     : MergeTreeReadPoolBase(
           std::move(parts_),
           std::move(mutations_snapshot_),
@@ -67,6 +71,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     , updater(std::move(updater_))
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{pool_settings.threads}
+    , index_build_context(context_->getSettingsRef()[Setting::projection_index_narrow_marks] ? std::move(index_build_context_) : nullptr)
 {
     fillPerThreadInfo(pool_settings.threads, pool_settings.sum_marks);
 }
@@ -163,12 +168,34 @@ std::optional<MergeTreeReadPool::PickedBatch> MergeTreeReadPool::pickNextBatch(s
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
-    auto batch = pickNextBatch(task_idx);
-    if (!batch)
-        return nullptr;
+    while (auto batch = pickNextBatch(task_idx))
+    {
+        if (index_build_context)
+        {
+            const auto & data_part = per_part_infos[batch->part_idx]->data_part;
+            const size_t min_marks_for_seek = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
+                reader_settings.merge_tree_min_rows_for_seek,
+                reader_settings.merge_tree_min_bytes_for_seek,
+                data_part->index_granularity_info.fixed_index_granularity,
+                data_part->index_granularity_info.index_granularity_bytes);
 
-    /// createTask() is costly; intentionally called outside the mutex held by pickNextBatch().
-    return createTask(per_part_infos[batch->part_idx], std::move(batch->ranges), previous_task, updater);
+            batch->ranges = narrowMarkRangesByProjectionIndex(
+                *index_build_context,
+                per_part_infos[batch->part_idx]->part_index_in_query,
+                *data_part->index_granularity,
+                std::move(batch->ranges),
+                min_marks_for_seek);
+
+            /// All marks in this batch are absent from the projection bitmap -- fetch the next batch.
+            if (batch->ranges.empty())
+                continue;
+        }
+
+        /// createTask() is costly; intentionally called outside the mutex held by pickNextBatch().
+        return createTask(per_part_infos[batch->part_idx], std::move(batch->ranges), previous_task, updater);
+    }
+
+    return nullptr;
 }
 
 void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info)

@@ -12,6 +12,9 @@
 namespace DB
 {
 
+struct MergeTreeIndexBuildContext;
+using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
 /** Provides read tasks for MergeTreeThreadSelectAlgorithm in fine-grained batches, allowing for more
  *  uniform distribution of work amongst multiple threads. All parts and their ranges are divided into `threads`
  *  workloads with at most `sum_marks / threads` marks. Then, threads are performing reads from these workloads
@@ -38,7 +41,8 @@ public:
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        MergeTreeIndexBuildContextPtr index_build_context_ = {});
 
     ~MergeTreeReadPool() override = default;
 
@@ -119,6 +123,8 @@ private:
 
     std::vector<ThreadTask> threads_tasks TSA_GUARDED_BY(mutex);
     std::set<size_t> remaining_thread_tasks TSA_GUARDED_BY(mutex);
+
+    MergeTreeIndexBuildContextPtr index_build_context;
 
     LoggerPtr log = getLogger("MergeTreeReadPool");
 };
