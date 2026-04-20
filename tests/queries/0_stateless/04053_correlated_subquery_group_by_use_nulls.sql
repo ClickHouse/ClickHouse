@@ -33,3 +33,15 @@ WHERE number >= (SELECT number - 1)
 GROUP BY number
 WITH ROLLUP
 ORDER BY number ASC NULLS FIRST;
+
+-- Correlated lambda capture under `group_by_use_nulls` + ROLLUP exercises the
+-- non-factory function path in `reconcileInputTypesAfterDecorrelation` (`FunctionCapture`
+-- is not registered in `FunctionFactory` and therefore cannot be rebuilt). This is a
+-- pre-existing limitation of `FunctionCapture` (it captures the original type of the
+-- outer column, but the actual column is wrapped in `Nullable` after ROLLUP). We do
+-- not regress here: the same `FunctionCapture` mismatch error is reported as on master.
+SELECT number, (SELECT arrayMap(x -> number + x, [1, 2, 3])), sum(number) AS val
+FROM numbers(5)
+GROUP BY number
+WITH ROLLUP
+ORDER BY number ASC NULLS FIRST; -- { serverError LOGICAL_ERROR }
