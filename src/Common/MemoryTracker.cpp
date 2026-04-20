@@ -8,7 +8,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
 #include <Common/ProfileEvents.h>
@@ -247,9 +247,7 @@ void incrementAllocationWithoutCheck(Int64 size)
 
     ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheckBytes, size);
 
-    /// In release builds, `isBlocked` is always true, so only profile events are collected;
-    /// the trace sending below is debug/sanitizer-only.
-    if (MemoryTrackerDebugBlockerInThread::isBlocked())
+    if (MemoryTrackerUntrackedAllocationsBlockerInThread::isBlocked())
         return;
 
     /// The choice is arbitrary (maybe we should decrease it)
@@ -257,16 +255,11 @@ void incrementAllocationWithoutCheck(Int64 size)
 
     if (size > threshold)
     {
-        auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
-        MemoryTrackerBlockerInThread tracker_blocker(VariableContext::Global);
-        /// Forbid recursive calls
-        [[maybe_unused]] MemoryTrackerDebugBlockerInThread debug_blocker;
-
         try
         {
             DB::TraceSender::send(DB::TraceType::MemoryAllocatedWithoutCheck, StackTrace(), DB::TraceSender::Extras{
                 .size = size,
-                .memory_blocked_context = memory_blocked_context,
+                .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
             });
         }
         catch (const std::exception &) // NOLINT(bugprone-empty-catch)

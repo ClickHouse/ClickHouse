@@ -230,6 +230,16 @@ public:
 
     String getName() const override { return "ConvertingAggregatedToChunksWithMergingSource"; }
 
+    void cancel(CancelReason reason) noexcept override
+    {
+        /// When 2-level aggregation is being used ConvertingAggregatedToChunksTransform expects
+        /// to receive data from all sources, so we do not need to stop the processor here.
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+
 protected:
     Chunk generate() override
     {

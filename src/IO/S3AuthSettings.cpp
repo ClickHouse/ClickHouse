@@ -13,10 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 #define CLIENT_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, "", 0) \
@@ -31,7 +27,8 @@ namespace ErrorCodes
     DECLARE(Bool, use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, "", 0) \
     DECLARE(Bool, is_virtual_hosted_style, false, "", 0) \
     DECLARE(Bool, disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, "", 0) \
-    DECLARE(Bool, gcs_issue_compose_request, false, "", 0)
+    DECLARE(Bool, gcs_issue_compose_request, false, "", 0) \
+    DECLARE(S3UriStyle, uri_style, S3UriStyle::AUTO, "", 0)
 
 #define AUTH_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, access_key_id, "", "", 0) \
@@ -72,28 +69,6 @@ CLIENT_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 namespace S3
 {
 
-namespace
-{
-bool setValueFromConfig(
-    const Poco::Util::AbstractConfiguration & config, const std::string & path, typename S3AuthSettingsImpl::SettingFieldRef & field)
-{
-    if (!config.has(path))
-        return false;
-
-    auto which = field.getValue().getType();
-    if (isInt64OrUInt64FieldType(which))
-        field.setValue(config.getUInt64(path));
-    else if (which == Field::Types::String)
-        field.setValue(config.getString(path));
-    else if (which == Field::Types::Bool)
-        field.setValue(config.getBool(path));
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
-
-    return true;
-}
-}
-
 
 S3AuthSettings::S3AuthSettings() : impl(std::make_unique<S3AuthSettingsImpl>())
 {
@@ -107,7 +82,7 @@ S3AuthSettings::S3AuthSettings(
     {
         auto path = fmt::format("{}.{}", config_prefix, field.getName());
 
-        bool updated = setValueFromConfig(config, path, field);
+        bool updated = S3::setValueFromConfig(config, path, field);
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();

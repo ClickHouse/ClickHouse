@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if WITH_LIBSTEMMER
+#if USE_LIBSTEMMER
 
 #include <algorithm>
 #include <cstring>
@@ -276,4 +276,4 @@ Nullable and LowCardinality variants of String and FixedString are supported.
 
 }
 
-#endif
+#endif /// USE_LIBSTEMMER

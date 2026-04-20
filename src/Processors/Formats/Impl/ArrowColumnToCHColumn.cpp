@@ -1804,7 +1804,7 @@ static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_
     std::shared_ptr<arrow::DataType> build_type = unwrapArrowExtensionTypesRecursively(field->type());
 
     std::unique_ptr<arrow::ArrayBuilder> array_builder;
-    arrow::Status status = MakeBuilder(arrow::default_memory_pool(), build_type, &array_builder);
+    arrow::Status status = MakeBuilder(ArrowMemoryPool::instance(), build_type, &array_builder);
     checkStatus(status, field->name(), format_name);
 
     std::shared_ptr<arrow::Array> arrow_array;

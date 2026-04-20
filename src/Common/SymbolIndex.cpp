@@ -3,7 +3,7 @@
 #include <base/MemorySanitizer.h>
 #include <base/hex.h>
 #include <base/sort.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
@@ -792,7 +792,7 @@ const SymbolIndex & SymbolIndex::instance()
     ///
     ///   __cxa_guard_acquire detected recursive initialization: do you have a function-local static variable whose initialization depends on that function
     ///
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
     static SymbolIndex instance;
     return instance;
 }
