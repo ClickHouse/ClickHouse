@@ -98,11 +98,13 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     ContextPtr context_,
     const Block & index_sample_block,
     TokenizerPtr tokenizer_,
-    MergeTreeIndexTextPreprocessorPtr preprocessor_)
+    MergeTreeIndexTextPreprocessorPtr preprocessor_,
+    bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
     , tokenizer(tokenizer_)
     , preprocessor(preprocessor_)
+    , has_positions(has_positions_)
 {
     if (!predicate)
     {
@@ -174,6 +176,7 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
         case RPNElement::FUNCTION_EQUALS:
         case RPNElement::FUNCTION_LIKE:
         case RPNElement::FUNCTION_HAS_ALL_TOKENS:
+        case RPNElement::FUNCTION_HAS_PHRASE:
         case RPNElement::FUNCTION_UNKNOWN:
         case RPNElement::ALWAYS_TRUE:
         case RPNElement::ALWAYS_FALSE:
@@ -223,6 +226,9 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         return TextIndexDirectReadMode::Exact;
     }
 
+    if (function_name == "hasPhrase")
+        return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+
     if (function_name == "equals"
         || function_name == "has"
         || function_name == "mapContainsKey"
@@ -236,9 +242,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         return is_array_tokenizer && !has_preprocessor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
-
     if (function_name == "like"
-        || function_name == "hasPhrase"
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "mapContainsKeyLike"
@@ -299,6 +303,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
         {RPNElement::FUNCTION_EQUALS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
+         RPNElement::FUNCTION_HAS_PHRASE,
          RPNElement::FUNCTION_LIKE,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_MATCH});
@@ -336,6 +341,15 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS)
         {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
+            rpn_stack.emplace_back(exists_in_granule, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_HAS_PHRASE)
+        {
+            /// At the granule level, phrase matching degrades to "all tokens must exist".
+            /// Actual positional phrase checking is done at the row level via position data.
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
@@ -783,6 +797,29 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
+        const String value = preprocessor->processConstant(value_field.safeGet<String>());
+
+        /// When positions are available, use phrase search with positional intersection.
+        if (has_positions)
+        {
+            /// For phrase queries, we need tokens in their original order with duplicates preserved.
+            std::vector<String> phrase_tokens;
+            tokenizer->stringToTokens(value.data(), value.size(), phrase_tokens);
+            if (phrase_tokens.empty())
+                return false;
+
+            /// The sorted+deduplicated tokens are used for granule-level filtering (all tokens must exist).
+            auto unique_tokens = tokenizer->compactTokens(phrase_tokens);
+            std::sort(unique_tokens.begin(), unique_tokens.end());
+
+            auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Phrase, direct_read_mode, std::move(unique_tokens));
+            query->phrase_tokens = std::move(phrase_tokens);
+            out.function = RPNElement::FUNCTION_HAS_PHRASE;
+            out.text_search_queries.emplace_back(std::move(query));
+            return true;
+        }
+
+        /// Without positions, fallback to "all tokens must exist".
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));

@@ -2,6 +2,8 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
+#include <Storages/MergeTree/TextIndexPhraseSearch.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -307,6 +309,26 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
     }
 }
 
+void MergeTreeReaderTextIndex::initializePositionsStream()
+{
+    const auto & substreams = index.index->getSubstreams();
+
+    /// The positions substream is the 4th one (index 3), only present when positions are enabled.
+    if (substreams.size() < 4)
+        return;
+
+    const auto & data_part = getDataPart();
+    const auto & substream = substreams[3];
+
+    positions_stream = makeTextIndexInputStream(
+        data_part->getDataPartStoragePtr(),
+        index.index->getFileName() + substream.suffix,
+        substream.extension,
+        MergeTreeIndexReader::patchSettings(settings, substream.type));
+
+    positions_stream->seekToStart();
+}
+
 size_t MergeTreeReaderTextIndex::readRows(
     size_t from_mark,
     size_t current_task_last_mark,
@@ -356,6 +378,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         is_initialized = true;
         analyzeTokensCardinality();
         initializePostingStreams();
+        initializePositionsStream();
     }
 
     const bool any_use_fallback = !use_fallback.empty() && std::ranges::any_of(use_fallback, [](bool b) { return b; });
@@ -381,7 +404,27 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
         /// contains no more data rows than actually exist in the part
         size_t rows_to_read = std::min(index_granularity.getMarkRows(from_mark), max_rows_to_read - read_rows);
-        auto mark_postings = readPostingsIfNeeded(from_mark);
+
+        /// Only read posting lists if there are non-phrase virtual columns that need them.
+        /// Phrase-mode columns use position data and don't need per-mark postings.
+        const auto & cond = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+        bool needs_postings = false;
+        for (size_t i = 0; i < columns_to_read.size(); ++i)
+        {
+            if (is_always_true[i] || use_fallback[i])
+                continue;
+
+            auto search_query = cond.getSearchQueryForVirtualColumn(columns_to_read[i].name);
+            if (search_query && search_query->search_mode != TextSearchMode::Phrase)
+            {
+                needs_postings = true;
+                break;
+            }
+        }
+
+        PostingsMap mark_postings;
+        if (needs_postings)
+            mark_postings = readPostingsIfNeeded(from_mark);
 
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
@@ -490,6 +533,24 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
 
             cardinality = static_cast<double>(total_rows) * (1.0 - cardinality);
             return cardinality;
+        }
+        case TextSearchMode::Phrase:
+        {
+            /// For phrase queries, estimate as intersection (all tokens must appear).
+            /// The actual phrase constraint makes it even more selective, but this is a safe upper bound.
+            double log_cardinality = 0.0;
+
+            for (const auto & token : query.tokens)
+            {
+                auto it = remaining_tokens.find(token);
+                if (it == remaining_tokens.end())
+                    return 0;
+
+                log_cardinality += std::log(static_cast<double>(it->second->cardinality));
+            }
+
+            log_cardinality -= static_cast<double>(query.tokens.size() - 1) * std::log(static_cast<double>(total_rows));
+            return std::exp(log_cardinality);
         }
     }
 }
@@ -717,6 +778,13 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
         return;
     }
 
+    /// Phrase mode uses cached position data, not per-mark posting lists.
+    if (search_query->search_mode == TextSearchMode::Phrase)
+    {
+        applyPostingsPhrase(column, search_query, old_size, row_offset, num_rows);
+        return;
+    }
+
     if (postings.empty())
         return;
 
@@ -735,6 +803,82 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     else
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
+    }
+}
+
+void MergeTreeReaderTextIndex::applyPostingsPhrase(
+    IColumn & column,
+    const TextSearchQueryPtr & search_query,
+    size_t column_offset,
+    size_t row_offset,
+    size_t num_rows)
+{
+    if (!positions_stream || search_query->phrase_tokens.empty())
+        return;
+
+    /// Build a cache key from the function name + phrase tokens.
+    /// For the same phrase query, the result is the same across marks within a granule.
+    String cache_key = search_query->function_name;
+    for (const auto & token : search_query->phrase_tokens)
+    {
+        cache_key += '|';
+        cache_key += token;
+    }
+
+    auto cache_it = cached_phrase_results.find(cache_key);
+    if (cache_it == cached_phrase_results.end())
+    {
+        /// Cache miss: read position data and compute phrase intersection.
+        const auto & remaining_tokens = granule->getRemainingTokens();
+
+        std::vector<UInt64> position_offsets;
+        position_offsets.reserve(search_query->phrase_tokens.size());
+        for (const auto & token : search_query->phrase_tokens)
+        {
+            auto it = remaining_tokens.find(token);
+            if (it == remaining_tokens.end() || !(it->second->header & PostingsSerialization::Flags::HasPositions))
+            {
+                position_offsets.clear();
+                break;
+            }
+
+            const auto & token_info = *it->second;
+            position_offsets.emplace_back(token_info.position_offset);
+        }
+        position_offsets.shrink_to_fit();
+
+        if (position_offsets.empty())
+        {
+            cache_it = cached_phrase_results.emplace(cache_key, std::vector<UInt32>{}).first;
+        }
+        else
+        {
+            std::vector<std::vector<RoaringishEntry>> position_lists;
+            position_lists.reserve(position_offsets.size());
+
+            auto * data_buffer = positions_stream->getDataBuffer();
+            for (auto position_offset : position_offsets)
+            {
+                positions_stream->seekToMark({position_offset, 0});
+                auto & positions = position_lists.emplace_back();
+                TextIndexPositionCodec::decode(*data_buffer, positions);
+            }
+
+            auto matching = TextIndexPhraseSearch::phraseSearch(position_lists);
+            cache_it = cached_phrase_results.emplace(cache_key, std::move(matching)).first;
+        }
+    }
+
+    const auto & matching_doc_ids = cache_it->second;
+
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    for (UInt32 doc_id : matching_doc_ids)
+    {
+        if (doc_id < row_offset || doc_id >= row_offset + num_rows)
+            continue;
+
+        size_t relative_row_number = doc_id - row_offset;
+        column_data[column_offset + relative_row_number] = 1;
     }
 }
 

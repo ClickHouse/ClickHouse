@@ -23,6 +23,7 @@ enum class TextSearchMode : uint8_t
 {
     Any,
     All,
+    Phrase,
 };
 
 enum class TextIndexDirectReadMode : uint8_t
@@ -45,6 +46,8 @@ struct TextSearchQuery
     TextIndexDirectReadMode direct_read_mode;
     std::vector<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
+    /// not sorted, not deduplicated
+    std::vector<String> phrase_tokens;
 
     SipHash getHash() const;
 };
@@ -65,7 +68,8 @@ public:
         ContextPtr context_,
         const Block & index_sample_block,
         TokenizerPtr tokenizer_,
-        MergeTreeIndexTextPreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        bool has_positions_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -106,6 +110,7 @@ private:
             FUNCTION_MATCH,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
+            FUNCTION_HAS_PHRASE,
             FUNCTION_LIKE,
             /// Can take any value
             FUNCTION_UNKNOWN,
@@ -172,6 +177,8 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    /// Whether the index has position data for phrase queries.
+    bool has_positions = false;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index
