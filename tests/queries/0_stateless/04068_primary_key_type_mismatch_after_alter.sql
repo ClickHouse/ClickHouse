@@ -283,7 +283,7 @@ DROP TABLE t_pk_type_mismatch_18;
 
 -- Test 19: DateTime64/DateTime forward lifecycle with `set` index. Key is DateTime64
 -- (setting=1), index is DateTime (setting=0). Exercises the per-index CAST path on a
--- fixed-width width difference (8 bytes Decimal64 vs 4 bytes UInt32) to cover the
+-- fixed-width difference (8 bytes Decimal64 vs 4 bytes UInt32) to cover the
 -- same mechanism for datetime types.
 DROP TABLE IF EXISTS t_pk_type_mismatch_19;
 SET enable_extended_results_for_datetime_functions = 1;
