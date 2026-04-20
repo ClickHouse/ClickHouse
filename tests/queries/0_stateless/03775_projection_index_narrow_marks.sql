@@ -1,13 +1,10 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
 
 -- { echo ON }
-
 SET enable_analyzer = 1;
 SET min_table_rows_to_use_projection_index = 0;
 SET max_projection_rows_to_use_projection_index = 1000000000;
-
 DROP TABLE IF EXISTS t_narrow;
-
 CREATE TABLE t_narrow
 (
     id UInt64,
@@ -17,28 +14,21 @@ CREATE TABLE t_narrow
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 32;
-
 INSERT INTO t_narrow
     SELECT number, unhex(hex(sipHash128(toString(number)))), 'x'
     FROM numbers(100000);
-
 INSERT INTO t_narrow
     SELECT 100000 + number, unhex(hex(sipHash128(toString(100000 + number)))), 'x'
     FROM numbers(100000);
-
 OPTIMIZE TABLE t_narrow FINAL;
-
 CREATE TEMPORARY TABLE _tid AS SELECT trace_id AS v FROM t_narrow LIMIT 1;
-
 -- Both paths return the same result.
 SELECT 'off', count()
 FROM t_narrow WHERE trace_id = (SELECT v FROM _tid)
 SETTINGS optimize_use_projection_filtering = 1, projection_index_narrow_marks = 0;
-
 SELECT 'on', count()
 FROM t_narrow WHERE trace_id = (SELECT v FROM _tid)
 SETTINGS optimize_use_projection_filtering = 1, projection_index_narrow_marks = 1;
-
 -- All columns readable with narrowing enabled.
 SELECT 'match', d.id = e.id
 FROM
@@ -48,5 +38,4 @@ JOIN
     (SELECT * FROM t_narrow WHERE trace_id = (SELECT v FROM _tid)
      SETTINGS optimize_use_projection_filtering = 1, projection_index_narrow_marks = 1) e
 USING (trace_id);
-
 DROP TABLE t_narrow;

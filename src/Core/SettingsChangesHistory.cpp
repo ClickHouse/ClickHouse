@@ -80,6 +80,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
+            {"projection_index_narrow_marks", false, false, "New setting to narrow main-table mark ranges using the projection index bitmap before task distribution."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

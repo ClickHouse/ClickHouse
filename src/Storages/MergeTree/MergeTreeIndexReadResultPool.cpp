@@ -404,20 +404,19 @@ MarkRanges bitmapToMarkRanges(
     else
     {
         auto * it = roaring::api::roaring64_iterator_create(bitmap.data.bitmap64);
-        if (it)
-        {
-            /// RAII: `process_offset` can throw on OOM (devector emplace_back),
-            /// and the iterator owns a heap allocation. Without the guard an
-            /// exception path would leak.
-            SCOPE_EXIT(roaring::api::roaring64_iterator_free(it));
+        if (!it)
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failed to allocate roaring64 iterator");
+        /// RAII: `process_offset` can throw on OOM (devector emplace_back), and
+        /// the iterator owns a heap allocation. Without the guard an exception
+        /// path would leak.
+        SCOPE_EXIT(roaring::api::roaring64_iterator_free(it));
 
-            UInt64 buf[batch_size];
-            while (roaring::api::roaring64_iterator_has_value(it))
-            {
-                uint64_t n = roaring::api::roaring64_iterator_read(it, buf, batch_size);
-                for (uint64_t i = 0; i < n; ++i)
-                    process_offset(buf[i]);
-            }
+        UInt64 buf[batch_size];
+        while (roaring::api::roaring64_iterator_has_value(it))
+        {
+            uint64_t n = roaring::api::roaring64_iterator_read(it, buf, batch_size);
+            for (uint64_t i = 0; i < n; ++i)
+                process_offset(buf[i]);
         }
     }
 
