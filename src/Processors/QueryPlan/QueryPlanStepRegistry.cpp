@@ -60,6 +60,7 @@ void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerObjectFilterStep(QueryPlanStepRegistry & registry);
+void registerOptimizationBarrierStep(QueryPlanStepRegistry & registry);
 
 void QueryPlanStepRegistry::registerPlanSteps()
 {
@@ -88,6 +89,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerReadFromTableFunctionStep(registry);
     registerBuildRuntimeFilterStep(registry);
     registerObjectFilterStep(registry);
+    registerOptimizationBarrierStep(registry);
 }
 
 }

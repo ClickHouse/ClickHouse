@@ -19,6 +19,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include <Processors/QueryPlan/OptimizationBarrierStep.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -465,6 +466,28 @@ void StorageTimeSeriesSelector::readImpl(
     InterpreterSelectQueryAnalyzer interpreter(select_query_from_data_table, context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+
+    /// Seal the inner plan behind an optimization barrier.
+    ///
+    /// The inner `WHERE id IN (SELECT timeSeriesStoreTags(...) FROM tags_table ...)` has a side
+    /// effect: `timeSeriesStoreTags` populates `ContextTimeSeriesTagsCollector` for every id it
+    /// returns. Downstream functions such as `timeSeriesIdToGroup(id)` read from that collector.
+    ///
+    /// Without this barrier the outer expression can be fused with the inner filter (via
+    /// `tryMergeExpressions`). Then `timeSeriesIdToGroup(id)` may be evaluated before the
+    /// `id IN (SELECT timeSeriesStoreTags(...) FROM tags_table ...)` filter is applied, so it runs
+    /// on ids for which `timeSeriesStoreTags` has not populated the collector yet, causing
+    /// exception "Unknown identifier".
+    ///
+    /// See also https://github.com/ClickHouse/ClickHouse/issues/83611, https://github.com/ClickHouse/ClickHouse/issues/100827.
+    OptimizationBarrierStep::AllowedOptimizations allowed_optimizations;
+    allowed_optimizations.push_down_limit = true;
+    allowed_optimizations.remove_unused_columns = true;
+    allowed_optimizations.read_in_order = true;
+    auto barrier_step = std::make_unique<OptimizationBarrierStep>(query_plan.getCurrentHeader(), allowed_optimizations);
+    barrier_step->setStepDescription(
+        "timeSeriesStoreTags must populate the per-query tag collector before downstream functions read it");
+    query_plan.addStep(std::move(barrier_step));
 }
 
 }

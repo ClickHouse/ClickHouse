@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/OptimizationBarrierStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -124,6 +125,13 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     /// TODO: we can push down limit in some cases if increase the limit value.
     if (typeid_cast<const WindowStep *>(child.get()))
         return 0;
+
+    /// We push down limit through OptimizationBarrierStep if it's allowed.
+    if (auto * barrier = typeid_cast<OptimizationBarrierStep *>(child.get()))
+    {
+        if (!barrier->allow_push_down_limit())
+            return 0;
+    }
 
     /// Now we should decide if pushing down limit possible for this step.
 

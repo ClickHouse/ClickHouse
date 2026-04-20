@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/OptimizationBarrierStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -129,6 +130,9 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
         return findReadingStep(*node.children.front(), data);
 
     if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
+        return findReadingStep(*node.children.front(), data);
+
+    if (auto * barrier = typeid_cast<OptimizationBarrierStep *>(step); barrier && barrier->allow_read_in_order())
         return findReadingStep(*node.children.front(), data);
 
     if (data.read_in_order_through_join)
