@@ -1,0 +1,28 @@
+=== select t ===
+(10,'hello')
+=== select m ===
+{'key1':100}
+=== select arr ===
+[1,2,3]
+=== select n ===
+42
+=== select vec ===
+[1,2,3]
+=== select t.a ===
+10
+=== select t.b ===
+hello
+=== select m.keys ===
+['key1']
+=== select m.values ===
+[100]
+=== select arr.size0 ===
+3
+=== select n.null ===
+0
+=== select vec.1 ===
+[1,2,3]
+=== select id (denied) ===
+ACCESS_DENIED
+=== select t.a after revoke (denied) ===
+ACCESS_DENIED
