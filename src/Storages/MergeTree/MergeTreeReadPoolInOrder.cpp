@@ -4,6 +4,8 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
+#include <utility>
+
 namespace DB
 {
 
@@ -77,17 +79,16 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
 
     /// When the projection index narrows a popped range to empty, loop back to pop the
     /// next range rather than returning nullptr -- nullptr means "no more work for this
-    /// part" and would prematurely terminate reading of remaining ranges. The InOrder
-    /// path has a consume-all branch that leaves `all_mark_ranges` moved-from; when
-    /// that branch narrows to empty there is nothing left to pop, so we return nullptr
-    /// immediately rather than re-entering the loop with a moved-from container.
+    /// part" and would prematurely terminate reading of remaining ranges. The consume-all
+    /// branch uses std::exchange so `all_mark_ranges` is reset to empty at the move site,
+    /// making the next iteration's empty() check well-defined (and keeping clang-tidy's
+    /// use-after-move analyzer happy).
     while (true)
     {
         if (all_mark_ranges.empty())
             return nullptr;
 
         MarkRanges mark_ranges_for_task;
-        bool consumed_all_ranges = false;
         if (read_type == MergeTreeReadType::InReverseOrder)
         {
             /// Read ranges from right to left.
@@ -102,8 +103,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
         }
         else
         {
-            mark_ranges_for_task = std::move(all_mark_ranges);
-            consumed_all_ranges = true;
+            mark_ranges_for_task = std::exchange(all_mark_ranges, {});
         }
 
         if (index_build_context)
@@ -122,11 +122,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
                 min_marks_for_seek);
 
             if (mark_ranges_for_task.empty())
-            {
-                if (consumed_all_ranges)
-                    return nullptr;
                 continue;
-            }
         }
 
         return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);

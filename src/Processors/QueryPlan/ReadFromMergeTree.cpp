@@ -195,6 +195,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsBool projection_index_narrow_marks;
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool distributed_index_analysis_for_non_shared_merge_tree;
     extern const SettingsUInt64 preferred_block_size_bytes;
@@ -570,8 +571,16 @@ Pipe ReadFromMergeTree::readFromPool(
     /** Do not use prefetched read pool if query is trivial limit query.
       * Because time spend during filling per thread tasks can be greater than whole query
       * execution for big tables with small limit.
+      *
+      * Also do not use it when `projection_index_narrow_marks` is enabled: the narrowing
+      * hook lives in MergeTreeReadPool / MergeTreeReadPoolInOrder and is not wired into
+      * MergeTreePrefetchedReadPool. Falling back to the non-prefetched pool here ensures
+      * the setting is honored on remote filesystem paths where the prefetched pool is the
+      * default; wiring into the prefetched pool is a follow-up.
       */
-    bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
+    bool use_prefetched_read_pool = query_info.trivial_limit == 0
+        && (allow_prefetched_remote || allow_prefetched_local)
+        && !settings[Setting::projection_index_narrow_marks];
 
     if (use_prefetched_read_pool)
     {
