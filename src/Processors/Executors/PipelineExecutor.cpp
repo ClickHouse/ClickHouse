@@ -93,17 +93,6 @@ const Processors & PipelineExecutor::getProcessors() const
     return graph->getProcessors();
 }
 
-static IProcessor::CancelReason toCancelReason(PipelineExecutor::ExecutionStatus status)
-{
-    switch (status)
-    {
-        case PipelineExecutor::ExecutionStatus::CancelledByUser:    return IProcessor::CancelReason::CancelledByUser;
-        case PipelineExecutor::ExecutionStatus::CancelledByTimeout: return IProcessor::CancelReason::CancelledByTimeout;
-        case PipelineExecutor::ExecutionStatus::Exception:          return IProcessor::CancelReason::Exception;
-        default:                                                    return IProcessor::CancelReason::Unknown;
-    }
-}
-
 void PipelineExecutor::cancel(ExecutionStatus reason)
 {
     /// It is allowed to cancel not started query by user.
@@ -112,7 +101,7 @@ void PipelineExecutor::cancel(ExecutionStatus reason)
 
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
-    graph->cancel(toCancelReason(reason));
+    graph->cancel();
 }
 
 void PipelineExecutor::cancelReading()
@@ -120,7 +109,7 @@ void PipelineExecutor::cancelReading()
     if (!cancelled_reading)
     {
         cancelled_reading = true;
-        graph->cancel(IProcessor::CancelReason::PartialResult);
+        graph->cancel(/*cancel_all_processors*/ false);
     }
 }
 

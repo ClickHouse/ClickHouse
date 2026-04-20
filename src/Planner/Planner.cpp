@@ -1,5 +1,4 @@
 #include <Planner/Planner.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
@@ -1164,12 +1163,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
         && query_analysis_result.fractional_offset == 0
         && !query_node.isDistinct() && !query_node.hasLimitBy()
         && !settings[Setting::extremes] && !has_withfill;
-
-    /// `isToAggregationState` covers both `WithMergeableStateAfterAggregation` (stage 3) and
-    /// `WithMergeableStateAfterAggregationAndLimit` (stage 4). OFFSET must not be applied at
-    /// either stage because OFFSET means skipping rows from the entire query result, not from each
-    /// shard individually.
-    bool apply_offset = !query_processing_info.isToAggregationState();
+    bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
     if (apply_prelimit)
     {
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, /* do_not_skip_offset= */!apply_offset);
@@ -1536,8 +1530,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            std::make_shared<GlobalPlannerContext>(
-                nullptr, nullptr, nullptr, collectFiltersForAnalysis(query_tree, subquery_options, nullptr)));
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, collectFiltersForAnalysis(query_tree, subquery_options, nullptr)));
         subquery_planner.buildQueryPlanIfNeeded();
 
         auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
@@ -1639,7 +1632,7 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
                 Planner cte_planner(
                     cte_subquery,
                     cte_options,
-                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
                 cte_planner.buildQueryPlanIfNeeded();
 
                 auto cte_plan = std::move(cte_planner).extractQueryPlan();
@@ -1751,7 +1744,6 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
         std::make_shared<GlobalPlannerContext>(
             findQueryForParallelReplicas(query_tree, select_query_options),
             findTableForParallelReplicas(query_tree, select_query_options),
-            findTableUnionForParallelReplicas(query_tree, select_query_options),
             collectFiltersForAnalysis(query_tree, select_query_options, post_filter_))))
 {
 }
@@ -2344,11 +2336,7 @@ void Planner::buildPlanForQueryNode()
             addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
-        /// `isToAggregationState` covers both `WithMergeableStateAfterAggregation` (stage 3) and
-        /// `WithMergeableStateAfterAggregationAndLimit` (stage 4). OFFSET must not be applied at
-        /// either stage because OFFSET means skipping rows from the entire query result, not from each
-        /// shard individually.
-        const bool apply_offset = !query_processing_info.isToAggregationState();
+        const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
         if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 

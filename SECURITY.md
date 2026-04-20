@@ -14,10 +14,9 @@ The following versions of ClickHouse server are currently supported with securit
 
 | Version | Supported |
 |:-|:-|
-| 26.3 | ✔️ |
 | 26.2 | ✔️ |
 | 26.1 | ✔️ |
-| 25.12 | ❌ |
+| 25.12 | ✔️ |
 | 25.11 | ❌ |
 | 25.10 | ❌ |
 | 25.9 | ❌ |
@@ -26,7 +25,7 @@ The following versions of ClickHouse server are currently supported with securit
 | 25.6 | ❌ |
 | 25.5 | ❌ |
 | 25.4 | ❌ |
-| 25.3 | ❌ |
+| 25.3 | ✔️ |
 | 25.2 | ❌ |
 | 25.1 | ❌ |
 | 24.* | ❌ |
