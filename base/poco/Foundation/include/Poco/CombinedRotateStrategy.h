@@ -68,6 +68,12 @@ private:
         std::string unit;
         while (it != end && Ascii::isAlpha(*it)) unit += *it++;
 
+        /// Return std::nullopt if n is 0
+        if (n == 0)
+            return std::nullopt;
+
+        while (it != end && Ascii::isSpace(*it)) ++it;
+
         UInt64 size = 0;
         if (unit == "K")
             size = n * 1024;
@@ -75,7 +81,7 @@ private:
             size = n * 1024 * 1024;
         else if (unit == "G")
             size = n * 1024 * 1024 * 1024;
-        else if (unit.empty())
+        else if (unit.empty() && (it == end || *it == ','))
             size = n;
         else
             return std::nullopt; /// Return std::nullopt if fails to parse
@@ -126,7 +132,6 @@ private:
             return std::nullopt; /// Return std::nullopt if fails to parse
 
         /// Try to skip ','
-        while (it != end && Ascii::isSpace(*it)) ++it;
         if (it != end && *it == ',') ++it;
 
         pos = it - str.begin();
@@ -150,7 +155,7 @@ private:
             return res;
         }
 
-        auto res = std::string(str.substr(pos, comma_after_colon));
+        auto res = std::string(str.substr(pos, comma_after_colon - pos));
         pos = comma_after_colon + 1;
         return res;
     }
