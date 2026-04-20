@@ -163,6 +163,14 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (context->getZooKeeperMetadataTransaction())
         new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
 
+    // parallel replicas related
+    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
+    {
+        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
+        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
+        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
+    }
+
     if (sql_security_type == SQLSecurityType::NONE)
     {
         new_context->applySettingsChanges(context->getSettingsRef().changes());
@@ -175,14 +183,6 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
     new_context->setSetting("allow_ddl", 1);
-
-    // parallel replicas related
-    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
-    {
-        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
-        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
-        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
-    }
 
     return new_context;
 }
