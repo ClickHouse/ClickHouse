@@ -86,6 +86,9 @@ class Result(MetaClasses.Serializable):
         INFRA = "infra"
         XFAIL = "xfail"
         CIDB = "cidb"
+        SETTING_VALUE = "setting"
+        FLAKY = "flaky"
+        REPRODUCIBLE = "reproducible"
 
     # Default hints rendered as a hover tooltip in json.html.
     # Looked up automatically when set_label is called without an explicit hint.
@@ -97,6 +100,9 @@ class Result(MetaClasses.Serializable):
         Label.INFRA: "Infrastructure error",
         Label.XFAIL: "Expected to fail (bugfix validation inverts the status)",
         Label.CIDB: "Failure history for this test in the CI database",
+        Label.SETTING_VALUE: "Failure caused by a specific randomized setting value",
+        Label.FLAKY: "Failure is reproducible in less than 100% of reruns",
+        Label.REPRODUCIBLE: "Failure is reproducible in 100% of reruns",
     }
 
     name: str
@@ -326,6 +332,47 @@ class Result(MetaClasses.Serializable):
         if self.info:
             self.info += "\n"
         self.info += info
+        self._dump_if_persisted()
+        return self
+
+    def add_warning(self, message: str) -> "Result":
+        """
+        Add a warning message to this result only.
+
+        The message is stored in ``self.ext["warnings"]`` as
+        ``{"message": str, "from": str}`` and rendered as a notification panel
+        on the report page for this specific result (workflow, job, sub-task,
+        or test).  It is **not** propagated to parent or child results — use
+        ``Info.add_workflow_warning`` when the message should appear on the job
+        level and be propagated to the top (workflow) level.
+        """
+        self.ext.setdefault("warnings", []).append(
+            {"message": message, "from": self.name}
+        )
+        self._dump_if_persisted()
+        return self
+
+    def add_error(self, message: str) -> "Result":
+        """
+        Add an error message to this result only.
+
+        See ``add_warning`` for propagation semantics.
+        """
+        self.ext.setdefault("errors", []).append(
+            {"message": message, "from": self.name}
+        )
+        self._dump_if_persisted()
+        return self
+
+    def add_note(self, message: str) -> "Result":
+        """
+        Add a note message to this result only.
+
+        See ``add_warning`` for propagation semantics.
+        """
+        self.ext.setdefault("notes", []).append(
+            {"message": message, "from": self.name}
+        )
         self._dump_if_persisted()
         return self
 
@@ -1128,6 +1175,27 @@ class ResultInfo:
 
 class _ResultS3:
 
+    # Map the ``kind`` field used in ``_Environment.REPORT_MESSAGES`` to the
+    # ``ext`` bucket rendered by ``json.html``. Unknown kinds fall into notes.
+    _REPORT_MESSAGE_KIND_TO_EXT_KEY = {
+        "warning": "warnings",
+        "error": "errors",
+        "note": "notes",
+    }
+
+    @classmethod
+    def append_report_messages(cls, result, messages):
+        """
+        Append ``{"message", "kind", "from"}`` dicts from
+        ``_Environment.REPORT_MESSAGES`` into ``result.ext`` under the
+        matching ``warnings``/``errors``/``notes`` bucket.
+        """
+        for msg in messages:
+            key = cls._REPORT_MESSAGE_KIND_TO_EXT_KEY.get(msg.get("kind"), "notes")
+            result.ext.setdefault(key, []).append(
+                {"message": msg["message"], "from": msg["from"]}
+            )
+
     @classmethod
     def copy_result_to_s3(cls, result, clean=False):
         result.dump()
@@ -1288,12 +1356,13 @@ class _ResultS3:
     def update_workflow_results(
         cls,
         workflow_name,
-        new_info="",
         new_sub_results=None,
         storage_usage=None,
         compute_usage=None,
+        report_messages=None,
+        clear_report_sources=None,
     ):
-        assert new_info or new_sub_results
+        assert new_sub_results
 
         attempt = 1
         prev_status = ""
@@ -1306,8 +1375,6 @@ class _ResultS3:
             )
             workflow_result = Result.from_fs(workflow_name)
             prev_status = workflow_result.status
-            if new_info:
-                workflow_result.set_info(new_info)
             if new_sub_results:
                 if isinstance(new_sub_results, Result):
                     new_sub_results = [new_sub_results]
@@ -1327,6 +1394,17 @@ class _ResultS3:
                     workflow_result.ext.get("compute_usage", {})
                 ).merge_with(compute_usage)
                 workflow_result.ext["compute_usage"] = workflow_compute_usage
+
+            if clear_report_sources:
+                for key in cls._REPORT_MESSAGE_KIND_TO_EXT_KEY.values():
+                    if key in workflow_result.ext:
+                        workflow_result.ext[key] = [
+                            e for e in workflow_result.ext[key]
+                            if e.get("from") not in clear_report_sources
+                        ]
+
+            if report_messages:
+                cls.append_report_messages(workflow_result, report_messages)
 
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(

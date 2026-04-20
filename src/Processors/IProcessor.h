@@ -3,6 +3,7 @@
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
+#include <atomic>
 #include <list>
 #include <memory>
 #include <vector>
@@ -245,10 +246,22 @@ public:
       */
     virtual Processors expandPipeline();
 
+    /// Why the processor is being cancelled, chosen by the caller of cancel.
+    enum class CancelReason : uint8_t
+    {
+        NotCancelled,           /// Default state: no cancellation happened yet.
+        Unknown,                /// Cancelled without a specific reason (legacy callers).
+        CancelledByUser,        /// User killed the query or closed the session.
+        CancelledByTimeout,     /// Query time limit exceeded.
+        PartialResult,          /// Consumer has enough data; stop ingress and drain compute.
+        Exception,              /// Pipeline is being torn down due to an error.
+    };
+
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
-    void cancel() noexcept;
+    virtual void cancel(CancelReason reason) noexcept;
+    void cancel() noexcept { cancel(CancelReason::Unknown); }
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
