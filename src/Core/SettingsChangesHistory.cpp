@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
             {"query_plan_optimize_join_order_randomize", 0, 0, "New setting to randomize join order statistics for testing."},
             {"enable_materialized_cte", false, false, "New setting"},
+            {"s3_uri_style", "auto", "auto", "New setting."},
             {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
             {"parallel_replicas_allow_view_over_mergetree", false, false, "New setting"},
@@ -80,6 +81,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimisation. If zero, there is no limit"},
+            {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
+            {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
