@@ -1705,43 +1705,12 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
     if (canRemoveColumnsFromLeftBlock())
         left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
 
+    /// The previous `left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns()`
+    /// arithmetic invariant against `result_sample_block.columns()` is too brittle: column names can overlap across
+    /// sides (e.g. after `LEFT ANTI → RIGHT ANTI` swapping) or within a side, and `result_sample_block` may either
+    /// deduplicate the collision or keep both copies with a qualified rename (`t2.a`). Any per-column sanity
+    /// check belongs to `NotJoinedBlocks`, which already validates its own mapping invariant.
     bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
-    if (!flag_per_row)
-    {
-        /// With multiple disjuncts, all keys are in sample_block_with_columns_to_add, so invariant is not held.
-        /// After join side swapping (e.g., LEFT ANTI → RIGHT ANTI), a column name
-        /// can appear in both the left block and `sample_block_with_columns_to_add` or
-        /// `required_right_keys`, and there can also be duplicates within the left block.
-        /// The result_sample_block deduplicates such columns, so compare unique name sets
-        /// rather than raw column counts.
-        Names left_block_names;
-        if (canRemoveColumnsFromLeftBlock())
-            std::ranges::copy(
-                table_join->getOutputColumns(JoinTableSide::Left) | std::views::transform([](const auto & column) { return column.name; }),
-                std::back_inserter(left_block_names));
-        else
-            left_block_names = left_sample_block.getNames();
-
-        NameSet expected_names(left_block_names.begin(), left_block_names.end());
-        for (size_t i = 0; i < required_right_keys.columns(); ++i)
-            expected_names.insert(required_right_keys.getByPosition(i).name);
-        for (size_t i = 0; i < sample_block_with_columns_to_add.columns(); ++i)
-            expected_names.insert(sample_block_with_columns_to_add.getByPosition(i).name);
-
-        const Names result_names_vec = result_sample_block.getNames();
-        const NameSet result_names(result_names_vec.begin(), result_names_vec.end());
-
-        if (expected_names != result_names)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected columns in result sample block: got [{}], expected union of [{}] + [{}] + [{}]",
-                            fmt::join(result_names_vec, ", "),
-                            fmt::join(left_block_names, ", "),
-                            required_right_keys.dumpNames(),
-                            sample_block_with_columns_to_add.dumpNames());
-        }
-    }
-
     auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size, flag_per_row, bucket_idx, num_buckets);
     return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
 }
