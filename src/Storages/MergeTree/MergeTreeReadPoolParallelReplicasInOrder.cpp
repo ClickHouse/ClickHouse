@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace ProfileEvents
 {
@@ -13,11 +12,6 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
-}
-
-namespace MergeTreeSetting
-{
-extern const MergeTreeSettingsUInt64 index_granularity;
 }
 
 MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrder(
@@ -63,6 +57,8 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
+    min_marks_per_request = min_marks_per_task * pool_settings.threads;
+
     for (const auto & part : parts_ranges)
     {
         bool is_projection = part.data_part->isProjectionPart();
@@ -79,11 +75,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     chassert(descriptions.size() == per_part_infos.size());
     for (size_t i = 0; i < descriptions.size(); ++i)
         descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
-    extension.sendInitialRequest(
-        mode,
-        std::move(descriptions),
-        /*mark_segment_size=*/0,
-        /*min_marks_per_request=*/min_marks_per_task * per_part_infos.size());
+    extension.sendInitialRequest(mode, std::move(descriptions), /*mark_segment_size=*/0, min_marks_per_request);
 
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
 }
@@ -101,21 +93,21 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
 
     const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
     const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
-    const auto & data_settings = per_part_infos[task_idx]->data_part->storage.getSettings();
     auto & marks_in_range = per_part_marks_in_range[task_idx];
-    auto get_from_buffer = [&,
-                            rows_granularity = (*data_settings)[MergeTreeSetting::index_granularity],
-                            my_max_block_size = this->block_size_params.max_block_size_rows]() -> std::optional<MarkRanges>
+    auto get_from_buffer = [&]() -> std::optional<MarkRanges>
     {
-        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
+        /// Cap the warmup growth at `min_marks_per_task` so that steady-state task size
+        /// matches what the Default pool uses. The initial small ranges still allow early
+        /// termination for LIMIT queries.
+        const size_t task_size_cap = min_marks_per_task;
         for (auto & desc : buffered_tasks)
         {
             if (desc.info == part_info && desc.projection_name == projection_name && !desc.ranges.empty())
             {
                 if (mode == CoordinationMode::WithOrder)
                 {
-                    /// if already splited, just return desc.ranges
-                    if (marks_in_range > max_marks_in_range)
+                    /// Past warmup: return all remaining ranges as one task.
+                    if (marks_in_range > task_size_cap)
                     {
                         auto result = std::move(desc.ranges);
                         desc.ranges = MarkRanges{};
@@ -149,7 +141,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                     MarkRanges result;
                     for (auto range : desc.ranges)
                     {
-                        while (marks_in_range <= max_marks_in_range && range.begin + marks_in_range < range.end)
+                        while (marks_in_range <= task_size_cap && range.begin + marks_in_range < range.end)
                         {
                             result.emplace_back(range.begin, range.begin + marks_in_range);
                             range.begin += marks_in_range;
@@ -171,7 +163,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                     {
                         result.emplace_front(range.end - marks_in_range, range.end);
                         range.end -= marks_in_range;
-                        marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
+                        marks_in_range = std::min(marks_in_range * 2, task_size_cap);
                     }
                     else
                     {
@@ -202,7 +194,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     {
         response = extension.sendReadInOrderRequest(
             mode,
-            min_marks_per_task * per_part_infos.size(),
+            min_marks_per_request,
             request // Send for compatibility with old initiators
         );
         if (response)

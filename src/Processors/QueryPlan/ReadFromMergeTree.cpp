@@ -1418,14 +1418,26 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
 
     Pipes pipes;
+    /// Each split runs as an independent pool. If we pass the top-level `.threads = num_streams`
+    /// to every pool, `min_marks_per_request = min_marks_per_task * threads` is inflated by
+    /// num_splits-fold across all pools. Divide threads evenly across splits (rounded up).
+    auto make_per_split_pool_settings = [&](size_t num_splits)
+    {
+        PoolSettings per_split = pool_settings;
+        const size_t divisor = std::max<size_t>(num_splits, 1);
+        per_split.threads = (pool_settings.threads + divisor - 1) / divisor;
+        return per_split;
+    };
+
     if (is_local_plan_initiator)
     {
         /// Initiator with local plan: each split gets its own subset of parts (genuine splitting).
         const size_t num_splits = split_parts_and_ranges.size();
+        const PoolSettings per_split_pool_settings = make_per_split_pool_settings(num_splits);
         for (size_t i = 0; i < num_splits; ++i)
         {
             pipes.emplace_back(readInOrder(
-                std::move(split_parts_and_ranges[i]), index_build_context, column_names, pool_settings, read_type,
+                std::move(split_parts_and_ranges[i]), index_build_context, column_names, per_split_pool_settings, read_type,
                 input_order_info->limit, /*split_id=*/i));
         }
     }
@@ -1434,10 +1446,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         /// Non-initiator with local_plan=1: N splits, each with ALL parts.
         /// The coordinator uses the initiator's split structure for range partitioning.
         const size_t num_splits = split_parts_and_ranges.size();
+        const PoolSettings per_split_pool_settings = make_per_split_pool_settings(num_splits);
         for (size_t i = 0; i < num_splits; ++i)
         {
             pipes.emplace_back(readInOrder(
-                RangesInDataParts(all_parts_for_replicas), index_build_context, column_names, pool_settings, read_type,
+                RangesInDataParts(all_parts_for_replicas), index_build_context, column_names, per_split_pool_settings, read_type,
                 input_order_info->limit, /*split_id=*/i));
         }
     }
@@ -1450,10 +1463,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else
     {
+        const PoolSettings per_split_pool_settings = make_per_split_pool_settings(split_parts_and_ranges.size());
         for (auto & split_parts_and_range : split_parts_and_ranges)
         {
             pipes.emplace_back(readInOrder(
-                std::move(split_parts_and_range), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+                std::move(split_parts_and_range), index_build_context, column_names, per_split_pool_settings, read_type, input_order_info->limit));
         }
     }
 

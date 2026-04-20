@@ -38,6 +38,7 @@ private:
     const bool has_limit_below_one_block;
 
     size_t min_marks_per_task{0};
+    size_t min_marks_per_request{0};
     bool no_more_tasks{false};
     RangesInDataPartsDescription request;
     RangesInDataPartsDescription buffered_tasks;
