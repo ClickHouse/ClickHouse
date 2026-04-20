@@ -81,7 +81,7 @@ struct PlanStepWithRequiredDAGPositions
 /// Returns a boolean mask which indicate if the header column is required.
 /// The required_output_positions is the same mask for the output header.
 /// The number of DAG outputs may differ from required_output_positions.size().
-std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
+static std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
 {
     std::unordered_set<const ActionsDAG::Node *> required_nodes;
     std::stack<const ActionsDAG::Node *> stack;

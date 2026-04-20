@@ -12,6 +12,8 @@
 namespace DB
 {
 
+void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
