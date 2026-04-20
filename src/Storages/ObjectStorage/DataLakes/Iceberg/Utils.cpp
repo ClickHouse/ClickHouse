@@ -181,6 +181,11 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
                 ErrorCodes::BAD_ARGUMENTS,
                 "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
                 file_name);
+        if (end_of_version == after_v)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                file_name);
         version_str = String(after_v, end_of_version);
     }
     /// <V>-<random-uuid>.metadata.json
