@@ -511,6 +511,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
         else
         {
             /// Allocate CPU slots from concurrency control with guaranteed master thread slot.
+            LOG_TRACE(log, "Allocating CPU slots from ConcurrencyControl: min={}, max={}", master_threads, num_threads);
             return ConcurrencyControl::instance().allocate(master_threads, num_threads);
         }
     }
@@ -543,17 +544,24 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
 void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 {
+    size_t spawned = 0;
     while (cpu_slots)
     {
         if (!slot)
             slot = cpu_slots->tryAcquire();
         if (!slot)
+        {
+            LOG_TRACE(log, "spawnThreads finished: spawned {} threads, reason: no more granted slots", spawned);
             return;
+        }
 
         size_t thread_num = slot->slot_id;
 
         /// Count of threads in use should be updated for proper finish() condition.
         const auto spawn_status = tasks.upscale(thread_num);
+        ++spawned;
+
+        LOG_TRACE(log, "spawnThreads: spawning thread {}, spawn_status={}", thread_num, spawn_status == ExecutorTasks::SHOULD_SPAWN ? "SHOULD_SPAWN" : "DO_NOT_SPAWN");
 
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
@@ -575,7 +583,10 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         slot.reset(); // To make tidy build happy (bugprone-use-after-move)
 
         if (spawn_status == ExecutorTasks::DO_NOT_SPAWN)
+        {
+            LOG_TRACE(log, "spawnThreads finished: spawned {} threads, reason: DO_NOT_SPAWN (too many idle threads)", spawned);
             return;
+        }
     }
 }
 
