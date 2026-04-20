@@ -195,15 +195,9 @@ void MergeSortingTransform::consume(Chunk chunk)
     }
 
     removeConstColumns(chunk);
+    compactReplicatedColumns(chunk);
 
-    /// Optimize replicated columns memory layout before accumulating: materialize when
-    /// replication is not useful, otherwise compact to release unreferenced nested data.
-    size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    optimizeReplicatedColumnsLayout(columns);
-    chunk.setColumns(std::move(columns), num_rows);
-
-    sum_rows_in_blocks += num_rows;
+    sum_rows_in_blocks += chunk.getNumRows();
     sum_bytes_in_blocks += chunk.allocatedBytes();
     chunks.push_back(std::move(chunk));
 

@@ -68,6 +68,7 @@ void FinishSortingTransform::consume(Chunk chunk)
     }
 
     removeConstColumns(chunk);
+    compactReplicatedColumns(chunk);
 
     /// Find the position of last already read key in current chunk.
     if (!chunks.empty())

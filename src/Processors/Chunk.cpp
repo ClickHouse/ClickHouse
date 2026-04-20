@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
@@ -217,6 +218,61 @@ void materializeChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
+void compactReplicatedColumns(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    
+    /// Step 1: Materialize columns where replication provides no benefit.
+    for (auto & col : columns)
+        col = convertToFullColumnIfReplicationNotUseful(col);
+
+    /// Step 2: Compact remaining ColumnReplicated columns.
+    ColumnPtr shared_src_index;
+    Columns nested_columns;
+    std::vector<size_t> positions;
+
+    auto compact = [&]
+    {
+        if (positions.empty())
+            return;
+
+        ColumnIndex column_index(shared_src_index);
+        auto result = column_index.buildCompactIndexedColumns(nested_columns);
+
+        if (result.compact_indexes.get() != shared_src_index.get())
+        {
+            for (size_t j = 0; j < positions.size(); ++j)
+                columns[positions[j]] = ColumnReplicated::create(
+                    result.compact_indexed_columns[j], result.compact_indexes);
+        }
+
+        nested_columns.clear();
+        positions.clear();
+    };
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (!columns[i]->isReplicated())
+            continue;
+
+        const auto & rep = typeid_cast<const ColumnReplicated &>(*columns[i]);
+        const auto & src_index = rep.getIndexesColumn();
+
+        if (src_index.get() != shared_src_index.get())
+        {
+            compact();
+            shared_src_index = src_index;
+        }
+
+        nested_columns.push_back(rep.getNestedColumn());
+        positions.push_back(i);
+    }
+    compact();
+
     chunk.setColumns(std::move(columns), num_rows);
 }
 

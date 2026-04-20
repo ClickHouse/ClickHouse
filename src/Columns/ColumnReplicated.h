@@ -233,8 +233,4 @@ void transformColumnsWithSharedIndex(
 /// - `isLazyReplicationUseful` returns false.
 /// - index size <= nested data size, when size check is enabled.
 ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check = true);
-/// Optimize ColumnReplicated columns memory layout:
-/// 1. Materializes columns where replication provides no benefit.
-/// 2. Compacts remaining ColumnReplicated columns by removing unreferenced nested rows.
-void optimizeReplicatedColumnsLayout(Columns & columns);
 }
