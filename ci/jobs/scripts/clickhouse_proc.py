@@ -899,8 +899,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         except Exception as e:
             print(f"WARNING: Failed to collect logs: {e}")
             traceback.print_exc()
-            info.add_workflow_report_message(
-                f"Failed to collect all logs in job [{info.job_name}], ex [{e}], see job.log"
+            info.add_workflow_warning(
+                f"Failed to collect all logs, ex [{e}], see job.log"
             )
         return res
 
