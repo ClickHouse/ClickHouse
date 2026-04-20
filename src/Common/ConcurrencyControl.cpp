@@ -165,6 +165,13 @@ SlotAllocationPtr ConcurrencyControlRoundRobinScheduler::allocate(std::unique_lo
     //
     // Emergency revert (state.lazy_allocation=false): restore pre-#88339 eager behavior —
     // grant up to `max` slots immediately from available capacity.
+    // `eager_granted` is what a pre-#88339 eager allocate would have handed out given the
+    // current `available` capacity. We use it to attribute "Delayed" correctly: only slots we
+    // *couldn't* grant due to capacity pressure count as delayed, not ones intentionally
+    // withheld by the lazy strategy.
+    SlotCount eager_granted = std::max(min, std::min(max, state.available(lock)));
+    SlotCount capacity_delay = max - eager_granted;
+
     SlotCount granted;
     if (state.lazy_allocation.load(std::memory_order_relaxed))
     {
@@ -174,7 +181,7 @@ SlotAllocationPtr ConcurrencyControlRoundRobinScheduler::allocate(std::unique_lo
     }
     else
     {
-        granted = std::max(min, std::min(max, state.available(lock)));
+        granted = eager_granted;
     }
     state.cur_concurrency += granted;
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsGranted, min);
@@ -182,8 +189,11 @@ SlotAllocationPtr ConcurrencyControlRoundRobinScheduler::allocate(std::unique_lo
     // Create allocation and start waiting if more slots are required
     if (granted < max)
     {
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsDelayed, max - granted);
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
+        if (capacity_delay > 0)
+        {
+            ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsDelayed, capacity_delay);
+            ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
+        }
         auto alloc = SlotAllocationPtr(new Allocation(*this, max, granted,
             waiters.insert(cur_waiter, nullptr /* pointer is set by Allocation ctor */)));
         // New allocation defaults to has_more_demand == true; register it in demanders.
@@ -507,17 +517,24 @@ SlotAllocationPtr ConcurrencyControlFairRoundRobinScheduler::allocate(std::uniqu
     // Eager path (state.lazy_allocation=false) restores the pre-#88339 behavior — used as an
     // emergency rollback lever only.
     SlotCount limit = max - min;
+    // See RR::allocate for the capacity_delay rationale.
+    SlotCount eager_granted = std::min(limit, state.available(lock));
+    SlotCount capacity_delay = limit - eager_granted;
+
     SlotCount granted = state.lazy_allocation.load(std::memory_order_relaxed)
         ? std::min({SlotCount(1), limit, state.available(lock)})
-        : std::min(limit, state.available(lock));
+        : eager_granted;
     state.cur_concurrency += granted;
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsGranted, min);
 
     // Create allocation and start waiting if more slots are required
     if (granted < limit)
     {
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsDelayed, limit - granted);
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
+        if (capacity_delay > 0)
+        {
+            ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsDelayed, capacity_delay);
+            ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
+        }
         auto alloc = SlotAllocationPtr(new Allocation(*this, min, max, granted,
             waiters.insert(cur_waiter, nullptr /* pointer is set by Allocation ctor */)));
         addDemanderLocked(static_cast<Allocation *>(alloc.get()));
@@ -808,9 +825,13 @@ SlotAllocationPtr ConcurrencyControlMaxMinFairScheduler::allocate(std::unique_lo
     // Eager path (state.lazy_allocation=false) restores the pre-#88339 behavior — used as an
     // emergency rollback lever only.
     SlotCount limit = max - min;
+    // See RR::allocate for the capacity_delay rationale.
+    SlotCount eager_granted = std::min(limit, state.available(lock));
+    SlotCount capacity_delay = limit - eager_granted;
+
     SlotCount granted = state.lazy_allocation.load(std::memory_order_relaxed)
         ? std::min({SlotCount(1), limit, state.available(lock)})
-        : std::min(limit, state.available(lock));
+        : eager_granted;
     state.cur_concurrency += granted;
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsGranted, min);
 
@@ -820,8 +841,11 @@ SlotAllocationPtr ConcurrencyControlMaxMinFairScheduler::allocate(std::unique_lo
     // Start waiting if more slots are required
     if (granted < limit)
     {
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsDelayed, limit - granted);
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
+        if (capacity_delay > 0)
+        {
+            ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsDelayed, capacity_delay);
+            ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
+        }
         // Insert into waiters set (sorted by allocated count, then by sequence number)
         // The hook's is_linked() will return true after insertion
         auto * a = static_cast<Allocation*>(allocation.get());

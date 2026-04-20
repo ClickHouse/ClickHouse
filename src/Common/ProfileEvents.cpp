@@ -1289,10 +1289,10 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by WriteBufferFromHTTP. Doesn't include HTTP headers.", ValueType::Bytes) \
     \
     M(ConcurrencyControlSlotsGranted, "Number of CPU slot granted according to guarantee of 1 thread per query and for queries with setting 'use_concurrency_control' = 0", ValueType::Number) \
-    M(ConcurrencyControlSlotsDelayed, "Number of CPU slot not granted initially and required to wait for a free CPU slot", ValueType::Number) \
+    M(ConcurrencyControlSlotsDelayed, "Number of CPU slots not granted at allocation time due to capacity pressure. Excludes slots held back by lazy allocation.", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquired, "Total number of CPU slots acquired", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquiredNonCompeting, "Total number of noncompeting CPU slot acquired", ValueType::Number) \
-    M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
+    M(ConcurrencyControlQueriesDelayed, "Number of queries delayed by CPU slot capacity pressure. Contention indicator — excludes lazy-upscale waits on an uncontested server.", ValueType::Number) \
     M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
     M(ConcurrencyControlPreemptedMicroseconds, "Total time a query was waiting due to preemption of CPU slots.", ValueType::Microseconds) \
     M(ConcurrencyControlPreemptions, "Total number of CPU preemptions", ValueType::Number) \
