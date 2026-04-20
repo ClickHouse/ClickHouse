@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <base/scope_guard.h>
 
 namespace CurrentMetrics
 {
@@ -352,6 +353,114 @@ template void ProjectionIndexBitmap::add<UInt64>(UInt64 value);
 
 template void ProjectionIndexBitmap::addBulk<UInt32>(const UInt32 * values, size_t size);
 template void ProjectionIndexBitmap::addBulk<UInt64>(const UInt64 * values, size_t size);
+
+MarkRanges bitmapToMarkRanges(
+    const ProjectionIndexBitmap & bitmap,
+    const MergeTreeIndexGranularity & index_granularity)
+{
+    MarkRanges result;
+    size_t prev_mark = SIZE_MAX;
+    const size_t num_marks = index_granularity.getMarksCount();
+
+    /// Only coalesces with the immediately adjacent mark. Seek-distance
+    /// coalescing (merging across sub-`min_marks_for_seek` gaps) is deliberately
+    /// left to `intersectMarkRanges`, so this result stays independent of any
+    /// reader settings and can be cached per-part via `std::call_once`.
+    auto process_offset = [&](UInt64 offset)
+    {
+        size_t mark = index_granularity.getMarkRangeForRowOffset(offset).begin;
+        /// A bitmap offset past the part's rows would emit a mark beyond the
+        /// part -- silently dropped downstream, but a corrupt projection index
+        /// should not reach here. Tripwire for that.
+        chassert(mark < num_marks);
+
+        if (mark == prev_mark)
+            return; /// Same granule as previous offset, skip.
+
+        prev_mark = mark;
+
+        if (!result.empty() && result.back().end == mark)
+            result.back().end = mark + 1;
+        else
+            result.emplace_back(mark, mark + 1);
+    };
+
+    /// Use batch read APIs for efficiency -- reads up to `batch_size` values per call
+    /// instead of advancing the iterator one value at a time.
+    static constexpr size_t batch_size = 256;
+
+    if (bitmap.type == ProjectionIndexBitmap::BitmapType::Bitmap32)
+    {
+        UInt32 buf[batch_size];
+        roaring::api::roaring_uint32_iterator_t it;
+        roaring_iterator_init(bitmap.data.bitmap32, &it);
+        while (it.has_value)
+        {
+            uint32_t n = roaring_uint32_iterator_read(&it, buf, batch_size);
+            for (uint32_t i = 0; i < n; ++i)
+                process_offset(buf[i]);
+        }
+    }
+    else
+    {
+        auto * it = roaring::api::roaring64_iterator_create(bitmap.data.bitmap64);
+        if (it)
+        {
+            /// RAII: `process_offset` can throw on OOM (devector emplace_back),
+            /// and the iterator owns a heap allocation. Without the guard an
+            /// exception path would leak.
+            SCOPE_EXIT(roaring::api::roaring64_iterator_free(it));
+
+            UInt64 buf[batch_size];
+            while (roaring::api::roaring64_iterator_has_value(it))
+            {
+                uint64_t n = roaring::api::roaring64_iterator_read(it, buf, batch_size);
+                for (uint64_t i = 0; i < n; ++i)
+                    process_offset(buf[i]);
+            }
+        }
+    }
+
+    return result;
+}
+
+const MarkRanges & MergeTreeIndexReadResult::getProjectionMarkRanges(const MergeTreeIndexGranularity & index_granularity) const
+{
+    std::call_once(projection_mark_ranges_once, [&]
+    {
+        projection_mark_ranges = bitmapToMarkRanges(*projection_index_read_result, index_granularity);
+    });
+    return projection_mark_ranges;
+}
+
+MarkRanges narrowMarkRangesByProjectionIndex(
+    const MergeTreeIndexBuildContext & index_build_context,
+    size_t part_index_in_query,
+    const MergeTreeIndexGranularity & index_granularity,
+    MarkRanges mark_ranges,
+    size_t min_marks_for_seek)
+{
+    auto part_it = index_build_context.read_ranges.find(part_index_in_query);
+    if (part_it == index_build_context.read_ranges.end())
+        return mark_ranges;
+
+    auto proj_it = index_build_context.projection_read_ranges.find(part_index_in_query);
+    if (proj_it == index_build_context.projection_read_ranges.end())
+        return mark_ranges;
+
+    auto index_result = index_build_context.index_reader_pool->getOrBuildIndexReadResult(
+        part_it->second, proj_it->second);
+
+    if (!index_result || !index_result->projection_index_read_result)
+        return mark_ranges;
+
+    /// Convert the bitmap to MarkRanges once per part and cache on the result object --
+    /// subsequent getTask batches for the same part reuse the converted ranges. The
+    /// cache stays seek-threshold-free; `intersectMarkRanges` applies coalescing to the
+    /// per-batch intersection output instead.
+    const auto & bitmap_ranges = index_result->getProjectionMarkRanges(index_granularity);
+    return intersectMarkRanges(mark_ranges, bitmap_ranges, min_marks_for_seek);
+}
 
 SingleProjectionIndexReader::SingleProjectionIndexReader(
     std::shared_ptr<MergeTreeReadPoolProjectionIndex> pool,
