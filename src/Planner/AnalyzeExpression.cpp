@@ -81,7 +81,7 @@ ActionsDAG analyzeExpressionToActionsDAG(
     auto storage = std::make_shared<StorageDummy>(StorageID{"_analyze_expression_db", "_analyze_expression_table"}, columns_description);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
-    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
     QueryAnalyzer analyzer(/* only_analyze */ true);
@@ -127,7 +127,7 @@ ActionsDAG analyzeExpressionToActionsDAG(
             Planner subquery_planner(
                 subquery_tree,
                 subquery_options,
-                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
             subquery_planner.buildQueryPlanIfNeeded();
             auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
             subquery_set->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
