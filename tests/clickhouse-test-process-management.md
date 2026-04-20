@@ -94,22 +94,19 @@ if os.getpid() != os.getpgid(0):
 subprocess.run([sys.executable, str(_clickhouse_test), "--cleanup"], check=False)
 ```
 
-### Pre-hook and post-hook guard
+### Post-hook guard
 
-`ci/defs/job_configs.py` registers the hook for both pre- and post-execution:
+`ci/defs/job_configs.py` registers the hook for post-execution:
 
 ```python
 darwin_fast_test_jobs = Job.Config(
     ...
-    pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py"],
     post_hooks=["python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py"],
 )
 ```
 
-The **pre-hook** cleans up any orphans left by a previous run (e.g. if the
-runner was rebooted mid-job and the post-hook never fired).  The **post-hook**
-covers the case where `fast_test.py` itself is SIGKILL'd and the `finally`
-block in `run_test` never executes.
+The **post-hook** covers the case where `fast_test.py` itself is SIGKILL'd and
+the `finally` block in `run_test` never executes.
 
 The hook contains no kill logic of its own — it just calls
 `clickhouse-test --cleanup`, the single source of truth for orphan cleanup.
@@ -121,7 +118,6 @@ The hook contains no kill logic of its own — it just calls
 | `cleanup_child_processes` | SIGTERM/SIGINT/SIGHUP to `clickhouse-test` | `killpg` on each direct child's PGID |
 | test `finally` block | Any exit of the per-test code path (incl. SIGKILL to the worker) | `_gpid_file.unlink` — removes the per-worker file |
 | `run_test()` `finally` | Any exit of `clickhouse-test` (incl. SIGKILL) | `clickhouse-test --cleanup` → `kill_process_group` per PGID file |
-| Pre-hook | Job start (cleans up previous run's orphans) | same — `clickhouse-test --cleanup` |
 | Post-hook | Any exit of `fast_test.py` (incl. SIGKILL) | same — `clickhouse-test --cleanup` |
 
 ### Remaining limitation

@@ -45,10 +45,10 @@ bool hasMaterializedTextIndex(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const String & virtual_column_name)
 {
-    if (!storage_snapshot->virtual_columns)
+    if (storage_snapshot->metadata->virtuals.empty())
         return false;
 
-    const auto * virtual_column = storage_snapshot->virtual_columns->tryGetDescription(virtual_column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    const auto * virtual_column = storage_snapshot->metadata->virtuals.tryGetDescription(virtual_column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     if (!virtual_column)
         return false;
 

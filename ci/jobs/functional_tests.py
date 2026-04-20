@@ -236,9 +236,8 @@ def main():
 
     runner_options += f" --jobs {workers}"
 
-    if is_flaky_check:
+    if is_flaky_check or is_targeted_check:
         # Stop after 5 total failures across all parallel workers (fast feedback on broken PRs).
-        # The 45-min global_time_limit is the primary stopping condition for healthy PRs.
         runner_options += " --max-failures 5"
 
     if is_excluded_from_llvm:
@@ -573,14 +572,14 @@ def main():
             )
 
         elif is_targeted_check:
-            job_timeout = int(3600 * 2.5)
-            soft_limit_margin = 3600
+            TARGETED_CHECK_TIME_LIMIT = 50 * 60  # 50 min
             global_time_limit = max(
-                job_timeout - soft_limit_margin - int(stop_watch.duration), 0
+                TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
             print(
-                f"Soft time limit for test runner: {global_time_limit}s"
-                f" (elapsed so far: {int(stop_watch.duration)}s)"
+                f"Targeted-check time limit: {TARGETED_CHECK_TIME_LIMIT}s"
+                f" (elapsed so far: {int(stop_watch.duration)}s,"
+                f" remaining: {global_time_limit}s)"
             )
 
             run_tests(
@@ -665,9 +664,8 @@ def main():
                             print(
                                 f"Test {test_case.name} has succeeded after rerun. Mark it as OK"
                             )
-                            test_case.remove_label(Result.Status.FAILED)
-                            test_case.remove_label(Result.StatusExtended.FAIL)
-                            test_case.set_status(Result.StatusExtended.OK)
+                            test_case.remove_label(Result.Status.FAIL)
+                            test_case.set_status(Result.Status.OK)
                         else:
                             test_case.set_label(Result.Label.OK_ON_RETRY)
                     elif test_case.name in failed_after_rerun:
@@ -709,7 +707,7 @@ def main():
             Result.create_from(
                 name="Check errors",
                 results=CH.check_fatal_messages_in_logs(),
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 stopwatch=sw_,
             )
         )
@@ -721,12 +719,12 @@ def main():
     if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         has_failure = False
         for r in test_result.results:
-            r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
-                r.status = Result.StatusExtended.OK
+            r.set_label(Result.Label.XFAIL)
+            if r.status == Result.Status.FAIL:
+                r.status = Result.Status.OK
                 has_failure = True
-            elif r.status == Result.StatusExtended.OK:
-                r.status = Result.StatusExtended.FAIL
+            elif r.status == Result.Status.OK:
+                r.status = Result.Status.FAIL
         if not has_failure:
             print("Failed to reproduce the bug")
             test_result.set_failed().set_info("Failed to reproduce the bug")

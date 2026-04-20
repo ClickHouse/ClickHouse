@@ -188,6 +188,11 @@
             background-color: var(--info-background);
             font-family: 'SF Mono', 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
         }
+        .info-text pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
         #info-content {
             text-align: left;
             padding: 10px;
@@ -283,12 +288,16 @@
         }
 
         th.name-column, td.name-column,
-        th.status-column, td.status-column,
         td.dur-column, th.dur-column {
             width: 1px;
             max-width: fit-content;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        th.status-column, td.status-column {
+            width: 1px;
+            max-width: fit-content;
+            text-align: center;
         }
 
         td.dur-column {
@@ -323,7 +332,7 @@
         }
 
         .disabled {
-            white-space: pre;
+            white-space: pre-wrap;
         }
 
         .status-column span[style*="pointer"] {
@@ -602,16 +611,15 @@
     function getStatusPriority(status) {
         const statusLower = (status || '').toLowerCase();
         if (statusLower.includes('error')) return 0;
-        if (statusLower.includes('fail')) return 1;
+        if (statusLower.includes('fail') && statusLower !== 'xfail') return 1;
         if (statusLower === 'xpass') return 2;
         if (statusLower.includes('running')) return 3;
         if (statusLower.includes('dropped')) return 4;
         if (statusLower.includes('pending')) return 5;
-        if (statusLower.includes('success')) return 6;
-        if (statusLower === 'ok') return 7;
-        if (statusLower === 'xfail') return 8;
-        if (statusLower.includes('skipped')) return 9;
-        return 10;
+        if (statusLower === 'ok' || statusLower.includes('success')) return 6;
+        if (statusLower === 'xfail') return 7;
+        if (statusLower.includes('skipped')) return 8;
+        return 9;
     }
 
     function formatTimestamp(timestamp, showDate = true) {
@@ -688,6 +696,58 @@
         const saturation = dark ? 90 : 60; // Higher = more vivid
         const lightness = dark ? 45 : 60;  // Slightly darker = more contrast
         return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+    }
+
+    // Normalize ext.labels (and legacy ext.hlabels) into a list of
+     // {name, link?, hint?} entries. Accepts the unified dict format as well as
+     // legacy formats: a bare string in ext.labels, or [name, link] in ext.hlabels.
+    function normalizeLabels(labels, hlabels) {
+        const out = [];
+        const indexByName = new Map();
+        const upsert = (entry) => {
+            const existingIdx = indexByName.get(entry.name);
+            if (existingIdx === undefined) {
+                indexByName.set(entry.name, out.length);
+                out.push(entry);
+            } else {
+                out[existingIdx] = {...out[existingIdx], ...entry};
+            }
+        };
+        if (Array.isArray(labels)) {
+            labels.forEach(item => {
+                if (typeof item === 'string') {
+                    upsert({name: item});
+                } else if (item && typeof item === 'object' && item.name) {
+                    upsert({
+                        name: item.name,
+                        ...(item.link ? {link: item.link} : {}),
+                        ...(item.hint ? {hint: item.hint} : {}),
+                    });
+                }
+            });
+        }
+        if (Array.isArray(hlabels)) {
+            hlabels.forEach(item => {
+                if (Array.isArray(item) && item[0]) {
+                    upsert({name: item[0], ...(item[1] ? {link: item[1]} : {})});
+                }
+            });
+        }
+        return out;
+    }
+
+    // Apply common pill styling to a label element.
+    function applyLabelStyles(element, text) {
+        element.textContent = text;
+        element.style.marginLeft = '6px';
+        element.style.padding = '2px 8px';
+        element.style.backgroundColor = stringToColor(text, true);
+        element.style.color = 'white';
+        element.style.fontSize = '12px';
+        element.style.borderRadius = '8px';
+        element.style.fontWeight = 'bold';
+        element.style.display = 'inline-block';
+        element.style.verticalAlign = 'middle';
     }
 
     function addFileLinksWidget(links) {
@@ -1202,7 +1262,8 @@
                     x = 0;
                     width = canvas.width;
                     const getCss = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
-                    color = task.status === "pending" ? getCss('--pending-bar-color') : getCss('--skipped-bar-color');
+                    const sl = (task.status || '').toLowerCase();
+                    color = sl === "pending" ? getCss('--pending-bar-color') : getCss('--skipped-bar-color');
                 } else if (task.duration === null) {
                     x = (task.start_time - minStartTime) * scaleX;
                     width = (maxTime - (task.start_time - minStartTime)) * scaleX;
@@ -1219,7 +1280,8 @@
                 taskRects.push({ x, y, width, height, task });
 
                 // Save failure marker position for second pass
-                if (task.status === "failure" || task.status === "error" || task.status === "dropped") {
+                const tsl = (task.status || '').toLowerCase();
+                if (tsl === "fail" || tsl === "failure" || tsl === "error" || tsl === "dropped") {
                     failedMarkers.push({ x: x + width, y: y + height / 2 });
                 }
             });
@@ -1426,8 +1488,9 @@
         displayResults.forEach((result, _index) => {
             const row = document.createElement('tr');
             if (result._downstreamHref) row.classList.add('downstream-row');
-            const labels = result?.ext?.labels;
-            const linklabels = result?.ext?.hlabels;
+            // Unified labels: list of {name, link?, hint?} (or legacy strings).
+            // Legacy ext.hlabels (list of [name, link]) is merged in for backward compat.
+            const labels = normalizeLabels(result?.ext?.labels, result?.ext?.hlabels);
 
             existingColumnsList.forEach(column => {
                 const td = document.createElement('td');
@@ -1437,11 +1500,12 @@
                 if (column === lastColumn) td.classList.add('time-column');
 
                 if (column === 'status') {
+                    const value_ = value ? value.toLowerCase() : "";
                     const span = document.createElement('span');
-                    span.className = getStatusClass(value);
-                    span.textContent = value;
+                    span.className = getStatusClass(value_);
+                    span.textContent = value_;
                     td.classList.add('status-column');
-                    row.dataset.status = value ? value.toLowerCase() : "";
+                    row.dataset.status = value_;
                     if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
                         span.style.cursor = "pointer";
                         span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
@@ -1480,56 +1544,22 @@
                         td.appendChild(link);
                     }
 
-                    // Helper to apply common label styling
-                    const applyLabelStyles = (element, text) => {
-                        element.textContent = text;
-                        element.style.marginLeft = '6px';
-                        element.style.padding = '2px 8px';
-                        element.style.backgroundColor = stringToColor(text, true);
-                        element.style.color = 'white';
-                        element.style.fontSize = '12px';
-                        element.style.borderRadius = '8px';
-                        element.style.fontWeight = 'bold';
-                        element.style.display = 'inline-block';
-                        element.style.verticalAlign = 'middle';
-                    };
-
-                    // Add whitespace before labels if any exist
-                    if ((labels && labels.length > 0) || (linklabels && linklabels.length > 0)) {
+                    // Render unified labels: plain span, or <a> if link present.
+                    // The hint (when set) becomes the title attribute -> hover tooltip.
+                    if (labels.length > 0) {
                         td.appendChild(document.createTextNode(' '));
-                    }
-
-                    // Render plain labels
-                    if (Array.isArray(labels)) {
-                        labels.forEach(labelStr => {
-                            const label = document.createElement('span');
-                            applyLabelStyles(label, labelStr);
-                            td.appendChild(label);
-                        });
-                    }
-
-                    // Render link labels
-                    if (Array.isArray(linklabels)) {
-                        linklabels.forEach(item => {
-                            let text, href;
-                            if (Array.isArray(item)) {
-                                [text, href] = item;
-                            } else if (item && typeof item === 'object') {
-                                text = item.text || item.label || '';
-                                href = item.href || item.url || '';
-                            } else if (typeof item === 'string') {
-                                text = item;
-                                href = '';
-                            }
-                            if (!text) return;
-
-                            const element = href ? document.createElement('a') : document.createElement('span');
-                            if (href) {
-                                element.href = href;
+                        labels.forEach(({name, link, hint}) => {
+                            const element = link ? document.createElement('a') : document.createElement('span');
+                            if (link) {
+                                element.href = link;
                                 element.target = '_blank';
                                 element.rel = 'noopener noreferrer';
                             }
-                            applyLabelStyles(element, text);
+                            applyLabelStyles(element, name);
+                            if (hint) {
+                                element.title = hint;
+                                element.style.cursor = link ? 'pointer' : 'help';
+                            }
                             td.appendChild(element);
                         });
                     }
@@ -2098,11 +2128,11 @@
 
                 if (nameParams?.length === 1) {
                     // For single-level results, check json0 status
-                    shouldContinue = ["running", "pending"].includes(runtimeCache?.json0?.status);
+                    shouldContinue = ["running", "pending"].includes((runtimeCache?.json0?.status || '').toLowerCase());
                 } else if (nameParams?.length === 2) {
                     // For two-level results, check json1 status (or json0 if json1 is null)
                     if (runtimeCache?.json1) {
-                        shouldContinue = ["running", "pending"].includes(runtimeCache?.json1?.status);
+                        shouldContinue = ["running", "pending"].includes((runtimeCache?.json1?.status || '').toLowerCase());
                     } else {
                         // If json1 is null, we might still be loading, so continue
                         shouldContinue = true;

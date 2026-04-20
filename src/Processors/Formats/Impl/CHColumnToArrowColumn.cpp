@@ -560,7 +560,10 @@ namespace DB
         if (column_tuple->tupleSize() == 0)
         {
             for (size_t i = start; i != end; ++i)
-                checkStatus(builder.Append(), column->getName(), format_name);
+            {
+                auto status = (null_bytemap && (*null_bytemap)[i]) ? builder.AppendNull() : builder.Append();
+                checkStatus(status, column->getName(), format_name);
+            }
             return checkResult(builder.Finish(), column_name, format_name);
         }
 
@@ -569,10 +572,13 @@ namespace DB
         for (size_t i = 0; i != column_tuple->tupleSize(); ++i)
         {
             ColumnPtr nested_column = column_tuple->getColumnPtr(i);
+            /// Do not propagate the struct-level null_bytemap to child fields.
+            /// In Arrow, struct-level nulls and child-level nulls are independent;
+            /// child values at null struct positions are undefined.
             auto name = column_name + "." + nested_names[i];
             std::shared_ptr<arrow::Array> nested_arrow_array = fillArrowArray(
                 name,
-                nested_column, nested_types[i], null_bytemap,
+                nested_column, nested_types[i], nullptr,
                 builder.field_builder(static_cast<int>(i)),
                 format_name,
                 start, end,

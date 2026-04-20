@@ -68,48 +68,50 @@ def test_cleanup_kills_orphaned_test_process():
     )
 
     try:
-        # Wait for clickhouse-test to open the stdout file for the test, which
-        # happens just before the test subprocess is launched.  This gives us
-        # an early confirmation that the harness is actually running the test
-        # rather than, e.g., still parsing options or connecting to the server.
-        deadline_stdout = time.monotonic() + 5
-        while time.monotonic() < deadline_stdout:
-            p = list(_SUITE_TMP.glob(f"{_TEST}*.stdout"))
-            if not p: continue
-            if p[0].stat().st_size:
-                break
-            time.sleep(0.1)
-        else:
-            assert False, f"{_SUITE_TMP}/{_TEST} has no stdout"
-    
-        # The PGID file is written by clickhouse-test synchronously right after
-        # Popen(), before the bash script starts.  By the time SELECT 1 has
-        # completed and the stdout file has content, the file is likely to exist.
-        p = list(_GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"))[0]
-        pgid = int(p.read_text())
-    
-        def got_procs(procs) -> str:
-            return ", got\n" + '\n'.join(f"{p[0]} {p[3]}" for p in procs)
-    
+        try:
+            # Wait for clickhouse-test to open the stdout file for the test, which
+            # happens just before the test subprocess is launched.  This gives us
+            # an early confirmation that the harness is actually running the test
+            # rather than, e.g., still parsing options or connecting to the server.
+            deadline_stdout = time.monotonic() + 5
+            while time.monotonic() < deadline_stdout:
+                p = list(_SUITE_TMP.glob(f"{_TEST}*.stdout"))
+                if not p: continue
+                if p[0].stat().st_size:
+                    break
+                time.sleep(0.1)
+            else:
+                assert False, f"{_SUITE_TMP}/{_TEST} has no stdout"
+
+            # The PGID file is written by clickhouse-test synchronously right after
+            # Popen(), before the bash script starts.  By the time SELECT 1 has
+            # completed and the stdout file has content, the file is likely to exist.
+            p = list(_GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"))[0]
+            pgid = int(p.read_text())
+
+            def got_procs(procs) -> str:
+                return ", got\n" + '\n'.join(f"{p[0]} {p[3]}" for p in procs)
+
+            procs = pgrep(pgid=pgid)
+            assert len(procs) == 7, "(Before kill) Expect 7 processes (two bash processes + 5 test processes)" + got_procs(procs)
+
+            # Kill clickhouse-test with SIGKILL — simulates the OOM killer or an
+            # external timeout killing the test runner.
+        finally:
+            os.kill(_ch_proc.pid, signal.SIGKILL)
+
         procs = pgrep(pgid=pgid)
-        assert len(procs) == 7, "(Before kill) Expect 7 processes (two bash processes + 5 test processes)" + got_procs(procs)
-    
-        # Kill clickhouse-test with SIGKILL — simulates the OOM killer or an
-        # external timeout killing the test runner.
+        assert len(procs) == 7, "(After kill) Expect 7 processes" + got_procs(procs)
     finally:
-        os.kill(_ch_proc.pid, signal.SIGKILL)
+        _ch_proc.wait()
+        # Run clickhouse-test --cleanup to kill the orphaned process group.
+        result = subprocess.run(
+            [sys.executable, _CLICKHOUSE_TEST, "--cleanup"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
 
-    procs = pgrep(pgid=pgid)
-    assert len(procs) == 7, "(After kill) Expect 7 processes" + got_procs(procs)
-    _ch_proc.wait()
-
-    # Run clickhouse-test --cleanup to kill the orphaned process group.
-    result = subprocess.run(
-        [sys.executable, _CLICKHOUSE_TEST, "--cleanup"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
     assert result.returncode == 0, (
         f"clickhouse-test --cleanup failed (rc={result.returncode}):\n"
         f"{result.stdout}\n{result.stderr}"
