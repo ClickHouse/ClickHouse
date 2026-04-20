@@ -11,6 +11,7 @@ set max_block_size = 65505;
 set allow_prefetched_read_pool_for_remote_filesystem = 0;
 set allow_prefetched_read_pool_for_local_filesystem = 0;
 set min_rows_per_stream_for_gradual_resize = 0;
+set min_bytes_per_stream_for_gradual_resize = 0;
 
 -- { echoOn }
 
