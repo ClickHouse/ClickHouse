@@ -528,6 +528,18 @@
         </div>
     </div>
     <script>
+        const isKeeper = (window.JEMALLOC_CONFIG || {}).mode === 'keeper';
+
+        if (isKeeper) {
+            document.title = 'ClickHouse Keeper \u2014 Jemalloc Profiler';
+            document.querySelector('.header h1').textContent = 'Keeper Jemalloc Profiler';
+            document.querySelector('.connection-params').style.display = 'none';
+            document.querySelector('[onclick*="query-profile"]').style.display = 'none';
+            document.getElementById('tab-query-profile').style.display = 'none';
+            const autoRefreshLabel = document.querySelector('label[for="refresh-interval"]');
+            if (autoRefreshLabel) autoRefreshLabel.parentElement.style.display = 'none';
+        }
+
         let host = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
         let user = 'default';
         let password = '';
@@ -539,13 +551,11 @@
         if (user_from_url) {
             user = user_from_url;
         }
-        /// Substitute password if it's specified in the query string
         const password_from_url = current_url.searchParams.get('password');
         if (password_from_url) {
             password = password_from_url;
         }
 
-        /// Read connection parameters from the input fields
         function readConnectionParams() {
             host = document.getElementById('url').value || host;
             user = document.getElementById('user').value || user;
@@ -2182,13 +2192,18 @@
             container.innerHTML = backgroundInfo + mutexTable;
         }
         async function checkProfilingEnabled() {
-            readConnectionParams();
             try {
+                if (isKeeper) {
+                    const response = await fetch(location.origin + '/jemalloc/status');
+                    if (!response.ok) return null;
+                    const status = await response.json();
+                    if (status.errors && status.errors.length > 0) return null;
+                    return status.prof_enabled && status.thread_active_init;
+                }
+                readConnectionParams();
                 const query = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'jemalloc.prof.thread_active_init'";
                 const response = await fetch(buildUrl(query), fetchOptions);
-                if (!response.ok) {
-                    return null;
-                }
+                if (!response.ok) return null;
                 const text = await response.text();
                 return text.trim() === '1';
             } catch (error) {
@@ -2211,11 +2226,10 @@
         let profileAbortController = null;
 
         async function getProfile() {
-            readConnectionParams();
+            if (!isKeeper) readConnectionParams();
             const button = document.getElementById('get-profile-btn');
             const resultDiv = document.getElementById('profile-result');
 
-            // If already running, cancel it
             if (profileAbortController) {
                 profileAbortController.abort();
                 profileAbortController = null;
@@ -2225,43 +2239,51 @@
                 return;
             }
 
-            const outputFormat = document.getElementById('profile-output-format').value;
-            const symbolizeWithInline = document.getElementById('profile-symbolize-with-inline').checked;
             button.disabled = false;
             button.textContent = 'Cancel';
             resultDiv.innerHTML = '<p>Fetching profile...</p>';
 
-            // Create abort controller for this request
             profileAbortController = new AbortController();
 
             try {
-                // Build settings based on selection (values must be lowercase)
-                const outputFormatLower = outputFormat.toLowerCase();
-                const useCount = document.getElementById('profile-collapsed-use-count').checked;
-                let settings = `jemalloc_profile_text_output_format = '${outputFormatLower}'`;
-                if (outputFormat === 'Symbolized' || outputFormat === 'Collapsed') {
-                    settings += `, jemalloc_profile_text_symbolize_with_inline = ${symbolizeWithInline ? 1 : 0}`;
+                let result, outputFormat, label, flameGraphOnclick;
+
+                if (isKeeper) {
+                    const response = await fetch(location.origin + '/jemalloc/profile', {
+                        signal: profileAbortController.signal
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    result = await response.text();
+                    outputFormat = 'Collapsed';
+                    label = 'Profile Output (Collapsed)';
+                    flameGraphOnclick = `downloadFlameGraphFromProfile('profile-result', 'flamegraph', 'bytes')`;
+                } else {
+                    outputFormat = document.getElementById('profile-output-format').value;
+                    const symbolizeWithInline = document.getElementById('profile-symbolize-with-inline').checked;
+                    const outputFormatLower = outputFormat.toLowerCase();
+                    const useCount = document.getElementById('profile-collapsed-use-count').checked;
+                    let settings = `jemalloc_profile_text_output_format = '${outputFormatLower}'`;
+                    if (outputFormat === 'Symbolized' || outputFormat === 'Collapsed') {
+                        settings += `, jemalloc_profile_text_symbolize_with_inline = ${symbolizeWithInline ? 1 : 0}`;
+                    }
+                    if (outputFormat === 'Collapsed') {
+                        settings += `, jemalloc_profile_text_collapsed_use_count = ${useCount ? 1 : 0}`;
+                        settings += `, max_block_size = 500`;
+                    }
+                    const query = `SELECT * FROM system.jemalloc_profile_text SETTINGS ${settings}`;
+                    const response = await fetch(buildUrl(query), {
+                        ...fetchOptions,
+                        signal: profileAbortController.signal
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    result = await response.text();
+                    label = `Profile Output (${outputFormat}${(outputFormat === 'Symbolized' || outputFormat === 'Collapsed') ? (symbolizeWithInline ? ' - with inline' : ' - no inline') : ''}${outputFormat === 'Collapsed' && useCount ? ' - count' : ''})`;
+                    flameGraphOnclick = outputFormat === 'Collapsed'
+                        ? `downloadFlameGraphFromProfile('profile-result', 'flamegraph', document.getElementById('profile-collapsed-use-count').checked ? 'allocations' : 'bytes')`
+                        : null;
                 }
-                if (outputFormat === 'Collapsed') {
-                    settings += `, jemalloc_profile_text_collapsed_use_count = ${useCount ? 1 : 0}`;
-                    settings += `, max_block_size = 500`;
-                }
-                const query = `SELECT * FROM system.jemalloc_profile_text SETTINGS ${settings}`;
-                const response = await fetch(buildUrl(query), {
-                    ...fetchOptions,
-                    signal: profileAbortController.signal
-                });
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                const result = await response.text();
+
                 const lines = result ? result.split('\n') : [];
-
-                const label = `Profile Output (${outputFormat}${(outputFormat === 'Symbolized' || outputFormat === 'Collapsed') ? (symbolizeWithInline ? ' - with inline' : ' - no inline') : ''}${outputFormat === 'Collapsed' && useCount ? ' - count' : ''})`;
-                const flameGraphOnclick = outputFormat === 'Collapsed'
-                    ? `downloadFlameGraphFromProfile('profile-result', 'flamegraph', document.getElementById('profile-collapsed-use-count').checked ? 'allocations' : 'bytes')`
-                    : null;
-
                 renderProfileOutputCard('profile-result', label, lines, outputFormat, flameGraphOnclick, 'jemalloc-profile');
             } catch (error) {
                 console.error('Error getting profile:', error);
@@ -2281,13 +2303,14 @@
             container.innerHTML = '<p>Checking profiling status...</p>';
             const isEnabled = await checkProfilingEnabled();
             if (isEnabled === null) {
+                const unknownHint = isKeeper
+                    ? 'Unable to determine profiling status. Make sure the Keeper HTTP server is reachable.'
+                    : 'Unable to determine profiling status. Make sure the query has access to system.asynchronous_metrics.';
                 container.innerHTML = `
                     <div class="metric-card" style="border-left: 4px solid var(--warning-color);">
                         <div class="metric-label">Profiling Status</div>
                         <div class="metric-value">Unknown</div>
-                        <p style="margin-top: 1rem; font-size: 0.9rem;">
-                            Unable to determine profiling status. Make sure the query has access to system.asynchronous_metrics.
-                        </p>
+                        <p style="margin-top: 1rem; font-size: 0.9rem;">${unknownHint}</p>
                     </div>
                 `;
                 return;
@@ -2295,15 +2318,21 @@
             const statusColor = isEnabled ? 'var(--success-color)' : 'var(--error-color)';
             const statusText = isEnabled ? 'Enabled' : 'Disabled';
             const statusIcon = isEnabled ? '✓' : '✗';
+            const enableHint = isKeeper
+                ? 'To enable it, set <code style="background: var(--table-header-bg); padding: 0.2rem 0.4rem; border-radius: 3px;">jemalloc_enable_global_profiler</code> in Keeper config and restart.'
+                : 'To enable it, set <code style="background: var(--table-header-bg); padding: 0.2rem 0.4rem; border-radius: 3px;">jemalloc_enable_global_profiler</code> in server config and restart the instance. Note that per-query profiling can still be used independently.';
+            const activeHint = isKeeper
+                ? 'Global heap profiling is active. Click "Get Profile" to capture a heap dump.'
+                : 'Global heap profiling is active. Note that per-query profiling can still be enabled independently.';
             container.innerHTML = `
                 <div class="metric-card" style="border-left: 4px solid ${statusColor};">
                     <div class="metric-label">Global Profiler Status</div>
                     <div class="metric-value">${statusIcon} ${statusText}</div>
-                    ${isEnabled ? '<p style="margin-top: 1rem; font-size: 0.9rem;">Global heap profiling is active. Note that per-query profiling can still be enabled independently.</p>' : '<p style="margin-top: 1rem; font-size: 0.9rem;">Global heap profiling is not enabled. To enable it, set <code style="background: var(--table-header-bg); padding: 0.2rem 0.4rem; border-radius: 3px;">jemalloc_enable_global_profiler</code> in server config and restart the instance. Note that per-query profiling can still be used independently.</p>'}
+                    ${isEnabled ? `<p style="margin-top: 1rem; font-size: 0.9rem;">${activeHint}</p>` : `<p style="margin-top: 1rem; font-size: 0.9rem;">Global heap profiling is not enabled. ${enableHint}</p>`}
                 </div>
                 <div style="margin-top: 2rem;">
                     <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.5rem;">
-                        <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        ${isKeeper ? '' : `<div style="display: flex; flex-direction: column; gap: 0.3rem;">
                             <label for="profile-output-format" style="font-size: 0.85rem; font-weight: 600; color: var(--color);">Output Format</label>
                             <select id="profile-output-format" onchange="updateSymbolizationVisibility()" style="padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-background); color: var(--color); font-size: 0.9rem; cursor: pointer; min-width: 140px;">
                                 <option value="Raw">Raw</option>
@@ -2328,19 +2357,21 @@
                                 </span>
                                 Count allocations (not bytes)
                             </label>
-                        </div>
+                        </div>`}
                         <button id="get-profile-btn" class="btn btn-primary" onclick="getProfile()" style="padding: 0.5rem 1.5rem; height: 38px;">Get Profile</button>
                     </div>
-                    <div id="inline-warning" style="display: none; margin-bottom: 0.5rem; font-size: 0.82rem; color: var(--warning-color);">&#9888; Inline frames are disabled. The profile will be produced faster but may lose precision.</div>
+                    ${isKeeper ? '' : `<div id="inline-warning" style="display: none; margin-bottom: 0.5rem; font-size: 0.82rem; color: var(--warning-color);">&#9888; Inline frames are disabled. The profile will be produced faster but may lose precision.</div>`}
                     <p style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.8;">
-                        Retrieves the jemalloc heap profile with the selected output format. Works with both global and per-query profiling.
+                        ${isKeeper
+                            ? 'Flushes the jemalloc heap profile, symbolizes it, and returns collapsed stacks suitable for flame graph visualization.'
+                            : 'Retrieves the jemalloc heap profile with the selected output format. Works with both global and per-query profiling.'}
                     </p>
-                    <div style="margin-top: 0.75rem; padding: 0.6rem 1rem; border-left: 4px solid var(--success-color); background: var(--table-header-bg); border-radius: 0 4px 4px 0; font-size: 0.85rem; line-height: 1.6;">
+                    ${isKeeper ? '' : `<div style="margin-top: 0.75rem; padding: 0.6rem 1rem; border-left: 4px solid var(--success-color); background: var(--table-header-bg); border-radius: 0 4px 4px 0; font-size: 0.85rem; line-height: 1.6;">
                         The <strong>Collapsed</strong> format is best for analysis with AI tools.
                         For help analyzing it with Claude, you can fetch the
                         <a href="https://github.com/ClickHouse/ClickHouse/blob/master/.claude/skills/alloc-profile/SKILL.md" target="_blank" style="color: var(--link-color);">alloc-profile skill</a>
                         into your Claude Code project and use it with <code style="background: var(--card-background); padding: 0.1rem 0.3rem; border-radius: 3px;">/alloc-profile</code>.
-                    </div>
+                    </div>`}
                 </div>
                 <div id="profile-result"></div>
             `;
@@ -2622,11 +2653,10 @@ SETTINGS jemalloc_enable_profiler = 1,
         }
 
         async function loadStats(isManualRefresh = false) {
-            readConnectionParams();
+            if (!isKeeper) readConnectionParams();
             const loading = document.getElementById('loading');
             const content = document.getElementById('content');
             const errorDiv = document.getElementById('error');
-            // Only show loading on first load
             const isFirstLoad = content.style.display === 'none';
             if (isFirstLoad) {
                 loading.style.display = 'block';
@@ -2634,27 +2664,28 @@ SETTINGS jemalloc_enable_profiler = 1,
             }
             errorDiv.style.display = 'none';
             try {
-                const query = 'SELECT * FROM system.jemalloc_stats';
-                const response = await fetch(buildUrl(query), fetchOptions);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                let statsText;
+                if (isKeeper) {
+                    const response = await fetch(location.origin + '/jemalloc/stats');
+                    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    statsText = await response.text();
+                } else {
+                    const query = 'SELECT * FROM system.jemalloc_stats';
+                    const response = await fetch(buildUrl(query), fetchOptions);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    statsText = await response.text();
                 }
-                const statsText = await response.text();
                 const stats = parseJemallocStats(statsText);
-                // Update timestamp
                 document.getElementById('timestamp').textContent = new Date().toLocaleString();
-                // Render all sections (now optimized to only update values)
                 renderOverviewMetrics(stats.overview);
                 renderMemoryOverview(stats.overview);
                 renderBinStats(stats.raw, stats.arenas);
                 renderArenaStats(stats.arenas, stats.raw);
                 renderOperationsStats(stats.raw);
-                // Only check profile status on first load or manual refresh
                 if (isFirstLoad || isManualRefresh) {
                     renderProfileStats();
-                    renderQueryProfileStats();
+                    if (!isKeeper) renderQueryProfileStats();
                 }
-                // Only update raw stats on manual refresh or first load
                 const rawStatsEl = document.getElementById('raw-stats');
                 rawStatsEl.textContent = stats.raw.replace(/\\n/g, '\n');
                 if (isFirstLoad) {
@@ -3296,11 +3327,13 @@ SETTINGS jemalloc_enable_profiler = 1,
         }
 
 function start() {
-    document.getElementById('url').value = host;
-    document.getElementById('user').value = user;
-    document.getElementById('password').value = password;
+    if (!isKeeper) {
+        document.getElementById('url').value = host;
+        document.getElementById('user').value = user;
+        document.getElementById('password').value = password;
+        updateRefreshInterval();
+    }
     loadStats();
-    updateRefreshInterval();
 }
 
 start();

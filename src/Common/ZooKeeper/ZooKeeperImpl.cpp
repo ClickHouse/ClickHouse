@@ -32,7 +32,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 
@@ -70,6 +70,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperSync;
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperGetACL;
+    extern const Event ZooKeeperListRecursive;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
@@ -791,7 +792,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
 void ZooKeeper::sendThread()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::ZOOKEEPER_SEND);
 
@@ -827,8 +828,8 @@ void ZooKeeper::sendThread()
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
-                    ZooKeeperOpentelemetrySpans::maybeFinalize(
-                        info.request->spans.client_requests_queue,
+                    info.request->spans.maybeFinalize(
+                        KeeperSpan::ClientRequestsQueue,
                         [&]
                         {
                             return std::vector<OpenTelemetry::SpanAttribute>{
@@ -892,7 +893,7 @@ void ZooKeeper::sendThread()
 
 void ZooKeeper::receiveThread()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::ZOOKEEPER_RECV);
 
@@ -1510,10 +1511,10 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             current_trace_context.isTraceEnabled() && current_trace_context.trace_flags & DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS
         )
         {
-            info.request->tracing_context = current_trace_context;
+            info.request->tracing_context = std::make_shared<OpenTelemetry::TracingContext>(current_trace_context);
         }
 
-        ZooKeeperOpentelemetrySpans::maybeInitialize(info.request->spans.client_requests_queue, info.request->tracing_context);
+        info.request->spans.maybeInitialize(KeeperSpan::ClientRequestsQueue, info.request->tracing_context.get());
 
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {
@@ -1696,6 +1697,27 @@ void ZooKeeper::removeRecursive(
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveRecursiveResponse &>(response)); };
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
+}
+
+void ZooKeeper::listRecursive(
+    const String & path,
+    uint32_t get_children_recursive_nodes_limit,
+    ListRecursiveCallback callback)
+{
+    if (!isFeatureEnabled(KeeperFeatureFlag::GET_CHILDREN_RECURSIVE))
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListRecursive request type cannot be used because it's not supported by the server");
+
+    ZooKeeperListRecursiveRequest request;
+    request.path = path;
+    request.children_nodes_limit = get_children_recursive_nodes_limit;
+
+    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperListRecursiveRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListRecursiveResponse &>(response)); };
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperListRecursive);
 }
 
 void ZooKeeper::exists(
@@ -1951,7 +1973,7 @@ void ZooKeeper::close()
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request_info.request->spans.client_requests_queue, request_info.request->tracing_context);
+    request_info.request->spans.maybeInitialize(KeeperSpan::ClientRequestsQueue, request_info.request->tracing_context.get());
 
     if (!requests_queue.tryPush(std::move(request_info), args.operation_timeout_ms))
         throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);
@@ -2022,7 +2044,7 @@ std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
 #ifdef ZOOKEEPER_LOG
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     auto maybe_zk_log = getZooKeeperLog();
     if (!maybe_zk_log)

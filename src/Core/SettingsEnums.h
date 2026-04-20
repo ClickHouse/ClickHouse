@@ -553,4 +553,14 @@ enum class JemallocProfileFormat : uint8_t
 };
 
 DECLARE_SETTING_ENUM(JemallocProfileFormat)
+
+enum class S3UriStyle : uint8_t
+{
+    AUTO,
+    PATH,
+    VIRTUAL_HOSTED,
+};
+
+DECLARE_SETTING_ENUM(S3UriStyle)
+
 }
