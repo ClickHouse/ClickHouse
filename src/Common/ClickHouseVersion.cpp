@@ -25,14 +25,6 @@ ClickHouseVersion::ClickHouseVersion(std::string_view version)
 
     for (const auto & split_element : split)
     {
-        if (split_element == "altinityantalya")
-        {
-            /// version like '26.3.1.20001.altinityantalya'
-            if (components.size() != 4 || split.size() != 5)
-                throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
-            is_antalya = true;
-            continue;
-        }
         size_t component;
         ReadBufferFromString buf(split_element);
         if (!tryReadIntText(component, buf) || !buf.eof())
@@ -43,10 +35,7 @@ ClickHouseVersion::ClickHouseVersion(std::string_view version)
 
 String ClickHouseVersion::toString() const
 {
-    auto res = fmt::format("{}", fmt::join(components, "."));
-    if (is_antalya)
-        res += ".altinityantalya";
-    return res;
+    return fmt::format("{}", fmt::join(components, "."));
 }
 
 }
