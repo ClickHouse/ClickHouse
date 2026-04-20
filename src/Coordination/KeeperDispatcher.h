@@ -93,7 +93,6 @@ private:
     void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
 
 public:
-    /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
 
     /// Call shutdown

@@ -9,9 +9,12 @@
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 
@@ -355,6 +358,14 @@ static void explainStep(
     const auto & prefix = settings.detail_prefix;
 
     auto description = step.getStepDescription();
+
+    String pretty_description;
+    if (settings.pretty)
+    {
+        pretty_description = QueryPlanFormat::trimColumnIdentifier(description);
+        description = pretty_description;
+    }
+
     if (max_description_length)
         description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
@@ -440,7 +451,7 @@ static void explainStep(
         if (const auto & sort_description = step.getSortDescription(); !sort_description.empty())
         {
             settings.out << prefix << "Sorting: ";
-            dumpSortDescription(sort_description, settings.out);
+            dumpSortDescription(sort_description, settings);
             settings.out.write('\n');
         }
     }
@@ -462,7 +473,7 @@ std::string debugExplainStep(IQueryPlanStep & step)
 {
     WriteBufferFromOwnString out;
     ExplainPlanOptions options{.actions = true};
-    IQueryPlanStep::FormatSettings settings{.out = out, .header_prefix = "", .detail_prefix = ""};
+    IQueryPlanStep::FormatSettings settings{.out = out, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
     explainStep(step, settings, options, 0);
     return out.str();
 }
@@ -553,7 +564,9 @@ void QueryPlan::explainPlan(
         .detail_prefix = "",
         .write_header = options.header,
         .compact = options.compact,
-        .pretty = options.pretty
+        .pretty = options.pretty,
+        .pretty_names = {},
+        .runtime_filter_names = {}
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {
@@ -562,11 +575,19 @@ void QueryPlan::explainPlan(
         return node;
     };
 
+    if (options.pretty)
+    {
+        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> subquery_set_names;
+        QueryPlanFormat::buildPrettyNamesMap(*this, settings.pretty_names, settings.runtime_filter_names, subquery_set_names);
+        for (const auto & [hash, name] : subquery_set_names)
+            settings.pretty_names[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
+    }
+
     std::deque<ExplainPlan::Frame> stack;
 
     if (settings.pretty && parent_tree_prefix.empty())
     {
-        QueryPlanFormat::formatOutputColumns(settings.out, *root->step, settings.header_prefix);
+        QueryPlanFormat::formatOutputColumns(settings.pretty_names, settings.out, *root->step, settings.header_prefix);
         settings.out << '\n';
     }
 
@@ -653,7 +674,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 {
     checkInitialized();
 
-    IQueryPlanStep::FormatSettings settings{.out = buffer, .header_prefix = "", .detail_prefix = "", .write_header = options.header};
+    IQueryPlanStep::FormatSettings settings{.out = buffer, .header_prefix = "", .detail_prefix = "", .write_header = options.header, .pretty_names = {}, .runtime_filter_names = {}};
 
     struct Frame
     {

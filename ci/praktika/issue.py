@@ -282,7 +282,7 @@ class Issue:
         print(
             f"Marking '{result.name}' as flaky (matched: {test_name}, issue: #{self.number})"
         )
-        result.set_clickable_label(label=Result.Label.ISSUE, link=self.url)
+        result.set_label(Result.Label.ISSUE, link=self.url)
         return True
 
     def _check_infrastructure_match(
@@ -313,7 +313,7 @@ class Issue:
         print(
             f"  Marking '{result.name}' as infrastructure issue (issue: #{self.number})"
         )
-        result.set_clickable_label(label="issue", link=self.url)
+        result.set_label(Result.Label.ISSUE, link=self.url)
         return True
 
     @classmethod

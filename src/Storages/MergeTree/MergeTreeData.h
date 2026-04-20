@@ -379,6 +379,8 @@ public:
 
         TransactionID getTID() const;
 
+        MergeTreeTransaction * getMergeTreeTransaction() const { return txn; }
+
     private:
         friend class MergeTreeData;
 
@@ -929,7 +931,7 @@ public:
     size_t clearEmptyParts();
 
     /// Moves to outdated state patch parts that do not need to be applied to regular parts.
-    size_t clearUnusedPatchParts();
+    virtual size_t clearUnusedPatchParts();
 
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
@@ -980,7 +982,7 @@ public:
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder);
 
-    static std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings);
+    std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// Should be called if part data is suspected to be corrupted.
@@ -1391,6 +1393,10 @@ protected:
     friend class IPartMetadataManager;
     friend class IMergedBlockOutputStream; // for access to log
     friend struct DataPartsLock; // for access to shared_parts_list/shared_ranges_in_parts
+    friend class VersionMetadata; // for access to log
+    friend class VersionMetadataOnDisk; // for access to log
+    friend class VersionMetadataOnKeeper; // for access to log
+    friend class MutationsState; // for access to log
 
     bool require_part_metadata;
 
