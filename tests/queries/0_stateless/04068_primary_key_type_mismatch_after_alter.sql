@@ -217,5 +217,85 @@ INSERT INTO t_pk_type_mismatch_15 VALUES ('2024-01-01 12:30:00.000'), ('2024-06-
 SELECT c0, toStartOfMinute(c0) FROM t_pk_type_mismatch_15 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_15;
 
+-- Tests 16-19: key and a hash-based skip index (`set`, `bloom_filter`) share the same
+-- expression name but were created under different settings, so their expected types
+-- differ. `getCombinedIndicesExpression` resolves the shared DAG output to the sorting
+-- key's expected type (the primary index serializer cannot tolerate a different type).
+-- Without the per-index CAST fix in `MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices`,
+-- the hash-based aggregator reads the key-typed column as if it had the index's expected
+-- type, producing corrupt hashes or failing `assert_cast` inside the hashing path.
+-- The fix casts the shared column to the index's expected type on a per-index view of
+-- the block before handing it to the aggregator, so both the primary index and the skip
+-- index see correctly-typed data.
+
+-- Restore setting
+SET enable_extended_results_for_datetime_functions = 1;
+
+-- Test 16: INVERSE lifecycle — key created with setting=0 (Date), `set` index added with
+-- setting=1 (Date32). Without the fix the `set` aggregator hashes a Date (UInt16) column
+-- through Date32 (Int32) key sizes, which either crashes in `assert_cast` on hashing
+-- paths or silently produces wrong hashes (false negatives/positives during pruning).
+DROP TABLE IF EXISTS t_pk_type_mismatch_16;
+SET enable_extended_results_for_datetime_functions = 0;
+CREATE TABLE t_pk_type_mismatch_16 (c0 Date32) ENGINE = MergeTree() ORDER BY (toMonday(c0));
+
+SET enable_extended_results_for_datetime_functions = 1;
+ALTER TABLE t_pk_type_mismatch_16 ADD INDEX idx_monday_set toMonday(c0) TYPE set(100) GRANULARITY 1;
+
+SET enable_extended_results_for_datetime_functions = 0;
+INSERT INTO t_pk_type_mismatch_16 (c0) VALUES ('2024-01-01'), ('2024-06-15');
+SELECT c0, toMonday(c0) FROM t_pk_type_mismatch_16 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_16;
+
+-- Test 17: FORWARD lifecycle with `set` index — key created with setting=1 (Date32),
+-- index added with setting=0 (Date). Current-context INSERT runs with setting=1 so the
+-- DAG output is Date32 and the key CAST keeps the shared output as Date32; without the
+-- per-index CAST the `set` aggregator sees Date32 but was built with Date key sizes,
+-- producing the same class of type-mismatch failure in the opposite direction.
+DROP TABLE IF EXISTS t_pk_type_mismatch_17;
+SET enable_extended_results_for_datetime_functions = 1;
+CREATE TABLE t_pk_type_mismatch_17 (c0 Date32) ENGINE = MergeTree() ORDER BY (toMonday(c0));
+
+SET enable_extended_results_for_datetime_functions = 0;
+ALTER TABLE t_pk_type_mismatch_17 ADD INDEX idx_monday_set toMonday(c0) TYPE set(100) GRANULARITY 1;
+
+SET enable_extended_results_for_datetime_functions = 1;
+INSERT INTO t_pk_type_mismatch_17 (c0) VALUES ('2024-01-01'), ('2024-06-15');
+SELECT c0, toMonday(c0) FROM t_pk_type_mismatch_17 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_17;
+
+-- Test 18: FORWARD lifecycle with `bloom_filter` index — key is Date32 (setting=1),
+-- index is Date (setting=0). `bloom_filter` only accepts `Date`/`DateTime`/`DateTime64`
+-- (not `Date32`), so this direction is the one that passes validation. The per-index
+-- CAST is still required: otherwise the aggregator hashes Date32 (Int32) using the
+-- Date (UInt16) hash method, reading past the column width.
+DROP TABLE IF EXISTS t_pk_type_mismatch_18;
+SET enable_extended_results_for_datetime_functions = 1;
+CREATE TABLE t_pk_type_mismatch_18 (c0 Date32) ENGINE = MergeTree() ORDER BY (toMonday(c0));
+
+SET enable_extended_results_for_datetime_functions = 0;
+ALTER TABLE t_pk_type_mismatch_18 ADD INDEX idx_monday_bf toMonday(c0) TYPE bloom_filter(0.01) GRANULARITY 1;
+
+SET enable_extended_results_for_datetime_functions = 1;
+INSERT INTO t_pk_type_mismatch_18 (c0) VALUES ('2024-01-01'), ('2024-06-15');
+SELECT c0, toMonday(c0) FROM t_pk_type_mismatch_18 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_18;
+
+-- Test 19: DateTime64/DateTime forward lifecycle with `set` index. Key is DateTime64
+-- (setting=1), index is DateTime (setting=0). Exercises the per-index CAST path on a
+-- fixed-width width difference (8 bytes Decimal64 vs 4 bytes UInt32) to cover the
+-- same mechanism for datetime types.
+DROP TABLE IF EXISTS t_pk_type_mismatch_19;
+SET enable_extended_results_for_datetime_functions = 1;
+CREATE TABLE t_pk_type_mismatch_19 (c0 DateTime64(3)) ENGINE = MergeTree() ORDER BY (toStartOfMinute(c0));
+
+SET enable_extended_results_for_datetime_functions = 0;
+ALTER TABLE t_pk_type_mismatch_19 ADD INDEX idx_minute_set toStartOfMinute(c0) TYPE set(100) GRANULARITY 1;
+
+SET enable_extended_results_for_datetime_functions = 1;
+INSERT INTO t_pk_type_mismatch_19 VALUES ('2024-01-01 12:30:00.000'), ('2024-06-15 08:15:30.500');
+SELECT c0, toStartOfMinute(c0) FROM t_pk_type_mismatch_19 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_19;
+
 -- Restore setting
 SET enable_extended_results_for_datetime_functions = 1;

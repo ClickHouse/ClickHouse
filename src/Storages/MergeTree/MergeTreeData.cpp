@@ -1273,17 +1273,21 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         }
     }
 
-    /// Apply the same normalization to skip-index expression outputs. Settings-dependent
-    /// functions in skip-index expressions (e.g. `INDEX idx toMonday(col) TYPE minmax`) can
-    /// also drift in type after `ALTER` / `ATTACH`, causing the same class of crash during
-    /// index serialization. Each index description stores the expected `column_names` /
-    /// `data_types` from when the index was originally created.
+    /// Apply the same normalization to skip-index expression outputs that do not collide with
+    /// the sorting key. Settings-dependent functions in skip-index expressions (e.g.
+    /// `INDEX idx toMonday(col) TYPE minmax`) can also drift in type after `ALTER` / `ATTACH`,
+    /// causing the same class of exception during index serialization. Each index description
+    /// stores the expected `column_names` / `data_types` from when the index was originally
+    /// created.
     ///
-    /// Never `CAST` an output whose name belongs to the sorting key: the `Block` can only hold
-    /// one column per name, and the primary index serializer's type expectations are
-    /// non-negotiable. The skip index will receive the key-typed column; for typical indices
-    /// (`minmax`, `bloom_filter`) this still produces correct results because the underlying
-    /// data is the same expression, just in a different width.
+    /// When a name belongs to the sorting key, we cannot `CAST` the shared output in place:
+    /// a `Block` can only hold one column per name, and the primary index serializer's type
+    /// expectations are non-negotiable. In that case the skip index receives the key-typed
+    /// column here, and `MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices`
+    /// applies a per-index `CAST` to the index's expected type before handing the block to the
+    /// aggregator. That keeps hash-based indices (`set`, `bloom_filter`, `ngrambf_v1`,
+    /// `tokenbf_v1`) consistent with their own `sample_block` types without perturbing the
+    /// primary key's view of the data.
     for (const auto & index_ptr : indices)
     {
         const auto & idx = index_ptr->index;

@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
+#include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -218,6 +219,38 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         const auto index_helper = skip_indices[i];
         auto & index_streams = skip_indices_streams[i];
 
+        /// When the sorting key and a skip index share an expression name (e.g. both use
+        /// `toMonday(c0)`) but were created under different settings, they may have different
+        /// expected types. `getCombinedIndicesExpression` gives name priority to the sorting key
+        /// because the primary index serializer cannot tolerate a different type. That means the
+        /// shared column in `skip_indexes_block` carries the key's type, not the index's.
+        ///
+        /// For hash-based index types (`set`, `bloom_filter`, `ngrambf_v1`, `tokenbf_v1`), the
+        /// aggregator derives its hash method from the index's own `sample_block` types, so a
+        /// mismatch between the block column type and the index's expected type corrupts the hash
+        /// or throws inside the aggregator. To keep both the primary index and each skip index
+        /// correct, cast the relevant columns to the index's expected type on a per-index view of
+        /// the block before feeding it to the aggregator. The original `skip_indexes_block` is
+        /// left untouched so other indices still see their own expected types.
+        const Block * block_for_index = &skip_indexes_block;
+        Block per_index_block;
+        const auto & idx_desc = index_helper->index;
+        for (size_t j = 0; j < idx_desc.column_names.size() && j < idx_desc.data_types.size(); ++j)
+        {
+            if (!skip_indexes_block.has(idx_desc.column_names[j]))
+                continue;
+            const auto & src = skip_indexes_block.getByName(idx_desc.column_names[j]);
+            if (src.type->equals(*idx_desc.data_types[j]))
+                continue;
+
+            if (per_index_block.empty())
+                per_index_block = skip_indexes_block;
+            auto & dst = per_index_block.getByName(idx_desc.column_names[j]);
+            dst.column = castColumn({dst.column, dst.type, dst.name}, idx_desc.data_types[j]);
+            dst.type = idx_desc.data_types[j];
+            block_for_index = &per_index_block;
+        }
+
         for (const auto & granule : granules_to_write)
         {
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
@@ -256,7 +289,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterSkipIndicesCalculationMicroseconds);
 
             size_t pos = granule.start_row;
-            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.rows_to_write);
+            skip_indices_aggregators[i]->update(*block_for_index, &pos, granule.rows_to_write);
 
             if (granule.is_complete)
                 ++skip_index_accumulated_marks[i];
