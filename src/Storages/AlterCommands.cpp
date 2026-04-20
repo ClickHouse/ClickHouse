@@ -1648,7 +1648,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                 auto expression = buildQueryTree(default_expression->clone(), execution_context);
                                 QueryAnalyzer analyzer(true);
                                 analyzer.resolve(expression, fake_table_expression, execution_context);
-                                GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+                                GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
                                 auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
                                 collectSourceColumns(expression, planner_context);
                                 if (const auto * table_expression = planner_context->getTableExpressionDataOrNull(fake_table_expression))
