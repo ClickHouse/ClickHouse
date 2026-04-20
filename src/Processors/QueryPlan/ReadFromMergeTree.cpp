@@ -55,6 +55,7 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -1206,6 +1207,133 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     const auto & settings = context->getSettingsRef();
 
     LOG_TRACE(log, "Spreading ranges among streams with order");
+
+    /// ORDER BY key LIMIT N: trim parts from partitions that cannot contribute to the top-N result.
+    /// Only trim at a partition boundary when the next/prev partition's sort-key bound is strictly
+    /// beyond the retained parts' range, and only when all parts are globally sorted by sort key
+    /// value (rules out non-monotone partition keys such as PARTITION BY (col % N)).
+    /// Skipped when row-level filtering is present (PREWHERE / row-level filter / filter_actions_dag)
+    /// because cumulative_rows is pre-filter and may overestimate surviving row counts, and when
+    /// FINAL or is_deleted is active because rows may be collapsed/removed after the read.
+    {
+        const auto & reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+        const bool has_reverse_sort_key = std::any_of(reverse_flags.begin(), reverse_flags.end(), [](bool f) { return f; });
+
+        if (input_order_info->limit > 0
+            && !is_parallel_reading_from_replicas
+            && parts_with_ranges.size() > 1
+            && !query_info.prewhere_info
+            && !query_info.row_level_filter
+            && !query_info.filter_actions_dag
+            && !query_info.isFinal()
+            && data.merging_params.is_deleted_column.empty()
+            && !has_reverse_sort_key)
+        {
+            const size_t limit = input_order_info->limit;
+            const int direction = input_order_info->direction;
+
+            /// Returns the sort-key bound for trimming purposes.
+            /// last=false: lower bound — primary index entry at the first selected granule.
+            /// last=true:  upper bound — primary index entry just past the last selected granule
+            ///             (all selected values are strictly less than this entry). Falls back to
+            ///             the last granule's entry when the selection covers the final granule
+            ///             (known limitation: that entry is a lower bound, not an upper bound).
+            auto get_sort_key_mark = [](const RangesInDataPart & p, bool last) -> std::optional<Field>
+            {
+                const auto index = p.data_part->getIndex();
+                if (!index || index->empty() || p.ranges.empty())
+                    return std::nullopt;
+                const auto & col = (*index)[0];
+                if (col->empty())
+                    return std::nullopt;
+
+                const size_t mark_idx = last
+                    ? std::min(p.ranges.back().end, col->size() - 1)
+                    : p.ranges.front().begin;
+
+                Field f;
+                col->get(mark_idx, f);
+                return f.isNull() ? std::nullopt : std::make_optional(std::move(f));
+            };
+
+            /// Pre-check: verify that parts are globally sorted by sort key value.
+            /// This fails for non-monotone partition keys such as PARTITION BY (col % N),
+            /// where lexicographic partition ID order differs from sort key order.
+            bool sort_key_globally_monotone = true;
+            std::optional<Field> prev_last;
+            for (const auto & p : parts_with_ranges)
+            {
+                auto first = get_sort_key_mark(p, false);
+                if (first && prev_last && accurateLess(*first, *prev_last))
+                {
+                    sort_key_globally_monotone = false;
+                    break;
+                }
+                if (auto last = get_sort_key_mark(p, true))
+                    prev_last = std::move(last);
+            }
+
+            /// With global monotonicity guaranteed, the sort-key range of the parts seen so far
+            /// is bounded above by the current part's upper mark — no need to track a running max/min.
+            if (sort_key_globally_monotone)
+            {
+                if (direction == 1)
+                {
+                    /// Ascending: scan forward; trim trailing parts at the first partition boundary
+                    /// after accumulating enough rows where the next partition starts strictly later.
+                    size_t cumulative_rows = 0;
+                    for (size_t i = 0; i + 1 < parts_with_ranges.size(); ++i)
+                    {
+                        cumulative_rows += parts_with_ranges[i].getRowsCount();
+                        if (cumulative_rows < limit)
+                            continue;
+                        if (parts_with_ranges[i].data_part->info.getPartitionId()
+                            == parts_with_ranges[i + 1].data_part->info.getPartitionId())
+                            continue;
+                        auto curr_last  = get_sort_key_mark(parts_with_ranges[i],     true);
+                        auto next_first = get_sort_key_mark(parts_with_ranges[i + 1], false);
+                        if (curr_last && next_first && accurateLess(*curr_last, *next_first))
+                        {
+                            parts_with_ranges.erase(
+                                parts_with_ranges.begin() + static_cast<ptrdiff_t>(i + 1),
+                                parts_with_ranges.end());
+                            LOG_TRACE(log, "Trimmed to {} part(s) for ascending ORDER BY LIMIT {}",
+                                parts_with_ranges.size(), limit);
+                            break;
+                        }
+                    }
+                }
+                else /// direction == -1
+                {
+                    /// Descending: scan backward; trim leading parts at the first partition boundary
+                    /// after accumulating enough rows where the previous partition ends strictly earlier.
+                    size_t cumulative_rows = 0;
+                    for (size_t i = parts_with_ranges.size(); i-- > 0;)
+                    {
+                        cumulative_rows += parts_with_ranges[i].getRowsCount();
+                        if (cumulative_rows < limit)
+                            continue;
+                        if (i == 0)
+                            break;
+                        if (parts_with_ranges[i].data_part->info.getPartitionId()
+                            == parts_with_ranges[i - 1].data_part->info.getPartitionId())
+                            continue;
+                        auto curr_first      = get_sort_key_mark(parts_with_ranges[i],     false);
+                        auto prev_part_last  = get_sort_key_mark(parts_with_ranges[i - 1], true);
+                        if (curr_first && prev_part_last && accurateLess(*prev_part_last, *curr_first))
+                        {
+                            parts_with_ranges.erase(
+                                parts_with_ranges.begin(),
+                                parts_with_ranges.begin() + static_cast<ptrdiff_t>(i));
+                            LOG_TRACE(log, "Trimmed to {} part(s) for descending ORDER BY LIMIT {}",
+                                parts_with_ranges.size(), limit);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
