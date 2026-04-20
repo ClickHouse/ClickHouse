@@ -130,22 +130,22 @@ public:
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
+
     using KeyContainerType = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         HashMap<UInt64, size_t>,
         HashMapWithSavedHash<std::string_view, size_t, DefaultHash<std::string_view>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<
-        std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>,
-        VectorWithMemoryTracking<Value>,
-        PaddedPODArray<Value>>;
+    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
 
     template <typename Value>
-    using AttributeContainerShardsType = VectorWithMemoryTracking<AttributeContainerType<Value>>;
+    using AttributeContainerShardsType = std::vector<AttributeContainerType<Value>>;
 
     struct Attribute final
     {
+        AttributeUnderlyingType type;
+
         std::variant<
             AttributeContainerShardsType<UInt8>,
             AttributeContainerShardsType<UInt16>,
@@ -170,22 +170,18 @@ private:
             AttributeContainerShardsType<IPv4>,
             AttributeContainerShardsType<IPv6>,
             AttributeContainerShardsType<std::string_view>,
-            AttributeContainerShardsType<Array>,
-            AttributeContainerShardsType<Map>,
-            AttributeContainerShardsType<Object>>
+            AttributeContainerShardsType<Array>>
             containers;
 
         /// One container per shard
-        using RowsMask = VectorWithMemoryTracking<bool>;
-        std::optional<VectorWithMemoryTracking<RowsMask>> is_index_null;
-
-        AttributeUnderlyingType type;
+        using RowsMask = std::vector<bool>;
+        std::optional<std::vector<RowsMask>> is_index_null;
     };
 
     struct KeyAttribute final
     {
         /// One container per shard
-        VectorWithMemoryTracking<KeyContainerType> containers;
+        std::vector<KeyContainerType> containers;
     };
 
     void createAttributes();
@@ -268,20 +264,20 @@ private:
     const DictionarySourcePtr source_ptr;
     const HashedArrayDictionaryStorageConfiguration configuration;
 
-    VectorWithMemoryTracking<Attribute> attributes;
+    std::vector<Attribute> attributes;
 
     KeyAttribute key_attribute;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;
     std::atomic<size_t> total_element_count = 0;
-    VectorWithMemoryTracking<size_t> element_counts;
+    std::vector<size_t> element_counts;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    VectorWithMemoryTracking<std::unique_ptr<Arena>> string_arenas;
+    std::vector<std::unique_ptr<Arena>> string_arenas;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 

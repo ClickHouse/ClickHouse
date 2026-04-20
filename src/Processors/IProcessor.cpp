@@ -7,10 +7,6 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
 
-#ifdef OS_LINUX
-#include <sys/epoll.h>
-#endif
-
 
 namespace DB
 {
@@ -61,13 +57,6 @@ int IProcessor::schedule()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
 }
-
-#ifdef OS_LINUX
-std::pair<int, uint32_t> IProcessor::scheduleForEvent()
-{
-    return {schedule(), EPOLLIN | EPOLLERR};
-}
-#endif
 
 Processors IProcessor::expandPipeline()
 {

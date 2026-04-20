@@ -134,6 +134,7 @@ bool isUserError(Error zk_return_code)
         || zk_return_code == Error::ZNOTEMPTY;
 }
 
+
 void CreateRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRecursiveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
@@ -148,11 +149,6 @@ void SyncRequest::addRootPath(const String & root_path) { Coordination::addRootP
 
 void CreateResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path_created, root_path); }
 void WatchResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path, root_path); }
-void ListRecursiveResponse::removeRootPath(const String & root_path)
-{
-    for (auto & child : children)
-        Coordination::removeRootPath(child, root_path);
-}
 
 void MultiResponse::removeRootPath(const String & root_path)
 {

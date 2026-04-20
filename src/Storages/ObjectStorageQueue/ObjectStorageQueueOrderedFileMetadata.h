@@ -21,7 +21,6 @@ public:
         Bucket bucket;
         std::string bucket_lock_path;
         std::string processor_info;
-        std::string zookeeper_name;
         std::string toString() const;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
@@ -36,7 +35,6 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
-        const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode_,
         ObjectStorageQueuePartitioningMode partitioning_mode_,
         const ObjectStorageQueueFilenameParser * parser_,
@@ -48,14 +46,10 @@ public:
     bool useBucketsForProcessing() const override;
     size_t getBucket() const override { chassert(useBucketsForProcessing() && bucket_info); return bucket_info->bucket; }
 
-    PathState getPathState(std::string & failure_message) const override;
-    const std::string & getProcessedWatchPath() const override;
-
     static BucketHolderPtr tryAcquireBucket(
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
         bool use_persistent_processing_nodes_,
-        const std::string & zookeeper_name_,
         LoggerPtr log_);
 
     static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
@@ -67,45 +61,13 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
-    static std::vector<std::string> getLastProcessedPaths(
-        const std::filesystem::path & zk_path,
-        size_t buckets_num,
-        ObjectStorageQueuePartitioningMode partitioning_mode,
-        const std::string & zookeeper_name,
-        LoggerPtr log);
-
-    static void migrateToBuckets(
-        const std::string & zk_path,
-        size_t value,
-        size_t prev_value,
-        const std::string & zookeeper_name_);
-
-    /// Derive the partition key for `path` under the configured partitioning mode.
-    /// Returns an empty string when partitioning is NONE or the key cannot be extracted.
-    static std::string getPartitionKey(
-        const std::string & path,
-        ObjectStorageQueuePartitioningMode partitioning_mode,
-        const ObjectStorageQueueFilenameParser * parser);
-
-    /// Represents the processed / failed state of a single file path as seen in Keeper.
-    struct ProcessingStateFromKeeper
-    {
-        explicit ProcessingStateFromKeeper(bool is_failed_) : is_failed(is_failed_) {}
-        ProcessingStateFromKeeper(const std::string & path, const std::string & last_processed_path_, bool is_failed_);
-
-        std::optional<std::string> last_processed_path = std::nullopt;
-        bool is_failed = false;
-        bool is_processed = false;
-        /// Populated from the failed node data when `is_failed` is true.
-        std::string failure_message;
-    };
+    static void migrateToBuckets(const std::string & zk_path, size_t value, size_t prev_value);
 
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
-        const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser,
@@ -119,10 +81,6 @@ private:
     const BucketInfoPtr bucket_info;
     const ObjectStorageQueuePartitioningMode partitioning_mode;
     const ObjectStorageQueueFilenameParser * parser;
-    /// Keeper path to watch for processing completion.
-    /// Equals `processed_node_path` when there is no partitioning, or
-    /// `processed_node_path / <partition_key>` for HIVE/REGEX partitioned queues.
-    std::string processed_watch_path;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
@@ -133,32 +91,35 @@ private:
         NodeMetadata & result,
         Coordination::Stat * stat,
         const std::string & processed_node_path_,
-        LoggerPtr log_,
-        const std::string & zookeeper_name_);
+        LoggerPtr log_);
+
+    struct ProcessingStateFromKeeper
+    {
+        explicit ProcessingStateFromKeeper(bool is_failed_) : is_failed(is_failed_) {}
+        ProcessingStateFromKeeper(const std::string & path, const std::string & last_processed_path_, bool is_failed_);
+
+        const std::optional<std::string> last_processed_path = std::nullopt;
+        const bool is_failed = false;
+        const bool is_processed = false;
+    };
 
     ProcessingStateFromKeeper getProcessingStateFromKeeper(
         Coordination::Stat * processed_node_stat,
         bool check_failed = false,
-        LoggerPtr log_ = nullptr) const;
+        LoggerPtr log_ = nullptr);
 
-    /// Read the processed/failed state of `file_path` from Keeper without side-effects.
-    /// `processed_node_path_` is the global or per-bucket processed pointer node.
-    /// `processed_node_hive_partitioning_path` is the partition-specific sub-node (optional).
-    /// `failed_node_path_` is the per-file failed node (optional).
     static ProcessingStateFromKeeper getProcessingStateFromKeeper(
         Coordination::Stat * processed_node_stat,
         const std::string & processed_node_path_,
         const std::string & file_path,
         std::optional<std::string> processed_node_hive_partitioning_path = std::nullopt,
         std::optional<std::string> failed_node_path = std::nullopt,
-        LoggerPtr log_ = nullptr,
-        const std::string & zookeeper_name_ = {});
+        LoggerPtr log_ = nullptr);
 
     static bool getMaxProcessedFilesByHivePartition(
         std::unordered_map<std::string, std::string> & last_processed_path_per_hive_partition,
         const std::string & processed_node_path_,
-        LoggerPtr log_,
-        const std::string & zookeeper_name_);
+        LoggerPtr log_);
 
     void doPrepareProcessedRequests(
         Coordination::Requests & requests,
@@ -175,8 +136,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         const Bucket & bucket_,
         const std::string & bucket_lock_path_,
         const std::string & processor_info_,
-        LoggerPtr log_,
-        const std::string & zookeeper_name_);
+        LoggerPtr log_);
 
     ~BucketHolder();
 

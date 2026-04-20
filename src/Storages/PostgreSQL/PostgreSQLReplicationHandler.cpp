@@ -74,14 +74,7 @@ public:
 
     ~TemporaryReplicationSlot()
     {
-        try
-        {
-            handler->dropReplicationSlot(*tx, /* temporary */true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException("TemporaryReplicationSlot");
-        }
+        handler->dropReplicationSlot(*tx, /* temporary */true);
     }
 
 private:
@@ -505,7 +498,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    StorageInMemoryMetadata storage_metadata = *nested_storage->getInMemoryMetadataPtr(insert_context, false);
+    const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
     auto sample_block = std::make_shared<const Block>(storage_metadata.getSampleBlockNonMaterialized());
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
@@ -811,14 +804,11 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     {
         shutdown();
 
-        /// Do not use fault injection during cleanup: leaked replication slots
-        /// can exhaust PostgreSQL's max_replication_slots and break subsequent
-        /// MaterializedPostgreSQL databases.
         postgres::Connection connection(connection_info);
-        connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx){ dropPublication(tx); });
         String last_committed_lsn;
 
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
                 dropReplicationSlot(tx, /* temporary */true);
@@ -827,7 +817,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         if (user_managed_slot)
             return;
 
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
                 dropReplicationSlot(tx, /* temporary */false);

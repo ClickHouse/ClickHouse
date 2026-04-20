@@ -1,12 +1,8 @@
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#if CLICKHOUSE_CLOUD
-#include <Storages/StorageSharedMergeTree.h>
-#endif
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 
@@ -47,7 +43,6 @@ template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::update()
 try
 {
-    auto component_guard = Coordination::setCurrentComponent("AsyncBlockIDsCache");
     auto zookeeper = storage.getZooKeeper();
     std::vector<String> paths = zookeeper->getChildren(path);
     std::unordered_set<String> set;
@@ -69,10 +64,10 @@ catch (...)
 }
 
 template <typename TStorage>
-AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name)
+AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_)
     : storage(storage_)
-    , update_wait(std::chrono::milliseconds((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms].totalMilliseconds()))
-    , path(fs::path(storage.getZooKeeperPath()) / dir_name)
+    , update_wait((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms])
+    , path(storage.getZooKeeperPath() + "/async_blocks")
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
 {
@@ -112,7 +107,7 @@ void AsyncBlockIDsCache<TStorage>::truncate()
 
 /// Caller will keep the version of last call. When the caller calls again, it will wait util gets a newer version.
 template <typename TStorage>
-std::vector<DeduplicationHash> AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 & last_version)
+Strings AsyncBlockIDsCache<TStorage>::detectConflicts(const Strings & paths, UInt64 & last_version)
 {
     if (!(*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
         return {};
@@ -135,12 +130,12 @@ std::vector<DeduplicationHash> AsyncBlockIDsCache<TStorage>::detectConflicts(con
     if (cur_cache == nullptr)
         return {};
 
-    std::vector<DeduplicationHash> conflicts;
-    for (const auto & hash : deduplication_hashes)
+    Strings conflicts;
+    for (const String & p : paths)
     {
-        if (cur_cache->contains(hash.getBlockId()))
+        if (cur_cache->contains(p))
         {
-            conflicts.push_back(hash);
+            conflicts.push_back(p);
         }
     }
 
@@ -150,8 +145,5 @@ std::vector<DeduplicationHash> AsyncBlockIDsCache<TStorage>::detectConflicts(con
 }
 
 template class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
-#if CLICKHOUSE_CLOUD
-template class AsyncBlockIDsCache<StorageSharedMergeTree>;
-#endif
 
 }

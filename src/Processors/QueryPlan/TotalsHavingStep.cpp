@@ -112,23 +112,26 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
 
 void TotalsHavingStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
     settings.out << prefix << "Filter column: " << filter_column_name;
     if (remove_filter)
         settings.out << " (removed)";
     settings.out << '\n';
     settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
 
-    if (!settings.compact && actions_dag)
+    if (actions_dag)
     {
         bool first = true;
-        auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
-        for (const auto & action : expression->getActions())
+        if (actions_dag)
         {
-            settings.out << prefix << (first ? "Actions: "
-                                            : "         ");
-            first = false;
-            settings.out << action.toString() << '\n';
+            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+            for (const auto & action : expression->getActions())
+            {
+                settings.out << prefix << (first ? "Actions: "
+                                                : "         ");
+                first = false;
+                settings.out << action.toString() << '\n';
+            }
         }
     }
 }
@@ -188,7 +191,7 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
     }
 }
 
-QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");

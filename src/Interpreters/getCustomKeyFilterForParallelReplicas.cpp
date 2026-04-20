@@ -1,5 +1,4 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Settings.h>
 
