@@ -678,7 +678,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (const auto & column : columns_desc)
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized && available_columns_set.contains(column.name))
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                && available_columns_set.contains(column.name)
+                && column.default_desc.expression)
             {
                 auto query = column.default_desc.expression->clone();
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
@@ -889,7 +891,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 for (const auto & column : columns_desc)
                 {
                     if (column.default_desc.kind == ColumnDefaultKind::Materialized
-                        && affected_materialized.contains(column.name))
+                        && affected_materialized.contains(column.name)
+                        && column.default_desc.expression)
                     {
                         auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
@@ -1197,7 +1200,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & column : columns_desc)
             {
                 if (column.default_desc.kind != ColumnDefaultKind::Materialized
-                    || !available_columns_set.contains(column.name))
+                    || !available_columns_set.contains(column.name)
+                    || !column.default_desc.expression)
                     continue;
 
                 auto query = column.default_desc.expression->clone();
@@ -1331,7 +1335,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         stages.emplace_back(context);
         for (const auto & column : columns_desc)
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                && column.default_desc.expression)
             {
                 auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
