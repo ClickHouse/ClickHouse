@@ -1272,7 +1272,8 @@ public:
             size_t size = any_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
-                DataTypePtr left_element_type, right_element_type;
+                DataTypePtr left_element_type;
+                DataTypePtr right_element_type;
                 if (both_tuples)
                 {
                     left_element_type = left_tuple->getElements()[i];
