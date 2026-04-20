@@ -136,11 +136,13 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+    """,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
     show_result = node.query(f"SHOW DATABASE {name}")
     assert minio_secret_key not in show_result
@@ -149,23 +151,16 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
 def create_clickhouse_iceberg_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
 ):
-    settings = {
-        "storage_catalog_type": "rest",
-        "storage_warehouse": "demo",
-        "object_storage_endpoint": "http://minio:9000/warehouse-rest",
-        "storage_region": "us-east-1",
-        "storage_catalog_url" : BASE_URL,
-    }
-
-    settings.update(additional_settings)
-
+    settings_suffix = "" if len(additional_settings) == 0 else f"SETTINGS {",".join((k+"="+repr(v) for k, v in additional_settings.items()))}"
     node.query(
         f"""
-SET allow_experimental_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
 CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
-SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+{settings_suffix}
+    """,
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
 
 def drop_clickhouse_iceberg_table(
@@ -455,7 +450,7 @@ def test_hide_sensitive_info(started_cluster):
         started_cluster,
         node,
         CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
+        additional_settings={"auth_header": "Authorization: SECRET_2"},
     )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
 
@@ -487,17 +482,9 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
         },
     )
 
-    table_settings = {
-        "storage_catalog_type": "rest",
-        "storage_warehouse": "demo",
-        "object_storage_endpoint": "http://minio:9000/warehouse-rest",
-        "storage_region": "us-east-1",
-        "storage_catalog_url": BASE_URL,
-    }
     qid_table = uuid.uuid4().hex
     node.query(
-        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
-SETTINGS {",".join((k + "=" + repr(v) for k, v in table_settings.items()))}""",
+        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
         query_id=qid_table,
         settings={
             "allow_experimental_database_iceberg": 1,
@@ -606,6 +593,29 @@ def test_backup_database(started_cluster):
         node.query("SHOW CREATE DATABASE backup_database")
         == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://rest:8181/v1\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'demo\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
     )
+
+
+def test_restore_database_replace_external_to_null(started_cluster):
+    node = started_cluster.instances["node1"]
+    db_name = "backup_database_null"
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+    node.query(f"BACKUP DATABASE {db_name} TO {backup_name}")
+    node.query(f"DROP DATABASE {db_name} SYNC")
+    assert db_name not in node.query("SHOW DATABASES")
+
+    node.query(
+        f"RESTORE DATABASE {db_name} FROM {backup_name}",
+        settings={
+            "restore_replace_external_engines_to_null": 1,
+            "restore_replace_external_table_functions_to_null": 1,
+            "restore_replace_external_dictionary_source_to_null": 1,
+        },
+    )
+    assert db_name not in node.query("SHOW DATABASES")
 
 
 def test_non_existing_tables(started_cluster):
@@ -836,11 +846,13 @@ def test_not_specified_catalog_type(started_cluster):
     node.query(
         f"""
     DROP DATABASE IF EXISTS {CATALOG_NAME};
-    SET allow_database_iceberg=true;
-    SET write_full_path_in_iceberg_metadata=1;
     CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
     SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+    """,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
     assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
@@ -933,12 +945,7 @@ def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 
     node.query("SYSTEM ENABLE FAILPOINT database_iceberg_gcs")
-    node.query(
-        f"""
-        DROP DATABASE IF EXISTS {CATALOG_NAME};
-        SET allow_database_iceberg = 1;
-        """
-    )
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
 
     with pytest.raises(Exception) as err:
         node.query(
@@ -948,6 +955,26 @@ def test_gcs(started_cluster):
             SETTINGS
                 catalog_type = 'rest',
                 warehouse = 'demo',
-            """
+            """,
+            settings={"allow_database_iceberg": 1},
         )
         assert "Google cloud storage converts to S3" in str(err.value)
+
+
+def test_invalid_auth_header_format(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            SET allow_database_iceberg = 1;
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'demo',
+                auth_header = 'wrong.header'
+            """
+        )
+    assert "Invalid auth header format" in str(err.value)

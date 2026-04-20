@@ -836,6 +836,13 @@ namespace ErrorCodes
     If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
     0 - unlimited.
     )", 0) \
+    DECLARE(Bool, compress_per_column_in_compact_parts, true, R"(
+    Controls the physical layout of Compact parts. If true (default), each column in a granule
+    starts a new compressed block, allowing ClickHouse to skip reading unnecessary columns
+    from disk. If false, all columns within a granule are packed into the same compressed block,
+    improving compression ratio but requiring more data to be decompressed during reads.
+    This is beneficial for workloads that always read all columns (e.g. projections).
+    )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
     If the number of active parts in a single partition exceeds the
@@ -1850,7 +1857,7 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
-    DECLARE(String, auto_statistics_types, "", R"(
+    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \

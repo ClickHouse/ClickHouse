@@ -179,8 +179,15 @@ public:
             auto src_supertype = tryGetLeastSupertype(src_array_types);
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
 
+            /// The `transform` function cannot handle Dynamic/Variant types because its
+            /// hash-based lookup includes the type discriminator, so values with the same
+            /// logical content but different stored subtypes (e.g. Dynamic(UInt8(1)) vs
+            /// Dynamic(Int64(1))) produce different hashes and never match.
+            auto expr_type = removeNullable(args.front().type);
             bool can_use_transform = src_supertype && dst_supertype
-                && !(src_supertype->isNullable() && !args.front().type->isNullable());
+                && !(src_supertype->isNullable() && !args.front().type->isNullable())
+                && !isDynamic(expr_type)
+                && !isVariant(expr_type);
 
             if (can_use_transform)
             {
