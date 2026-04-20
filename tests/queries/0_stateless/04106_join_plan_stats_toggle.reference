@@ -1,0 +1,10 @@
+-- use_statistics = 0: left-deep plan, outer ResultRows untrusted
+Join: f[10000] ⋈ s[100] ⋈ n
+ResultRows: unknown
+Join: f[10000] ⋈ s[100]
+ResultRows: 100
+-- use_statistics = 1: dims pre-joined, trusted cardinalities propagate
+Join: f[10000] ⋈ (s[100] ⋈ n[1])
+ResultRows: 1000
+Join: s[100] ⋈ n[1]
+ResultRows: 10
