@@ -490,9 +490,9 @@ template <typename>     /// Unused template parameter is for AggregateFunctionQu
 class QuantileTiming : private boost::noncopyable
 {
 private:
-    union
+    union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `tiny.count` is initialized in `QuantileTiming` ctor
     {
-        detail::QuantileTimingTiny tiny{};
+        detail::QuantileTimingTiny tiny;
         detail::QuantileTimingMedium medium;
         detail::QuantileTimingLarge * large;
     };
