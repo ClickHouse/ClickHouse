@@ -38,6 +38,19 @@ CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
 CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
+def collect_and_encrypt_cores(directory, key_path: str, aes_key_path: str = None) -> List[str]:
+    if aes_key_path is None:
+        aes_key_path = str(Path(directory) / "aes.key")
+    encrypted = []
+    for core in sorted(Path(directory).glob("core.*"))[:3]:
+        if not core.name.endswith(".zst") and not core.name.endswith(".enc"):
+            zst_path = Utils.compress_zst(core)
+            encrypted.append(Utils.encrypt(str(zst_path), key_path, aes_key_path))
+    if encrypted and Path(f"{aes_key_path}.rsa").exists():
+        encrypted.append(f"{aes_key_path}.rsa")
+    return encrypted
+
+
 class ClickHouseProc:
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
@@ -166,13 +179,13 @@ class ClickHouseProc:
 
     def start_azurite(self):
         command = (
-            f"cd {temp_dir} && azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
+            f"cd {temp_dir} && azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory",
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
-        print(f"Started azurite asynchronously with PID {self.azurite_proc.pid}")
+        print(f"Started azurite-rs asynchronously with PID {self.azurite_proc.pid}")
         return True
 
     def start_kafka(self):
@@ -206,24 +219,24 @@ class ClickHouseProc:
     @staticmethod
     def enable_thread_fuzzer_config():
         # For flaky check we also enable thread fuzzer
-        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "10000"
-        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.05"
-        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
+        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
+        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "0.5"
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "0.5"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "0.5"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "0.5"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.0005"
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.0005"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.0005"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.0005"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.001"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "1000"
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "1000"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "1000"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "1000"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
 
     @staticmethod
     def set_memory_ratio(ratio):
@@ -775,15 +788,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
             try:
                 process.wait(timeout=timeout)
+                reader_thread.join()
+                return process.returncode == 0
             except subprocess.TimeoutExpired:
-                print(f"ERROR: fast test timed out after {timeout}s, killing process group")
+                print(
+                    f"ERROR: fast test timed out after {timeout}s, killing process group"
+                )
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.wait()
                 reader_thread.join()
                 return False
-
-            reader_thread.join()
-            return process.returncode == 0
+            finally:
+                # Kill any test processes that survived clickhouse-test's own cleanup
+                # (e.g. if it was killed with SIGKILL before its signal handlers ran).
+                # clickhouse-test writes the group pid file itself on startup; --cleanup
+                # reads it and kills all orphaned test process groups.
+                _clickhouse_test = Path(__file__).resolve().parent.parent.parent.parent / "tests" / "clickhouse-test"
+                subprocess.run([sys.executable, str(_clickhouse_test), "--cleanup"], check=False)
 
     def terminate(self, force=False):
         if self.minio_proc:
@@ -860,8 +881,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
-                if Path(f"{self.aes_key}.rsa").exists():
-                    res.append(f"{self.aes_key}.rsa")
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -886,11 +905,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
-        cores = list(p_temp_dir.glob("run_r*/core.*"))[:3]
-        return [
-            Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/ci/defs/public.pem", self.aes_key)
-            for f in cores
-        ]
+        result = []
+        for run_dir in sorted(p_temp_dir.glob("run_r*")):
+            result.extend(
+                collect_and_encrypt_cores(
+                    run_dir, f"{repo_dir}/ci/defs/public.pem", self.aes_key
+                )
+            )
+        return result
 
     @classmethod
     def _get_logs_archive_coordination(cls):
@@ -1010,7 +1032,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     Result.create_from(
                         name="Sanitizer assert or Fatal messages in server logs",
                         info="no server logs found",
-                        status=Result.StatusExtended.FAIL,
+                        status=Result.Status.FAIL,
                         labels=[Result.Label.BLOCKER],  # to explicitly block the merge
                     )
                 )
@@ -1026,7 +1048,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         Result.create_from(
                             name=name,
                             info=description,
-                            status=Result.StatusExtended.FAIL,
+                            status=Result.Status.FAIL,
                             files=files,
                             labels=[
                                 Result.Label.BLOCKER
@@ -1038,7 +1060,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         Result.create_from(
                             name="Failed to parse sanitizer/fatal failure from server logs",
                             info=traceback.format_exc(),
-                            status=Result.StatusExtended.FAIL,
+                            status=Result.Status.FAIL,
                             labels=[
                                 Result.Label.BLOCKER
                             ],  # to explicitly block the merge
@@ -1077,9 +1099,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # convert statuses to CH tests notation
         for result in results:
             if result.is_ok():
-                result.set_status(Result.StatusExtended.OK)
+                result.set_status(Result.Status.OK)
             else:
-                result.set_status(Result.StatusExtended.FAIL)
+                result.set_status(Result.Status.FAIL)
         return results
 
     def dump_system_tables(self):
@@ -1146,7 +1168,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             for cache_status_path in cache_status_files:
                 Shell.check(f"rm {cache_status_path}", verbose=True)
 
-        scraping_system_table = Result(name=f"Scraping system tables", status="OK")
+        scraping_system_table = Result(name=f"Scraping system tables", status=Result.Status.OK)
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1226,7 +1248,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         )
 
         if scraping_system_table.info:
-            scraping_system_table.set_status(Result.StatusExtended.FAIL)
+            scraping_system_table.set_status(Result.Status.FAIL)
             self.extra_tests_results.append(scraping_system_table)
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
