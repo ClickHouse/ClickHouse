@@ -131,11 +131,8 @@ public:
     /// Non-blocking variant: returns nullptr if another thread already holds the guard.
     /// Useful in background operations where waiting could deadlock against shutdown.
     DDLGuardPtr tryGetDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
-    /// Acquire a DDLGuard for a storage whose StorageID may be concurrently renamed. Uses
-    /// tryGetDDLGuard in a polling loop, checking `is_alive()` between iterations so background
-    /// callers can bail out on shutdown instead of blocking the thread that is waiting on them.
-    /// Throws TIMEOUT_EXCEEDED if the guard cannot be acquired within `timeout`, or ABORTED if
-    /// `is_alive()` returns false.
+    /// Non-blocking DDLGuard acquisition with rename-retry; throws TIMEOUT_EXCEEDED on timeout or
+    /// ABORTED when `is_alive()` returns false (lets background callers bail out on shutdown).
     DDLGuardPtr tryGetDDLGuardForStorage(
         const StoragePtr & storage,
         const Poco::Timespan & timeout,

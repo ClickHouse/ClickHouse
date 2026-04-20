@@ -285,10 +285,10 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     {
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
-            auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
-            /// Serializes with concurrent RENAME/EXCHANGE TABLES. RMT may release early.
+            /// DDLGuard first to keep lock order consistent with RENAME/EXCHANGE and the RMT queue.
             auto ddl_guard = DatabaseCatalog::instance().tryGetDDLGuardForStorage(
                 table, settings[Setting::lock_acquire_timeout]);
+            auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             alter_commands->validate(table, context);
             alter_commands->prepare(*metadata_snapshot);

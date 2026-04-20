@@ -1100,8 +1100,6 @@ DDLGuardPtr DatabaseCatalog::tryGetDDLGuardForStorage(
     const Poco::Timespan & timeout,
     std::function<bool()> is_alive)
 {
-    /// Non-blocking by design: acquiring with a plain getDDLGuard would deadlock when a DROP
-    /// already holds this guard while waiting on a background thread that calls us.
     auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
     while (is_alive())
     {
@@ -1109,8 +1107,7 @@ DDLGuardPtr DatabaseCatalog::tryGetDDLGuardForStorage(
         DDLGuardPtr guard = tryGetDDLGuard(before.database_name, before.table_name, /*expected_database=*/nullptr);
         if (guard)
         {
-            /// Re-check that the storage is still at the guarded (db, table); a RENAME could have
-            /// moved it between the StorageID snapshot and the guard acquisition.
+            /// Re-check StorageID: a RENAME could have moved the storage under us.
             StorageID after = storage->getStorageID();
             if (after.database_name == before.database_name
                 && after.table_name == before.table_name
@@ -2210,7 +2207,7 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
     {
         table_lock = std::unique_lock(*it->second.mutex, std::try_to_lock);
         if (!table_lock.owns_lock())
-            return;   /// Caller inspects ownsTableLock(); destructor still cleans up the counter.
+            return;
     }
     else
     {
@@ -2270,6 +2267,7 @@ DDLGuard::~DDLGuard()
         db_mutex.unlock_shared();
     releaseTableLock();
 }
+
 
 std::pair<String, String> TableNameHints::getHintForTable(const String & table_name) const
 {
