@@ -74,8 +74,12 @@ Processors IProcessor::expandPipeline()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
 }
 
-void IProcessor::cancel() noexcept
+void IProcessor::cancel(IProcessor::CancelReason reason) noexcept
 {
+    /// PartialResult means the consumer has enough data and only wants external ingress to stop
+    /// while the rest of the pipeline drains. Only sources act on it;
+    if (reason == CancelReason::PartialResult)
+        return;
 
     bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
     if (already_cancelled)
