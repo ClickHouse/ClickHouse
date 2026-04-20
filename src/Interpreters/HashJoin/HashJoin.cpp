@@ -894,12 +894,18 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         {
             for (auto & column : stored_columns.columns_info.columns)
                 column = column->cloneResized(column->size());
+
+            /// `cloneResized` replaces each column with a new object.
+            /// The raw pointers in `replicated_columns` pointed at the old objects and are now dangling.
+            stored_columns.columns_info.rebuildReplicatedColumns();
         }
         catch (...)
         {
             /// If cloneResized throws (e.g., due to memory allocation failure or fault injection),
             /// some columns may have already been replaced with shrunk copies while
             /// data->allocated_size still reflects the old sizes. Recalculate to stay consistent.
+            /// Also rebuild replicated_columns for columns that were already replaced, to avoid dangling pointers.
+            stored_columns.columns_info.rebuildReplicatedColumns();
             size_t partial_new_size = stored_columns.allocatedBytes();
             if (old_size >= partial_new_size)
                 data->allocated_size -= old_size - partial_new_size;
