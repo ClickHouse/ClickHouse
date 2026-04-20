@@ -306,7 +306,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::optional<DB::KeyDescription> partition_key_description;
     if (!partition_columns_description.empty())
         partition_key_description.emplace(
-            DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context_));
+            DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context_));
 
     size_t total_rows = manifest_file_deserializer_->rows();
 
