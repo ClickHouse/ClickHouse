@@ -658,54 +658,6 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_par
     assert cluster_optimized_traffic == optimized_traffic
 
 
-# --- Kill-query regression test (GitHub issue #98165) ---
-#
-# Before the fix, RemoteQueryExecutor::read() and readAsync() held
-# was_cancelled_mutex while calling processReadTaskRequest().  For
-# icebergS3Cluster (and any other cluster table-function where the task
-# iterator does slow I/O), this caused cancel() to block on that mutex,
-# making the initiator query unkillable.
-#
-# The fix releases was_cancelled_mutex before calling processReadTaskRequest().
-#
-# The key observable difference:
-#   KILL QUERY calls RemoteQueryExecutor::cancel() SYNCHRONOUSLY (the KILL
-#   QUERY command itself blocks until cancel() returns).  Therefore:
-#
-#   Without fix: KILL QUERY blocks for the entire duration of the slow S3
-#                listing, because cancel() must wait for was_cancelled_mutex
-#                which is held by processReadTaskRequest().
-#   With fix:    cancel() acquires was_cancelled_mutex immediately (it is no
-#                longer held during processReadTaskRequest()), so KILL QUERY
-#                returns in a fraction of a second.
-#
-# The test measures how long KILL QUERY itself takes.  If it finishes before
-# the S3 listing delay expires, the fix is working.
-
-_listing_delay_mock_started = False
-_DELAY_MOCK_PORT = "8082"
-_DELAY_MOCK_HOST = "resolver"
-# How long the mock delays every listing request.
-# Must be large enough to clearly distinguish fast (fixed) vs slow (broken),
-# and large enough to outlast the KILL QUERY synchronisation window.
-_LISTING_DELAY_S = 30
-# Maximum acceptable duration for KILL QUERY to complete with the fix applied.
-# Must be much less than _LISTING_DELAY_S.
-_MAX_KILL_DURATION_S = 5
-
-
-def _start_listing_delay_mock(cluster):
-    global _listing_delay_mock_started
-    if _listing_delay_mock_started:
-        return
-    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
-    start_mock_servers(
-        cluster,
-        script_dir,
-        [("s3_listing_delay_mock.py", "resolver", _DELAY_MOCK_PORT)],
-    )
-    _listing_delay_mock_started = True
-
 # --- icebergS3Cluster large-data functional test (GitHub issue #98165) ---
 # Number of data files (iceberg snapshots) to create.
 _LARGE_NUM_FILES = 170
