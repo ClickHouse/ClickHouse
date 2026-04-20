@@ -190,7 +190,7 @@ class Info:
         else:
             assert branch
             ref_param = f"REF={branch}"
-        path = Settings.HTML_S3_PATH
+        path = Settings.S3_REPORT_BUCKET
         for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
@@ -210,7 +210,7 @@ class Info:
         else:
             assert branch
             ref_param = f"REF={branch}"
-        path = Settings.HTML_S3_PATH
+        path = Settings.S3_REPORT_BUCKET
         for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)

@@ -111,6 +111,21 @@ void IAggregateFunction::merge(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
 }
 
+void IAggregateFunction::parallelizeMergeMulti(
+    AggregateDataPtrs & places,
+    ThreadPool & thread_pool,
+    std::atomic<bool> & is_cancelled,
+    Arena * arena) const
+{
+    /// Default: fall back to pairwise parallel merge.
+    for (size_t i = 1; i < places.size(); ++i)
+    {
+        if (is_cancelled.load(std::memory_order_seq_cst))
+            return;
+        merge(places[0], places[i], thread_pool, is_cancelled, arena);
+    }
+}
+
 void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
 {
     if (isState())

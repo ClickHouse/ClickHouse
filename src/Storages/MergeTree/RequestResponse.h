@@ -27,11 +27,6 @@ enum class CoordinationMode : uint8_t
     MAX = ReverseOrder,
 };
 
-constexpr bool isInOrder(CoordinationMode mode)
-{
-    return mode == CoordinationMode::WithOrder || mode == CoordinationMode::ReverseOrder;
-}
-
 /// Represents a segment [left; right]
 struct PartBlockRange
 {
@@ -46,32 +41,23 @@ struct PartBlockRange
 
 /// ParallelReadRequest is used by remote replicas during parallel read
 /// to signal an initiator that they need more marks to read.
-///
-/// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MODE_SPECIFIC_REQUESTS, in-order requests
-/// no longer carry part descriptions — the coordinator already knows the part set
-/// from the initial announcement. For older protocol versions, the description field
-/// is still serialized for backward compatibility.
 struct ParallelReadRequest
 {
-    /// Default mode: no part descriptions needed, coordinator uses hash-based distribution.
-    ParallelReadRequest(CoordinationMode mode_, size_t replica_num_, size_t min_marks_per_request_)
-        : mode(mode_), replica_num(replica_num_), min_marks_per_request(min_marks_per_request_)
-    {}
+    /// No default constructor, you must initialize all fields at once.
 
-    /// In-order mode for new protocol
     ParallelReadRequest(
         CoordinationMode mode_,
         size_t replica_num_,
         size_t min_marks_per_request_,
-        size_t split_id_,
-        RangesInDataPartsDescription description_ = {} // Empty in new protocol versions
-        )
+        RangesInDataPartsDescription description_,
+        String stream_id_)
         : mode(mode_)
         , replica_num(replica_num_)
         , min_marks_per_request(min_marks_per_request_)
-        , split_id(split_id_)
         , description(std::move(description_))
-    {}
+        , stream_id(std::move(stream_id_))
+    {
+    }
 
     CoordinationMode mode;
     size_t replica_num;
@@ -81,18 +67,16 @@ struct ParallelReadRequest
     /// compatibility with older initiators that still read it from each request.
     size_t min_marks_per_request;
 
-    /// Identifies which reading stream (split) within a replica this request is for.
-    /// Used by the coordinator to maintain independent read positions per split.
-    size_t split_id{0};
-
-    /// Part descriptions for backward compatibility with old in-order protocol.
-    /// Empty for Default mode and for new in-order protocol.
+    /// Extension for Ordered (InOrder or ReverseOrder) mode
+    /// Contains only data part names without mark ranges.
     RangesInDataPartsDescription description;
+
+    /// Identifies the data stream for coordinator dispatch (e.g. table name, projection name).
+    String stream_id;
 
     void serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const;
     String describe() const;
     static ParallelReadRequest deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
-    void merge(ParallelReadRequest & other);
 };
 
 /// ParallelReadResponse is used by an initiator to tell
@@ -103,6 +87,7 @@ struct ParallelReadResponse
 {
     bool finish{false};
     RangesInDataPartsDescription description;
+    String stream_id;
 
     void serialize(WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const;
     String describe() const;
@@ -124,14 +109,15 @@ struct InitialAllRangesAnnouncement
         size_t replica_num_,
         size_t mark_segment_size_,
         size_t min_marks_per_request_,
-        size_t split_id_ = 0)
+        String stream_id_)
         : mode(mode_)
         , description(std::move(description_))
         , replica_num(replica_num_)
         , mark_segment_size(mark_segment_size_)
         , min_marks_per_request(min_marks_per_request_)
-        , split_id(split_id_)
-    {}
+        , stream_id(std::move(stream_id_))
+    {
+    }
 
     CoordinationMode mode;
     RangesInDataPartsDescription description;
@@ -143,9 +129,8 @@ struct InitialAllRangesAnnouncement
     /// Total number of marks the replica wants per coordinator request.
     size_t min_marks_per_request;
 
-    /// Identifies the reading stream (split) within a replica.
-    /// Each split announces its own subset of ranges.
-    size_t split_id{0};
+    /// Identifies the data stream for coordinator dispatch (e.g. table name, projection name).
+    String stream_id;
 
     void serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const;
     String describe();

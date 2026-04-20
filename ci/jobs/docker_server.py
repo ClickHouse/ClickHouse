@@ -321,7 +321,7 @@ def test_docker_library(test_results) -> None:
         test_results.append(
             Result(
                 name=test_name,
-                status=Result.Status.FAILED,
+                status=Result.Status.FAIL,
                 info=f"Exception while testing docker library: {traceback.format_exc()}",
             )
         )
