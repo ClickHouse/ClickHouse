@@ -33,6 +33,8 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
+    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
+
     void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
