@@ -179,5 +179,43 @@ INSERT INTO t_pk_type_mismatch_13 VALUES ('2024-01-01 12:30:00.000'), ('2024-06-
 SELECT c0, toStartOfMinute(c0) FROM t_pk_type_mismatch_13 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_13;
 
+-- Test 14: INVERSE mixed-settings lifecycle — key is created WITHOUT the extended setting
+-- (key_type = Date), then the skip index is added WITH the setting (idx_type = Date32).
+-- At INSERT time, the rebuild context has the setting off, so the DAG output for
+-- toMonday(c0) matches the key type — no key CAST is needed. But the skip index
+-- expects Date32, so the index CAST loop would CAST the shared output to Date32,
+-- overwriting the key-typed column. The primary index serializer then reads Date32
+-- (Int32) but its metadata expects Date (UInt16) — "Bad cast".
+-- This exercises the case the first collision fix did NOT cover: key_cast_outputs
+-- was empty (no key CAST happened), so the index CAST was not skipped. The fix:
+-- pin every key-named output unconditionally, independent of whether a key CAST
+-- was applied.
+DROP TABLE IF EXISTS t_pk_type_mismatch_14;
+SET enable_extended_results_for_datetime_functions = 0;
+CREATE TABLE t_pk_type_mismatch_14 (c0 Date32) ENGINE = MergeTree() ORDER BY (toMonday(c0));
+
+SET enable_extended_results_for_datetime_functions = 1;
+ALTER TABLE t_pk_type_mismatch_14 ADD INDEX idx_monday toMonday(c0) TYPE minmax GRANULARITY 1;
+
+SET enable_extended_results_for_datetime_functions = 0;
+INSERT INTO t_pk_type_mismatch_14 (c0) VALUES ('2024-01-01'), ('2024-06-15');
+SELECT c0, toMonday(c0) FROM t_pk_type_mismatch_14 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_14;
+
+-- Test 15: Same as Test 14 but with DateTime64 (INVERSE of Test 13)
+-- Key created with setting=0: toStartOfMinute(DateTime64) → DateTime (UInt32)
+-- Index added with setting=1: toStartOfMinute(DateTime64) → DateTime64(3)
+DROP TABLE IF EXISTS t_pk_type_mismatch_15;
+SET enable_extended_results_for_datetime_functions = 0;
+CREATE TABLE t_pk_type_mismatch_15 (c0 DateTime64(3)) ENGINE = MergeTree() ORDER BY (toStartOfMinute(c0));
+
+SET enable_extended_results_for_datetime_functions = 1;
+ALTER TABLE t_pk_type_mismatch_15 ADD INDEX idx_minute toStartOfMinute(c0) TYPE minmax GRANULARITY 1;
+
+SET enable_extended_results_for_datetime_functions = 0;
+INSERT INTO t_pk_type_mismatch_15 VALUES ('2024-01-01 12:30:00.000'), ('2024-06-15 08:15:30.500');
+SELECT c0, toStartOfMinute(c0) FROM t_pk_type_mismatch_15 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_15;
+
 -- Restore setting
 SET enable_extended_results_for_datetime_functions = 1;
