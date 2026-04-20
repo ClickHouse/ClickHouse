@@ -225,7 +225,7 @@ void compactReplicatedColumns(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-    
+
     /// Step 1: Materialize columns where replication provides no benefit.
     for (auto & col : columns)
         col = convertToFullColumnIfReplicationNotUseful(col);
