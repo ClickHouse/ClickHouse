@@ -514,16 +514,25 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             if (old_entity && name_collision_id.has_value())
                 memory_storage.insert(*name_collision_id, old_entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
             /// Clean up the .sql file if it was already written.
-            std::filesystem::remove(getEntityFilePath(directory_path, id));
+            /// Use the non-throwing overload so we don't mask the original exception if cleanup fails.
+            std::error_code ec;
+            auto new_file_path = getEntityFilePath(directory_path, id);
+            std::filesystem::remove(new_file_path, ec);
+            if (ec)
+                LOG_WARNING(getLogger(), "Failed to clean up {} after a failed insert: {}", new_file_path, ec.message());
             throw;
         }
 
         /// Now that the new file is on disk, remove the old collision file (different UUID, same name).
         /// Tolerate missing files: the old file may have been already removed or never existed.
+        /// Use the non-throwing overload so that a cleanup error doesn't turn a successful replacement into a reported failure.
         if (name_collision_id.has_value() && *name_collision_id != id)
         {
             auto old_file_path = getEntityFilePath(directory_path, *name_collision_id);
-            std::filesystem::remove(old_file_path);
+            std::error_code ec;
+            std::filesystem::remove(old_file_path, ec);
+            if (ec)
+                LOG_WARNING(getLogger(), "Failed to remove replaced file {}: {}", old_file_path, ec.message());
         }
     }
 
