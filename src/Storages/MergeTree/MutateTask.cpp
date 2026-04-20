@@ -1,47 +1,47 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/MergeTree/MutateTask.h>
 
+#include <Columns/ColumnsNumber.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/NestedUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
-#include <Common/logger_useful.h>
-#include <Common/escapeForFileName.h>
-#include <Core/Settings.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/Statistics/Statistics.h>
-#include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/Squashing.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
-#include <Processors/Transforms/TTLTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
-#include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/TextIndexUtils.h>
-#include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeVariant.h>
-#include <boost/algorithm/string/replace.hpp>
-#include <Common/ProfileEventsScope.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <Common/FailPoint.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/TextIndexUtils.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/Statistics/Statistics.h>
+#include <boost/algorithm/string/replace.hpp>
+#include <Common/FailPoint.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/escapeForFileName.h>
 
 
 namespace ProfileEvents
@@ -363,7 +363,7 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name) && !ignored_columns.contains(column.name))
+                if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name) && !ignored_columns.contains(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
@@ -541,6 +541,7 @@ getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
     const Block & updated_header,
     NamesAndTypesList storage_columns,
+    NamesAndTypesList persistent_virtuals,
     const SerializationInfoByName & serialization_infos,
     const MutationCommands & commands_for_interpreter,
     const MutationCommands & commands_for_removes)
@@ -600,8 +601,6 @@ getColumnsForNewDataPart(
             renamed_columns_from_to.emplace(command.column_name, command.rename_to);
         }
     }
-
-    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
 
     for (const auto & [name, type] : persistent_virtuals)
     {
@@ -2007,7 +2006,7 @@ private:
             skip_indices,
             ctx->compression_codec,
             std::move(index_granularity_ptr),
-            ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
+            ctx->txn ? ctx->txn->tid : Tx::NonTransactionalTID,
             ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
@@ -2125,11 +2124,10 @@ private:
         ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-        TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
+        TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::NonTransactionalTID;
         /// NOTE do not pass context for writing to system.transactions_info_log,
         /// because part may have temporary name (with temporary block numbers). Will write it later.
-        ctx->new_data_part->version.setCreationTID(tid, nullptr);
-        ctx->new_data_part->storeVersionMetadata();
+        ctx->new_data_part->version->setAndStoreCreationTID(tid, nullptr);
 
         auto settings = ctx->source_part->storage.getSettings();
         NameSet hardlinked_files;
@@ -2921,7 +2919,7 @@ bool MutateTask::prepare()
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
-        ctx->source_part, ctx->updated_header, ctx->storage_columns,
+        ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());

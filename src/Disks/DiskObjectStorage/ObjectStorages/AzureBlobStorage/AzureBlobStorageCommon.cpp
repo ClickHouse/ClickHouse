@@ -440,8 +440,10 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
 {
     String storage_url;
     String account_name;
+    String account_key;
     String container_name;
     String prefix;
+    bool endpoint_contains_account_name = false;
 
     auto get_container_name = [&]
     {
@@ -461,7 +463,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
 
         /// For some authentication methods account name is not present in the endpoint
         /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
-        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
+        endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
 
         size_t pos = endpoint.find("//");
         if (pos == std::string::npos)
@@ -512,7 +514,16 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
             {
                 container_name = endpoint.substr(cont_pos_begin + 1);
             }
+
+            /// When the account name is not embedded in the endpoint path, read it
+            /// from the explicit `account_name` config key if provided.
+            /// It will not be appended to service/container URLs (add_account_name_to_url = false),
+            /// but is stored for use by external systems such as delta-kernel-rs.
+            if (config.has(config_prefix + ".account_name"))
+                account_name = config.getString(config_prefix + ".account_name");
         }
+        if (config.has(config_prefix + ".account_key"))
+                account_key = config.getString(config_prefix + ".account_key");
         if (config.has(config_prefix + ".endpoint_subpath"))
         {
             String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
@@ -535,6 +546,14 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
         storage_url = config.getString(config_prefix + ".storage_account_url");
         validateStorageAccountUrl(storage_url);
         container_name = get_container_name();
+
+        /// The account name is not part of the URL here; read it from config if provided.
+        /// It will not be appended to service/container URLs (add_account_name_to_url defaults
+        /// to false for this path), but is stored for use by external systems such as delta-kernel-rs.
+        if (config.has(config_prefix + ".account_name"))
+            account_name = config.getString(config_prefix + ".account_name");
+        if (config.has(config_prefix + ".account_key"))
+            account_key = config.getString(config_prefix + ".account_key");
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `storage_account_url` or `connection_string` or `endpoint` in config");
@@ -546,7 +565,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
 
-    return {storage_url, account_name, container_name, prefix, "", "", container_already_exists};
+    return {storage_url, account_name, account_key, container_name, prefix, /* sas_auth */"", /* additional_params */"", container_already_exists, endpoint_contains_account_name};
 }
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
