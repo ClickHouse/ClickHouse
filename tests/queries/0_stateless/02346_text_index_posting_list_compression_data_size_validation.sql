@@ -19,7 +19,8 @@ CREATE TABLE tab_bitpacking
     str String CODEC(LZ4),
     INDEX inv_idx str TYPE text(
         tokenizer = 'splitByNonAlpha',
-        posting_list_codec = 'bitpacking'
+        posting_list_codec = 'bitpacking',
+        positions = 0
     )
 )
 ENGINE = MergeTree
@@ -45,7 +46,8 @@ CREATE TABLE tab_uncompressed
     ts DateTime CODEC(LZ4),
     str String CODEC(LZ4),
     INDEX inv_idx str TYPE text(
-        tokenizer = 'splitByNonAlpha'
+        tokenizer = 'splitByNonAlpha',
+        positions = 0
     )
 )
 ENGINE = MergeTree
