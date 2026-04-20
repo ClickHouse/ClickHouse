@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Disks/SingleDiskVolume.h>
@@ -336,8 +337,21 @@ void MergeTextIndexesTask::flushPostingList()
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
 
+    /// Serialize position data if positions are enabled.
+    if (params.positions && !output_positions.empty())
+    {
+        auto * positions_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+
+        token_info.header |= PostingsSerialization::Flags::HasPositions;
+        token_info.position_offset = positions_stream->plain_hashing.count();
+        token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
+
+        TextIndexPositionCodec::encode(output_positions, positions_stream->plain_hashing);
+    }
+
     output_infos.push_back(token_info);
     output_postings.clear();
+    output_positions.clear();
 }
 
 void MergeTextIndexesTask::flushDictionaryBlock()
@@ -413,7 +427,7 @@ bool MergeTextIndexesTask::executeStep()
 
     do
     {
-        SortCursor current = queue.current();
+        const SortCursor & current = queue.current();
 
         if (isNewToken(current))
         {
@@ -432,6 +446,34 @@ bool MergeTextIndexesTask::executeStep()
         {
             posting = adjustPartOffsets(current->order, posting);
             output_postings |= *posting;
+        }
+
+        /// Read and merge position data if positions are enabled.
+        if (params.positions)
+        {
+            const auto & token_info = inputs[current->order].token_infos[current->getRow()];
+            if (token_info.header & PostingsSerialization::Flags::HasPositions)
+            {
+                auto * pos_stream = input_streams[current->order].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+                auto * pos_data_buffer = pos_stream->getDataBuffer();
+                pos_stream->seekToMark({token_info.position_offset, 0});
+
+                std::vector<RoaringishEntry> position_entries;
+                TextIndexPositionCodec::decode(*pos_data_buffer, position_entries);
+
+                /// Adjust doc_ids if merging parts with offset remapping.
+                if (merged_part_offsets)
+                {
+                    size_t part_index = segments[current->order].part_index;
+                    for (auto & entry : position_entries)
+                    {
+                        UInt32 new_doc_id = static_cast<UInt32>((*merged_part_offsets)[part_index, entry.docId()]);
+                        entry = entry.withDocId(new_doc_id);
+                    }
+                }
+
+                output_positions.insert(output_positions.end(), position_entries.begin(), position_entries.end());
+            }
         }
 
         if (!current->isLast())
