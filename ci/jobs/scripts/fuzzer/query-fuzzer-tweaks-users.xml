@@ -29,7 +29,7 @@
 
                 <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
                 <enable_analyzer>
-                    <readonly/>
+                    <min>1</min>
                 </enable_analyzer>
 
                 <!-- Prevent stack overflow -->

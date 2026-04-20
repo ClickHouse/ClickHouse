@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/demangle.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashing/HashMethod.h>
@@ -9,11 +10,8 @@
 #include <Common/SipHash.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/assert_cast.h>
-#include <Interpreters/AggregationCommon.h>
 #include <base/unaligned.h>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/Defines.h>

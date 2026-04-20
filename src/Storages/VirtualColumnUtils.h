@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IPartitionStrategy.h>
@@ -15,10 +16,14 @@ namespace DB
 class Block;
 class Chunk;
 class NamesAndTypesList;
+class ColumnsDescription;
 
 class ExpressionActions;
 class IMergeTreeDataPart;
 using DataPartsVector = std::vector<std::shared_ptr<const IMergeTreeDataPart>>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 namespace VirtualColumnUtils
 {
@@ -151,6 +156,11 @@ void addRequestedFileLikeStorageVirtualsToChunk(
 /// the "need only count" optimization that skips actual row parsing.
 bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns);
 
+/// Append virtual columns to a physical columns list for expression analysis.
+/// Virtual columns that already exist in the list are skipped.
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns);
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns);
+
 /// Find hive partitioning part inside path
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g
 std::string_view findHivePartitioningInPath(const String & path);
@@ -160,6 +170,13 @@ std::string_view findHivePartitioningInPath(const String & path);
 DataPartsVector filterDataPartsWithExpression(
     const DataPartsVector & data_parts,
     const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
+
+/// Filter out common virtual column names (marked with is_common) from the given list.
+Names filterVirtualColumns(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsKind & kind_to_filter,
+    const VirtualsMaterializationPlace & place_to_filter);
 
 /// Splits requested column names into physical and virtual.
 /// Returns {physical_names, virtual_names}. Always includes at least one physical column.

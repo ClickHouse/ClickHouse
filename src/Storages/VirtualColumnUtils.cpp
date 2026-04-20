@@ -42,6 +42,7 @@
 #include <Functions/indexHint.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/StorageSnapshot.h>
@@ -204,7 +205,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
             return;
 
         const auto & type = pair.getTypeInStorage();
-        desc.addEphemeral(name, type, "");
+        desc.addEphemeral(name, type, "", VirtualsMaterializationPlace::Reader);
     };
 
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
@@ -720,6 +721,49 @@ DataPartsVector filterDataPartsWithExpression(
     return filtered_parts;
 }
 
+Names filterVirtualColumns(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsKind & kind_to_filter,
+    const VirtualsMaterializationPlace & place_to_filter)
+{
+    Names result;
+    result.reserve(column_names.size());
+    for (const auto & name : column_names)
+    {
+        if (metadata_snapshot->isVirtualColumn(name))
+            if (metadata_snapshot->virtuals.tryGet(name, kind_to_filter, place_to_filter))
+                continue;
+
+        result.push_back(name);
+    }
+
+    /// If all requested columns were common virtuals, we still need at least one
+    /// physical column so the storage has something to read.
+    if (result.empty())
+        if (const auto & all_physical = metadata_snapshot->getColumns().getAllPhysical(); !all_physical.empty())
+            result.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
+
+    return result;
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns)
+{
+    return getColumnsWithVirtualsForAnalysis(
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()),
+        virtual_columns.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns)
+{
+    auto result = columns;
+    for (const auto & col : virtual_columns)
+        if (!result.contains(col.name))
+            result.push_back(col);
+
+    return result;
+}
+
 std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
 {
     Names physical_names;
@@ -728,9 +772,9 @@ std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_
     {
         /// If the column exists in the table schema, treat it as physical even if
         /// a virtual column with the same name is registered.
-        if (storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name))
+        if (storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name))
             physical_names.push_back(name);
-        else if (storage_snapshot->virtual_columns->tryGetDescription(name))
+        else if (storage_snapshot->metadata->virtuals.tryGetDescription(name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
             virtual_names.push_back(name);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' is neither physical nor virtual", name);
