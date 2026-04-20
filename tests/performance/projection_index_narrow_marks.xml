@@ -1,0 +1,34 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <min_table_rows_to_use_projection_index>0</min_table_rows_to_use_projection_index>
+        <max_projection_rows_to_use_projection_index>1000000000</max_projection_rows_to_use_projection_index>
+    </settings>
+
+    <create_query>
+        CREATE TABLE projection_index_narrow_marks
+        (
+            id UInt64,
+            trace_id FixedString(16),
+            payload String,
+            PROJECTION by_trace_id (SELECT _part_offset ORDER BY trace_id)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 8, max_bytes_to_merge_at_max_space_in_pool = 1
+    </create_query>
+
+    <!-- 20 parts of 500k rows each. The needle trace_id appears in only 2 of
+         them (rows 42 and 4000042), so the narrowing path should prune 18/20
+         parts entirely while the baseline still distributes every mark of
+         every part. -->
+    <fill_query>INSERT INTO projection_index_narrow_marks SELECT number, if(number IN (42, 4000042), unhex('00000000000000000000000000000042'), unhex(hex(sipHash128(toString(number))))), repeat('x', 16) FROM numbers_mt(10000000) SETTINGS max_insert_block_size = 500000, min_insert_block_size_rows = 500000</fill_query>
+
+    <!-- Baseline: canSkipMark over every mark of every part. -->
+    <query>SELECT count(id), length(min(payload)) FROM projection_index_narrow_marks WHERE trace_id = unhex('00000000000000000000000000000042') SETTINGS projection_index_narrow_marks = 0</query>
+
+    <!-- With narrowing: 18/20 parts are pruned, surviving parts drop to a handful of granules. -->
+    <query>SELECT count(id), length(min(payload)) FROM projection_index_narrow_marks WHERE trace_id = unhex('00000000000000000000000000000042') SETTINGS projection_index_narrow_marks = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS projection_index_narrow_marks</drop_query>
+</test>
