@@ -179,9 +179,17 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 
 static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
 {
+    /// TTL uses the legacy `TreeRewriter` + `ExpressionAnalyzer` path because the TTL
+    /// WHERE clause supports subqueries (e.g. `TTL t WHERE a IN (SELECT ...)`), and
+    /// those subqueries must be built lazily via `FutureSetFromSubquery`.  The Analyzer
+    /// helper `analyzeExpressionToActionsDAG` eagerly builds subquery sets at analysis
+    /// time — that would execute the subquery during DDL (CREATE TABLE) and also
+    /// during every merge, which is undesirable.
     ExpressionAndSets result;
     auto ttl_string = ast->formatWithSecretsOneLine();
-    auto dag = analyzeExpressionToActionsDAG(ast, columns, context);
+    auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
+    ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
+    auto dag = analyzer.getActionsDAG(false);
 
     const auto * col = &dag.findInOutputs(ast->getColumnName());
     if (col->result_name != ttl_string)
@@ -191,7 +199,7 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     dag.removeUnusedActions();
 
     result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
-    result.sets = std::make_shared<PreparedSets>();
+    result.sets = analyzer.getPreparedSets();
 
     return result;
 }
@@ -255,8 +263,9 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             if (ASTPtr where_expr_ast = ttl_element->where())
             {
-                checkExpressionDoesntContainSubqueries(*where_expr_ast);
-
+                /// Do not check for subqueries here: TTL WHERE supports subqueries
+                /// (e.g. `TTL t WHERE a IN (SELECT ...)`), which are built lazily
+                /// via `FutureSetFromSubquery` inside `buildExpressionAndSets`.
                 result.where_expression_ast = where_expr_ast->clone();
 
                 ASTPtr ast = where_expr_ast->clone();
