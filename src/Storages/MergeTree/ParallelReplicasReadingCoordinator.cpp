@@ -1170,6 +1170,20 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
         LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Using snapshot from replica num {}", snapshot_replica_num.value());
     }
 
+    /// Only the snapshot replica (initiator-local) can introduce new streams (including in-order splits).
+    /// Announcements from other replicas for unknown streams are silently dropped; the follower's reads
+    /// from those streams will get empty responses.
+    const bool is_snapshot_replica = (announcement.replica_num == *snapshot_replica_num);
+    if (!is_snapshot_replica && !stream_to_coordinator.contains(announcement.stream_id))
+    {
+        LOG_DEBUG(
+            getLogger("ParallelReplicasReadingCoordinator"),
+            "Ignoring announcement from non-snapshot replica {} for unknown stream {}",
+            announcement.replica_num,
+            announcement.stream_id);
+        return;
+    }
+
     auto coordinator = getOrCreateCoordinator(announcement.stream_id, announcement.mode);
 
     if (is_reading_completed)
@@ -1205,11 +1219,16 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
         auto coordinator = getCoordinator(request.stream_id);
         if (!coordinator)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Got read request from replica {} for stream {} without ranges announcement",
+        {
+            /// The requesting replica has a stream that the snapshot replica didn't create
+            /// (e.g., it computed more in-order splits locally). Return an empty/finished response.
+            LOG_DEBUG(
+                getLogger("ParallelReplicasReadingCoordinator"),
+                "Read request from replica {} for unknown stream {}; returning empty response",
                 request.replica_num,
                 request.stream_id);
+            return response;
+        }
 
         if (request.mode != coordinator->getCoordinationMode())
             throw Exception(
