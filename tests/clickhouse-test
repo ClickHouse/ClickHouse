@@ -1142,6 +1142,7 @@ class FailureReason(enum.Enum):
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
+    NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -2401,6 +2402,9 @@ class TestCase:
 
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
+
+        if "no-darwin" in tags and platform.system() == "Darwin":
+            return FailureReason.NOT_SUPPORTED_ON_DARWIN
 
         # Do not run *Log and Memory engine-specific tests
         if (

@@ -29,6 +29,7 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>

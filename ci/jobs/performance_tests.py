@@ -653,7 +653,7 @@ def main():
                 "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
-                "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
+                "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
             cmds = []
@@ -665,7 +665,7 @@ def main():
             results.append(
                 Result(
                     name="Download datasets",
-                    status=Result.Status.SUCCESS if res else Result.Status.ERROR,
+                    status=Result.Status.OK if res else Result.Status.ERROR,
                 )
             )
             if res:
@@ -977,20 +977,20 @@ def main():
             if message_match:
                 message = message_match.group(1).strip()
             # TODO: Remove me, always green mode for the first time, unless errors
-            status = Result.Status.SUCCESS
+            status = Result.Status.OK
             if "errors" in message.lower() or too_many_slow(message.lower()):
-                status = Result.Status.FAILED
+                status = Result.Status.FAIL
             # TODO: Remove until here
         except Exception:
             traceback.print_exc()
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
             message = "Failed to parse the report."
 
         if not status:
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
             message = "No status in report."
         elif not message:
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
             message = "No message in report."
         results.append(
             Result(

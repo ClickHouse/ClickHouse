@@ -664,9 +664,8 @@ def main():
                             print(
                                 f"Test {test_case.name} has succeeded after rerun. Mark it as OK"
                             )
-                            test_case.remove_label(Result.Status.FAILED)
-                            test_case.remove_label(Result.StatusExtended.FAIL)
-                            test_case.set_status(Result.StatusExtended.OK)
+                            test_case.remove_label(Result.Status.FAIL)
+                            test_case.set_status(Result.Status.OK)
                         else:
                             test_case.set_label(Result.Label.OK_ON_RETRY)
                     elif test_case.name in failed_after_rerun:
@@ -708,7 +707,7 @@ def main():
             Result.create_from(
                 name="Check errors",
                 results=CH.check_fatal_messages_in_logs(),
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 stopwatch=sw_,
             )
         )
@@ -720,12 +719,12 @@ def main():
     if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         has_failure = False
         for r in test_result.results:
-            r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
-                r.status = Result.StatusExtended.OK
+            r.set_label(Result.Label.XFAIL)
+            if r.status == Result.Status.FAIL:
+                r.status = Result.Status.OK
                 has_failure = True
-            elif r.status == Result.StatusExtended.OK:
-                r.status = Result.StatusExtended.FAIL
+            elif r.status == Result.Status.OK:
+                r.status = Result.Status.FAIL
         if not has_failure:
             print("Failed to reproduce the bug")
             test_result.set_failed().set_info("Failed to reproduce the bug")
