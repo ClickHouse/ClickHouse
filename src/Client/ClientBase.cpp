@@ -1340,7 +1340,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                     query_processing_stage,
                     &client_context->getSettingsRef(),
                     &client_context->getClientInfo(),
-                    send_external_tables,
+                    true,
                     {},
                     [&](const Progress & progress) { onProgress(progress); });
 
@@ -2388,8 +2388,6 @@ void ClientBase::processParsedSingleQuery(
         const auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
-
-        send_external_tables = !external_tables.empty();
 
         /// Update async_insert after applying settings from server
         is_async_insert_with_inlined_data = client_context->getSettingsRef()[Setting::async_insert] && insert && insert->hasInlinedData();
