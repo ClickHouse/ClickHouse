@@ -2,11 +2,15 @@
 
 #include <cmath>
 #include <type_traits>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnDecimal.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionsRound.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -360,7 +364,7 @@ public:
             sum_data.addMany(column.getData().data(), row_begin, row_end);
             this->data(place).denominator += (row_end - row_begin);
         }
-        increment(place, sum_data.get());
+        increment(place, sum_data.sum);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -396,7 +400,7 @@ public:
             sum_data.addManyNotNull(column.getData().data(), null_map, row_begin, row_end);
             this->data(place).denominator += (row_end - row_begin) - countBytesInFilter(null_map, row_begin, row_end);
         }
-        increment(place, sum_data.get());
+        increment(place, sum_data.sum);
     }
 
     String getName() const override { return "avg"; }

@@ -13,10 +13,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
@@ -33,16 +31,12 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_QUERY;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
-    , virtuals(other.virtuals)
     , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
     , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
-    , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
     , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
@@ -72,10 +66,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         return *this;
 
     columns = other.columns;
-    virtuals = other.virtuals;
     add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
     add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
-    add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
     escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
@@ -194,11 +186,6 @@ void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
-void StorageInMemoryMetadata::setVirtuals(VirtualColumnsDescription virtuals_)
-{
-    virtuals = std::move(virtuals_);
-}
-
 void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_indices_)
 {
     secondary_indices = std::move(secondary_indices_);
@@ -256,13 +243,6 @@ StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t met
 {
     StorageInMemoryMetadata copy(*this);
     copy.setMetadataVersion(metadata_version_);
-    return copy;
-}
-
-StorageInMemoryMetadata StorageInMemoryMetadata::withVirtuals(VirtualColumnsDescription virtual_columns_) const
-{
-    StorageInMemoryMetadata copy(*this);
-    copy.setVirtuals(std::move(virtual_columns_));
     return copy;
 }
 
@@ -485,18 +465,13 @@ Block StorageInMemoryMetadata::getSampleBlockNonMaterialized() const
     return res;
 }
 
-bool StorageInMemoryMetadata::isVirtualColumn(const String & column_name) const
-{
-    /// Virtual column may be overridden by real column
-    return !columns.has(column_name) && virtuals.has(column_name);
-}
-
-Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const
+Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const
 {
     auto res = getSampleBlock();
 
-    /// Virtual columns must be appended after ordinary, because user can override them.
-    for (const auto & column : virtuals.getSampleBlock(kind, place).getNamesAndTypesList())
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
+    for (const auto & column : virtuals)
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
@@ -869,19 +844,7 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
     if (column.default_desc.kind == ColumnDefaultKind::Ephemeral)
         return;
 
-    // Skip ALIAS columns that are just aliases to other columns (not expressions).
-    // Only create implicit indices for ALIAS columns with actual expressions.
-    // For example: `a ALIAS b` should be skipped, but `a ALIAS b > 0` should get an index.
-    if (column.default_desc.kind == ColumnDefaultKind::Alias && column.default_desc.expression)
-    {
-        // If the expression is just a simple identifier (column reference), skip creating implicit index
-        // because the underlying column will already have its own implicit index if needed.
-        if (column.default_desc.expression->as<ASTIdentifier>())
-            return;
-    }
-
-    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns)
-        || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(column.type) && add_minmax_index_for_temporal_columns))
+    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns))
     {
         bool minmax_index_exists = false;
 
@@ -900,14 +863,11 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             bool valid_index = true;
             try
             {
-                MergeTreeIndexFactory::instance().validate(index, false);
+                MergeTreeIndexFactory::implicitValidation(index);
             }
-            catch (const Exception & e)
+            catch (...)
             {
-                if (e.code() == ErrorCodes::BAD_ARGUMENTS || e.code() == ErrorCodes::INCORRECT_QUERY)
-                    valid_index = false;
-                else
-                    throw;
+                valid_index = false;
             }
             if (valid_index)
                 secondary_indices.push_back(std::move(index));
@@ -920,11 +880,7 @@ void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column
 {
     for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
     {
-        /// We check the index name rather than column_names because for ALIAS columns,
-        /// the column_names contains the resolved underlying expression columns, not the alias name.
-        /// For example, for `alias UInt64 ALIAS value>0`, the implicit index is named
-        /// `auto_minmax_index_alias` but its column_names contains `["value"]`, not `["alias"]`.
-        if (index_it->isImplicitlyCreated() && index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+        if (index_it->isImplicitlyCreated() && index_it->column_names.front() == column_name)
             index_it = secondary_indices.erase(index_it);
         else
             ++index_it;

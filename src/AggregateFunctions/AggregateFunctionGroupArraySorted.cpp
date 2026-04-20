@@ -8,9 +8,9 @@
 #include <type_traits>
 #include <utility>
 
-#include <Common/ArenaAllocator.h>
-#include <Common/Exception.h>
 #include <Common/RadixSort.h>
+#include <Common/Exception.h>
+#include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 
 #include <IO/ReadHelpers.h>
@@ -23,7 +23,6 @@
 #include <Columns/ColumnVector.h>
 
 #include <Columns/IColumn.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -55,7 +54,7 @@ struct GroupArraySortedData
     static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
 
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = typename std::conditional_t<is_value_generic_field, VectorWithMemoryTracking<T>, PODArray<T, 32, Allocator>>;
+    using Array = typename std::conditional_t<is_value_generic_field, std::vector<T>, PODArray<T, 32, Allocator>>;
 
     static constexpr size_t partial_sort_max_elements_factor = 2;
 
@@ -459,7 +458,7 @@ SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) AS str FROM number
 
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = false };
 
-    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, documentation, properties });
+    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, properties, documentation });
 }
 
 }

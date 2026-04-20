@@ -11,7 +11,6 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
@@ -470,7 +469,9 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 
     if (nodes_info.empty())
     {
-        removeCluster(cluster_info.name, /* is_dynamic_cluster */cluster_info.zk_root_index != 0);
+        String name = cluster_info.name;
+        /// cluster_info removed inside removeCluster, can't use reference to name.
+        removeCluster(name);
         return true;
     }
 
@@ -481,21 +482,15 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
     return true;
 }
 
-void ClusterDiscovery::removeCluster(const String & name, bool is_dynamic)
+void ClusterDiscovery::removeCluster(const String & name)
 {
     {
         std::lock_guard lock(mutex);
         cluster_impls.erase(name);
     }
-    /// For static clusters (defined in config), `clusters_to_update` and `get_nodes_callbacks`
-    /// are initialized once at startup and must persist so the cluster can be re-registered after
-    /// a ZooKeeper session loss. Dynamic clusters own their entries and must clean them up.
-    if (is_dynamic)
-    {
-        clusters_to_update->remove(name);
-        get_nodes_callbacks.erase(name);
-        LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
-    }
+    clusters_to_update->remove(name);
+    get_nodes_callbacks.erase(name);
+    LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
 }
 
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
@@ -642,7 +637,6 @@ void ClusterDiscovery::start()
 
     try
     {
-        auto component_guard = Coordination::setCurrentComponent("ClusterDiscovery::start");
         initialUpdate();
     }
     catch (...)
@@ -685,8 +679,6 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     DB::setThreadName(ThreadName::CLUSTER_DISCOVERY);
     LOG_DEBUG(log, "Worker thread started");
 
-    auto component_guard = Coordination::setCurrentComponent("ClusterDiscovery::runMainThread");
-
     using namespace std::chrono_literals;
 
     constexpr auto force_update_interval = 2min;
@@ -723,7 +715,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
             clusters_to_insert.insert(cluster_name);
 
         for (const auto & cluster_name : clusters_to_remove)
-            removeCluster(cluster_name, /* is_dynamic_cluster */true);
+            removeCluster(cluster_name);
 
         clusters_info.merge(new_dynamic_clusters_info);
 

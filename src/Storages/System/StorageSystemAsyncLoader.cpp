@@ -1,7 +1,5 @@
 #include <chrono>
 #include <Storages/System/StorageSystemAsyncLoader.h>
-
-#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>

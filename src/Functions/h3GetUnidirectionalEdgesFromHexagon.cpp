@@ -30,11 +30,7 @@ class FunctionH3GetUnidirectionalEdgesFromHexagon : public IFunction
 public:
     static constexpr auto name = "h3GetUnidirectionalEdgesFromHexagon";
 
-    H3Validator validator;
-
-    explicit FunctionH3GetUnidirectionalEdgesFromHexagon(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetUnidirectionalEdgesFromHexagon>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetUnidirectionalEdgesFromHexagon>(); }
 
     std::string getName() const override { return name; }
 
@@ -86,14 +82,10 @@ public:
             // allocate array of size 6
             // originToDirectedEdges places 6 edges into
             // array that's passed to it
-            std::array<H3Index, 6> res{};
+            std::array<H3Index, 6> res;
 
             const UInt64 cell = data_hindex[row];
-            if (!validator.validateCell(cell))
-            {
-                result_offsets[row] = current_offset;
-                continue;
-            }
+            validateH3Cell(cell);
             originToDirectedEdges(cell, res.data());
 
             for (auto & i : res)

@@ -7,7 +7,6 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
@@ -15,13 +14,12 @@
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -30,16 +28,11 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
-#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTQualifiedAsterisk.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -69,7 +62,6 @@
 #include <Access/Common/AccessRightsElement.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -119,7 +111,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
-    extern const SettingsBool allow_statistics;
+    extern const SettingsBool allow_experimental_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -197,7 +189,6 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
-    auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createDatabase");
     String database_name = create.getDatabase();
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
@@ -269,7 +260,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
         auto engine = make_intrusive<ASTFunction>();
         engine->name = "Atomic";
-        engine->setNoEmptyArgs(true);
+        engine->no_empty_args = true;
         create.storage->set(create.storage->engine, engine);
     }
     else if ((create.columns_list
@@ -412,10 +403,13 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
     for (const auto & column : columns)
     {
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
-
         column_declaration->name = column.name;
-        column_declaration->setType(dataTypeToAST(column.type));
 
+        ParserDataType type_parser;
+        String type_name = column.type->getName();
+        const char * pos = type_name.data();
+        const char * end = pos + type_name.size();
+        column_declaration->setType(parseQuery(type_parser, pos, end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -429,9 +423,13 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, 
     for (const auto & alias_column : alias_columns)
     {
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
-
         column_declaration->name = alias_column.name;
-        column_declaration->setType(dataTypeToAST(alias_column.type));
+
+        ParserDataType type_parser;
+        String type_name = alias_column.type->getName();
+        const char * type_pos = type_name.data();
+        const char * type_end = type_pos + type_name.size();
+        column_declaration->setType(parseQuery(type_parser, type_pos, type_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
 
         column_declaration->default_specifier = ColumnDefaultSpecifier::Alias;
 
@@ -457,7 +455,12 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         ASTPtr column_declaration_ptr{column_declaration};
 
         column_declaration->name = column.name;
-        column_declaration->setType(dataTypeToAST(column.type));
+
+        ParserDataType type_parser;
+        String type_name = column.type->getName();
+        const char * type_name_pos = type_name.data();
+        const char * type_name_end = type_name_pos + type_name.size();
+        column_declaration->setType(parseQuery(type_parser, type_name_pos, type_name_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
 
         if (column.default_desc.expression)
         {
@@ -683,9 +686,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (auto statistics_desc = col_decl.getStatisticsDesc())
         {
-            if (!skip_checks && !context_->getSettingsRef()[Setting::allow_statistics])
+            if (!skip_checks && !context_->getSettingsRef()[Setting::allow_experimental_statistics])
                 throw Exception(
-                    ErrorCodes::INCORRECT_QUERY, "Create table with statistics is disabled. Turn on allow_statistics");
+                    ErrorCodes::INCORRECT_QUERY, "Create table with statistics is now disabled. Turn on allow_experimental_statistics");
 
             column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(statistics_desc, column.name, column.type);
         }
@@ -732,7 +735,7 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
-    ASTCreateQuery & create, LoadingStrictnessLevel mode)
+    ASTCreateQuery & create, LoadingStrictnessLevel mode) const
 {
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
@@ -783,7 +786,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext());
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
                 properties.projections.add(std::move(projection));
             }
 
@@ -797,7 +800,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-        auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+        auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
         properties.columns = as_storage_metadata->getColumns();
 
         if (!create.comment && !as_storage_metadata->comment.empty())
@@ -895,69 +898,35 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             if (!select_with_union_query)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectWithUnionQuery");
 
-            std::function<void(const ASTPtr &)> apply_aliases = [&](const ASTPtr & node)
-            {
-                /// Must check ASTSelectIntersectExceptQuery before ASTSelectQuery
-                if (const auto * intersect_except = node->as<ASTSelectIntersectExceptQuery>())
-                {
-                    for (const auto & child : intersect_except->getListOfSelects())
-                        apply_aliases(child);
-                }
-                else if (const auto * select_query = node->as<ASTSelectQuery>())
-                {
-                    auto select_expression_list = select_query->select();
-                    if (!select_expression_list)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "No select expressions in SELECT query");
-
-                    auto & select_expressions = select_expression_list->children;
-
-                    /// Check for asterisks and COLUMNS matchers — we cannot set aliases on them at AST level.
-                    for (const auto & expr : select_expressions)
-                    {
-                        if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>()
-                            || expr->as<ASTColumnsRegexpMatcher>() || expr->as<ASTColumnsListMatcher>()
-                            || expr->as<ASTQualifiedColumnsRegexpMatcher>() || expr->as<ASTQualifiedColumnsListMatcher>())
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Cannot use column aliases with asterisk (*) or COLUMNS matcher in SELECT list of a view definition. "
-                                "Please list the columns explicitly");
-                    }
-
-                    if (select_expressions.size() != aliases_children.size())
-                    {
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Number of aliases does not match number of expressions in SELECT list");
-                    }
-
-                    for (size_t i = 0; i < select_expressions.size(); ++i)
-                    {
-                        auto & expr = select_expressions[i];
-                        const auto & alias_ast = aliases_children[i]->as<ASTIdentifier &>();
-                        expr->setAlias(alias_ast.name());
-                    }
-                }
-                else if (const auto * nested_union = node->as<ASTSelectWithUnionQuery>())
-                {
-                    for (const auto & child : nested_union->list_of_selects->children)
-                        apply_aliases(child);
-                }
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AST node inside ASTSelectWithUnionQuery: {}", node->getID());
-            };
-
             const auto & selects = select_with_union_query->list_of_selects->children;
-            for (const auto & select : selects)
-                apply_aliases(select);
-        }
 
-        /// For refreshable materialized views, use the MV's database as context for the view's SELECT analysis.
-        /// This ensures unqualified table/view references resolve in the MV's database, not the session's database.
-        ContextPtr select_context = getContext();
-        bool is_refreshable_mv = create.is_materialized_view && create.refresh_strategy;
-        if (is_refreshable_mv)
-        {
-            auto mv_context = Context::createCopy(getContext());
-            mv_context->setCurrentDatabase(create.getDatabase());
-            select_context = mv_context;
+            for (const auto & select : selects)
+            {
+                const auto * select_query = select->as<ASTSelectQuery>();
+
+                if (!select_query)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectQuery inside ASTSelectWithUnionQuery");
+
+                auto select_expression_list = select_query->select();
+
+                if (!select_expression_list)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No select expressions in SELECT query");
+
+                auto & select_expressions = select_expression_list->children;
+
+                if (select_expressions.size() != aliases_children.size())
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Number of aliases does not match number of expressions in SELECT list");
+                }
+
+                for (size_t i = 0; i < select_expressions.size(); ++i)
+                {
+                    auto & expr = select_expressions[i];
+                    const auto & alias_ast = aliases_children[i]->as<ASTIdentifier &>();
+                    expr->setAlias(alias_ast.name());
+                }
+            }
         }
 
         SharedHeader as_select_sample;
@@ -965,17 +934,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                select_context,
+                getContext(),
                 SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
         }
         else
         {
-            /// For refreshable materialized views, allow parameterized views in the query.
-            /// This prevents the old analyzer from trying to execute table functions during analysis.
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                select_context,
-                false /* is_subquery */,
-                is_refreshable_mv /* is_create_parameterized_view */);
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
         }
 
         properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
@@ -984,9 +948,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.as_table_function)
     {
         /// Table function without columns list.
-        auto table_function_ast = create.as_table_function->ptr();
+        auto table_function_ast = create.getChild(*create.as_table_function);
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
-        properties.columns = table_function->getActualTableStructureWithAccess(getContext(), /*is_insert_query*/ true);
+        properties.columns = table_function->getActualTableStructure(getContext(), /*is_insert_query*/ true);
     }
     else if (create.is_dictionary)
     {
@@ -996,7 +960,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Evaluate expressions (like currentDatabase() or tcpPort()) in dictionary source definition.
         NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
         NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
-        visitor.visit(create.dictionary->source->ptr());
+        visitor.visit(create.dictionary->getChild(*create.dictionary->source));
 
         return {};
     }
@@ -1079,7 +1043,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
         if (to_table)
         {
-            all_output_columns = to_table->getInMemoryMetadataPtr(getContext(), false)->getSampleBlockInsertable().getNamesAndTypesList();
+            all_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlockInsertable().getNamesAndTypesList();
             check_columns = true;
         }
     }
@@ -1112,37 +1076,15 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
-
-                /// For refreshable materialized views, use the MV's database as context.
-                /// This ensures unqualified references resolve in the MV's database, not session's database.
-                if (create.refresh_strategy)
-                    context->setCurrentDatabaseUnchecked(create.getDatabase());
-
                 input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
                     context,
                     SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
             }
             else
             {
-                /// For refreshable materialized views with old analyzer, use MV's database context.
-                ContextPtr select_context = getContext();
-                bool is_refreshable_mv = create.refresh_strategy != nullptr;
-                if (is_refreshable_mv)
-                {
-                    auto mv_context = Context::createCopy(getContext());
-                    mv_context->setCurrentDatabaseUnchecked(create.getDatabase());
-                    select_context = mv_context;
-                }
-
-                /// For refreshable materialized views, allow parameterized views in the query.
-                /// This prevents the old analyzer from trying to execute table functions during analysis.
-                auto options = SelectQueryOptions().analyze();
-                if (is_refreshable_mv)
-                    options = options.createParameterizedView();
-
                 input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                    select_context,
-                    options).getSampleBlock();
+                    getContext(),
+                    SelectQueryOptions().analyze()).getSampleBlock();
             }
         }
         catch (Exception & e)
@@ -1205,7 +1147,7 @@ namespace
 
         auto engine_ast = make_intrusive<ASTFunction>();
         engine_ast->name = SettingFieldDefaultTableEngine(engine).toString();
-        engine_ast->setNoEmptyArgs(true);
+        engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
     }
 
@@ -1218,7 +1160,7 @@ namespace
 
         auto engine_ast = make_intrusive<ASTFunction>();
         engine_ast->name = "Null";
-        engine_ast->setNoEmptyArgs(true);
+        engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
     }
 
@@ -1255,12 +1197,12 @@ namespace
         return &engine_def.arguments->children;
     }
 
-    bool hasColumnsWithDynamicStructure(const ColumnsDescription & columns)
+    bool hasDynamicSubcolumns(const ColumnsDescription & columns)
     {
         return std::any_of(columns.begin(), columns.end(),
             [](const auto & column)
             {
-               return column.type->hasDynamicStructure();
+               return column.type->hasDynamicSubcolumns();
             });
     }
 
@@ -1296,7 +1238,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_dictionary || create.is_ordinary_view || create.is_window_view)
         return;
 
-    if (create.isTemporary())
+    if (create.temporary)
     {
         /// Some part of storage definition is specified, but ENGINE is not: just set the one from default_temporary_table_engine setting.
 
@@ -1394,7 +1336,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         else if (as_create.as_table_function)
         {
-            create.set(create.as_table_function, as_create.as_table_function->ptr());
+            create.set(create.as_table_function, as_create.getChild(*as_create.as_table_function));
             return;
         }
         else if (as_create.storage)
@@ -1427,7 +1369,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
     bool is_replicated_database_internal = database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal;
-    bool from_path = create.has_attach_from_path;
+    bool from_path = create.attach_from_path.has_value();
     bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
     if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !internal && !is_on_cluster && !create.attach)
@@ -1537,17 +1479,13 @@ bool isReplicated(const ASTStorage & storage)
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
-    auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createTable");
     /// Temporary tables are created out of databases.
-    if (create.isTemporary() && create.attach)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "ATTACH of TEMPORARY tables are not supported");
-
-    if (create.isTemporary() && create.database)
+    if (create.temporary && create.database)
         throw Exception(ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE,
                         "Temporary objects (tables/views) cannot be inside a database. "
                         "You should not specify a database for a temporary objects.");
 
-    if (create.isTemporary() && !create.cluster.empty())
+    if (create.temporary && !create.cluster.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY,
             "Temporary objects (tables/views) cannot be created ON CLUSTER."
             "You should not specify a cluster for a temporary objects.");
@@ -1635,7 +1573,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Attaching table as [not] replicated is supported only for short attach queries");
 
-    if (create.has_attach_from_path)
+    if (create.attach_from_path)
     {
         chassert(!ddl_guard);
 
@@ -1644,7 +1582,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
-            fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
+            fs::path data_path = fs::path(*create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
             if (!startsWith(data_path, user_files))
@@ -1656,7 +1594,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
         else
         {
-            fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
+            fs::path data_path = (root_path / *create.attach_from_path).lexically_normal();
             if (!startsWith(data_path, user_files))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
@@ -1672,7 +1610,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                          create.getTable(), create.getTable(), create.getTable());
     }
 
-    if (!create.isTemporary() && !create.database)
+    if (!create.temporary && !create.database)
         create.setDatabase(current_database);
 
     if (create.targets)
@@ -1706,7 +1644,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
     DatabasePtr database;
-    bool need_add_to_database = !create.isTemporary();
+    bool need_add_to_database = !create.temporary;
     // In case of an ON CLUSTER query, the database may not be present on the initiator node
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
@@ -1781,7 +1719,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
-    if (create.isTemporary() && create.replace_table)
+    if (create.temporary && create.replace_table)
     {
         chassert(!ddl_guard);
         return doCreateOrReplaceTemporaryTable(create, properties, mode);
@@ -1809,48 +1747,36 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
-void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
+void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(storage.getInMemoryMetadataPtr(context, false)->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
+    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumns())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Dynamic or JSON, "
-            "because storage {} doesn't support columns with dynamic structure",
+            "because storage {} doesn't support dynamic subcolumns",
             storage.getName());
     }
 }
 
-void validateVirtualColumns(IStorage & storage, ContextPtr context)
+void validateVirtualColumns(IStorage & storage)
 {
-    const auto metadata = storage.getInMemoryMetadataPtr(context, false);
-    for (const auto & storage_column : metadata->columns)
+    auto virtual_columns = storage.getVirtualsPtr();
+    for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
     {
-        if (metadata->virtuals.tryGet(storage_column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
+        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
                 storage_column.name, storage.getName());
         }
-
-        /// An EPHEMERAL user column has no physical storage and no read-time expression,
-        /// so it cannot properly shadow a virtual column of the same name.
-        /// This leads to a type mismatch: the Block header uses the user column's type
-        /// while the data comes from the virtual column (which may have a different type).
-        if (storage_column.default_desc.kind == ColumnDefaultKind::Ephemeral && metadata->virtuals.tryGet(storage_column.name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create table with ephemeral column '{}' for {} engines "
-                "because it conflicts with a virtual column of the same name",
-                storage_column.name, storage.getName());
-        }
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode)
 try
 {
-    validateVirtualColumns(storage, context);
-    checkForUnsupportedColumns(storage, mode, context);
+    validateVirtualColumns(storage);
+    checkForUnsupportedColumns(storage, mode);
 }
 catch (...)
 {
@@ -1874,7 +1800,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
 {
-    if (create.isTemporary())
+    if (create.temporary)
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
@@ -1892,7 +1818,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateStorage(*res, mode, getContext());
+            validateStorage(*res, mode);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -1998,7 +1924,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    bool from_path = create.has_attach_from_path;
+    bool from_path = create.attach_from_path.has_value();
     String actual_data_path = data_path;
     if (from_path)
     {
@@ -2006,9 +1932,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                             "ATTACH ... FROM ... query is not supported for {} database engine", database->getEngineName());
         /// We will try to create Storage instance with provided data path
-        data_path = create.attach_from_path;
-        create.has_attach_from_path = false;
-        create.attach_from_path.clear();
+        data_path = *create.attach_from_path;
+        create.attach_from_path = std::nullopt;
     }
 
     if (create.attach)
@@ -2051,7 +1976,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
-        auto table_function_ast = create.as_table_function->ptr();
+        auto table_function_ast = create.getChild(*create.as_table_function);
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
         if (!table_function->canBeUsedToCreateTable())
@@ -2082,7 +2007,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext());
+    validateStorage(*res, mode);
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -2329,7 +2254,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateStorage(*res, mode, getContext());
+        validateStorage(*res, mode);
         return res;
     };
 
@@ -2370,7 +2295,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
-        String as_database_name = getContext()->resolveDatabase(as_database_saved);
+        String as_database_name = getContext()->resolveDatabase(create.as_database);
 
         auto partition = make_intrusive<ASTPartition>();
         partition->all = true;
@@ -2395,13 +2320,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 
         alter->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
         alter->set(alter->command_list, command_list);
-
-        /// The result of this internal ALTER is not visible to the user,
-        /// so disable verbose output to avoid creating a pulling pipeline
-        /// that executeTrivialBlockIO cannot handle.
-        auto alter_context = Context::createCopy(getContext());
-        alter_context->setSetting("alter_partition_verbose_result", Field(false));
-        return InterpreterAlterQuery(query, alter_context).execute();
+        return InterpreterAlterQuery(query, getContext()).execute();
     }
 
     return {};
@@ -2520,14 +2439,14 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     {
         if (create.replace_view)
             required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
-        else if (create.isTemporary())
+        else if (create.temporary)
             required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
         else
             required_access.emplace_back(AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
     }
     else
     {
-        if (create.isTemporary())
+        if (create.temporary)
         {
             /// Currently default table engine for temporary tables is Memory. default_table_engine does not affect temporary tables.
             if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
@@ -2577,7 +2496,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     auto ast_storage = make_intrusive<ASTStorage>();
     unsigned max_parser_depth_v = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_parser_depth]);
     unsigned max_parser_backtracks_v = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
-    auto query_from_storage = DB::getCreateQueryFromStorage(storage, ast_storage, false, max_parser_depth_v, max_parser_backtracks_v, true, getContext());
+    auto query_from_storage = DB::getCreateQueryFromStorage(storage, ast_storage, false, max_parser_depth_v, max_parser_backtracks_v, true);
     auto & create_query_from_storage = query_from_storage->as<ASTCreateQuery &>();
 
     if (!create.columns_list)
@@ -2680,19 +2599,6 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
-    /// Ensure the old detached table instance is destroyed before we remove
-    /// transaction metadata files. Otherwise the old table's parts still hold
-    /// in-memory version metadata referencing those files, and the debug
-    /// assertion in removeIfNeeded() → assertHasValidVersionMetadata() will
-    /// fail when the old storage is destroyed later.
-    if (create.uuid != UUIDHelpers::Nil)
-    {
-        if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-            database->waitDetachedTableNotInUse(create.uuid);
-        else
-            database->checkDetachedTableNotInUse(create.uuid);
-    }
-
     /// When converting to replicated, remove all transaction metadata files
     if (to_replicated && !engine_name.starts_with("Replicated"))
     {
@@ -2743,7 +2649,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                     continue;
 
                 /// Try to remove txn_version.txt file
-                String txn_file = fs::path(part_path) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
+                String txn_file = fs::path(part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
                 if (disk->existsFile(txn_file))
                 {
                     disk->removeFile(txn_file);

@@ -1,11 +1,12 @@
 #pragma once
 
 #include <atomic>
+#include <vector>
 
-#include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryHelpers.h>
 
 
 namespace DB

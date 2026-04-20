@@ -72,13 +72,11 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_rows_in_join;
-    extern const SettingsBool parallel_non_joined_rows_processing;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsString temporary_files_codec;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool enable_lazy_columns_replication;
-    extern const SettingsBool enable_join_fixed_hash_table_conversion;
 }
 
 namespace ErrorCodes
@@ -174,7 +172,6 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
     , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , enable_lazy_columns_replication(settings[Setting::enable_lazy_columns_replication])
-    , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -191,7 +188,6 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , max_joined_block_rows(settings.max_joined_block_size_rows)
     , max_joined_block_bytes(settings.max_joined_block_size_bytes)
     , joined_block_split_single_row(settings.joined_block_split_single_row)
-    , parallel_non_joined_rows_processing(settings.parallel_non_joined_rows_processing)
     , join_algorithms(settings.join_algorithms)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
@@ -204,7 +200,6 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
     , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , enable_lazy_columns_replication(settings.enable_lazy_columns_replication)
-    , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -346,7 +341,9 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
         dedup_columns.push_back(column);
         auto & inserted = dedup_columns.back();
 
-        if (left_table_columns.contains(column.name))
+        /// Also qualify unusual column names - that does not look like identifiers.
+
+        if (left_table_columns.contains(column.name) || !isValidIdentifierBegin(column.name.at(0)))
             inserted.name = right_table_prefix + column.name;
 
         original_names[inserted.name] = column.name;
@@ -480,40 +477,19 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
 void TableJoin::setUsedColumns(const Names & column_names)
 {
     std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> left_columns_idx;
-    std::unordered_map<std::string_view, size_t> left_columns_max_count;
     for (auto it = columns_from_left_table.begin(); it != columns_from_left_table.end(); ++it)
-    {
         left_columns_idx[it->name] = it;
-        ++left_columns_max_count[it->name];
-    }
 
     std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> right_columns_idx;
-    std::unordered_map<std::string_view, size_t> right_columns_max_count;
     for (auto it = columns_from_joined_table.begin(); it != columns_from_joined_table.end(); ++it)
-    {
         right_columns_idx[it->name] = it;
-        ++right_columns_max_count[it->name];
-    }
-
-    /// `column_names` may contain duplicates (e.g., from `ActionsDAG::getRequiredColumnsNames`
-    /// when the DAG has multiple input nodes with the same name). We must not add more entries
-    /// to `result_columns_from_left_table` / `columns_added_by_join` than actually exist
-    /// in the input columns, otherwise `HashJoin::getNonJoinedBlocks` will see a count mismatch.
-    std::unordered_map<std::string_view, size_t> left_seen_count;
-    std::unordered_map<std::string_view, size_t> right_seen_count;
 
     for (const auto & column_name : column_names)
     {
         if (auto lit = left_columns_idx.find(column_name); lit != left_columns_idx.end())
-        {
-            if (++left_seen_count[column_name] <= left_columns_max_count[column_name])
-                setUsedColumn(*lit->second, JoinTableSide::Left);
-        }
+            setUsedColumn(*lit->second, JoinTableSide::Left);
         else if (auto rit = right_columns_idx.find(column_name); rit != right_columns_idx.end())
-        {
-            if (++right_seen_count[column_name] <= right_columns_max_count[column_name])
-                setUsedColumn(*rit->second, JoinTableSide::Right);
-        }
+            setUsedColumn(*rit->second, JoinTableSide::Right);
         else
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
                 "Column {} not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
