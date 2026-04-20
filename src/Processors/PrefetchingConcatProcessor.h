@@ -14,8 +14,9 @@ namespace DB
 /** Like ConcatProcessor: has N inputs and one output, all with the same structure.
   * Outputs data from inputs in order (first all data from input 0, then input 1, etc.).
   *
-  * Unlike ConcatProcessor, marks ALL inputs as needed simultaneously,
-  * which allows the pipeline executor to schedule upstream sources in parallel.
+  * Unlike ConcatProcessor, marks a sliding window of upcoming inputs as needed
+  * (up to max_prefetch_inputs ahead of the current input), which allows the pipeline
+  * executor to schedule upstream sources in parallel with bounded lookahead.
   * Data from non-current inputs is buffered (up to max_buffered_chunks per input)
   * to keep their upstream sources producing data while we consume the current input.
   *
