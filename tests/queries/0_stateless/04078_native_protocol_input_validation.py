@@ -214,8 +214,14 @@ def skip_block(sock):
             recv_exact(sock, nr * 8)
 
 
-def get_response(sock, timeout=5.0):
-    """Returns (ok, message). ok=True means query succeeded."""
+def get_response(sock, timeout=60.0):
+    """Returns (ok, message). ok=True means query succeeded.
+
+    The default timeout is generous because this test runs in CI on
+    `amd_llvm_coverage` builds where server response latency can be several
+    seconds under parallel load (the test itself is fast; the socket wait
+    is just a safety net against a genuinely stuck server).
+    """
     sock.settimeout(timeout)
     try:
         while True:
