@@ -34,7 +34,7 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-    MergeTreeIndexBuildContextPtr index_build_context_)
+    const MergeTreeIndexBuildContextPtr & index_build_context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
         std::move(mutations_snapshot_),
@@ -52,8 +52,15 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     , has_limit_below_one_block(has_limit_below_one_block_)
     , read_type(read_type_)
     , updater(std::move(updater_))
-    , index_build_context(context_->getSettingsRef()[Setting::projection_index_narrow_marks] ? std::move(index_build_context_) : nullptr)
+    , index_build_context(context_->getSettingsRef()[Setting::projection_index_narrow_marks] ? index_build_context_ : nullptr)
 {
+    if (index_build_context)
+    {
+        per_part_index_result_cache.resize(per_part_infos.size());
+        for (auto & slot : per_part_index_result_cache)
+            slot = std::make_unique<PartIndexResultCacheEntry>();
+    }
+
     per_part_mark_ranges.reserve(parts_ranges.size());
     for (const auto & part_with_ranges : parts_ranges)
         per_part_mark_ranges.push_back(part_with_ranges.ranges);
@@ -109,8 +116,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
                 data_part->index_granularity_info.index_granularity_bytes);
 
             mark_ranges_for_task = narrowMarkRangesByProjectionIndex(
-                *index_build_context,
-                per_part_infos[task_idx]->part_index_in_query,
+                getCachedPartIndexResult(task_idx),
                 *data_part->index_granularity,
                 std::move(mark_ranges_for_task),
                 min_marks_for_seek);
@@ -125,6 +131,18 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
 
         return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);
     }
+}
+
+MergeTreeIndexReadResultPtr MergeTreeReadPoolInOrder::getCachedPartIndexResult(size_t part_idx)
+{
+    auto & entry = *per_part_index_result_cache[part_idx];
+    std::call_once(entry.flag, [&]
+    {
+        entry.result = lookupProjectionIndexResult(
+            *index_build_context,
+            per_part_infos[part_idx]->part_index_in_query);
+    });
+    return entry.result;
 }
 
 }

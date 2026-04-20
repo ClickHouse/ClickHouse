@@ -15,6 +15,9 @@ namespace DB
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
 
+struct MergeTreeIndexReadResult;
+using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
+
 /** Provides read tasks for MergeTreeThreadSelectAlgorithm in fine-grained batches, allowing for more
  *  uniform distribution of work amongst multiple threads. All parts and their ranges are divided into `threads`
  *  workloads with at most `sum_marks / threads` marks. Then, threads are performing reads from these workloads
@@ -42,7 +45,7 @@ public:
         const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        MergeTreeIndexBuildContextPtr index_build_context_ = {});
+        const MergeTreeIndexBuildContextPtr & index_build_context_ = {});
 
     ~MergeTreeReadPool() override = default;
 
@@ -91,6 +94,21 @@ private:
     /// threads per pool policy). Returns nullopt when the pool has no further work for
     /// this thread. Holds `mutex` internally for the duration of the selection.
     std::optional<PickedBatch> pickNextBatch(size_t task_idx);
+
+    /// Per-part cached lookup of the projection index result. First access per part
+    /// resolves via the shared index reader pool; subsequent accesses return the cached
+    /// pointer without taking any locks. A null cached value means "no narrowing for
+    /// this part" (e.g. the projection has no matching rows or no bitmap is available).
+    struct PartIndexResultCacheEntry
+    {
+        std::once_flag flag;
+        MergeTreeIndexReadResultPtr result;
+    };
+
+    /// Sized to match `per_part_infos` when `index_build_context` is non-null.
+    std::vector<std::unique_ptr<PartIndexResultCacheEntry>> per_part_index_result_cache;
+
+    MergeTreeIndexReadResultPtr getCachedPartIndexResult(size_t part_idx);
 
     mutable std::mutex mutex;
 

@@ -433,24 +433,33 @@ const MarkRanges & MergeTreeIndexReadResult::getProjectionMarkRanges(const Merge
     return projection_mark_ranges;
 }
 
-MarkRanges narrowMarkRangesByProjectionIndex(
+MergeTreeIndexReadResultPtr lookupProjectionIndexResult(
     const MergeTreeIndexBuildContext & index_build_context,
-    size_t part_index_in_query,
-    const MergeTreeIndexGranularity & index_granularity,
-    MarkRanges mark_ranges,
-    size_t min_marks_for_seek)
+    size_t part_index_in_query)
 {
     auto part_it = index_build_context.read_ranges.find(part_index_in_query);
     if (part_it == index_build_context.read_ranges.end())
-        return mark_ranges;
+        return nullptr;
 
     auto proj_it = index_build_context.projection_read_ranges.find(part_index_in_query);
     if (proj_it == index_build_context.projection_read_ranges.end())
-        return mark_ranges;
+        return nullptr;
 
     auto index_result = index_build_context.index_reader_pool->getOrBuildIndexReadResult(
         part_it->second, proj_it->second);
 
+    if (!index_result || !index_result->projection_index_read_result)
+        return nullptr;
+
+    return index_result;
+}
+
+MarkRanges narrowMarkRangesByProjectionIndex(
+    const MergeTreeIndexReadResultPtr & index_result,
+    const MergeTreeIndexGranularity & index_granularity,
+    MarkRanges mark_ranges,
+    size_t min_marks_for_seek)
+{
     if (!index_result || !index_result->projection_index_read_result)
         return mark_ranges;
 
@@ -460,6 +469,18 @@ MarkRanges narrowMarkRangesByProjectionIndex(
     /// per-batch intersection output instead.
     const auto & bitmap_ranges = index_result->getProjectionMarkRanges(index_granularity);
     return intersectMarkRanges(mark_ranges, bitmap_ranges, min_marks_for_seek);
+}
+
+MarkRanges narrowMarkRangesByProjectionIndex(
+    const MergeTreeIndexBuildContext & index_build_context,
+    size_t part_index_in_query,
+    const MergeTreeIndexGranularity & index_granularity,
+    MarkRanges mark_ranges,
+    size_t min_marks_for_seek)
+{
+    auto index_result = lookupProjectionIndexResult(index_build_context, part_index_in_query);
+    return narrowMarkRangesByProjectionIndex(
+        index_result, index_granularity, std::move(mark_ranges), min_marks_for_seek);
 }
 
 SingleProjectionIndexReader::SingleProjectionIndexReader(

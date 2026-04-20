@@ -53,7 +53,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-    MergeTreeIndexBuildContextPtr index_build_context_)
+    const MergeTreeIndexBuildContextPtr & index_build_context_)
     : MergeTreeReadPoolBase(
           std::move(parts_),
           std::move(mutations_snapshot_),
@@ -71,9 +71,28 @@ MergeTreeReadPool::MergeTreeReadPool(
     , updater(std::move(updater_))
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{pool_settings.threads}
-    , index_build_context(context_->getSettingsRef()[Setting::projection_index_narrow_marks] ? std::move(index_build_context_) : nullptr)
+    , index_build_context(context_->getSettingsRef()[Setting::projection_index_narrow_marks] ? index_build_context_ : nullptr)
 {
+    if (index_build_context)
+    {
+        per_part_index_result_cache.resize(per_part_infos.size());
+        for (auto & slot : per_part_index_result_cache)
+            slot = std::make_unique<PartIndexResultCacheEntry>();
+    }
+
     fillPerThreadInfo(pool_settings.threads, pool_settings.sum_marks);
+}
+
+MergeTreeIndexReadResultPtr MergeTreeReadPool::getCachedPartIndexResult(size_t part_idx)
+{
+    auto & entry = *per_part_index_result_cache[part_idx];
+    std::call_once(entry.flag, [&]
+    {
+        entry.result = lookupProjectionIndexResult(
+            *index_build_context,
+            per_part_infos[part_idx]->part_index_in_query);
+    });
+    return entry.result;
 }
 
 std::optional<MergeTreeReadPool::PickedBatch> MergeTreeReadPool::pickNextBatch(size_t task_idx)
@@ -180,8 +199,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
                 data_part->index_granularity_info.index_granularity_bytes);
 
             batch->ranges = narrowMarkRangesByProjectionIndex(
-                *index_build_context,
-                per_part_infos[batch->part_idx]->part_index_in_query,
+                getCachedPartIndexResult(batch->part_idx),
                 *data_part->index_granularity,
                 std::move(batch->ranges),
                 min_marks_for_seek);

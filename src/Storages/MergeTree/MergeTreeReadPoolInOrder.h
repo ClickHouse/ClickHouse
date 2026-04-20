@@ -1,11 +1,16 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
+#include <mutex>
+
 namespace DB
 {
 
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
+struct MergeTreeIndexReadResult;
+using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 
 class MergeTreeReadPoolInOrder : public MergeTreeReadPoolBase
 {
@@ -27,7 +32,7 @@ public:
         const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        MergeTreeIndexBuildContextPtr index_build_context_ = {});
+        const MergeTreeIndexBuildContextPtr & index_build_context_ = {});
 
     String getName() const override { return "ReadPoolInOrder"; }
     bool preservesOrderOfRanges() const override { return true; }
@@ -40,6 +45,16 @@ private:
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     MergeTreeIndexBuildContextPtr index_build_context;
+
+    struct PartIndexResultCacheEntry
+    {
+        std::once_flag flag;
+        MergeTreeIndexReadResultPtr result;
+    };
+
+    std::vector<std::unique_ptr<PartIndexResultCacheEntry>> per_part_index_result_cache;
+
+    MergeTreeIndexReadResultPtr getCachedPartIndexResult(size_t part_idx);
 
     std::vector<MarkRanges> per_part_mark_ranges;
 };
