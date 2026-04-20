@@ -19,6 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
 #include <Common/StackTrace.h>
@@ -100,6 +101,8 @@ constexpr size_t max_query_id_size = 128;
 char query_id_data[max_query_id_size];
 size_t query_id_size = 0;
 
+Int64 untracked_memory_data = 0;
+
 LazyPipeFDs notification_pipe;
 
 #ifdef OS_LINUX
@@ -158,6 +161,8 @@ void signalHandler(int, siginfo_t * info, void * context)
     query_id_size = std::min(query_id.size(), max_query_id_size);
     if (!query_id.empty())
         memcpy(query_id_data, query_id.data(), query_id_size);
+
+    untracked_memory_data = current_thread ? current_thread->untracked_memory : 0;
 
     /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
     data_ready_num.store(notification_num, std::memory_order_release);
@@ -400,7 +405,7 @@ public:
     {
         /// Create a mask of what columns are needed in the result.
         NameSet names_set(column_names.begin(), column_names.end());
-        send_signal = names_set.contains("trace") || names_set.contains("query_id");
+        send_signal = names_set.contains("trace") || names_set.contains("query_id") || names_set.contains("untracked_memory");
         read_thread_names = names_set.contains("thread_name");
 
 #ifdef OS_DARWIN
@@ -457,6 +462,7 @@ protected:
             {
                 res_columns[res_index++]->insert(thread_name);
                 res_columns[res_index++]->insert(tid);
+                res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
             }
@@ -562,6 +568,7 @@ protected:
                         res_columns[res_index++]->insert(tid);
                         res_columns[res_index++]->insertData(query_id_data, query_id_size);
                         res_columns[res_index++]->insert(arr);
+                        res_columns[res_index++]->insert(untracked_memory_data);
 
                         continue;
                     }
@@ -574,6 +581,7 @@ protected:
 
                 res_columns[res_index++]->insert(thread_name);
                 res_columns[res_index++]->insert(tid);
+                res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
             }
@@ -718,6 +726,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
+        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread atomic-less counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);

@@ -19,22 +19,33 @@ node = cluster.add_instance(
 
 
 def start_zookeeper():
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             node.exec_in_container(
                 ["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"]
             )
             return
         except Exception:
-            if attempt == 2:
+            if attempt == 4:
                 raise
-            time.sleep(2)
+            time.sleep(3)
 
 
 def stop_zookeeper():
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
     timeout = time.time() + 60
-    while node.get_process_pid("zookeeper") != None:
+    # get_process_pid("zookeeper") uses the regex '^[^ ]*zookeeper' which only
+    # matches the first word of the command line. The ZooKeeper Java process
+    # starts with "java -Dzookeeper..." so it never matches. Use a direct pgrep
+    # for the ZooKeeper main class to properly detect the running JVM.
+    # The bracket expression [o]rg is a standard trick to keep pgrep -f from
+    # matching the shell process that is running pgrep itself (its argv
+    # contains the literal string '[o]rg.apache.zookeeper.server', which the
+    # regex '[o]rg.apache.zookeeper.server' does not match).
+    while node.exec_in_container(
+        ["bash", "-c", "pgrep -f '[o]rg\\.apache\\.zookeeper\\.server' || true"],
+        nothrow=True,
+    ).strip():
         if time.time() > timeout:
             raise Exception("Failed to stop ZooKeeper in 60 secs")
         time.sleep(0.2)
