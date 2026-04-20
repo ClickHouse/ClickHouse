@@ -400,6 +400,7 @@ namespace ServerSetting
     extern const ServerSettingsString google_protos_path;
     extern const ServerSettingsString filesystem_caches_path;
     extern const ServerSettingsInt32 oom_score;
+    extern const ServerSettingsBool allow_experimental_oom_canary;
     extern const ServerSettingsBool oom_canary_enable;
     extern const ServerSettingsUInt64 oom_canary_size;
     extern const ServerSettingsBool oom_canary_relaunch;
@@ -1773,7 +1774,9 @@ try
     std::optional<OOMCanary> oom_canary;
     oom_canary.emplace(global_context);
     OOMCanary::Config canary_config;
-    canary_config.enable = server_settings[ServerSetting::oom_canary_enable];
+    /// Require both the experimental gate and the feature toggle.
+    canary_config.enable = server_settings[ServerSetting::allow_experimental_oom_canary]
+        && server_settings[ServerSetting::oom_canary_enable];
     canary_config.size_bytes = server_settings[ServerSetting::oom_canary_size];
     canary_config.relaunch = server_settings[ServerSetting::oom_canary_relaunch];
 

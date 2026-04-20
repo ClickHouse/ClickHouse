@@ -27,6 +27,11 @@ cat > "$test_dir/config.xml" << XMLEOF
     <uncompressed_cache_size>0</uncompressed_cache_size>
     <shutdown_wait_unfinished>0</shutdown_wait_unfinished>
     <users_config>$test_dir/users.xml</users_config>
+    <crash_log>
+        <database>system</database>
+        <table>crash_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </crash_log>
 </clickhouse>
 XMLEOF
 
@@ -66,6 +71,7 @@ CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY \
     --user_files_path "$test_dir/user_files" \
     --format_schema_path "$test_dir/format_schemas" \
     --oom_canary_enable true \
+    --allow_experimental_oom_canary true \
     --oom_canary_size 1048576 \
     --oom_canary_relaunch true \
     --logger.log "$server_log" \
@@ -170,6 +176,28 @@ if grep -q "$relaunch_message" "$server_log"; then
     echo "relaunch log entry found"
 else
     echo "relaunch log entry not found" >&2
+    tail -n 100 "$server_log" >&2
+    exit 1
+fi
+
+# Step 7: Verify that the OOM canary event was written to system.crash_log.
+# Poll because crash_log flushes asynchronously (flush_interval_milliseconds = 1s).
+client_args=(--send_logs_level=warning --database=default --port "$tcp_port")
+crash_rows=0
+for _ in $(seq 1 30); do
+    "$CLICKHOUSE_BINARY" client "${client_args[@]}" --query "SYSTEM FLUSH LOGS crash_log" 2>/dev/null || true
+    crash_rows=$("$CLICKHOUSE_BINARY" client "${client_args[@]}" --query \
+        "SELECT count() FROM system.crash_log WHERE signal = 9 AND signal_description LIKE '%OOM Canary%'" 2>/dev/null || echo 0)
+    if [[ "$crash_rows" -ge 1 ]]; then
+        break
+    fi
+    sleep 0.2
+done
+
+if [[ "$crash_rows" -ge 1 ]]; then
+    echo "crash_log entry found"
+else
+    echo "crash_log entry not found" >&2
     tail -n 100 "$server_log" >&2
     exit 1
 fi
