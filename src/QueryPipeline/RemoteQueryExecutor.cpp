@@ -512,35 +512,18 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
     while (true)
     {
-        bool is_read_task_request = false;
-        Packet packet;
-        {
-            LockAndBlocker lock(was_cancelled_mutex);
-            if (was_cancelled)
-                return ReadResult(Block());
+        LockAndBlocker lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return ReadResult(Block());
 
-            packet = connections->receivePacket();
-            /// ReadTaskRequest processing may call the file iterator which can be slow
-            /// (e.g., reading Iceberg manifest files from object storage). Release
-            /// was_cancelled_mutex before calling processReadTaskRequest() so that
-            /// cancel() can run concurrently — otherwise the query becomes unkillable.
-            /// sendClusterFunctionReadTaskResponse() and sendCancel() are already
-            /// serialised by cancel_mutex inside MultiplexedConnections, so this is safe.
-            is_read_task_request = (packet.type == Protocol::Server::ReadTaskRequest);
-            if (!is_read_task_request)
-            {
-                auto anything = processPacket(std::move(packet));
+        auto packet = connections->receivePacket();
+        auto anything = processPacket(std::move(packet));
 
-                if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
-                    return anything;
+        if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
+            return anything;
 
-                if (got_duplicated_part_uuids)
-                    break;
-            }
-        }
-
-        if (is_read_task_request)
-            processReadTaskRequest();
+        if (got_duplicated_part_uuids)
+            break;
     }
 
     return restartQueryWithoutDuplicatedUUIDs();
@@ -564,90 +547,58 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
     while (true)
     {
-        /// ReadTaskRequest processing may call the file iterator which can be slow
-        /// (e.g., reading Iceberg manifest files from object storage). We must release
-        /// was_cancelled_mutex before calling processReadTaskRequest() so that
-        /// cancel() can run concurrently — otherwise the query becomes unkillable.
-        /// sendClusterFunctionReadTaskResponse() and sendCancel() are already
-        /// serialised by cancel_mutex inside MultiplexedConnections, so this is safe.
-        bool is_read_task_request = false;
+        LockAndBlocker lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return ReadResult(Block());
+
+        if (packet_in_progress)
         {
-            LockAndBlocker lock(was_cancelled_mutex);
-            if (was_cancelled)
-                return ReadResult(Block());
+            chassert(read_context->readPacketTypeSeparately());
+            chassert(read_context->hasReadTillPacketType());
 
-            if (packet_in_progress)
-            {
-                chassert(read_context->readPacketTypeSeparately());
-                chassert(read_context->hasReadTillPacketType());
+            /// packet type is handled already, read and parse packet itself
+            if (!read_context->hasReadPacket() && !read_context->read())
+                return ReadResult(read_context->getFileDescriptor());
 
-                /// packet type is handled already, read and parse packet itself
-                if (!read_context->hasReadPacket() && !read_context->read())
-                    return ReadResult(read_context->getFileDescriptor());
+            packet_in_progress = false;
+            auto read_result = processPacket(read_context->getPacket());
+            if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
+                return read_result;
 
-                packet_in_progress = false;
-                auto packet = read_context->getPacket();
-                if (packet.type == Protocol::Server::ReadTaskRequest)
-                {
-                    is_read_task_request = true;
-                }
-                else
-                {
-                    auto read_result = processPacket(std::move(packet));
-                    if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
-                        return read_result;
-
-                    if (got_duplicated_part_uuids)
-                        break;
-                }
-            }
-
-            if (!is_read_task_request)
-            {
-                read_context->resume();
-
-                if (isReplicaUnavailable() || needToSkipUnavailableShard())
-                {
-                    /// We need to tell the coordinator not to wait for this replica.
-                    /// But at this point it may lead to an incomplete result set, because
-                    /// this replica committed to read some part of there data and then died.
-                    if (extension && extension->parallel_reading_coordinator)
-                    {
-                        chassert(extension->parallel_reading_coordinator);
-                        extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
-                    }
-
-                    return ReadResult(Block());
-                }
-
-                /// Check if packet is not ready yet.
-                if (read_context->isInProgress())
-                    return ReadResult(read_context->getFileDescriptor());
-
-                /// if reading separately packet header and body enabled, try to read packet itself this time
-                if (read_context->readPacketTypeSeparately() && !read_context->hasReadPacket() && !read_context->read())
-                    return ReadResult(read_context->getFileDescriptor());
-
-                auto packet = read_context->getPacket();
-                if (packet.type == Protocol::Server::ReadTaskRequest)
-                {
-                    is_read_task_request = true;
-                }
-                else
-                {
-                    auto read_result = processPacket(std::move(packet));
-                    if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
-                        return read_result;
-
-                    if (got_duplicated_part_uuids)
-                        break;
-                }
-            }
+            if (got_duplicated_part_uuids)
+                break;
         }
-        /// was_cancelled_mutex released — cancel() can now run concurrently.
 
-        if (is_read_task_request)
-            processReadTaskRequest();
+        read_context->resume();
+
+        if (isReplicaUnavailable() || needToSkipUnavailableShard())
+        {
+            /// We need to tell the coordinator not to wait for this replica.
+            /// But at this point it may lead to an incomplete result set, because
+            /// this replica committed to read some part of there data and then died.
+            if (extension && extension->parallel_reading_coordinator)
+            {
+                chassert(extension->parallel_reading_coordinator);
+                extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
+            }
+
+            return ReadResult(Block());
+        }
+
+        /// Check if packet is not ready yet.
+        if (read_context->isInProgress())
+            return ReadResult(read_context->getFileDescriptor());
+
+        /// if reading separately packet header and body enabled, try to read packet itself this time
+        if (read_context->readPacketTypeSeparately() && !read_context->hasReadPacket() && !read_context->read())
+            return ReadResult(read_context->getFileDescriptor());
+
+        auto read_result = processPacket(read_context->getPacket());
+        if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
+            return read_result;
+
+        if (got_duplicated_part_uuids)
+            break;
     }
 
     return restartQueryWithoutDuplicatedUUIDs();

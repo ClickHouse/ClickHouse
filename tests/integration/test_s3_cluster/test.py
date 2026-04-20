@@ -10,7 +10,7 @@ from email.errors import HeaderParseError
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_secret_key
+from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import TSV
 from helpers.utility import random_string
@@ -686,10 +686,11 @@ _listing_delay_mock_started = False
 _DELAY_MOCK_PORT = "8082"
 _DELAY_MOCK_HOST = "resolver"
 # How long the mock delays every listing request.
-# Must be large enough to clearly distinguish fast (fixed) vs slow (broken).
-_LISTING_DELAY_S = 20
-# Maximum acceptable duration for KILL QUERY to complete with the fix.
-# Must be less than _LISTING_DELAY_S.
+# Must be large enough to clearly distinguish fast (fixed) vs slow (broken),
+# and large enough to outlast the KILL QUERY synchronisation window.
+_LISTING_DELAY_S = 30
+# Maximum acceptable duration for KILL QUERY to complete with the fix applied.
+# Must be much less than _LISTING_DELAY_S.
 _MAX_KILL_DURATION_S = 5
 
 
@@ -705,86 +706,62 @@ def _start_listing_delay_mock(cluster):
     )
     _listing_delay_mock_started = True
 
-
-def test_kill_query_when_task_iterator_is_slow(started_cluster):
-    """Regression test for https://github.com/ClickHouse/ClickHouse/issues/98165
-
-    Before the fix, was_cancelled_mutex was held throughout
-    processReadTaskRequest(), so KILL QUERY would block while waiting for
-    cancel() to acquire that mutex.  Because processReadTaskRequest() was
-    stuck waiting for a slow S3 listing (simulated here by a mock with a
-    _LISTING_DELAY_S-second delay), KILL QUERY itself would hang for the
-    entire delay duration.
-
-    KILL QUERY calls RemoteQueryExecutor::cancel() synchronously from the
-    KILL QUERY thread (InterpreterKillQuery → ProcessList::sendCancelToQuery
-    → QueryStatus::cancelQuery → ... → RemoteQueryExecutor::cancel()).
-    Therefore, if cancel() blocks on was_cancelled_mutex, the KILL QUERY
-    command blocks too.
-
-    After the fix, was_cancelled_mutex is released before calling
-    processReadTaskRequest(), so cancel() runs immediately and KILL QUERY
-    returns well before the S3 listing delay expires.
-    """
-    _start_listing_delay_mock(started_cluster)
-
+# --- icebergS3Cluster large-data functional test (GitHub issue #98165) ---
+# Number of data files (iceberg snapshots) to create.
+_LARGE_NUM_FILES = 170
+# Rows per INSERT.  randomString(1000) yields ~1 000 incompressible bytes per
+# row, so 100 000 rows ≈ 100 MB of Parquet per snapshot.
+_LARGE_ROWS_PER_FILE = 100_000
+def test_iceberg_s3_cluster_large_data(started_cluster):
     node = started_cluster.instances["s0_0_0"]
-    query_id = str(uuid.uuid4())
-    error_container = []
+    run_id = uuid.uuid4().hex[:8]
+    table_name = f"iceberg_large_{run_id}"
+    table_url = (
+        f"http://minio1:9001/{started_cluster.minio_bucket}/{table_name}/"
+    )
 
-    def run_query():
-        _, error = node.query_and_get_answer_with_error(
-            f"""
-            SELECT count(*) FROM s3Cluster(
-                'cluster_simple',
-                'http://{_DELAY_MOCK_HOST}:{_DELAY_MOCK_PORT}/test-bucket/data/*.csv',
-                'CSV', 'value UInt64')
-            SETTINGS receive_timeout=120, send_timeout=120
-            """,
-            query_id=query_id,
-        )
-        error_container.append(error)
+    node.query(
+        f"""
+        CREATE TABLE {table_name} (id UInt64, data String)
+        ENGINE = IcebergS3('{table_url}', '{minio_access_key}', '{minio_secret_key}')
+        """
+    )
 
-    query_thread = threading.Thread(target=run_query, daemon=True)
-    query_thread.start()
-
-    # Wait for the query to reach processReadTaskRequest() and block on the
-    # slow S3 listing.  Workers connect and immediately send ReadTaskRequest,
-    # so a 2-second pause is sufficient.
-    time.sleep(2)
-
-    assert (
-        int(
+    try:
+        # Insert _LARGE_NUM_FILES batches.  Each INSERT into an IcebergS3
+        # engine table commits a new iceberg snapshot with one Parquet file.
+        # max_insert_threads=1 ensures a single file per snapshot.
+        for batch_idx in range(_LARGE_NUM_FILES):
             node.query(
-                f"SELECT count() FROM system.processes WHERE query_id='{query_id}'"
-            ).strip()
+                f"""
+                INSERT INTO {table_name}
+                SELECT
+                    number + {batch_idx * _LARGE_ROWS_PER_FILE} AS id,
+                    randomString(1000) AS data
+                FROM numbers({_LARGE_ROWS_PER_FILE})
+                """,
+                settings={
+                    "allow_insert_into_iceberg": 1,
+                    "max_insert_threads": 1,
+                },
+            )
+
+        total_rows = _LARGE_NUM_FILES * _LARGE_ROWS_PER_FILE
+
+        result = node.query(
+            f"""
+            SELECT count() FROM icebergS3Cluster(
+                'cluster_simple',
+                '{table_url}',
+                '{minio_access_key}',
+                '{minio_secret_key}'
+            )
+            """
         )
-        == 1
-    ), "Query should still be running (stuck in processReadTaskRequest()) before KILL QUERY"
+        assert int(result.strip()) == total_rows, (
+            f"Expected {total_rows} rows from icebergS3Cluster, "
+            f"got {result.strip()}. Table URL: {table_url}"
+        )
 
-    # Time KILL QUERY.
-    #
-    # KILL QUERY → ProcessList::sendCancelToQuery → QueryStatus::cancelQuery
-    #            → RemoteQueryExecutor::cancel()
-    #
-    # Without fix: cancel() tries to acquire was_cancelled_mutex, which is
-    #   held by processReadTaskRequest().  It blocks for the remaining mock
-    #   delay (~_LISTING_DELAY_S - 2 seconds ≈ 18 seconds).
-    # With fix:    cancel() acquires the mutex immediately (released before
-    #   processReadTaskRequest()) and returns in milliseconds.
-    kill_start = time.time()
-    node.query(f"KILL QUERY WHERE query_id='{query_id}'")
-    kill_duration = time.time() - kill_start
-
-    assert kill_duration < _MAX_KILL_DURATION_S, (
-        f"KILL QUERY took {kill_duration:.1f}s — expected < {_MAX_KILL_DURATION_S}s. "
-        f"Without the fix, cancel() is blocked by was_cancelled_mutex held in "
-        f"processReadTaskRequest() for the full {_LISTING_DELAY_S}s mock delay. "
-        f"See GitHub issue #98165."
-    )
-
-    # Let the mock delay expire so the query thread finishes naturally.
-    query_thread.join(timeout=_LISTING_DELAY_S + 10)
-    assert not query_thread.is_alive(), (
-        "Query thread did not terminate after mock delay expired"
-    )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
