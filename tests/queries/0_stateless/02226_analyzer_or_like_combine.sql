@@ -56,7 +56,7 @@ SELECT materialize('Hello World') AS s WHERE (s LIKE '%Hello%') OR (s LIKE '%Wor
 -- Test that no match still returns empty
 SELECT materialize('test') AS s WHERE (s LIKE '%Hello%') OR (s LIKE '%World%') SETTINGS optimize_or_like_chain = 1;
 
--- Test case-insensitive substring patterns (should use multiSearchAnyCaseInsensitive)
+-- Test case-insensitive substring patterns (should use multiSearchAnyCaseInsensitiveUTF8)
 EXPLAIN SYNTAX SELECT materialize('Hello World') AS s WHERE (s ILIKE '%hello%') OR (s ILIKE '%world%') SETTINGS optimize_or_like_chain = 1;
 EXPLAIN QUERY TREE run_passes=1 SELECT materialize('Hello World') AS s WHERE (s ILIKE '%hello%') OR (s ILIKE '%world%') SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1;
 
@@ -82,3 +82,8 @@ SELECT materialize('World Hello') AS s WHERE (s LIKE '%Hello%') OR (s LIKE 'Worl
 -- Test match() with case-insensitive regexp
 EXPLAIN SYNTAX SELECT materialize('Hello World') AS s WHERE match(s, '(?i)hello') OR match(s, '(?i)world') SETTINGS optimize_or_like_chain = 1;
 SELECT materialize('Hello World') AS s WHERE match(s, '(?i)hello') OR match(s, '(?i)world') SETTINGS optimize_or_like_chain = 1;
+
+-- Mixed OR chain (LIKE + non-LIKE branch) must NOT be wrapped in indexHint, since
+-- `indexHint(LIKE) AND (optimized_OR)` would prune ranges where only the non-LIKE branch matches,
+-- producing false negatives. The QUERY TREE must keep just `or(...)` at the top, not `and(...)`.
+EXPLAIN QUERY TREE run_passes=1 SELECT materialize('Hello World') AS s, materialize(1::UInt8) AS n WHERE (s LIKE '%Hello%') OR (n = 2) SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1;

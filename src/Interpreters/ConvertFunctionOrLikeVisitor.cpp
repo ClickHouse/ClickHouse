@@ -135,12 +135,12 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/)
 
                     if (is_match)
                     {
-                        /// match() already has a regexp pattern - use as is
+                        /// match() already has a regexp pattern - use as is.
+                        /// A regexp can never be a pure substring, so it always falls through to the
+                        /// combined `match` path; case-insensitivity flags inside the pattern (e.g.
+                        /// `(?i)`, `(?mi:...)`) are preserved verbatim in the combined alternation.
                         data.regexp = pattern_str;
                         data.is_substring = false;
-                        /// Check if match pattern starts with (?i) for case insensitivity
-                        if (data.regexp.starts_with("(?i)"))
-                            data.is_case_insensitive = true;
                     }
                     else
                     {
@@ -185,7 +185,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/)
                 ASTPtr match_fn;
                 if (info.canUseMultiSearchAny())
                 {
-                    /// Use multiSearchAny or multiSearchAnyCaseInsensitive for pure substring patterns
+                    /// Use multiSearchAny or multiSearchAnyCaseInsensitiveUTF8 for pure substring patterns
                     String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitiveUTF8" : "multiSearchAny";
                     match_fn = makeASTFunction(func_name, identifier_ast, make_intrusive<ASTLiteral>(Field{info.getSubstrings()}));
                 }

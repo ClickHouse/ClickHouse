@@ -188,12 +188,12 @@ public:
 
             if (is_match)
             {
-                /// match() already has a regexp pattern - use as is
+                /// match() already has a regexp pattern - use as is.
+                /// A regexp can never be a pure substring, so it always falls through to the
+                /// combined `match` path; case-insensitivity flags inside the pattern (e.g.
+                /// `(?i)`, `(?mi:...)`) are preserved verbatim in the combined alternation.
                 data.regexp = pattern_str;
                 data.is_substring = false;
-                /// Check if match pattern starts with (?i) for case insensitivity
-                if (data.regexp.starts_with("(?i)"))
-                    data.is_case_insensitive = true;
             }
             else
             {
@@ -232,26 +232,37 @@ public:
         /// Cache context for later use
         auto context = getContext();
 
-        /// Create indexHint with the original LIKE/ILIKE/match expressions for index analysis FIRST
-        /// (before modifying the original node)
-        QueryTreeNodePtr index_hint_arg;
-        if (original_like_exprs.size() == 1)
-        {
-            index_hint_arg = std::move(original_like_exprs[0]);
-        }
-        else
-        {
-            /// Create OR of all original expressions
-            auto original_or = std::make_shared<FunctionNode>("or");
-            original_or->getArguments().getNodes() = std::move(original_like_exprs);
-            original_or->resolveAsFunction(or_function_resolver);
-            index_hint_arg = std::move(original_or);
-        }
+        /// `indexHint(A) AND expr` restricts index analysis to ranges satisfying `A`, so wrapping the
+        /// optimized chain in `indexHint(<LIKE subset>)` is only safe when every OR branch was a
+        /// LIKE/ILIKE/match: for mixed chains (e.g. `URL LIKE 'a%' OR UserID = 1`), the hint would
+        /// prune ranges where only the non-LIKE branch matches, producing false negatives.
+        const bool is_pure_like_chain = original_like_exprs.size() == function_node->getArguments().getNodes().size();
 
-        auto index_hint_resolver = FunctionFactory::instance().get("indexHint", context);
-        auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
-        index_hint_node->getArguments().getNodes().push_back(std::move(index_hint_arg));
-        index_hint_node->resolveAsFunction(index_hint_resolver);
+        QueryTreeNodePtr index_hint_node;
+        if (is_pure_like_chain)
+        {
+            /// Create indexHint with the original LIKE/ILIKE/match expressions for index analysis FIRST
+            /// (before modifying the original node)
+            QueryTreeNodePtr index_hint_arg;
+            if (original_like_exprs.size() == 1)
+            {
+                index_hint_arg = std::move(original_like_exprs[0]);
+            }
+            else
+            {
+                /// Create OR of all original expressions
+                auto original_or = std::make_shared<FunctionNode>("or");
+                original_or->getArguments().getNodes() = std::move(original_like_exprs);
+                original_or->resolveAsFunction(or_function_resolver);
+                index_hint_arg = std::move(original_or);
+            }
+
+            auto index_hint_resolver = FunctionFactory::instance().get("indexHint", context);
+            auto index_hint_fn = std::make_shared<FunctionNode>("indexHint");
+            index_hint_fn->getArguments().getNodes().push_back(std::move(index_hint_arg));
+            index_hint_fn->resolveAsFunction(index_hint_resolver);
+            index_hint_node = std::move(index_hint_fn);
+        }
 
         /// Now create the appropriate function nodes and fill in the placeholders
         for (size_t i = 0; i < pattern_keys.size(); ++i)
@@ -264,7 +275,7 @@ public:
 
             if (info.canUseMultiSearchAny())
             {
-                /// Use multiSearchAny or multiSearchAnyCaseInsensitive for pure substring patterns
+                /// Use multiSearchAny or multiSearchAnyCaseInsensitiveUTF8 for pure substring patterns
                 String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitiveUTF8" : "multiSearchAny";
                 match_function = std::make_shared<FunctionNode>(func_name);
                 match_function->getArguments().getNodes().push_back(key);
@@ -291,6 +302,9 @@ public:
 
         function_node->getArguments().getNodes() = std::move(unique_elems);
         function_node->resolveAsFunction(or_function_resolver);
+
+        if (!index_hint_node)
+            return;
 
         /// Clone the optimized OR node
         auto optimized_or_clone = node->clone();
