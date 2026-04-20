@@ -73,14 +73,6 @@ boost::context::stack_context FiberStack::allocate() const
         }
     }
 
-    /// MSan doesn't track shadow for struct padding bytes through return values
-    /// (the LLVM IR shadow is per-field, not per-byte of the padded representation).
-    /// Any struct with padding returned by value will have uninitialized padding shadow
-    /// in the caller. On the main thread stack this is harmless (OS zero-inits pages),
-    /// but on heap-allocated fiber stacks the dirty shadow can propagate via stack slot
-    /// reuse and eventually trigger false positives in unrelated code.
-    __msan_unpoison(data, num_bytes);
-
     boost::context::stack_context sctx;
     sctx.size = num_bytes;
     sctx.sp = static_cast< char * >(data) + sctx.size;

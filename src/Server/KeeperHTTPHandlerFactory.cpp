@@ -21,6 +21,7 @@
 
 #include <Server/KeeperDashboardRequestHandler.h>
 #include <Server/KeeperHTTPStorageHandler.h>
+#include <Server/KeeperJemallocHandler.h>
 #include <Server/KeeperNotFoundHandler.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
@@ -110,6 +111,39 @@ void addCommandsHandlersToFactory(
     factory.addHandler(commands_handler);
 }
 
+template <typename H>
+void addStrictHandler(KeeperHTTPRequestHandlerFactory & factory, const std::string & path)
+{
+    auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<H>>(
+        [] { return std::make_unique<H>(); });
+    handler->addFilter([path](const auto & request)
+    {
+        const auto & uri = request.getURI();
+        return uri == path
+            || (uri.size() > path.size() && uri.starts_with(path) && uri[path.size()] == '?');
+    });
+    handler->allowGetAndHeadRequest();
+    factory.addHandler(handler);
+}
+
+void addJemallocHandlersToFactory(KeeperHTTPRequestHandlerFactory & factory)
+{
+    addStrictHandler<KeeperJemallocWebUIHandler>(factory, "/jemalloc");
+    factory.addPathToHints("/jemalloc");
+
+    addStrictHandler<KeeperJemallocRedirectHandler>(factory, "/jemalloc/");
+
+#if USE_JEMALLOC
+    addStrictHandler<KeeperJemallocProfileHandler>(factory, "/jemalloc/profile");
+    addStrictHandler<KeeperJemallocStatsHandler>(factory, "/jemalloc/stats");
+    addStrictHandler<KeeperJemallocStatusHandler>(factory, "/jemalloc/status");
+#else
+    addStrictHandler<KeeperJemallocNotAvailableHandler>(factory, "/jemalloc/profile");
+    addStrictHandler<KeeperJemallocNotAvailableHandler>(factory, "/jemalloc/stats");
+    addStrictHandler<KeeperJemallocNotAvailableHandler>(factory, "/jemalloc/status");
+#endif
+}
+
 void addStorageHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
@@ -161,6 +195,7 @@ void addDefaultHandlersToFactory(
     addDashboardHandlersToFactory(factory, keeper_dispatcher);
     addCommandsHandlersToFactory(factory, keeper_dispatcher, keeper_client);
     addStorageHandlersToFactory(factory, keeper_dispatcher, keeper_client);
+    addJemallocHandlersToFactory(factory);
 }
 
 static auto createHandlersFactoryFromConfig(
@@ -203,6 +238,8 @@ static auto createHandlersFactoryFromConfig(
                 addCommandsHandlersToFactory(*main_handler_factory, keeper_dispatcher, keeper_client);
             else if (handler_type == "storage")
                 addStorageHandlersToFactory(*main_handler_factory, keeper_dispatcher, keeper_client);
+            else if (handler_type == "jemalloc")
+                addJemallocHandlersToFactory(*main_handler_factory);
             else
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
