@@ -126,11 +126,14 @@ void MergeTreeLeaderElection::run()
                 LOG_TRACE(log, "Renewing leader lease at '{}'", lease_path);
                 became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
             }
-            else if (now - timestamp > static_cast<time_t>(session_timeout_ms / 1000))
+            else if (now - timestamp > static_cast<time_t>(session_timeout_ms / 1000)
+                     || timestamp - now > static_cast<time_t>(session_timeout_ms / 1000))
             {
-                /// The lease has expired (or was corrupted — parseLeaseContent returns timestamp 0 on failure).
-                /// Try to claim leadership.
-                LOG_INFO(log, "Leader lease at '{}' expired or corrupted (leader_id: {}, age: {} s), trying to claim",
+                /// The lease has expired, or its timestamp is far in the future
+                /// (leader clock skew — otherwise a follower would wait indefinitely until local
+                /// time catches up), or the content was corrupted (`parseLeaseContent` returns
+                /// timestamp 0 on failure). Try to claim leadership.
+                LOG_INFO(log, "Leader lease at '{}' expired, corrupted, or has future timestamp (leader_id: {}, skew: {} s), trying to claim",
                     lease_path, file_leader_id, now - timestamp);
                 became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
             }
