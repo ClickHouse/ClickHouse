@@ -954,6 +954,7 @@ public:
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
     void doHandleInitialAllRangesAnnouncement([[maybe_unused]] InitialAllRangesAnnouncement announcement) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
+    bool isReadingCompleted() const override;
 
     /// Global part set for replica membership tracking and progress reporting.
     Parts all_parts_to_read;
@@ -976,6 +977,15 @@ void InOrderCoordinator::markReplicaAsUnavailable(size_t replica_number)
         stats[replica_number].is_unavailable = true;
         ++unavailable_replicas_count;
     }
+}
+
+bool InOrderCoordinator::isReadingCompleted() const
+{
+    for (const auto & [_, parts] : split_states)
+        for (const auto & part : parts)
+            if (!part.description.ranges.empty())
+                return false;
+    return true;
 }
 
 void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
