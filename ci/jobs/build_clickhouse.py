@@ -166,6 +166,10 @@ def main():
     use_pgo = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
     use_bolt = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
 
+    # PGO is best-effort: keep a PGO-free command ready so we can retry without
+    # profile-guided optimization if cmake/build fails with a stale/incompatible
+    # profile. BOLT has a similar fallback path applied after linking.
+    cmake_cmd_no_pgo = cmake_cmd
     if use_pgo:
         print(f"PGO profile found at {pgo_profile}, enabling profile-guided optimization")
         cmake_cmd += f" -DCLICKHOUSE_PGO_PROFILE_PATH={pgo_profile}"
@@ -174,6 +178,7 @@ def main():
         cmake_cmd += " -DENABLE_CLICKHOUSE_BOLT=ON"
 
     cmake_cmd += f" {repo_path_normalized} -B {build_dir_normalized}"
+    cmake_cmd_no_pgo += f" {repo_path_normalized} -B {build_dir_normalized}"
 
     res = True
     results = []
@@ -256,6 +261,23 @@ def main():
         )
         res = results[-1].is_ok()
 
+        # PGO is best-effort: if cmake failed with a profile (e.g. it is stale
+        # or incompatible with the current sources/toolchain), retry once
+        # without `-DCLICKHOUSE_PGO_PROFILE_PATH`.
+        if not res and use_pgo:
+            print("WARNING: cmake with PGO failed, retrying without profile-guided optimization")
+            Shell.check(f"rm -f {build_dir}/CMakeCache.txt")
+            results.append(
+                Result.from_commands_run(
+                    name="Cmake configuration (retry without PGO)",
+                    command=cmake_cmd_no_pgo,
+                    workdir=build_dir_normalized,
+                )
+            )
+            res = results[-1].is_ok()
+            if res:
+                use_pgo = False
+
         # Pre-seed .ninja_log from toolchain for timing-based scheduling
         if res:
             ninja_log_seed = "/usr/local/share/clickhouse-build/ninja_log"
@@ -289,6 +311,29 @@ def main():
                 workdir=build_dir_normalized,
             )
         )
+
+        # PGO is best-effort: if linking with a stale/incompatible profile fails,
+        # reconfigure without `-DCLICKHOUSE_PGO_PROFILE_PATH` and rebuild once.
+        if not results[-1].is_ok() and use_pgo:
+            print("WARNING: build with PGO failed, retrying without profile-guided optimization")
+            Shell.check(f"rm -f {build_dir}/CMakeCache.txt")
+            results.append(
+                Result.from_commands_run(
+                    name="Cmake configuration (retry without PGO)",
+                    command=cmake_cmd_no_pgo,
+                    workdir=build_dir_normalized,
+                )
+            )
+            if results[-1].is_ok():
+                use_pgo = False
+                results.append(
+                    Result.from_commands_run(
+                        name="Build ClickHouse (retry without PGO)",
+                        command=f"command time -v ninja {targets}",
+                        workdir=build_dir_normalized,
+                    )
+                )
+
         run_shell("sccache stats", "sccache --show-stats")
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
