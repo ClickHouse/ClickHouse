@@ -184,10 +184,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         std::optional<ParallelReadResponse> response;
         try
         {
-            response = extension.sendReadRequest(
-                coordination_mode,
-                min_marks_per_request // Send for compatibility with old initiators
-            );
+            response = extension.sendReadRequest(coordination_mode, min_marks_per_request);
         }
         catch (...)
         {

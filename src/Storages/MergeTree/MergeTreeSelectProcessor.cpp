@@ -89,6 +89,12 @@ void ParallelReadingExtension::sendInitialRequest(
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
+    CoordinationMode mode, size_t min_marks_per_request) const
+{
+    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, {}, stream_id});
+}
+
+std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadInOrderRequest(
     CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const
 {
     return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, description, stream_id});
