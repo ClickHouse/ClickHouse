@@ -320,14 +320,16 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
 Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix)
 {
     this->macros_ = macros;
-    updateClusters(config, settings, config_prefix);
+    mergeConfigClusters(config, settings, config_prefix);
 }
+
+/// No synchronisation: `other` is either an already-published (immutable) snapshot or a writer-owned builder
+/// on the same thread. See the class-level comment in `Cluster.h` for the invariant.
+Clusters::Clusters(const Clusters & other) = default;
 
 
 ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
-    std::lock_guard lock(mutex);
-
     std::string expanded_cluster_name;
     try
     {
@@ -343,19 +345,29 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 }
 
 
-void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
+bool Clusters::hasCluster(const std::string & cluster_name) const
 {
-    std::lock_guard lock(mutex);
+    /// Intentionally reuses `getCluster` so macro expansion stays in a single source of truth; the only
+    /// observable difference is that callers get a `bool` without holding on to the `ClusterPtr`.
+    return getCluster(cluster_name) != nullptr;
+}
+
+
+void Clusters::addCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
+{
     impl[cluster_name] = cluster;
 }
 
-void Clusters::removeCluster(const String & cluster_name)
+void Clusters::removeClusterEntry(const String & cluster_name)
 {
-    std::lock_guard lock(mutex);
     impl.erase(cluster_name);
 }
 
-void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config)
+void Clusters::mergeConfigClusters(
+    const Poco::Util::AbstractConfiguration & new_config,
+    const Settings & settings,
+    const String & config_prefix,
+    const Poco::Util::AbstractConfiguration * old_config)
 {
     Poco::Util::AbstractConfiguration::Keys new_config_keys;
     new_config.keys(config_prefix, new_config_keys);
@@ -374,8 +386,6 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         std::set_difference(
             old_config_keys.begin(), old_config_keys.end(), new_config_keys.begin(), new_config_keys.end(), std::back_inserter(deleted_keys));
     }
-
-    std::lock_guard lock(mutex);
 
     /// If old config is set, remove deleted clusters from impl, otherwise just clear it.
     if (old_config)
@@ -415,8 +425,8 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
 Clusters::Impl Clusters::getContainer() const
 {
-    std::lock_guard lock(mutex);
-    /// The following line copies container of shared_ptrs to return value under lock
+    /// Returns a copy of the container of `shared_ptr<Cluster>` — callers can safely mutate the map without
+    /// affecting the snapshot. The underlying `Cluster` objects are still shared.
     return impl;
 }
 

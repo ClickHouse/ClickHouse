@@ -341,23 +341,27 @@ void ClusterFactory::shutdown()
     shutdown_called.store(true);
     if (sql_catalog_update_task)
         sql_catalog_update_task->deactivate();
-    std::lock_guard lock(mutex);
-    if (shards_metadata_storage)
-        shards_metadata_storage->shutdown();
-    if (clusters_metadata_storage)
-        clusters_metadata_storage->shutdown();
-    sql_catalog_update_task = {};
-    shards_metadata_storage.reset();
-    clusters_metadata_storage.reset();
-    initialized = false;
-    loaded_sql_shards.clear();
-    loaded_sql_clusters.clear();
-    sql_catalog_mutation_counter = 0;
 
     {
-        std::lock_guard clusters_lock(clusters_mutex);
-        clusters.reset();
+        std::lock_guard lock(mutex);
+        if (shards_metadata_storage)
+            shards_metadata_storage->shutdown();
+        if (clusters_metadata_storage)
+            clusters_metadata_storage->shutdown();
+        sql_catalog_update_task = {};
+        shards_metadata_storage.reset();
+        clusters_metadata_storage.reset();
+        initialized = false;
+        loaded_sql_shards.clear();
+        loaded_sql_clusters.clear();
+        sql_catalog_mutation_counter = 0;
     }
+
+    /// Publish an empty snapshot so any late readers stop seeing the old registry. `MultiVersion::set` takes its
+    /// own internal mutex and does not interact with `mutex` above; readers already holding a `Version` keep it
+    /// alive until they release it (the old `Clusters` is destroyed only then).
+    std::lock_guard writer_lock(clusters_writer_mutex);
+    clusters_state.set(std::make_unique<ClustersSnapshot>());
 }
 
 void ClusterFactory::reloadFromSQL()
@@ -574,14 +578,12 @@ bool ClusterFactory::createCluster(
     loadNamedCollectionsIfNeeded();
 
     /// Snapshot the unified registry once — enough to reject names already claimed by `remote_servers` / discovery
-    /// / an older materialised SQL entry. We don't need to hold `clusters_mutex` across the whole SQL-catalog
-    /// critical section: a config reload racing with us would at worst end up publishing a duplicate into
-    /// `clusters`, where `setCluster` rejects the lower-priority SQL source in `publishMaterializedSQLClusterAfterCatalogChange`.
-    std::shared_ptr<Clusters> registry_snapshot;
-    {
-        std::lock_guard lock_clusters(clusters_mutex);
-        registry_snapshot = clusters;
-    }
+    /// / an older materialised SQL entry. A config reload racing with us would at worst publish a duplicate into
+    /// `clusters`, where `setCluster` rejects the lower-priority SQL source in
+    /// `publishMaterializedSQLClusterAfterCatalogChange`.
+    std::shared_ptr<const Clusters> registry_snapshot;
+    if (auto snap = clusters_state.get())
+        registry_snapshot = snap->clusters;
 
     {
         /// SQL catalog writes are serialised by `mutex`; `IF NOT EXISTS` atomicity is preserved because the
@@ -591,7 +593,7 @@ bool ClusterFactory::createCluster(
         if (!initialized)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterFactory is not initialized");
 
-        if (registry_snapshot && registry_snapshot->getCluster(cluster_name))
+        if (registry_snapshot && registry_snapshot->hasCluster(cluster_name))
         {
             if (if_not_exists)
                 return false;
@@ -653,8 +655,9 @@ bool ClusterFactory::dropCluster(const String & cluster_name, bool if_exists)
     loaded_sql_clusters.erase(it);
     ++sql_catalog_mutation_counter;
 
-    /// Evict the materialized entry from the in-memory `Clusters` container so that subsequent
-    /// lookups don't return a stale `Cluster`. Uses a separate `clusters_mutex`, so no re-entrancy.
+    /// Evict the materialized entry from the in-memory `Clusters` container so that subsequent lookups don't return
+    /// a stale `Cluster`. `removeCluster` publishes a new `ClustersSnapshot` via `MultiVersion` — it takes only
+    /// `clusters_writer_mutex`, which is independent of `mutex`.
     removeCluster(cluster_name, ClusterDefinitionSource::SQLCatalog);
     return true;
 }
@@ -1192,9 +1195,9 @@ bool ClusterFactory::hasShard(const String & name) const
 bool ClusterFactory::hasCluster(const String & name) const
 {
     /// Reads from the unified materialized registry, which covers every source
-    /// (`<remote_servers>`, SQL catalog, cluster discovery).
-    std::lock_guard lock(clusters_mutex);
-    return clusters && clusters->getCluster(name) != nullptr;
+    /// (`<remote_servers>`, SQL catalog, cluster discovery). Lock-free: the snapshot is immutable.
+    auto snap = clusters_state.get();
+    return snap && snap->hasCluster(name);
 }
 
 std::vector<String> ClusterFactory::listClusterNames() const
@@ -1383,23 +1386,29 @@ UInt64 ClusterFactory::getSQLCatalogMutationCounter() const
     return sql_catalog_mutation_counter;
 }
 
-bool ClusterFactory::isDefinedByRemoteServersConfigLocked(const String & cluster_name) const
+void ClusterFactory::publishClustersSnapshotLocked(
+    std::shared_ptr<Clusters> new_clusters,
+    ConfigurationPtr new_config,
+    size_t new_version)
 {
-    if (!clusters)
-        return false;
-    auto existing = clusters->getCluster(cluster_name);
-    return existing && existing->getDefinitionSource() == ClusterDefinitionSource::RemoteServersConfig;
+    auto snap = std::make_unique<ClustersSnapshot>();
+    snap->clusters = std::move(new_clusters);
+    snap->clusters_config = new_config;
+    snap->clusters_version = new_version;
+    clusters_state.set(std::move(snap));
 }
 
-std::shared_ptr<Clusters> ClusterFactory::ensureClustersLocked(const Settings & settings, MultiVersion<Macros>::Version macros_snapshot)
+std::shared_ptr<Clusters> ClusterFactory::cloneClustersForWriteLocked(
+    const Settings & settings,
+    MultiVersion<Macros>::Version macros_snapshot,
+    const std::shared_ptr<const ClustersSnapshot> & current)
 {
-    if (!clusters)
-    {
-        /// Bootstrap with an empty XML config; consumers update entries via the `setCluster` / `applyClustersConfig` paths.
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> empty_config(new Poco::Util::XMLConfiguration);
-        clusters = std::make_shared<Clusters>(*empty_config, settings, macros_snapshot, "");
-    }
-    return clusters;
+    if (current && current->clusters)
+        return std::make_shared<Clusters>(*current->clusters);
+
+    /// Bootstrap with an empty XML config; consumers update entries via the `setCluster` / `applyClustersConfig` paths.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> empty_config(new Poco::Util::XMLConfiguration);
+    return std::make_shared<Clusters>(*empty_config, settings, macros_snapshot, "");
 }
 
 void ClusterFactory::setCluster(const String & cluster_name, ClusterPtr cluster, ClusterDefinitionSource source)
@@ -1411,35 +1420,53 @@ void ClusterFactory::setCluster(const String & cluster_name, ClusterPtr cluster,
     if (!global_context)
         return;
 
-    /// Priority check and storage update under `clusters_mutex`.
-    std::lock_guard lock(clusters_mutex);
-    ensureClustersLocked(global_context->getSettingsRef(), global_context->getMacros());
+    std::lock_guard writer_lock(clusters_writer_mutex);
+    auto current = clusters_state.get();
 
-    if (source != ClusterDefinitionSource::RemoteServersConfig && isDefinedByRemoteServersConfigLocked(cluster_name))
+    /// Priority check against the currently published snapshot: SQL / Discovery sources are not allowed to override
+    /// a name defined in `<remote_servers>` config.
+    if (source != ClusterDefinitionSource::RemoteServersConfig && current && current->clusters)
     {
-        LOG_DEBUG(
-            log,
-            "Refusing to upsert cluster `{}` from source `{}`: already defined in `<remote_servers>` config",
-            cluster_name,
-            static_cast<int>(source));
-        return;
+        if (auto existing = current->clusters->getCluster(cluster_name);
+            existing && existing->getDefinitionSource() == ClusterDefinitionSource::RemoteServersConfig)
+        {
+            LOG_DEBUG(
+                log,
+                "Refusing to upsert cluster `{}` from source `{}`: already defined in `<remote_servers>` config",
+                cluster_name,
+                static_cast<int>(source));
+            return;
+        }
     }
 
+    auto builder = cloneClustersForWriteLocked(global_context->getSettingsRef(), global_context->getMacros(), current);
+
     cluster->setDefinitionMetadata(source, /*version*/ 0);
-    clusters->setCluster(cluster_name, cluster);
+    builder->addCluster(cluster_name, cluster);
+
+    publishClustersSnapshotLocked(
+        std::move(builder),
+        current ? current->clusters_config : nullptr,
+        current ? current->clusters_version : 0);
 }
 
 void ClusterFactory::removeCluster(const String & cluster_name, ClusterDefinitionSource source)
 {
-    std::lock_guard lock(clusters_mutex);
-    if (!clusters)
+    std::lock_guard writer_lock(clusters_writer_mutex);
+    auto current = clusters_state.get();
+    if (!current || !current->clusters)
         return;
-    auto existing = clusters->getCluster(cluster_name);
+
+    auto existing = current->clusters->getCluster(cluster_name);
     /// Only evict entries owned by the requesting source — prevents a stale Discovery watch from deleting
     /// e.g. a config-defined or SQL-catalog cluster that happens to share a name with the old dynamic one.
-    if (existing && existing->getDefinitionSource() != source)
+    if (!existing || existing->getDefinitionSource() != source)
         return;
-    clusters->removeCluster(cluster_name);
+
+    auto builder = std::make_shared<Clusters>(*current->clusters);
+    builder->removeClusterEntry(cluster_name);
+
+    publishClustersSnapshotLocked(std::move(builder), current->clusters_config, current->clusters_version);
 }
 
 void ClusterFactory::publishMaterializedSQLClusterAfterCatalogChange(const String & cluster_name)
@@ -1458,56 +1485,63 @@ void ClusterFactory::publishMaterializedSQLClusterAfterCatalogChange(const Strin
 
 void ClusterFactory::removeCluster(const String & cluster_name)
 {
-    std::lock_guard lock(clusters_mutex);
-    if (clusters)
-        clusters->removeCluster(cluster_name);
+    std::lock_guard writer_lock(clusters_writer_mutex);
+    auto current = clusters_state.get();
+    if (!current || !current->clusters)
+        return;
+
+    auto builder = std::make_shared<Clusters>(*current->clusters);
+    builder->removeClusterEntry(cluster_name);
+
+    publishClustersSnapshotLocked(std::move(builder), current->clusters_config, current->clusters_version);
 }
 
 size_t ClusterFactory::getClustersVersion() const
 {
-    std::lock_guard lock(clusters_mutex);
-    return clusters_version;
+    auto snap = clusters_state.get();
+    return snap ? snap->clusters_version : 0;
 }
 
 bool ClusterFactory::isClusterDefinedOnlyInRemoteServers(const String & cluster_name) const
 {
-    std::lock_guard lock(clusters_mutex);
-    if (!clusters)
+    auto snap = clusters_state.get();
+    if (!snap || !snap->clusters)
         return false;
-    auto cluster = clusters->getCluster(cluster_name);
+    auto cluster = snap->clusters->getCluster(cluster_name);
     return cluster && cluster->getDefinitionSource() == ClusterDefinitionSource::RemoteServersConfig;
 }
 
-void ClusterFactory::registerCatalogClustersLocked(ContextPtr context)
+void ClusterFactory::registerCatalogClustersInto(Clusters & builder, ContextPtr context) const
 {
-    if (!clusters || !context)
+    if (!context)
         return;
 
-    /// `listClusterNames` locks `mutex`; called here without holding it (the caller holds only `clusters_mutex`).
+    /// `listClusterNames` locks `mutex`; we call it here without holding any `ClusterFactory` read/write mutex
+    /// besides `clusters_writer_mutex`, which is independent of `mutex` (no lock order between them).
     auto names = listClusterNames();
     for (const auto & cluster_name : names)
     {
-        if (clusters->getCluster(cluster_name))
+        if (builder.hasCluster(cluster_name))
             continue;
         if (auto cluster = tryMaterializeCluster(cluster_name, context))
-            clusters->setCluster(cluster_name, cluster);
+            builder.addCluster(cluster_name, cluster);
     }
 }
 
 ClusterPtr ClusterFactory::tryGetCluster(const String & cluster_name) const
 {
-    std::lock_guard lock(clusters_mutex);
-    if (!clusters)
+    auto snap = clusters_state.get();
+    if (!snap || !snap->clusters)
         return nullptr;
-    return clusters->getCluster(cluster_name);
+    return snap->clusters->getCluster(cluster_name);
 }
 
 std::map<String, ClusterPtr> ClusterFactory::getClusters() const
 {
-    std::lock_guard lock(clusters_mutex);
-    if (!clusters)
+    auto snap = clusters_state.get();
+    if (!snap || !snap->clusters)
         return {};
-    return clusters->getContainer();
+    return snap->clusters->getContainer();
 }
 
 void ClusterFactory::applyClustersConfig(
@@ -1517,24 +1551,31 @@ void ClusterFactory::applyClustersConfig(
     const String & config_name,
     ContextPtr context)
 {
-    std::lock_guard lock(clusters_mutex);
+    std::lock_guard writer_lock(clusters_writer_mutex);
+    auto current = clusters_state.get();
 
     /// Skip rebuild when the new config snapshot is byte-identical to the last-applied one — mirrors the old
     /// `isSameConfiguration` short-circuit in `Context::setClustersConfig`.
-    if (clusters && clusters_config && isSameConfiguration(*config, *clusters_config, config_name))
+    if (current && current->clusters && current->clusters_config
+        && isSameConfiguration(*config, *current->clusters_config, config_name))
         return;
 
-    auto old_clusters_config = clusters_config;
-    clusters_config = config;
-
-    if (!clusters)
-        clusters = std::make_shared<Clusters>(*clusters_config, settings, macros_snapshot, config_name);
+    std::shared_ptr<Clusters> builder;
+    if (current && current->clusters)
+    {
+        builder = std::make_shared<Clusters>(*current->clusters);
+        auto old_config = current->clusters_config;
+        builder->mergeConfigClusters(*config, settings, config_name, old_config.get());
+    }
     else
-        clusters->updateClusters(*clusters_config, settings, config_name, old_clusters_config);
+    {
+        builder = std::make_shared<Clusters>(*config, settings, macros_snapshot, config_name);
+    }
 
-    ++clusters_version;
+    registerCatalogClustersInto(*builder, context);
 
-    registerCatalogClustersLocked(context);
+    const size_t new_version = (current ? current->clusters_version : 0) + 1;
+    publishClustersSnapshotLocked(std::move(builder), config, new_version);
 }
 
 void ClusterFactory::reloadClustersConfig(ContextPtr context)
@@ -1547,17 +1588,22 @@ void ClusterFactory::reloadClustersConfig(ContextPtr context)
     /// go through `applyClustersConfig`. SQL catalog and cluster-discovery entries are left untouched.
     static constexpr std::string_view config_prefix = "remote_servers";
 
+    /// Snapshot the current published state lock-free: we need both the `<remote_servers>` config and the list of
+    /// config-defined cluster names. The heavy DNS-resolving work below runs without holding `clusters_writer_mutex`.
     ConfigurationPtr pinned_config;
     std::vector<String> config_cluster_names;
     {
-        std::lock_guard lock(clusters_mutex);
-        pinned_config = clusters_config;
-        if (clusters)
+        auto snap = clusters_state.get();
+        if (snap)
         {
-            for (const auto & [name, cluster] : clusters->getContainer())
+            pinned_config = snap->clusters_config;
+            if (snap->clusters)
             {
-                if (cluster && cluster->getDefinitionSource() == ClusterDefinitionSource::RemoteServersConfig)
-                    config_cluster_names.push_back(name);
+                for (const auto & [name, cluster] : snap->clusters->getContainer())
+                {
+                    if (cluster && cluster->getDefinitionSource() == ClusterDefinitionSource::RemoteServersConfig)
+                        config_cluster_names.push_back(name);
+                }
             }
         }
     }
@@ -1565,7 +1611,6 @@ void ClusterFactory::reloadClustersConfig(ContextPtr context)
     const auto & config = pinned_config ? *pinned_config : context->getConfigRef();
     const auto & settings = context->getSettingsRef();
 
-    /// Rebuild each config cluster outside the lock — the `Cluster` constructor resolves DNS and can be slow.
     std::vector<std::pair<String, std::shared_ptr<Cluster>>> rebuilt;
     rebuilt.reserve(config_cluster_names.size());
     for (const auto & name : config_cluster_names)
@@ -1575,19 +1620,24 @@ void ClusterFactory::reloadClustersConfig(ContextPtr context)
         rebuilt.emplace_back(name, std::make_shared<Cluster>(config, settings, String(config_prefix), name));
     }
 
-    std::lock_guard lock(clusters_mutex);
-    if (clusters_config.get() != pinned_config.get() || !clusters)
+    std::lock_guard writer_lock(clusters_writer_mutex);
+    auto current = clusters_state.get();
+    if (!current || !current->clusters || current->clusters_config.get() != pinned_config.get())
         return;
 
-    /// Swap in the rebuilt cluster only if the slot is still a config-defined entry; between the two lock
-    /// windows another thread may have replaced it via SQL catalog / cluster discovery (`setCluster(..., source)`).
+    auto builder = std::make_shared<Clusters>(*current->clusters);
+
+    /// Swap in the rebuilt cluster only if the slot is still a config-defined entry; between the two snapshots
+    /// another writer may have replaced it via SQL catalog / cluster discovery (`setCluster(..., source)`).
     for (auto & [name, cluster] : rebuilt)
     {
-        auto existing = clusters->getCluster(name);
+        auto existing = builder->getCluster(name);
         if (!existing || existing->getDefinitionSource() != ClusterDefinitionSource::RemoteServersConfig)
             continue;
-        clusters->setCluster(name, cluster);
+        builder->addCluster(name, cluster);
     }
+
+    publishClustersSnapshotLocked(std::move(builder), current->clusters_config, current->clusters_version);
 }
 
 void ClusterFactory::loadNamedCollectionsIfNeeded()

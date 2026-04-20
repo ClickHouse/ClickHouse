@@ -3,6 +3,7 @@
 #include <Common/Clusters/ClusterCatalogTypes.h>
 #include <Common/Clusters/ClustersMetadataStorage.h>
 #include <Common/Clusters/ShardsMetadataStorage.h>
+#include <Common/MultiVersion.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -179,28 +180,59 @@ private:
 
     UInt64 sql_catalog_mutation_counter = 0;
 
-    /// Unified materialized-`ClusterPtr` registry. Owns entries from all three upstreams — `<remote_servers>` config,
-    /// SQL catalog DDL, and ClusterDiscovery — each tagged via `Cluster::getDefinitionSource`. Kept as `shared_ptr`
-    /// so readers can snapshot cheaply without holding `clusters_mutex`.
-    mutable std::mutex clusters_mutex;
-    std::shared_ptr<Clusters> clusters TSA_GUARDED_BY(clusters_mutex);
-    /// Last-applied `<remote_servers>` config: stored so `reloadClustersConfig` can re-run the diff without the caller
-    /// re-fetching the config. Populated by `applyClustersConfig`; nullptr until the first call.
-    ConfigurationPtr clusters_config TSA_GUARDED_BY(clusters_mutex);
-    /// Monotonic version of `clusters_config`, returned by `getClustersVersion`. Read by connection-pool rebuild paths.
-    size_t clusters_version TSA_GUARDED_BY(clusters_mutex) = 0;
+    /// Immutable snapshot of the unified materialized-`ClusterPtr` registry together with the last-applied
+    /// `<remote_servers>` config and its monotonic version. Publication is done via `MultiVersion<ClustersSnapshot>`:
+    /// readers atomically acquire a `shared_ptr<const ClustersSnapshot>` and never take a `ClusterFactory`-level mutex;
+    /// writers build a new snapshot (copy-on-write on the underlying `Clusters`) and publish it with `set()`.
+    struct ClustersSnapshot
+    {
+        /// Owns entries from all three upstreams — `<remote_servers>` config, SQL catalog DDL, and `ClusterDiscovery`;
+        /// each tagged via `Cluster::getDefinitionSource`. Immutable once the snapshot is published — the `const`
+        /// in the element type makes every call through a reader snapshot reject `Clusters` mutators at compile time.
+        std::shared_ptr<const Clusters> clusters;
 
-    /// Returns whether `cluster_name`'s existing entry in `clusters` comes from `RemoteServersConfig`.
-    /// Used by `setCluster(name, cluster, source)` to refuse SQL / Discovery overrides of config-defined names.
-    bool isDefinedByRemoteServersConfigLocked(const String & cluster_name) const TSA_REQUIRES(clusters_mutex);
+        /// Last-applied `<remote_servers>` config: stored so `reloadClustersConfig` can re-run the diff without the
+        /// caller re-fetching the config. `nullptr` until `applyClustersConfig` has been called at least once.
+        ConfigurationPtr clusters_config;
 
-    /// Ensure `clusters` is constructed. Called from every read path so consumers never see a null map.
-    /// Takes `clusters_mutex` internally; returns the `shared_ptr` atomically.
-    std::shared_ptr<Clusters> ensureClustersLocked(const Settings & settings, MultiVersion<Macros>::Version macros) TSA_REQUIRES(clusters_mutex);
+        /// Monotonic version of the `<remote_servers>` portion of the snapshot, returned by `getClustersVersion`.
+        size_t clusters_version = 0;
 
-    /// Materialise SQL catalog clusters whose names are missing from `clusters`. Called from `applyClustersConfig`,
-    /// `reloadClustersConfig`, and `getClusters` so `system.clusters` reflects the full catalog state at any time.
-    void registerCatalogClustersLocked(ContextPtr context) TSA_REQUIRES(clusters_mutex);
+        /// Existence-only probe that also handles the pre-init state where `clusters` itself is null, saving
+        /// call sites the double null check `snap && snap->clusters && snap->clusters->hasCluster(...)`.
+        bool hasCluster(const String & cluster_name) const { return clusters && clusters->hasCluster(cluster_name); }
+    };
+
+    /// Lock-free read path for `tryGetCluster` / `getClusters` / `hasCluster` / `getClustersVersion` /
+    /// `isClusterDefinedOnlyInRemoteServers`: each call does a single `MultiVersion::get()` to snapshot the current
+    /// version, then operates on the immutable payload without synchronising with writers.
+    MultiVersion<ClustersSnapshot> clusters_state;
+
+    /// Serialises writers so one write sees a consistent "current" snapshot while building the next one. Readers
+    /// never take this mutex. Safe to acquire without `mutex`; `applyClustersConfig` briefly takes `mutex` only to
+    /// snapshot SQL catalog names before releasing it again (see `registerCatalogClustersInto`). There is no lock
+    /// order between `clusters_writer_mutex` and `mutex` — they are never held simultaneously.
+    mutable std::mutex clusters_writer_mutex;
+
+    /// Atomically publishes `ClustersSnapshot` with the given components. Called by write paths while holding
+    /// `clusters_writer_mutex`. Increments the `clusters_version` field only when caller opts in.
+    void publishClustersSnapshotLocked(
+        std::shared_ptr<Clusters> new_clusters,
+        ConfigurationPtr new_config,
+        size_t new_version) TSA_REQUIRES(clusters_writer_mutex);
+
+    /// Materialise SQL catalog clusters whose names are missing from `builder`. Expects `clusters_writer_mutex`
+    /// held so no one else is concurrently building; internally takes `mutex` briefly to snapshot the SQL catalog
+    /// name list before releasing it (the per-name materialisation re-acquires `mutex` on its own).
+    void registerCatalogClustersInto(Clusters & builder, ContextPtr context) const TSA_REQUIRES(clusters_writer_mutex);
+
+    /// Returns a `Clusters` suitable as the starting point for a copy-on-write write. If the current snapshot has
+    /// a non-null `Clusters`, it is deep-copied (shallow on the underlying `Cluster` pointers); otherwise a fresh
+    /// empty one is constructed.
+    std::shared_ptr<Clusters> cloneClustersForWriteLocked(
+        const Settings & settings,
+        MultiVersion<Macros>::Version macros,
+        const std::shared_ptr<const ClustersSnapshot> & current) TSA_REQUIRES(clusters_writer_mutex);
 
     void reloadSQLDefinitionsLocked();
 
@@ -211,8 +243,8 @@ private:
     /// registry under the `SQLCatalog` source. Called at the tail of every catalog-mutating DDL
     /// (`CREATE CLUSTER`, `ALTER CLUSTER`, `ALTER SHARD` on a referenced shard) so the in-memory
     /// registry stays in sync on this node without waiting for the background refresh.
-    /// MUST be called with `mutex` unlocked — `tryMaterializeCluster` and `setCluster(..., source)`
-    /// re-acquire `mutex` / `clusters_mutex` internally, and `std::mutex` is non-recursive.
+    /// MUST be called with `mutex` unlocked — `tryMaterializeCluster` and `setCluster(..., source)` re-acquire
+    /// `mutex` / `clusters_writer_mutex` internally, and `std::mutex` is non-recursive.
     void publishMaterializedSQLClusterAfterCatalogChange(const String & cluster_name);
 
     BackgroundSchedulePoolTaskHolder sql_catalog_update_task;

@@ -392,33 +392,58 @@ private:
 using ClusterPtr = std::shared_ptr<Cluster>;
 
 
+/// Materialised registry of named `Cluster` objects. Intended lifecycle (managed exclusively by `ClusterFactory`):
+///   1. Writer constructs or clones a `Clusters` instance it owns alone (the "builder").
+///   2. Writer calls mutators (`addCluster`, `removeClusterEntry`, `mergeConfigClusters`) on the builder.
+///   3. Writer publishes the builder as `shared_ptr<const Clusters>` through `MultiVersion<ClustersSnapshot>`.
+///   4. Readers observe only published instances and call only the `const` accessors.
+///
+/// There is no internal mutex: published instances are immutable, and builders are single-owner by contract
+/// (enforced by `ClusterFactory::clusters_writer_mutex` serialising writes). Calling a mutator on a published
+/// `Clusters` is a bug — type system prevents it when callers use `shared_ptr<const Clusters>`.
 class Clusters
 {
 public:
     Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix = "remote_servers");
 
-    Clusters(const Clusters &) = delete;
+    /// Builder seed: copies `impl` (shallow, `shared_ptr<Cluster>` sharing the underlying objects),
+    /// `automatic_clusters` and `macros_`. Precondition: `other` is either an already-published snapshot
+    /// (immutable, nobody will mutate it) or a writer-owned builder on the same thread — no synchronisation
+    /// needed. Intended only for `ClusterFactory::cloneClustersForWriteLocked`.
+    Clusters(const Clusters & other);
     Clusters & operator=(const Clusters &) = delete;
 
+    /// --- Read-only accessors, safe on any published snapshot ---
     ClusterPtr getCluster(const std::string & cluster_name) const;
-    void setCluster(const String & cluster_name, const ClusterPtr & cluster);
-    void removeCluster(const String & cluster_name);
-
-    void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
+    /// Existence-only probe: avoids the `getCluster(name) != nullptr` idiom on hot read paths and makes call
+    /// sites read as a predicate instead of leaking the materialised `ClusterPtr` when callers don't need it.
+    bool hasCluster(const std::string & cluster_name) const;
 
     using Impl = std::map<String, ClusterPtr>;
-
     Impl getContainer() const;
 
-protected:
+    /// --- Builder-only mutators ---
+    /// Valid only while the caller is the sole owner of `*this` (i.e. before publishing it through
+    /// `MultiVersion<ClustersSnapshot>`). Names deliberately differ from the classical `setCluster` / etc. to
+    /// make the write-side contract obvious at every call site.
+    void addCluster(const String & cluster_name, const ClusterPtr & cluster);
+    void removeClusterEntry(const String & cluster_name);
+    /// Diff `new_config` against `old_config` (nullptr => treat as empty) and apply the resulting add / remove /
+    /// replace operations to `impl`. Entries registered via ClusterDiscovery (`automatic_clusters`) are preserved.
+    void mergeConfigClusters(
+        const Poco::Util::AbstractConfiguration & new_config,
+        const Settings & settings,
+        const String & config_prefix,
+        const Poco::Util::AbstractConfiguration * old_config = nullptr);
 
-    /// setup outside of this class, stored to prevent deleting from impl on config update
+private:
+    /// Set of cluster names registered via ClusterDiscovery. Kept across `mergeConfigClusters` so the config
+    /// diff does not evict Discovery-owned entries.
     std::unordered_set<std::string> automatic_clusters;
 
-    MultiVersion<Macros>::Version macros_;
+    MultiVersion<Macros>::Version macros_; // NOLINT(readability-identifier-naming)
 
     Impl impl;
-    mutable std::mutex mutex;
 };
 
 }
