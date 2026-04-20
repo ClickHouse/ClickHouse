@@ -287,7 +287,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         {
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
             /// Serializes with concurrent RENAME/EXCHANGE TABLES. RMT may release early.
-            auto ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
+            auto ddl_guard = DatabaseCatalog::instance().tryGetDDLGuardForStorage(
                 table, settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             alter_commands->validate(table, context);

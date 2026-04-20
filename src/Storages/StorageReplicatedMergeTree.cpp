@@ -6564,9 +6564,14 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     {
         auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
         auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-        /// Serialize with RENAME/EXCHANGE TABLES; refresh table_id if a rename happened while waiting.
-        auto background_ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
-            shared_from_this(), (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+
+        /// Serialize with RENAME/EXCHANGE TABLES. Must not block on the guard: DROP TABLE holds
+        /// it while waiting for this background thread via storage->shutdown().
+        auto background_ddl_guard = DatabaseCatalog::instance().tryGetDDLGuardForStorage(
+            shared_from_this(),
+            (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations],
+            [this] { return !shutdown_called && !partial_shutdown_called; });
+        /// A rename could have slipped in while we were polling; refresh table_id.
         table_id = getStorageID();
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
