@@ -31,8 +31,6 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes
             return;
     }
 
-    static constexpr size_t MIN_PROBE_COLUMNS = 3;
-
     if (node.children.empty())
         return;
 
@@ -44,7 +42,7 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes
         if (child_join_step)
         {
             size_t probe_columns = !child->children.empty() ? child->children.front()->step->getOutputHeader()->columns() : 0;
-            if (probe_columns >= MIN_PROBE_COLUMNS)
+            if (probe_columns >= settings.min_columns_for_join_lazy_indexing)
                 child_join_step->getJoin()->setEnableLazyColumnsIndexing(true);
             break;
         }

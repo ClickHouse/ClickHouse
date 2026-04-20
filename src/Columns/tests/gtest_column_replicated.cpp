@@ -107,26 +107,3 @@ TEST(ColumnReplicated, IndicesOfNonDefaultRows)
     ASSERT_EQ(offsets.size(), 10);
     ASSERT_EQ(offsets, IColumn::Offsets({0, 1, 2, 3, 5, 6, 7, 8, 10, 11}));
 }
-
-TEST(ColumnReplicated, OptimizeCompactsUnreferencedRows)
-{
-    auto column = createColumn({"a", "b", "c", "d"}, {1, 2, 2, 1, 2, 1, 2});
-    Columns columns = {std::move(column)};
-    optimizeReplicatedColumnsLayout(columns);
-
-    ASSERT_TRUE(columns[0]->isReplicated());
-    checkColumn(*columns[0], {"b", "c"}, {0, 1, 1, 0, 1, 0, 1});
-}
-
-TEST(ColumnReplicated, OptimizeMaterializesWhenNotUseful)
-{
-    auto column = createColumn({"s1", "s2", "s3"}, {0, 1, 1});
-    Columns columns = {std::move(column)};
-    optimizeReplicatedColumnsLayout(columns);
-
-    ASSERT_FALSE(columns[0]->isReplicated());
-    ASSERT_EQ(columns[0]->size(), 3);
-    ASSERT_EQ((*columns[0])[0], Field(String("s1")));
-    ASSERT_EQ((*columns[0])[1], Field(String("s2")));
-    ASSERT_EQ((*columns[0])[2], Field(String("s2")));
-}

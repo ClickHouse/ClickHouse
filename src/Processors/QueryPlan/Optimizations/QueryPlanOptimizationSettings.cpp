@@ -69,7 +69,7 @@ namespace Setting
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
-    extern const SettingsBool query_plan_optimize_join_lazy_indexing;
+    extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -244,7 +244,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 
-    optimize_join_lazy_indexing = from[Setting::query_plan_optimize_join_lazy_indexing];
+    min_columns_for_join_lazy_indexing = from[Setting::query_plan_min_columns_for_join_lazy_indexing];
     max_limit_for_join_lazy_indexing = from[Setting::query_plan_max_limit_for_join_lazy_indexing];
 
     max_threads = from[Setting::max_threads];

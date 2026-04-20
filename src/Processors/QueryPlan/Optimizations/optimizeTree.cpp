@@ -275,7 +275,7 @@ void optimizeTreeSecondPass(
     }
 
     /// Run after runtime filter push-down so that chains of joins are detected correctly.
-    if (optimization_settings.optimize_join_lazy_indexing)
+    if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
     {
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
