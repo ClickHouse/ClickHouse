@@ -1,10 +1,12 @@
 #include <memory>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <Columns/ColumnSet.h>
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Joins.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -25,6 +27,23 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     const auto * filter_node = combined_dag.tryFindInOutputs(filter_column_name);
     if (!filter_node)
         return FilterResult::UNKNOWN;
+
+    /// If the combined DAG contains IN subquery sets that are not yet built, we cannot evaluate the filter result.
+    for (const auto & node : combined_dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set || !future_set->get())
+                    return FilterResult::UNKNOWN;
+            }
+        }
+    }
 
     ColumnsWithTypeAndName filter_output;
     try

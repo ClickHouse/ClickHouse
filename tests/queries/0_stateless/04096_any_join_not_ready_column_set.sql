@@ -1,0 +1,6 @@
+-- Regression test for https://github.com/ClickHouse/ClickHouse/issues/102981
+-- filterResultForMatchedRows in tryConvertAnyJoinToSemiOrAntiJoin must not crash
+-- or produce wrong results when the filter contains a not-yet-built IN subquery ColumnSet.
+-- In debug builds the original code aborted via LOGICAL_ERROR before the catch() could fire.
+
+SELECT DISTINCT number, neighbor(toFixedString(toLowCardinality(''), 10), 255) FROM numbers(255) WHERE globalIn(number, tuple(concat(toString(subtractDays((SELECT 1), (SELECT NULL), minus(concatAssumeInjective(NULL, concat(NULL), '-0.02'), isNotNull(modulo(multiIf(minus(isNotNull(modulo(materialize(toInt256(-2147483649)), toNullable(NULL))), concatAssumeInjective(10, concat('World '), materialize(NULL))), minus(intDivOrZero(NULL, -2147483649), (SELECT DISTINCT toNullable(2), * LIMIT 652)), toIntervalQuarter(256)), NULL))), multiIf(notIn(toIntervalSecond((SELECT DISTINCT -2147483648)), (SELECT toNullable(1) QUALIFY addMonths(NULL))), concatAssumeInjective(NULL, toIntervalQuarter(-2147483649)), notIn(toIntervalSecond(1024), (SELECT 255 QUALIFY addMonths(toNullable(NULL)) LIMIT 3))), (SELECT concat(materialize(NULL), isNull(number))), 187), number)), assumeNotNull(10))) GROUP BY -2 WITH CUBE LIMIT 65537 SETTINGS allow_deprecated_error_prone_window_functions=1;
