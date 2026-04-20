@@ -1544,16 +1544,26 @@ bool ColumnObject::isFinalized() const
 
 void ColumnObject::getExtremes(DB::Field & min, DB::Field & max) const
 {
+    min = Object();
+    max = Object();
+
     if (empty())
+        return;
+
+    size_t min_idx = 0;
+    size_t max_idx = 0;
+
+    size_t end = size();
+    for (size_t i = 1; i < end; ++i)
     {
-        min = Object();
-        max = Object();
+        if (compareAt(i, min_idx, *this, /* nan_direction_hint = */ 1) < 0)
+            min_idx = i;
+        else if (compareAt(i, max_idx, *this, /* nan_direction_hint = */ -1) > 0)
+            max_idx = i;
     }
-    else
-    {
-        get(0, min);
-        get(0, max);
-    }
+
+    get(min_idx, min);
+    get(max_idx, max);
 }
 
 void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor)
