@@ -657,63 +657,108 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_par
     cluster_optimized_traffic = int(cluster_optimized_traffic)
     assert cluster_optimized_traffic == optimized_traffic
 
+# --- icebergS3Cluster insert background-task timeout test ---
+#
+# When ClickHouse INSERTs into an IcebergS3 table it starts background S3
+# write tasks: Parquet data files are uploaded, followed by iceberg metadata
+# (manifest + snapshot JSON).  Each upload is a single S3 HTTP request.
+#
+# If the S3 endpoint is slow, the upload thread can exceed the S3 request
+# timeout and the INSERT must fail with a clear timeout exception rather than
+# hanging forever.
+#
+# The test simulates a slow S3 by pointing the IcebergS3 table at a mock
+# server that sleeps for _WRITE_DELAY_S seconds before responding to Iceberg
+# metadata PUTs (paths containing "/metadata/").  Data-file PUTs respond
+# immediately, so the data write succeeds and only the metadata write times out.
+# This exercises the fix that ensures the timeout exception propagates instead
+# of being swallowed by the `catch (...)` in `writeMetadataFileAndVersionHint`.
 
-# --- icebergS3Cluster large-data functional test (GitHub issue #98165) ---
-# Number of data files (iceberg snapshots) to create.
-_LARGE_NUM_FILES = 170
-# Rows per INSERT.  randomString(1000) yields ~1 000 incompressible bytes per
-# row, so 100 000 rows ≈ 100 MB of Parquet per snapshot.
-_LARGE_ROWS_PER_FILE = 100_000
-def test_iceberg_s3_cluster_large_data(started_cluster):
+_write_delay_mock_started = False
+_WRITE_MOCK_PORT = "8083"
+_WRITE_MOCK_HOST = "resolver"
+# How long the mock delays metadata PUT responses.  Must exceed the S3 client's
+# actual request timeout (DEFAULT_REQUEST_TIMEOUT_MS = 30 s) so the timeout
+# reliably fires before the mock responds.
+_WRITE_DELAY_S = 60
+# Informational: the test sets s3_request_timeout_ms but it does not currently
+# affect the IcebergS3 engine's S3 client timeout (the client is built at
+# CREATE TABLE time from the global default of 30 s).  The mock's 60 s delay
+# is what ensures the timeout fires.
+_S3_TIMEOUT_MS = 3_000
+
+
+def _start_write_delay_mock(cluster):
+    global _write_delay_mock_started
+    if _write_delay_mock_started:
+        return
+    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
+    start_mock_servers(
+        cluster,
+        script_dir,
+        [("s3_write_delay_mock.py", "resolver", _WRITE_MOCK_PORT)],
+    )
+    _write_delay_mock_started = True
+
+
+def test_iceberg_s3_cluster_insert_background_task_timeout(started_cluster):
+    """INSERT into IcebergS3 fails with a timeout when the metadata write is slow.
+
+    Uses a mock S3 server (`s3_write_delay_mock.py`) that responds immediately
+    to data-file PUTs but sleeps `_WRITE_DELAY_S` seconds before responding to
+    Iceberg metadata PUTs (paths containing "/metadata/").  Because
+    `_WRITE_DELAY_S` exceeds the S3 client's default request timeout (30 s),
+    the metadata write reliably times out.
+
+    Before the fix in `writeMetadataFileAndVersionHint`, the timeout exception
+    was swallowed by a bare `catch (...)` block, and ClickHouse returned the
+    unhelpful "Write into iceberg was not successful" message.  After the fix
+    only `PreconditionFailed` (concurrent-write conflict) is swallowed; all
+    other exceptions, including timeouts, propagate to the caller.
+
+    See https://github.com/ClickHouse/ClickHouse/issues/98165.
+    """
+    _start_write_delay_mock(started_cluster)
+
     node = started_cluster.instances["s0_0_0"]
     run_id = uuid.uuid4().hex[:8]
-    table_name = f"iceberg_large_{run_id}"
+    table_name = f"iceberg_insert_timeout_{run_id}"
     table_url = (
-        f"http://minio1:9001/{started_cluster.minio_bucket}/{table_name}/"
+        f"http://{_WRITE_MOCK_HOST}:{_WRITE_MOCK_PORT}/test-bucket/{table_name}/"
     )
 
     node.query(
         f"""
         CREATE TABLE {table_name} (id UInt64, data String)
-        ENGINE = IcebergS3('{table_url}', '{minio_access_key}', '{minio_secret_key}')
+        ENGINE = IcebergS3('{table_url}', 'mock_user', 'mock_pass')
         """
     )
 
     try:
-        # Insert _LARGE_NUM_FILES batches.  Each INSERT into an IcebergS3
-        # engine table commits a new iceberg snapshot with one Parquet file.
-        # max_insert_threads=1 ensures a single file per snapshot.
-        for batch_idx in range(_LARGE_NUM_FILES):
-            node.query(
-                f"""
-                INSERT INTO {table_name}
-                SELECT
-                    number + {batch_idx * _LARGE_ROWS_PER_FILE} AS id,
-                    randomString(1000) AS data
-                FROM numbers({_LARGE_ROWS_PER_FILE})
-                """,
-                settings={
-                    "allow_insert_into_iceberg": 1,
-                    "max_insert_threads": 1,
-                },
-            )
-
-        total_rows = _LARGE_NUM_FILES * _LARGE_ROWS_PER_FILE
-
-        result = node.query(
+        # Data files are written immediately by the mock.  The metadata file
+        # PUT is delayed _WRITE_DELAY_S seconds, which exceeds the S3 client's
+        # default 30-second timeout, so the INSERT must fail with a timeout
+        # error.  The fix ensures that error propagates to the user.
+        _, error = node.query_and_get_answer_with_error(
             f"""
-            SELECT count() FROM icebergS3Cluster(
-                'cluster_simple',
-                '{table_url}',
-                '{minio_access_key}',
-                '{minio_secret_key}'
-            )
-            """
-        )
-        assert int(result.strip()) == total_rows, (
-            f"Expected {total_rows} rows from icebergS3Cluster, "
-            f"got {result.strip()}. Table URL: {table_url}"
+            INSERT INTO {table_name}
+            SELECT number AS id, randomString(10) AS data
+            FROM numbers(100)
+            """,
+            settings={
+                "allow_insert_into_iceberg": 1,
+                "max_insert_threads": 1,
+                "s3_request_timeout_ms": _S3_TIMEOUT_MS,
+            },
         )
 
+        assert error, (
+            f"Expected a timeout error but INSERT succeeded. "
+            f"The mock delays metadata PUT responses for {_WRITE_DELAY_S}s which "
+            f"exceeds the default S3 request timeout."
+        )
+        assert "timeout" in error.lower(), (
+            f"Expected a timeout-related error, got: {error}"
+        )
     finally:
         node.query(f"DROP TABLE IF EXISTS {table_name}")

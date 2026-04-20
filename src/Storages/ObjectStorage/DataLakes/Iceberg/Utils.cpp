@@ -68,6 +68,7 @@ extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int PATH_ACCESS_DENIED;
 extern const int LOGICAL_ERROR;
+extern const int S3_ERROR;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -301,10 +302,17 @@ bool writeMetadataFileAndVersionHint(
             "",
             metadata_file_info.compression_method);
     }
-    catch (...)
+    catch (const DB::Exception & e)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        /// PreconditionFailed means a concurrent writer already committed this metadata version.
+        /// Return false so the caller retries with the next version number.
+        /// All other errors (timeouts, permission denied, etc.) must propagate to the caller.
+        if (e.code() == DB::ErrorCodes::S3_ERROR && e.message().find("PreconditionFailed") != String::npos)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            return false;
+        }
+        throw;
     }
 
     if (try_write_version_hint)
@@ -351,9 +359,15 @@ bool writeMetadataFileAndVersionHint(
                         /* write-if-match */ etag);
                     break;
                 }
-                catch (...)
+                catch (const DB::Exception & e)
                 {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    /// PreconditionFailed means another writer updated the version hint
+                    /// concurrently. Retry the read-modify-write loop with the new value.
+                    /// All other errors (timeouts, permission denied, etc.) must propagate.
+                    if (e.code() == DB::ErrorCodes::S3_ERROR && e.message().find("PreconditionFailed") != String::npos)
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                    else
+                        throw;
                 }
             }
             else
