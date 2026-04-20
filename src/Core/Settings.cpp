@@ -4653,6 +4653,13 @@ Maximum parser backtracking (how many times it tries different alternatives in t
     DECLARE(UInt64, max_recursive_cte_evaluation_depth, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, R"(
 Maximum limit on recursive CTE evaluation depth
 )", 0) \
+    DECLARE(UInt64, recursive_cte_max_in_filter_cardinality, 10000, R"(
+During recursive CTE evaluation, join keys from the working table are pushed into the real table as an `IN (...)` filter so that the MergeTree primary key index can be used. This setting caps the number of distinct values included in that generated filter.
+
+If the working table contains more distinct join key values than this limit at some recursive step, the optimization is skipped for that step and the real table is scanned without the generated filter (user-specified `additional_table_filters` are still applied).
+
+Setting this to `0` disables the optimization entirely.
+)", 0) \
     DECLARE(Bool, allow_settings_after_format_in_insert, false, R"(
 Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
 

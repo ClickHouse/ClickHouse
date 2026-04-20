@@ -74,4 +74,43 @@ WHERE
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
+-- Self-join of the same physical table via two aliases in the recursive step.
+-- Each alias has a different join key, so keying the generated filter by
+-- alias (rather than by StorageID) is required to avoid applying a combined
+-- filter to each occurrence.
+DROP TABLE IF EXISTS two_hop;
+CREATE TABLE two_hop (from_id UInt64, to_id UInt64)
+ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 8192;
+
+INSERT INTO two_hop SELECT number, number + 1 FROM numbers(10);
+INSERT INTO two_hop SELECT number + 1000, number + 1000000 FROM numbers(999000);
+
+WITH RECURSIVE two_step AS
+(
+    SELECT CAST(0 AS UInt64) AS current_id
+  UNION ALL
+    SELECT e2.to_id AS current_id
+    FROM two_hop AS e1
+    INNER JOIN two_hop AS e2 ON e1.to_id = e2.from_id
+    INNER JOIN two_step AS t ON e1.from_id = t.current_id
+    WHERE e1.to_id < 100
+)
+SELECT count() FROM two_step;
+
+-- Setting `recursive_cte_max_in_filter_cardinality = 0` disables the
+-- optimization but still produces correct results.
+WITH RECURSIVE traverse3 AS
+(
+    SELECT to_id AS current_id
+    FROM edges
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM edges AS e
+    INNER JOIN traverse3 AS t ON e.from_id = t.current_id
+)
+SELECT current_id FROM traverse3 ORDER BY current_id
+SETTINGS recursive_cte_max_in_filter_cardinality = 0;
+
 DROP TABLE edges;
+DROP TABLE two_hop;

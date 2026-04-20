@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
+    extern const SettingsUInt64 recursive_cte_max_in_filter_cardinality;
 }
 
 namespace ErrorCodes
@@ -83,6 +84,10 @@ struct JoinKeyInfo
     String real_table_column_name;
     String cte_column_name;
     StorageID real_table_storage_id;
+    /// Alias of the real table expression, if any. When present, the generated
+    /// filter is keyed by alias so each occurrence of the same physical table
+    /// in the join tree receives only the filter derived from its own join keys.
+    String real_table_alias;
 };
 
 /// Check if a query tree node pointer matches one of the CTE table nodes.
@@ -144,29 +149,25 @@ void extractEquiJoinKeys(
     if (!real_table_node)
         return;
 
+    /// Use the original alias (the one the user wrote) — the analyzer rewrites
+    /// aliases to internal `__tableN` names, but `PlannerJoinTree::buildAdditionalFiltersIfNeeded`
+    /// matches `additional_table_filters` keys against `getOriginalAlias()`.
     result.push_back({
         real_column->getColumnName(),
         cte_column->getColumnName(),
-        real_table_node->getStorageID()
+        real_table_node->getStorageID(),
+        real_table_node->getOriginalAlias(),
     });
 }
 
-/// Walk the join tree of the recursive query to find equi-join keys
-/// between the CTE table and real tables.
-/// Only handles INNER JOINs with ON expressions.
-std::vector<JoinKeyInfo> findJoinKeysWithCTETable(
-    const QueryTreeNodePtr & recursive_query,
-    const std::vector<TableNode *> & recursive_table_nodes)
+/// Extract equi-join keys from the join tree of a single QueryNode.
+void findJoinKeysInQueryNode(
+    const QueryNode & query_node,
+    const std::vector<TableNode *> & recursive_table_nodes,
+    std::vector<JoinKeyInfo> & result)
 {
-    std::vector<JoinKeyInfo> result;
-
-    const auto * query_node = recursive_query->as<QueryNode>();
-    if (!query_node)
-        return result;
-
-    /// Walk the join tree to find all JoinNodes.
     std::vector<IQueryTreeNode *> nodes_to_visit;
-    nodes_to_visit.push_back(query_node->getJoinTree().get());
+    nodes_to_visit.push_back(query_node.getJoinTree().get());
 
     while (!nodes_to_visit.empty())
     {
@@ -187,28 +188,48 @@ std::vector<JoinKeyInfo> findJoinKeysWithCTETable(
         nodes_to_visit.push_back(join_node->getLeftTableExpression().get());
         nodes_to_visit.push_back(join_node->getRightTableExpression().get());
     }
+}
+
+/// Walk the join tree of the recursive query to find equi-join keys
+/// between the CTE table and real tables. Only handles INNER JOINs with ON
+/// expressions. When the recursive query has more than two branches, its root
+/// is a UnionNode and each branch must be inspected independently.
+std::vector<JoinKeyInfo> findJoinKeysWithCTETable(
+    const QueryTreeNodePtr & recursive_query,
+    const std::vector<TableNode *> & recursive_table_nodes)
+{
+    std::vector<JoinKeyInfo> result;
+
+    if (const auto * query_node = recursive_query->as<QueryNode>())
+    {
+        findJoinKeysInQueryNode(*query_node, recursive_table_nodes, result);
+    }
+    else if (const auto * union_node = recursive_query->as<UnionNode>())
+    {
+        for (const auto & subquery : union_node->getQueries().getNodes())
+        {
+            if (const auto * sub_query_node = subquery->as<QueryNode>())
+                findJoinKeysInQueryNode(*sub_query_node, recursive_table_nodes, result);
+        }
+    }
 
     return result;
 }
 
-/// Maximum number of distinct values to collect for an IN filter.
-/// If the working table has more distinct join key values than this,
-/// we skip the optimization for that step to avoid generating an
-/// excessively large SQL expression that may exceed parser limits.
-constexpr size_t MAX_IN_FILTER_CARDINALITY = 10000;
-
 /// Read deduplicated values of a column from a StorageMemory-backed temporary table.
-/// Returns nullopt if the number of distinct values exceeds MAX_IN_FILTER_CARDINALITY.
+/// Returns nullopt if the number of distinct values exceeds max_cardinality
+/// (caller falls back to user-specified filters in that case).
 std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
     const StoragePtr & storage,
     const String & column_name,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    size_t max_cardinality)
 {
     auto * memory_storage = typeid_cast<StorageMemory *>(storage.get());
     if (!memory_storage)
         return std::vector<Field>{};
 
-    auto metadata = memory_storage->getInMemoryMetadataPtr();
+    auto metadata = memory_storage->getInMemoryMetadataPtr(context, false);
     auto snapshot = memory_storage->getStorageSnapshot(metadata, context);
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*snapshot->data);
 
@@ -229,7 +250,7 @@ std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
             column->get(i, value);
             unique_values.insert(std::move(value));
 
-            if (unique_values.size() > MAX_IN_FILTER_CARDINALITY)
+            if (unique_values.size() > max_cardinality)
                 return std::nullopt;
         }
     }
@@ -254,6 +275,25 @@ String buildInFilterExpression(const String & column_name, const std::vector<Fie
     return result;
 }
 
+/// Identity of a real table occurrence in the join tree: its alias (preferred
+/// when present) or its full table name. Keying generated filters by this value
+/// ensures that different occurrences of the same physical table (e.g., two
+/// aliases of `edges` in a self-join) receive only the filter derived from
+/// their own join keys — rather than a single combined filter that would
+/// over-constrain every occurrence.
+struct TableExpressionKey
+{
+    String value;
+    bool is_alias = false;
+};
+
+TableExpressionKey makeTableExpressionKey(const JoinKeyInfo & key_info)
+{
+    if (!key_info.real_table_alias.empty())
+        return {key_info.real_table_alias, true};
+    return {key_info.real_table_storage_id.getFullNameNotQuoted(), false};
+}
+
 /// Build the `additional_table_filters` Map for a recursive CTE step.
 /// Reads join key values from the working (CTE) table and creates IN filters
 /// for the corresponding real tables.
@@ -264,20 +304,33 @@ Map buildAdditionalTableFiltersForRecursiveStep(
     const std::vector<TableNode *> & recursive_table_nodes,
     const StoragePtr & working_table_storage,
     const ContextPtr & context,
-    const Map & original_additional_table_filters)
+    const Map & original_additional_table_filters,
+    size_t max_in_filter_cardinality)
 {
+    if (max_in_filter_cardinality == 0)
+        return original_additional_table_filters;
+
     if (!cached_join_keys.has_value())
         cached_join_keys = findJoinKeysWithCTETable(recursive_query, recursive_table_nodes);
 
     if (cached_join_keys->empty())
         return original_additional_table_filters;
 
-    /// Group filter expressions by real table.
-    std::map<String, std::vector<String>> table_filter_parts;
+    /// Group filter expressions by table-expression identity (alias when
+    /// present, otherwise full table name). Remember the StorageID so we can
+    /// still match user filters written as short name / full name.
+    struct GroupedFilter
+    {
+        std::vector<String> parts;
+        StorageID storage_id = StorageID::createEmpty();
+    };
+    std::map<String, GroupedFilter> filters_by_key; /// keyed by TableExpressionKey::value
+    std::set<String> alias_keys;
 
     for (const auto & key_info : *cached_join_keys)
     {
-        auto values = readColumnValuesFromMemoryStorage(working_table_storage, key_info.cte_column_name, context);
+        auto values = readColumnValuesFromMemoryStorage(
+            working_table_storage, key_info.cte_column_name, context, max_in_filter_cardinality);
 
         /// nullopt means cardinality exceeded the limit — skip the optimization entirely
         /// for this step and fall back to unfiltered scans.
@@ -288,41 +341,39 @@ Map buildAdditionalTableFiltersForRecursiveStep(
             continue;
 
         String filter_expr = buildInFilterExpression(key_info.real_table_column_name, *values);
-        if (!filter_expr.empty())
-            table_filter_parts[key_info.real_table_storage_id.getFullNameNotQuoted()].push_back(std::move(filter_expr));
+        if (filter_expr.empty())
+            continue;
+
+        auto key = makeTableExpressionKey(key_info);
+        auto & entry = filters_by_key[key.value];
+        entry.parts.push_back(std::move(filter_expr));
+        entry.storage_id = key_info.real_table_storage_id;
+        if (key.is_alias)
+            alias_keys.insert(key.value);
     }
 
-    /// Build a set of StorageIDs for tables that have CTE-generated filters,
-    /// so we can match user filters by any key form (full name, short name, or alias).
-    std::map<String, StorageID> table_name_to_storage_id;
-    for (const auto & key_info : *cached_join_keys)
-        table_name_to_storage_id.emplace(
-            key_info.real_table_storage_id.getFullNameNotQuoted(),
-            key_info.real_table_storage_id);
-
-    /// Find user-specified filter for a given table, matching by full name or short name.
-    /// This mirrors the matching logic in PlannerJoinTree::buildAdditionalFiltersIfNeeded
-    /// so that we correctly merge (rather than shadow) user filters regardless of how
-    /// the user specified the table key.
-    auto find_user_filter = [&](const String & full_table_name) -> std::pair<size_t, String>
+    /// Find the user-specified filter for a given generated filter group.
+    /// Mirrors the matching logic in `PlannerJoinTree::buildAdditionalFiltersIfNeeded`
+    /// so that user filters referencing the table by alias, short name, or full name
+    /// are merged (rather than shadowed) by CTE-generated filters.
+    auto find_user_filter = [&](const String & group_key, const StorageID & storage_id)
+        -> std::pair<size_t, String>
     {
-        auto sid_it = table_name_to_storage_id.find(full_table_name);
-        if (sid_it == table_name_to_storage_id.end())
-            return {SIZE_MAX, {}};
-
-        const auto & storage_id = sid_it->second;
         const auto & current_database = context->getCurrentDatabase();
+        const bool group_key_is_alias = alias_keys.contains(group_key);
 
         for (size_t idx = 0; idx < original_additional_table_filters.size(); ++idx)
         {
             const auto & tuple = original_additional_table_filters[idx].safeGet<Tuple>();
             const auto & user_key = tuple.at(0).safeGet<String>();
 
-            if (user_key == full_table_name
-                || (user_key == storage_id.getTableName() && current_database == storage_id.getDatabaseName()))
-            {
+            const bool matches_alias = group_key_is_alias && user_key == group_key;
+            const bool matches_full_name = user_key == storage_id.getFullNameNotQuoted();
+            const bool matches_short_name = user_key == storage_id.getTableName()
+                && current_database == storage_id.getDatabaseName();
+
+            if (matches_alias || matches_full_name || matches_short_name)
                 return {idx, tuple.at(1).safeGet<String>()};
-            }
         }
 
         return {SIZE_MAX, {}};
@@ -331,18 +382,18 @@ Map buildAdditionalTableFiltersForRecursiveStep(
     Map filters_map;
     std::set<size_t> merged_user_filter_indices;
 
-    for (auto & [table_name, parts] : table_filter_parts)
+    for (auto & [group_key, entry] : filters_by_key)
     {
         String combined_filter;
-        for (size_t i = 0; i < parts.size(); ++i)
+        for (size_t i = 0; i < entry.parts.size(); ++i)
         {
             if (i > 0)
                 combined_filter += " AND ";
-            combined_filter += parts[i];
+            combined_filter += entry.parts[i];
         }
 
         /// Combine with user-specified filter for the same table, if any.
-        auto [user_idx, user_filter] = find_user_filter(table_name);
+        auto [user_idx, user_filter] = find_user_filter(group_key, entry.storage_id);
         if (user_idx != SIZE_MAX)
         {
             combined_filter = "(" + combined_filter + ") AND (" + user_filter + ")";
@@ -350,7 +401,7 @@ Map buildAdditionalTableFiltersForRecursiveStep(
         }
 
         Tuple tuple;
-        tuple.push_back(Field(table_name));
+        tuple.push_back(Field(group_key));
         tuple.push_back(Field(std::move(combined_filter)));
         filters_map.push_back(Field(std::move(tuple)));
     }
@@ -504,10 +555,14 @@ private:
         /// recursive_step was already incremented above, so >1 means we're executing the recursive query.
         if (recursive_step > 1)
         {
+            const auto max_in_filter_cardinality
+                = recursive_subquery_settings[Setting::recursive_cte_max_in_filter_cardinality].value;
+
             auto filters = buildAdditionalTableFiltersForRecursiveStep(
                 recursive_query, cached_join_keys, recursive_table_nodes,
                 working_temporary_table_storage, recursive_query_context,
-                original_additional_table_filters);
+                original_additional_table_filters,
+                max_in_filter_cardinality);
 
             recursive_query_context->setSetting("additional_table_filters", Field(std::move(filters)));
         }
