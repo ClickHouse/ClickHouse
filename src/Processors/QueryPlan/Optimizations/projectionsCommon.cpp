@@ -294,6 +294,7 @@ bool analyzeProjectionCandidate(
 {
     RangesInDataParts projection_parts;
     size_t parent_parts_sum_marks = 0;
+    size_t parent_parts_sum_rows = 0;
     for (const auto & part_with_ranges : parent_reading_select_result.parts_with_ranges)
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
@@ -310,6 +311,7 @@ bool analyzeProjectionCandidate(
         {
             candidate.parent_parts.emplace(part_with_ranges.data_part.get());
             parent_parts_sum_marks += part_with_ranges.getMarksCount();
+            parent_parts_sum_rows += part_with_ranges.getRowsCount();
         }
     }
 
@@ -344,6 +346,7 @@ bool analyzeProjectionCandidate(
 
     candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
     candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->selected_marks + parent_parts_sum_marks;
+    candidate.sum_rows += candidate.merge_tree_projection_select_result_ptr->selected_rows + parent_parts_sum_rows;
 
     return true;
 }

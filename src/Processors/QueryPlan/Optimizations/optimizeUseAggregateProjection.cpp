@@ -730,20 +730,23 @@ std::optional<String> optimizeUseAggregateProjections(
                 stat.filtered_parts = candidate.filtered_parts;
                 candidate.stat = &stat;
 
-                size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-                if (candidate.sum_marks > parent_reading_marks)
+                size_t parent_reading_rows = parent_reading_select_result->selected_rows;
+                if (candidate.sum_rows > parent_reading_rows)
                 {
                     stat.description = fmt::format(
-                        "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
+                        "Projection {} is usable but requires reading {} marks consisting of {} rows, "
+                        "which is not better than the original table with {} marks consisting of {} rows",
                         candidate.projection->name,
                         candidate.sum_marks,
-                        parent_reading_marks);
+                        candidate.sum_rows,
+                        parent_reading_select_result->selected_marks,
+                        parent_reading_rows);
 
                     LOG_DEBUG(logger, "{}", stat.description);
                     continue;
                 }
 
-                if (best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks)
+                if (best_candidate == nullptr || best_candidate->sum_rows > candidate.sum_rows)
                     best_candidate = &candidate;
             }
         }
@@ -769,20 +772,26 @@ std::optional<String> optimizeUseAggregateProjections(
                 chassert(candidate.stat);
                 chassert(candidate.stat->description.empty());
                 candidate.stat->description = fmt::format(
-                    "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
+                    "Projection {} is selected as the best with {} marks consisting of {} rows to read, "
+                    "while the original table requires scanning {} marks consisting of {} rows",
                     candidate.projection->name,
                     candidate.sum_marks,
-                    parent_reading_select_result->selected_marks);
+                    candidate.sum_rows,
+                    parent_reading_select_result->selected_marks,
+                    parent_reading_select_result->selected_rows);
                 LOG_DEBUG(logger, "{}", candidate.stat->description);
             }
             else if (candidate.stat && candidate.stat->description.empty())
             {
                 candidate.stat->description = fmt::format(
-                    "Projection {} is usable but requires reading {} marks, which is less efficient than projection {} with {} marks",
+                    "Projection {} is usable but requires reading {} marks consisting of {} rows, "
+                    "which is less efficient than projection {} with {} marks consisting of {} rows",
                     candidate.projection->name,
                     candidate.sum_marks,
+                    candidate.sum_rows,
                     best_candidate->projection->name,
-                    best_candidate->sum_marks);
+                    best_candidate->sum_marks,
+                    best_candidate->sum_rows);
                 LOG_DEBUG(logger, "{}", candidate.stat->description);
             }
         }

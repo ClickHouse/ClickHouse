@@ -41,6 +41,10 @@ struct ProjectionCandidate
     /// Estimated total marks to read (including parent and projection)
     size_t sum_marks = 0;
 
+    /// Estimated total rows to read (including parent and projection).
+    /// Used for accurate cost comparison when table and projection have different index_granularity.
+    size_t sum_rows = 0;
+
     /// Number of parts, marks, and ranges selected during projection read
     size_t selected_parts = 0;
     size_t selected_marks = 0;

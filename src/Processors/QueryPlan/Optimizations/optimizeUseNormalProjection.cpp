@@ -302,29 +302,32 @@ std::optional<String> optimizeUseNormalProjections(
         stat.filtered_parts = candidate.filtered_parts;
         candidate.stat = &stat;
 
-        size_t parent_reading_marks = parent_reading_select_result->selected_marks;
+        size_t parent_reading_rows = parent_reading_select_result->selected_rows;
 
         /// Consider projections with equal read cost only if:
         /// - `force_optimize_projection` is enabled, or
-        /// - the parent reading's `selected_marks` becomes zero
-        if (candidate.sum_marks > parent_reading_marks
-            || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection))
+        /// - the parent reading's `selected_rows` becomes zero
+        if (candidate.sum_rows > parent_reading_rows
+            || (candidate.sum_rows == parent_reading_rows && parent_reading_rows > 0 && !force_optimize_projection))
         {
             stat.description = fmt::format(
-                "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
+                "Projection {} is usable but requires reading {} marks consisting of {} rows, "
+                "which is not better than the original table with {} marks consisting of {} rows",
                 candidate.projection->name,
                 candidate.sum_marks,
-                parent_reading_marks);
+                candidate.sum_rows,
+                parent_reading_select_result->selected_marks,
+                parent_reading_rows);
 
             LOG_DEBUG(logger, "{}", stat.description);
             continue;
         }
 
-        if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
+        if (best_candidate == nullptr || candidate.sum_rows < best_candidate->sum_rows)
             best_candidate = &candidate;
 
         /// All parts has been filtered out; no need to analyze further projections.
-        if (parent_reading_marks == 0)
+        if (parent_reading_rows == 0)
             break;
     }
 
@@ -339,20 +342,26 @@ std::optional<String> optimizeUseNormalProjections(
             chassert(candidate.stat);
             chassert(candidate.stat->description.empty());
             candidate.stat->description = fmt::format(
-                "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
+                "Projection {} is selected as the best with {} marks consisting of {} rows to read, "
+                "while the original table requires scanning {} marks consisting of {} rows",
                 candidate.projection->name,
                 candidate.sum_marks,
-                parent_reading_select_result->selected_marks);
+                candidate.sum_rows,
+                parent_reading_select_result->selected_marks,
+                parent_reading_select_result->selected_rows);
             LOG_DEBUG(logger, "{}", candidate.stat->description);
         }
         else if (candidate.stat && candidate.stat->description.empty())
         {
             candidate.stat->description = fmt::format(
-                "Projection {} is usable but requires reading {} marks, which is less efficient than projection {} with {} marks",
+                "Projection {} is usable but requires reading {} marks consisting of {} rows, "
+                "which is less efficient than projection {} with {} marks consisting of {} rows",
                 candidate.projection->name,
                 candidate.sum_marks,
+                candidate.sum_rows,
                 best_candidate->projection->name,
-                best_candidate->sum_marks);
+                best_candidate->sum_marks,
+                best_candidate->sum_rows);
             LOG_DEBUG(logger, "{}", candidate.stat->description);
         }
     }
