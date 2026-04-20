@@ -6,6 +6,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <mutex>
+#include <optional>
 
 
 namespace DB
@@ -75,6 +76,17 @@ public:
 
 private:
     void fillPerThreadInfo(size_t threads, size_t sum_marks);
+
+    struct PickedBatch
+    {
+        size_t part_idx;
+        MarkRanges ranges;
+    };
+
+    /// Selects the next batch of mark ranges for `task_idx` (possibly stealing from other
+    /// threads per pool policy). Returns nullopt when the pool has no further work for
+    /// this thread. Holds `mutex` internally for the duration of the selection.
+    std::optional<PickedBatch> pickNextBatch(size_t task_idx);
 
     mutable std::mutex mutex;
 
