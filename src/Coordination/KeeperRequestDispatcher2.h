@@ -78,7 +78,7 @@ namespace DB
 /// (KeeperRequestDispatcher2 implementation goes all fancy on avoiding locks and grouping atomics.
 ///  This is mostly just for fun and for practice; a much sloppier implementation would probably be
 ///  equally fast because KeeperRequestDispatcher2 shouldn't be the bottleneck.
-///  One part where performance matters is commit callback; we shouldn't waste any time there
+///  One part where performance may matter is commit callback; we shouldn't waste any time there
 ///  because the commit thread is likely a bottleneck.)
 class KeeperRequestDispatcher2
 {
@@ -300,6 +300,13 @@ private:
     ///       discard the response. Consider adding server id to the request so that we can tell
     ///       early that response is not needed. It would also save time in
     ///       KeeperRequestDispatcher2::onCommit, we won't have to check most requests against the queue.
+    /// TODO: Maybe we should remove this and pass responses directly to KeeperTCPHandler queues.
+    ///       But this intermediate queue may in theory improve performance: it's much cheaper to
+    ///       push a batch of responses to this queue than to push individual responses to the
+    ///       corresponding sessions' different queues and notify their condition_variable-s
+    ///       (FUTEX_WAKE syscall); and that pushing happens from the commit thread, which is often
+    ///       on the critical path limiting the total server throughput, while responseThread is
+    ///       ~never the bottleneck.
     NonblockingBoundedQueue<KeeperResponseForSession> responses_queue;
     std::atomic<int64_t> response_bytes_in_all_queues {};
 

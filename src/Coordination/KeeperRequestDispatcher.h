@@ -22,6 +22,8 @@ namespace DB
 {
 
 /// Process user requests via consensus and return responses.
+///
+/// This is an old implementation that will hopefully be removed soon in favor of KeeperRequestDispatcher2.
 class KeeperRequestDispatcher
 {
 private:

@@ -5,6 +5,7 @@
 #include <Common/BitHelpers.h>
 
 /// Vyukov queue.
+/// https://web.archive.org/web/20170205113402/http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
 /// Lock-free. Fixed preallocated capacity.
 /// No blocking operations, only tryPush/tryPop; you may need a separate condition_variable/futex/etc or busy-wait.
 /// Most efficient when used as SPSC and the queue stays nonempty.
@@ -57,6 +58,7 @@ class NonblockingBoundedQueue
 {
 public:
     static_assert(std::is_nothrow_move_assignable_v<T>, "NonblockingBoundedQueue requires noexcept move assignment to avoid permanent deadlock");
+    static_assert(std::is_default_constructible_v<T>, "NonblockingBoundedQueue requires default constructor");
 
     NonblockingBoundedQueue() = default; // must call init() before using
     explicit NonblockingBoundedQueue(size_t min_capacity)
@@ -68,8 +70,8 @@ public:
     {
         chassert(!mask);
         /// (Capacity must be at least 2 to make `pos + 1` different from `pos + capacity`.)
-        while (min_capacity < 2 || !isPowerOf2(min_capacity))
-            ++min_capacity;
+        min_capacity = std::max<size_t>(2, roundUpToPowerOfTwoOrZero(min_capacity));
+        chassert(isPowerOf2(min_capacity));
         mask = min_capacity - 1;
         slots = std::vector<Slot>(min_capacity);
         for (size_t i = 0; i < slots.size(); ++i)
@@ -80,11 +82,11 @@ public:
     bool tryPush(T && value)
     {
         chassert(mask);
-        size_t pos = enqueue_pos.load();
+        size_t pos = enqueue_pos.load(std::memory_order_relaxed);
         while (true)
         {
             Slot & slot = slots[pos & mask];
-            size_t slot_pos = slot.pos.load();
+            size_t slot_pos = slot.pos.load(std::memory_order_acquire);
             if (slot_pos < pos)
             {
                 // This slot's previous value wasn't consumed. Queue is full.
@@ -93,17 +95,17 @@ public:
             else if (slot_pos > pos)
             {
                 // This slot already has a new value. Another producer won a race.
-                pos = enqueue_pos.load();
+                pos = enqueue_pos.load(std::memory_order_relaxed);
                 continue;
             }
-            else if (!enqueue_pos.compare_exchange_weak(pos, pos + 1))
+            else if (!enqueue_pos.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed))
             {
                 // Another producer won a different race.
                 continue;
             }
 
             slot.value = std::move(value);
-            slot.pos.store(pos + 1);
+            slot.pos.store(pos + 1, std::memory_order_release);
             return true;
         }
     }
@@ -111,11 +113,11 @@ public:
     bool tryPop(T & out_value)
     {
         chassert(mask);
-        size_t pos = dequeue_pos.load();
+        size_t pos = dequeue_pos.load(std::memory_order_relaxed);
         while (true)
         {
             Slot & slot = slots[pos & mask];
-            size_t slot_pos = slot.pos.load();
+            size_t slot_pos = slot.pos.load(std::memory_order_acquire);
             if (slot_pos < pos + 1)
             {
                 /// Queue is empty.
@@ -124,26 +126,26 @@ public:
             else if (slot_pos > pos + 1)
             {
                 /// Another consumer won a race.
-                pos = dequeue_pos.load();
+                pos = dequeue_pos.load(std::memory_order_relaxed);
                 continue;
             }
-            else if (!dequeue_pos.compare_exchange_weak(pos, pos + 1))
+            else if (!dequeue_pos.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed))
             {
                 /// Another consumer won a different race.
                 continue;
             }
 
             out_value = std::move(slot.value);
-            slot.pos.store(pos + mask + 1);
+            slot.pos.store(pos + mask + 1, std::memory_order_release);
             return true;
         }
     }
 
-    /// (May overestimate a bit if called in parallel with lots of pushes and pops.)
+    /// Imprecise if called in parallel with other operations.
     size_t size() const
     {
-        size_t y = dequeue_pos.load();
-        size_t x = enqueue_pos.load();
+        size_t y = dequeue_pos.load(std::memory_order_relaxed);
+        size_t x = enqueue_pos.load(std::memory_order_relaxed);
         return x - std::min(x, y); // max(0, x - y)
     }
 
