@@ -85,6 +85,8 @@ class KeeperRequestDispatcher2
 public:
     explicit KeeperRequestDispatcher2(KeeperServer * server_);
 
+    void startup();
+
     /// closed_all_connections is used just for an assert: if true, we expect that all
     /// onResponseDeallocated calls were made, so the tracked response queue size should be zero.
     void shutdown(bool closed_all_connections);

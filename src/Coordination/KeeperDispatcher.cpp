@@ -160,6 +160,9 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         throw;
     }
 
+    if (dispatcher2)
+        dispatcher2->startup(); // after server->startup to avoid race on raft_instance
+
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
 
