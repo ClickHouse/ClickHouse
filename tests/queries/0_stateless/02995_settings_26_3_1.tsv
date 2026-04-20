@@ -58,6 +58,7 @@ allow_experimental_json_lazy_type_hints	0
 allow_experimental_json_type	1
 allow_experimental_kafka_offsets_storage_in_keeper	0
 allow_experimental_kusto_dialect	0
+allow_experimental_lateral_join	0
 allow_experimental_lightweight_delete	1
 allow_experimental_lightweight_update	1
 allow_experimental_live_view	0

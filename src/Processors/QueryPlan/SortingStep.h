@@ -126,6 +126,7 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    bool hasCorrelatedExpressions() const override { return false; }
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 

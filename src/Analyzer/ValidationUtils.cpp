@@ -557,6 +557,9 @@ void validateFromClause(const QueryTreeNodePtr & node)
     const auto & root_query_node = node->as<QueryNode &>();
     auto correlated_columns_set = root_query_node.getCorrelatedColumnsSet();
 
+    /// Track which nodes are allowed to have correlated columns (right side of LATERAL JOINs)
+    std::unordered_set<const IQueryTreeNode *> lateral_allowed_nodes;
+
     std::vector<QueryTreeNodePtr> nodes_to_process = { root_query_node.getJoinTree() };
 
     while (!nodes_to_process.empty())
@@ -576,9 +579,10 @@ void validateFromClause(const QueryTreeNodePtr & node)
             {
                 auto & query_node = node_to_process->as<QueryNode &>();
                 const auto & correlated_columns = query_node.getCorrelatedColumns();
+                bool is_lateral_allowed = lateral_allowed_nodes.contains(node_to_process.get());
                 for (const auto & column : correlated_columns)
                 {
-                    if (!correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(column)))
+                    if (!is_lateral_allowed && !correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(column)))
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                             "Lateral joins are not supported. Correlated column '{}' is found in the FROM clause. In query {}",
                             column->formatASTForErrorMessage(),
@@ -588,8 +592,13 @@ void validateFromClause(const QueryTreeNodePtr & node)
             }
             case QueryTreeNodeType::UNION:
             {
+                bool is_lateral_allowed = lateral_allowed_nodes.contains(node_to_process.get());
                 for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                {
+                    if (is_lateral_allowed)
+                        lateral_allowed_nodes.insert(union_node.get());
                     nodes_to_process.push_back(union_node);
+                }
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
@@ -608,6 +617,8 @@ void validateFromClause(const QueryTreeNodePtr & node)
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
+                if (join_node.isLateral())
+                    lateral_allowed_nodes.insert(join_node.getRightTableExpression().get());
                 nodes_to_process.push_back(join_node.getRightTableExpression());
                 nodes_to_process.push_back(join_node.getLeftTableExpression());
                 break;
