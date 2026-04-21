@@ -236,6 +236,10 @@ const std::unordered_set<std::string_view> excluded_functions = {
     /// Avoid depending on environment (e.g. current query, configuration, settings).
     "synonyms",
     "catboostEvaluate",
+    "aiGenerate",
+    "aiClassify",
+    "aiExtract",
+    "aiTranslate",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -266,6 +270,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "timeSeriesCopyTag",
     "timeSeriesCopyTags",
     "timeSeriesExtractTag",
+    "timeSeriesGroupToSamplingKey",
     "timeSeriesGroupToTags",
     "timeSeriesIdToGroup",
     "timeSeriesJoinTags",
