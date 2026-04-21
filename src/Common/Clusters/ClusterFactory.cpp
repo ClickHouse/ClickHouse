@@ -13,8 +13,7 @@
 #include <base/sleep.h>
 #include <Parsers/ASTAlterClusterQuery.h>
 #include <Parsers/ASTAlterShardQuery.h>
-#include <Parsers/ASTCreateClusterQuery.h>
-#include <Parsers/ASTCreateShardQuery.h>
+#include <Parsers/ASTCreateClusterCatalogQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -77,12 +76,13 @@ String formatCreateShardStatement(
     UInt32 weight,
     bool internal_replication)
 {
-    ASTCreateShardQuery ast;
-    ast.shard_name = shard_name;
-    ast.replicas = replica_collections;
-    ast.shard_properties.clear();
-    ast.shard_properties.push_back(SettingChange{"weight", Field{UInt64{weight}}});
-    ast.shard_properties.push_back(SettingChange{"internal_replication", Field{internal_replication}});
+    ASTCreateClusterCatalogQuery ast;
+    ast.kind = ASTCreateClusterCatalogQuery::Kind::Shard;
+    ast.name = shard_name;
+    ast.members = replica_collections;
+    ast.properties.clear();
+    ast.properties.push_back(SettingChange{"weight", Field{UInt64{weight}}});
+    ast.properties.push_back(SettingChange{"internal_replication", Field{internal_replication}});
     ast.if_not_exists = false;
     return ast.formatWithSecretsOneLine();
 }
@@ -93,13 +93,14 @@ String formatCreateClusterStatement(
     const String & cluster_secret,
     bool allow_distributed_ddl_queries)
 {
-    ASTCreateClusterQuery ast;
-    ast.cluster_name = cluster_name;
+    ASTCreateClusterCatalogQuery ast;
+    ast.kind = ASTCreateClusterCatalogQuery::Kind::Cluster;
+    ast.name = cluster_name;
     ast.members = members;
     if (!cluster_secret.empty())
-        ast.cluster_properties.push_back(SettingChange{"secret", Field{cluster_secret}});
+        ast.properties.push_back(SettingChange{"secret", Field{cluster_secret}});
     /// Always persist `allow_distributed_ddl_queries` so `SHOW CREATE CLUSTER` matches catalog state (default is true).
-    ast.cluster_properties.push_back(SettingChange{"allow_distributed_ddl_queries", Field{allow_distributed_ddl_queries}});
+    ast.properties.push_back(SettingChange{"allow_distributed_ddl_queries", Field{allow_distributed_ddl_queries}});
     ast.if_not_exists = false;
     return ast.formatWithSecretsOneLine();
 }

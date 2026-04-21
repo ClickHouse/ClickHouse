@@ -40,14 +40,11 @@
 #include <Parsers/ASTCreateReplicaQuery.h>
 #include <Parsers/ASTAlterReplicaQuery.h>
 #include <Parsers/ASTDropReplicaQuery.h>
-#include <Parsers/ASTCreateShardQuery.h>
+#include <Parsers/ASTCreateClusterCatalogQuery.h>
 #include <Parsers/ASTAlterShardQuery.h>
-#include <Parsers/ASTDropShardQuery.h>
-#include <Parsers/ASTCreateClusterQuery.h>
+#include <Parsers/ASTDropClusterCatalogQuery.h>
 #include <Parsers/ASTAlterClusterQuery.h>
-#include <Parsers/ASTDropClusterQuery.h>
-#include <Parsers/ASTShowCreateShardQuery.h>
-#include <Parsers/ASTShowCreateClusterQuery.h>
+#include <Parsers/ASTShowCreateClusterCatalogQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -239,13 +236,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterExistsQuery";
     }
-    else if (query->as<ASTShowCreateShardQuery>())
+    else if (query->as<ASTShowCreateClusterCatalogQuery>())
     {
-        interpreter_name = "InterpreterShowCreateShardQuery";
-    }
-    else if (query->as<ASTShowCreateClusterQuery>())
-    {
-        interpreter_name = "InterpreterShowCreateClusterQuery";
+        interpreter_name = "InterpreterShowCreateClusterCatalogQuery";
     }
     else if (query->as<ASTShowCreateTableQuery>() || query->as<ASTShowCreateViewQuery>() || query->as<ASTShowCreateDatabaseQuery>() || query->as<ASTShowCreateDictionaryQuery>())
     {
@@ -331,17 +324,13 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterMoveAccessEntityQuery";
     }
-    else if (query->as<ASTDropShardQuery>())
+    else if (query->as<ASTDropClusterCatalogQuery>())
     {
-        interpreter_name = "InterpreterDropShardQuery";
+        interpreter_name = "InterpreterDropClusterCatalogQuery";
     }
     else if (query->as<ASTAlterShardQuery>())
     {
         interpreter_name = "InterpreterAlterShardQuery";
-    }
-    else if (query->as<ASTDropClusterQuery>())
-    {
-        interpreter_name = "InterpreterDropClusterQuery";
     }
     else if (query->as<ASTAlterClusterQuery>())
     {
@@ -419,13 +408,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterCreateReplicaQuery";
     }
-    else if (query->as<ASTCreateShardQuery>())
+    else if (query->as<ASTCreateClusterCatalogQuery>())
     {
-        interpreter_name = "InterpreterCreateShardQuery";
-    }
-    else if (query->as<ASTCreateClusterQuery>())
-    {
-        interpreter_name = "InterpreterCreateClusterQuery";
+        interpreter_name = "InterpreterCreateClusterCatalogQuery";
     }
     else if (query->as<ASTCreateNamedCollectionQuery>())
     {

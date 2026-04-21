@@ -4,83 +4,12 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserAlterClusterQuery.h>
+#include <Parsers/ParserSQLClusterAlterReplaceList.h>
 #include <Parsers/ParserSQLClusterCatalogProperties.h>
 
 
 namespace DB
 {
-
-namespace
-{
-
-/// One side of `REPLACE from... TO to...` for `ALTER CLUSTER` (identifiers only).
-/// When `is_to_side`, a comma followed by `REPLACE` / `MODIFY PROPERTIES` / `ON` ends the list (same as `ALTER SHARD ... REPLACE`).
-bool parseClusterReplaceMemberList(std::vector<String> & out, IParser::Pos & pos, Expected & expected, bool is_to_side)
-{
-    ParserToken s_comma(TokenType::Comma);
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
-    ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserIdentifier name_p;
-    ParserKeyword s_to(Keyword::TO);
-    ParserKeyword s_replace(Keyword::REPLACE);
-    ParserKeyword s_properties(Keyword::PROPERTIES);
-    ParserKeyword s_modify_kw(Keyword::MODIFY);
-    ParserKeyword s_on(Keyword::ON);
-
-    if (s_lparen.ignore(pos, expected))
-    {
-        ASTPtr id;
-        if (!name_p.parse(pos, id, expected))
-            return false;
-        tryGetIdentifierNameInto(id, out.emplace_back());
-        while (s_comma.ignore(pos, expected))
-        {
-            if (!name_p.parse(pos, id, expected))
-                return false;
-            tryGetIdentifierNameInto(id, out.emplace_back());
-        }
-        if (!s_rparen.ignore(pos, expected))
-            return false;
-        return !out.empty();
-    }
-
-    ASTPtr id;
-    if (!name_p.parse(pos, id, expected))
-        return false;
-    tryGetIdentifierNameInto(id, out.emplace_back());
-
-    while (true)
-    {
-        const auto before_comma = pos;
-        if (!s_comma.ignore(pos, expected))
-            break;
-        if (s_to.check(pos, expected))
-        {
-            pos = before_comma;
-            break;
-        }
-        if (is_to_side && (s_replace.check(pos, expected) || s_on.check(pos, expected)))
-        {
-            pos = before_comma;
-            break;
-        }
-        if (is_to_side)
-        {
-            auto lookahead = pos;
-            if (s_modify_kw.ignore(lookahead, expected) && s_properties.check(lookahead, expected))
-            {
-                pos = before_comma;
-                break;
-            }
-        }
-        if (!name_p.parse(pos, id, expected))
-            return false;
-        tryGetIdentifierNameInto(id, out.emplace_back());
-    }
-    return true;
-}
-
-}
 
 bool ParserAlterClusterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -247,11 +176,11 @@ bool ParserAlterClusterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         while (true)
         {
             AlterClusterMemberReplaceClause clause;
-            if (!parseClusterReplaceMemberList(clause.from_members, pos, expected, false))
+            if (!parseSQLClusterReplaceList(clause.from_members, pos, expected, false))
                 return false;
             if (!s_to.ignore(pos, expected))
                 return false;
-            if (!parseClusterReplaceMemberList(clause.to_members, pos, expected, true))
+            if (!parseSQLClusterReplaceList(clause.to_members, pos, expected, true))
                 return false;
             if (clause.from_members.size() != clause.to_members.size())
                 return false;

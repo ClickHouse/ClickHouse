@@ -6,8 +6,8 @@
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTCreateShardQuery.h>
-#include <Parsers/ParserCreateShardQuery.h>
+#include <Parsers/ASTCreateClusterCatalogQuery.h>
+#include <Parsers/ParserCreateClusterCatalogQuery.h>
 #include <Parsers/parseQuery.h>
 
 #include <filesystem>
@@ -37,7 +37,7 @@ constexpr auto SHARDS_CATALOG_STORAGE_CONFIG_PREFIX = "shards_catalog_storage";
 ShardCatalogDefinition parseShardCreateStatement(const String & query_text, const String & path_for_error, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    ParserCreateShardQuery parser;
+    ParserCreateClusterCatalogQuery parser;
     auto ast = parseQuery(
         parser,
         query_text,
@@ -45,10 +45,10 @@ ShardCatalogDefinition parseShardCreateStatement(const String & query_text, cons
         0,
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
-    const auto & q = ast->as<const ASTCreateShardQuery &>();
+    const auto & q = ast->as<const ASTCreateClusterCatalogQuery &>();
     ShardCatalogDefinition row;
-    row.replica_collections = q.replicas;
-    validateAndExtractShardLevelProperties(q.shard_properties, row.weight, row.internal_replication);
+    row.replica_collections = q.members;
+    validateAndExtractShardLevelProperties(q.properties, row.weight, row.internal_replication);
     return row;
 }
 

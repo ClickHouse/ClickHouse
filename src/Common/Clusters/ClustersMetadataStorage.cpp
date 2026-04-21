@@ -6,8 +6,8 @@
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTCreateClusterQuery.h>
-#include <Parsers/ParserCreateClusterQuery.h>
+#include <Parsers/ASTCreateClusterCatalogQuery.h>
+#include <Parsers/ParserCreateClusterCatalogQuery.h>
 #include <Parsers/parseQuery.h>
 
 #include <filesystem>
@@ -37,7 +37,7 @@ constexpr auto CLUSTERS_CATALOG_STORAGE_CONFIG_PREFIX = "clusters_catalog_storag
 ClusterCatalogDefinition parseClusterCreateStatement(const String & query_text, const String & path_for_error, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    ParserCreateClusterQuery parser;
+    ParserCreateClusterCatalogQuery parser;
     auto ast = parseQuery(
         parser,
         query_text,
@@ -45,10 +45,10 @@ ClusterCatalogDefinition parseClusterCreateStatement(const String & query_text, 
         0,
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
-    const auto & q = ast->as<const ASTCreateClusterQuery &>();
+    const auto & q = ast->as<const ASTCreateClusterCatalogQuery &>();
     ClusterCatalogDefinition row;
     row.members = q.members;
-    validateAndExtractClusterLevelProperties(q.cluster_properties, row.secret, row.allow_distributed_ddl_queries);
+    validateAndExtractClusterLevelProperties(q.properties, row.secret, row.allow_distributed_ddl_queries);
     return row;
 }
 

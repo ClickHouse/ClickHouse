@@ -9,15 +9,13 @@
 #include <Parsers/ParserDropResourceQuery.h>
 #include <Parsers/ParserDropIndexQuery.h>
 #include <Parsers/ParserDropNamedCollectionQuery.h>
-#include <Parsers/ParserCreateShardQuery.h>
 #include <Parsers/ParserCreateReplicaQuery.h>
 #include <Parsers/ParserAlterReplicaQuery.h>
 #include <Parsers/ParserAlterShardQuery.h>
-#include <Parsers/ParserDropShardQuery.h>
 #include <Parsers/ParserDropReplicaQuery.h>
-#include <Parsers/ParserCreateClusterQuery.h>
+#include <Parsers/ParserCreateClusterCatalogQuery.h>
 #include <Parsers/ParserAlterClusterQuery.h>
-#include <Parsers/ParserDropClusterQuery.h>
+#include <Parsers/ParserDropClusterCatalogQuery.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
@@ -75,14 +73,12 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDropWorkloadQuery drop_workload_p;
     ParserCreateResourceQuery create_resource_p;
     ParserDropResourceQuery drop_resource_p;
-    ParserCreateShardQuery create_shard_p;
+    ParserCreateClusterCatalogQuery create_cluster_catalog_p;
     ParserCreateReplicaQuery create_replica_p;
     ParserAlterReplicaQuery alter_replica_p;
     ParserAlterShardQuery alter_shard_p;
-    ParserCreateClusterQuery create_cluster_p;
     ParserAlterClusterQuery alter_cluster_p;
-    ParserDropClusterQuery drop_cluster_p;
-    ParserDropShardQuery drop_shard_p;
+    ParserDropClusterCatalogQuery drop_cluster_catalog_p;
     ParserDropReplicaQuery drop_replica_p;
     ParserCreateNamedCollectionQuery create_named_collection_p;
     ParserDropNamedCollectionQuery drop_named_collection_p;
@@ -117,15 +113,13 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_workload_p.parse(pos, node, expected)
         || create_resource_p.parse(pos, node, expected)
         || drop_resource_p.parse(pos, node, expected)
-        || create_shard_p.parse(pos, node, expected)
+        || create_cluster_catalog_p.parse(pos, node, expected)
         || create_replica_p.parse(pos, node, expected)
         || alter_replica_p.parse(pos, node, expected)
         || alter_shard_p.parse(pos, node, expected)
-        || create_cluster_p.parse(pos, node, expected)
         || alter_cluster_p.parse(pos, node, expected)
-        || drop_shard_p.parse(pos, node, expected)
+        || drop_cluster_catalog_p.parse(pos, node, expected)
         || drop_replica_p.parse(pos, node, expected)
-        || drop_cluster_p.parse(pos, node, expected)
         || create_named_collection_p.parse(pos, node, expected)
         || drop_named_collection_p.parse(pos, node, expected)
         || alter_named_collection_p.parse(pos, node, expected)

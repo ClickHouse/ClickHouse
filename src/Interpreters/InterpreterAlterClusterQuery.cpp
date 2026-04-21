@@ -45,7 +45,7 @@ BlockIO InterpreterAlterClusterQuery::execute()
 
     /// Same member contract as `CREATE CLUSTER`: new whole-shard members resolve via named collections.
     /// `hasShard` uses an unlocked snapshot, so member classification here is best-effort — see the matching
-    /// comment in `InterpreterCreateClusterQuery::execute`. The factory re-validates existence and name
+    /// comment in `InterpreterCreateClusterCatalogQuery::execute`. The factory re-validates existence and name
     /// ambiguity under its lock; this pre-check only rejects unauthorised NC references early.
     switch (query.command)
     {
