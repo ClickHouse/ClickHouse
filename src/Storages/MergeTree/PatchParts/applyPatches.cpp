@@ -14,7 +14,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
-#include "Columns/IColumn_fwd.h"
 #include <absl/container/flat_hash_map.h>
 #include <base/types.h>
 #include <shared_mutex>

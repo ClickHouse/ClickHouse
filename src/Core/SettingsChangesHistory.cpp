@@ -81,7 +81,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
-            {"enable_v2_lightweight_update_patches", true, true, "New setting to enable v2 lightweight update patches."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -1148,6 +1147,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
             {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"compress_per_column_in_compact_parts", true, true, "New setting"},
+            {"enable_v2_lightweight_update_patches", true, true, "New setting to enable v2 lightweight update patches."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
