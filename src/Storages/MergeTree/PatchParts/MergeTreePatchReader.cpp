@@ -449,16 +449,15 @@ bool MergeTreePatchReaderMergeOnKey::needOldPatch(const ReadResult & main_result
 
 MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache)
 {
-    if (patch_part.mode == PatchMode::Merge)
-        return std::make_unique<MergeTreePatchReaderMerge>(std::move(patch_part), std::move(reader));
-
-    if (patch_part.mode == PatchMode::Join)
-        return std::make_unique<MergeTreePatchReaderJoin>(std::move(patch_part), std::move(reader), read_join_cache);
-
-    if (patch_part.mode == PatchMode::MergeOnKey)
-        return std::make_unique<MergeTreePatchReaderMergeOnKey>(std::move(patch_part), std::move(reader));
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected patch parts mode {}", patch_part.mode);
+    switch (patch_part.mode)
+    {
+        case PatchMode::Merge:
+            return std::make_unique<MergeTreePatchReaderMerge>(std::move(patch_part), std::move(reader));
+        case PatchMode::Join:
+            return std::make_unique<MergeTreePatchReaderJoin>(std::move(patch_part), std::move(reader), read_join_cache);
+        case PatchMode::MergeOnKey:
+            return std::make_unique<MergeTreePatchReaderMergeOnKey>(std::move(patch_part), std::move(reader));
+    }
 }
 
 }

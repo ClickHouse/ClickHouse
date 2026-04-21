@@ -140,12 +140,6 @@ StorageMetadataPtr getPatchPartMetadataV2(
     /// filters down to the metadata's stored columns (`writeTempPartImpl` filters via
     /// `metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames())`), so the
     /// extra block column is silently dropped before anything touches disk.
-    auto part_column_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    if (!patch_part_desc.has("_part"))
-        patch_part_desc.add(ColumnDescription("_part", part_column_type));
-    if (patch_part_desc.has("_part_offset"))
-        patch_part_desc.remove("_part_offset");
-
     /// Ensure v2 identity + version columns are present (they may be missing when constructing
     /// an empty coverage part via createEmptyPart).
     auto ensure_column = [&](const String & name, const DataTypePtr & type)
@@ -153,6 +147,9 @@ StorageMetadataPtr getPatchPartMetadataV2(
         if (!patch_part_desc.has(name))
             patch_part_desc.add(ColumnDescription(name, type));
     };
+
+    auto part_column_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    ensure_column("_part", part_column_type);
     ensure_column(BlockNumberColumn::name, BlockNumberColumn::type);
     ensure_column(BlockOffsetColumn::name, BlockOffsetColumn::type);
     ensure_column(PartDataVersionColumn::name, PartDataVersionColumn::type);
@@ -163,16 +160,16 @@ StorageMetadataPtr getPatchPartMetadataV2(
     /// patch's on-disk layout from later additions to the target table's sort key; it also lets
     /// `ORDER BY tuple()` (or any shorter prefix) produce a sort key with only the two identity
     /// columns, matching the design's degenerate-sort-key case.
-    const auto * sorting_key_expr_list = main_sorting_key.expression_list_ast
-        ? main_sorting_key.expression_list_ast->as<ASTExpressionList>()
-        : nullptr;
+    const auto * sorting_key_expr_list = main_sorting_key.expression_list_ast ? main_sorting_key.expression_list_ast->as<ASTExpressionList>() : nullptr;
     const size_t main_sorting_key_children = sorting_key_expr_list ? sorting_key_expr_list->children.size() : 0;
 
     if (sorting_key_prefix_size > main_sorting_key_children)
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Patch's persisted sort-key prefix size ({}) exceeds the main table's current sort-key children count ({})",
             sorting_key_prefix_size, main_sorting_key_children);
+    }
 
     /// Partition id: `__patchPartitionID(_part, hash(...))`. Hash input uses the *stored*
     /// column names (including `_part`), a serialized form of the target table's sort-key AST,
@@ -196,14 +193,7 @@ StorageMetadataPtr getPatchPartMetadataV2(
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
     part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, {}, local_context);
 
-    /// Sort key: `(<sorting_key_expr_children[0..sorting_key_prefix_size]>..., _block_number,
-    /// _block_offset)`. Primary key equals sort key — the widened sparse index subsumes the v1
-    /// per-granule minmax index on `_block_number` and `_block_offset`, so no secondary indices
-    /// are needed here. Building via `KeyDescription::getKeyFromAST` gives us `expression` (an
-    /// ExpressionActions that materializes the result columns from physical source columns — the
-    /// same way FINAL does for base parts), `column_names` (the result column names), and
-    /// `reverse_flags` (we override the reverse flags from the per-shard DESC info since our AST
-    /// children are plain expressions, not ASTStorageOrderByElements).
+    /// Sorting key: (<sorting_key_expr_children[0..sorting_key_prefix_size]>..., _block_number, _block_offset).
     auto order_by_expression = makeASTOperator("tuple");
     if (sorting_key_expr_list)
     {
@@ -217,11 +207,15 @@ StorageMetadataPtr getPatchPartMetadataV2(
     addCodecsForPatchSystemColumns(patch_part_desc);
     part_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, {}, local_context);
 
-    /// Honour DESC flags from the main table for the semantic sort-key prefix. The two trailing
-    /// identity columns (`_block_number`, `_block_offset`) are always ASC.
-    part_metadata.sorting_key.reverse_flags.assign(sorting_key_prefix_size + 2, false);
-    for (size_t i = 0; i < main_sorting_key.reverse_flags.size() && i < sorting_key_prefix_size; ++i)
-        part_metadata.sorting_key.reverse_flags[i] = main_sorting_key.reverse_flags[i];
+    /// Honour DESC flags from the main table for the semantic sort-key prefix.
+    /// The two trailing identity columns (_block_number, _block_offset) are always ASC.
+    if (!main_sorting_key.reverse_flags.empty())
+    {
+        part_metadata.sorting_key.reverse_flags.assign(sorting_key_prefix_size + 2, false);
+
+        for (size_t i = 0; i < main_sorting_key.reverse_flags.size() && i < sorting_key_prefix_size; ++i)
+            part_metadata.sorting_key.reverse_flags[i] = main_sorting_key.reverse_flags[i];
+    }
 
     part_metadata.primary_key = part_metadata.sorting_key;
     part_metadata.primary_key.definition_ast = nullptr;
