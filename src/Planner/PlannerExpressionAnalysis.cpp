@@ -771,6 +771,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
+    /// `BEFORE_INTERPOLATE` actions are executed later with `WITH FILL`, but aliases produced by this
+    /// step must be visible for projection analysis. Add this step to `ActionsChain` after `LIMIT BY`
+    /// so finalization does not propagate interpolate dependencies into `BEFORE_LIMIT_BY`.
+    if (sort_analysis_result_optional && sort_analysis_result_optional->before_interpolate_actions)
+    {
+        actions_chain.addStep(std::make_unique<ActionsChainStep>(sort_analysis_result_optional->before_interpolate_actions));
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
+
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
 
