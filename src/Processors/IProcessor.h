@@ -3,7 +3,6 @@
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
-#include <atomic>
 #include <list>
 #include <memory>
 #include <vector>
@@ -210,14 +209,6 @@ public:
       */
     virtual int schedule();
 
-    /** This method is similar to schedule() but also returns epoll events mask
-      * Note that file descriptor returned by schedule() will be polled for read (EPOLLIN event) and errors
-      * but for ISink implementations that write data to network or to files it is necessary to poll for write (EPOLLOUT) events as well.
-      */
-#ifdef OS_LINUX
-    virtual std::pair<int, uint32_t> scheduleForEvent();
-#endif
-
     /* The method is called right after asynchronous job is done
      * i.e. when file descriptor returned by schedule() is readable.
      * The sequence of method calls:
@@ -246,22 +237,10 @@ public:
       */
     virtual Processors expandPipeline();
 
-    /// Why the processor is being cancelled, chosen by the caller of cancel.
-    enum class CancelReason : uint8_t
-    {
-        NotCancelled,           /// Default state: no cancellation happened yet.
-        Unknown,                /// Cancelled without a specific reason (legacy callers).
-        CancelledByUser,        /// User killed the query or closed the session.
-        CancelledByTimeout,     /// Query time limit exceeded.
-        PartialResult,          /// Consumer has enough data; stop ingress and drain compute.
-        Exception,              /// Pipeline is being torn down due to an error.
-    };
-
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
-    virtual void cancel(CancelReason reason) noexcept;
-    void cancel() noexcept { cancel(CancelReason::Unknown); }
+    void cancel() noexcept;
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.

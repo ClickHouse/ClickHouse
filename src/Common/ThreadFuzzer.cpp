@@ -15,7 +15,6 @@
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/logger_useful.h>

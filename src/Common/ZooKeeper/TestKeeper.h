@@ -64,11 +64,6 @@ public:
         uint32_t remove_nodes_limit,
         RemoveRecursiveCallback callback) override;
 
-    void listRecursive(
-        const String & path,
-        uint32_t get_children_recursive_nodes_limit,
-        ListRecursiveCallback callback) override;
-
     void exists(
         const String & path,
         ExistsCallback callback,
@@ -89,9 +84,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtrOrEventPtr watch,
-        bool with_stat,
-        bool with_data) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void check(
         const String & path,

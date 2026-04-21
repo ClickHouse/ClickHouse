@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
-#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 
 #if USE_PARQUET
@@ -339,8 +338,7 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
             CHColumnToArrowColumn::Settings
             {
                 .output_string_as_string = format_settings.parquet.output_string_as_string,
-                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array,
-                .output_unsupported_types_as_binary = format_settings.parquet.output_unsupported_types_as_binary,
+                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array
             });
     }
 
@@ -367,9 +365,9 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
             builder.compression_level(static_cast<int>(format_settings.parquet.output_compression_level));
         }
 
-        // Writing page index is enabled by default.
-        if (!format_settings.parquet.write_page_index)
-            builder.disable_write_page_index();
+        // Writing page index is disabled by default.
+        if (format_settings.parquet.write_page_index)
+            builder.enable_write_page_index();
 
         parquet::ArrowWriterProperties::Builder writer_props_builder;
         if (format_settings.parquet.output_compliant_nested_types)
@@ -379,7 +377,7 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
 
         auto result = parquet::arrow::FileWriter::Open(
             *arrow_table->schema(),
-            ArrowMemoryPool::instance(),
+            arrow::default_memory_pool(),
             sink,
             builder.build(),
             writer_props_builder.build());

@@ -1,3 +1,5 @@
+SET enable_qbit_type = 1;
+
 -- Tests when number of elements in QBit % 8 == 0
 -- Also tests the default value of QBit when no default is specified (when inserting data without `vec`)
 SELECT 'Tests when number of elements in QBit % 8 == 0';

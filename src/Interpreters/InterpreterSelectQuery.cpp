@@ -79,7 +79,6 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/ObjectFilterStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -92,7 +91,6 @@
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 #include <Storages/ReadInOrderOptimizer.h>
-#include <Storages/IStorageCluster.h>
 
 #include <Columns/Collator.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -132,7 +130,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
@@ -211,7 +208,6 @@ namespace Setting
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
-    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ServerSetting
@@ -544,22 +540,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     query_info.is_internal = options.is_internal;
 
     initSettings();
-
-    // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for
-    // the case of unsupported settings combination: enabled PRs + enabled AutoPR. Since it is not supported, we just
-    // disable both which is technically a correct behaviour: AutoPR is allowed to execute the query without PRs.
     const Settings & settings = context->getSettingsRef();
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
-        && settings[Setting::automatic_parallel_replicas_mode] != 0)
-    {
-        LOG_DEBUG(
-            log,
-            "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
-            " This combination of settings is not supported in the old SELECT query analyzer."
-            " To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
-        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-    }
 
     if (settings[Setting::max_subquery_depth] && options.subquery_depth > settings[Setting::max_subquery_depth])
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", settings[Setting::max_subquery_depth].toString());
@@ -611,7 +592,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
-            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            metadata_snapshot = storage->getInMemoryMetadataPtr();
 
         if (options.only_analyze)
             storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
@@ -720,14 +701,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)
-    {
         row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        if (row_policy_filter && context->hasQueryContext())
-        {
-            for (const auto & row_policy : row_policy_filter->policies)
-                context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
-        }
-    }
 
     StorageView * view = nullptr;
     if (storage)
@@ -753,7 +727,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     {settings[Setting::parallel_replicas_mode],
                      settings[Setting::parallel_replicas_custom_key_range_lower],
                      settings[Setting::parallel_replicas_custom_key_range_upper]},
-                    storage->getInMemoryMetadataPtr(context, false)->columns,
+                    storage->getInMemoryMetadataPtr()->columns,
                     context);
             }
             else if (settings[Setting::parallel_replica_offset] > 0)
@@ -840,22 +814,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
-                RangesInDataParts parts_for_estimator;
-                if (storage_snapshot->data)
-                {
-                    const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
-                    if (parts)
-                        parts_for_estimator = *parts;
-                }
+                const auto parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
 
-                /// Just attempting to read statistics files on disk can increase query latencies.
-                /// First check the in-memory metadata if statistics are present at all.
-                /// Also, statistics are only used to reorder conditions, so skip if there is just one.
-                const auto * where_function = query.where()->as<ASTFunction>();
-                const bool has_multiple_conditions = where_function && where_function->name == "and";
-                const bool has_statistics = storage_snapshot->metadata->hasStatistics();
-                auto estimator = (has_statistics && has_multiple_conditions)
-                                    ? storage->getConditionSelectivityEstimator(parts_for_estimator, queried_columns, context)
+                /// Just attempting to read statistics files on disk can increase query latencies
+                /// First check the in-memory metadata if statistics are present at all
+                auto estimator = storage_snapshot->metadata->hasStatistics()
+                                    ? storage->getConditionSelectivityEstimator(*parts, context)
                                     : nullptr;
 
                 MergeTreeWhereOptimizer where_optimizer{
@@ -944,7 +908,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query_info.filter_asts.clear();
 
             /// Fix source_header for filter actions.
-            if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            if (row_policy_filter && !row_policy_filter->empty())
             {
                 row_policy_info = generateFilterActions(
                     table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
@@ -1351,7 +1315,7 @@ static std::pair<Field, DataTypePtr> getWithFillFieldValue(const ASTPtr & node, 
     return field_type;
 }
 
-static std::pair<Field, std::optional<IntervalKind>> getWithFillValueWithIntervalKind(const ASTPtr & node, const ContextPtr & context)
+static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPtr & node, const ContextPtr & context)
 {
     auto [field, type] = evaluateConstantExpression(node, context);
 
@@ -1375,18 +1339,9 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         std::tie(descr.fill_to, descr.fill_to_type) = getWithFillFieldValue(order_by_elem.getFillTo(), context);
 
     if (order_by_elem.getFillStep())
-        std::tie(descr.fill_step, descr.step_kind) = getWithFillValueWithIntervalKind(order_by_elem.getFillStep(), context);
+        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.getFillStep(), context);
     else
         descr.fill_step = order_by_elem.direction;
-
-    if (order_by_elem.getFillStaleness())
-    {
-        std::tie(descr.fill_staleness, descr.staleness_kind) = getWithFillValueWithIntervalKind(order_by_elem.getFillStaleness(), context);
-
-        if (order_by_elem.getFillFrom())
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS cannot be used together with WITH FILL FROM");
-    }
 
     if (accurateEquals(descr.fill_step, Field{0}))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be zero");
@@ -1402,10 +1357,6 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
         }
-
-        if (accurateLess(descr.fill_staleness, Field{0}))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS value cannot be negative for sorting in ascending direction");
     }
     else
     {
@@ -1418,10 +1369,6 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
         }
-
-        if (accurateLess(Field{0}, descr.fill_staleness))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS value cannot be positive for sorting in descending direction");
     }
 
     return descr;
@@ -1571,7 +1518,10 @@ static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node
             Int64 int_value = converted_value.safeGet<Int64>();
             assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
-            const UInt64 magnitude = -static_cast<UInt64>(int_value);
+            // We need to be careful because -Int64::min() is not representable as Int64
+            const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
+                ? (static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1ULL)
+                : static_cast<UInt64>(-int_value);
             return {magnitude, 0, true};
         }
     }
@@ -2102,22 +2052,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
         if (expressions.second_stage || from_aggregation_stage)
         {
-            if (settings[Setting::use_hive_partitioning]
-                && !expressions.first_stage
-                && expressions.hasWhere())
-            {
-                if (typeid_cast<ReadFromCluster *>(query_plan.getRootNode()->step.get()))
-                {
-                    auto object_filter_step = std::make_unique<ObjectFilterStep>(
-                        query_plan.getCurrentHeader(),
-                        expressions.before_where->dag.clone(),
-                        getSelectQuery().where()->getColumnName());
-
-                    object_filter_step->setStepDescription("WHERE");
-                    query_plan.addStep(std::move(object_filter_step));
-                }
-            }
-
             if (from_aggregation_stage)
             {
                 /// No need to aggregate anything, since this was done on remote shards.
@@ -2243,11 +2177,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 apply_prelimit = apply_prelimit && (lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0);
             }
 
-            /// `isToAggregationState` covers both `WithMergeableStateAfterAggregation` (stage 3) and
-            /// `WithMergeableStateAfterAggregationAndLimit` (stage 4). OFFSET must not be applied at
-            /// either stage because OFFSET means skipping rows from the entire query result, not from each
-            /// shard individually.
-            bool apply_offset = options.to_stage < QueryProcessingStage::WithMergeableStateAfterAggregation;
+            bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
             if (apply_prelimit)
             {
                 executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
@@ -2395,6 +2325,18 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
 RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 {
     return row_policy_filter;
+}
+
+void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
+{
+    if (row_policy_filter)
+    {
+        for (const auto & row_policy : row_policy_filter->policies)
+        {
+            auto name = row_policy->getFullName().toString();
+            elem.used_row_policies.emplace(std::move(name));
+        }
+    }
 }
 
 bool InterpreterSelectQuery::shouldMoveToPrewhere() const
@@ -3178,10 +3120,6 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         if (need_sort)
         {
             SortingStep::Settings sort_settings(context->getSettingsRef());
-
-            /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
-            /// would produce incomplete data and cause the pipeline to get stuck.
-            sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),

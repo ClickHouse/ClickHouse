@@ -1,25 +1,22 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/VectorSearchUtils.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
 
 /// Internal temporary storage for table function mergeTreeAnalyzeIndexes(...)
-class StorageMergeTreeAnalyzeIndexes final : public StorageWithCommonVirtualColumns
+class StorageMergeTreeAnalyzeIndexes final : public IStorage
 {
 public:
     StorageMergeTreeAnalyzeIndexes(
         const StorageID & table_id_,
         const StoragePtr & source_table_,
         const ColumnsDescription & columns,
-        std::vector<String> parts_,
-        const ASTPtr & primary_key_predicate_,
-        const OptionalVectorSearchParameters & vector_search_parameters_);
+        const String & parts_regexp_,
+        const ASTPtr & primary_key_predicate_);
 
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -31,8 +28,6 @@ public:
 
     String getName() const override { return "MergeTreeAnalyzeIndexes"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
 private:
     friend class ReadFromMergeTreeAnalyzeIndexes;
 
@@ -40,7 +35,6 @@ private:
     MergeTreeData::DataPartsVector data_parts;
     MergeTreeSettingsPtr table_settings;
     ASTPtr predicate;
-    OptionalVectorSearchParameters vector_search_parameters;
 };
 
 }

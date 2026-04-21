@@ -48,7 +48,7 @@ public:
     /// Get the type of the elements in the tuple (FixedString<N>)
     DataTypePtr getNestedTupleElementType() const;
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
 
     static ALWAYS_INLINE inline size_t bitsToBytes(size_t n) { return (n + 7) / 8; }
 };

@@ -63,7 +63,7 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
 static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
     GetColumnsOptions options(GetColumnsOptions::All);
-    options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    options.withVirtuals();
     options.withSubcolumns();
 
     auto columns_list = storage_snapshot->getColumns(options);
@@ -354,8 +354,11 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         if (where_optimizer_context.use_statistics)
         {
             cond.good = cond.viable;
+
             cond.estimated_row_count = static_cast<Float64>(estimator->estimateRelationProfile(storage_metadata, node).rows);
-            LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getColumnName(), cond.estimated_row_count);
+
+            if (node.getASTNode() != nullptr)
+                LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);
         }
 
         if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
@@ -459,7 +462,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
             /// Keep the original order of conditions in prewhere_conditions.
             position = condition_positions[&(*cond_it)];
             auto prewhere_it = prewhere_conditions.begin();
-            while (prewhere_it != prewhere_conditions.end() && condition_positions[&(*prewhere_it)] < position)
+            while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
                 ++prewhere_it;
             prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
         }

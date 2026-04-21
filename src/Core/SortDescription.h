@@ -36,7 +36,7 @@ struct FillColumnDescription
     Field fill_staleness;   /// Default = Null - should not be considered
     std::optional<IntervalKind> staleness_kind;
 
-    using StepFunction = std::function<void(Field &, Int64 jumps_count)>;
+    using StepFunction = std::function<void(Field &, Int32 jumps_count)>;
     StepFunction step_func;
     StepFunction staleness_step_func;
 };
@@ -159,9 +159,6 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 
 /// Outputs user-readable description into `out`.
 void dumpSortDescription(const SortDescription & description, WriteBuffer & out);
-
-struct ExplainFormatSettings;
-void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings);
 
 std::string dumpSortDescription(const SortDescription & description);
 

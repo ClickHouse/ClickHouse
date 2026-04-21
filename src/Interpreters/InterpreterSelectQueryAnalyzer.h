@@ -28,11 +28,10 @@ public:
       * After query tree is built left most table expression is replaced with table node that
       * is initialized with provided storage.
       */
-    InterpreterSelectQueryAnalyzer(
-        const ASTPtr & query_,
+    InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
-        const SelectQueryOptions & select_query_options_,
         const StoragePtr & storage_,
+        const SelectQueryOptions & select_query_options_,
         const Names & column_names = {});
 
     /** Initialize interpreter with query tree.
@@ -71,6 +70,8 @@ public:
     QueryPipelineBuilder buildQueryPipeline();
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
+
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const override;
 
     bool supportsTransactions() const override { return true; }
 
