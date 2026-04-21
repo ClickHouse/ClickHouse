@@ -124,7 +124,7 @@ protected:
 
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context, *table_settings, query_info);
 
-        StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr();
+        StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", storage->getName());
@@ -143,7 +143,7 @@ protected:
             QueryAnalyzer analyzer(false);
             analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
 
-            GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+            GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
             auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
             collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
@@ -167,7 +167,7 @@ protected:
                 Planner subquery_planner(
                     query_tree,
                     subquery_options,
-                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
                 subquery_planner.buildQueryPlanIfNeeded();
 
                 auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
@@ -321,8 +321,8 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageMergeTreeAnalyzeIndexes::createVirtuals()
