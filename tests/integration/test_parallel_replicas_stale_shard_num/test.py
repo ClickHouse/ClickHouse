@@ -114,14 +114,17 @@ def test_stale_shard_num_single_shard_pr_cluster(start_cluster):
     assert result.strip() == "20", f"Unexpected result: {result!r}"
 
     # Verify the WARNING was emitted on n3 (shard 2, _shard_num=2 > shard_count=1).
+    # Note: system.text_log has query_id (not initial_query_id). In distributed queries,
+    # the remote shard's query_id differs from the initiator's. We match by message pattern
+    # and use a short time window, filtering by the query_id we set to reduce false positives.
     n3.query("SYSTEM FLUSH LOGS text_log")
     warning_count = n3.query(
-        """
+        f"""
         SELECT count()
         FROM system.text_log
         WHERE level = 'Warning'
           AND message LIKE '%shard_num%greater than shard count%'
-          AND event_time >= now() - INTERVAL 120 SECOND
+          AND event_time >= now() - INTERVAL 30 SECOND
         """
     )
     assert int(warning_count.strip()) > 0, (

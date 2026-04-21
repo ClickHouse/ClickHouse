@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 -- Regression test for: LOGICAL_ERROR 'Shard number is greater than shard count' when
 -- `cluster_for_parallel_replicas` has fewer shards than the outer Distributed cluster.
 --
@@ -8,7 +6,8 @@
 --   2. `cluster_for_parallel_replicas` = cluster Y (1 shard, multiple replicas).
 --   3. `_shard_num=2` is set unconditionally by `ReadFromRemote::addPipe` for `shardNum()`.
 --   4. `cluster_for_parallel_replicas` is NOT overridden to cluster X on the initiator
---      (e.g. because `allow_experimental_analyzer` differs between initiator and remote).
+--      (e.g. because settings constraints cause initiator to disable parallel replicas
+--       while remote enables it, leading to different `canUseTaskBasedParallelReplicas()` results).
 --   5. On the remote shard, `parallel_replicas` triggers for the local MergeTree.
 --   6. `prepareClusterForParallelReplicas` reads `_shard_num=2` but `shard_count=1`
 --      → LOGICAL_ERROR (server abort) before this fix.
