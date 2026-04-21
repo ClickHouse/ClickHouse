@@ -770,7 +770,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
-        if (!statistics_types_str.empty())
+        if (!statistics_types_str.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         {
             addImplicitStatistics(metadata.columns, statistics_types_str);
         }

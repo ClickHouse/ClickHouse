@@ -193,6 +193,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
     return function_name == "hasToken"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
+        || function_name == "hasPhrase"
         || function_name == "equals"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsKeyLike"
@@ -237,6 +238,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 
 
     if (function_name == "like"
+        || function_name == "hasPhrase"
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "mapContainsKeyLike"
@@ -666,6 +668,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     const auto & settings = getContext()->getSettingsRef();
 
+    /// like/ilike optimization is only supported for splitByNonAlpha and array tokenizers.
+    static const std::unordered_set<ITokenizer::Type> like_optimization_supported_tokenizers = {
+        ITokenizer::Type::SplitByNonAlpha,
+        ITokenizer::Type::Array
+    };
+
     if (has_map_keys_column || has_map_values_column)
     {
         if (!value_data_type.isStringOrFixedString())
@@ -763,6 +771,23 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
+    if (function_name == "hasPhrase")
+    {
+        /// Only splitByNonAlpha, splitByString, ngrams, and asciiCJK tokenizers are supported with the `hasPhrase` function.
+        static const std::unordered_set<std::string_view> supported_tokenizers = {
+            SplitByNonAlphaTokenizer::getExternalName(),
+            SplitByStringTokenizer::getExternalName(),
+            AsciiCJKTokenizer::getExternalName(),
+            NgramsTokenizer::getExternalName(),
+        };
+        if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
+            return false;
+
+        auto tokens = stringToTokens(value_field);
+        out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        return true;
+    }
     if (function_name == "startsWith" && tokenizer->supportsStringLike())
     {
         auto tokens = substringToTokens(value_field, true, false);
@@ -778,14 +803,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         return true;
     }
     /// Currently, not all token extractors support LIKE-style matching.
-    if (function_name == "like" && tokenizer->supportsStringLike())
+    if (function_name == "like")
     {
         const bool has_preprocessor = preprocessor && preprocessor->hasActions();
-        /// like/notLike optimization is only supported for the SplitByNonAlpha tokenizer.
         /// Requires explicit opt-in via use_text_index_like_evaluation_by_dictionary_scan because scanning
         /// the index dictionary for pattern-matching tokens has non-trivial overhead.
-        if (tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan]
-            && !has_preprocessor)
+        if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor
+            && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
             /// TODO(ahmadov): Only '%foo%' pattern is eligible for direct read mode. An empty vector means the pattern is too complex.
             /// Add support for multiple patterns later with hint mode:
@@ -806,14 +830,17 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             }
         }
 
+        /// When the like optimization is not enabled, we fallback to the HINT mode.
+        if (!tokenizer->supportsStringLike())
+            return false;
+
         std::vector<String> exact_tokens = stringLikeToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens)));
         return true;
     }
-    /// Currently, only SplitByNonAlpha tokenizer is supported with ilike/notilike functions for the like optimization.
-    if (function_name == "ilike" && tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha
+    if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
         const bool has_preprocessor = preprocessor && preprocessor->hasActions();

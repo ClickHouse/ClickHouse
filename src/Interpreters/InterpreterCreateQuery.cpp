@@ -7,6 +7,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
@@ -19,8 +20,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
+#include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -1283,7 +1284,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             }
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
-            create.as_table_function = nullptr;
+            create.reset(create.as_table_function);
             setNullTableEngine(*create.storage);
         }
         return;
@@ -2387,8 +2388,8 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         command_list->children.push_back(command);
 
         auto query = make_intrusive<ASTAlterQuery>();
-        query->database = create.database;
-        query->table = create.table;
+        query->setDatabase(create.getDatabase());
+        query->setTable(create.getTable());
         query->uuid = create.uuid;
         auto * alter = query->as<ASTAlterQuery>();
 
@@ -2742,7 +2743,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                     continue;
 
                 /// Try to remove txn_version.txt file
-                String txn_file = fs::path(part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
+                String txn_file = fs::path(part_path) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
                 if (disk->existsFile(txn_file))
                 {
                     disk->removeFile(txn_file);

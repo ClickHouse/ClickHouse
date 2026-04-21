@@ -1,7 +1,9 @@
 #include <charconv>
 #include <limits>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 
 #include <base/scope_guard.h>
 
@@ -31,6 +33,7 @@
 
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionOperatorPrettyLookup.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -3020,6 +3023,55 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::u
 
 const Operator ParserExpressionImpl::finish_between_operator("", 8, 0, OperatorType::FinishBetween);
 
+std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(std::string_view function_name)
+{
+    static const std::unordered_map<std::string, ExpressionOperatorPrettyInfo> map = []
+    {
+        std::unordered_map<std::string, ExpressionOperatorPrettyInfo> result;
+
+        auto consider = [&](std::string_view lexeme, const Operator & op)
+        {
+            if (op.function_name.empty())
+                return;
+            if (op.type == OperatorType::Lambda
+                || op.type == OperatorType::StartIf
+                || op.type == OperatorType::FinishIf
+                || op.type == OperatorType::StartBetween
+                || op.type == OperatorType::StartNotBetween
+                || op.type == OperatorType::Cast)
+                return;
+            if (op.function_name == "match")
+                return;
+
+            result.insert_or_assign(op.function_name, ExpressionOperatorPrettyInfo{lexeme, op.priority});
+        };
+
+        for (const auto & [lexeme, op] : ParserExpressionImpl::operators_table)
+            consider(lexeme, op);
+        for (const auto & [lexeme, op] : ParserExpressionImpl::unary_operators_table)
+            consider(lexeme, op);
+
+        /// Canonical spellings / precedence not achieved by last-wins alone (e.g. `<>` follows `!=` in the table).
+        result.insert_or_assign("equals", ExpressionOperatorPrettyInfo{"=", 9});
+        result.insert_or_assign("notEquals", ExpressionOperatorPrettyInfo{"!=", 9});
+        result.insert_or_assign("isNotDistinctFrom", ExpressionOperatorPrettyInfo{"<=>", 6});
+
+        for (const char * name : {"not", "isNull", "isNotNull", "negate", "tupleElement", "arrayElement"})
+            if (auto it = result.find(name); it != result.end())
+                it->second.symbol = {};
+
+        result.insert_or_assign("nullIn", ExpressionOperatorPrettyInfo{"IN", 9});
+        result.insert_or_assign("globalNullIn", ExpressionOperatorPrettyInfo{"IN", 9});
+        result.insert_or_assign("notNullIn", ExpressionOperatorPrettyInfo{"NOT IN", 9});
+        result.insert_or_assign("globalNotNullIn", ExpressionOperatorPrettyInfo{"NOT IN", 9});
+
+        return result;
+    }();
+
+    if (auto it = map.find(std::string{function_name}); it != map.end())
+        return it->second;
+    return std::nullopt;
+}
 
 bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
