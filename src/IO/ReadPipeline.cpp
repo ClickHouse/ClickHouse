@@ -100,7 +100,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
             auto cache_key = FileCacheKey::fromPath(object.remote_path);
             auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
 
-            auto impl_creator = [&pipeline_creator, cache_settings, &object]() mutable
+            auto impl_creator = [pipeline_creator, cache_settings, object]() mutable
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 return pipeline_creator(object, cache_settings);
