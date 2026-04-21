@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-ordinary-database, no-encrypted-storage
+# Tags: no-fasttest, no-replicated-database, no-ordinary-database, no-encrypted-storage, no-random-detach
 # Looks like server does not listen https port in fasttest
 # FIXME Replicated database executes ALTERs in separate context, so transaction info is lost
+# no-random-detach: uses transactions, which are incompatible with DETACH/ATTACH
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

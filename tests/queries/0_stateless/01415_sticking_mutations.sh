@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-random-detach
+# no-random-detach: test relies on mutations staying in progress; DETACH/ATTACH disrupts them
 
 set -e
 
