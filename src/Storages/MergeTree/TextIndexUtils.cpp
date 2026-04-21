@@ -342,6 +342,19 @@ void MergeTextIndexesTask::flushPostingList()
     {
         auto * positions_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
 
+        /// Entries from multiple source parts may interleave after doc_id remapping.
+        std::sort(output_positions.begin(), output_positions.end());
+
+        size_t out = 0;
+        for (size_t i = 1; i < output_positions.size(); ++i)
+        {
+            if (output_positions[out].sameBucket(output_positions[i]))
+                output_positions[out].mergeBitmap(output_positions[i]);
+            else
+                output_positions[++out] = output_positions[i];
+        }
+        output_positions.resize(out + 1);
+
         token_info.header |= PostingsSerialization::Flags::HasPositions;
         token_info.position_offset = positions_stream->plain_hashing.count();
         token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
