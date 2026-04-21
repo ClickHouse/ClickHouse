@@ -235,18 +235,31 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     return chunk;
 }
 
+void RemoteSource::cancel(CancelReason reason) noexcept
+{
+    cancel_reason.store(reason, std::memory_order_release);
+    ISource::cancel(reason);
+}
+
 void RemoteSource::onCancel() noexcept
 {
     try
     {
-        /// Use finish() instead of cancel() to drain remaining packets from the connection.
-        /// This ensures that Progress packets sent by replicas after data blocks are still
-        /// processed and accumulated in read_progress, so that the coordinator pipeline
-        /// can report accurate rows_read statistics.
-        /// Without this, fast queries with LIMIT and parallel replicas may show rows_read=0
-        /// because the replicas send Progress packets after all data blocks, and cancel()
+        /// For `PartialResult` (consumer has enough data, e.g. `LIMIT` satisfied), use `finish`
+        /// to drain remaining packets from the connection. This ensures `Progress` packets sent
+        /// by replicas after data blocks are still processed and accumulated in `read_progress`,
+        /// so that the coordinator pipeline can report accurate `rows_read` statistics.
+        /// Without this, fast queries with `LIMIT` and parallel replicas may show `rows_read=0`
+        /// because the replicas send `Progress` packets after all data blocks, and `cancel`
         /// would close the connection before they are received.
-        query_executor->finish();
+        /// For other reasons (user cancel, timeout, exception), use `cancel` to close the
+        /// connection immediately without waiting for remaining packets — this avoids long
+        /// delays when replicas are still processing and would otherwise take significant
+        /// time to reach end-of-stream (e.g. many streams in cluster functions).
+        if (cancel_reason.load(std::memory_order_acquire) == CancelReason::PartialResult)
+            query_executor->finish();
+        else
+            query_executor->cancel();
     }
     catch (...)
     {

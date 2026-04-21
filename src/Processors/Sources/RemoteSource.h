@@ -41,11 +41,14 @@ public:
 
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
+    void cancel(CancelReason reason) noexcept override;
+
 protected:
     std::optional<Chunk> tryGenerate() override;
     void onCancel() noexcept override;
 
 private:
+    std::atomic<CancelReason> cancel_reason{CancelReason::NotCancelled};
     std::atomic_bool was_query_sent = false;
     bool need_drain = false;
     bool add_aggregation_info = false;

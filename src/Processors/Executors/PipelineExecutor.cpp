@@ -272,16 +272,17 @@ void PipelineExecutor::finalizeExecution()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
 
     /// Ensure source processors' onCancel() handlers have run before collecting progress.
-    /// For cancelled pipelines, graph->cancel() was already called in cancel().
-    /// For normal completion (e.g. LIMIT satisfied with parallel replicas), we only
-    /// cancel source processors because RemoteSource::onCancel() calls
-    /// query_executor->finish() which drains remaining packets (including Progress)
-    /// from replica connections. Non-source processors should not be cancelled on a
-    /// successful completion path — their onCancel() handlers are not designed as
+    /// For cancelled pipelines, `graph->cancel` was already called in `cancel`.
+    /// For normal completion (e.g. `LIMIT` satisfied with parallel replicas), we cancel
+    /// with `PartialResult`, which only acts on source processors (`IProcessor::cancel`
+    /// returns early for non-sources when reason is `PartialResult`). `RemoteSource::onCancel`
+    /// calls `query_executor->finish` which drains remaining packets (including `Progress`)
+    /// from replica connections. Non-source processors must not be cancelled on the
+    /// successful completion path — their `onCancel` handlers are not designed as
     /// post-success cleanup hooks and may have unintended side effects.
     /// This is safe because all worker threads have been joined by this point.
     if (!is_cancelled)
-        graph->cancel(/*cancel_all_processors*/ false);
+        graph->cancel(IProcessor::CancelReason::PartialResult);
 
     /// Second pass: collect remaining progress from all processors.
     for (auto & node : graph->nodes)
