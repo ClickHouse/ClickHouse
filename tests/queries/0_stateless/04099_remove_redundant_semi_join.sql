@@ -1180,6 +1180,62 @@ SELECT count() FROM s_users u1
   SETTINGS optimize_remove_redundant_semi_join = 1;
 
 -- ============================================================================
+-- Symmetric / multi-candidate paths in the pairing loop
+-- ============================================================================
+
+SELECT '== T45: ANTI subset, stricter side written FIRST, drop the stricter (covers the symmetric ANTI branch) ==';
+SELECT '-- rows  opt=0 --';
+SELECT o.oid FROM orders o
+  LEFT ANTI JOIN (SELECT uid FROM users WHERE age = 33) u1 ON o.uid = u1.uid
+  LEFT ANTI JOIN users u2 ON o.uid = u2.uid
+  ORDER BY o.oid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- rows  opt=1 --';
+SELECT o.oid FROM orders o
+  LEFT ANTI JOIN (SELECT uid FROM users WHERE age = 33) u1 ON o.uid = u1.uid
+  LEFT ANTI JOIN users u2 ON o.uid = u2.uid
+  ORDER BY o.oid SETTINGS optimize_remove_redundant_semi_join = 1;
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT o.oid FROM orders o
+  LEFT ANTI JOIN (SELECT uid FROM users WHERE age = 33) u1 ON o.uid = u1.uid
+  LEFT ANTI JOIN users u2 ON o.uid = u2.uid
+  ORDER BY o.oid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT o.oid FROM orders o
+  LEFT ANTI JOIN (SELECT uid FROM users WHERE age = 33) u1 ON o.uid = u1.uid
+  LEFT ANTI JOIN users u2 ON o.uid = u2.uid
+  ORDER BY o.oid SETTINGS optimize_remove_redundant_semi_join = 1;
+
+SELECT '== T46: SEMI three-way in one bucket, the dropped one is later re-encountered (covers the already-removed-skip path) ==';
+SELECT '-- rows  opt=0 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN (SELECT * FROM users WHERE age = 33 AND active = 1) a ON u1.uid = a.uid
+  LEFT SEMI JOIN (SELECT * FROM users WHERE name LIKE 'B%')          b ON u1.uid = b.uid
+  LEFT SEMI JOIN (SELECT * FROM users WHERE age = 33)                c ON u1.uid = c.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- rows  opt=1 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN (SELECT * FROM users WHERE age = 33 AND active = 1) a ON u1.uid = a.uid
+  LEFT SEMI JOIN (SELECT * FROM users WHERE name LIKE 'B%')          b ON u1.uid = b.uid
+  LEFT SEMI JOIN (SELECT * FROM users WHERE age = 33)                c ON u1.uid = c.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN (SELECT * FROM users WHERE age = 33 AND active = 1) a ON u1.uid = a.uid
+  LEFT SEMI JOIN (SELECT * FROM users WHERE name LIKE 'B%')          b ON u1.uid = b.uid
+  LEFT SEMI JOIN (SELECT * FROM users WHERE age = 33)                c ON u1.uid = c.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN (SELECT * FROM users WHERE age = 33 AND active = 1) a ON u1.uid = a.uid
+  LEFT SEMI JOIN (SELECT * FROM users WHERE name LIKE 'B%')          b ON u1.uid = b.uid
+  LEFT SEMI JOIN (SELECT * FROM users WHERE age = 33)                c ON u1.uid = c.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+
+-- ============================================================================
 -- Cleanup
 -- ============================================================================
 DROP TABLE users;

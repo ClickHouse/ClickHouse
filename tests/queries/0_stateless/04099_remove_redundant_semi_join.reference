@@ -1499,3 +1499,71 @@ SEMI LEFT JOIN
     SAMPLE 1 / 2 OFFSET 1 / 2
 ) AS __table4 ON __table1.uid = __table4.uid
 SETTINGS optimize_remove_redundant_semi_join = 1
+== T45: ANTI subset, stricter side written FIRST, drop the stricter (covers the symmetric ANTI branch) ==
+-- rows  opt=0 --
+13
+-- rows  opt=1 --
+13
+-- query opt=0 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+ANTI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE __table3.age = 33
+) AS __table2 ON __table1.uid = __table2.uid
+ANTI LEFT JOIN default.users AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.oid AS oid
+FROM default.orders AS __table1
+ANTI LEFT JOIN default.users AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.oid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T46: SEMI three-way in one bucket, the dropped one is later re-encountered (covers the already-removed-skip path) ==
+-- rows  opt=0 --
+2
+-- rows  opt=1 --
+2
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (__table3.age = 33) AND (__table3.active = 1)
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE startsWith(__table5.name, \'B\')
+) AS __table4 ON __table1.uid = __table4.uid
+SEMI LEFT JOIN
+(
+    SELECT __table7.uid AS uid
+    FROM default.users AS __table7
+    WHERE __table7.age = 33
+) AS __table6 ON __table1.uid = __table6.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (__table3.age = 33) AND (__table3.active = 1)
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE startsWith(__table5.name, \'B\')
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
