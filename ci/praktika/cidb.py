@@ -285,6 +285,12 @@ ORDER BY day DESC
                     raise ex
                 time.sleep(2**attempt)
 
+    @staticmethod
+    def _prepare_request_body(data):
+        if isinstance(data, str):
+            return data.encode("utf-8")
+        return data
+
     def insert_rows(self, jsons, retries=3):
         params = {
             "database": Settings.CI_DB_DB_NAME,
@@ -299,7 +305,7 @@ ORDER BY day DESC
                 response = requests.post(
                     url=self.url,
                     params=params,
-                    data="\n".join(jsons),
+                    data=self._prepare_request_body("\n".join(jsons)),
                     headers=self.auth,
                     timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )
