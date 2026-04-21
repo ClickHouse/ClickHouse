@@ -35,6 +35,17 @@ namespace ErrorCodes
 }
 
 
+boost::intrusive_ptr<ASTFunction> makeASTLambda(std::initializer_list<String> param_names, ASTPtr && body)
+{
+    auto tuple = makeASTFunction("tuple");
+    auto & tuple_args = tuple->arguments->children;
+    tuple_args.reserve(param_names.size());
+    for (const auto & param_name : param_names)
+        tuple_args.emplace_back(make_intrusive<ASTIdentifier>(param_name));
+    return makeASTFunction("lambda", std::move(tuple), std::move(body));
+}
+
+
 void ASTFunction::setNoEmptyArgs(bool value)
 {
     flags<ASTFunctionFlags>().no_empty_args = value;

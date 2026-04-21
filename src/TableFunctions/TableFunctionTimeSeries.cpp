@@ -95,7 +95,7 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    return getTargetTable(context)->getInMemoryMetadataPtr()->columns;
+    return getTargetTable(context)->getInMemoryMetadataPtr(context, false)->columns;
 }
 
 template <ViewTarget::Kind target_kind>

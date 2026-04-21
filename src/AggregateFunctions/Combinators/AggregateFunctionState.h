@@ -109,6 +109,11 @@ public:
         nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
     }
 
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        nested_func->parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);

@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -48,8 +49,6 @@
 #include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageDistributed.h>
-#include <Storages/StorageMerge.h>
 
 namespace ProfileEvents
 {
@@ -73,6 +72,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
+    extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
 }
 
@@ -388,11 +388,11 @@ bool MutationsInterpreter::Source::isCompactPart() const
     return part && part->getType() == MergeTreeDataPartType::Compact;
 }
 
-static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot, const IStorage & storage)
+static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot)
 {
-    auto all_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
-    auto virtuals = storage.getVirtualsPtr();
-    for (const auto & column : *virtuals)
+    auto all_columns = metadata_snapshot->columns.getNamesOfPhysical();
+    const auto & virtuals = metadata_snapshot->virtuals;
+    for (const auto & column : virtuals)
         all_columns.push_back(column.name);
     return all_columns;
 }
@@ -405,7 +405,7 @@ MutationsInterpreter::MutationsInterpreter(
     Settings settings_)
     : MutationsInterpreter(
         storage_, metadata_snapshot_, std::move(commands_),
-        getAvailableColumnsWithVirtuals(metadata_snapshot_, *storage_),
+        getAvailableColumnsWithVirtuals(metadata_snapshot_),
         std::move(context_), std::move(settings_))
 {
 }
@@ -455,7 +455,7 @@ MutationsInterpreter::MutationsInterpreter(
     }
 
     const auto & part_columns = source_part_->getColumnsDescription();
-    auto persistent_virtuals = storage_.getVirtualsPtr()->getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
+    auto persistent_virtuals = metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
     for (const auto & column : persistent_virtuals)
@@ -525,10 +525,8 @@ static void validateUpdateColumns(
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context, false);
     NameSet key_columns = getKeyColumns(source, metadata_snapshot);
 
-    const auto & storage_columns = storage_snapshot->metadata->getColumns();
-    const auto & virtual_columns = *storage_snapshot->virtual_columns;
-    const auto common_virtual_columns = storage_snapshot->storage.getCommonVirtuals(storage_snapshot->virtual_columns);
-
+    const auto & storage_columns = storage_snapshot->metadata->columns;
+    const auto & virtual_columns = storage_snapshot->metadata->virtuals;
     for (const auto & column_name : updated_columns)
     {
         if (key_columns.contains(column_name))
@@ -560,7 +558,7 @@ static void validateUpdateColumns(
                 if (!source.supportsLightweightDelete())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
             }
-            else if (virtual_columns.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All) || common_virtual_columns->tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
+            else if (virtual_columns.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
             }
@@ -615,33 +613,6 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     }
 
     return res;
-}
-
-static bool extractRequiredNonTableColumnsFromStorage(
-    const Names & columns_names,
-    const StoragePtr & storage,
-    const StorageSnapshotPtr & storage_snapshot,
-    Names & extracted_column_names)
-{
-    if (std::dynamic_pointer_cast<StorageMerge>(storage))
-        return false;
-
-    if (std::dynamic_pointer_cast<StorageDistributed>(storage))
-        return false;
-
-    if (storage->getVirtualsPtr()->has("_table"))
-        return false;
-
-    bool has_table_virtual_column = false;
-    for (const auto & column_name : columns_names)
-    {
-        if (column_name == "_table" && storage->isVirtualColumn(column_name, storage_snapshot->metadata))
-            has_table_virtual_column = true;
-        else
-            extracted_column_names.push_back(column_name);
-    }
-
-    return has_table_virtual_column;
 }
 
 void MutationsInterpreter::prepare(bool dry_run)
@@ -708,7 +679,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (const auto & column : columns_desc)
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized && available_columns_set.contains(column.name))
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                && available_columns_set.contains(column.name)
+                && column.default_desc.expression)
             {
                 auto query = column.default_desc.expression->clone();
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
@@ -878,8 +851,12 @@ void MutationsInterpreter::prepare(bool dry_run)
                 auto type_literal = make_intrusive<ASTLiteral>(type->getName());
                 ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command);
 
-                /// And new check validateNestedArraySizes for Nested subcolumns
-                if (isArray(type) && !Nested::splitName(column_name).second.empty())
+                /// And new check validateNestedArraySizes for Nested subcolumns.
+                /// When share_nested_offsets is disabled, sibling Array columns are independent
+                /// and their sizes don't need to match.
+                bool skip_nested_validation = source.getMergeTreeData()
+                    && !(*source.getMergeTreeData()->getSettings())[MergeTreeSetting::share_nested_offsets];
+                if (!skip_nested_validation && isArray(type) && !Nested::splitName(column_name).second.empty())
                 {
                     boost::intrusive_ptr<ASTFunction> function = nullptr;
 
@@ -919,7 +896,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 for (const auto & column : columns_desc)
                 {
                     if (column.default_desc.kind == ColumnDefaultKind::Materialized
-                        && affected_materialized.contains(column.name))
+                        && affected_materialized.contains(column.name)
+                        && column.default_desc.expression)
                     {
                         auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
@@ -1227,7 +1205,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & column : columns_desc)
             {
                 if (column.default_desc.kind != ColumnDefaultKind::Materialized
-                    || !available_columns_set.contains(column.name))
+                    || !available_columns_set.contains(column.name)
+                    || !column.default_desc.expression)
                     continue;
 
                 auto query = column.default_desc.expression->clone();
@@ -1361,7 +1340,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         stages.emplace_back(context);
         for (const auto & column : columns_desc)
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                && column.default_desc.expression)
             {
                 auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
@@ -1713,25 +1693,7 @@ void MutationsInterpreter::Source::read(
         query_info.filter_actions_dag = std::move(filter_actions_dag);
 
         size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];
-        Names extracted_column_names;
-        const auto has_table_virtual_column
-            = extractRequiredNonTableColumnsFromStorage(required_columns, storage, storage_snapshot, extracted_column_names);
-
-        storage->read(plan, has_table_virtual_column ? extracted_column_names : required_columns, storage_snapshot,
-            query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, mutation_settings.max_threads);
-
-        if (has_table_virtual_column && plan.isInitialized())
-        {
-            const auto & table_name = storage->getStorageID().getTableName();
-            ColumnWithTypeAndName column;
-            column.name = "_table";
-            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-            column.column = column.type->createColumnConst(0, Field(table_name));
-
-            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto expression_step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(adding_column_dag));
-            plan.addStep(std::move(expression_step));
-        }
+        storage->read(plan, required_columns, storage_snapshot, query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, mutation_settings.max_threads);
 
         if (!plan.isInitialized())
         {

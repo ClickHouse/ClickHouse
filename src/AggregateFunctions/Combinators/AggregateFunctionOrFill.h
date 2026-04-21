@@ -4,10 +4,9 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/memory.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -80,7 +79,8 @@ public:
 
     size_t sizeOfData() const override
     {
-        return size_of_data + sizeof(char);
+        /// Pad to alignment so that arrays of states (e.g. in -ForEach) keep each element aligned.
+        return ::Memory::alignUp(size_of_data + sizeof(char), alignOfData());
     }
 
     size_t alignOfData() const override
