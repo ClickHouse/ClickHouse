@@ -63,9 +63,6 @@
 #include <Disks/registerDisks.h>
 
 /// A minimal file used when the keeper is run without installation
-///
-/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to
-/// make a scratch build.
 constexpr unsigned char keeper_resource_embedded_xml[] =
 {
 #embed "keeper_embedded.xml"
@@ -450,6 +447,11 @@ try
         listen_hosts.emplace_back("127.0.0.1");
         listen_try = true;
     }
+
+#if USE_SSL
+    CertificateReloader::instance().tryLoad(config());
+    CertificateReloader::instance().tryLoadClient(config());
+#endif
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
     global_context->initializeKeeperDispatcher(/* start_async = */ false);

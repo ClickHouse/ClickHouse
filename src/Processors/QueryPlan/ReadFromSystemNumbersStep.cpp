@@ -213,7 +213,7 @@ private:
 protected:
     Chunk generate() override
     {
-        if (ranges.empty())
+        if (ranges.empty() || isCancelled())
             return {};
 
         /// Find the data range.
@@ -236,7 +236,7 @@ protected:
         UInt64 provided = 0;
         RangesPos cursor = start;
 
-        while (provided < block_size)
+        while (provided < block_size && !isCancelled())
         {
             chassert(cursor.offset_in_ranges < ranges.size());
 
@@ -269,10 +269,13 @@ protected:
             }
         }
 
-        chassert(provided == block_size);
-        progress(column->size(), column->byteSize());
+        if (isCancelled())
+            column->popBack(block_size - provided);
+        else
+            chassert(provided == block_size);
 
-        return {Columns{std::move(column)}, block_size};
+        progress(column->size(), column->byteSize());
+        return {Columns{std::move(column)}, provided};
     }
 
 private:
@@ -366,7 +369,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
         context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, {}, context, false).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
     , storage_limits(query_info.storage_limits)

@@ -14,9 +14,10 @@ INSERT INTO rhs SELECT * FROM numbers_mt(1e6);
 SET enable_parallel_replicas = 0; -- join swap/reordering disabled with parallel replicas
 SET enable_analyzer = 1, query_plan_join_swap_table = 'auto';
 SET join_algorithm='hash';
+SET query_plan_optimize_join_order_limit = 10; -- CI may inject 0; anti join table swap runs inside chooseJoinOrder and is skipped when the limit is 0
 
 -- swap LEFT ANTI join to RIGHT ANTI join
-SELECT *
+SELECT trimLeft(explain)
 FROM (
     EXPLAIN actions=1
     SELECT *
@@ -40,7 +41,7 @@ FROM system.query_log
 WHERE log_comment = '03927_left_anti_join_swap_tables' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= NOW() - INTERVAL '10 MINUTE';
 
 -- swap RIGHT ANTI join to LEFT ANTI join
-SELECT *
+SELECT trimLeft(explain)
 FROM (
     EXPLAIN actions=1
     SELECT *
