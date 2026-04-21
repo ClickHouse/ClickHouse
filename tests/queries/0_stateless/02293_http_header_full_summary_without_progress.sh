@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-llvm-coverage
+# no-llvm-coverage: the test relies on HTTP-level timing (max-time 10, max_execution_time 2) to
+# produce a 408 response and an X-ClickHouse-Summary header. LLVM source-based coverage
+# instrumentation slows the server enough that curl sometimes times out before any summary
+# header is emitted, leaving $READ_ROWS empty and failing line 27 with
+# "[: : integer expression expected". See PRs #103287, #103288, #103219, #103226.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
