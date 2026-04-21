@@ -807,7 +807,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
 
-    pipeline.setNumThreads(max_threads);
+    /// When materialized views are attached, their inner SELECT queries benefit
+    /// from full parallelism, so we use max_threads. Without MVs the insert
+    /// pipeline is 1-wide and requesting max_threads would only waste
+    /// ConcurrencyControl slots and spawn unnecessary threads (see #102947).
+    pipeline.setNumThreads(insert_dependencies->isViewsInvolved() ? max_threads : max_insert_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)
