@@ -816,16 +816,9 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
     if (!positions_stream || search_query->phrase_tokens.empty())
         return;
 
-    /// Build a cache key from the function name + phrase tokens.
-    /// For the same phrase query, the result is the same across marks within a granule.
-    String cache_key = search_query->function_name;
-    for (const auto & token : search_query->phrase_tokens)
-    {
-        cache_key += '|';
-        cache_key += token;
-    }
-
+    auto cache_key = search_query->getHash().get128();
     auto cache_it = cached_phrase_results.find(cache_key);
+
     if (cache_it == cached_phrase_results.end())
     {
         /// Cache miss: read position data and compute phrase intersection.

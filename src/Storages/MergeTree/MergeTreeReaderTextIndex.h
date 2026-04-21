@@ -103,7 +103,7 @@ private:
     /// Stream for position data (.pos file) used for phrase queries.
     std::unique_ptr<MergeTreeReaderStream> positions_stream;
     /// Cached phrase search results per virtual column, computed once per granule.
-    absl::flat_hash_map<String, std::vector<UInt32>> cached_phrase_results;
+    absl::flat_hash_map<UInt128, std::vector<UInt32>> cached_phrase_results;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
