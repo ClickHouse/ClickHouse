@@ -29,6 +29,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
@@ -826,7 +827,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB requires at least one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     for (const auto & primary_key_name : primary_key_names)
     {
