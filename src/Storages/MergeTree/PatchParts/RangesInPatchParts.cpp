@@ -232,15 +232,12 @@ MarkRanges getRangesInPatchPartMergeOnKey(
     size_t max_granule_end = 0;
     for (const auto & range : original_ranges)
     {
-        if (range.begin < min_granule)
-            min_granule = range.begin;
-        if (range.end > max_granule_end)
-            max_granule_end = range.end;
+        min_granule = std::min(range.begin, min_granule);
+        max_granule_end = std::max(range.end, max_granule_end);
     }
     if (min_granule >= main_marks_count)
         return {};
-    if (max_granule_end > main_marks_count)
-        max_granule_end = main_marks_count;
+    max_granule_end = std::min(max_granule_end, main_marks_count);
 
     const size_t n_patch = patch_sk.size();
 
