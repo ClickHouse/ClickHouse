@@ -19,13 +19,16 @@
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -64,9 +67,11 @@ namespace ErrorCodes
 namespace
 {
     /// Walk the AST and expand parameterized view "table function" calls into their inlined,
-    /// parameter-substituted subqueries. This is used by EXPLAIN SYNTAX in the analyzer path so
-    /// users can see the resolved query behind a parameterized view. The legacy non-analyzer
-    /// path already does this via `StorageView::replaceWithSubquery` during analysis.
+    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
+    ///
+    /// In the analyzer path, without this expansion the query tree would show the unexpanded
+    /// table function call. In the legacy path, `ExplainAnalyzedSyntaxMatcher` also performs
+    /// this via `InterpreterSelectQuery`, so this visitor is redundant there but harmless.
     struct ExpandParameterizedViewsMatcher
     {
         struct Data : public WithContext
@@ -82,23 +87,35 @@ namespace
         static void visit(ASTPtr & ast, Data & data)
         {
             if (auto * select = ast->as<ASTSelectQuery>())
-                expandFirstTable(*select, data);
+                expandTables(*select, data);
         }
 
-        static void expandFirstTable(ASTSelectQuery & select, const Data & data)
+        /// Iterate all table expressions in the SELECT (FROM and JOINs) and expand
+        /// any that are parameterized view calls.
+        static void expandTables(ASTSelectQuery & select, const Data & data)
         {
             if (!select.tables() || select.tables()->children.empty())
                 return;
 
-            auto * table_element = select.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
-            if (!table_element || !table_element->table_expression)
-                return;
+            for (auto & child : select.tables()->children)
+            {
+                auto * table_element = child->as<ASTTablesInSelectQueryElement>();
+                if (!table_element || !table_element->table_expression)
+                    continue;
 
-            auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
-            if (!table_expr || !table_expr->table_function)
-                return;
+                auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
+                if (!table_expr || !table_expr->table_function)
+                    continue;
 
-            const auto * func = table_expr->table_function->as<ASTFunction>();
+                tryExpandTableExpression(*table_expr, data);
+            }
+        }
+
+        /// If the table expression is a parameterized view call, replace it with
+        /// the parameter-substituted inner query as a subquery.
+        static void tryExpandTableExpression(ASTTableExpression & table_expr, const Data & data)
+        {
+            const auto * func = table_expr.table_function->as<ASTFunction>();
             if (!func)
                 return;
 
@@ -111,9 +128,7 @@ namespace
                 std::vector<std::string> parts;
                 splitInto<'.'>(parts, func->name);
                 if (parts.size() != 2)
-                {
                     return;
-                }
                 database_name = parts[0];
                 table_name = parts[1];
             }
@@ -128,11 +143,23 @@ namespace
 
             auto view_query = storage->getInMemoryMetadataPtr(query_context, false)
                                  ->getSelectQuery().inner_query->clone();
-            NameToNameMap parameter_values = analyzeFunctionParamValues(table_expr->table_function, query_context);
+            NameToNameMap parameter_values = analyzeFunctionParamValues(table_expr.table_function, query_context);
             StorageView::replaceQueryParametersIfParameterizedView(view_query, parameter_values);
 
-            ASTPtr dummy_view_name;
-            StorageView::replaceWithSubquery(select, std::move(view_query), dummy_view_name, /*parameterized_view=*/ true);
+            /// Replace the table function with a subquery in-place on this table expression,
+            /// rather than using `StorageView::replaceWithSubquery` which only handles the
+            /// first table expression in the SELECT. The alias for the wrapping subquery is the
+            /// view's table name, so the rendered `EXPLAIN SYNTAX` keeps referring to the view.
+            ASTPtr view_identifier = make_intrusive<ASTTableIdentifier>(func->name);
+            DatabaseAndTableWithAlias db_table(view_identifier);
+            String alias = db_table.alias.empty() ? db_table.table : db_table.alias;
+
+            table_expr.table_function = nullptr;
+            table_expr.subquery = make_intrusive<ASTSubquery>(std::move(view_query));
+            table_expr.subquery->setAlias(alias);
+
+            table_expr.children.clear();
+            table_expr.children.push_back(table_expr.subquery);
         }
     };
 

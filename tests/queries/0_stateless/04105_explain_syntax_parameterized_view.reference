@@ -36,3 +36,11 @@ FROM
         WHERE number > 10
     ) AS `04105_pv`
 )
+SELECT *
+FROM `04105_join_target`
+ALL INNER JOIN
+(
+    SELECT number
+    FROM numbers(_CAST(10, \'UInt64\'))
+    WHERE number > 10
+) AS `04105_pv` USING (number)

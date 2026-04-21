@@ -2,12 +2,14 @@
 -- EXPLAIN SYNTAX should inline parameterized view calls with their parameter-substituted
 -- inner queries, so users can see what the view expands to.
 
+DROP TABLE IF EXISTS 04105_join_target;
 DROP VIEW IF EXISTS 04105_pv;
 DROP VIEW IF EXISTS 04105_pv_multi;
 DROP VIEW IF EXISTS 04105_pv_nested_inner;
 DROP VIEW IF EXISTS 04105_pv_nested_outer;
 DROP VIEW IF EXISTS 04105_plain_view;
 
+CREATE TABLE 04105_join_target (number UInt64) ENGINE = Memory;
 CREATE VIEW 04105_pv AS SELECT number FROM numbers({n:UInt64}) WHERE number > 10;
 CREATE VIEW 04105_pv_multi AS SELECT number FROM numbers({n:UInt64}) WHERE number > {m:UInt64};
 CREATE VIEW 04105_pv_nested_inner AS SELECT number FROM numbers({n:UInt64});
@@ -29,6 +31,10 @@ EXPLAIN SYNTAX SELECT * FROM 04105_plain_view;
 -- Subquery in outer query references a parameterized view.
 EXPLAIN SYNTAX SELECT * FROM (SELECT number FROM 04105_pv(n = 12));
 
+-- Parameterized view in JOIN position should also be expanded.
+EXPLAIN SYNTAX SELECT * FROM 04105_join_target JOIN 04105_pv(n = 10) USING number;
+
+DROP TABLE 04105_join_target;
 DROP VIEW 04105_pv;
 DROP VIEW 04105_pv_multi;
 DROP VIEW 04105_pv_nested_outer;
