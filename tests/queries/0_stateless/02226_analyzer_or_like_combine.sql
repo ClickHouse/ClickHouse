@@ -45,7 +45,7 @@ SELECT materialize('Hello World') AS s WHERE (s LIKE 'hello%') OR match(s, 'wor.
 EXPLAIN SYNTAX SELECT materialize('test string') AS s WHERE match(s, '^test') OR match(s, 'ing$') SETTINGS optimize_or_like_chain = 1;
 SELECT materialize('test string') AS s WHERE match(s, '^test') OR match(s, 'ing$') SETTINGS optimize_or_like_chain = 1;
 
--- Test pure substring patterns (should use multiSearchAny instead of multiMatchAny)
+-- Test pure substring patterns (should use `multiSearchAny`)
 EXPLAIN SYNTAX SELECT materialize('Hello World') AS s WHERE (s LIKE '%Hello%') OR (s LIKE '%World%') SETTINGS optimize_or_like_chain = 1;
 EXPLAIN QUERY TREE run_passes=1 SELECT materialize('Hello World') AS s WHERE (s LIKE '%Hello%') OR (s LIKE '%World%') SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1;
 
