@@ -3653,3 +3653,123 @@ def test_hiding_credentials(rabbitmq_cluster, db, unique):
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE {db}.{table_name}%'")
     assert "rabbitmq_password = \\'[HIDDEN]\\'" in  message
     assert "rabbitmq_address = \\'amqp://root:[HIDDEN]@rabbitmq1:5672/\\'" in  message
+
+
+def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique):
+    """When rabbitmq_handle_error_mode = 'default' and a message fails to parse,
+    the message must be properly nack'd (not left permanently unacked).
+    Regression test for https://github.com/ClickHouse/ClickHouse/issues/73541
+    """
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    deadletter_exchange = f"{unique}_dlx"
+    deadletter_queue = f"{unique}_dlq"
+    channel.exchange_declare(exchange=deadletter_exchange)
+    channel.queue_declare(queue=deadletter_queue)
+    channel.queue_bind(exchange=deadletter_exchange, routing_key="", queue=deadletter_queue)
+
+    exchange = f"{unique}_exchange"
+
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbit (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 1000,
+                     rabbitmq_queue_settings_list = 'x-dead-letter-exchange={deadletter_exchange}';
+
+        CREATE TABLE {db}.data (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW {db}.view TO {db}.data AS
+            SELECT key, value FROM {db}.rabbit;
+        """
+    )
+
+    num_bad = 10
+    for i in range(num_bad):
+        # String value for a UInt64 column triggers a parse error in DEFAULT mode
+        channel.basic_publish(
+            exchange=exchange, routing_key="",
+            body=json.dumps({"key": f"not_a_number_{i}", "value": i}),
+        )
+
+    # Wait for the error to appear in logs, proving the messages were consumed
+    instance.wait_for_log_line("Failed to push to views.*Cannot parse input")
+
+    # Bad messages must arrive in the dead-letter queue (proving they were nack'd)
+    dead_letters = []
+
+    def on_dead_letter(ch, method, properties, body):
+        dead_letters.append(body)
+        if len(dead_letters) == num_bad:
+            ch.stop_consuming()
+
+    channel.basic_consume(deadletter_queue, on_dead_letter, auto_ack=True)
+    deadline = time.monotonic() + 30
+    while len(dead_letters) < 1 and time.monotonic() < deadline:
+        connection.process_data_events(time_limit=1)
+
+    # In DEFAULT mode each streaming iteration processes one bad message before
+    # the exception aborts the pipeline, so collecting all 10 takes many cycles.
+    # Asserting >= 1 is sufficient: before the fix we would get 0 (messages
+    # stayed permanently unacked instead of being nack'd to the DLX).
+    assert len(dead_letters) >= 1, (
+        "No dead-lettered messages received within 30 seconds. "
+        "Messages were likely left permanently unacked instead of being nack'd."
+    )
+
+    # Now publish good messages and verify they are consumed
+    num_good = 10
+    for i in range(num_good):
+        channel.basic_publish(
+            exchange=exchange, routing_key="",
+            body=json.dumps({"key": i, "value": i}),
+        )
+
+    check_expected_result_polling(num_good, f"SELECT count() FROM {db}.data")
+
+    channel.queue_delete(deadletter_queue)
+    channel.exchange_delete(deadletter_exchange)
+    connection.close()
+
+
+def test_connection_info_logging_with_rabbitmq_address(rabbitmq_cluster, db, unique):
+    """Verify that reconnection logs show the actual connection address,
+    not ':0', when rabbitmq_address is used instead of rabbitmq_host_port."""
+
+    # Create a table using rabbitmq_address (connection string)
+    instance.query(f"""                                                       
+        CREATE TABLE {db}.rmq_addr_log (key UInt64, value String)
+        ENGINE = RabbitMQ                                                     
+        SETTINGS rabbitmq_address = 'amqp://root:clickhouse@{rabbitmq_cluster.rabbitmq_host}:5672/', rabbitmq_exchange_name = '{unique}_addr_log_exchange', rabbitmq_format = 'JSONEachRow';                              
+        CREATE TABLE {db}.rmq_addr_log_dst (key UInt64, value String)
+        ENGINE = MergeTree ORDER BY key;                                  
+        CREATE MATERIALIZED VIEW {db}.rmq_addr_log_mv TO {db}.rmq_addr_log_dst AS 
+        SELECT * FROM {db}.rmq_addr_log;
+    """)
+    instance.query(f"DETACH TABLE {db}.rmq_addr_log")
+
+    # disconnect/reconnect by briefly pausing RabbitMQ
+    with rabbitmq_cluster.pause_rabbitmq():
+        # forces a reconnection
+        instance.query(f"ATTACH TABLE {db}.rmq_addr_log")
+        instance.wait_for_log_line("Trying to restore connection to")
+
+    # Check server logs for the reconnection message
+    log = instance.grep_in_log("Trying to restore connection to")
+    assert 'Trying to restore connection to :0' not in log, \
+        f"Log contains ':0' instead of actual address: {log}"
+    assert rabbitmq_cluster.rabbitmq_host + ":" + str(rabbitmq_cluster.rabbitmq_port) in log, \
+        f"Log should contain the actual connection address: {log}"
+    assert 'root:clickhouse' not in log
+
+    instance.query(f"DROP TABLE {db}.rmq_addr_log_mv; DROP TABLE {db}.rmq_addr_log; DROP TABLE {db}.rmq_addr_log_dst;")

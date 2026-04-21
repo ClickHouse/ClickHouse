@@ -5,7 +5,7 @@
 
 #include <Disks/IDisk.h>
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
@@ -24,7 +24,7 @@ using BackupPtr = std::shared_ptr<const IBackup>;
   * Also implements TinyLog - a table engine that is suitable for small chunks of the log.
   * It differs from Log in the absence of mark files.
   */
-class StorageLog final : public IStorage, public WithMutableContext
+class StorageLog final : public StorageWithCommonVirtualColumns, public WithMutableContext
 {
     friend class LogSource;
     friend class LogSink;
@@ -56,7 +56,7 @@ public:
         size_t num_streams
     );
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

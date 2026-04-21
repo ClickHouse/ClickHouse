@@ -9,6 +9,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Common/CurrentThread.h>
+#include <Common/HashTable/FixedHashMap.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
@@ -1962,12 +1963,21 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
     }
 }
 
+/// We should not rerange the right table on such conditions:
+/// 1. The right table is already reranged by key, or it is empty.
+/// 2. The join clauses size is greater than 1, for example:
+///    `...join on a.key1=b.key1 or a.key2=b.key2`.
+///    We cannot rerange the right table on different sets of keys.
+/// 3. The number of right table rows exceeds the threshold, which may
+///    results in a significant cost for reranging and performance degradation.
+/// 4. The keys of the right table are very sparse, which may result in
+///    insignificant performance improvement after reranging by key.
 bool HashJoin::rightTableCanBeReranged() const
 {
-    return table_join->allowJoinSorting()
-            && !table_join->getMixedJoinExpression()
-            && isInnerOrLeft(kind)
-            && strictness == JoinStrictness::All;
+    return table_join->allowJoinSorting() && !table_join->getMixedJoinExpression() && isInnerOrLeft(kind)
+        && strictness == JoinStrictness::All && data && !data->sorted && !data->columns.empty() && data->maps.size() == 1
+        && data->rows_to_join <= table_join->sortRightMaximumTableRows()
+        && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows();
 }
 
 size_t HashJoin::getAndSetRightTableKeys() const
@@ -1982,25 +1992,6 @@ void HashJoin::tryRerangeRightTableData()
 {
     if (!rightTableCanBeReranged())
         return;
-
-    /// We should not rerange the right table on such conditions:
-    /// 1. The right table is already reranged by key, or it is empty.
-    /// 2. The join clauses size is greater than 1, for example:
-    ///    `...join on a.key1=b.key1 or a.key2=b.key2`.
-    ///    We cannot rerange the right table on different sets of keys.
-    /// 3. The number of right table rows exceeds the threshold, which may
-    ///    results in a significant cost for reranging and performance degradation.
-    /// 4. The keys of the right table are very sparse, which may result in
-    ///    insignificant performance improvement after reranging by key.
-    if (!data
-        || data->sorted
-        || data->columns.empty()
-        || data->maps.size() != 1
-        || data->rows_to_join > table_join->sortRightMaximumTableRows()
-        || data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
-    {
-        return;
-    }
 
     if (data->keys_to_join == 0)
         data->keys_to_join = getTotalRowCount();
@@ -2022,25 +2013,196 @@ void HashJoin::tryRerangeRightTableData()
     data->sorted = true;
 }
 
+template <bool is_signed, typename Key, typename MapsTemplate>
+void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
+{
+    using SignedKey = std::make_signed_t<Key>;
+
+    static constexpr size_t MAX_RANGE = (1ULL << 18);
+    /// Limits conversion to cases where FixedHashMaps larger than 2^16 have at least 25% fill factor,
+    /// ensuring they use at most around twice the memory of the source HashMap.
+    static constexpr size_t MAX_RANGE_SPARSITY_FACTOR = 4;
+
+    auto & source_map = [&]() -> auto &
+    {
+        if constexpr (std::is_same_v<Key, UInt32>)
+            return *maps.key32;
+        else
+            return *maps.key64;
+    }();
+
+    if (source_map.empty() || source_map.size() > MAX_RANGE)
+        return;
+
+    size_t key_count = source_map.size();
+    auto it = source_map.begin();
+    Key min_key = it->getKey();
+    Key max_key = it->getKey();
+    ++it;
+
+    /// Keys are stored as unsigned (UInt32/UInt64) in the hash map, but the original column
+    /// may be signed (Int32/Int64). We must compare using signed arithmetic to find the true
+    /// min/max
+    for (; it != source_map.end(); ++it)
+    {
+        Key k = it->getKey();
+        if constexpr (is_signed)
+        {
+            SignedKey sk = static_cast<SignedKey>(k);
+            if (sk < static_cast<SignedKey>(min_key))
+                min_key = k;
+            if (sk > static_cast<SignedKey>(max_key))
+                max_key = k;
+        }
+        else
+        {
+            if (k < min_key)
+                min_key = k;
+            if (k > max_key)
+                max_key = k;
+        }
+
+        if (static_cast<size_t>(max_key - min_key) >= MAX_RANGE)
+            return;
+    }
+
+    size_t range = static_cast<size_t>(max_key - min_key) + 1;
+
+    using Mapped = typename std::decay_t<decltype(source_map)>::mapped_type;
+    auto convert_to_fixed_hash_map = [&]<size_t size_bits>(auto & dst_map, Type type)
+    {
+        using RangeMap = FixedHashMapWithSizeBits<Key, Mapped, size_bits>;
+        auto range_map = std::make_shared<RangeMap>();
+        for (auto source_map_it = source_map.begin(); source_map_it != source_map.end(); ++source_map_it)
+        {
+            typename RangeMap::LookupResult res;
+            bool inserted;
+            range_map->emplace(source_map_it->getKey() - min_key, res, inserted);
+            if (inserted)
+                res->getMapped() = source_map_it->getMapped();
+        }
+        dst_map = std::move(range_map);
+        data->key_range = {min_key, range};
+        data->type = type;
+    };
+
+    auto dispatch_conversion =
+        [&](auto & range8, Type type8, auto & range16, Type type16, auto & range17, Type type17, auto & range18, Type type18, auto & source)
+    {
+        if (range <= (1ULL << 8))
+            convert_to_fixed_hash_map.template operator()<8>(range8, type8);
+        else if (range <= (1ULL << 16))
+            convert_to_fixed_hash_map.template operator()<16>(range16, type16);
+        else if (range <= (1ULL << 17))
+        {
+            if ((1ULL << 17) > key_count * MAX_RANGE_SPARSITY_FACTOR)
+                return false;
+            convert_to_fixed_hash_map.template operator()<17>(range17, type17);
+        }
+        else
+        {
+            if ((1ULL << 18) > key_count * MAX_RANGE_SPARSITY_FACTOR)
+                return false;
+            convert_to_fixed_hash_map.template operator()<18>(range18, type18);
+        }
+        source.reset();
+        return true;
+    };
+
+    bool result = false;
+    if constexpr (std::is_same_v<Key, UInt32>)
+        result = dispatch_conversion(
+            maps.range8_key32,
+            Type::range8_key32,
+            maps.range16_key32,
+            Type::range16_key32,
+            maps.range17_key32,
+            Type::range17_key32,
+            maps.range18_key32,
+            Type::range18_key32,
+            maps.key32);
+    else
+        result = dispatch_conversion(
+            maps.range8_key64,
+            Type::range8_key64,
+            maps.range16_key64,
+            Type::range16_key64,
+            maps.range17_key64,
+            Type::range17_key64,
+            maps.range18_key64,
+            Type::range18_key64,
+            maps.key64);
+
+    if (result)
+        LOG_DEBUG(log, "{}Converted join hash map to fixed hash map (range: {}, keys: {})", instance_log_id, range, key_count);
+}
+
+bool HashJoin::canConvertToFixedHashMap() const
+{
+    return !conversion_to_fixed_hash_map_attempted && data && data->rows_to_join && table_join->enableJoinFixedHashTableConversion()
+        && (data->type == Type::key32 || data->type == Type::key64) && data->maps.size() == 1 && strictness != JoinStrictness::Asof;
+}
+
+void HashJoin::reinitUsedFlags()
+{
+    if (needUsedFlagsForPerRightTableRow(table_join))
+        return;
+
+    const bool prefer_use_maps_all = preferUseMapsAll();
+    for (auto & map : data->maps)
+    {
+        joinDispatch(
+            kind,
+            strictness,
+            map,
+            prefer_use_maps_all,
+            [this](auto kind_, auto strictness_, auto & map_)
+            {
+                used_flags->reinitAllowShrinking<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(
+                    map_.getBufferSizeInCells(data->type) + 1);
+            });
+    }
+}
+
+void HashJoin::tryConvertToFixedHashMap()
+{
+    if (!canConvertToFixedHashMap())
+        return;
+
+    conversion_to_fixed_hash_map_attempted = true;
+    const Type old_type = data->type;
+    std::visit(
+        [&](auto & map)
+        {
+            using MapType = std::decay_t<decltype(map)>;
+            if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll>)
+            {
+                bool is_signed = !right_table_keys.getByPosition(0).type->isValueRepresentedByUnsignedInteger();
+                if (data->type == Type::key32)
+                {
+                    if (is_signed)
+                        tryConvertToFixedHashMapImpl<true, UInt32>(map);
+                    else
+                        tryConvertToFixedHashMapImpl<false, UInt32>(map);
+                }
+                else
+                {
+                    if (is_signed)
+                        tryConvertToFixedHashMapImpl<true, UInt64>(map);
+                    else
+                        tryConvertToFixedHashMapImpl<false, UInt64>(map);
+                }
+            }
+        },
+        data->maps.front());
+
+    if (data->type != old_type)
+        reinitUsedFlags();
+}
+
 void HashJoin::onBuildPhaseFinish()
 {
-    if (!needUsedFlagsForPerRightTableRow(table_join))
-    {
-        const bool prefer_use_maps_all = preferUseMapsAll();
-        for (auto & map : data->maps)
-        {
-            joinDispatch(
-                kind,
-                strictness,
-                map,
-                prefer_use_maps_all,
-                [this](auto kind_, auto strictness_, auto & map_)
-                {
-                    used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(
-                        map_.getBufferSizeInCells(data->type) + 1);
-                });
-        }
-    }
+    reinitUsedFlags();
 
     if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind) && data->maps.size() == 1)
     {
@@ -2051,5 +2213,16 @@ void HashJoin::onBuildPhaseFinish()
     updateNonJoinedRowsStatus();
 
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
+}
+
+bool HashJoin::hasPostBuildPhase() const
+{
+    return rightTableCanBeReranged() || canConvertToFixedHashMap();
+}
+
+void HashJoin::runPostBuildPhase()
+{
+    tryRerangeRightTableData();
+    tryConvertToFixedHashMap();
 }
 }
