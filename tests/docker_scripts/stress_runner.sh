@@ -94,7 +94,11 @@ if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     TEMP_POLICY="azure_cache"
 else
-    random=$((RANDOM % 3))
+    if [[ -n "$AZURE_STORAGE_KEY" ]] && [[ -n "$AZURE_ACCOUNT_NAME" ]] && [[ -n "$AZURE_CONTAINER_NAME" ]] && [[ -n "$AZURE_STORAGE_ACCOUNT_URL" ]]; then
+        random=$((RANDOM % 3))
+    else
+        random=$((RANDOM % 2))
+    fi
     if [[ $random -eq 0 ]]; then
         TEMP_POLICY="default"
         echo "Using local storage policy"

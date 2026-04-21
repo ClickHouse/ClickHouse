@@ -185,10 +185,15 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::shared_ptr<const QueryPlan> query_plan_,
-    std::optional<Extension> extension_)
+    std::optional<Extension> extension_,
+    ConnectionPoolWithFailoverPtr pool)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
 {
-    create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable
+    /// Capture `pool` in the lambda to prevent the connection pool from being destroyed
+    /// while entries are still in use. The Entry objects hold raw references (via PoolEntryHelper)
+    /// back to the pool's internal PooledObject and PoolBase structures, so the pool must
+    /// outlive all Entry objects.
+    create_connections = [this, connections_, throttler, extension_, pool](AsyncCallback) mutable
     {
         auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context, throttler);
         if (extension_ && extension_->replica_info)

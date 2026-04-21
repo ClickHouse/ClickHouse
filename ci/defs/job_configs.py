@@ -556,7 +556,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM_CPU,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
-            for total_batches in (2,)
+            for total_batches in (4,)
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
@@ -634,7 +634,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
-            for total_batches in (2,)
+            for total_batches in (4,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -709,11 +709,15 @@ class JobConfigs:
     functional_tests_jobs_azure = common_ft_job_config.set_allow_merge_on_failure(
         True
     ).parametrize(
-        Job.ParamSet(
-            parameter="arm_asan, azure, parallel",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_ASAN],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"arm_asan, azure, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.FUNC_TESTER_ARM,
+                requires=[ArtifactNames.CH_ARM_ASAN],
+            )
+            for total_batches in (4,)
+            for batch in range(1, total_batches + 1)
+        ],
         Job.ParamSet(
             parameter="arm_asan, azure, sequential",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,

@@ -1199,7 +1199,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
-                = std::make_shared<RemoteQueryExecutor>(std::move(connections), new_query_str, std::make_shared<Block>(Block{}), query_context);
+                = std::make_shared<RemoteQueryExecutor>(
+                    std::move(connections), new_query_str, std::make_shared<Block>(Block{}), query_context,
+                    /*throttler=*/nullptr, Scalars{}, Tables{}, QueryProcessingStage::Complete,
+                    /*query_plan=*/nullptr, /*extension=*/std::nullopt, shard_info.pool);
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
                 remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
@@ -1330,7 +1333,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 Tables{},
                 QueryProcessingStage::Complete,
                 nullptr,
-                RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
+                RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)},
+                replicas.pool);
 
             Pipe pipe{std::make_shared<RemoteSource>(
                 remote_query_executor,
