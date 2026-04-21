@@ -125,6 +125,15 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
+    enum class InputFormatColumnMatchingCaseSensitivity : uint8_t
+    {
+        MATCH_CASE, /// Matches case-sensitively
+        IGNORE_CASE, /// Matches case-insensitively
+        AUTO, /// First tries to match case-sensitively, if fails, tries to match case-insensitively
+    };
+
+    InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::MATCH_CASE;
+
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;

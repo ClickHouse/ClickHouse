@@ -19,6 +19,7 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/InputSelectorTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -320,6 +321,50 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     left->resources = std::move(right->resources);
     return left;
+}
+
+QueryPipelineBuilderPtr QueryPipelineBuilder::selectPipeline(
+    QueryPipelineBuilderPtr signal,
+    QueryPipelineBuilderPtr true_pipeline,
+    QueryPipelineBuilderPtr false_pipeline,
+    Processors * collected_processors)
+{
+    if (!signal->getHeader().empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Signal pipeline header must be empty in selectPipeline");
+
+    assertBlocksHaveEqualStructure(true_pipeline->getHeader(), false_pipeline->getHeader(), "selectPipeline");
+
+    size_t num_streams = std::max(true_pipeline->getNumStreams(), false_pipeline->getNumStreams());
+
+    signal->pipe.resize(1);
+    true_pipeline->pipe.resize(1);
+    false_pipeline->pipe.resize(1);
+
+    auto transform = std::make_shared<InputSelectorTransform>(true_pipeline->getHeader());
+
+    auto & transform_inputs = transform->getInputs();
+    auto it = transform_inputs.begin();
+    connect(*signal->pipe.output_ports.front(), *it++);
+    connect(*true_pipeline->pipe.output_ports.front(), *it++);
+    connect(*false_pipeline->pipe.output_ports.front(), *it);
+
+    if (collected_processors)
+        collected_processors->emplace_back(transform);
+
+    signal->pipe.output_ports.front() = &transform->getOutputs().front();
+    signal->pipe.processors->emplace_back(transform);
+
+    signal->pipe.processors->insert(signal->pipe.processors->end(), true_pipeline->pipe.processors->begin(), true_pipeline->pipe.processors->end());
+    signal->pipe.processors->insert(signal->pipe.processors->end(), false_pipeline->pipe.processors->begin(), false_pipeline->pipe.processors->end());
+    signal->pipe.header = signal->pipe.output_ports.front()->getSharedHeader();
+    signal->pipe.max_parallel_streams = std::max({signal->pipe.max_parallel_streams, true_pipeline->pipe.max_parallel_streams, false_pipeline->pipe.max_parallel_streams});
+
+    /// Transfer resources so they stay alive while processors execute.
+    signal->resources.append(true_pipeline->resources);
+    signal->resources.append(false_pipeline->resources);
+
+    signal->pipe.resize(num_streams);
+    return signal;
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped(
