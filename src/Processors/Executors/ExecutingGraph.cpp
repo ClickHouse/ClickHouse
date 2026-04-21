@@ -1,4 +1,5 @@
 #include <Processors/Executors/ExecutingGraph.h>
+#include <Processors/IProcessor.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 
@@ -18,20 +19,31 @@ ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool pro
     : processors(std::move(processors_))
     , profile_processors(profile_processors_)
 {
-    uint64_t num_processors = processors->size();
-    nodes.reserve(num_processors);
-
-    /// Create nodes.
-    for (uint64_t node = 0; node < num_processors; ++node)
-    {
-        IProcessor * proc = processors->at(node).get();
-        processors_map[proc] = node;
-        nodes.emplace_back(std::make_unique<Node>(proc, node));
-    }
+    /// Create nodes for every processor.
+    for (auto it = processors->begin(); it != processors->end(); ++it)
+        addNode(it);
 
     /// Create edges.
-    for (uint64_t node = 0; node < num_processors; ++node)
+    for (auto & node : nodes)
         addEdges(node);
+}
+
+ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_iter)
+{
+    IProcessor * processor = processor_iter->get();
+    auto & new_node = nodes.emplace_back(processor_iter, next_node_id++);
+
+    const auto [_, inserted] = processors_map.emplace(processor, &new_node);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
+
+    return new_node;
+}
+
+ExecutingGraph::Node & ExecutingGraph::addNode(ProcessorPtr processor)
+{
+    processors->push_back(std::move(processor));
+    return addNode(std::prev(processors->end()));
 }
 
 ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to)
@@ -51,59 +63,47 @@ ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const I
     return added_edge;
 }
 
-bool ExecutingGraph::addEdges(uint64_t node)
+ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
 {
-    IProcessor * from = nodes[node]->processor;
+    IProcessor * from = node.processor();
+    NewEdges result;
 
-    bool was_edge_added = false;
-
-    /// Add backward edges from input ports.
-    auto & inputs = from->getInputs();
-    auto from_input = nodes[node]->back_edges.size();
-
-    if (from_input < inputs.size())
+    /// Backward edges from input ports (input_port -> peer's output_port).
+    for (auto & input : from->getInputs())
     {
-        was_edge_added = true;
+        if (input.hasUpdateInfo() || !input.isConnected())
+            continue;
 
-        for (auto it = std::next(inputs.begin(), from_input); it != inputs.end(); ++it, ++from_input)
-        {
-            const IProcessor * to = &it->getOutputPort().getProcessor();
-            auto output_port_number = to->getOutputPortNumber(&it->getOutputPort());
-            Edge edge(0, true, from_input, output_port_number, &nodes[node]->post_updated_input_ports);
-            auto & added_edge = addEdge(nodes[node]->back_edges, std::move(edge), from, to);
-            it->setUpdateInfo(&added_edge.update_info);
-        }
+        const IProcessor * to = &input.getOutputPort().getProcessor();
+        Edge edge(nullptr, true, &input, &input.getOutputPort(), &node.post_updated_input_ports);
+        auto & added_edge = addEdge(node.back_edges, std::move(edge), from, to);
+        input.setUpdateInfo(&added_edge.update_info);
+        result.back.push_back(&added_edge);
     }
 
-    /// Add direct edges from output ports.
-    auto & outputs = from->getOutputs();
-    auto from_output = nodes[node]->direct_edges.size();
-
-    if (from_output < outputs.size())
+    /// Direct edges from output ports (output_port -> peer's input_port).
+    for (auto & output : from->getOutputs())
     {
-        was_edge_added = true;
+        if (output.hasUpdateInfo() || !output.isConnected())
+            continue;
 
-        for (auto it = std::next(outputs.begin(), from_output); it != outputs.end(); ++it, ++from_output)
-        {
-            const IProcessor * to = &it->getInputPort().getProcessor();
-            auto input_port_number = to->getInputPortNumber(&it->getInputPort());
-            Edge edge(0, false, input_port_number, from_output, &nodes[node]->post_updated_output_ports);
-            auto & added_edge = addEdge(nodes[node]->direct_edges, std::move(edge), from, to);
-            it->setUpdateInfo(&added_edge.update_info);
-        }
+        const IProcessor * to = &output.getInputPort().getProcessor();
+        Edge edge(nullptr, false, &output.getInputPort(), &output, &node.post_updated_output_ports);
+        auto & added_edge = addEdge(node.direct_edges, std::move(edge), from, to);
+        output.setUpdateInfo(&added_edge.update_info);
+        result.direct.push_back(&added_edge);
     }
 
-    return was_edge_added;
+    return result;
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(boost::container::devector<uint64_t> & stack, uint64_t pid)
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(boost::container::devector<Node *> & stack, Node & cur_node)
 {
-    auto & cur_node = *nodes[pid];
     Processors new_processors;
 
     try
     {
-        new_processors = cur_node.processor->expandPipeline();
+        new_processors = cur_node.processor()->expandPipeline();
     }
     catch (...)
     {
@@ -118,7 +118,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(boost::container
         /// to keep them alive, because their ports are already connected to existing processors.
         /// Destroying them here would leave dangling port references, causing use-after-free
         /// (e.g. pure virtual call in `dumpPipeline`).
-        processors->insert(processors->end(), new_processors.begin(), new_processors.end());
+        for (const auto & new_proc : new_processors)
+            addNode(new_proc);
 
         if (cancel_reason != IProcessor::CancelReason::NotCancelled)
         {
@@ -132,54 +133,25 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(boost::container
         }
     }
 
-    uint64_t num_processors = processors->size();
-    std::vector<uint64_t> back_edges_sizes(num_processors, 0);
-    std::vector<uint64_t> direct_edge_sizes(num_processors, 0);
+    /// Build new edges for every node.
+    std::vector<std::pair<Node *, NewEdges>> added_edges;
+    for (auto & node : nodes)
+        if (auto new_edges = addEdges(node); !new_edges.empty())
+            added_edges.emplace_back(&node, std::move(new_edges));
 
-    for (uint64_t node = 0; node < nodes.size(); ++node)
+    /// Record updated ports for each newly added edge for each processor and schedule it for prepare if something changed.
+    for (auto & [updated_node, new_edges] : added_edges)
     {
-        direct_edge_sizes[node] = nodes[node]->direct_edges.size();
-        back_edges_sizes[node] = nodes[node]->back_edges.size();
-    }
+        /// Record the updated port pointers so the next prepare() sees them as "updated".
+        for (auto * edge : new_edges.back)
+            updated_node->updated_input_ports.emplace_back(edge->input_port);
 
-    nodes.reserve(num_processors);
+        for (auto * edge : new_edges.direct)
+            updated_node->updated_output_ports.emplace_back(edge->output_port);
 
-    while (nodes.size() < num_processors)
-    {
-        auto * processor = processors->at(nodes.size()).get();
-        if (processors_map.contains(processor))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
-
-        processors_map[processor] = nodes.size();
-        nodes.emplace_back(std::make_unique<Node>(processor, nodes.size()));
-    }
-
-    std::vector<uint64_t> updated_nodes;
-
-    for (uint64_t node = 0; node < num_processors; ++node)
-    {
-        if (addEdges(node))
-            updated_nodes.push_back(node);
-    }
-
-    for (auto updated_node : updated_nodes)
-    {
-        auto & node = *nodes[updated_node];
-
-        size_t num_direct_edges = node.direct_edges.size();
-        size_t num_back_edges = node.back_edges.size();
-
-        std::lock_guard guard(node.status_mutex);
-
-        for (uint64_t edge = back_edges_sizes[updated_node]; edge < num_back_edges; ++edge)
-            node.updated_input_ports.emplace_back(edge);
-
-        for (uint64_t edge = direct_edge_sizes[updated_node]; edge < num_direct_edges; ++edge)
-            node.updated_output_ports.emplace_back(edge);
-
-        if (node.status == ExecutingGraph::ExecStatus::Idle)
+        if (updated_node->status == ExecutingGraph::ExecStatus::Idle)
         {
-            node.status = ExecutingGraph::ExecStatus::Preparing;
+            updated_node->status = ExecutingGraph::ExecStatus::Preparing;
             stack.push_front(updated_node);
         }
     }
@@ -189,35 +161,33 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(boost::container
 
 void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 {
-    std::stack<uint64_t> stack;
+    std::stack<Node *> stack;
 
     /// Add childless processors to stack.
-    uint64_t num_processors = nodes.size();
-    for (uint64_t proc = 0; proc < num_processors; ++proc)
+    for (auto & node : nodes)
     {
-        if (nodes[proc]->direct_edges.empty())
+        if (node.direct_edges.empty())
         {
-            stack.push(proc);
+            stack.push(&node);
             /// do not lock mutex, as this function is executed in single thread
-            nodes[proc]->status = ExecutingGraph::ExecStatus::Preparing;
+            node.status = ExecutingGraph::ExecStatus::Preparing;
         }
     }
 
     while (!stack.empty())
     {
-        uint64_t proc = stack.top();
+        Node * node = stack.top();
         stack.pop();
 
-        updateNode(proc, queue, async_queue);
+        updateNode(node, queue, async_queue);
     }
 }
 
-
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue)
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Queue & queue, Queue & async_queue)
 {
     boost::container::devector<Edge *> updated_edges;
-    boost::container::devector<uint64_t> updated_processors;
-    updated_processors.push_back(pid);
+    boost::container::devector<Node *> updated_processors;
+    updated_processors.push_back(start_node);
 
     std::shared_lock read_lock(nodes_mutex);
 
@@ -232,7 +202,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
 
             /// Here we have ownership on edge, but node can be concurrently accessed.
 
-            auto & node = *nodes[edge->to];
+            auto & node = *edge->to;
 
             std::unique_lock lock(node.status_mutex);
 
@@ -241,9 +211,9 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
             if (status != ExecutingGraph::ExecStatus::Finished)
             {
                 if (edge->backward)
-                    node.updated_output_ports.push_back(edge->output_port_number);
+                    node.updated_output_ports.push_back(edge->output_port);
                 else
-                    node.updated_input_ports.push_back(edge->input_port_number);
+                    node.updated_input_ports.push_back(edge->input_port);
 
                 if (status == ExecutingGraph::ExecStatus::Idle)
                 {
@@ -252,17 +222,17 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                     stack_top_lock = std::move(lock);
                 }
                 else
-                    nodes[edge->to]->processor->onUpdatePorts();
+                    edge->to->processor()->onUpdatePorts();
             }
         }
 
         if (!updated_processors.empty())
         {
-            pid = updated_processors.front();
+            Node * current = updated_processors.front();
             updated_processors.pop_front();
 
             /// In this method we have ownership on node.
-            auto & node = *nodes[pid];
+            auto & node = *current;
 
             bool need_expand_pipeline = false;
 
@@ -278,7 +248,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
 
                 try
                 {
-                    auto & processor = *node.processor;
+                    auto & processor = *node.processor();
                     const auto last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
@@ -388,14 +358,14 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                 read_lock.unlock();
                 {
                     std::unique_lock lock(nodes_mutex);
-                    auto status = expandPipeline(updated_processors, pid);
+                    auto status = expandPipeline(updated_processors, node);
                     if (status != UpdateNodeStatus::Done)
                         return status;
                 }
                 read_lock.lock();
 
                 /// Add itself back to be prepared again.
-                updated_processors.push_front(pid);
+                updated_processors.push_front(current);
             }
         }
     }
@@ -415,12 +385,11 @@ void ExecutingGraph::cancel(IProcessor::CancelReason reason)
         else if (cancel_reason == IProcessor::CancelReason::PartialResult && reason != IProcessor::CancelReason::PartialResult)
             cancel_reason = reason;
 
-        uint64_t num_processors = processors->size();
-        for (uint64_t proc = 0; proc < num_processors; ++proc)
+        for (auto & processor : *processors)
         {
             try
             {
-                processors->at(proc)->cancel(cancel_reason);
+                processor->cancel(cancel_reason);
             }
             catch (...)
             {
