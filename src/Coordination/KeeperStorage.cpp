@@ -1378,6 +1378,8 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
                         {
                             node.stats = operation.new_stats;
                             node.num_children = operation.new_num_children;
+                            if (operation.new_destroy_time.has_value())
+                                node.destroy_time = operation.new_destroy_time;
                         }
                         else
                             node.setData(std::move(operation.new_data));
@@ -2784,16 +2786,6 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetReque
 
     node_it->value.setResponseStat(response->stat);
     response->error = Coordination::Error::ZOK;
-
-    if (node_it->value.ttl.has_value())
-    {
-        auto now = std::chrono::system_clock::now();
-        auto desctroy_point = now + std::chrono::milliseconds(*node_it->value.ttl);
-        auto duration = desctroy_point.time_since_epoch();
-        auto count_ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
-        int64_t deadline_ms = count_ms.count();
-        node_it->value.destroy_time = deadline_ms;
-    }
 
     return response;
 }

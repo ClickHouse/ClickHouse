@@ -824,7 +824,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotTTLRoundTrip)
 
     ASSERT_TRUE(storage.ttl_paths.contains("/ttl_node"));
 
-    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, zxid, nullptr, this->keeper_context->getWriteSnapshotVersion());
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, zxid, nullptr, DB::SnapshotVersion::V8);
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, zxid);
 
