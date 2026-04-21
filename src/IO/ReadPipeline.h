@@ -29,6 +29,7 @@ using FileCachePtr = std::shared_ptr<FileCache>;
 ///   objectStorage->prepareRead(path, pipeline);     // sets source
 ///   cachedStorage->prepareRead(path, pipeline);     // adds disk cache
 ///   diskObjectStorage->prepareRead(path, pipeline); // adds async, memory cache
+///   diskEncrypted->prepareRead(path, pipeline);     // adds decryption
 ///   auto buf = pipeline.build(read_settings);
 ///
 /// Stage ordering (innermost to outermost, fixed at build time):
@@ -46,6 +47,9 @@ public:
     using BufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(
         const StoredObject & object,
         const ReadSettings & settings)>;
+
+    /// Function that finds an encryption key by its fingerprint.
+    using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
 
     ReadPipeline() = default;
     ReadPipeline(const ReadPipeline &) = default;
@@ -69,6 +73,11 @@ public:
 
     /// -- Async prefetch stage --
     void needAsyncPrefetch(IAsynchronousReader & reader);
+
+    /// -- Decryption stage --
+    /// The key_finder callback is called at build time with the key fingerprint
+    /// read from the encryption header. It must return the decryption key.
+    void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
 
     /// -- Decompression stage --
     void needDecompression(bool allow_different_codecs = false);
@@ -110,6 +119,13 @@ private:
         IAsynchronousReader * reader = nullptr;
     };
 
+    struct DecryptionStage
+    {
+        String path;
+        size_t buffer_size;
+        KeyFinderFunc key_finder;
+    };
+
     struct DecompressionStage
     {
         bool allow_different_codecs = false;
@@ -119,6 +135,7 @@ private:
     std::optional<DiskCacheStage> disk_cache;
     std::optional<MemoryCacheStage> memory_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
+    std::optional<DecryptionStage> decryption;
     std::optional<DecompressionStage> decompression;
 };
 

@@ -40,6 +40,8 @@ namespace Poco
 namespace DB
 {
 
+class ReadPipeline;
+
 #if USE_AWS_S3
 namespace S3
 {
@@ -244,6 +246,14 @@ public:
         const String & path,
         const ReadSettings & settings,
         std::optional<size_t> read_hint = {}) const = 0;
+
+    /// Populate a ReadPipeline with the stages needed to read from this disk.
+    /// Override in disk implementations that support the pipeline model.
+    virtual void prepareRead(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const;
 
     /// Returns nullptr if the file does not exist, otherwise opens it for reading.
     /// This method can save a request. The default implementation will do a separate `exists` call.

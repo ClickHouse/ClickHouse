@@ -10,6 +10,7 @@
 #include <Common/atomicRename.h>
 #include <Common/formatReadable.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/ReadPipeline.h>
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
@@ -370,6 +371,30 @@ bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const st
 std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
 {
     return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, /*file_size*/ std::nullopt, /*flags*/ -1, /*existing_memory*/ nullptr, settings.use_page_cache_for_local_disks);
+}
+
+void DiskLocal::prepareRead(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
+{
+    auto full_path = fs::path(disk_path) / path;
+    size_t file_size = fs::file_size(full_path);
+    StoredObject obj(full_path.string(), full_path.string(), file_size);
+
+    auto path_str = full_path.string();
+    pipeline.setSource(
+        StoredObjects{obj},
+        [path_str, read_hint, use_page_cache = settings.use_page_cache_for_local_disks](
+            const StoredObject & /* object */, const ReadSettings & read_settings)
+            -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return createReadBufferFromFileBase(
+                path_str, read_settings, read_hint,
+                /*file_size*/ std::nullopt, /*flags*/ -1,
+                /*existing_memory*/ nullptr, use_page_cache);
+        });
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

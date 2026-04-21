@@ -5,7 +5,11 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
+#include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileDecorator.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/FileEncryptionCommon.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Common/CurrentThread.h>
@@ -49,6 +53,11 @@ void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cach
 void ReadPipeline::needAsyncPrefetch(IAsynchronousReader & reader)
 {
     async_prefetch = AsyncPrefetchStage{.reader = &reader};
+}
+
+void ReadPipeline::needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder)
+{
+    decryption = DecryptionStage{.path = std::move(path), .buffer_size = buffer_size, .key_finder = std::move(key_finder)};
 }
 
 void ReadPipeline::needDecompression(bool allow_different_codecs)
@@ -160,7 +169,32 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
             settings.remote_read_min_bytes_for_seek);
     }
 
-    /// -- Stages 6-7 (decrypt, decompress) in later steps --
+    /// -- Stage 6: Decryption --
+
+#if USE_SSL
+    if (decryption && decryption->key_finder)
+    {
+        if (impl->eof())
+        {
+            /// Empty encrypted file — no header, return empty buffer.
+            return std::make_unique<ReadBufferFromFileDecorator>(
+                std::make_unique<ReadBufferFromString>(std::string_view{}), decryption->path);
+        }
+
+        FileEncryption::Header header;
+        header.read(*impl);
+        String key = decryption->key_finder(header.key_fingerprint, decryption->path);
+
+        impl = std::make_unique<ReadBufferFromEncryptedFile>(
+            decryption->path,
+            decryption->buffer_size,
+            std::move(impl),
+            key,
+            header);
+    }
+#endif
+
+    /// -- Stage 7: Decompression (not yet implemented) --
 
     return impl;
 }
@@ -185,6 +219,8 @@ String ReadPipeline::describe() const
         append("MemoryCache");
     if (async_prefetch)
         append("AsyncPrefetch");
+    if (decryption)
+        append("Decrypt");
     if (decompression)
         append("Decompress");
 

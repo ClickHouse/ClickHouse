@@ -2,6 +2,7 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <IO/ReadPipeline.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <IO/FileEncryptionCommon.h>
@@ -423,6 +424,28 @@ void DiskEncrypted::copyFile(
     IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
 }
 
+
+void DiskEncrypted::prepareRead(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
+{
+    if (read_hint && *read_hint > 0)
+        read_hint = *read_hint + FileEncryption::Header::kSize;
+
+    auto wrapped_path = wrappedPath(path);
+    delegate->prepareRead(wrapped_path, settings, read_hint, pipeline);
+
+    auto encryption_settings = current_settings.get();
+    pipeline.needDecryption(
+        path,
+        settings.local_fs_buffer_size,
+        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> String
+        {
+            return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
+        });
+}
 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const String & path,

@@ -76,6 +76,15 @@ void IDisk::copyFile( /// NOLINT
     out->finalize();
 }
 
+void IDisk::prepareRead(
+    const String & /* path */,
+    const ReadSettings & /* settings */,
+    std::optional<size_t> /* read_hint */,
+    ReadPipeline & /* pipeline */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReadPipeline is not supported by disk {}", getName());
+}
+
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
     const String & path,
     const ReadSettings & settings,

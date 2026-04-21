@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <Disks/DiskFactory.h>
+#include <Disks/DiskEncrypted.h>
 #include <Disks/registerDisks.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <IO/FileEncryptionCommon.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -1021,3 +1023,56 @@ catch (...)
 {
     FAIL() << DB::getCurrentExceptionMessage(true);
 }
+
+
+#if USE_SSL
+TEST_F(DiskObjectStorageTest, ReadPipelineEncrypted)
+try
+{
+    auto disk = getDiskObjectStorage();
+
+    /// Wrap with encryption.
+    String key = "1234567890123456"; /// 16 bytes = AES-128-CTR
+    auto enc_settings = std::make_unique<DB::DiskEncryptedSettings>();
+    enc_settings->wrapped_disk = disk;
+    enc_settings->current_algorithm = DB::FileEncryption::Algorithm::AES_128_CTR;
+    auto fingerprint = DB::FileEncryption::calculateKeyFingerprint(key);
+    enc_settings->all_keys[fingerprint] = key;
+    enc_settings->current_key = key;
+    enc_settings->current_key_fingerprint = fingerprint;
+    enc_settings->disk_path = "";
+    auto encrypted_disk = std::make_shared<DB::DiskEncrypted>("encrypted_test", std::move(enc_settings));
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = "encrypted pipeline test data 0123456789";
+
+    {
+        auto tx = encrypted_disk->createTransaction();
+        auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+        tx->commit();
+    }
+
+    /// Read via readFile (old path — DiskEncrypted wraps the buffer manually).
+    DB::ReadSettings read_settings;
+    std::string via_read_file = readAll(*encrypted_disk->readFile(file_name, read_settings, {}));
+    EXPECT_EQ(via_read_file, file_content);
+
+    /// Read via prepareRead + build (pipeline path — decryption is a stage).
+    DB::ReadPipeline pipeline;
+    encrypted_disk->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+    String desc = pipeline.describe();
+    EXPECT_NE(desc.find("Source"), String::npos) << "describe: " << desc;
+    EXPECT_NE(desc.find("Decrypt"), String::npos) << "describe: " << desc;
+
+    auto buf = pipeline.build(read_settings);
+    std::string via_pipeline = readAll(*buf);
+    EXPECT_EQ(via_pipeline, file_content);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+#endif
