@@ -42,8 +42,9 @@ std::vector<RoaringishEntry> TextIndexPhraseSearch::intersect(
 
             /// Phase 2: boundary crossing.
             /// High bits of LHS bitmap overflow into the next group.
+            /// Skip when group is at max to avoid crossing into a different document.
             UInt16 overflow_positions_bitmap = static_cast<UInt16>(lhs[lhs_idx].bitmap() >> (RoaringishEntry::BITMAP_BITS - shift));
-            if (overflow_positions_bitmap)
+            if (overflow_positions_bitmap && lhs[lhs_idx].group() < std::numeric_limits<UInt16>::max())
             {
                 UInt64 boundary_key = lhs_key + 1; /// Same doc_id, group+1.
 
@@ -71,7 +72,7 @@ std::vector<RoaringishEntry> TextIndexPhraseSearch::intersect(
         {
             /// Phase 2 for non-matching LHS: check if LHS overflows into RHS's group.
             UInt16 overflow_positions_bitmap = static_cast<UInt16>(lhs[lhs_idx].bitmap() >> (RoaringishEntry::BITMAP_BITS - shift));
-            if (overflow_positions_bitmap)
+            if (overflow_positions_bitmap && lhs[lhs_idx].group() < std::numeric_limits<UInt16>::max())
             {
                 UInt64 boundary_key = lhs_key + 1;
 
@@ -98,7 +99,7 @@ std::vector<RoaringishEntry> TextIndexPhraseSearch::intersect(
     while (lhs_idx < lhs.size() && rhs_idx < rhs.size())
     {
         UInt16 overflow_positions_bitmap = static_cast<UInt16>(lhs[lhs_idx].bitmap() >> (RoaringishEntry::BITMAP_BITS - shift));
-        if (overflow_positions_bitmap)
+        if (overflow_positions_bitmap && lhs[lhs_idx].group() < std::numeric_limits<UInt16>::max())
         {
             UInt64 boundary_key = lhs[lhs_idx].key() + 1;
 
