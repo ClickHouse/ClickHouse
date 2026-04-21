@@ -274,29 +274,6 @@ std::vector<PatchToApplyPtr> MergeTreePatchReaderJoin::applyPatch(const Block & 
     return patches;
 }
 
-/// Projects a single row `(row)` of `sample_block`'s sort-key columns into a fresh 1-row block.
-/// Used by MergeOnKey to stash the min and max sort-key tuple of each patch-side block.
-static Block makeSortKeyRowBlock(const Block & sample_block, const Columns & columns, size_t row, const Names & sorting_key_column_names)
-{
-    Block out;
-    for (const auto & name : sorting_key_column_names)
-    {
-        const auto & src_with_type = sample_block.getByName(name);
-        auto src_col_idx = sample_block.getPositionByName(name);
-        const auto & src_column = *columns[src_col_idx];
-
-        auto target = src_column.cloneEmpty();
-        target->insertFrom(src_column, row);
-
-        ColumnWithTypeAndName entry;
-        entry.name = name;
-        entry.type = src_with_type.type;
-        entry.column = std::move(target);
-        out.insert(std::move(entry));
-    }
-    return out;
-}
-
 MergeTreePatchReaderMergeOnKey::MergeTreePatchReaderMergeOnKey(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_)
     : MergeTreePatchReader(std::move(patch_part_), std::move(reader_))
 {
@@ -328,15 +305,6 @@ PatchReadResultPtr MergeTreePatchReaderMergeOnKey::readPatch(const MarkRange & r
     const auto & sorting_key = *patch_part.sorting_key;
     if (sorting_key.expression)
         sorting_key.expression->execute(patch_read_result->block);
-
-    if (sorting_key.column_names.empty())
-        return patch_read_result;
-
-    /// Project the 1-row min/max tuples from the now-augmented block. We key min/max on the
-    /// sort-key *result* column names, which the expression just materialized.
-    const auto & aug_block = patch_read_result->block;
-    patch_read_result->min_sorting_key_row = makeSortKeyRowBlock(aug_block, aug_block.getColumns(), 0, sorting_key.column_names);
-    patch_read_result->max_sorting_key_row = makeSortKeyRowBlock(aug_block, aug_block.getColumns(), aug_block.rows() - 1, sorting_key.column_names);
 
     return patch_read_result;
 }
@@ -391,30 +359,28 @@ std::vector<PatchToApplyPtr> MergeTreePatchReaderMergeOnKey::applyPatch(const Bl
     return {applyPatchMergeOnKey(result_block, patch_data.block, *patch_part.sorting_key)};
 }
 
-static int compareMainMaxVsPatchMax(
+static int compareMainVsPatch(
     const Block & main_block,
     size_t main_row,
-    const Block & patch_max_row,
+    const Block & patch_block,
+    size_t patch_row,
     const Names & sorting_key_names,
     const std::vector<bool> & reverse_flags)
 {
-    /// Compares sort-key tuples at two positions: `main_block[main_row]` vs `patch_max_row[0]`.
+    /// Compares sort-key tuples at two positions: `main_block[main_row]` vs `patch_block[patch_row]`.
     for (size_t i = 0; i < sorting_key_names.size(); ++i)
     {
-        const auto & a_col = *main_block.getByName(sorting_key_names[i]).column;
-        const auto & b_col = *patch_max_row.getByName(sorting_key_names[i]).column;
-        int cmp = a_col.compareAt(main_row, 0, b_col, /*nan_direction_hint=*/ 1);
+        const auto & main_column = *main_block.getByName(sorting_key_names[i]).column;
+        const auto & patch_column = *patch_block.getByName(sorting_key_names[i]).column;
+
+        int cmp = main_column.compareAt(main_row, patch_row, patch_column, /*nan_direction_hint=*/ 1);
         if (cmp != 0)
             return (i < reverse_flags.size() && reverse_flags[i]) ? -cmp : cmp;
     }
     return 0;
 }
 
-/// Build a block from `main_result` whose sort-key *result* columns are materialized via
-/// `patch.sorting_key_expression`. For plain sort keys this is a no-op (the expression is identity
-/// over the source columns that were already copied into `main_result.columns`). For expression
-/// sort keys (e.g. `ORDER BY cityHash64(id)`) the expression is executed on a clone of the main
-/// block to add the `cityHash64(id)` column, which we then compare against.
+/// Build a block from `main_result` whose sorting key *result* columns are materialized via `patch.sorting_key_expression`.
 static Block buildMainBlockWithSortKey(const Block & result_header, const Columns & columns, const ExpressionActionsPtr & sorting_key_expression)
 {
     Block block = result_header.cloneWithColumns(columns);
@@ -434,7 +400,6 @@ bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result
     const auto & old = typeid_cast<const PatchMergeOnKeyReadResult &>(old_patch);
 
     /// An empty patch block contributes nothing — always read the next mark if there is one.
-    /// Its `max_sorting_key_row` is an empty Block, so skip the comparison before it throws on lookup.
     if (old.block.rows() == 0)
         return true;
 
@@ -447,10 +412,11 @@ bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result
 
     auto result_block = buildMainBlockWithSortKey(result_header, main_result.columns, sorting_key.expression);
 
-    int cmp = compareMainMaxVsPatchMax(
+    int cmp = compareMainVsPatch(
         result_block,
         main_result.num_rows - 1,
-        old.max_sorting_key_row,
+        old.block,
+        old.block.rows() - 1,
         sorting_key.column_names,
         sorting_key.reverse_flags);
 
@@ -475,10 +441,11 @@ bool MergeTreePatchReaderMergeOnKey::needOldPatch(const ReadResult & main_result
 
     auto result_block = buildMainBlockWithSortKey(result_header, main_result.columns, sorting_key.expression);
 
-    int cmp = compareMainMaxVsPatchMax(
+    int cmp = compareMainVsPatch(
         result_block,
         /*main_row=*/ 0,  // first row = min sort-key on main side
-        old.max_sorting_key_row,
+        old.block,
+        old.block.rows() - 1,
         sorting_key.column_names,
         sorting_key.reverse_flags);
 

@@ -58,17 +58,13 @@ struct PatchJoinReadResult : public PatchReadResult
     bool empty() const override { return entries.empty(); }
 };
 
-/// v2 patch-read result. Instead of a scalar `_part_offset` range, carries a single-row block with
-/// the first and last rows' sort-key columns. Those two rows define the tuple range
-/// `[min_sorting_key, max_sorting_key]` that `MergeTreePatchReaderMergeOnKey::needNewPatch`/`needOldPatch`
-/// compare against the main-side read result's own min/max sort-key tuple.
+/// v2 patch-read result. The block's last row — projected onto the sort-key columns — defines the
+/// upper bound that `MergeTreePatchReaderMergeOnKey::needNewPatch`/`needOldPatch` compare against
+/// the main-side read result's min/max sort-key tuple. The sort-key expression is materialized
+/// in-place on `block` by the reader, so callers can look up sort-key columns on it by name.
 struct PatchMergeOnKeyReadResult : public PatchReadResult
 {
     Block block;
-    /// A 1-row block containing the first row of `block` projected onto the sort-key columns.
-    Block min_sorting_key_row;
-    /// Similarly for the last row.
-    Block max_sorting_key_row;
 
     bool empty() const override { return block.rows() == 0; }
 };
