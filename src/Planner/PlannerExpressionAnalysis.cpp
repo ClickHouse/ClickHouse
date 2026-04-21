@@ -546,7 +546,9 @@ SortAnalysisResult analyzeSort(
 
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
 
-    /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG
+    /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG.
+    /// This step is executed later together with `WITH FILL`, so it must not participate in `ActionsChain`
+    /// finalization and affect dependencies for earlier steps such as `BEFORE_LIMIT_BY`.
     if (query_node.hasInterpolate())
     {
         auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
@@ -578,12 +580,6 @@ SortAnalysisResult analyzeSort(
 
         before_interpolate_actions = std::make_shared<ActionsAndProjectInputsFlag>();
         before_interpolate_actions->dag = std::move(before_interpolate_actions_dag);
-    }
-
-    if (before_interpolate_actions)
-    {
-        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
-        actions_chain.addStep(std::move(actions_step_before_interpolate));
     }
 
     return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
