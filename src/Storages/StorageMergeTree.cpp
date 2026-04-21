@@ -281,6 +281,8 @@ void StorageMergeTree::startup()
             if (became_leader)
             {
                 LOG_INFO(log, "Became leader, starting background operations");
+                clearEmptyParts();
+                clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
                 cleanup_thread.start();
                 background_operations_assignee.start();
                 startBackgroundMovesIfNeeded();
