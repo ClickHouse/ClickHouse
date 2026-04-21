@@ -6,9 +6,11 @@
 #if USE_WASMTIME
 
 #include <cstdint>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <variant>
+#include <pthread.h>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <base/MemorySanitizer.h>
@@ -480,14 +482,43 @@ private:
 std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view module_name, std::string_view wasm_code) const
 {
     std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(wasm_code.data())), wasm_code.size());
-    auto compilation_result = wasmtime::Module::compile(impl->engine, bytes);
-    if (!compilation_result)
-    {
-        throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code: {}", compilation_result.err().message());
-    }
-    auto module = compilation_result.ok();
 
-    return std::make_unique<WasmTimeModule>(module_name, impl->engine, std::move(module));
+    // Cranelift's egraph optimizer generates a huge constructor_simplify function
+    // (64KB+ of code) that recurses up to REWRITE_LIMIT=5 times during compilation.
+    // Each level pushes a large stack frame; the default 512KB thread stack overflows
+    // on aarch64-apple-darwin. Compile on a dedicated thread with an 8 MiB stack.
+    struct CompileTask
+    {
+        wasmtime::Engine & engine;
+        std::span<uint8_t> bytes;
+        std::optional<wasmtime::Module> result;
+        std::string error;
+    };
+    CompileTask task{impl->engine, bytes, std::nullopt, {}};
+
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 8 * 1024 * 1024);
+
+    pthread_t thread;
+    pthread_create(&thread, &attr, [](void * arg) -> void *
+    {
+        auto & t = *static_cast<CompileTask *>(arg);
+        auto res = wasmtime::Module::compile(t.engine, t.bytes);
+        if (res)
+            t.result = res.ok();
+        else
+            t.error = res.err().message();
+        return nullptr;
+    }, &task);
+
+    pthread_attr_destroy(&attr);
+    pthread_join(thread, nullptr);
+
+    if (!task.result)
+        throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code: {}", task.error);
+
+    return std::make_unique<WasmTimeModule>(module_name, impl->engine, std::move(*task.result));
 };
 
 WasmTimeRuntime::~WasmTimeRuntime() = default;
