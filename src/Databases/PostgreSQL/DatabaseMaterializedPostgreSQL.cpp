@@ -527,9 +527,10 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         }
         else
         {
-            if (engine_args.size() != 4)
+            if (engine_args.size() < 4 || engine_args.size() > 5)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password`.");
+                                "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password`"
+                                "[, `compression` = \"\"]");
 
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
@@ -541,7 +542,12 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
             configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+
+            if (engine_args.size() >= 5)
+                configuration.compression = safeGetLiteralValue<String>(engine_args[4], engine_name);
         }
+
+        StoragePostgreSQL::validateCompressionValue(configuration.compression);
 
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
@@ -549,7 +555,8 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.port,
             configuration.username,
             configuration.password,
-            args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
+            args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
+            configuration.compression);
 
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
         if (engine_define->settings)

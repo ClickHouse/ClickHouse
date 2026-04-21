@@ -564,6 +564,15 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
 
+void StoragePostgreSQL::validateCompressionValue(const String & compression)
+{
+    if (!compression.empty() && compression != "on" && compression != "off")
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "PostgreSQL compression must be one of: '', 'on', 'off'. Got: {}",
+            compression);
+}
+
 StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
@@ -572,7 +581,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
         required_arguments.insert("table");
 
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
+        named_collection, required_arguments, {"schema", "on_conflict", "compression", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
@@ -595,6 +604,9 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
         configuration.table = named_collection.get<String>("table");
     configuration.schema = named_collection.getOrDefault<String>("schema", "");
     configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
+    configuration.compression = named_collection.getOrDefault<String>("compression", "");
+
+    validateCompressionValue(configuration.compression);
 
     return configuration;
 }
@@ -608,13 +620,13 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
     }
     else
     {
-        if (engine_args.size() < 5 || engine_args.size() > 7)
+        if (engine_args.size() < 5 || engine_args.size() > 8)
         {
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage PostgreSQL requires from 5 to 7 parameters: "
+                "Storage PostgreSQL requires from 5 to 8 parameters: "
                 "PostgreSQL('host:port', 'database', 'table', 'username', 'password' "
-                "[, 'schema', 'ON CONFLICT ...']. Got: {}",
+                "[, 'schema', 'ON CONFLICT ...', 'compression']. Got: {}",
                 engine_args.size());
         }
 
@@ -639,7 +651,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
             configuration.schema = checkAndGetLiteralArgument<String>(engine_args[5], "schema");
         if (engine_args.size() >= 7)
             configuration.on_conflict = checkAndGetLiteralArgument<String>(engine_args[6], "on_conflict");
+        if (engine_args.size() >= 8)
+            configuration.compression = checkAndGetLiteralArgument<String>(engine_args[7], "compression");
     }
+
+    validateCompressionValue(configuration.compression);
+
     for (const auto & address : configuration.addresses)
         context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
 

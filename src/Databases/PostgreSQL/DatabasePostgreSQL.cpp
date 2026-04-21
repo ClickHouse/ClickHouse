@@ -522,10 +522,10 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         }
         else
         {
-            if (engine_args.size() < 4 || engine_args.size() > 6)
+            if (engine_args.size() < 4 || engine_args.size() > 7)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "PostgreSQL Database require `host:port`, `database_name`, `username`, `password`"
-                                "[, `schema` = "", `use_table_cache` = 0");
+                                "[, `schema` = \"\", `use_table_cache` = 0, `compression` = \"\"]");
 
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
@@ -556,7 +556,12 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
 
             if (!is_deprecated_syntax && engine_args.size() >= 6)
                 use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+
+            if (!is_deprecated_syntax && engine_args.size() >= 7)
+                configuration.compression = safeGetLiteralValue<String>(engine_args[6], engine_name);
         }
+
+        StoragePostgreSQL::validateCompressionValue(configuration.compression);
 
         const auto & settings = args.context->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(

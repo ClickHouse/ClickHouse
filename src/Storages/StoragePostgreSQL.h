@@ -64,6 +64,7 @@ public:
         String table;
         String schema;
         String on_conflict;
+        String compression;
 
         std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
         String addresses_expr;
@@ -72,6 +73,8 @@ public:
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context, const StorageID * table_id = nullptr);
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
+
+    static void validateCompressionValue(const String & compression);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,

@@ -108,7 +108,8 @@ PoolWithFailover::PoolWithFailover(
                 replica_configuration.port,
                 replica_configuration.username,
                 replica_configuration.password,
-                connection_attempt_timeout_);
+                connection_attempt_timeout_,
+                replica_configuration.compression);
             replicas_with_priority[priority].emplace_back(std::make_shared<PoolHolder>(connection_info, pool_size));
             if (bg_reconnect)
                 DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_with_priority[priority].back()), pool_wait_timeout));
@@ -142,7 +143,8 @@ PoolWithFailover::PoolWithFailover(
             port,
             configuration.username,
             configuration.password,
-            connection_attempt_timeout_);
+            connection_attempt_timeout_,
+            configuration.compression);
         replicas_with_priority[0].emplace_back(std::make_shared<PoolHolder>(connection_string, pool_size));
         if (bg_reconnect)
             DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_with_priority[0].back()), pool_wait_timeout));

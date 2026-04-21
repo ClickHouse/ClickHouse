@@ -553,7 +553,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             configuration.port,
             configuration.username,
             configuration.password,
-            args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
+            args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
+            configuration.compression);
 
         bool has_settings = args.storage_def->settings;
         auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();

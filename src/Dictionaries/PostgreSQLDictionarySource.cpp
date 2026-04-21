@@ -39,7 +39,7 @@ namespace ErrorCodes
 
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
-    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority", "sslmode"};
+    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority", "sslmode", "compression"};
 
 #if USE_LIBPQXX
 
@@ -244,6 +244,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             common_configuration.database = named_collection->getAnyOrDefault<String>({"database", "db"}, "");
             common_configuration.schema = named_collection->getOrDefault<String>("schema", "");
             common_configuration.table = named_collection->getOrDefault<String>("table", "");
+            common_configuration.compression = named_collection->getOrDefault<String>("compression", "");
+            StoragePostgreSQL::validateCompressionValue(common_configuration.compression);
 
             dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration{
                 .db = common_configuration.database,
@@ -272,6 +274,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             common_configuration.database = config.getString(fmt::format("{}.database", settings_config_prefix), config.getString(fmt::format("{}.db", settings_config_prefix), ""));
             common_configuration.schema = config.getString(fmt::format("{}.schema", settings_config_prefix), "");
             common_configuration.table = config.getString(fmt::format("{}.table", settings_config_prefix), "");
+            common_configuration.compression = config.getString(fmt::format("{}.compression", settings_config_prefix), "");
+            StoragePostgreSQL::validateCompressionValue(common_configuration.compression);
 
             dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration
             {
