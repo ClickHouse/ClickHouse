@@ -403,7 +403,7 @@ static int compareMainMaxVsPatchMax(
     {
         const auto & a_col = *main_block.getByName(sorting_key_names[i]).column;
         const auto & b_col = *patch_max_row.getByName(sorting_key_names[i]).column;
-        int cmp = a_col.compareAt(main_row, /*b_row=*/ 0, b_col, /*nan_direction_hint=*/ 1);
+        int cmp = a_col.compareAt(main_row, 0, b_col, /*nan_direction_hint=*/ 1);
         if (cmp != 0)
             return (i < reverse_flags.size() && reverse_flags[i]) ? -cmp : cmp;
     }
