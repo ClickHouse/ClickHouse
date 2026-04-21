@@ -223,6 +223,7 @@ public:
     Port(Block header_, IProcessor * processor_) : header(std::make_shared<const Block>(std::move(header_))), processor(processor_) { }
 
     void setUpdateInfo(UpdateInfo * info) { update_info = info; }
+    bool hasUpdateInfo() const { return update_info != nullptr; }
 
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
