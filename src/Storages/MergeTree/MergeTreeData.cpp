@@ -10046,7 +10046,11 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     LOG_DEBUG(log, "Executing lightweight update with commands: {}", commands.toString(false));
 
     MutationCommands commands_to_run;
-    const auto & system_columns = getPatchPartSystemColumns();
+    auto system_columns = getPatchPartSystemColumns();
+    bool lightweight_updates_v2 = (*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches];
+
+    if (lightweight_updates_v2)
+        system_columns.erase(std::ranges::find(system_columns, "_part_offset", &NameAndTypePair::name));
 
     for (const auto & [name, type] : system_columns)
     {
@@ -10059,22 +10063,12 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     }
 
     /// For v2 patches, additionally read the **physical source columns** of the target table's
-    /// sort-key expression through the mutation pipeline, so they land in every patch row.
-    /// The sort-key expression itself (e.g. `cityHash64(id)`) is not materialized here — it is
-    /// replayed at patch-apply time from the same physical columns on both the main-side block
-    /// and the patch-side block, mirroring what FINAL does for base parts (see
-    /// `ReadFromMergeTree.cpp:1431`). UPDATE of any sort-key-source column is already rejected
-    /// by `MutationsInterpreter::validateUpdateColumns`, so there's no conflict with `commands`.
-    /// Deduplicate against `system_columns` since `_block_number`/`_block_offset` could
-    /// technically be inputs to the sort-key expression for tables that reference them.
-    if ((*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches])
+    /// sorting key expression through the mutation pipeline, so they land in every patch row.
+    if (lightweight_updates_v2)
     {
+        NameSet already_read = system_columns.getNameSet();
         auto main_metadata = getInMemoryMetadataPtr(query_context, false);
         const auto & main_columns = main_metadata->getColumns();
-
-        NameSet already_read;
-        for (const auto & [name, _] : system_columns)
-            already_read.insert(name);
 
         Names source_columns;
         if (main_metadata->hasSortingKey())
@@ -10114,26 +10108,6 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
         pipeline_builder.getSharedHeader(),
         query_context->getSettingsRef()[Setting::min_insert_block_size_rows],
         query_context->getSettingsRef()[Setting::min_insert_block_size_bytes]));
-
-    /// v2 patches drop `_part_offset` from on-disk columns — the mutation interpreter emits it
-    /// unconditionally (since v1 patches need it as the sort-key tie-breaker), but v2's sink
-    /// header excludes it, and the pipeline-builder would otherwise bail with a "Block structure
-    /// mismatch". Project it out here so the sink sees exactly what it declared.
-    if ((*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches])
-    {
-        const auto & pipeline_header = *pipeline_builder.getSharedHeader();
-        if (pipeline_header.has("_part_offset"))
-        {
-            ActionsDAG drop_part_offset_dag(pipeline_header.getNamesAndTypesList());
-            drop_part_offset_dag.removeFromOutputs("_part_offset");
-            auto drop_expression = std::make_shared<ExpressionActions>(
-                std::move(drop_part_offset_dag), ExpressionActionsSettings(query_context));
-            pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
-            {
-                return std::make_shared<ExpressionTransform>(header, drop_expression);
-            });
-        }
-    }
 
     /// Required by MergeTree sinks.
     pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr

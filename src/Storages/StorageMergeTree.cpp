@@ -890,16 +890,16 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
-    const bool v2_patches_enabled = (*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches];
+    const bool lightweight_updates_v2 = (*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches];
     StorageMetadataPtr patch_metadata;
-    std::optional<UInt64> v2_sorting_key_prefix_size;
+    std::optional<UInt64> sorting_key_prefix_size;
 
-    if (v2_patches_enabled)
+    if (lightweight_updates_v2)
     {
         auto main_metadata = getInMemoryMetadataPtr(context_copy, false);
         const auto & main_sorting_key = main_metadata->getSortingKey();
-        v2_sorting_key_prefix_size = main_sorting_key.column_names.size();
-        patch_metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), main_sorting_key, *v2_sorting_key_prefix_size, context_copy);
+        sorting_key_prefix_size = main_sorting_key.column_names.size();
+        patch_metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), main_sorting_key, *sorting_key_prefix_size, context_copy);
     }
     else
     {
@@ -910,7 +910,7 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
         *this,
         std::move(patch_metadata),
         std::move(update_holder),
-        v2_sorting_key_prefix_size,
+        sorting_key_prefix_size,
         context_copy);
 
     chassert(!pipeline.completed());

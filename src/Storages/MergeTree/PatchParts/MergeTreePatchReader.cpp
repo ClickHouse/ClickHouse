@@ -296,15 +296,10 @@ PatchReadResultPtr MergeTreePatchReaderMergeOnKey::readPatch(const MarkRange & r
     if (read_result.num_rows == 0)
         return patch_read_result;
 
-    /// Materialize the sort-key result columns on the patch block in place so downstream callers
-    /// (`applyPatchMergeOnKey`, `needOldPatch`, `needNewPatch`) can look them up by name without
-    /// re-executing the expression. Safe because `sorting_key.expression` is built with
-    /// `project_result=false` — it *adds* output columns without dropping input columns the apply
-    /// path needs. `patch_part.sorting_key` is the shared semantic-prefix `KeyDescription` built
-    /// once per `SourcePartsSetForPatch`; its `column_names` are the sort-key *result* columns.
-    const auto & sorting_key = *patch_part.sorting_key;
-    if (sorting_key.expression)
-        sorting_key.expression->execute(patch_read_result->block);
+    /// Materialize the sorting key result columns on the patch block in place
+    /// so downstream callers can look them up by name without re-executing the expression.
+    if (patch_part.sorting_key->expression)
+        patch_part.sorting_key->expression->execute(patch_read_result->block);
 
     return patch_read_result;
 }

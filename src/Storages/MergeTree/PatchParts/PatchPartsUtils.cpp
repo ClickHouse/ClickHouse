@@ -345,13 +345,6 @@ Names getVirtualsRequiredForPatch(const PatchPartInfoForReader & patch)
             columns = {BlockNumberColumn::name, BlockOffsetColumn::name};
             break;
         case PatchMode::MergeOnKey:
-            /// v2 reads the **physical source columns** of the patch's sort-key expression plus
-            /// the two identity columns. For a plain sort key the source set equals the result
-            /// set; for an expression sort key (e.g. `ORDER BY cityHash64(id)`) the source set
-            /// is just `{id}` and the result column `cityHash64(id)` is materialized by
-            /// `sorting_key.expression` at apply time. Source columns come straight off the shared
-            /// prefix `KeyDescription` (`patch.sorting_key`); no identity-column filter needed —
-            /// the prefix `KeyDescription` does not carry `_block_number`/`_block_offset`.
             chassert(patch.sorting_key && patch.sorting_key->expression);
             columns = patch.sorting_key->expression->getRequiredColumns();
             columns.emplace_back(BlockNumberColumn::name);

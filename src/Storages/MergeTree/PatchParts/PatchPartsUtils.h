@@ -39,6 +39,7 @@ StorageMetadataPtr getPatchPartMetadataV2(
     const KeyDescription & main_sorting_key,
     UInt64 sorting_key_prefix_size,
     ContextPtr local_context);
+
 StorageMetadataPtr getPatchPartMetadataV2(
     ColumnsDescription patch_part_desc,
     const KeyDescription & main_sorting_key,
