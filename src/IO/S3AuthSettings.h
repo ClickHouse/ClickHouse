@@ -20,7 +20,8 @@ struct S3AuthSettingsImpl;
 #define S3AUTH_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, UInt64) \
-    M(CLASS_NAME, String)
+    M(CLASS_NAME, String) \
+    M(CLASS_NAME, S3UriStyle)
 
 S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, DECLARE_SETTING_TRAIT)
 

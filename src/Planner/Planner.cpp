@@ -1,4 +1,5 @@
 #include <Planner/Planner.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
@@ -291,6 +292,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         for (const auto & input : post_filter->getInputs())
         {
             if (!header.has(input->result_name))
+            {
+                all_inputs_present = false;
+                break;
+            }
+            if (!input->result_type->equals(*header.getByName(input->result_name).type))
             {
                 all_inputs_present = false;
                 break;
@@ -1530,7 +1536,8 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, collectFiltersForAnalysis(query_tree, subquery_options, nullptr)));
+            std::make_shared<GlobalPlannerContext>(
+                nullptr, nullptr, nullptr, collectFiltersForAnalysis(query_tree, subquery_options, nullptr)));
         subquery_planner.buildQueryPlanIfNeeded();
 
         auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
@@ -1632,7 +1639,7 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
                 Planner cte_planner(
                     cte_subquery,
                     cte_options,
-                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
                 cte_planner.buildQueryPlanIfNeeded();
 
                 auto cte_plan = std::move(cte_planner).extractQueryPlan();
@@ -1744,6 +1751,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
         std::make_shared<GlobalPlannerContext>(
             findQueryForParallelReplicas(query_tree, select_query_options),
             findTableForParallelReplicas(query_tree, select_query_options),
+            findTableUnionForParallelReplicas(query_tree, select_query_options),
             collectFiltersForAnalysis(query_tree, select_query_options, post_filter_))))
 {
 }

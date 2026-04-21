@@ -384,10 +384,6 @@ protected:
     std::unique_ptr<WriteBuffer> out_file_buf;
     std::shared_ptr<IOutputFormat> output_format;
 
-    /// Progress received from server before output_format was initialized.
-    /// When the output format is created, this buffered progress is replayed into it.
-    Progress pending_output_format_progress;
-
     /// The user could specify special file for server logs (stderr by default)
     std::unique_ptr<WriteBuffer> out_logs_buf;
     String server_logs_file;
@@ -412,6 +408,9 @@ protected:
     SettingsChanges settings_from_server;
 
     ProgressIndication progress_indication;
+    /// Progress received before the output format was created (e.g. from scalar subqueries during analysis).
+    /// Replayed into output_format once it's available.
+    Progress pending_progress;
     ProgressTable progress_table;
     bool need_render_progress = true;
     bool need_render_progress_table = true;

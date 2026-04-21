@@ -401,7 +401,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,
         table,
-        table->getInMemoryMetadataPtr(),
+        table->getInMemoryMetadataPtr(query_context, false),
         query_context,
         /* no_destination */false,
         insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns]);

@@ -93,6 +93,17 @@ const Processors & PipelineExecutor::getProcessors() const
     return graph->getProcessors();
 }
 
+static IProcessor::CancelReason toCancelReason(PipelineExecutor::ExecutionStatus status)
+{
+    switch (status)
+    {
+        case PipelineExecutor::ExecutionStatus::CancelledByUser:    return IProcessor::CancelReason::CancelledByUser;
+        case PipelineExecutor::ExecutionStatus::CancelledByTimeout: return IProcessor::CancelReason::CancelledByTimeout;
+        case PipelineExecutor::ExecutionStatus::Exception:          return IProcessor::CancelReason::Exception;
+        default:                                                    return IProcessor::CancelReason::Unknown;
+    }
+}
+
 void PipelineExecutor::cancel(ExecutionStatus reason)
 {
     /// It is allowed to cancel not started query by user.
@@ -102,13 +113,13 @@ void PipelineExecutor::cancel(ExecutionStatus reason)
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
 
-    graph->cancel();
+    graph->cancel(toCancelReason(reason));
 
-    /// After graph->cancel(), onCancel() has been called on all processors synchronously.
-    /// Some processors (e.g. RemoteSource) drain remaining packets during onCancel(),
-    /// which may produce additional progress (e.g. Progress packets from parallel replicas).
-    /// This progress is accumulated in ISource::read_progress and will be collected by
-    /// finalizeExecution() which runs after all worker threads have been joined,
+    /// After `graph->cancel`, `onCancel` has been called on all processors synchronously.
+    /// Some processors (e.g. `RemoteSource`) drain remaining packets during `onCancel`,
+    /// which may produce additional progress (e.g. `Progress` packets from parallel replicas).
+    /// This progress is accumulated in `ISource::read_progress` and will be collected by
+    /// `finalizeExecution` which runs after all worker threads have been joined,
     /// ensuring no concurrent access to processor state.
 }
 
@@ -117,7 +128,7 @@ void PipelineExecutor::cancelReading()
     if (!cancelled_reading)
     {
         cancelled_reading = true;
-        graph->cancel(/*cancel_all_processors*/ false);
+        graph->cancel(IProcessor::CancelReason::PartialResult);
     }
 }
 

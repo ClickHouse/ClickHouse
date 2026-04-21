@@ -6,7 +6,6 @@
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/Stopwatch.h>
-#include <Formats/FormatSettings.h>
 
 namespace DB
 {
