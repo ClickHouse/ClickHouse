@@ -503,7 +503,7 @@ struct DeltaLakeMetadataImpl
         std::atomic<int> is_stopped{0};
 
         auto open_file_res = parquet::arrow::OpenFile(
-            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool());
+            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
         THROW_ARROW_NOT_OK(open_file_res.status());
         auto reader = *std::move(open_file_res);
 
