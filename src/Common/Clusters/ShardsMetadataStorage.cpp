@@ -17,6 +17,8 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+using namespace SQLClusterCatalog;
+
 namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
@@ -48,7 +50,7 @@ ShardCatalogDefinition parseShardCreateStatement(const String & query_text, cons
     const auto & q = ast->as<const ASTCreateClusterCatalogQuery &>();
     ShardCatalogDefinition row;
     row.replica_collections = q.members;
-    validateAndExtractShardLevelProperties(q.properties, row.weight, row.internal_replication);
+    PropertyValidation::Shard::validateAndExtract(q.properties, row.weight, row.internal_replication);
     return row;
 }
 

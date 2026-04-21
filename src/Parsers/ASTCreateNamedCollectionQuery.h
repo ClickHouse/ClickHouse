@@ -12,7 +12,6 @@ class ASTCreateNamedCollectionQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     std::string collection_name;
-    std::string collection_type;
     SettingsChanges changes;
     bool if_not_exists = false;
     std::unordered_map<String, bool> overridability;

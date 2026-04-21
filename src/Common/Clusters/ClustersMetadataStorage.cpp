@@ -17,6 +17,8 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+using namespace SQLClusterCatalog;
+
 namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
@@ -48,7 +50,7 @@ ClusterCatalogDefinition parseClusterCreateStatement(const String & query_text, 
     const auto & q = ast->as<const ASTCreateClusterCatalogQuery &>();
     ClusterCatalogDefinition row;
     row.members = q.members;
-    validateAndExtractClusterLevelProperties(q.properties, row.secret, row.allow_distributed_ddl_queries);
+    PropertyValidation::Cluster::validateAndExtract(q.properties, row.secret, row.allow_distributed_ddl_queries);
     return row;
 }
 

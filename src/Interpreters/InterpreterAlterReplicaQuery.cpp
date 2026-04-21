@@ -2,6 +2,7 @@
 
 #include <Access/ContextAccess.h>
 #include <Common/Clusters/SQLClusterCatalogPropertyValidation.h>
+#include <Common/NamedCollections/NamedCollectionReservedKeys.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAlterNamedCollectionQuery.h>
@@ -10,10 +11,11 @@
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTAlterReplicaQuery.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
+
+using namespace SQLClusterCatalog;
 
 namespace ErrorCodes
 {
@@ -44,11 +46,14 @@ BlockIO InterpreterAlterReplicaQuery::execute()
             query.replica_name);
     }
 
-    if (!boost::iequals(collection->getCollectionType(), "REPLICA"))
+    /// The named collection must have been created via `CREATE REPLICA`, i.e. carry the internal
+    /// `__type__='replica'` tag. Plain `CREATE NAMED COLLECTION` cannot set that key (see
+    /// `NamedCollectionReservedKeys.h`), so this check cannot be forged from user DDL.
+    if (collection->getOrDefault<String>(String{NAMED_COLLECTION_KIND_KEY}, "") != NAMED_COLLECTION_KIND_REPLICA)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Named collection `{}` is not TYPE `REPLICA`, cannot use ALTER REPLICA",
+            "Named collection `{}` is not a SQL replica, cannot use ALTER REPLICA",
             query.replica_name);
     }
 
@@ -56,7 +61,7 @@ BlockIO InterpreterAlterReplicaQuery::execute()
     /// would be rejected at creation time. This preserves the SQL-replica property model invariants that
     /// shard materialisation relies on. Does not prevent `ALTER NAMED COLLECTION` with the same target —
     /// that path deliberately bypasses SQL-cluster semantics.
-    validateReplicaLevelPropertyKeys(query.properties);
+    PropertyValidation::Replica::validateKeys(query.properties);
 
     auto alter_named_collection_ast = make_intrusive<ASTAlterNamedCollectionQuery>();
     alter_named_collection_ast->collection_name = query.replica_name;

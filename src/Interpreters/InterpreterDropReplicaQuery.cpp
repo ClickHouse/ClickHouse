@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterDropReplicaQuery.h>
 
 #include <Access/ContextAccess.h>
+#include <Common/NamedCollections/NamedCollectionReservedKeys.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDropNamedCollectionQuery.h>
@@ -9,7 +10,6 @@
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTDropReplicaQuery.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -45,11 +45,13 @@ BlockIO InterpreterDropReplicaQuery::execute()
             query.replica_name);
     }
 
-    if (!boost::iequals(collection->getCollectionType(), "REPLICA"))
+    /// Parallel to the check in `InterpreterAlterReplicaQuery`: only NCs tagged via `CREATE REPLICA` can
+    /// be removed through `DROP REPLICA`. Plain named collections must be dropped with `DROP NAMED COLLECTION`.
+    if (collection->getOrDefault<String>(String{NAMED_COLLECTION_KIND_KEY}, "") != NAMED_COLLECTION_KIND_REPLICA)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Named collection `{}` is not TYPE `REPLICA`, cannot use DROP REPLICA",
+            "Named collection `{}` is not a SQL replica, cannot use DROP REPLICA",
             query.replica_name);
     }
 

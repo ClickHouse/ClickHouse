@@ -14,6 +14,8 @@
 namespace DB
 {
 
+using namespace SQLClusterCatalog;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -31,11 +33,12 @@ BlockIO InterpreterAlterShardQuery::execute()
     switch (query.command)
     {
         case AlterShardCommand::ModifyShardProperties:
-            validateShardLevelPropertyPatchAssignments(query.shard_definition_properties);
+            PropertyValidation::Shard::validatePatchAssignments(query.shard_definition_properties);
             break;
         case AlterShardCommand::AddReplica:
-            /// `ADD REPLICA` only attaches an existing `TYPE REPLICA` named collection — no property patch is
-            /// accepted here (the parser rejects `PROPERTIES`). Use `ALTER REPLICA` to mutate replica properties.
+            /// `ADD REPLICA` only attaches an existing replica named collection (created via `CREATE REPLICA`) —
+            /// no property patch is accepted here (the parser rejects `PROPERTIES`). Use `ALTER REPLICA` to
+            /// mutate replica properties.
             /// `CREATE_SHARD` alone must not let the caller bring in a named collection they are not entitled
             /// to use, so check `NAMED_COLLECTION` access up-front — before the `ON CLUSTER` dispatch — to
             /// match the contract of `CREATE SHARD`, `CREATE CLUSTER`, and `ALTER CLUSTER`.
@@ -45,7 +48,7 @@ BlockIO InterpreterAlterShardQuery::execute()
             break;
         case AlterShardCommand::ReplaceReplicas:
             if (!query.shard_definition_properties.empty())
-                validateShardLevelPropertyPatchAssignments(query.shard_definition_properties);
+                PropertyValidation::Shard::validatePatchAssignments(query.shard_definition_properties);
             /// `REPLACE ... TO <new>` introduces named collections `<new>` as shard replicas — the factory
             /// resolves them against `NamedCollectionFactory`. Check `NAMED_COLLECTION` per target name
             /// up-front (same contract as `CREATE SHARD` and `ALTER SHARD ADD REPLICA`). `from_collections`

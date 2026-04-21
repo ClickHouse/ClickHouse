@@ -13,6 +13,8 @@
 namespace DB
 {
 
+using namespace SQLClusterCatalog;
+
 namespace Setting
 {
     extern const SettingsInt64 distributed_ddl_task_timeout;
@@ -33,9 +35,9 @@ BlockIO InterpreterCreateClusterCatalogQuery::execute()
     UInt32 shard_weight = 1;
     bool shard_internal_replication = false;
     if (is_cluster)
-        validateAndExtractClusterLevelProperties(query.properties, cluster_secret, allow_distributed_ddl_queries);
+        PropertyValidation::Cluster::validateAndExtract(query.properties, cluster_secret, allow_distributed_ddl_queries);
     else
-        validateAndExtractShardLevelProperties(query.properties, shard_weight, shard_internal_replication);
+        PropertyValidation::Shard::validateAndExtract(query.properties, shard_weight, shard_internal_replication);
 
     if (is_cluster)
     {
@@ -56,7 +58,8 @@ BlockIO InterpreterCreateClusterCatalogQuery::execute()
     }
     else
     {
-        /// Each replica names an existing `TYPE REPLICA` collection resolved in `ClusterFactory::createShard`.
+        /// Each replica names an existing replica collection (created via `CREATE REPLICA`) resolved in
+        /// `ClusterFactory::createShard`.
         /// `CREATE_SHARD` alone must not let the caller reference collections they are not allowed to use.
         for (const auto & replica_name : query.members)
             current_context->checkAccess(AccessType::NAMED_COLLECTION, replica_name);

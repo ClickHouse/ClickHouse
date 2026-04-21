@@ -32,6 +32,16 @@
 /// | allow_distributed_ddl_queries | default true in XML docs; enforced when wired to SQL |
 ///
 /// Nested `shard` / `replica` layout in XML is expressed in SQL via `CREATE SHARD` / member lists, not as arbitrary keys here.
+///
+/// Public API is nested under `DB::SQLClusterCatalog::PropertyValidation::{Shard,Replica,Cluster}`:
+///
+///     using namespace SQLClusterCatalog;
+///     PropertyValidation::Replica::validateForSQLReplica(properties);
+///     PropertyValidation::Shard::validateAndExtract(properties, weight, internal_replication);
+///     PropertyValidation::Cluster::validate(properties);
+///
+/// `PropertyValidation::Detail` holds file-internal helpers (numeric parsing, hostname predicates). They are `inline`
+/// because this is a header and some are reused across sub-namespaces; they are not part of the public contract.
 
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -55,8 +65,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace SQLClusterCatalogPropertyValidationDetail
+namespace SQLClusterCatalog::PropertyValidation
 {
+
+/// Rejects repeated keys in a `PROPERTIES` list (e.g. `weight = 1, weight = 2`). Shared by all three sub-namespaces and
+/// also called directly from `ClusterFactory` paths that do their own bespoke parsing.
 inline void assertNoDuplicatePropertyNames(const SettingsChanges & changes)
 {
     std::unordered_set<std::string_view> seen;
@@ -66,6 +79,9 @@ inline void assertNoDuplicatePropertyNames(const SettingsChanges & changes)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate property `{}` in PROPERTIES", ch.name);
     }
 }
+
+namespace Detail
+{
 
 inline UInt64 parseUnsignedIntegerPropertyValue(const Field & value, std::string_view property_name)
 {
@@ -158,6 +174,30 @@ inline bool isValidHost(const std::string & host)
 {
     return isIPv4(host) || isIPv6(host) || isValidHostname(host);
 }
+
+}
+
+namespace Shard
+{
+
+/// Narrow a shard-level `weight` from `UInt64` (parsed width) to the `UInt32` width actually stored in
+/// `Cluster::ShardInfo::weight`, enforcing `raw != 0` and `raw <= UINT32_MAX`. A plain `static_cast<UInt32>`
+/// would silently wrap — e.g. `weight = 4294967297` becomes `1` and passes the `weight == 0` check. The
+/// `context_label` is the human prefix of the error message (e.g. `"Property \`weight\`"`, `"Named collection
+/// key \`weight\`"`) so call sites from both SQL `PROPERTIES` and named-collection whole-shard paths share one
+/// range-check with a source-appropriate message.
+inline UInt32 narrowWeightToUInt32(UInt64 raw, std::string_view context_label)
+{
+    if (raw == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must be greater than zero", context_label);
+    if (raw > std::numeric_limits<UInt32>::max())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{} must fit in a 32-bit unsigned integer (got {}, max {})",
+            context_label,
+            raw,
+            std::numeric_limits<UInt32>::max());
+    return static_cast<UInt32>(raw);
 }
 
 /// Parse shard-level `weight` and validate it against `UInt32` range **before** narrowing.
@@ -166,22 +206,14 @@ inline bool isValidHost(const std::string & host)
 /// `String`. A naive `static_cast<UInt32>(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value))` silently
 /// wraps, so e.g. `weight = 4294967297` becomes `1` and passes the `weight == 0` check. Validate the full-width
 /// value here, then narrow.
-inline UInt32 parseShardCatalogWeightValue(const Field & value)
+inline UInt32 parseWeightValue(const Field & value)
 {
-    const UInt64 raw = SQLClusterCatalogPropertyValidationDetail::parseUnsignedIntegerPropertyValue(value, "weight");
-    if (raw == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `weight` must be greater than zero");
-    if (raw > std::numeric_limits<UInt32>::max())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Property `weight` must fit in a 32-bit unsigned integer (got {}, max {})",
-            raw,
-            std::numeric_limits<UInt32>::max());
-    return static_cast<UInt32>(raw);
+    const UInt64 raw = Detail::parseUnsignedIntegerPropertyValue(value, "weight");
+    return narrowWeightToUInt32(raw, "Property `weight`");
 }
 
 /// Parse shard-level `internal_replication` only from boolean literals, integer 0 or 1, or string `true` / `false`.
-inline void parseShardCatalogInternalReplicationValue(const Field & value, bool & internal_replication)
+inline void parseInternalReplicationValue(const Field & value, bool & internal_replication)
 {
     switch (value.getType())
     {
@@ -273,11 +305,11 @@ inline void parseShardCatalogInternalReplicationValue(const Field & value, bool 
         applyVisitor(FieldVisitorToString(), value));
 }
 
-/// **Shard**-level `PROPERTIES` (`CREATE SHARD`, `ALTER SHARD ... MODIFY PROPERTIES`, optional tail on `ALTER SHARD ... REPLACE ...`, `ALTER CLUSTER` shard clauses): `weight`, `internal_replication`.
-inline void validateAndExtractShardLevelProperties(
-    const SettingsChanges & changes, UInt32 & weight, bool & internal_replication)
+/// Shard-level `PROPERTIES` (`CREATE SHARD`, `ALTER SHARD ... MODIFY PROPERTIES`, optional tail on
+/// `ALTER SHARD ... REPLACE ...`, `ALTER CLUSTER` shard clauses): `weight`, `internal_replication`.
+inline void validateAndExtract(const SettingsChanges & changes, UInt32 & weight, bool & internal_replication)
 {
-    SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(changes);
+    assertNoDuplicatePropertyNames(changes);
 
     weight = 1;
     internal_replication = false;
@@ -285,9 +317,9 @@ inline void validateAndExtractShardLevelProperties(
     for (const auto & ch : changes)
     {
         if (ch.name == "weight")
-            weight = parseShardCatalogWeightValue(ch.value);
+            weight = parseWeightValue(ch.value);
         else if (ch.name == "internal_replication")
-            parseShardCatalogInternalReplicationValue(ch.value, internal_replication);
+            parseInternalReplicationValue(ch.value, internal_replication);
         else
         {
             throw Exception(
@@ -299,15 +331,17 @@ inline void validateAndExtractShardLevelProperties(
     }
 }
 
-/// For `ALTER SHARD ... MODIFY PROPERTIES` (standalone) and for the optional `MODIFY PROPERTIES` tail on `ALTER SHARD ... REPLACE ...`: non-empty assignment list, known keys only (merge semantics in `ClusterFactory::updateShardPropertiesFromSQL` / `replaceShardReplicasFromSQL`).
-inline void validateShardLevelPropertyPatchAssignments(const SettingsChanges & changes)
+/// For `ALTER SHARD ... MODIFY PROPERTIES` (standalone) and for the optional `MODIFY PROPERTIES` tail on
+/// `ALTER SHARD ... REPLACE ...`: non-empty assignment list, known keys only (merge semantics in
+/// `ClusterFactory::updateShardPropertiesFromSQL` / `replaceShardReplicasFromSQL`).
+inline void validatePatchAssignments(const SettingsChanges & changes)
 {
     if (changes.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "ALTER SHARD ... MODIFY PROPERTIES requires at least one shard-level assignment (allowed: weight, internal_replication)");
 
-    SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(changes);
+    assertNoDuplicatePropertyNames(changes);
 
     for (const auto & ch : changes)
     {
@@ -321,8 +355,46 @@ inline void validateShardLevelPropertyPatchAssignments(const SettingsChanges & c
     }
 }
 
-/// **Replica**-level `PROPERTIES`: allowed keys only (values validated in `validateReplicaLevelPropertiesForSQLReplica`).
-inline void validateReplicaLevelPropertyKeys(const SettingsChanges & changes)
+}
+
+namespace Replica
+{
+
+/// Narrow a replica-level `priority` from `UInt64` (parsed width) to the `Int64` width of `Priority::Value`,
+/// enforcing `raw <= INT64_MAX`. The original code used `static_cast<int>` which both truncated to 32 bits
+/// (silently wrapping) and contradicted `Priority::Value` (which is `Int64`), so e.g. `priority = 2^32` became
+/// `0` and ended up at the "highest priority" bucket (lower value = higher priority in load balancing).
+inline Int64 narrowPriorityToInt64(UInt64 raw, std::string_view context_label)
+{
+    if (raw > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{} must fit in a 64-bit signed integer (got {}, max {})",
+            context_label,
+            raw,
+            std::numeric_limits<Int64>::max());
+    return static_cast<Int64>(raw);
+}
+
+/// Narrow a replica-level `port` from `UInt64` (parsed width) to the `UInt16` width of `Cluster::Address::port`,
+/// enforcing `raw <= 65535`. Accepts `raw == 0` because call sites use `0` as a "not specified in this named
+/// collection" sentinel and check it separately (a user-supplied `port = 0` is still caught by that follow-up check).
+/// Fixes the same wrap-around issue as `Shard::narrowWeightToUInt32`: `port = 65537` would otherwise become `1` and
+/// silently bypass the `if (!addr.port)` guard.
+inline UInt16 narrowPortToUInt16(UInt64 raw, std::string_view context_label)
+{
+    if (raw > std::numeric_limits<UInt16>::max())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{} must fit in a 16-bit unsigned integer (got {}, max {})",
+            context_label,
+            raw,
+            std::numeric_limits<UInt16>::max());
+    return static_cast<UInt16>(raw);
+}
+
+/// Replica-level `PROPERTIES`: allowed keys only (values validated in `Replica::validateForSQLReplica`).
+inline void validateKeys(const SettingsChanges & changes)
 {
     static const std::unordered_set<std::string_view> allowed{
         "host",
@@ -336,7 +408,7 @@ inline void validateReplicaLevelPropertyKeys(const SettingsChanges & changes)
         "default_database",
     };
 
-    SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(changes);
+    assertNoDuplicatePropertyNames(changes);
 
     for (const auto & ch : changes)
     {
@@ -350,10 +422,10 @@ inline void validateReplicaLevelPropertyKeys(const SettingsChanges & changes)
     }
 }
 
-/// After `validateReplicaLevelPropertyKeys`, require `host` / `port` suitable for a replica endpoint named collection.
-inline void validateReplicaLevelPropertiesForSQLReplica(const SettingsChanges & changes)
+/// After `Replica::validateKeys`, require `host` / `port` suitable for a replica endpoint named collection.
+inline void validateForSQLReplica(const SettingsChanges & changes)
 {
-    validateReplicaLevelPropertyKeys(changes);
+    validateKeys(changes);
 
     const String * host = nullptr;
     const Field * port_value = nullptr;
@@ -373,7 +445,7 @@ inline void validateReplicaLevelPropertiesForSQLReplica(const SettingsChanges & 
     if (!host || host->empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica-level PROPERTIES require non-empty `host`");
 
-    if (!SQLClusterCatalogPropertyValidationDetail::isValidHost(*host))
+    if (!Detail::isValidHost(*host))
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -384,17 +456,22 @@ inline void validateReplicaLevelPropertiesForSQLReplica(const SettingsChanges & 
     if (!port_value)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica-level PROPERTIES require `port`");
 
-    UInt64 port = SQLClusterCatalogPropertyValidationDetail::parseUnsignedIntegerPropertyValue(*port_value, "port");
+    UInt64 port = Detail::parseUnsignedIntegerPropertyValue(*port_value, "port");
     if (port == 0 || port > 65535)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica-level PROPERTIES require `port` between 1 and 65535, got {}", port);
 }
 
-/// **Cluster**-level `PROPERTIES` (`CREATE CLUSTER ... PROPERTIES`, optional tail on `ALTER CLUSTER ... REPLACE ... MODIFY PROPERTIES`): `secret`, `allow_distributed_ddl_queries`.
-/// Callers that only need validation may pass dummy `String` / `bool` out-parameters and ignore them after the call.
-inline void validateAndExtractClusterLevelProperties(
-    const SettingsChanges & changes, String & secret, bool & allow_distributed_ddl_queries)
+}
+
+namespace Cluster
 {
-    SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(changes);
+
+/// Cluster-level `PROPERTIES` (`CREATE CLUSTER ... PROPERTIES`, optional tail on `ALTER CLUSTER ... REPLACE ... MODIFY
+/// PROPERTIES`): `secret`, `allow_distributed_ddl_queries`. Callers that only need validation may pass dummy `String` /
+/// `bool` out-parameters and ignore them after the call.
+inline void validateAndExtract(const SettingsChanges & changes, String & secret, bool & allow_distributed_ddl_queries)
+{
+    assertNoDuplicatePropertyNames(changes);
 
     secret.clear();
     allow_distributed_ddl_queries = true;
@@ -425,15 +502,16 @@ inline void validateAndExtractClusterLevelProperties(
     }
 }
 
-/// For optional cluster-level `MODIFY PROPERTIES` tail on `ALTER CLUSTER ... REPLACE ...`: non-empty list, known keys only (merge semantics in `ClusterFactory::replaceClusterMembersFromSQL`).
-inline void validateClusterLevelProperties(const SettingsChanges & changes)
+/// For optional cluster-level `MODIFY PROPERTIES` tail on `ALTER CLUSTER ... REPLACE ...`: non-empty list, known keys
+/// only (merge semantics in `ClusterFactory::replaceClusterMembersFromSQL`).
+inline void validate(const SettingsChanges & changes)
 {
     if (changes.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "ALTER CLUSTER ... MODIFY PROPERTIES requires at least one cluster-level assignment (allowed: secret, allow_distributed_ddl_queries)");
 
-    SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(changes);
+    assertNoDuplicatePropertyNames(changes);
 
     for (const auto & ch : changes)
     {
@@ -445,6 +523,10 @@ inline void validateClusterLevelProperties(const SettingsChanges & changes)
                 ch.name);
         }
     }
+}
+
+}
+
 }
 
 }

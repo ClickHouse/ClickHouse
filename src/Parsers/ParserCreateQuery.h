@@ -645,7 +645,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// CREATE NAMED COLLECTION name [ON CLUSTER cluster] [TYPE type] AS k = v, ...
+/// CREATE NAMED COLLECTION name [ON CLUSTER cluster] AS k = v, ...
 class ParserCreateNamedCollectionQuery : public IParserBase
 {
 protected:

@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Common/NamedCollections/NamedCollectionReservedKeys.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
@@ -19,6 +20,11 @@ BlockIO InterpreterAlterNamedCollectionQuery::execute()
     const auto & query = updated_query->as<const ASTAlterNamedCollectionQuery &>();
 
     current_context->checkAccess(AccessType::ALTER_NAMED_COLLECTION, query.collection_name);
+
+    /// Neither SET nor DELETE may touch reserved keys (prevents forging a replica tag onto a plain NC,
+    /// or stripping a replica's tag to smuggle it out of `system.replicas_collection`).
+    assertNoReservedKeys(query.changes);
+    assertNoReservedKeys(query.delete_keys);
 
     if (!query.cluster.empty())
     {

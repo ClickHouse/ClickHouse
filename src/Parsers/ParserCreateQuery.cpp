@@ -1820,7 +1820,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     ParserKeyword s_named_collection(Keyword::NAMED_COLLECTION);
     ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
     ParserKeyword s_on(Keyword::ON);
-    ParserKeyword s_type(Keyword::TYPE);
     ParserKeyword s_as(Keyword::AS);
     ParserKeyword s_not_overridable(Keyword::NOT_OVERRIDABLE);
     ParserKeyword s_overridable(Keyword::OVERRIDABLE);
@@ -1828,7 +1827,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     ParserToken s_comma(TokenType::Comma);
 
     String cluster_str;
-    String collection_type;
     bool if_not_exists = false;
 
     ASTPtr collection_name;
@@ -1850,14 +1848,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
-    }
-
-    if (s_type.ignore(pos, expected))
-    {
-        ASTPtr type_ast;
-        if (!name_p.parse(pos, type_ast, expected))
-            return false;
-        tryGetIdentifierNameInto(type_ast, collection_type);
     }
 
     if (!s_as.ignore(pos, expected))
@@ -1885,7 +1875,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
     tryGetIdentifierNameInto(collection_name, query->collection_name);
     query->if_not_exists = if_not_exists;
-    query->collection_type = std::move(collection_type);
     query->changes = changes;
     query->cluster = std::move(cluster_str);
     query->overridability = overridability;

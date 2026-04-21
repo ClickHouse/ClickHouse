@@ -14,6 +14,8 @@
 namespace DB
 {
 
+using namespace SQLClusterCatalog;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -36,7 +38,7 @@ BlockIO InterpreterAlterClusterQuery::execute()
             break;
         case AlterClusterCommand::ReplaceClusterMembers:
             if (!query.cluster_definition_properties.empty())
-                validateClusterLevelProperties(query.cluster_definition_properties);
+                PropertyValidation::Cluster::validate(query.cluster_definition_properties);
             break;
         case AlterClusterCommand::ModifyShard:
         case AlterClusterCommand::RenameShard:

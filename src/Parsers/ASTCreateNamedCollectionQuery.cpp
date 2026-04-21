@@ -23,9 +23,6 @@ void ASTCreateNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::F
 
     formatOnCluster(ostr, settings);
 
-    if (!collection_type.empty())
-        ostr << " TYPE " << backQuoteIfNeed(collection_type);
-
     ostr << " AS ";
     bool first = true;
     for (const auto & change : changes)

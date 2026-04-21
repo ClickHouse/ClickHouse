@@ -42,6 +42,16 @@ namespace ErrorCodes
 namespace
 {
 
+/// Backend storage-type tag values accepted in the `<type>` key of this component's config section. Kept
+/// together with the `_encrypted` suffix detector so that adding a new backend touches one place.
+constexpr std::string_view STORAGE_TYPE_LOCAL = "local";
+constexpr std::string_view STORAGE_TYPE_LOCAL_ENCRYPTED = "local_encrypted";
+constexpr std::string_view STORAGE_TYPE_ZOOKEEPER = "zookeeper";
+constexpr std::string_view STORAGE_TYPE_KEEPER = "keeper";
+constexpr std::string_view STORAGE_TYPE_ZOOKEEPER_ENCRYPTED = "zookeeper_encrypted";
+constexpr std::string_view STORAGE_TYPE_KEEPER_ENCRYPTED = "keeper_encrypted";
+constexpr std::string_view STORAGE_TYPE_ENCRYPTED_SUFFIX = "_encrypted";
+
 LoggerPtr getLog()
 {
     return getLogger("ClusterCatalogMetadataBackend");
@@ -407,16 +417,16 @@ std::shared_ptr<IClusterCatalogMetadataBackend> createClusterCatalogMetadataBack
     const ContextPtr & context_, const std::string & config_prefix, const std::string & default_local_path)
 {
     const auto & config = context_->getConfigRef();
-    const auto storage_type = config.getString(config_prefix + ".type", "local");
+    const auto storage_type = config.getString(config_prefix + ".type", std::string{STORAGE_TYPE_LOCAL});
 
-    if (storage_type == "local" || storage_type == "local_encrypted")
+    if (storage_type == STORAGE_TYPE_LOCAL || storage_type == STORAGE_TYPE_LOCAL_ENCRYPTED)
     {
         const auto path = config.getString(config_prefix + ".path", default_local_path);
 
         LOG_TRACE(getLog(), "Using {} cluster catalog backend ({}) at path: {}", storage_type, config_prefix, path);
 
         std::shared_ptr<IClusterCatalogMetadataBackend> local_backend;
-        if (storage_type == "local")
+        if (storage_type == STORAGE_TYPE_LOCAL)
             local_backend = std::make_shared<ClusterCatalogLocalBackend>(context_, path);
         else
         {
@@ -430,13 +440,13 @@ std::shared_ptr<IClusterCatalogMetadataBackend> createClusterCatalogMetadataBack
         return local_backend;
     }
 
-    if (storage_type == "zookeeper" || storage_type == "keeper" || storage_type == "zookeeper_encrypted"
-        || storage_type == "keeper_encrypted")
+    if (storage_type == STORAGE_TYPE_ZOOKEEPER || storage_type == STORAGE_TYPE_KEEPER
+        || storage_type == STORAGE_TYPE_ZOOKEEPER_ENCRYPTED || storage_type == STORAGE_TYPE_KEEPER_ENCRYPTED)
     {
         const auto path = config.getString(config_prefix + ".path");
 
         std::shared_ptr<IClusterCatalogMetadataBackend> keeper_backend;
-        if (!storage_type.ends_with("_encrypted"))
+        if (!storage_type.ends_with(STORAGE_TYPE_ENCRYPTED_SUFFIX))
             keeper_backend = std::make_shared<ClusterCatalogKeeperBackend>(context_, path);
         else
         {

@@ -33,6 +33,8 @@
 namespace DB
 {
 
+using namespace SQLClusterCatalog;
+
 namespace ErrorCodes
 {
     extern const int SHARD_ALREADY_EXISTS;
@@ -172,7 +174,11 @@ SQLCatalogReplicaHostPort tryExtractSQLCatalogReplicaHostPort(const NamedCollect
     if (coll.has(NC_REPLICAS) || !coll.has(NC_HOST))
         return out;
     out.host = coll.get<String>(NC_HOST);
-    out.port = static_cast<UInt16>(coll.getOrDefault<UInt64>(NC_PORT, NC_NUM_DEFAULT_OFF));
+    /// Same range-check as the consuming side in `makeReplicaAddress`: refuse to report a spurious `host:port`
+    /// pair for a named collection whose `port` is out of `UInt16` range (would otherwise wrap into a plausible
+    /// in-range value and contribute a wrong duplicate-endpoint signature).
+    out.port = PropertyValidation::Replica::narrowPortToUInt16(
+        coll.getOrDefault<UInt64>(NC_PORT, NC_NUM_DEFAULT_OFF), "Replica named collection key `port`");
     out.valid = out.port != 0;
     return out;
 }
@@ -194,7 +200,10 @@ Cluster::Address makeReplicaAddress(
 
     Cluster::Address addr;
     addr.host_name = coll.get<String>(NC_HOST);
-    addr.port = static_cast<UInt16>(coll.getOrDefault<UInt64>(NC_PORT, NC_NUM_DEFAULT_OFF));
+    /// Range-check before narrowing `UInt64 → UInt16` — `static_cast<UInt16>` would silently wrap and e.g. turn
+    /// `port = 65537` into `1`, bypassing the `if (!addr.port)` guard below with a plausible-looking value.
+    addr.port = PropertyValidation::Replica::narrowPortToUInt16(
+        coll.getOrDefault<UInt64>(NC_PORT, NC_NUM_DEFAULT_OFF), "Replica named collection key `port`");
     if (!addr.port)
         throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Replica named collection `{}` requires positive `port`", nc_name);
 
@@ -202,7 +211,11 @@ Cluster::Address makeReplicaAddress(
     addr.password = coll.getOrDefault<String>(NC_PASSWORD, EMPTY_STRING);
     addr.default_database = coll.getOrDefault<String>(NC_DEFAULT_DATABASE, EMPTY_STRING);
     addr.bind_host = coll.getOrDefault<String>(NC_BIND_HOST, EMPTY_STRING);
-    addr.priority = Priority{static_cast<int>(getUIntField(coll, NC_PRIORITY, NC_NUM_DEFAULT_PRIORITY))};
+    /// `Priority::Value` is `Int64`; the old `static_cast<int>` first truncated to 32 bits (silently wrapping
+    /// values `> INT32_MAX`) and then sign-extended back to `Int64`, so e.g. `priority = 2^32` became `0` and
+    /// landed at the top-priority bucket. Narrow through the validated helper instead.
+    addr.priority = Priority{PropertyValidation::Replica::narrowPriorityToInt64(
+        getUIntField(coll, NC_PRIORITY, NC_NUM_DEFAULT_PRIORITY), "Named collection key `priority`")};
     bool sec = getUIntField(coll, NC_SECURE, NC_NUM_DEFAULT_OFF) != 0;
     addr.secure = sec ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     addr.shard_index = shard_index;
@@ -234,12 +247,17 @@ Cluster::ShardInitSpec makeWholeShardSpec(
 
     String user = coll.getOrDefault<String>(NC_USER, NC_DEFAULT_USER);
     String password = coll.getOrDefault<String>(NC_PASSWORD, EMPTY_STRING);
-    UInt32 weight = static_cast<UInt32>(getUIntField(coll, NC_WEIGHT, NC_NUM_DEFAULT_WEIGHT));
+    /// Validate the raw `UInt64` against `UInt32` range (and reject 0) before narrowing — same invariant as the
+    /// SQL `PROPERTIES(weight = ...)` path (`PropertyValidation::Shard::parseWeightValue`). A plain `static_cast<UInt32>` would
+    /// silently wrap (e.g. `4294967297` → `1`) and pass the positivity check unnoticed.
+    UInt32 weight = PropertyValidation::Shard::narrowWeightToUInt32(
+        getUIntField(coll, NC_WEIGHT, NC_NUM_DEFAULT_WEIGHT), "Named collection key `weight`");
     bool internal_replication = getUIntField(coll, NC_INTERNAL_REPLICATION, NC_NUM_DEFAULT_OFF) != 0;
     bool sec = getUIntField(coll, NC_SECURE, NC_NUM_DEFAULT_OFF) != 0;
     String default_database = coll.getOrDefault<String>(NC_DEFAULT_DATABASE, EMPTY_STRING);
     String bind_host = coll.getOrDefault<String>(NC_BIND_HOST, EMPTY_STRING);
-    Priority priority{static_cast<int>(getUIntField(coll, NC_PRIORITY, NC_NUM_DEFAULT_PRIORITY))};
+    Priority priority{PropertyValidation::Replica::narrowPriorityToInt64(
+        getUIntField(coll, NC_PRIORITY, NC_NUM_DEFAULT_PRIORITY), "Named collection key `priority`")};
 
     Cluster::Addresses addresses;
     UInt32 replica_index = 1;
@@ -853,7 +871,7 @@ bool ClusterFactory::replaceClusterMembersFromSQL(const ASTAlterClusterQuery & q
 
         if (!query.cluster_definition_properties.empty())
         {
-            SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(query.cluster_definition_properties);
+            PropertyValidation::assertNoDuplicatePropertyNames(query.cluster_definition_properties);
 
             for (const auto & ch : query.cluster_definition_properties)
             {
@@ -916,14 +934,14 @@ bool ClusterFactory::updateShardPropertiesFromSQL(const ASTAlterShardQuery & que
 
         ShardCatalogDefinition record = loaded_sql_shards.at(query.shard_name);
 
-        SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(query.shard_definition_properties);
+        PropertyValidation::assertNoDuplicatePropertyNames(query.shard_definition_properties);
 
         for (const auto & ch : query.shard_definition_properties)
         {
             if (ch.name == "weight")
-                record.weight = parseShardCatalogWeightValue(ch.value);
+                record.weight = PropertyValidation::Shard::parseWeightValue(ch.value);
             else if (ch.name == "internal_replication")
-                parseShardCatalogInternalReplicationValue(ch.value, record.internal_replication);
+                PropertyValidation::Shard::parseInternalReplicationValue(ch.value, record.internal_replication);
             else
             {
                 throw Exception(
@@ -1155,14 +1173,14 @@ bool ClusterFactory::replaceShardReplicasFromSQL(const ASTAlterShardQuery & quer
 
         if (!query.shard_definition_properties.empty())
         {
-            SQLClusterCatalogPropertyValidationDetail::assertNoDuplicatePropertyNames(query.shard_definition_properties);
+            PropertyValidation::assertNoDuplicatePropertyNames(query.shard_definition_properties);
 
             for (const auto & ch : query.shard_definition_properties)
             {
                 if (ch.name == "weight")
-                    record.weight = parseShardCatalogWeightValue(ch.value);
+                    record.weight = PropertyValidation::Shard::parseWeightValue(ch.value);
                 else if (ch.name == "internal_replication")
-                    parseShardCatalogInternalReplicationValue(ch.value, record.internal_replication);
+                    PropertyValidation::Shard::parseInternalReplicationValue(ch.value, record.internal_replication);
                 else
                 {
                     throw Exception(

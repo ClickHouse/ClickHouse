@@ -78,9 +78,15 @@ public:
 
     virtual SourceId getSourceId() const { return SourceId::NONE; }
 
-    virtual String getCollectionType() const { return {}; }
-
-    virtual String getCreateStatement(bool /*show_secrects*/) { return  {}; }
+    /// Render the `CREATE NAMED COLLECTION` statement that reconstructs this collection.
+    ///
+    /// * `show_secrets`          — if false, replace sensitive values with `[HIDDEN]` for user display.
+    /// * `hide_reserved_keys`    — if true, strip keys in the `__` reserved namespace (see
+    ///                             `NamedCollectionReservedKeys.h`). The persistence path MUST pass
+    ///                             `false` here, or the feature tag (e.g. `__type__='replica'`) would be
+    ///                             lost across restart; user-facing surfaces (`system.named_collections`,
+    ///                             `system.replicas_collection`) SHOULD pass `true`.
+    virtual String getCreateStatement(bool /*show_secrets*/, bool /*hide_reserved_keys*/) { return {}; }
 
     virtual void update(const ASTAlterNamedCollectionQuery & query);
 
@@ -109,13 +115,11 @@ class NamedCollectionFromSQL final : public NamedCollection
 public:
     static MutableNamedCollectionPtr create(const ASTCreateNamedCollectionQuery & query);
 
-    String getCreateStatement(bool show_secrects) override;
+    String getCreateStatement(bool show_secrets, bool hide_reserved_keys) override;
 
     void update(const ASTAlterNamedCollectionQuery & query) override;
 
     NamedCollection::SourceId getSourceId() const override { return SourceId::SQL; }
-
-    String getCollectionType() const override { return create_query_ptr.collection_type; }
 
 private:
     explicit NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_);
@@ -133,7 +137,7 @@ public:
         const std::string & collection_path,
         const Keys & keys);
 
-    String getCreateStatement(bool /*show_secrects*/) override { return {}; }
+    String getCreateStatement(bool /*show_secrets*/, bool /*hide_reserved_keys*/) override { return {}; }
 
     void update(const ASTAlterNamedCollectionQuery & /*query*/) override { NamedCollection::assertMutable(); }
 

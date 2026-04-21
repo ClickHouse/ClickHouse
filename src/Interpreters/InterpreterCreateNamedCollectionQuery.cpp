@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Common/NamedCollections/NamedCollectionReservedKeys.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Core/ServerSettings.h>
 
@@ -35,6 +36,11 @@ BlockIO InterpreterCreateNamedCollectionQuery::execute()
     const auto & query = updated_query->as<const ASTCreateNamedCollectionQuery &>();
 
     current_context->checkAccess(AccessType::CREATE_NAMED_COLLECTION, query.collection_name);
+
+    /// User DDL is never allowed to populate internal reserved keys (see `NamedCollectionReservedKeys.h`).
+    /// Interpreters like `InterpreterCreateReplicaQuery` that legitimately need to set them bypass this
+    /// interpreter and talk to `NamedCollectionFactory` directly.
+    assertNoReservedKeys(query.changes);
 
     UInt64 limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_named_collection_num_to_throw];
     UInt64 count = CurrentMetrics::get(CurrentMetrics::NamedCollection);

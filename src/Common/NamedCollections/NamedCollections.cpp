@@ -4,10 +4,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/NamedCollections/NamedCollectionReservedKeys.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <fmt/ranges.h>
+#include <ranges>
 
 
 namespace DB
@@ -368,17 +370,40 @@ NamedCollectionFromSQL::NamedCollectionFromSQL(const ASTCreateNamedCollectionQue
     pimpl = Impl::create(*config, collection_name, "", keys);
 }
 
-String NamedCollectionFromSQL::getCreateStatement(bool show_secrects)
+String NamedCollectionFromSQL::getCreateStatement(bool show_secrets, bool hide_reserved_keys)
 {
     auto & changes = create_query_ptr.changes;
     std::sort(
         changes.begin(), changes.end(),
         [](const SettingChange & lhs, const SettingChange & rhs) { return lhs.name < rhs.name; });
 
-    return create_query_ptr.formatWithPossiblyHidingSensitiveData(
+    /// Fast path: no reserved keys to hide -> format the canonical AST directly. This is the path used for
+    /// persistence, where we MUST preserve every key (including the `__type__` tag that identifies replicas).
+    if (!hide_reserved_keys)
+    {
+        return create_query_ptr.formatWithPossiblyHidingSensitiveData(
+            /*max_length=*/0,
+            /*one_line=*/true,
+            /*show_secrets=*/show_secrets,
+            /*print_pretty_type_names=*/false,
+            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+    }
+
+    /// User-facing path: build a throwaway AST with reserved keys stripped, then format that. Cloning and
+    /// filtering in-memory is cheaper than post-processing the formatted string and keeps quoting correct.
+    ASTCreateNamedCollectionQuery filtered = create_query_ptr;
+    std::erase_if(filtered.changes, [](const SettingChange & c) { return isReservedNamedCollectionKey(c.name); });
+    for (const auto & key : create_query_ptr.overridability | std::views::keys)
+    {
+        if (isReservedNamedCollectionKey(key))
+            filtered.overridability.erase(key);
+    }
+
+    return filtered.formatWithPossiblyHidingSensitiveData(
         /*max_length=*/0,
         /*one_line=*/true,
-        /*show_secrets=*/show_secrects,
+        /*show_secrets=*/show_secrets,
         /*print_pretty_type_names=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);

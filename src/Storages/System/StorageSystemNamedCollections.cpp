@@ -12,6 +12,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
+#include <Common/NamedCollections/NamedCollectionReservedKeys.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
@@ -28,7 +29,6 @@ ColumnsDescription StorageSystemNamedCollections::getColumnsDescription()
     return ColumnsDescription
     {
         {"name", std::make_shared<DataTypeString>(), "Name of the collection."},
-        {"type", std::make_shared<DataTypeString>(), "Optional collection type from `CREATE NAMED COLLECTION ... TYPE ...`."},
         {"collection", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Collection internals."},
         {"source", std::make_shared<DataTypeString>(), "Named collection source."},
         {"create_query", std::make_shared<DataTypeString>(), "Named collection create query."},
@@ -53,9 +53,8 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
             continue;
 
         res_columns[0]->insert(name);
-        res_columns[1]->insert(collection->getCollectionType());
 
-        auto * column_map = typeid_cast<ColumnMap *>(res_columns[2].get());
+        auto * column_map = typeid_cast<ColumnMap *>(res_columns[1].get());
 
         auto & offsets = column_map->getNestedColumn().getOffsets();
         auto & tuple_column = column_map->getNestedData();
@@ -69,6 +68,10 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         size_t size = 0;
         for (const auto & key : collection->getKeys())
         {
+            /// Reserved keys (e.g. `__type__` used internally to tag replicas) are not part of the
+            /// user-visible schema — hide them here so `system.named_collections` stays clean.
+            if (isReservedNamedCollectionKey(key))
+                continue;
             key_column.insertData(key.data(), key.size());
             if (access_secrets)
                 value_column.insert(collection->get<String>(key));
@@ -79,8 +82,8 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
 
         offsets.push_back(offsets.back() + size);
 
-        res_columns[3]->insert(magic_enum::enum_name(collection->getSourceId()));
-        res_columns[4]->insert(collection->getCreateStatement(access_secrets));
+        res_columns[2]->insert(magic_enum::enum_name(collection->getSourceId()));
+        res_columns[3]->insert(collection->getCreateStatement(/*show_secrets=*/access_secrets, /*hide_reserved_keys=*/true));
     }
 }
 
