@@ -126,7 +126,7 @@ namespace
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
             writeBinary(node.sizeInBytes(), out);
 
-        if (version >= SnapshotVersion::V7)
+        if (version >= SnapshotVersion::V8)
         {
             writeBinary(node.destroy_time.has_value(), out);
             if (node.destroy_time.has_value())
@@ -244,7 +244,7 @@ namespace
             readBinary(size_bytes, in);
         }
 
-        if (version >= SnapshotVersion::V7)
+        if (version >= SnapshotVersion::V8)
         {
             bool has_destroy_time = false;
             readBinary(has_destroy_time, in);
