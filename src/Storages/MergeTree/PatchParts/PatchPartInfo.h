@@ -9,8 +9,8 @@ namespace DB
 
 struct KeyDescription;
 
-/** This directory contains classes functions with implementation of patch parts.
-  * Patch parts are created on lightweight updates (UPDATE queies, ALTER UPDATE
+/** This directory contains classes and functions with implementation of patch parts.
+  * Patch parts are created on lightweight updates (UPDATE queries, ALTER UPDATE
   * queries with `alter_update_mode` set to lightweight mode) and represent a patch
   * to the original part.
   *

@@ -1354,9 +1354,12 @@ public:
 
     /// Returns the metadata snapshot used to read a patch part, rebuilt deterministically from the
     /// part's columns + source-parts set. v1 patches (format_version = 0) use `DB::getPatchPartMetadata`;
-    /// v2 patches (format_version = 1) use `DB::getPatchPartMetadataV2` with the sort-key column names
-    /// persisted in the part's `SourcePartsSetForPatch`. Cached by partition id (v1 and v2 patches
-    /// never share a partition by construction of the partition-id hash).
+    /// v2 patches (format_version = 1) use `DB::getPatchPartMetadataV2` with the persisted sort-key
+    /// prefix size from `SourcePartsSetForPatch`, slicing the target table's current sort key to that
+    /// length (the partition-id hash isolates pre- and post-`ALTER MODIFY ORDER BY` patches into
+    /// different partitions, so the first `prefix_size` children of the current sort key match the
+    /// patch's written shape). Cached by partition id (v1 and v2 patches never share a partition by
+    /// construction of the partition-id hash).
     StorageMetadataPtr getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
 
     static MergingParams getMergingParamsForPatchParts();

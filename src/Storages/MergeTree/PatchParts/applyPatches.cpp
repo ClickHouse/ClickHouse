@@ -603,8 +603,6 @@ ALWAYS_INLINE size_t gallopingBinarySearch(
         step = step < max_step ? step << 1 : max_step;
     }
 
-    LOG_DEBUG(getLogger("KEK"), "begin: {}, end: {}, prev: {}, step: {}", begin, end, prev, step);
-
     size_t lo = begin + prev;
     size_t hi = std::min(end, begin + step);
 
