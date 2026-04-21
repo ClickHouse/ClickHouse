@@ -3,7 +3,6 @@
 
 #if USE_AVRO
 
-#include <atomic>
 #include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -12,67 +11,20 @@
 namespace DB::Iceberg
 {
 
-// All fields in this struct should be either thread-safe or immutable, because it can be used by several queries
+// All fields in this struct should be either thread-safe or immutable, because it can be used by several queries.
+// `format_version` is the value observed when the table was opened; the authoritative version
+// for parsing a specific manifest list / manifest file is taken from that file's own Avro metadata,
+// so an external upgrade (e.g. Spark v1 -> v2) between queries does not corrupt this cache.
 struct PersistentTableComponents
 {
     IcebergSchemaProcessorPtr schema_processor;
     IcebergMetadataFilesCachePtr metadata_cache;
-    /// format_version is atomic because external tools (e.g. Spark) can upgrade the
-    /// Iceberg format version between queries, and we update it when reading new metadata.
-    /// It can be read concurrently from multiple queries.
-    mutable std::atomic<Int32> format_version;
+    const Int32 format_version;
     const String table_location;
     const CompressionMethod metadata_compression_method;
     const String table_path;
     const std::optional<String> table_uuid;
     const IcebergPathResolver path_resolver;
-
-    PersistentTableComponents(
-        IcebergSchemaProcessorPtr schema_processor_,
-        IcebergMetadataFilesCachePtr metadata_cache_,
-        Int32 format_version_,
-        String table_location_,
-        CompressionMethod metadata_compression_method_,
-        String table_path_,
-        std::optional<String> table_uuid_,
-        IcebergPathResolver path_resolver_)
-        : schema_processor(std::move(schema_processor_))
-        , metadata_cache(std::move(metadata_cache_))
-        , format_version(format_version_)
-        , table_location(std::move(table_location_))
-        , metadata_compression_method(metadata_compression_method_)
-        , table_path(std::move(table_path_))
-        , table_uuid(std::move(table_uuid_))
-        , path_resolver(std::move(path_resolver_))
-    {
-    }
-
-    PersistentTableComponents(const PersistentTableComponents & other)
-        : schema_processor(other.schema_processor)
-        , metadata_cache(other.metadata_cache)
-        , format_version(other.format_version.load(std::memory_order_relaxed))
-        , table_location(other.table_location)
-        , metadata_compression_method(other.metadata_compression_method)
-        , table_path(other.table_path)
-        , table_uuid(other.table_uuid)
-        , path_resolver(other.path_resolver)
-    {
-    }
-
-    PersistentTableComponents(PersistentTableComponents && other) noexcept
-        : schema_processor(std::move(other.schema_processor))
-        , metadata_cache(std::move(other.metadata_cache))
-        , format_version(other.format_version.load(std::memory_order_relaxed))
-        , table_location(other.table_location)
-        , metadata_compression_method(other.metadata_compression_method)
-        , table_path(other.table_path)
-        , table_uuid(other.table_uuid)
-        , path_resolver(other.path_resolver)
-    {
-    }
-
-    PersistentTableComponents & operator=(const PersistentTableComponents &) = delete;
-    PersistentTableComponents & operator=(PersistentTableComponents &&) = delete;
 };
 
 }
