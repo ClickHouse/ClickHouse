@@ -203,7 +203,7 @@ Test output:
         title = result.name
         body = f"""\
 Test name: {result.name}
-{ci_report_line}Failing test history: [cidb]({result.get_hlabel_link("cidb")})
+{ci_report_line}Failing test history: [cidb]({result.get_label_link(Result.Label.CIDB)})
 
 Test output:
 ```
@@ -263,8 +263,8 @@ Test output:
             max_info_lines_cnt=50,
             max_line_length=200,
         )
-        res += f"\n - flags: {', '.join(result.get_labels()) or 'not flaged'}"
-        res += f"\n - cidb: {result.get_hlabel_link('cidb') or 'not found'}"
+        res += f"\n - flags: {', '.join(result.get_labels()) or 'not flagged'}"
+        res += f"\n - cidb: {result.get_label_link(Result.Label.CIDB) or 'not found'}"
         return res
 
     @classmethod
@@ -708,7 +708,7 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
             print(f"{failure_cnt}. [ {failure_result.status} ] {failure_result.name}")
             if job_name != failure_result.name:
                 print(f"  in {job_name}")
-                print(f"cidb: {failure_result.get_hlabel_link('cidb')}")
+                print(f"cidb: {failure_result.get_label_link(Result.Label.CIDB)}")
 
             # Create new issue if user confirms
             if UserPrompt.confirm("Create GitHub issue for this failure?"):
@@ -731,7 +731,7 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
                         issue_catalog.active_test_issues.append(ci_issue)
                         issue_catalog.dump()
                     failure_result.set_comment("ISSUE CREATED")
-                    failure_result.set_clickable_label("issue", ci_issue.url)
+                    failure_result.set_label(Result.Label.ISSUE, link=ci_issue.url)
                     known_failures.append((job_name, failure_result))
                     issues_created_count += 1
                 else:

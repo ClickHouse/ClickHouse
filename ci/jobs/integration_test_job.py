@@ -1048,7 +1048,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         has_failure = False
         for r in R.results:
             # invert statuses
-            r.set_label("xfail")
+            r.set_label(Result.Label.XFAIL)
             if r.status == Result.Status.FAIL:
                 r.status = Result.Status.OK
                 has_failure = True

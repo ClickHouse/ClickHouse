@@ -688,15 +688,19 @@ class GH:
                     else:
                         yield from flatten_results(r.results)
 
-            def extract_hlabels_info(res: Result) -> str:
+            def extract_label_links_md(res: Result) -> str:
+                """Render labels with links as markdown ``[name](link)`` chips.
+                Reads the unified ``ext['labels']`` and falls back to legacy
+                ``ext['hlabels']`` for results stored before the unification.
+                """
                 try:
-                    hlabels = (
-                        res.ext.get("hlabels", [])
-                        if hasattr(res, "ext") and isinstance(res.ext, dict)
-                        else []
-                    )
+                    if not (hasattr(res, "ext") and isinstance(res.ext, dict)):
+                        return ""
                     links = []
-                    for item in hlabels:
+                    for item in res.ext.get("labels", []) or []:
+                        if isinstance(item, dict) and item.get("name") and item.get("link"):
+                            links.append(f"[{item['name']}]({item['link']})")
+                    for item in res.ext.get("hlabels", []) or []:
                         if isinstance(item, (list, tuple)) and len(item) >= 2:
                             text, href = item[0], item[1]
                             if text and href:
@@ -705,6 +709,16 @@ class GH:
                 except Exception:
                     return ""
 
+            def has_label_links(res: Result) -> bool:
+                if not (hasattr(res, "ext") and isinstance(res.ext, dict)):
+                    return False
+                if any(
+                    isinstance(it, dict) and it.get("link")
+                    for it in res.ext.get("labels", []) or []
+                ):
+                    return True
+                return bool(res.ext.get("hlabels"))
+
             summary = cls(
                 name=result.name,
                 status=result.status,
@@ -712,7 +726,7 @@ class GH:
                 start_time=result.start_time,
                 duration=result.duration,
                 failed_results=[],
-                info=extract_hlabels_info(result),
+                info=extract_label_links_md(result),
                 comment=result.ext.get("comment", ""),
             )
 
@@ -735,14 +749,14 @@ class GH:
                 failed_result = cls(
                     name=sub_result.name,
                     status=sub_result.status,
-                    info=extract_hlabels_info(sub_result),
+                    info=extract_label_links_md(sub_result),
                     comment=sub_result.ext.get("comment", ""),
                 )
                 failed_result.failed_results = [
                     cls(
                         name=r.name,
                         status=r.status,
-                        info=extract_hlabels_info(r),
+                        info=extract_label_links_md(r),
                         comment=r.ext.get("comment", ""),
                     )
                     for r in flatten_results(sub_result.results)
@@ -762,11 +776,11 @@ class GH:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
                 print(f"NOTE: {remaining} more jobs not shown in PR comment")
-            # Collect links from jobs that have hlabels (e.g. keeper-stress Grafana links).
+            # Collect links from jobs that have labels with links (e.g. keeper-stress Grafana links).
             # Include regardless of success/failure so Grafana links always appear when keeper-stress runs.
             for job_result in getattr(result, "results", []) or []:
-                if job_result.ext.get("hlabels"):
-                    links_md = extract_hlabels_info(job_result)
+                if has_label_links(job_result):
+                    links_md = extract_label_links_md(job_result)
                     if links_md:
                         summary.extra_links.append((job_result.name, links_md))
             return summary

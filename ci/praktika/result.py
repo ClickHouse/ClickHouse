@@ -84,6 +84,26 @@ class Result(MetaClasses.Serializable):
         BLOCKER = "blocker"
         ISSUE = "issue"
         INFRA = "infra"
+        XFAIL = "xfail"
+        CIDB = "cidb"
+        SETTING_VALUE = "setting"
+        FLAKY = "flaky"
+        REPRODUCIBLE = "reproducible"
+
+    # Default hints rendered as a hover tooltip in json.html.
+    # Looked up automatically when set_label is called without an explicit hint.
+    LABEL_HINTS = {
+        Label.OK_ON_RETRY: "Test failed initially but passed on retry",
+        Label.FAILED_ON_RETRY: "Test failed both on the first run and on retry",
+        Label.BLOCKER: "Blocks the merge regardless if a known issue is matched (sanitizer/fatal in server logs, etc.)",
+        Label.ISSUE: "A known open GitHub issue matches this failure",
+        Label.INFRA: "Infrastructure error",
+        Label.XFAIL: "Expected to fail (bugfix validation inverts the status)",
+        Label.CIDB: "Failure history for this test in the CI database",
+        Label.SETTING_VALUE: "Failure caused by a specific randomized setting value",
+        Label.FLAKY: "Failure is reproducible in less than 100% of reruns",
+        Label.REPRODUCIBLE: "Failure is reproducible in 100% of reruns",
+    }
 
     name: str
     status: str
@@ -167,7 +187,7 @@ class Result(MetaClasses.Serializable):
             for result in results:
                 if result.info:
                     infos.append(f"{result.name}: {result.info}")
-        return Result(
+        result = Result(
             name=name,
             status=result_status,
             start_time=start_time,
@@ -177,7 +197,12 @@ class Result(MetaClasses.Serializable):
             assets=assets or [],
             files=files or [],
             links=links or [],
-        ).set_label(labels or [])
+        )
+        if isinstance(labels, str):
+            labels = [labels]
+        for label in labels or []:
+            result.set_label(label)
+        return result
 
     @staticmethod
     def get():
@@ -310,6 +335,47 @@ class Result(MetaClasses.Serializable):
         self._dump_if_persisted()
         return self
 
+    def add_warning(self, message: str) -> "Result":
+        """
+        Add a warning message to this result only.
+
+        The message is stored in ``self.ext["warnings"]`` as
+        ``{"message": str, "from": str}`` and rendered as a notification panel
+        on the report page for this specific result (workflow, job, sub-task,
+        or test).  It is **not** propagated to parent or child results — use
+        ``Info.add_workflow_warning`` when the message should appear on the job
+        level and be propagated to the top (workflow) level.
+        """
+        self.ext.setdefault("warnings", []).append(
+            {"message": message, "from": self.name}
+        )
+        self._dump_if_persisted()
+        return self
+
+    def add_error(self, message: str) -> "Result":
+        """
+        Add an error message to this result only.
+
+        See ``add_warning`` for propagation semantics.
+        """
+        self.ext.setdefault("errors", []).append(
+            {"message": message, "from": self.name}
+        )
+        self._dump_if_persisted()
+        return self
+
+    def add_note(self, message: str) -> "Result":
+        """
+        Add a note message to this result only.
+
+        See ``add_warning`` for propagation semantics.
+        """
+        self.ext.setdefault("notes", []).append(
+            {"message": message, "from": self.name}
+        )
+        self._dump_if_persisted()
+        return self
+
     def set_link(self, link) -> "Result":
         self.links.append(link)
         self._dump_if_persisted()
@@ -356,52 +422,97 @@ class Result(MetaClasses.Serializable):
         self.duration = stopwatch.duration
         return self
 
-    def set_label(self, label):
-        if not self.ext.get("labels", None):
-            self.ext["labels"] = []
-        if isinstance(label, list):
-            self.ext["labels"].extend(label)
-        else:
-            self.ext["labels"].append(label)
+    @staticmethod
+    def _label_name(entry):
+        """Return the name of a label entry (handles legacy string entries)."""
+        return entry if isinstance(entry, str) else entry.get("name")
+
+    _UNSET = object()
+
+    def set_label(self, label, link=_UNSET, hint=_UNSET):
+        """Add or update a label.
+
+        Each label is stored as a dict {"name": str, "link"?: str, "hint"?: str}.
+        - link: optional URL — clicking the label opens it in a new tab.
+        - hint: optional tooltip text shown on hover. If omitted on a new label,
+          falls back to Result.LABEL_HINTS[label] when registered. On an existing
+          label, omitting link/hint preserves the current value.
+        """
+        assert isinstance(label, str), (
+            f"label must be a string, got {type(label).__name__}"
+        )
+
+        labels = self.ext.setdefault("labels", [])
+        for i, existing in enumerate(labels):
+            if self._label_name(existing) == label:
+                merged = {"name": label}
+                if isinstance(existing, dict):
+                    for k in ("link", "hint"):
+                        if k in existing:
+                            merged[k] = existing[k]
+                else:
+                    # Legacy string entry — backfill default hint when migrating to dict.
+                    default = self.LABEL_HINTS.get(label)
+                    if default:
+                        merged["hint"] = default
+                if link is not self._UNSET:
+                    if link:
+                        merged["link"] = link
+                    else:
+                        merged.pop("link", None)
+                if hint is not self._UNSET:
+                    if hint:
+                        merged["hint"] = hint
+                    else:
+                        merged.pop("hint", None)
+                labels[i] = merged
+                return self
+
+        entry = {"name": label}
+        if link is not self._UNSET and link:
+            entry["link"] = link
+        resolved_hint = hint if hint is not self._UNSET else self.LABEL_HINTS.get(label)
+        if resolved_hint:
+            entry["hint"] = resolved_hint
+        labels.append(entry)
         return self
 
     def remove_label(self, label):
         if not self.ext.get("labels", None):
-            return
-        self.ext["labels"] = [l for l in self.ext["labels"] if l != label]
+            return self
+        self.ext["labels"] = [
+            l for l in self.ext["labels"] if self._label_name(l) != label
+        ]
         return self
 
     def get_labels(self):
-        return self.ext.get("labels", [])
+        """Return list of label names."""
+        return [self._label_name(l) for l in self.ext.get("labels", [])]
 
     def has_label(self, label):
-        return label in self.ext.get("labels", []) or label in [
-            x[0] for x in self.ext.get("hlabels", [])
-        ]
+        if label in self.get_labels():
+            return True
+        # Legacy fallback for results stored before the label/hlabel unification.
+        return label in [x[0] for x in self.ext.get("hlabels", []) if x]
+
+    def get_label_link(self, label):
+        for l in self.ext.get("labels", []):
+            if isinstance(l, dict) and l.get("name") == label:
+                return l.get("link")
+        # Legacy fallback for results stored before the label/hlabel unification.
+        for h in self.ext.get("hlabels", []):
+            if isinstance(h, (list, tuple)) and len(h) >= 2 and h[0] == label:
+                return h[1]
+        return None
+
+    def get_label_hint(self, label):
+        for l in self.ext.get("labels", []):
+            if isinstance(l, dict) and l.get("name") == label:
+                return l.get("hint")
+        return None
 
     def set_comment(self, comment):
         self.ext["comment"] = comment
-
-    def set_clickable_label(self, label, link):
-        if not self.ext.get("hlabels", None):
-            self.ext["hlabels"] = []
-        for i, (existing_label, existing_link) in enumerate(self.ext["hlabels"]):
-            if existing_label == label:
-                if existing_link != link:
-                    print(
-                        f"WARNING: Updating hlabel '{label}' from '{existing_link}' to '{link}'"
-                    )
-                    self.ext["hlabels"][i] = (label, link)
-                return
-        self.ext["hlabels"].append((label, link))
-
-    def get_hlabel_link(self, label):
-        if not self.ext.get("hlabels", None):
-            return None
-        for hlabel in self.ext["hlabels"]:
-            if hlabel[0] == label:
-                return hlabel[1]
-        return None
 
     @classmethod
     def from_pytest_run(
@@ -687,9 +798,11 @@ class Result(MetaClasses.Serializable):
         command_args = command_args or []
         command_kwargs = command_kwargs or {}
 
-        # Set log file path if logging is enabled
+        # Set log file path if logging is enabled. Fall back to JOB_NAME so the log file
+        # gets a real basename when `name=""` (otherwise it ends up as just ".log").
         if with_log or with_info or with_info_on_failure:
-            log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
+            log_name = name or _Environment.get().JOB_NAME
+            log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(log_name)}.log"
         else:
             log_file = None
 
@@ -1064,6 +1177,27 @@ class ResultInfo:
 
 class _ResultS3:
 
+    # Map the ``kind`` field used in ``_Environment.REPORT_MESSAGES`` to the
+    # ``ext`` bucket rendered by ``json.html``. Unknown kinds fall into notes.
+    _REPORT_MESSAGE_KIND_TO_EXT_KEY = {
+        "warning": "warnings",
+        "error": "errors",
+        "note": "notes",
+    }
+
+    @classmethod
+    def append_report_messages(cls, result, messages):
+        """
+        Append ``{"message", "kind", "from"}`` dicts from
+        ``_Environment.REPORT_MESSAGES`` into ``result.ext`` under the
+        matching ``warnings``/``errors``/``notes`` bucket.
+        """
+        for msg in messages:
+            key = cls._REPORT_MESSAGE_KIND_TO_EXT_KEY.get(msg.get("kind"), "notes")
+            result.ext.setdefault(key, []).append(
+                {"message": msg["message"], "from": msg["from"]}
+            )
+
     @classmethod
     def copy_result_to_s3(cls, result, clean=False):
         result.dump()
@@ -1224,12 +1358,13 @@ class _ResultS3:
     def update_workflow_results(
         cls,
         workflow_name,
-        new_info="",
         new_sub_results=None,
         storage_usage=None,
         compute_usage=None,
+        report_messages=None,
+        clear_report_sources=None,
     ):
-        assert new_info or new_sub_results
+        assert new_sub_results
 
         attempt = 1
         prev_status = ""
@@ -1242,8 +1377,6 @@ class _ResultS3:
             )
             workflow_result = Result.from_fs(workflow_name)
             prev_status = workflow_result.status
-            if new_info:
-                workflow_result.set_info(new_info)
             if new_sub_results:
                 if isinstance(new_sub_results, Result):
                     new_sub_results = [new_sub_results]
@@ -1263,6 +1396,17 @@ class _ResultS3:
                     workflow_result.ext.get("compute_usage", {})
                 ).merge_with(compute_usage)
                 workflow_result.ext["compute_usage"] = workflow_compute_usage
+
+            if clear_report_sources:
+                for key in cls._REPORT_MESSAGE_KIND_TO_EXT_KEY.values():
+                    if key in workflow_result.ext:
+                        workflow_result.ext[key] = [
+                            e for e in workflow_result.ext[key]
+                            if e.get("from") not in clear_report_sources
+                        ]
+
+            if report_messages:
+                cls.append_report_messages(workflow_result, report_messages)
 
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(
