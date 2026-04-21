@@ -18,6 +18,7 @@ namespace DB
 {
 struct ReadSettings;
 class ReadBufferFromFileBase;
+class ReadPipeline;
 class WriteBufferFromFileBase;
 
 struct IDiskTransaction;
@@ -139,6 +140,13 @@ public:
         const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint) const = 0;
+
+    /// Populate a ReadPipeline with the stages needed to read from this part storage.
+    virtual void prepareRead(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,

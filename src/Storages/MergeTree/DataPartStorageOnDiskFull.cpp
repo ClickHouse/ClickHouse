@@ -130,6 +130,15 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFile(
     return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint);
 }
 
+void DataPartStorageOnDiskFull::prepareRead(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
+{
+    volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
+}
+
 std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
     const std::string & name,
     const ReadSettings & settings,

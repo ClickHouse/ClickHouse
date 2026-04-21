@@ -31,6 +31,12 @@ public:
         const ReadSettings & settings,
         std::optional<size_t> read_hint) const override;
 
+    void prepareRead(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override;
+
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
         const ReadSettings & settings,

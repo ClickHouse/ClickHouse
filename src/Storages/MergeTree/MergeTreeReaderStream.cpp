@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <IO/ReadBufferFromEmptyFile.h>
+#include <IO/ReadPipeline.h>
 
 #include <base/getThreadId.h>
 #include <base/range.h>
@@ -77,13 +79,25 @@ void MergeTreeReaderStream::init()
     if (!read_settings.local_fs_buffer_size || !read_settings.remote_fs_buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
+    auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        ReadPipeline pipeline;
+        data_part_storage->prepareRead(
+            path_prefix + data_file_extension,
+            read_settings,
+            estimated_sum_mark_range_bytes,
+            pipeline);
+
+        if (!pipeline.hasSource())
+            return std::make_unique<ReadBufferFromEmptyFile>();
+
+        return pipeline.build(read_settings);
+    };
+
     /// Initialize the objects that shall be used to perform read operations.
     if (!settings.is_compressed)
     {
-        auto buffer = data_part_storage->readFile(
-            path_prefix + data_file_extension,
-            read_settings,
-            estimated_sum_mark_range_bytes);
+        auto buffer = build_read_buffer();
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -97,12 +111,20 @@ void MergeTreeReaderStream::init()
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
             [this, estimated_sum_mark_range_bytes, read_settings]()
+                -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
-                return data_part_storage->readFile(
+                ReadPipeline pipeline;
+                data_part_storage->prepareRead(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes);
+                    estimated_sum_mark_range_bytes,
+                    pipeline);
+
+                if (!pipeline.hasSource())
+                    return std::make_unique<ReadBufferFromEmptyFile>();
+
+                return pipeline.build(read_settings);
             },
             uncompressed_cache,
             settings.allow_different_codecs);
@@ -120,10 +142,7 @@ void MergeTreeReaderStream::init()
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            data_part_storage->readFile(
-                path_prefix + data_file_extension,
-                read_settings,
-                estimated_sum_mark_range_bytes), settings.allow_different_codecs);
+            build_read_buffer(), settings.allow_different_codecs);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
