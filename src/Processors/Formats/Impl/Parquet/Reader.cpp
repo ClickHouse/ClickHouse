@@ -804,7 +804,10 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     size_t base_offset = column.meta->meta_data.bloom_filter_offset + header_size;
     for (size_t block_idx : block_idxs)
         subranges.emplace_back(base_offset + block_idx * bytes_per_block, bytes_per_block);
-    auto prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
+
+    std::vector<PrefetchHandle> prefetches;
+    if (!subranges.empty()) // can be empty e.g. if `WHERE x IN ()`
+        prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
 
     column.bloom_filter_blocks.reserve(block_idxs.size());
     for (size_t i = 0; i < block_idxs.size(); ++i)
@@ -1336,11 +1339,20 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     /// use_filter_in_decoder path reads ALL pages sequentially, so it would crash trying to access
     /// those reset handles. Only use this optimization when reading the whole column chunk
     /// sequentially (no offset index, i.e. data_pages is empty).
+    ///
+    /// Also disabled for nullable columns (need_null_map): the filter-in-decoder path processes
+    /// ALL rows (passing + non-passing) through processDefLevelsForInnermostColumn, so the
+    /// null_map ends up with entries for all rows rather than just filtered rows. Additionally,
+    /// the decoder applies the filter at consecutive encoded-value indices, but with nulls the
+    /// encoded values don't correspond 1:1 to rows (null rows have no encoded values), causing
+    /// the filter to be applied at wrong positions. The standard row-range iteration path
+    /// correctly handles both issues by only reading rows in passing filter ranges.
     const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
         !row_subgroup.filter.filter.empty() &&
         column.page.initialized &&
         !column.page.is_dictionary_encoded &&
-        column.data_pages.empty();
+        column.data_pages.empty() &&
+        !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
 
     if (use_filter_in_decoder)
@@ -1419,7 +1431,9 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
-        if (memchr(null_map.data(), 0, null_map.size()) != nullptr)
+        /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
+        /// Check if any values are null — those can't be inserted into a non-Nullable column.
+        if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
             throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", column_info.name);
         subchunk.null_map = nullptr;
     }
