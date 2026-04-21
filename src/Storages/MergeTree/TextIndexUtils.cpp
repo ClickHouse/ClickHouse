@@ -427,7 +427,7 @@ bool MergeTextIndexesTask::executeStep()
 
     do
     {
-        const SortCursor & current = queue.current();
+        SortCursor current = queue.current();
 
         if (isNewToken(current))
         {
