@@ -86,8 +86,8 @@ IProcessor::Status LazyReadReplacingFinalSource::prepare()
 
 static void calculateGlobalOffset(ActionsDAG & dag, ReadFromMergeTree & reading_step)
 {
-    bool added_part_starting_offset;
-    bool added_part_offset;
+    bool added_part_starting_offset = false;
+    bool added_part_offset = false;
     reading_step.addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
     const auto * part_starting_offset_in = &dag.addInput("_part_starting_offset", uint64_type);
