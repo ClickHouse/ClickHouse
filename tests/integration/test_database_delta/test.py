@@ -223,9 +223,6 @@ def test_check_database_unity(started_cluster):
     db_name = f"check_database_{test_uuid}"
     schema_name = f"test_schema_{test_uuid}"
 
-    # Create a single schema
-    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
-
     # Create multiple tables in the same schema
     table_configs = [
         (f"table1_{test_uuid}", "col1 int, col2 double", [(1, 1.0)]),
@@ -233,14 +230,16 @@ def test_check_database_unity(started_cluster):
         (f"table3_{test_uuid}", "col1 int, col2 double", [(3, 3.0)]),
     ]
 
+    # Combine schema creation, table creation and inserts into a single
+    # Spark invocation to avoid multiple slow JVM startups.
+    queries = [f"CREATE SCHEMA {schema_name}"]
     for table_name, table_schema, data_rows in table_configs:
-        # Create table
-        create_query = f"CREATE TABLE {schema_name}.{table_name} ({table_schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
-        execute_spark_query(node1, create_query)
-
-        # Insert data
+        queries.append(
+            f"CREATE TABLE {schema_name}.{table_name} ({table_schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
+        )
         for row in data_rows:
-            execute_spark_query(node1, f"INSERT INTO {schema_name}.{table_name} VALUES {row}")
+            queries.append(f"INSERT INTO {schema_name}.{table_name} VALUES {row}")
+    execute_multiple_spark_queries(node1, queries)
 
     # Create ClickHouse database pointing to Unity Catalog
     node1.query(

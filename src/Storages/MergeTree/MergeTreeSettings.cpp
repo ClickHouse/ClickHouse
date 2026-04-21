@@ -267,6 +267,14 @@ namespace ErrorCodes
     DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
     Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
     )", 0) \
+    DECLARE(Bool, share_nested_offsets, true, R"(
+    When enabled (default), Array columns with dotted names that share a common prefix (e.g. n.a and n.b)
+    are treated as part of a Nested structure: they share a single offsets file on disk (e.g. n.size0),
+    and their array sizes are validated to be equal during INSERT.
+    When disabled, each Array column gets its own independent offset file, dotted names carry no special
+    semantics, and a scalar column may coexist with dotted Array columns sharing the same prefix
+    (e.g. n UInt32 alongside n.a Array(String)). This setting is immutable after table creation.
+    )", 0) \
     DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.
@@ -835,6 +843,13 @@ namespace ErrorCodes
     The maximum uncompressed size of data in all patch parts in bytes.
     If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
     0 - unlimited.
+    )", 0) \
+    DECLARE(Bool, compress_per_column_in_compact_parts, true, R"(
+    Controls the physical layout of Compact parts. If true (default), each column in a granule
+    starts a new compressed block, allowing ClickHouse to skip reading unnecessary columns
+    from disk. If false, all columns within a granule are packed into the same compressed block,
+    improving compression ratio but requiring more data to be decompressed during reads.
+    This is beneficial for workloads that always read all columns (e.g. projections).
     )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
@@ -1850,7 +1865,7 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
-    DECLARE(String, auto_statistics_types, "", R"(
+    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \
@@ -2783,6 +2798,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_string_columns"
         || name == "add_minmax_index_for_temporal_columns"
         || name == "table_disk"
+        || name == "share_nested_offsets"
     ;
 }
 

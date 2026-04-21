@@ -34,6 +34,7 @@ const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, Milliseconds) \

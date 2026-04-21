@@ -313,7 +313,7 @@ def main():
                     " (link failures with instrumented compiler are expected)."
                     " Profraw files from compilation steps should still be available."
                 )
-                build_result.status = Result.Status.SUCCESS
+                build_result.status = Result.Status.OK
                 build_result.info = "Build failed at link step (expected); profraw files collected"
             results.append(build_result)
 
