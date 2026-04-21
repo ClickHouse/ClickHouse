@@ -90,6 +90,16 @@ SipHash TextSearchQuery::getHash() const
         }
     }
 
+    if (!phrase_tokens.empty())
+    {
+        hash.update(phrase_tokens.size());
+        for (const auto & token : phrase_tokens)
+        {
+            hash.update(token.size());
+            hash.update(token);
+        }
+    }
+
     return hash;
 }
 
