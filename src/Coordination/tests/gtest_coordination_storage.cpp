@@ -1891,7 +1891,7 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
 
     auto expired = storage.collectExpiredTTLPaths(/*now_ms=*/ttl_ms + 1);
     ASSERT_EQ(expired.size(), 1u);
-    EXPECT_EQ(expired[0], "/ttl_node");
+    EXPECT_EQ(expired[0].first, "/ttl_node");
 
     auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
     remove_request->path = "/ttl_node";
@@ -1961,6 +1961,57 @@ TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
     }
 }
 
+TYPED_TEST(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage = typename TestFixture::Storage;
 
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+    const int64_t session_id = 1;
+    const int64_t ttl_ms = 5000;
+    const int64_t create_time = 0;
+
+    auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/ttl_node";
+    create_request->include_ttl = true;
+    create_request->ttl = ttl_ms;
+    storage.preprocessRequest(create_request, session_id, create_time, ++zxid);
+    storage.processRequest(create_request, session_id, zxid);
+
+    auto expired = storage.collectExpiredTTLPaths(create_time + ttl_ms + 1);
+    ASSERT_EQ(expired.size(), 1u);
+    EXPECT_EQ(expired[0].first, "/ttl_node");
+    const int32_t collected_version = expired[0].second;
+
+    const int64_t set_time = create_time + ttl_ms - 1;
+    auto set_request = std::make_shared<ZooKeeperSetRequest>();
+    set_request->path = "/ttl_node";
+    set_request->data = "refreshed";
+    storage.preprocessRequest(set_request, session_id, set_time, ++zxid);
+    auto set_responses = storage.processRequest(set_request, session_id, zxid);
+    ASSERT_EQ(set_responses[0].response->error, Error::ZOK);
+
+    {
+        auto node_it = storage.container.find("/ttl_node");
+        ASSERT_NE(node_it, storage.container.end());
+        EXPECT_GT(node_it->value.stats.version, collected_version);
+    }
+
+    auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
+    remove_request->path = "/ttl_node";
+    remove_request->version = collected_version;
+    remove_request->try_remove = true;
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, set_time, ++zxid);
+    auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
+    EXPECT_TRUE(remove_responses.empty() || remove_responses[0].response->error == Error::ZOK);
+
+    EXPECT_NE(storage.container.find("/ttl_node"), storage.container.end());
+    EXPECT_TRUE(storage.ttl_paths.contains("/ttl_node"));
+}
 
 #endif

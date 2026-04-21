@@ -29,6 +29,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/Utils.h>
 
 #include <limits>
 #include <shared_mutex>
@@ -864,7 +865,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
 
             if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
             {
-                const auto & create_operation = static_cast<CreateNodeDelta>(operation);
+                const auto & create_operation = static_cast<const CreateNodeDelta &>(operation);
                 chassert(!node);
                 node = std::make_shared<Node>();
                 node->copyStats(operation.stat);
@@ -4515,29 +4516,30 @@ uint64_t KeeperStorage<Container>::getNodesCount() const
 
 
 template<typename Container>
-std::vector<std::string> KeeperStorage<Container>::collectExpiredTTLPaths(int64_t now_ms) const
+std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpiredTTLPaths(int64_t now_ms) const
 {
-    std::vector<std::string> out;
-    for (auto it = ttl_paths.begin(); it != ttl_paths.end(); )
+    std::vector<std::pair<String, bool>> nodes;
+    std::unordered_map<String, Int32> versions;
+
+    for (const auto & ttl_path : ttl_paths)
     {
-        const std::string & path = *it;
-        auto node_it = container.find(path);
+        auto node_it = container.find(ttl_path);
         if (node_it == container.end())
-        {
-            it = ttl_paths.erase(it);
             continue;
-        }
         const Node & node = node_it->value;
-        if (node.numChildren() != 0)
-        {
-            ++it;
-            continue;
-        }
+        versions[ttl_path] = node.stats.version;
         if (node.destroy_time.has_value() && now_ms >= *node.destroy_time)
-            out.push_back(path);
-        ++it;
+            nodes.push_back({ttl_path, /* outdated */ true});
+        else
+            nodes.push_back({ttl_path, /* outdated */ false});
     }
-    return out;
+
+    auto expired = findOldNodes(nodes);
+    std::vector<std::pair<std::string, Int32>> result;
+    result.reserve(expired.size());
+    for (auto & path : expired)
+        result.emplace_back(std::move(path), versions.at(path));
+    return result;
 }
 
 template<typename Container>

@@ -1658,7 +1658,7 @@ void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
 }
 
 template<typename Storage>
-std::vector<std::string> KeeperStateMachine<Storage>::getExpiredTTLPathsForGarbageCollector() const
+std::vector<std::pair<std::string, Int32>> KeeperStateMachine<Storage>::getExpiredTTLPathsForGarbageCollector() const
 {
     KEEPER_STORAGE_LOCK_SHARED(lock);
     const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(

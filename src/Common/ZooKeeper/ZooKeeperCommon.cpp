@@ -242,7 +242,7 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
     if (include_ttl)
     {
         chassert(!is_ephemeral);
-        flags = is_sequential ? CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL : CreateMode::PERSISTENT_WITH_TTL; /// PERSISTENT_SEQUENTIAL_WITH_TTL : PERSISTENT_WITH_TTL
+        flags = is_sequential ? CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL : CreateMode::PERSISTENT_WITH_TTL;
     }
     else if (is_ephemeral && is_sequential)
         flags = CreateMode::EPHEMERAL_SEQUENTIAL;
@@ -1424,10 +1424,10 @@ ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
     if (include_stats)
         return std::make_shared<ZooKeeperCreate2Response>();
-    if (not_exists)
-        return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
     if (include_ttl)
         return std::make_shared<ZooKeeperCreateTTLResponse>();
+    if (not_exists)
+        return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
     return std::make_shared<ZooKeeperCreateResponse>();
 }
 

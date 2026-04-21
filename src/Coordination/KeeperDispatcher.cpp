@@ -2,6 +2,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Common/ProfiledLocks.h>
 #include <libnuraft/async.hxx>
+#include <base/sleep.h>
 
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -46,6 +47,7 @@
 namespace CurrentMetrics
 {
     extern const Metric KeeperAliveConnections;
+    extern const Metric KeeperTTLRemoveRequests;
     extern const Metric KeeperOutstandingRequests;
 }
 
@@ -613,31 +615,32 @@ void KeeperDispatcher::garbageCollectorThread()
 {
     DB::setThreadName(ThreadName::KEEPER_TTL_GARBAGE_COLLECTOR);
 
+    int64_t time = duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     while (!keeper_context->isShutdownCalled())
     {
         try
         {
             if (server->checkInit() && isLeader())
             {
-                std::vector<std::string> paths = server->getExpiredTTLPathsForGarbageCollector();
-                for (auto & path : paths)
+                auto paths = server->getExpiredTTLPathsForGarbageCollector();
+                for (auto & [path, version] : paths)
                 {
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::TryRemove);
                     auto & rem = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*request);
                     rem.path = std::move(path);
-                    rem.version = -1;
+                    rem.version = version;
                     rem.try_remove = true;
                     rem.xid = Coordination::CLOSE_XID;
 
                     KeeperRequestForSession info;
 
                     info.session_id = keeper_internal_ttl_garbage_collector_session_id;
-                    info.time = duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                    info.time = time;
                     info.request = std::move(request);
 
                     if (!requests_queue->push(std::move(info)))
                         LOG_WARNING(log, "Garbage collector: queue full, drop path retry next tick");
-                    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+                    CurrentMetrics::add(CurrentMetrics::KeeperTTLRemoveRequests);
                 }
             }
         }
@@ -645,8 +648,10 @@ void KeeperDispatcher::garbageCollectorThread()
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(
-            configuration_and_settings->coordination_settings[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds()));
+        if (isShuttingDown())
+            return;
+        sleepForMilliseconds(std::chrono::milliseconds(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds()).count());
     }
 
 }
@@ -789,7 +794,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             ///  not sure happens in practice even under too much load.)
             {
                 ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-                int64_t last_checked_session_id = -1;
+                int64_t last_checked_session_id = keeper_internal_get_session_id;
                 bool last_checked_session_live = true;
                 std::erase_if(pending_reads, [&](const KeeperRequestForSession & read_request)
                 {
@@ -1097,10 +1102,10 @@ void KeeperDispatcher::sessionCleanerTask()
                     /// Close requests are exempt from stale filtering, so the
                     /// Close will still pass through RAFT for ephemeral cleanup.
                     finishSession(dead_session);
+                    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
 
                     if (!requests_queue->push(std::move(request_info)))
                         LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
-                    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
                     LOG_INFO(log, "Dead session close request pushed");
                 }
             }
@@ -1233,7 +1238,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     request_info.request = request;
     using namespace std::chrono;
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    request_info.session_id = -1;
+    request_info.session_id = keeper_internal_get_session_id;
 
     auto promise = std::make_shared<std::promise<int64_t>>();
     auto future = promise->get_future();

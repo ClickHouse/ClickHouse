@@ -409,7 +409,7 @@ struct CreateRequest : virtual Request
     ACLs acls;
     bool include_stats = false;
     bool include_ttl = false;
-    int64_t ttl;
+    int64_t ttl = 0;
 
     /// should it succeed if node already exists
     bool not_exists = false;

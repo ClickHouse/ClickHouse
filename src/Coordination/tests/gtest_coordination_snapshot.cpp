@@ -842,7 +842,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotTTLRoundTrip)
     EXPECT_TRUE(restored->collectExpiredTTLPaths(/*now_ms=*/0).empty());
     auto expired = restored->collectExpiredTTLPaths(/*now_ms=*/ttl_ms + 1);
     ASSERT_EQ(expired.size(), 1u);
-    EXPECT_EQ(expired[0], "/ttl_node");
+    EXPECT_EQ(expired[0].first, "/ttl_node");
 }
 
 #endif

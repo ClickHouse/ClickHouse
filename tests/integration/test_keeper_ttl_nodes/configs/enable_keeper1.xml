@@ -10,6 +10,7 @@
             <session_timeout_ms>10000</session_timeout_ms>
             <ttl_gc_period_ms>100</ttl_gc_period_ms>
             <raft_logs_level>trace</raft_logs_level>
+            <write_snapshot_version>8</write_snapshot_version>
         </coordination_settings>
 
         <raft_configuration>
