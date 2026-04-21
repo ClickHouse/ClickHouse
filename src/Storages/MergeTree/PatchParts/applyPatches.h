@@ -60,15 +60,15 @@ struct PatchJoinReadResult : public PatchReadResult
 
 /// v2 patch-read result. Instead of a scalar `_part_offset` range, carries a single-row block with
 /// the first and last rows' sort-key columns. Those two rows define the tuple range
-/// `[min_sort_key, max_sort_key]` that `MergeTreePatchReaderMergeOnKey::needNewPatch`/`needOldPatch`
+/// `[min_sorting_key, max_sorting_key]` that `MergeTreePatchReaderMergeOnKey::needNewPatch`/`needOldPatch`
 /// compare against the main-side read result's own min/max sort-key tuple.
 struct PatchMergeOnKeyReadResult : public PatchReadResult
 {
     Block block;
     /// A 1-row block containing the first row of `block` projected onto the sort-key columns.
-    Block min_sort_key_row;
+    Block min_sorting_key_row;
     /// Similarly for the last row.
-    Block max_sort_key_row;
+    Block max_sorting_key_row;
 
     bool empty() const override { return block.rows() == 0; }
 };
@@ -79,7 +79,7 @@ struct PatchMergeOnKeyReadResult : public PatchReadResult
 /// trims those two names out of the source-column set. Typically called once per patch at
 /// `PatchPartInfo` construction; the result is stashed on the info struct and re-used by every
 /// reader / apply / planning consumer.
-PatchSortKey makePatchSortKey(const KeyDescription & sort_key, UInt64 prefix_size);
+PatchSortKey makePatchSortKey(const KeyDescription & sorting_key, UInt64 prefix_size);
 
 /// Applies patch. Returns indices in result and patch blocks for rows that should be updated.
 PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch);
@@ -88,7 +88,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 /// Applies a v2 (MergeOnKey) patch. Two-cursor merge on the main table's sort-key columns; within
 /// each equal-sort-key run, uses `(_block_number, _block_offset)` to identify which main-side row
 /// matches which patch-side row. Memory bounded by the largest equal-sort-key run (usually 1).
-PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const PatchSortKey & sort_key);
+PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const PatchSortKey & sorting_key);
 
 /// Updates rows in result_block from patch_block at specified indices.
 /// versions_block is a shared block with current versions of rows for each updated column.

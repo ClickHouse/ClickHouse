@@ -16,7 +16,7 @@ MergeTreeSinkPatch::MergeTreeSinkPatch(
     StorageMergeTree & storage_,
     StorageMetadataPtr metadata_snapshot_,
     PlainLightweightUpdateHolder update_holder_,
-    std::optional<UInt64> v2_sort_key_prefix_size_,
+    std::optional<UInt64> v2_sorting_key_prefix_size_,
     ContextPtr context_)
     : MergeTreeSink(
         storage_,
@@ -24,7 +24,7 @@ MergeTreeSinkPatch::MergeTreeSinkPatch(
         /*max_parts_per_block=*/ 0,
         std::move(context_))
     , update_holder(std::move(update_holder_))
-    , v2_sort_key_prefix_size(v2_sort_key_prefix_size_)
+    , v2_sorting_key_prefix_size(v2_sorting_key_prefix_size_)
 {
 }
 
@@ -72,10 +72,10 @@ TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block
     /// record the length of the semantic sort-key prefix captured at the UPDATE's callsite —
     /// this lets readers slice the target table's sort key to the patch's shape without
     /// re-deriving the length from the rebuilt patch metadata.
-    if (v2_sort_key_prefix_size.has_value())
+    if (v2_sorting_key_prefix_size.has_value())
     {
         source_parts_set.setFormatVersion(SourcePartsSetForPatch::V2_FORMAT_VERSION);
-        source_parts_set.setSortKeyPrefixSize(*v2_sort_key_prefix_size);
+        source_parts_set.setSortKeyPrefixSize(*v2_sorting_key_prefix_size);
     }
 
     return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);

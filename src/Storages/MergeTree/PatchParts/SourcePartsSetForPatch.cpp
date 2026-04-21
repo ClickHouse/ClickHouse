@@ -87,11 +87,11 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
 
     /// v2 patches apply with a single `MergeOnKey` pass that handles both the same-lineage case
     /// (`has_merge`) and the cross-lineage case (`names_for_join`) uniformly. Emit one
-    /// `PatchPartInfo` with the union of all covered source parts. Populate `sort_key` here —
+    /// `PatchPartInfo` with the union of all covered source parts. Populate `sorting_key` here —
     /// the patch part's rebuilt metadata (cached on `IMergeTreeDataPart`) together with the
     /// persisted prefix length give us the complete sort-key view; downstream consumers
     /// (reader, applyPatchMergeOnKey, getVirtualsRequiredForPatch) read it straight off
-    /// `PatchPartInfo::sort_key` without touching the target-table metadata again.
+    /// `PatchPartInfo::sorting_key` without touching the target-table metadata again.
     if (format_version == V2_FORMAT_VERSION)
     {
         Names all_source_parts(names_for_join.begin(), names_for_join.end());
@@ -100,9 +100,9 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
 
         if (!all_source_parts.empty())
         {
-            PatchSortKey sort_key = makePatchSortKey(
+            PatchSortKey sorting_key = makePatchSortKey(
                 patch_part->getMetadataSnapshot()->getSortingKey(),
-                sort_key_prefix_size);
+                sorting_key_prefix_size);
 
             patch_parts.push_back(PatchPartInfo
             {
@@ -111,7 +111,7 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
                 .source_parts = std::move(all_source_parts),
                 .source_data_version = original_part.getDataVersion(),
                 .perform_alter_conversions = true,
-                .sort_key = std::move(sort_key),
+                .sorting_key = std::move(sorting_key),
             });
         }
         return patch_parts;
@@ -126,7 +126,7 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
             .source_parts = {part_name},
             .source_data_version = original_part.getDataVersion(),
             .perform_alter_conversions = true,
-            .sort_key = {},
+            .sorting_key = {},
         });
     }
 
@@ -139,7 +139,7 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
             .source_parts = Names(names_for_join.begin(), names_for_join.end()),
             .source_data_version = original_part.getDataVersion(),
             .perform_alter_conversions = true,
-            .sort_key = {},
+            .sorting_key = {},
         });
     }
 
@@ -183,13 +183,13 @@ SourcePartsSetForPatch SourcePartsSetForPatch::merge(const DataPartsVector & sou
         if (!format_version_set)
         {
             merged_set.format_version = set.format_version;
-            merged_set.sort_key_prefix_size = set.sort_key_prefix_size;
+            merged_set.sorting_key_prefix_size = set.sorting_key_prefix_size;
             format_version_set = true;
         }
         else
         {
             chassert(merged_set.format_version == set.format_version);
-            chassert(merged_set.sort_key_prefix_size == set.sort_key_prefix_size);
+            chassert(merged_set.sorting_key_prefix_size == set.sorting_key_prefix_size);
         }
 
         for (const auto & [part_name, min_max] : set.min_max_versions_by_part)
@@ -216,7 +216,7 @@ void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
     /// v2 adds the semantic sort-key prefix length right after the version byte, so readers can
     /// recover it without a round-trip through the target table's in-memory metadata.
     if (format_version == V2_FORMAT_VERSION)
-        writeBinaryLittleEndian(sort_key_prefix_size, out);
+        writeBinaryLittleEndian(sorting_key_prefix_size, out);
 
     writeBinaryLittleEndian(min_max_versions_by_part.size(), out);
 
@@ -239,7 +239,7 @@ void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
     format_version = version;
 
     if (format_version == V2_FORMAT_VERSION)
-        readBinaryLittleEndian(sort_key_prefix_size, in);
+        readBinaryLittleEndian(sorting_key_prefix_size, in);
 
     UInt64 num_parts;
     readBinaryLittleEndian(num_parts, in);

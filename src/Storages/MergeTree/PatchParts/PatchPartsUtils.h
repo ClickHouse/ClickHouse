@@ -25,7 +25,7 @@ StorageMetadataPtr getPatchPartMetadata(Block sample_block, ContextPtr local_con
 StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, ContextPtr local_context);
 
 /// Returns metadata snapshot of a v2 patch part. Sort key is
-/// `(<sort_key_expr_children[0..sort_key_prefix_size]>..., _block_number, _block_offset)`, cloned
+/// `(<sorting_key_expr_children[0..sorting_key_prefix_size]>..., _block_number, _block_offset)`, cloned
 /// from the target table's `KeyDescription` and sliced to exactly the prefix length the patch was
 /// written with (`SourcePartsSetForPatch::getSortKeyPrefixSize`). Nothing about the sort-key AST
 /// itself is persisted on disk; the metadata snapshot is rebuilt from the current main-table
@@ -37,12 +37,12 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
 StorageMetadataPtr getPatchPartMetadataV2(
     Block sample_block,
     const KeyDescription & main_sorting_key,
-    UInt64 sort_key_prefix_size,
+    UInt64 sorting_key_prefix_size,
     ContextPtr local_context);
 StorageMetadataPtr getPatchPartMetadataV2(
     ColumnsDescription patch_part_desc,
     const KeyDescription & main_sorting_key,
-    UInt64 sort_key_prefix_size,
+    UInt64 sorting_key_prefix_size,
     ContextPtr local_context);
 
 /// Returns system columns which are common for all v1 patch parts.

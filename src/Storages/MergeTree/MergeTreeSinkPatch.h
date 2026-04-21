@@ -16,7 +16,7 @@ public:
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
         PlainLightweightUpdateHolder update_holder_,
-        std::optional<UInt64> v2_sort_key_prefix_size_,
+        std::optional<UInt64> v2_sorting_key_prefix_size_,
         ContextPtr context_);
 
     String getName() const override { return "MergeTreeSinkPatch"; }
@@ -30,7 +30,7 @@ protected:
     /// sort-key expression itself is *not* carried on the sink — readers rebuild it from the
     /// target table's current `StorageMetadataPtr` and slice it to this length at apply time
     /// (see `MergeTreeData::getPatchPartMetadata`).
-    std::optional<UInt64> v2_sort_key_prefix_size;
+    std::optional<UInt64> v2_sorting_key_prefix_size;
 
     void finishDelayedChunk() override;
     TemporaryPartPtr writeNewTempPart(BlockWithPartition & block) override;

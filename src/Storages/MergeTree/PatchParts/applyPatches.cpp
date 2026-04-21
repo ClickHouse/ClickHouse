@@ -14,6 +14,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
+#include "Columns/IColumn_fwd.h"
 #include <absl/container/flat_hash_map.h>
 #include <base/types.h>
 #include <shared_mutex>
@@ -517,75 +518,85 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
 namespace
 {
 
-/// Pre-resolved sort-key column pointers for one block. The slow part of the old
-/// name-indexed comparator was `Block::getByName` per-row — a `std::unordered_map`
-/// lookup that perf traces showed dominating `applyPatchMergeOnKey` at ~58% CPU
-/// (`__hash_const_iterator` + `findPositionByName` + `getPositionByName`). Resolving
-/// the columns once up-front collapses the inner loop to straight pointer chasing.
-struct SortKeyColumns
+ColumnRawPtrs extractSortingKeyColumns(const Block & block, const Names & sorting_key_column_names)
 {
-    std::vector<const IColumn *> columns;
+    ColumnRawPtrs out;
+    out.reserve(sorting_key_column_names.size());
 
-    static SortKeyColumns resolve(const Block & block, const Names & sort_key_column_names)
-    {
-        SortKeyColumns out;
-        out.columns.reserve(sort_key_column_names.size());
-        for (const auto & name : sort_key_column_names)
-            out.columns.push_back(block.getByName(name).column.get());
-        return out;
-    }
-};
+    for (const auto & name : sorting_key_column_names)
+        out.push_back(block.getByName(name).column.get());
+
+    return out;
+}
 
 /// Compares sort-key tuples at two (block, row) positions, honouring DESC flags. Both
-/// `SortKeyColumns` must have been resolved against the same ordered `sort_key_column_names`;
+/// `SortKeyColumns` must have been resolved against the same ordered `sorting_key_column_names`;
 /// indices line up with `reverse_flags`. Returns <0, =0, or >0 using the same convention as
 /// `IColumn::compareAt` (NULL-aware, nan-last).
 ALWAYS_INLINE int compareSortKeyRows(
-    const SortKeyColumns & lhs_cols,
+    const ColumnRawPtrs & lhs_columns,
     size_t lhs_row,
-    const SortKeyColumns & rhs_cols,
+    const ColumnRawPtrs & rhs_columns,
     size_t rhs_row,
     const std::vector<UInt8> & reverse_flags)
 {
-    const size_t n = lhs_cols.columns.size();
-    for (size_t i = 0; i < n; ++i)
+    const size_t n = lhs_columns.size();
+    chassert(n == rhs_columns.size());
+
+    if (reverse_flags.empty())
     {
-        int cmp = lhs_cols.columns[i]->compareAt(lhs_row, rhs_row, *rhs_cols.columns[i], /*nan_direction_hint=*/ 1);
-        if (cmp != 0)
-            return (i < reverse_flags.size() && reverse_flags[i]) ? -cmp : cmp;
+        for (size_t i = 0; i < n; ++i)
+        {
+            int cmp = lhs_columns[i]->compareAt(lhs_row, rhs_row, *rhs_columns[i], /*nan_direction_hint=*/ 1);
+            if (cmp != 0)
+                return cmp;
+        }
+        return 0;
     }
+    else
+    {
+        chassert(n == reverse_flags.size());
+        for (size_t i = 0; i < n; ++i)
+        {
+            int cmp = lhs_columns[i]->compareAt(lhs_row, rhs_row, *rhs_columns[i], /*nan_direction_hint=*/ 1);
+            if (cmp != 0)
+                return reverse_flags[i] ? -cmp : cmp;
+        }
+    }
+
     return 0;
 }
 
 /// Galloping (exponential) partition-point search on the main side: returns the smallest `i` in
-/// `[begin, end)` such that `compareSortKeyRows(main[i], patch[p_row])` is `>= 0` when
-/// `is_upper_bound == false` (lower bound), or `> 0` when `is_upper_bound == true` (upper bound).
+/// `[begin, end)` such that `compareSortKeyRows(main[i], patch[p_row])` is `< 0` when
+/// `is_lower_bound == true` (lower bound), or `>= 0` when `is_lower_bound == false` (upper bound).
 /// When `patch_rows ≪ main_rows`, this collapses merge complexity from `O(m + p)` to
 /// `O(p log(m/p))` comparisons, matching the information-theoretic optimum for merging unbalanced
 /// sorted streams. With `gap = 1` (dense patches) it degrades to 1–2 extra comparisons per step
 /// vs. linear scan, so no adaptive fallback is needed.
-template <bool is_upper_bound>
+template <bool is_lower_bound>
 ALWAYS_INLINE size_t gallopingBinarySearch(
-    const SortKeyColumns & main_sorting_key,
+    const ColumnRawPtrs & main_sorting_key,
     size_t begin,
     size_t end,
-    const SortKeyColumns & patch_sorting_key,
+    const ColumnRawPtrs & patch_sorting_key,
     size_t patch_row,
     const std::vector<UInt8> & reverse_flags)
 {
     auto compare = [&](size_t i)
     {
         int res = compareSortKeyRows(main_sorting_key, i, patch_sorting_key, patch_row, reverse_flags);
-        if constexpr (is_upper_bound)
-            return res <= 0;
-        else
+        if constexpr (is_lower_bound)
             return res < 0;
+        else
+            return res <= 0;
     };
 
     static constexpr size_t max_step = 1ULL << 32;
 
     size_t prev = 0;
     size_t step = 1;
+
     while (begin + step <= end && compare(begin + step - 1))
     {
         prev = step;
@@ -594,6 +605,7 @@ ALWAYS_INLINE size_t gallopingBinarySearch(
 
     size_t lo = begin + prev;
     size_t hi = std::min(end, begin + step);
+
     while (lo < hi)
     {
         size_t mid = lo + (hi - lo) / 2;
@@ -602,6 +614,7 @@ ALWAYS_INLINE size_t gallopingBinarySearch(
         else
             hi = mid;
     }
+
     return lo;
 }
 
@@ -615,7 +628,7 @@ ALWAYS_INLINE UInt128 makeBlockIdentity(UInt64 block_number, UInt64 block_offset
 
 }
 
-PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const PatchSortKey & sort_key)
+PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const PatchSortKey & sorting_key)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchMergeOnKeyMicroseconds);
 
@@ -626,59 +639,30 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     if (main_rows == 0 || patch_rows == 0)
         return patch_to_apply;
 
-    /// Materialize the sort-key result columns on the main side, the same way FINAL does: the main
-    /// block has only physical source columns; the expression evaluates the sort key expression
-    /// (e.g. `cityHash64(id)`) into a new column. The patch block was already augmented in
-    /// `MergeTreePatchReaderMergeOnKey::readPatch` — running the expression again would collide on
-    /// the output column name — so we consume it as-is.
-    /// Executing on a clone keeps the caller's `result_block` untouched; `Block` copy is shallow,
-    /// so this is cheap. We emit the (unchanged) `patch_block` in `patch_blocks` so the combined-
-    /// apply stage still finds user data columns by name.
-    Block main_clone = result_block;
-    if (sort_key.expression)
-        sort_key.expression->execute(main_clone);
+    /// Execute sorting key expression and materialize the sorting key columns.
+    Block main_block_copy = result_block;
+    Block patch_block_copy = patch_block;
 
-    patch_to_apply->patch_blocks.emplace_back(patch_block);
+    for (auto & column : main_block_copy)
+        column.column = removeSpecialRepresentations(column.column);
 
-    const auto & sort_key_names = sort_key.result_column_names;
-    const auto & reverse_flags = sort_key.reverse_flags;
+    for (auto & column : patch_block_copy)
+        column.column = removeSpecialRepresentations(column.column);
 
-    /// `_block_number` / `_block_offset` can come back wrapped as `ColumnSparse` (all-zero
-    /// `_block_number` in a single-insert part triggers sparse encoding under
-    /// `ratio_of_defaults_for_sparse_serialization`) or as `ColumnConst` (reader virtual
-    /// defaults). `getColumnUInt64Data` does an `assert_cast<ColumnUInt64>` — static_cast in
-    /// release mode, so those wrappers read garbage through the wrong vtable layout. Convert
-    /// each identity column to its full, plain-`UInt64` form before indexing. `convertToFullIfNeeded`
-    /// is a no-op for already-flat columns so this costs nothing on the common path.
-    auto materialize_identity = [](Block & block, const String & name)
-    {
-        auto & col = block.getByName(name).column;
-        col = col->convertToFullIfNeeded();
-    };
-    materialize_identity(main_clone, BlockNumberColumn::name);
-    materialize_identity(main_clone, BlockOffsetColumn::name);
-    /// `patch_block` is aliased via `patch_to_apply->patch_blocks.emplace_back(patch_block)`
-    /// above, so mutating it here would affect the caller. The patch-side reader already
-    /// materializes these columns (see `MergeTreePatchReaderMergeOnKey::readPatch` which runs
-    /// `sort_key.expression` on the block, producing flat columns), but cast defensively in case
-    /// a future reader path produces a sparse `_block_number` / `_block_offset`. We clone the
-    /// column pointer only when it needs conversion, so the common path is still a no-op.
-    Block patch_block_materialized = patch_block;
-    materialize_identity(patch_block_materialized, BlockNumberColumn::name);
-    materialize_identity(patch_block_materialized, BlockOffsetColumn::name);
+    if (sorting_key.expression)
+        sorting_key.expression->execute(main_block_copy);
 
-    const auto & main_block_number = getColumnUInt64Data(main_clone, BlockNumberColumn::name);
-    const auto & main_block_offset = getColumnUInt64Data(main_clone, BlockOffsetColumn::name);
-    const auto & patch_block_number = getColumnUInt64Data(patch_block_materialized, BlockNumberColumn::name);
-    const auto & patch_block_offset = getColumnUInt64Data(patch_block_materialized, BlockOffsetColumn::name);
+    const auto & sorting_key_names = sorting_key.result_column_names;
+    const auto & reverse_flags = sorting_key.reverse_flags;
+    const auto & main_block_number = getColumnUInt64Data(main_block_copy, BlockNumberColumn::name);
+    const auto & main_block_offset = getColumnUInt64Data(main_block_copy, BlockOffsetColumn::name);
+    const auto & patch_block_number = getColumnUInt64Data(patch_block_copy, BlockNumberColumn::name);
+    const auto & patch_block_offset = getColumnUInt64Data(patch_block_copy, BlockOffsetColumn::name);
 
-    /// Resolve sort-key columns once per block so the inner merge-loop comparator never
-    /// hits `Block::getByName`. Empty for an `ORDER BY tuple()` base table, which takes
-    /// the whole-block equal-run branch below and never consults these.
-    const auto main_sorting_key = sort_key_names.empty() ? SortKeyColumns{} : SortKeyColumns::resolve(main_clone, sort_key_names);
-    const auto patch_sorting_key = sort_key_names.empty() ? SortKeyColumns{} : SortKeyColumns::resolve(patch_block, sort_key_names);
+    const auto main_sorting_key = extractSortingKeyColumns(main_block_copy, sorting_key_names);
+    const auto patch_sorting_key = extractSortingKeyColumns(patch_block_copy, sorting_key_names);
 
-    /// Degenerate sort key (tuple of no columns): by design the "equal-sort-key run" is the whole
+    /// Degenerate sorting key (tuple of no columns): by design the "equal-sort-key run" is the whole
     /// block on both sides. We fall through to the hash-map branch and build a map over the full
     /// patch — this mirrors today's Join-mode memory profile exactly, by user-locked decision.
     size_t main_idx = 0;
@@ -689,20 +673,20 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     /// rows below the current patch key in `O(log gap)` comparisons per patch row.
     while (main_idx < main_rows && patch_idx < patch_rows)
     {
-        main_idx = gallopingBinarySearch<false>(main_sorting_key, main_idx, main_rows, patch_sorting_key, patch_idx, reverse_flags);
+        main_idx = gallopingBinarySearch<true>(main_sorting_key, main_idx, main_rows, patch_sorting_key, patch_idx, reverse_flags);
         if (main_idx == main_rows)
             break;
 
+        /// main[main_idx] > patch[patch_idx]: the current patch row has no match in main. Advance past it.
         if (compareSortKeyRows(main_sorting_key, main_idx, patch_sorting_key, patch_idx, reverse_flags) > 0)
         {
-            /// main[main_idx] > patch[patch_idx]: the current patch row has no match in main. Advance past it.
             ++patch_idx;
             continue;
         }
 
         /// cmp == 0: equal-sort-key run on both sides. Find the run extents. Gallop on the main side.
         /// The patch side is scanned linearly because patch_rows is small.
-        size_t main_run_end = gallopingBinarySearch<true>(main_sorting_key, main_idx + 1, main_rows, patch_sorting_key, patch_idx, reverse_flags);
+        size_t main_run_end = gallopingBinarySearch<false>(main_sorting_key, main_idx + 1, main_rows, patch_sorting_key, patch_idx, reverse_flags);
         size_t patch_run_end = patch_idx + 1;
 
         while (patch_run_end < patch_rows && compareSortKeyRows(patch_sorting_key, patch_run_end, patch_sorting_key, patch_idx, reverse_flags) == 0)
@@ -744,6 +728,24 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
         main_idx = main_run_end;
         patch_idx = patch_run_end;
     }
+
+    /// Remove all unneeded columns from patch block
+    /// and keep in block only the updated columns.
+    auto erase_column = [&](const String & column_name)
+    {
+        if (patch_block_copy.has(column_name))
+            patch_block_copy.erase(column_name);
+    };
+
+    for (const auto & column_name : sorting_key.result_column_names)
+        erase_column(column_name);
+
+    for (const auto & column_name : sorting_key.source_column_names)
+        erase_column(column_name);
+
+    erase_column(BlockNumberColumn::name);
+    erase_column(BlockOffsetColumn::name);
+    patch_to_apply->patch_blocks.emplace_back(patch_block_copy);
 
     return patch_to_apply;
 }
@@ -877,38 +879,42 @@ void applyPatchesToBlock(
         applyPatchesToBlockCombined(result_block, versions_block, patches, updated_header, source_data_version);
 }
 
-PatchSortKey makePatchSortKey(const KeyDescription & sort_key, UInt64 prefix_size)
+PatchSortKey makePatchSortKey(const KeyDescription & sorting_key, UInt64 prefix_size)
 {
     PatchSortKey info;
 
     /// The v2 patch's sort key is laid out as `(<semantic_prefix>..., _block_number, _block_offset)`
     /// — the last two entries are always identity columns, appended at write time. Slice both the
     /// result-column names and the reverse flags at `prefix_size` to drop them.
-    if (prefix_size > sort_key.column_names.size())
+    if (prefix_size > sorting_key.column_names.size())
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Patch sort-key prefix size {} exceeds sort-key column count {}",
-            prefix_size, sort_key.column_names.size());
+            prefix_size, sorting_key.column_names.size());
+    }
 
-    info.result_column_names.assign(sort_key.column_names.begin(), sort_key.column_names.begin() + prefix_size);
+    info.expression = sorting_key.expression;
+    info.result_column_names.assign(sorting_key.column_names.begin(), sorting_key.column_names.begin() + prefix_size);
 
-    const size_t reverse_to_copy = std::min<size_t>(prefix_size, sort_key.reverse_flags.size());
-    info.reverse_flags.assign(sort_key.reverse_flags.begin(), sort_key.reverse_flags.begin() + reverse_to_copy);
-    info.reverse_flags.resize(prefix_size, 0);
-
-    info.expression = sort_key.expression;
+    if (sorting_key.reverse_flags.empty())
+    {
+        chassert(prefix_size <= sorting_key.reverse_flags.size());
+        info.reverse_flags.assign(sorting_key.reverse_flags.begin(), sorting_key.reverse_flags.begin() + prefix_size);
+    }
 
     /// Source columns = physical inputs to the sort-key expression, minus the two identity
     /// columns (those are plumbed through as main-table virtuals and are not sort-key sources).
     if (info.expression)
     {
         NameSet seen;
-        for (const auto & input : info.expression->getRequiredColumns())
+        for (const auto & input_name : info.expression->getRequiredColumns())
         {
-            if (input == BlockNumberColumn::name || input == BlockOffsetColumn::name)
+            if (input_name == BlockNumberColumn::name || input_name == BlockOffsetColumn::name)
                 continue;
-            if (seen.insert(input).second)
-                info.source_column_names.push_back(input);
+
+            if (seen.insert(input_name).second)
+                info.source_column_names.push_back(input_name);
         }
     }
 

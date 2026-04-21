@@ -12,7 +12,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /// Derived view of a v2 patch's sort key. Computed once — at the point a `PatchPartInfo` is
 /// constructed — from the patch part's rebuilt `KeyDescription` sliced to the prefix length
-/// persisted in `SourcePartsSetForPatch::sort_key_prefix_size`. See `makePatchSortKey` in
+/// persisted in `SourcePartsSetForPatch::sorting_key_prefix_size`. See `makePatchSortKey` in
 /// `applyPatches.h` for the builder; see `MergeTreeData::getAlterConversionsForPart` for where it
 /// gets populated. Empty for v1 patches (`Merge` / `Join` modes).
 struct PatchSortKey
@@ -49,11 +49,11 @@ struct PatchSortKey
   *
   * New format (v2, when `enable_v2_lightweight_update_patches = 1`):
   * patch parts carry the main table's sort-key columns instead of `_part, _part_offset`:
-  *  - <sort_key_column_1>, ..., <sort_key_column_n> - sort key columns of the target table.
+  *  - <sorting_key_column_1>, ..., <sorting_key_column_n> - sort key columns of the target table.
   *  - _block_number - the block number of row in the original part.
   *  - _block_offset - the block offset of row in the original part.
   *  - _data_version - the data version of the updated data (block number allocated for UPDATE query).
-  * Sorted by `(sort_key_columns..., _block_number, _block_offset)`. Applied via `PatchMode::MergeOnKey`,
+  * Sorted by `(sorting_key_columns..., _block_number, _block_offset)`. Applied via `PatchMode::MergeOnKey`,
   * which streaming-merges the patch against the main part on the sort-key prefix and uses
   * `(_block_number, _block_offset)` to disambiguate rows within each equal-sort-key run.
   *
@@ -129,7 +129,7 @@ struct PatchPartInfoBase
     /// Populated for `MergeOnKey` (v2) patches only, at construction time, via
     /// `makePatchSortKey(patch->getMetadataSnapshot()->getSortingKey(), prefix_size)`.
     /// Empty for `Merge`/`Join`. See the comment on `PatchSortKey` above.
-    PatchSortKey sort_key;
+    PatchSortKey sorting_key;
 
     String describe() const;
 };

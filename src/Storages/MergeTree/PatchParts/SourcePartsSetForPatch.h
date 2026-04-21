@@ -17,7 +17,7 @@ class SourcePartsSetForPatch
 public:
     /// On-disk format version of the patch part.
     ///  0 = legacy v1 (sorted by `_part, _part_offset`, applied with `Merge` or `Join` mode).
-    ///  1 = v2 (sorted by `sort_key..., _block_number, _block_offset`, applied with `MergeOnKey`).
+    ///  1 = v2 (sorted by `sorting_key..., _block_number, _block_offset`, applied with `MergeOnKey`).
     static constexpr UInt8 V1_FORMAT_VERSION = 0;
     static constexpr UInt8 V2_FORMAT_VERSION = 1;
     static constexpr UInt8 MAX_SUPPORTED_FORMAT_VERSION = V2_FORMAT_VERSION;
@@ -40,8 +40,8 @@ public:
     /// sort-key prefix, excluding the two trailing identity columns `_block_number` and
     /// `_block_offset`. Captured from the target table's sort key at write time and persisted
     /// alongside the format-version byte; zero for v1 patches.
-    UInt64 getSortKeyPrefixSize() const { return sort_key_prefix_size; }
-    void setSortKeyPrefixSize(UInt64 size) { sort_key_prefix_size = size; }
+    UInt64 getSortKeyPrefixSize() const { return sorting_key_prefix_size; }
+    void setSortKeyPrefixSize(UInt64 size) { sorting_key_prefix_size = size; }
 
     void addSourcePart(const String & name, UInt64 data_version);
     PatchParts getPatchParts(const MergeTreePartInfo & original_part, const DataPartPtr & patch_part) const;
@@ -68,7 +68,7 @@ private:
 
     /// Format version of the patch part on disk. Populated on read from the version byte;
     /// set explicitly by the sink before write. See `V1_FORMAT_VERSION` / `V2_FORMAT_VERSION`.
-    /// Only the prefix *length* is persisted (`sort_key_prefix_size` below), not the sort-key
+    /// Only the prefix *length* is persisted (`sorting_key_prefix_size` below), not the sort-key
     /// AST itself; v2 readers rebuild the AST from the target table's current
     /// `StorageMetadataPtr` and slice it to that length (see `MergeTreeData::getPatchPartMetadata`
     /// and `MergeTreeData::getAlterConversionsForPart`). The partition-id hash — computed over
@@ -82,7 +82,7 @@ private:
     /// so that readers can directly slice the target table's sort key to the shape the patch was
     /// written with, instead of deriving `n_semantic = n_full - 2` by subtracting the two
     /// identity columns after a `getPatchPartMetadataV2` rebuild.
-    UInt64 sort_key_prefix_size = 0;
+    UInt64 sorting_key_prefix_size = 0;
 };
 
 /// Returns set with source parts with _part column from block and data_version.

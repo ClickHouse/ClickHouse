@@ -9951,7 +9951,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     auto patches = mutations->getPatchesForPart(part);
     PatchPartsForReader patches_for_reader;
 
-    /// `PatchPartInfo::sort_key` was populated by `SourcePartsSetForPatch::getPatchParts`
+    /// `PatchPartInfo::sorting_key` was populated by `SourcePartsSetForPatch::getPatchParts`
     /// straight from the patch part's rebuilt metadata. Here we just move it across into the
     /// reader-shaped info; no extra metadata fetch and no prefix-length arithmetic needed.
     for (auto & patch : patches)
@@ -9967,7 +9967,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
             .source_parts = std::move(patch.source_parts),
             .source_data_version = patch.source_data_version,
             .perform_alter_conversions = patch.perform_alter_conversions,
-            .sort_key = std::move(patch.sort_key),
+            .sorting_key = std::move(patch.sorting_key),
         });
     }
 
