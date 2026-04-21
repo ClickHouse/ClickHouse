@@ -1,5 +1,3 @@
--- Tags: no-parallel
---
 -- Coverage matrix for `RemoveRedundantSemiJoinPass`.
 --
 -- Each test prints, in order:
@@ -21,6 +19,7 @@ DROP TABLE IF EXISTS extras;
 DROP TABLE IF EXISTS users_alt;
 DROP TABLE IF EXISTS users_pre;
 DROP TABLE IF EXISTS child_t;
+DROP TABLE IF EXISTS s_users;
 
 CREATE TABLE users    (uid Int32, age Int32, name String, active UInt8) ENGINE = MergeTree() ORDER BY uid;
 CREATE TABLE orders   (oid Int32, uid Int32, alt_uid Int32)             ENGINE = MergeTree() ORDER BY oid;
@@ -28,6 +27,7 @@ CREATE TABLE extras   (eid Int32, uid Int32)                            ENGINE =
 CREATE TABLE users_alt(uid Int32, id  Int32)                            ENGINE = MergeTree() ORDER BY uid;
 CREATE TABLE users_pre(uid Int32, age Int32)                            ENGINE = MergeTree() ORDER BY uid;
 CREATE TABLE child_t  (cid Int32, uid Int32)                            ENGINE = MergeTree() ORDER BY cid;
+CREATE TABLE s_users  (uid UInt32, age UInt32) ENGINE = MergeTree() ORDER BY intHash64(uid) SAMPLE BY intHash64(uid);
 
 INSERT INTO users    VALUES (1,20,'Alice',1),(2,33,'Bob',1),(3,40,'Charlie',0),(4,25,'Dave',1),(5,33,'Eve',0);
 INSERT INTO orders   VALUES (10,1,2),(11,2,3),(12,3,1),(13,99,100);
@@ -35,6 +35,7 @@ INSERT INTO extras   VALUES (100,1),(101,2),(102,999);
 INSERT INTO users_alt VALUES (1,100),(2,200),(3,300);
 INSERT INTO users_pre VALUES (1,20),(2,30),(3,40);
 INSERT INTO child_t  VALUES (1,10);
+INSERT INTO s_users   SELECT number, 20 + (number % 30) FROM numbers(1000);
 
 -- ============================================================================
 -- Cases that ARE optimised (expect: one fewer LEFT SEMI / LEFT ANTI join)
@@ -1123,6 +1124,60 @@ SELECT u1.uid FROM users u1
   ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
 
 -- ============================================================================
+-- Table expression modifiers (SAMPLE / FINAL / ...) on the right side: must
+-- block elimination, since they change which physical rows are observed and
+-- the candidate fingerprint does not normalise them.
+-- ============================================================================
+
+SELECT '== T43: SEMI two SAMPLE halves on bare table, must NOT be eliminated ==';
+SELECT '-- rows  opt=0 --';
+SELECT count() FROM s_users u1
+  LEFT SEMI JOIN s_users u2 SAMPLE 1/2          ON u1.uid = u2.uid
+  LEFT SEMI JOIN s_users u3 SAMPLE 1/2 OFFSET 1/2 ON u1.uid = u3.uid
+  SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- rows  opt=1 --';
+SELECT count() FROM s_users u1
+  LEFT SEMI JOIN s_users u2 SAMPLE 1/2          ON u1.uid = u2.uid
+  LEFT SEMI JOIN s_users u3 SAMPLE 1/2 OFFSET 1/2 ON u1.uid = u3.uid
+  SETTINGS optimize_remove_redundant_semi_join = 1;
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT count() FROM s_users u1
+  LEFT SEMI JOIN s_users u2 SAMPLE 1/2          ON u1.uid = u2.uid
+  LEFT SEMI JOIN s_users u3 SAMPLE 1/2 OFFSET 1/2 ON u1.uid = u3.uid
+  SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT count() FROM s_users u1
+  LEFT SEMI JOIN s_users u2 SAMPLE 1/2          ON u1.uid = u2.uid
+  LEFT SEMI JOIN s_users u3 SAMPLE 1/2 OFFSET 1/2 ON u1.uid = u3.uid
+  SETTINGS optimize_remove_redundant_semi_join = 1;
+
+SELECT '== T44: SEMI two SAMPLE halves wrapped in subqueries, must NOT be eliminated ==';
+SELECT '-- rows  opt=0 --';
+SELECT count() FROM s_users u1
+  LEFT SEMI JOIN (SELECT * FROM s_users SAMPLE 1/2)          u2 ON u1.uid = u2.uid
+  LEFT SEMI JOIN (SELECT * FROM s_users SAMPLE 1/2 OFFSET 1/2) u3 ON u1.uid = u3.uid
+  SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- rows  opt=1 --';
+SELECT count() FROM s_users u1
+  LEFT SEMI JOIN (SELECT * FROM s_users SAMPLE 1/2)          u2 ON u1.uid = u2.uid
+  LEFT SEMI JOIN (SELECT * FROM s_users SAMPLE 1/2 OFFSET 1/2) u3 ON u1.uid = u3.uid
+  SETTINGS optimize_remove_redundant_semi_join = 1;
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT count() FROM s_users u1
+  LEFT SEMI JOIN (SELECT * FROM s_users SAMPLE 1/2)          u2 ON u1.uid = u2.uid
+  LEFT SEMI JOIN (SELECT * FROM s_users SAMPLE 1/2 OFFSET 1/2) u3 ON u1.uid = u3.uid
+  SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT count() FROM s_users u1
+  LEFT SEMI JOIN (SELECT * FROM s_users SAMPLE 1/2)          u2 ON u1.uid = u2.uid
+  LEFT SEMI JOIN (SELECT * FROM s_users SAMPLE 1/2 OFFSET 1/2) u3 ON u1.uid = u3.uid
+  SETTINGS optimize_remove_redundant_semi_join = 1;
+
+-- ============================================================================
 -- Cleanup
 -- ============================================================================
 DROP TABLE users;
@@ -1131,3 +1186,4 @@ DROP TABLE extras;
 DROP TABLE users_alt;
 DROP TABLE users_pre;
 DROP TABLE child_t;
+DROP TABLE s_users;

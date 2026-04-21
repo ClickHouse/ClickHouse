@@ -1441,3 +1441,61 @@ SEMI LEFT JOIN
 ) AS __table3 ON (__table1.uid = __table3.uid) AND ((__table1.age + 1) = (__table3.age + 1))
 ORDER BY __table1.uid ASC
 SETTINGS optimize_remove_redundant_semi_join = 1
+== T43: SEMI two SAMPLE halves on bare table, must NOT be eliminated ==
+-- rows  opt=0 --
+0
+-- rows  opt=1 --
+0
+-- query opt=0 --
+SELECT count() AS `count()`
+FROM default.s_users AS __table1
+SEMI LEFT JOIN default.s_users AS __table2
+SAMPLE 1 / 2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN default.s_users AS __table3
+SAMPLE 1 / 2 OFFSET 1 / 2 ON __table1.uid = __table3.uid
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT count() AS `count()`
+FROM default.s_users AS __table1
+SEMI LEFT JOIN default.s_users AS __table2
+SAMPLE 1 / 2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN default.s_users AS __table3
+SAMPLE 1 / 2 OFFSET 1 / 2 ON __table1.uid = __table3.uid
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T44: SEMI two SAMPLE halves wrapped in subqueries, must NOT be eliminated ==
+-- rows  opt=0 --
+0
+-- rows  opt=1 --
+0
+-- query opt=0 --
+SELECT count() AS `count()`
+FROM default.s_users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.s_users AS __table3
+    SAMPLE 1 / 2
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.s_users AS __table5
+    SAMPLE 1 / 2 OFFSET 1 / 2
+) AS __table4 ON __table1.uid = __table4.uid
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT count() AS `count()`
+FROM default.s_users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.s_users AS __table3
+    SAMPLE 1 / 2
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.s_users AS __table5
+    SAMPLE 1 / 2 OFFSET 1 / 2
+) AS __table4 ON __table1.uid = __table4.uid
+SETTINGS optimize_remove_redundant_semi_join = 1

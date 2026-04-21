@@ -87,34 +87,47 @@ struct RightSideInfo
 /// `GROUP BY`).
 std::optional<RightSideInfo> analyzeRightSide(const QueryTreeNodePtr & right_side)
 {
+    RightSideInfo info;
+
     if (right_side->as<TableNode>())
-        return RightSideInfo{.table_expr = std::static_pointer_cast<TableNode>(right_side), .where_filter = nullptr};
+    {
+        info.table_expr = std::static_pointer_cast<TableNode>(right_side);
+        info.where_filter = nullptr;
+    }
+    else
+    {
+        const auto * query = right_side->as<QueryNode>();
+        if (!query)
+            return std::nullopt;
 
-    const auto * query = right_side->as<QueryNode>();
-    if (!query)
+        if (query->isCorrelated()
+            || query->hasWith()
+            || query->hasPrewhere()
+            || query->hasGroupBy()
+            || query->hasHaving()
+            || query->hasWindow()
+            || query->hasQualify()
+            || query->hasOrderBy()
+            || query->isDistinct()
+            || query->hasLimitBy()
+            || query->hasLimitByLimit()
+            || query->hasLimitByOffset()
+            || query->hasLimit()
+            || query->hasOffset())
+            return std::nullopt;
+
+        const auto & join_tree = query->getJoinTree();
+        if (!join_tree->as<TableNode>())
+            return std::nullopt;
+
+        info.table_expr = std::static_pointer_cast<TableNode>(join_tree);
+        info.where_filter = query->getWhere();
+    }
+
+    if (info.table_expr->hasTableExpressionModifiers())
         return std::nullopt;
 
-    if (query->isCorrelated()
-        || query->hasWith()
-        || query->hasPrewhere()
-        || query->hasGroupBy()
-        || query->hasHaving()
-        || query->hasWindow()
-        || query->hasQualify()
-        || query->hasOrderBy()
-        || query->isDistinct()
-        || query->hasLimitBy()
-        || query->hasLimitByLimit()
-        || query->hasLimitByOffset()
-        || query->hasLimit()
-        || query->hasOffset())
-        return std::nullopt;
-
-    const auto & join_tree = query->getJoinTree();
-    if (!join_tree->as<TableNode>())
-        return std::nullopt;
-
-    return RightSideInfo{.table_expr = std::static_pointer_cast<TableNode>(join_tree), .where_filter = query->getWhere()};
+    return info;
 }
 
 /// Resolve a right-side column reference to its underlying physical column name on
