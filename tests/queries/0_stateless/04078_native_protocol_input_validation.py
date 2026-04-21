@@ -182,75 +182,41 @@ def send_empty_block(sock):
     sock.sendall(pkt)
 
 
-def skip_block(sock):
-    _temp = read_string(sock)
-    while True:
-        fn = read_varuint(sock)
-        if fn == 0:
-            break
-        if fn == 1:
-            recv_exact(sock, 1)
-        elif fn == 2:
-            recv_exact(sock, 4)
-    nc = read_varuint(sock)
-    nr = read_varuint(sock)
-    for _ in range(nc):
-        _cn = read_string(sock)
-        ct = read_string(sock)
-        if nr == 0:
-            continue
-        if "Int8" in ct or "UInt8" in ct or "Enum8" in ct:
-            recv_exact(sock, nr)
-        elif "Int16" in ct or "UInt16" in ct:
-            recv_exact(sock, nr * 2)
-        elif "Int32" in ct or "UInt32" in ct or "Float32" in ct:
-            recv_exact(sock, nr * 4)
-        elif "Int64" in ct or "UInt64" in ct or "Float64" in ct or "DateTime64" in ct:
-            recv_exact(sock, nr * 8)
-        elif "String" in ct:
-            for _ in range(nr):
-                read_string(sock)
-        else:
-            recv_exact(sock, nr * 8)
-
-
 def get_response(sock, timeout=60.0):
-    """Returns (ok, message). ok=True means query succeeded.
+    """Returns `(ok, message)`. `ok=True` means the server accepted the query.
 
-    The default timeout is generous because this test runs in CI on
-    `amd_llvm_coverage` builds where server response latency can be several
-    seconds under parallel load (the test itself is fast; the socket wait
-    is just a safety net against a genuinely stuck server).
+    We only care whether the server rejected the query with `SERVER_EXCEPTION`
+    (which the server emits early, immediately after validating `stage`,
+    `compression`, and `query_kind` in the `Query` packet) or accepted it and
+    began producing a response. Accordingly we read exactly one packet:
+
+      - `SERVER_EXCEPTION`   -> rejected; parse the code/name/message
+      - any other packet     -> accepted (e.g. `Data`, `ProfileEvents`,
+                                `Progress`, `ProfileInfo`, `EndOfStream`, ...)
+
+    Parsing the full response stream is fragile: block payload, `Progress`, and
+    `ProfileInfo` formats all depend on protocol revision, and the server can
+    emit new packet types or new fields as revisions bump. A previous version
+    of this function tried to skip data/profile-event blocks and parse
+    `Progress`/`ProfileInfo` fields, but the revision-conditional field counts
+    drifted by a byte under some randomized CI configurations, eventually
+    causing `read_string` to read binary column data and fail with
+    `'utf-8' codec can't decode byte 0x88 in position 0`. The single-packet
+    approach sidesteps all of that: we only need the accept/reject signal.
+
+    The generous timeout is a safety net against a genuinely stuck server
+    (on `amd_llvm_coverage` builds response latency can be several seconds
+    under parallel load; the test itself is fast).
     """
     sock.settimeout(timeout)
     try:
-        while True:
-            pkt_type = read_varuint(sock)
-            if pkt_type == SERVER_EXCEPTION:
-                code = struct.unpack("<I", recv_exact(sock, 4))[0]
-                name = read_string(sock)
-                message = read_string(sock)
-                _stack = read_string(sock)
-                _nested = recv_exact(sock, 1)
-                return False, f"{code}:{message}"
-            elif pkt_type == SERVER_END_OF_STREAM:
-                return True, "OK"
-            elif pkt_type in (1, 14):  # Data or ProfileEvents
-                skip_block(sock)
-            elif pkt_type == SERVER_PROGRESS:
-                for _ in range(3):
-                    read_varuint(sock)
-                if CLIENT_REVISION >= 54372:
-                    read_varuint(sock)
-                    read_varuint(sock)
-                if CLIENT_REVISION >= 54448:
-                    read_varuint(sock)
-            elif pkt_type == SERVER_PROFILE_INFO:
-                for _ in range(7):
-                    read_varuint(sock)
-                recv_exact(sock, 3)
-            else:
-                return True, f"pkt_type={pkt_type}"
+        pkt_type = read_varuint(sock)
+        if pkt_type == SERVER_EXCEPTION:
+            code = struct.unpack("<I", recv_exact(sock, 4))[0]
+            _name = read_string(sock)
+            message = read_string(sock)
+            return False, f"{code}:{message}"
+        return True, f"accepted (first pkt: {pkt_type})"
     except socket.timeout:
         return False, "timeout"
     except Exception as e:
