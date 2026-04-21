@@ -260,6 +260,54 @@ SELECT u1.uid FROM users u1
   LEFT SEMI JOIN (SELECT inner_u.uid AS my_uid, inner_u.age, inner_u.name, inner_u.active FROM users AS inner_u WHERE inner_u.age = 33) u3 ON u1.uid = u3.my_uid
   ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
 
+SELECT '== T38: SEMI multi-key ON, drop the looser one ==';
+SELECT '-- rows  opt=0 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid AND u1.age = u3.age
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- rows  opt=1 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid AND u1.age = u3.age
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid AND u1.age = u3.age
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid AND u1.age = u3.age
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+
+SELECT '== T39: SEMI multi-key ON, conjuncts reordered and operands flipped, still optimises ==';
+SELECT '-- rows  opt=0 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u3.age = u1.age AND u3.uid = u1.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- rows  opt=1 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u3.age = u1.age AND u3.uid = u1.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u3.age = u1.age AND u3.uid = u1.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u3.age = u1.age AND u3.uid = u1.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+
 -- ============================================================================
 -- Cases that are NOT optimised (expect: all LEFT SEMI / LEFT ANTI joins kept,
 -- and EXPLAIN opt=0 / opt=1 must be identical)
@@ -708,6 +756,30 @@ SELECT o.oid FROM orders o
   LEFT SEMI JOIN users_alt a1 ON o.uid = a1.uid
   LEFT SEMI JOIN (SELECT id AS uid FROM users_alt) a2 ON o.uid = a2.uid
   ORDER BY o.oid SETTINGS optimize_remove_redundant_semi_join = 1;
+
+SELECT '== T40: SEMI multi-key vs single-key on same table => different bucket, no elimination ==';
+SELECT '-- rows  opt=0 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- rows  opt=1 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
 
 -- ============================================================================
 -- Cross-barrier safety: RIGHT/FULL JOIN between two SEMI/ANTI must block the
