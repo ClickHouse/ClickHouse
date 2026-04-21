@@ -4,7 +4,7 @@
 -- The bug: buildSetsForDAG() for PREWHERE calls buildSetInplace() which creates
 -- the set without storing explicit set elements. When KeyCondition later calls
 -- buildOrderedSetInplace(), it sees the set is already created, checks
--- hasExplicitSetElements() → false, and returns nullptr. The IN condition is
+-- hasExplicitSetElements() -> false, and returns nullptr. The IN condition is
 -- then excluded from primary key analysis, so all granules are read.
 --
 -- With WHERE the set is not pre-built, so buildOrderedSetInplace() builds it
@@ -19,21 +19,25 @@ ENGINE = MergeTree ORDER BY (id, ts);
 CREATE TABLE ids (id UInt64)
 ENGINE = MergeTree ORDER BY id;
 
--- 100 distinct ids × 8192 rows each = 819200 rows = 100 granules (one per id).
+-- 100 distinct ids, 8192 rows per id.
+-- The absolute number of granules selected depends on randomized settings
+-- (index_granularity, max_insert_threads, min_bytes_for_wide_part, ...),
+-- so this test does not pin it. It compares PREWHERE vs WHERE instead.
 INSERT INTO data SELECT number % 100, toDateTime('2020-01-01') + intDiv(number, 100), number FROM numbers(819200);
 
 INSERT INTO ids VALUES (1);
 
 CREATE TEMPORARY TABLE start_ts AS (SELECT now() AS ts);
 
--- WHERE variant: should read very few marks (only granules for id=1).
+-- WHERE variant: uses primary key analysis via buildOrderedSetInplace() that
+-- builds the subquery set from scratch with explicit elements.
 SELECT count()
 FROM data
 WHERE id IN (SELECT id FROM ids) AND ts >= '2020-01-01' AND ts <= '2020-12-31'
 SETTINGS log_comment = '04097_where'
 FORMAT Null;
 
--- PREWHERE variant: must also read the same few marks.
+-- PREWHERE variant: must pick the same granules as WHERE above.
 SELECT count()
 FROM data
 PREWHERE id IN (SELECT id FROM ids) AND ts >= '2020-01-01' AND ts <= '2020-12-31'
@@ -42,19 +46,40 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Both WHERE and PREWHERE should select the same number of marks (just 1 granule for id=1).
--- Without the fix, PREWHERE reads all 100 marks instead of 1.
-SELECT
-    log_comment,
-    if(ProfileEvents['SelectedMarks'] <= 5, 'ok',
-       format('error: SelectedMarks={} (expected <= 3), query_id={}', ProfileEvents['SelectedMarks'], query_id))
-FROM system.query_log
-WHERE type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    AND event_date >= yesterday()
-    AND event_time >= (SELECT ts FROM start_ts)
-    AND log_comment IN ('04097_where', '04097_prewhere')
-ORDER BY log_comment;
+-- Compare SelectedMarks for PREWHERE vs WHERE directly. Both queries read the
+-- same parts with the same granularity, so primary key analysis must select
+-- the same granules for both. This is robust under CI randomization of
+-- index_granularity / max_insert_threads / min_bytes_for_wide_part.
+--
+-- Without the fix, PREWHERE reads every granule (hundreds of marks) while WHERE
+-- prunes down to the granules covering id=1, so prewhere_marks >> where_marks.
+WITH
+    (
+        SELECT ProfileEvents['SelectedMarks']
+        FROM system.query_log
+        WHERE type = 'QueryFinish'
+            AND current_database = currentDatabase()
+            AND event_date >= yesterday()
+            AND event_time >= (SELECT ts FROM start_ts)
+            AND log_comment = '04097_where'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+    ) AS where_marks,
+    (
+        SELECT ProfileEvents['SelectedMarks']
+        FROM system.query_log
+        WHERE type = 'QueryFinish'
+            AND current_database = currentDatabase()
+            AND event_date >= yesterday()
+            AND event_time >= (SELECT ts FROM start_ts)
+            AND log_comment = '04097_prewhere'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+    ) AS prewhere_marks
+SELECT if(prewhere_marks <= where_marks,
+          'ok',
+          format('error: PREWHERE selected {} marks, WHERE selected {} marks',
+                 toString(prewhere_marks), toString(where_marks)));
 
 DROP TABLE data;
 DROP TABLE ids;
