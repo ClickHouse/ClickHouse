@@ -112,35 +112,36 @@ ColumnsCache::getIntersecting(
 
 void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 {
-    /// First collect all keys while holding the interval_index lock
+    /// Hold interval_index_mutex across both the index erase and the Base::remove
+    /// calls so that a concurrent set() for the same key cannot re-insert between
+    /// the two steps and end up with the Base entry deleted but the interval_index
+    /// still pointing at it.
+    ///
+    /// Lock ordering: set() acquires interval_index_mutex first, then calls
+    /// Base::set (which briefly takes the CacheBase lock). removePart follows the
+    /// same order, so there is no lock-order cycle.
+    std::lock_guard lock(interval_index_mutex);
+
+    PartIdentifier part_id{table_uuid, part_name};
+    auto part_it = interval_index.find(part_id);
+    if (part_it == interval_index.end())
+        return;
+
+    /// Collect all cache entries for this part
     std::vector<Key> keys;
+    const auto & columns_map = part_it->second;
+    for (const auto & column_entry : columns_map)
     {
-        std::lock_guard lock(interval_index_mutex);
-
-        PartIdentifier part_id{table_uuid, part_name};
-        auto part_it = interval_index.find(part_id);
-        if (part_it == interval_index.end())
-            return;
-
-        /// Collect all cache entries for this part
-        const auto & columns_map = part_it->second;
-        for (const auto & column_entry : columns_map)
+        for (const auto & interval_entry : column_entry.second)
         {
-            for (const auto & interval_entry : column_entry.second)
-            {
-                keys.push_back(interval_entry.second);
-            }
+            keys.push_back(interval_entry.second);
         }
-
-        /// Remove the part from the interval index
-        interval_index.erase(part_it);
     }
 
-    /// Then remove cache entries without holding interval_index lock to avoid deadlock
+    /// Remove from the interval index and from the base cache atomically w.r.t. set()
+    interval_index.erase(part_it);
     for (const auto & key : keys)
-    {
         Base::remove(key);
-    }
 }
 
 std::vector<ColumnsCache::EntryMetadata>
