@@ -774,7 +774,6 @@ private:
     void createSources()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
-        processors.reserve(num_threads);
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
@@ -793,7 +792,6 @@ private:
         /// Disable min max optimization to avoid race condition.
         params->aggregator.disableMinMaxOptimizationForFixedHashMaps(*data);
 
-        processors.reserve(num_threads);
         AggregatedDataVariantsPtr & first = data->at(0);
         for (size_t thread = 0; thread < num_threads; ++thread)
         {

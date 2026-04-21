@@ -798,9 +798,11 @@ class Result(MetaClasses.Serializable):
         command_args = command_args or []
         command_kwargs = command_kwargs or {}
 
-        # Set log file path if logging is enabled
+        # Set log file path if logging is enabled. Fall back to JOB_NAME so the log file
+        # gets a real basename when `name=""` (otherwise it ends up as just ".log").
         if with_log or with_info or with_info_on_failure:
-            log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
+            log_name = name or _Environment.get().JOB_NAME
+            log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(log_name)}.log"
         else:
             log_file = None
 
@@ -1591,14 +1593,12 @@ class ResultTranslator:
             List[Result]: A list of Result objects representing individual test cases
         """
         name = "pytest"
-        sw = Utils.Stopwatch()
         if not os.path.isfile(pytest_report_file):
             print(f"ERROR: Pytest report file {pytest_report_file} not found")
             return Result.create_from(
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Pytest report file {pytest_report_file} not found",
-                stopwatch=sw,
             )
 
         # Track test cases by their node_id, and also track failures by phase
@@ -1978,7 +1978,7 @@ class ResultTranslator:
                     elif "teardown" in failures:
                         test_results[node_id].status = failures["teardown"]
 
-            R = Result.create_from(name=name, results=list(test_results.values()), stopwatch=sw)
+            R = Result.create_from(name=name, results=list(test_results.values()))
 
             if session_exitstatus == 0:
                 # pytest exit code 0 means all tests passed or xfailed (from pytest's perspective).
@@ -2019,5 +2019,4 @@ class ResultTranslator:
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Failed to parse pytest jsonl: {e}, {traceback.print_exc()}",
-                stopwatch=sw,
             )
