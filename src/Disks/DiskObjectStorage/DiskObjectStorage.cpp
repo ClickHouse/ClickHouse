@@ -774,7 +774,15 @@ void DiskObjectStorage::prepareRead(
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
     if (storage_objects.empty())
+    {
+        pipeline.setSource(
+            StoredObjects{StoredObject()},
+            [](const StoredObject &, const ReadSettings &)
+            {
+                return std::make_unique<ReadBufferFromEmptyFile>();
+            });
         return;
+    }
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
@@ -793,12 +801,24 @@ void DiskObjectStorage::prepareRead(
         pipeline.setSource(storage, storage_objects, read_hint);
     }
 
+    /// Distributed cache.
+#if ENABLE_DISTRIBUTED_CACHE
+    bool use_distributed_cache = enable_distributed_cache
+        && DistributedCache::canUseDistributedCacheForRead(
+            read_settings.withNestedBuffer(), *storage);
+    if (use_distributed_cache)
+        pipeline.needDistributedCache();
+#else
+    bool use_distributed_cache = false;
+#endif
+
     /// Memory cache (page cache).
     const bool file_cache_enabled = storage->supportsCache() && read_settings.enable_filesystem_cache;
     const bool use_page_cache =
         read_settings.page_cache
-        && read_settings.use_page_cache_for_disks_without_file_cache
-        && !file_cache_enabled;
+        && (use_distributed_cache
+            ? read_settings.use_page_cache_with_distributed_cache
+            : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
 
     if (use_page_cache)
     {
@@ -825,10 +845,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
-    const auto storage_objects = metadata_storage->getStorageObjects(path);
-    if (storage_objects.empty())
-        return std::make_unique<ReadBufferFromEmptyFile>();
-
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
 
     ReadPipeline pipeline;

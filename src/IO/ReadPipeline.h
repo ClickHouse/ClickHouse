@@ -71,6 +71,12 @@ public:
     /// -- Memory cache stage --
     void needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix);
 
+    /// -- Distributed cache stage (sits between Gather and MemoryCache) --
+    /// Implementation is in the DistributedCache module (ENABLE_DISTRIBUTED_CACHE).
+    /// When enabled, reads go through the distributed cache with fallback to Gather.
+    /// Also affects: use_page_cache condition and min_bytes_for_seek in AsyncPrefetch.
+    void needDistributedCache();
+
     /// -- Async prefetch stage --
     void needAsyncPrefetch(IAsynchronousReader & reader);
 
@@ -134,6 +140,7 @@ private:
     std::optional<SourceStage> source;
     std::optional<DiskCacheStage> disk_cache;
     std::optional<MemoryCacheStage> memory_cache;
+    bool distributed_cache = false;
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::vector<DecryptionStage> decryption_stages;
     std::optional<DecompressionStage> decompression;
