@@ -58,6 +58,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_like_min_pattern_length", 4, 4, "New setting"},
             {"text_index_like_max_postings_to_read", 50, 50, "New setting"},
             {"analyzer_inline_views", false, false, "New setting"},
+            {"optimize_remove_redundant_semi_join", false, true, "Remove redundant SEMI/ANTI JOINs when one right-hand side is a provable subset of another."},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
