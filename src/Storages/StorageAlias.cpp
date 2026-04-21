@@ -84,6 +84,31 @@ public:
 
     String getName() const override { return "AliasSink"; }
 
+    void onStart() override
+    {
+        StoragePtr target = storage.getTargetTable();
+
+        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+        insert->table_id = target->getStorageID();
+        ASTPtr query_ptr(insert.release());
+
+        auto insert_context = Context::createCopy(getContext());
+        insert_context->makeQueryContext();
+        addInterpreterContext(insert_context);
+
+        InterpreterInsertQuery interpreter(
+            query_ptr,
+            insert_context,
+            /* allow_materialized */ false,
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_insert */ false);
+
+        block_io = interpreter.execute();
+        executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);
+        executor->start();
+    }
+
     void consume(Chunk & chunk) override
     {
         if (chunk.getNumRows() == 0)
@@ -95,34 +120,30 @@ public:
         for (const auto & col : non_materialized_header)
             non_materialized_block.insert(block.getByName(col.name));
 
-        StoragePtr target = storage.getTargetTable();
-        StorageID target_id = target->getStorageID();
+        executor->push(std::move(non_materialized_block));
+    }
 
-        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-        insert->table_id = target_id;
-        ASTPtr query_ptr(insert.release());
+    void onFinish() override
+    {
+        executor->finish();
+        executor.reset();
 
-        auto insert_context = Context::createCopy(getContext());
-        insert_context->makeQueryContext();
+        block_io.onFinish();
+        block_io = {};
+    }
 
-        InterpreterInsertQuery interpreter(
-            query_ptr,
-            insert_context,
-            /* allow_materialized */ false,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_insert */ false);
-
-        BlockIO block_io = interpreter.execute();
-        PushingPipelineExecutor executor(block_io.pipeline);
-        executor.start();
-        executor.push(std::move(non_materialized_block));
-        executor.finish();
+    void onException(std::exception_ptr) override
+    {
+        executor.reset();
+        block_io.onException();
+        block_io = {};
     }
 
 private:
     StorageAlias & storage;
     Block non_materialized_header;
+    BlockIO block_io;
+    std::unique_ptr<PushingPipelineExecutor> executor;
 };
 
 void StorageAlias::read(
