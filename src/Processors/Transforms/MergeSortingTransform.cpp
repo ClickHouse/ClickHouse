@@ -156,14 +156,14 @@ Processors MergeSortingTransform::expandPipeline()
         connect(external_merging_sorted->getOutputs().front(), inputs.back());
     }
 
-    auto & source = processors.at(0);
+    auto & source = processors.front();
 
     static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput();
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
 
     if (processors.size() > 1)
     {
-        auto & sink = processors.at(1);
+        auto & sink = *std::next(processors.begin());
         /// Serialize
         outputs.emplace_back(header_without_constants, this);
         connect(sink->getOutputs().front(), source->getInputs().front());
