@@ -776,7 +776,7 @@ void DiskObjectStorage::prepareRead(
     if (storage_objects.empty())
     {
         pipeline.setSource(
-            StoredObjects{StoredObject()},
+            StoredObjects{StoredObject("", "", 0)},
             [](const StoredObject &, const ReadSettings &)
             {
                 return std::make_unique<ReadBufferFromEmptyFile>();
