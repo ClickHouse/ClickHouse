@@ -31,6 +31,7 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
 STYLE_AND_FAST_TESTS = [
     JobNames.STYLE_CHECK,
     JobNames.FAST_TEST,
+    JobNames.CI_TESTS,
     *[j.name for j in JobConfigs.tidy_build_arm_jobs],
 ]
 
@@ -49,6 +50,7 @@ workflow = Workflow.Config(
         JobConfigs.code_review,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
+        JobConfigs.ci_tests,
         *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
@@ -192,6 +194,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/check_report_messages.py",
     ],
     job_aliases={
         "integration": JobConfigs.integration_test_jobs_non_required[
