@@ -277,6 +277,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool remove_empty_parts;
     extern const MergeTreeSettingsBool remove_rolled_back_parts_immediately;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
+    extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsUInt64 simultaneous_parts_removal_limit;
     extern const MergeTreeSettingsUInt64 sleep_before_loading_outdated_parts_ms;
     extern const MergeTreeSettingsString storage_policy;
@@ -8936,7 +8937,9 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
 void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
 {
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
-    auto columns_list = Nested::collect(columns.getAllPhysical());
+    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
+        ? Nested::collect(columns.getAllPhysical())
+        : columns.getAllPhysical();
     SerializationInfo::Settings serialization_settings
     {
         settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
@@ -10818,9 +10821,11 @@ MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForCo
     ColumnsDescriptionCache cache
     {
         .original = std::make_shared<ColumnsDescription>(columns),
-        .with_collected_nested = std::make_shared<ColumnsDescription>(Nested::collect(columns)),
+        .with_collected_nested = (*getSettings())[MergeTreeSetting::share_nested_offsets]
+            ? std::make_shared<ColumnsDescription>(Nested::collect(columns))
+            : nullptr,
     };
-    if (*cache.with_collected_nested == *cache.original)
+    if (!cache.with_collected_nested || *cache.with_collected_nested == *cache.original)
         cache.with_collected_nested = cache.original;
     auto [_, inserted] = columns_descriptions_cache.emplace(columns, cache);
     columns_descriptions_metric_handle.add(inserted);
