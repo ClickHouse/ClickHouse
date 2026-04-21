@@ -22,8 +22,11 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -60,6 +63,81 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Walk the AST and expand parameterized view "table function" calls into their inlined,
+    /// parameter-substituted subqueries. This is used by EXPLAIN SYNTAX in the analyzer path so
+    /// users can see the resolved query behind a parameterized view. The legacy non-analyzer
+    /// path already does this via `StorageView::replaceWithSubquery` during analysis.
+    struct ExpandParameterizedViewsMatcher
+    {
+        struct Data : public WithContext
+        {
+            explicit Data(ContextPtr context_) : WithContext(context_) {}
+        };
+
+        static bool needChildVisit(ASTPtr &, ASTPtr &)
+        {
+            return true;
+        }
+
+        static void visit(ASTPtr & ast, Data & data)
+        {
+            if (auto * select = ast->as<ASTSelectQuery>())
+                expandFirstTable(*select, data);
+        }
+
+        static void expandFirstTable(ASTSelectQuery & select, const Data & data)
+        {
+            if (!select.tables() || select.tables()->children.empty())
+                return;
+
+            auto * table_element = select.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
+            if (!table_element || !table_element->table_expression)
+                return;
+
+            auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
+            if (!table_expr || !table_expr->table_function)
+                return;
+
+            const auto * func = table_expr->table_function->as<ASTFunction>();
+            if (!func)
+                return;
+
+            auto query_context = data.getContext()->getQueryContext();
+
+            String database_name = query_context->getCurrentDatabase();
+            String table_name = func->name;
+            if (func->isCompoundName())
+            {
+                std::vector<std::string> parts;
+                splitInto<'.'>(parts, func->name);
+                if (parts.size() != 2)
+                {
+                    return;
+                }
+                database_name = parts[0];
+                table_name = parts[1];
+            }
+
+            auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
+            if (!storage)
+                return;
+
+            const auto * storage_view = storage->as<StorageView>();
+            if (!storage_view || !storage_view->isParameterizedView())
+                return;
+
+            auto view_query = storage->getInMemoryMetadataPtr(query_context, false)
+                                 ->getSelectQuery().inner_query->clone();
+            NameToNameMap parameter_values = analyzeFunctionParamValues(table_expr->table_function, query_context);
+            StorageView::replaceQueryParametersIfParameterizedView(view_query, parameter_values);
+
+            ASTPtr dummy_view_name;
+            StorageView::replaceWithSubquery(select, std::move(view_query), dummy_view_name, /*parameterized_view=*/ true);
+        }
+    };
+
+    using ExpandParameterizedViewsVisitor = InDepthNodeVisitor<ExpandParameterizedViewsMatcher, true>;
+
     struct ExplainAnalyzedSyntaxMatcher
     {
         struct Data : public WithContext
@@ -521,6 +599,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::AnalyzedSyntax:
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
+
+            /// Inline any parameterized view calls with their parameter-substituted inner queries,
+            /// so EXPLAIN SYNTAX shows what the view actually expands to.
+            ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
+            ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
 
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
