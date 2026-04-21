@@ -611,7 +611,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
-            metadata_snapshot = storage->getInMemoryMetadataPtr();
+            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
         if (options.only_analyze)
             storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
@@ -720,7 +720,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)
+    {
         row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && context->hasQueryContext())
+        {
+            for (const auto & row_policy : row_policy_filter->policies)
+                context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
+        }
+    }
 
     StorageView * view = nullptr;
     if (storage)
@@ -746,7 +753,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     {settings[Setting::parallel_replicas_mode],
                      settings[Setting::parallel_replicas_custom_key_range_lower],
                      settings[Setting::parallel_replicas_custom_key_range_upper]},
-                    storage->getInMemoryMetadataPtr()->columns,
+                    storage->getInMemoryMetadataPtr(context, false)->columns,
                     context);
             }
             else if (settings[Setting::parallel_replica_offset] > 0)
@@ -2236,7 +2243,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 apply_prelimit = apply_prelimit && (lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0);
             }
 
-            bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+            /// `isToAggregationState` covers both `WithMergeableStateAfterAggregation` (stage 3) and
+            /// `WithMergeableStateAfterAggregationAndLimit` (stage 4). OFFSET must not be applied at
+            /// either stage because OFFSET means skipping rows from the entire query result, not from each
+            /// shard individually.
+            bool apply_offset = options.to_stage < QueryProcessingStage::WithMergeableStateAfterAggregation;
             if (apply_prelimit)
             {
                 executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
@@ -2384,18 +2395,6 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
 RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 {
     return row_policy_filter;
-}
-
-void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
-{
-    if (row_policy_filter)
-    {
-        for (const auto & row_policy : row_policy_filter->policies)
-        {
-            auto name = row_policy->getFullName().toString();
-            elem.used_row_policies.emplace(std::move(name));
-        }
-    }
 }
 
 bool InterpreterSelectQuery::shouldMoveToPrewhere() const
