@@ -240,9 +240,6 @@ public:
     /// is_restore_from_backup = true in StorageFactory::Arguments).
     virtual void finalizeRestoreFromBackup() {}
 
-    /// Return true if there is at least one part containing lightweight deleted mask.
-    virtual bool hasLightweightDeletedMask() const { return false; }
-
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 

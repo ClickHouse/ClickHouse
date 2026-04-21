@@ -45,7 +45,7 @@ public:
 
     void setLocation(const std::string & location_);
     std::string getLocation() const;
-    std::string getLocationWithEndpoint(const std::string & endpoint_) const;
+    std::string getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO) const;
     std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
 
     void setEndpoint(const std::string & endpoint_);
@@ -126,7 +126,7 @@ private:
     bool with_storage_credentials = false;
     bool with_datalake_specific_metadata = false;
 
-    std::string constructLocation(const std::string & endpoint_) const;
+    std::string constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const;
 };
 
 
