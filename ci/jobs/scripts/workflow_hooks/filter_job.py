@@ -38,6 +38,13 @@ PRELIMINARY_JOBS = [
     "Build (arm_tidy)",
 ]
 
+BUILDS_FOR_TESTS = [
+    j.name
+    for j in JobConfigs.build_jobs
+    + JobConfigs.coverage_build_jobs
+    + JobConfigs.release_build_jobs
+]
+
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan_ubsan)",
     "Integration tests (amd_asan_ubsan, flaky)",
@@ -162,7 +169,7 @@ def should_skip_job(job_name):
 
     if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.INTEGRATION)
-        or job_name in JobConfigs.builds_for_tests
+        or job_name in BUILDS_FOR_TESTS
     ):
         return (
             True,
@@ -172,7 +179,7 @@ def should_skip_job(job_name):
     if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.STATELESS)
         or job_name.startswith(JobNames.STATEFUL)
-        or job_name in JobConfigs.builds_for_tests
+        or job_name in BUILDS_FOR_TESTS
         or "functional" in job_name.lower()  # Bugfix validation (functional tests)
     ):
         return (
