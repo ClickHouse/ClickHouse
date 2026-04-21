@@ -1368,3 +1368,76 @@ ORDER BY
     __table1.oid ASC,
     __table3.eid ASC
 SETTINGS optimize_remove_redundant_semi_join = 1
+== T41: SEMI multi-key ON, one equals has an expression on the LHS, drop the looser one ==
+-- rows  opt=0 --
+1
+2
+4
+-- rows  opt=1 --
+1
+2
+4
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON ((__table1.uid * 1) = __table2.uid) AND (__table1.age = __table2.age)
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON ((__table1.uid * 1) = __table3.uid) AND (__table1.age = __table3.age)
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON ((__table1.uid * 1) = __table3.uid) AND (__table1.age = __table3.age)
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+== T42: SEMI multi-key ON, one equals has neither side a right physical column, no elimination ==
+-- rows  opt=0 --
+1
+2
+4
+-- rows  opt=1 --
+1
+2
+4
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid = __table2.uid) AND ((__table1.age + 1) = (__table2.age + 1))
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON (__table1.uid = __table3.uid) AND ((__table1.age + 1) = (__table3.age + 1))
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid = __table2.uid) AND ((__table1.age + 1) = (__table2.age + 1))
+SEMI LEFT JOIN
+(
+    SELECT
+        __table4.uid AS uid,
+        __table4.age AS age
+    FROM default.users AS __table4
+    WHERE __table4.active = 1
+) AS __table3 ON (__table1.uid = __table3.uid) AND ((__table1.age + 1) = (__table3.age + 1))
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1

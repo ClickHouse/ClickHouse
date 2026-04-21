@@ -1071,6 +1071,58 @@ SELECT o.oid, e.eid AS ek FROM orders o
   ORDER BY o.oid, e.eid SETTINGS optimize_remove_redundant_semi_join = 1;
 
 -- ============================================================================
+-- More multi-key ON variants
+-- ============================================================================
+
+SELECT '== T41: SEMI multi-key ON, one equals has an expression on the LHS, drop the looser one ==';
+SELECT '-- rows  opt=0 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid * 1 = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid * 1 = u3.uid AND u1.age = u3.age
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- rows  opt=1 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid * 1 = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid * 1 = u3.uid AND u1.age = u3.age
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid * 1 = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid * 1 = u3.uid AND u1.age = u3.age
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid * 1 = u2.uid AND u1.age = u2.age
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid * 1 = u3.uid AND u1.age = u3.age
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+
+SELECT '== T42: SEMI multi-key ON, one equals has neither side a right physical column, no elimination ==';
+SELECT '-- rows  opt=0 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age + 1 = u2.age + 1
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid AND u1.age + 1 = u3.age + 1
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- rows  opt=1 --';
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age + 1 = u2.age + 1
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid AND u1.age + 1 = u3.age + 1
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age + 1 = u2.age + 1
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid AND u1.age + 1 = u3.age + 1
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users u2 ON u1.uid = u2.uid AND u1.age + 1 = u2.age + 1
+  LEFT SEMI JOIN (SELECT * FROM users WHERE active = 1) u3 ON u1.uid = u3.uid AND u1.age + 1 = u3.age + 1
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+
+-- ============================================================================
 -- Cleanup
 -- ============================================================================
 DROP TABLE users;
