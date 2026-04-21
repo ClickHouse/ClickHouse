@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
 #include <Common/Arena.h>
+#include <Common/memory.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -13,6 +14,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <absl/container/inlined_vector.h>
+
 
 namespace DB
 {
@@ -121,7 +123,9 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_, createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
-        nested_size_of_data = nested_func->sizeOfData();
+        /// Pad the size to a multiple of alignment so that consecutive elements in the array
+        /// are properly aligned (same principle as C++ sizeof for array element types).
+        nested_size_of_data = ::Memory::alignUp(nested_func->sizeOfData(), nested_func->alignOfData());
 
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require at least one argument", getName());
