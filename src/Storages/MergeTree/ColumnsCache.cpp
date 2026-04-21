@@ -146,44 +146,22 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 std::vector<ColumnsCache::EntryMetadata>
 ColumnsCache::getAllEntriesMetadata()
 {
+    /// Use Base::dump() rather than iterating interval_index and calling Base::get,
+    /// because Base::get updates LRU recency in the cache policy and would cause
+    /// the diagnostic query to perturb eviction order (i.e., "touch" every entry).
+    /// dump() returns a snapshot without changing priorities.
+    /// Note: entries returned by dump() briefly hold a MappedPtr; we extract the
+    /// metadata (rows, bytes) and drop the shared_ptr immediately so column data
+    /// is not pinned beyond the lifetime of this vector.
+    auto snapshot = Base::dump();
+
     std::vector<EntryMetadata> result;
-
-    /// First collect all keys while holding the interval_index lock
-    std::vector<Key> keys;
+    result.reserve(snapshot.size());
+    for (const auto & entry : snapshot)
     {
-        std::lock_guard lock(interval_index_mutex);
-
-        /// Iterate through all parts, columns, and intervals
-        for (const auto & part_entry : interval_index)
-        {
-            for (const auto & column_entry : part_entry.second)
-            {
-                for (const auto & interval_entry : column_entry.second)
-                {
-                    keys.push_back(interval_entry.second);
-                }
-            }
-        }
+        if (entry.mapped)
+            result.push_back(EntryMetadata{entry.key, entry.mapped->rows, entry.mapped->column->byteSize()});
     }
-
-    /// Then query cache entries without holding interval_index lock to avoid deadlock.
-    /// We extract metadata (rows, bytes) immediately and release the shared_ptr,
-    /// so we don't pin all cached column data in memory during the query.
-    std::vector<Key> stale_keys;
-    for (const auto & key : keys)
-    {
-        /// Verify the entry still exists in cache (might have been evicted)
-        auto entry = Base::get(key);
-        if (entry)
-            result.push_back(EntryMetadata{key, entry->rows, entry->column->byteSize()});
-        else
-            stale_keys.push_back(key);
-    }
-
-    /// Clean up stale entries from interval_index
-    if (!stale_keys.empty())
-        removeStaleKeys(stale_keys);
-
     return result;
 }
 
