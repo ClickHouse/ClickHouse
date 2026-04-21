@@ -47,6 +47,8 @@ if echo "$OUT" | grep -q "query_id"; then
     echo "Detach returned query_id: yes"
 else
     echo "Detach returned query_id: no"
+    echo "FAIL: Expected 'query_id' in detached INSERT output, got: $OUT"
+    exit 1
 fi
 
 # The subsequent SELECT joins the background thread (next sendQuery joins detached_query_thread)
@@ -55,6 +57,8 @@ if echo "$OUT" | grep -q "99"; then
     echo "Inserted data visible after detach: yes"
 else
     echo "Inserted data visible after detach: no"
+    echo "FAIL: Expected inserted value 99 to be visible after detach, got: $OUT"
+    exit 1
 fi
 
 # --- 2. ExceptionBeforeStart: INSERT into nonexistent table must return an error, not query_id ---
@@ -64,11 +68,10 @@ OUT_ERR=$(run_local_interactive \
 
 if echo "$OUT_ERR" | grep -qi "UNKNOWN_TABLE\|does not exist"; then
     echo "Error returned to client: yes"
-elif echo "$OUT_ERR" | grep -q "query_id"; then
-    # Old (broken) behavior: returned query_id while the background thread silently failed.
-    echo "Error returned to client: no (got query_id instead of exception)"
 else
-    echo "Error returned to client: unknown"
+    echo "Error returned to client: no"
+    echo "FAIL: Expected UNKNOWN_TABLE error on INSERT into nonexistent table, got: $OUT_ERR"
+    exit 1
 fi
 
 # --- 3. SELECT is never detached, always returns data synchronously ---
@@ -80,6 +83,8 @@ if echo "$OUT_SEL" | grep -q "42"; then
     echo "SELECT result returned: yes"
 else
     echo "SELECT result returned: no"
+    echo "FAIL: Expected 42 in synchronous SELECT result, got: $OUT_SEL"
+    exit 1
 fi
 
 echo "OK"
