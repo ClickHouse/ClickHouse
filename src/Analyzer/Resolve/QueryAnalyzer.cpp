@@ -54,6 +54,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <Access/EnabledRowPolicies.h>
 
@@ -72,6 +73,7 @@ namespace Setting
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
+    extern const SettingsBool asterisk_include_virtual_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_materialized_cte;
@@ -1557,6 +1559,7 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
     UInt8 get_columns_options_kind = GetColumnsOptions::AllPhysicalAndAliases;
+    VirtualsKind virtuals_kind = VirtualsKind::None;
 
     if (matcher_node_typed.isAsteriskMatcher())
     {
@@ -1569,9 +1572,12 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
 
         if (settings[Setting::asterisk_include_materialized_columns])
             get_columns_options_kind |= GetColumnsOptions::Kind::Materialized;
+
+        if (settings[Setting::asterisk_include_virtual_columns])
+            virtuals_kind = VirtualsKind::All;
     }
 
-    return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind));
+    return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind)).withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
 }
 
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
@@ -3784,7 +3790,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         if (storage_snapshot->storage.supportsSubcolumns())
         {
             get_column_options.withSubcolumns();
@@ -4040,20 +4046,17 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
 
                 QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
-                if (table_function_argument_function_name == "view")
+                if (table_function_argument_function_name == "view"
+                    || (table_function_argument_function_name == "merge"
+                        && (table_function_name == "remote" || table_function_name == "remoteSecure"
+                            || table_function_name == "cluster" || table_function_name == "clusterAllReplicas")))
                 {
-                    /// Subquery in view() table function can reference tables that don't exist on the initiator.
-                    /// In the following example `users` table may be not available on the initiator:
-                    /// SELECT *
-                    /// FROM remoteSecure(<address>, view(
-                    ///     SELECT
-                    ///         t1.age,
-                    ///         t1.name,
-                    ///         t2.name
-                    ///     FROM users AS t1
-                    ///     INNER JOIN users AS t2 ON t1.uid = t2.uid
-                    /// ), <user>, <password>)
-                    /// SETTINGS prefer_localhost_replica = 0
+                    /// The `view` table function contains a subquery that may reference tables
+                    /// not available on the initiator.
+                    /// The `merge` table function inside remote/cluster should not be resolved
+                    /// on the initiator, because it pattern-matches tables that may only exist
+                    /// on the remote server.
+                    /// For example: SELECT count() FROM remote('host', merge(currentDatabase(), '^test'))
                     skip_analysis_arguments_indexes.push_back(table_function_argument_index);
                 }
                 else

@@ -150,7 +150,8 @@ public:
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
     UpdateNodeStatus updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
 
-    void cancel(bool cancel_all_processors = true);
+    /// Cancel every processor with the given reason.
+    void cancel(IProcessor::CancelReason reason);
 
 private:
     /// Add single edge to edges list. Check processor is known.
@@ -165,13 +166,12 @@ private:
     UpdateNodeStatus expandPipeline(boost::container::devector<uint64_t> & stack, uint64_t pid);
 
     std::shared_ptr<Processors> processors;
-    std::vector<bool> source_processors;
     std::mutex processors_mutex;
 
     SharedMutex nodes_mutex;
 
     const bool profile_processors;
-    bool cancelled = false;
+    IProcessor::CancelReason cancel_reason = IProcessor::CancelReason::NotCancelled;
 };
 
 }
