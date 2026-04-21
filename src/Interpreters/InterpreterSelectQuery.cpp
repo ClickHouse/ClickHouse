@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
@@ -428,7 +429,30 @@ void checkAccessRightsForSelect(
     }
 
     /// General check.
-    context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    /// Map subcolumn names (e.g. `t.a` for a `Tuple` column `t`) back to their parent storage
+    /// column names before the access check. Column-level grants are stored against top-level
+    /// column names only, so `GRANT SELECT(t)` must implicitly cover `t.a`, `t.b`, etc.
+    if (table_metadata)
+    {
+        NameSet storage_columns_set;
+        for (const auto & column : table_metadata->getColumns())
+            storage_columns_set.insert(column.name);
+
+        const auto & required_columns = syntax_analyzer_result.requiredSourceColumnsForAccessCheck();
+        Names normalized_columns;
+        normalized_columns.reserve(required_columns.size());
+        for (const auto & name : required_columns)
+        {
+            auto storage_column = Nested::tryGetColumnNameInStorage(name, storage_columns_set);
+            normalized_columns.push_back(storage_column ? std::move(*storage_column) : name);
+        }
+
+        context->checkAccess(AccessType::SELECT, table_id, normalized_columns);
+    }
+    else
+    {
+        context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    }
 }
 
 ASTPtr parseAdditionalFilterConditionForTable(
