@@ -35,8 +35,12 @@ public:
     /// needed to report total rows to read
     void setProgressCallback(ProgressCallback callback);
 
-    /// snapshot replica - first replica the coordinator got InitialAllRangesAnnouncement from
     std::optional<size_t> getSnapshotReplicaNum() const { return snapshot_replica_num; }
+
+    /// Pin the snapshot replica to a specific replica_num before any announcement arrives.
+    /// Called by the initiator-local replica during pipeline build (synchronously, before any
+    /// follower announcement can reach the coordinator).
+    void setSnapshotReplicaNum(size_t replica_num);
 
     void setReadCompletedCallback(ReadCompletedCallback callback);
 

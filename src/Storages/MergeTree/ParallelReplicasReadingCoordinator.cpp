@@ -209,7 +209,7 @@ public:
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
-    virtual bool isReadingCompleted() const { return false; }
+    virtual bool isReadingCompleted() const = 0;
     virtual bool initializedWithEmptyRanges() const { return false; }
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
@@ -939,6 +939,7 @@ public:
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
     void doHandleInitialAllRangesAnnouncement([[maybe_unused]] InitialAllRangesAnnouncement announcement) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
+    bool isReadingCompleted() const override;
 
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
@@ -946,6 +947,14 @@ public:
 
     LoggerPtr log;
 };
+
+bool InOrderCoordinator::isReadingCompleted() const
+{
+    for (const auto & part : all_parts_to_read)
+        if (!part.description.ranges.empty())
+            return false;
+    return true;
+}
 
 void InOrderCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
@@ -1164,24 +1173,27 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
             announcement.replica_num,
             replicas_count);
 
-    if (!snapshot_replica_num)
+    /// If the snapshot replica was pinned explicitly via setSnapshotReplicaNum, only that
+    /// replica can create a new stream coordinator. Announcements from non-snapshot replicas
+    /// for streams that don't exist yet are silently dropped — otherwise a follower could
+    /// initialize a split stream before the snapshot replica and lock in wrong ranges.
+    /// If the snapshot replica wasn't pinned, fall back to the first announcement.
+    if (snapshot_replica_num)
+    {
+        const bool stream_exists = stream_to_coordinator.contains(announcement.stream_id);
+        if (!stream_exists && announcement.replica_num != *snapshot_replica_num)
+        {
+            LOG_DEBUG(
+                getLogger("ParallelReplicasReadingCoordinator"),
+                "Ignoring announcement from non-snapshot replica {} for unknown stream {}",
+                announcement.replica_num,
+                announcement.stream_id);
+            return;
+        }
+    }
+    else
     {
         snapshot_replica_num = announcement.replica_num;
-        LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Using snapshot from replica num {}", snapshot_replica_num.value());
-    }
-
-    /// Only the snapshot replica (initiator-local) can introduce new streams (including in-order splits).
-    /// Announcements from other replicas for unknown streams are silently dropped; the follower's reads
-    /// from those streams will get empty responses.
-    const bool is_snapshot_replica = (announcement.replica_num == *snapshot_replica_num);
-    if (!is_snapshot_replica && !stream_to_coordinator.contains(announcement.stream_id))
-    {
-        LOG_DEBUG(
-            getLogger("ParallelReplicasReadingCoordinator"),
-            "Ignoring announcement from non-snapshot replica {} for unknown stream {}",
-            announcement.replica_num,
-            announcement.stream_id);
-        return;
     }
 
     auto coordinator = getOrCreateCoordinator(announcement.stream_id, announcement.mode);
@@ -1375,6 +1387,16 @@ ParallelReplicasReadingCoordinator::getOrCreateCoordinator(const String & stream
         stream_to_coordinator.size());
 
     return coordinator;
+}
+
+void ParallelReplicasReadingCoordinator::setSnapshotReplicaNum(size_t replica_num)
+{
+    std::lock_guard lock(mutex);
+    if (snapshot_replica_num)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Snapshot replica is already set to {}, cannot pin to {}", *snapshot_replica_num, replica_num);
+    snapshot_replica_num = replica_num;
+    LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Replica {} is set as the snapshot replica", replica_num);
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)
