@@ -302,6 +302,11 @@ IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
      {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
      {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
 
+IMPLEMENT_SETTING_ENUM(InputFormatColumnMatchingCaseSensitivity, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", FormatSettings::InputFormatColumnMatchingCaseSensitivity::AUTO},
+     {"ignore_case", FormatSettings::InputFormatColumnMatchingCaseSensitivity::IGNORE_CASE},
+     {"match_case", FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE}})
+
 IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
     {{"DEFINER", SQLSecurityType::DEFINER},
      {"INVOKER", SQLSecurityType::INVOKER},
