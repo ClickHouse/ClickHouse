@@ -740,6 +740,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Create2:
             return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
+        case Coordination::OpNum::CreateTTL:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL);
         case Coordination::OpNum::TryRemove:
             return feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE);
         case Coordination::OpNum::SetWatch:
@@ -766,7 +768,6 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
         case Coordination::OpNum::Reconfig:
         case Coordination::OpNum::Auth:
         case Coordination::OpNum::SessionID:
-        case Coordination::OpNum::CreateTTL: // TODO: create feature flag
             return true;
     }
 }

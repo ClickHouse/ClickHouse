@@ -594,6 +594,7 @@ struct UpdateNodeStatDelta
     int32_t old_num_children;
     int32_t new_num_children;
     int32_t version{-1};
+    std::optional<int64_t> new_destroy_time;
 };
 
 struct UpdateNodeDataDelta
@@ -2750,6 +2751,8 @@ std::list<KeeperStorageBase::Delta> preprocess(
     new_stats.mzxid = zxid;
     new_stats.mtime = time;
     new_stats.data_size = static_cast<uint32_t>(zk_request.data.size());
+    if (node->ttl.has_value())
+        node_delta.new_destroy_time = time + *node->ttl;
     new_deltas.emplace_back(zk_request.path, zxid, std::move(node_delta));
 
     auto parent_path = Coordination::parentNodePath(zk_request.path);

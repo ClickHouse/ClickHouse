@@ -29,5 +29,8 @@
                 <port>9234</port>
             </server>
         </raft_configuration>
+        <feature_flags>
+            <create_ttl>1</create_ttl>
+        </feature_flags>
     </keeper_server>
 </clickhouse>

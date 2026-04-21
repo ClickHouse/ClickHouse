@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import threading
 import uuid
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -10,7 +9,7 @@ def get_fake_zk(cluster, nodename, timeout=30.0):
     return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
-def test_smoke():
+def test_simple():
     run_uuid = uuid.uuid4()
     cluster = ClickHouseCluster(__file__, str(run_uuid))
     # Disable `with_remote_database_disk` as the test does not use the default Keeper.
@@ -23,21 +22,183 @@ def test_smoke():
 
     node1_zk = None
 
+    cluster.start()
+
+    node1_zk = get_fake_zk(cluster, "node1")
+    node2_zk = get_fake_zk(cluster, "node2")
+    node1_zk.create("/test_alive", b"aaaa", ttl=1000)
+    assert node1_zk.exists("/test_alive")
+    assert node2_zk.exists("/test_alive")
+    time.sleep(1.1)
+    assert not node1_zk.exists("/test_alive")
+    assert not node2_zk.exists("/test_alive")
+
+    node1_zk.create("/test_alive", b"aaaa", ttl=1)
+    time.sleep(0.1)
+    assert not node1_zk.exists("/test_alive")
+    assert not node2_zk.exists("/test_alive")
+
+    cluster.shutdown()
+
+    if node1_zk:
+        node1_zk.stop()
+        node1_zk.close()
+    if node2_zk:
+        node2_zk.stop()
+        node2_zk.close()
+
+def test_dont_remove_until_children_alive():
+    run_uuid = uuid.uuid4()
+    cluster = ClickHouseCluster(__file__, str(run_uuid))
+    # Disable `with_remote_database_disk` as the test does not use the default Keeper.
+    cluster.add_instance(
+        "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True, with_remote_database_disk=False,
+    )
+    cluster.add_instance(
+        "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True, with_remote_database_disk=False,
+    )
+
+    node1_zk = None
+
+    cluster.start()
+
+    node1_zk = get_fake_zk(cluster, "node1")
+    node2_zk = get_fake_zk(cluster, "node2")
+    node1_zk.create("/test_alive", b"aaaa", ttl=1000)
+    node1_zk.create("/test_alive/child", b"aaaa", ttl=3000)
+    node1_zk.create("/test_alive/child2", b"aaaa", ttl=4000)
+    assert node1_zk.exists("/test_alive")
+    assert node2_zk.exists("/test_alive")
+    time.sleep(1.1)
+    assert node1_zk.exists("/test_alive")
+    assert node1_zk.exists("/test_alive/child")
+    assert node1_zk.exists("/test_alive/child2")
+    assert node2_zk.exists("/test_alive")
+    assert node2_zk.exists("/test_alive/child")
+    assert node2_zk.exists("/test_alive/child2")
+
+    time.sleep(2.0)
+    assert node1_zk.exists("/test_alive")
+    assert not node1_zk.exists("/test_alive/child")
+    assert node1_zk.exists("/test_alive/child2")
+    assert node2_zk.exists("/test_alive")
+    assert not node2_zk.exists("/test_alive/child")
+    assert node2_zk.exists("/test_alive/child2")
+
+    time.sleep(1.1)
+    assert not node1_zk.exists("/test_alive")
+    assert not node1_zk.exists("/test_alive/child")
+    assert not node1_zk.exists("/test_alive/child2")
+    assert not node2_zk.exists("/test_alive")
+    assert not node2_zk.exists("/test_alive/child")
+    assert not node2_zk.exists("/test_alive/child2")
+
+    cluster.shutdown()
+
+    if node1_zk:
+        node1_zk.stop()
+        node1_zk.close()
+    if node2_zk:
+        node2_zk.stop()
+        node2_zk.close()
+
+def test_dont_remove_until_children_alive2():
+    run_uuid = uuid.uuid4()
+    cluster = ClickHouseCluster(__file__, str(run_uuid))
+    # Disable `with_remote_database_disk` as the test does not use the default Keeper.
+    cluster.add_instance(
+        "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True, with_remote_database_disk=False,
+    )
+    cluster.add_instance(
+        "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True, with_remote_database_disk=False,
+    )
+
+    node1_zk = None
+
+    cluster.start()
+
+    node1_zk = get_fake_zk(cluster, "node1")
+    node2_zk = get_fake_zk(cluster, "node2")
+    node1_zk.create("/test_alive", b"aaaa", ttl=1000)
+    node1_zk.create("/test_alive/child", b"aaaa", ttl=3000)
+    node1_zk.create("/test_alive/child2", b"aaaa")
+    assert node1_zk.exists("/test_alive")
+    assert node2_zk.exists("/test_alive")
+    time.sleep(1.1)
+    assert node1_zk.exists("/test_alive")
+    assert node1_zk.exists("/test_alive/child")
+    assert node1_zk.exists("/test_alive/child2")
+    assert node2_zk.exists("/test_alive")
+    assert node2_zk.exists("/test_alive/child")
+    assert node2_zk.exists("/test_alive/child2")
+
+    time.sleep(2.0)
+    assert node1_zk.exists("/test_alive")
+    assert not node1_zk.exists("/test_alive/child")
+    assert node1_zk.exists("/test_alive/child2")
+    assert node2_zk.exists("/test_alive")
+    assert not node2_zk.exists("/test_alive/child")
+    assert node2_zk.exists("/test_alive/child2")
+
+    node1_zk.delete("/test_alive/child2")
+    time.sleep(0.5)
+    assert not node1_zk.exists("/test_alive")
+    assert not node1_zk.exists("/test_alive/child")
+    assert not node1_zk.exists("/test_alive/child2")
+    assert not node2_zk.exists("/test_alive")
+    assert not node2_zk.exists("/test_alive/child")
+    assert not node2_zk.exists("/test_alive/child2")
+
+    cluster.shutdown()
+
+    if node1_zk:
+        node1_zk.stop()
+        node1_zk.close()
+    if node2_zk:
+        node2_zk.stop()
+        node2_zk.close()
+
+def test_child_with_smaller_ttl_expires_before_parent():
+    run_uuid = uuid.uuid4()
+    cluster = ClickHouseCluster(__file__, str(run_uuid))
+    cluster.add_instance(
+        "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True, with_remote_database_disk=False,
+    )
+    cluster.add_instance(
+        "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True, with_remote_database_disk=False,
+    )
+
+    node1_zk = None
+    cluster.start()
+
     try:
-        cluster.start()
-
         node1_zk = get_fake_zk(cluster, "node1")
-        node1_zk.create("/test_alive", b"aaaa", ttl=1000)
-        assert node1_zk.exists("/test_alive")
-        time.sleep(2)
-        assert not node1_zk.exists("/test_alive")
+        node2_zk = get_fake_zk(cluster, "node1")
+        node1_zk.create("/parent", b"aaaa", ttl=4000)
+        node1_zk.create("/parent/child", b"bbbb", ttl=1000)
 
+        assert node1_zk.exists("/parent")
+        assert node1_zk.exists("/parent/child")
+        assert node2_zk.exists("/parent")
+        assert node2_zk.exists("/parent/child")
+
+        time.sleep(1.2)
+        assert node1_zk.exists("/parent")
+        assert not node1_zk.exists("/parent/child")
+        assert node2_zk.exists("/parent")
+        assert not node2_zk.exists("/parent/child")
+
+        time.sleep(3.1)
+        assert not node1_zk.exists("/parent")
+        assert not node2_zk.exists("/parent")
     finally:
         cluster.shutdown()
-
         if node1_zk:
             node1_zk.stop()
             node1_zk.close()
+        if node2_zk:
+            node2_zk.stop()
+            node2_zk.close()
 
 def test_deep_hierarchy_ttl_cleanup():
     run_uuid = uuid.uuid4()
@@ -252,44 +413,3 @@ def test_recreate_node_after_ttl_expiration():
         if node2_zk:
             node2_zk.stop()
             node2_zk.close()
-
-def test_increase_time_to_destroy():
-    run_uuid = uuid.uuid4()
-    cluster = ClickHouseCluster(__file__, str(run_uuid))
-    # Disable `with_remote_database_disk` as the test does not use the default Keeper.
-    cluster.add_instance(
-        "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True, with_remote_database_disk=False,
-    )
-    cluster.add_instance(
-        "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True, with_remote_database_disk=False,
-    )
-
-    node1_zk = None
-
-    cluster.start()
-
-    node1_zk = get_fake_zk(cluster, "node1")
-    node2_zk = get_fake_zk(cluster, "node2")
-    node1_zk.create("/test_alive", b"aaaa", ttl=1000)
-    assert node1_zk.exists("/test_alive")
-    assert node2_zk.exists("/test_alive")
-    time.sleep(0.5)
-    assert node1_zk.exists("/test_alive")
-    assert node2_zk.exists("/test_alive")
-    node1_zk.set("/test_alive", b"foo")
-    time.sleep(0.7)
-    assert node1_zk.exists("/test_alive")
-    assert node2_zk.exists("/test_alive")
-    time.sleep(1.0)
-
-    assert not node1_zk.exists("/test_alive")
-    assert not node2_zk.exists("/test_alive")
-
-    cluster.shutdown()
-
-    if node1_zk:
-        node1_zk.stop()
-        node1_zk.close()
-    if node2_zk:
-        node2_zk.stop()
-        node2_zk.close()

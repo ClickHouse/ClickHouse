@@ -3,7 +3,6 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperSpans.h>
 #include <Common/StaticString.h>
@@ -308,6 +307,8 @@ struct ZooKeeperCreateIfNotExistsResponse : ZooKeeperCreateResponse
 
 struct ZooKeeperCreateTTLResponse : ZooKeeperCreate2Response
 {
+    using ZooKeeperCreate2Response::ZooKeeperCreate2Response;
+
     void readImpl(ReadBuffer & in) override;
 
     void writeImpl(WriteBuffer & out) const override;
