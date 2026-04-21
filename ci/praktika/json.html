@@ -332,7 +332,7 @@
         }
 
         .disabled {
-            white-space: pre-wrap;
+            white-space: pre;
         }
 
         .status-column span[style*="pointer"] {
@@ -383,6 +383,57 @@
         .status-other {
             color: #808080;
             font-weight: 600;
+        }
+
+        .notification-panel {
+            padding: 10px 14px;
+            margin: 8px 0;
+            border-radius: 6px;
+            border-left: 4px solid;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .notification-panel .notification-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .notification-panel .notification-item {
+            margin: 4px 0;
+        }
+        .notification-panel .notification-jobs {
+            font-size: 11px;
+            opacity: 0.75;
+            margin-left: 4px;
+        }
+        .notification-errors {
+            background-color: #fef2f2;
+            border-left-color: #dc2626;
+            color: #991b1b;
+        }
+        .notification-warnings {
+            background-color: #fffbeb;
+            border-left-color: #d97706;
+            color: #92400e;
+        }
+        .notification-notes {
+            background-color: #eff6ff;
+            border-left-color: #2563eb;
+            color: #1e40af;
+        }
+        .night-theme .notification-errors {
+            background-color: #2a1515;
+            border-left-color: #f87171;
+            color: #fca5a5;
+        }
+        .night-theme .notification-warnings {
+            background-color: #2a2515;
+            border-left-color: #fbbf24;
+            color: #fde68a;
+        }
+        .night-theme .notification-notes {
+            background-color: #15202a;
+            border-left-color: #60a5fa;
+            color: #93c5fd;
         }
     </style>
 </head>
@@ -1842,6 +1893,67 @@
         fillInNavigationBar(nameParams.slice(0, i + 1))
     }
 
+    function renderNotificationPanels(container, ext, resultName) {
+        const kinds = [
+            { key: 'errors', cssClass: 'notification-errors', title: 'Errors' },
+            { key: 'warnings', cssClass: 'notification-warnings', title: 'Warnings' },
+            { key: 'notes', cssClass: 'notification-notes', title: 'Notes' },
+        ];
+        for (const { key, cssClass, title } of kinds) {
+            const items = ext?.[key];
+            if (!Array.isArray(items) || items.length === 0) continue;
+
+            // Group entries by message text, collecting unique "from" sources
+            const grouped = new Map();
+            for (const item of items) {
+                const text = item.message || '';
+                const source = item.from || '';
+                if (!grouped.has(text)) {
+                    grouped.set(text, []);
+                }
+                const sources = grouped.get(text);
+                if (source && !sources.includes(source)) {
+                    sources.push(source);
+                }
+            }
+
+            const panel = document.createElement('div');
+            panel.className = `notification-panel ${cssClass}`;
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'notification-title';
+            titleEl.textContent = title;
+            panel.appendChild(titleEl);
+
+            for (const [message, sources] of grouped) {
+                const row = document.createElement('div');
+                row.className = 'notification-item';
+                row.textContent = message;
+
+                // Hide source when all sources match the current result name
+                const externalSources = sources.filter(s => s !== resultName);
+                if (externalSources.length === 0) {
+                    // all from this result — no label needed
+                } else if (externalSources.length === 1) {
+                    const span = document.createElement('span');
+                    span.className = 'notification-jobs';
+                    span.textContent = `(${externalSources[0]})`;
+                    row.appendChild(span);
+                } else {
+                    const span = document.createElement('span');
+                    span.className = 'notification-jobs';
+                    span.textContent = `(${externalSources.length} jobs)`;
+                    span.title = externalSources.join('\n');
+                    row.appendChild(span);
+                }
+
+                panel.appendChild(row);
+            }
+
+            container.appendChild(panel);
+        }
+    }
+
     async function renderResults(PR, sha, nameParams) {
         const result = getTargetResults(nameParams)
         let i = 1;
@@ -1853,6 +1965,9 @@
         }
 
         const resultsDiv = document.getElementById('result-container');
+
+        renderNotificationPanels(resultsDiv, result.ext, result.name);
+
         if (result.info) {
             const textDiv = document.createElement('div');
             textDiv.id = 'info-content';
