@@ -222,7 +222,12 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
         result.default_base_location = object->get("default-base-location").extract<String>();
 }
 
-DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
+DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(
+    bool update_token,
+    const String & /*method*/,
+    const Poco::URI & /*url*/,
+    const DB::HTTPHeaderEntries & /*extra_headers*/,
+    const String & /*body*/) const
 {
     fiu_do_on(DB::FailPoints::check_database_datalake_negative,
     {
@@ -392,7 +397,12 @@ BigLakeCatalog::BigLakeCatalog(
     config = loadConfig();
 }
 
-DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
+DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(
+    bool update_token,
+    const String & /*method*/,
+    const Poco::URI & /*url*/,
+    const DB::HTTPHeaderEntries & /*extra_headers*/,
+    const String & /*body*/) const
 {
     /// Google Cloud OAuth2 for BigLake.
     /// Uses GCP metadata service or Application Default Credentials to get access token.
@@ -547,7 +557,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
     auto create_buffer = [&](bool update_token)
     {
-        auto result_headers = getAuthHeaders(update_token);
+        auto result_headers = getAuthHeaders(update_token, Poco::Net::HTTPRequest::HTTP_GET, url, headers, {});
         std::move(headers.begin(), headers.end(), std::back_inserter(result_headers));
 
         return DB::BuilderRWBufferFromHTTP(url)
@@ -947,9 +957,6 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
         request_body->stringify(oss);
     const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
-    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
-    headers.emplace_back("Content-Type", "application/json");
-
     const auto & context = getContext();
 
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
@@ -963,6 +970,12 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
 
     /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(endpoint, /* enable_url_encoding */ false);
+
+    DB::HTTPHeaderEntries extra_headers;
+    extra_headers.emplace_back("Content-Type", "application/json");
+
+    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true, method, url, extra_headers, body_str);
+    headers.emplace_back("Content-Type", "application/json");
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)

@@ -158,6 +158,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_read_in_window_order", true, false, "Disable this logic by default."},
             {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},
             {"allow_experimental_database_paimon_rest_catalog", false, false, "New setting"},
+            {"allow_experimental_database_s3_tables", false, false, "New setting"},
             {"allow_experimental_object_storage_queue_hive_partitioning", false, false, "New setting."},
             {"type_json_use_partial_match_to_skip_paths_by_regexp", false, true, "Add new setting that allows to use partial match in regexp paths skip in JSON type parsing"},
             {"max_insert_block_size_bytes", 0, 0, "New setting that allows to control the size of blocks in bytes during parsing of data in Row Input Format."},
