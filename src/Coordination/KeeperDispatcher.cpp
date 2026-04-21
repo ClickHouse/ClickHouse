@@ -80,7 +80,6 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
-    extern const CoordinationSettingsUInt64 max_finished_sessions_cache_size;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
