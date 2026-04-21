@@ -876,13 +876,24 @@ def main():
 
         test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run()
         if not res:
-            test_results.results.append(
-                Result.create_from(
-                    name="clickhouse-test",
-                    status=Result.Status.FAIL,
-                    info="clickhouse-test error",
-                )
+            server_died = any(
+                r.name == "Server died" for r in test_results.results
             )
+            if server_died:
+                # The non-zero exit code is caused by the server dying.
+                # Parse the server log with FuzzerLogParser to find crash info
+                # (signal, sanitizer error, logical error, etc.) and add any failures to the report.
+                for crash_result in CH.check_fatal_messages_in_logs():
+                    if crash_result.is_failure():
+                        test_results.results.append(crash_result)
+            else:
+                test_results.results.append(
+                    Result.create_from(
+                        name="clickhouse-test",
+                        status=Result.Status.FAIL,
+                        info="clickhouse-test error",
+                    )
+                )
             attach_debug = True
 
         results.append(test_results)
