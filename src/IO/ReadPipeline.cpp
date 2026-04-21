@@ -57,7 +57,7 @@ void ReadPipeline::needAsyncPrefetch(IAsynchronousReader & reader)
 
 void ReadPipeline::needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder)
 {
-    decryption = DecryptionStage{.path = std::move(path), .buffer_size = buffer_size, .key_finder = std::move(key_finder)};
+    decryption_stages.push_back(DecryptionStage{.path = std::move(path), .buffer_size = buffer_size, .key_finder = std::move(key_finder)});
 }
 
 void ReadPipeline::needDecompression(bool allow_different_codecs)
@@ -169,25 +169,28 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
             settings.remote_read_min_bytes_for_seek);
     }
 
-    /// -- Stage 6: Decryption --
+    /// -- Stage 6: Decryption (may have multiple layers for double encryption) --
 
 #if USE_SSL
-    if (decryption && decryption->key_finder)
+    for (const auto & dec : decryption_stages)
     {
+        if (!dec.key_finder)
+            continue;
+
         if (impl->eof())
         {
             /// Empty encrypted file — no header, return empty buffer.
             return std::make_unique<ReadBufferFromFileDecorator>(
-                std::make_unique<ReadBufferFromString>(std::string_view{}), decryption->path);
+                std::make_unique<ReadBufferFromString>(std::string_view{}), dec.path);
         }
 
         FileEncryption::Header header;
         header.read(*impl);
-        String key = decryption->key_finder(header.key_fingerprint, decryption->path);
+        String key = dec.key_finder(header.key_fingerprint, dec.path);
 
         impl = std::make_unique<ReadBufferFromEncryptedFile>(
-            decryption->path,
-            decryption->buffer_size,
+            dec.path,
+            dec.buffer_size,
             std::move(impl),
             key,
             header);
@@ -219,7 +222,7 @@ String ReadPipeline::describe() const
         append("MemoryCache");
     if (async_prefetch)
         append("AsyncPrefetch");
-    if (decryption)
+    if (!decryption_stages.empty())
         append("Decrypt");
     if (decompression)
         append("Decompress");

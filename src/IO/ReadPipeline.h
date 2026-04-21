@@ -135,7 +135,7 @@ private:
     std::optional<DiskCacheStage> disk_cache;
     std::optional<MemoryCacheStage> memory_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
-    std::optional<DecryptionStage> decryption;
+    std::vector<DecryptionStage> decryption_stages;
     std::optional<DecompressionStage> decompression;
 };
 

@@ -452,22 +452,18 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
-    if (read_hint && *read_hint > 0)
-        read_hint = *read_hint + FileEncryption::Header::kSize;
+    ReadPipeline pipeline;
+    prepareRead(path, settings, read_hint, pipeline);
 
-    auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, read_hint);
-    if (buffer->eof())
+    if (!pipeline.hasSource())
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
-        /// There is no header so we just return `ReadBufferFromString("")`.
-        return std::make_unique<ReadBufferFromFileDecorator>(std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
+        auto wrapped_path = wrappedPath(path);
+        return std::make_unique<ReadBufferFromFileDecorator>(
+            std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
     }
-    auto encryption_settings = current_settings.get();
-    FileEncryption::Header header = readHeader(*buffer);
-    String key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
-    chassert(settings.local_fs_buffer_size != 0);
-    return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
+
+    return pipeline.build(settings);
 }
 
 size_t DiskEncrypted::getFileSize(const String & path) const
