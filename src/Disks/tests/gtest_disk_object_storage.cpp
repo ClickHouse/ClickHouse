@@ -9,6 +9,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadPipeline.h>
+#include <IO/ReadSettings.h>
 
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -795,4 +797,227 @@ TEST_F(DiskObjectStorageTest, TruncateFileToNotZero)
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
 
     waitBlobsCount(disk, 1);
+}
+
+
+/// -- ReadPipeline integration tests --
+
+TEST_F(DiskObjectStorageTest, ReadPipelineBasic)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = "ReadPipeline basic test data";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    /// Build a pipeline and read data through it.
+    DB::ReadPipeline pipeline;
+    DB::ReadSettings read_settings;
+    dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+    EXPECT_TRUE(pipeline.hasSource());
+    ASSERT_EQ(pipeline.getStoredObjects().size(), 1u);
+
+    auto buf = pipeline.build(read_settings);
+    ASSERT_NE(buf, nullptr);
+    EXPECT_EQ(readAll(*buf), file_content);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, ReadPipelineDescribeStages)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText("data", *wb);
+        wb->finalize();
+    }
+
+    /// Synchronous read: no async prefetch.
+    {
+        DB::ReadPipeline pipeline;
+        DB::ReadSettings read_settings;
+        read_settings.remote_fs_method = DB::RemoteFSReadMethod::read;
+        dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+        String desc = pipeline.describe();
+        EXPECT_NE(desc.find("Source"), String::npos) << "describe: " << desc;
+        EXPECT_NE(desc.find("Gather"), String::npos) << "describe: " << desc;
+        EXPECT_EQ(desc.find("AsyncPrefetch"), String::npos) << "describe: " << desc;
+        EXPECT_EQ(desc.find("MemoryCache"), String::npos) << "describe: " << desc;
+    }
+
+    /// Default settings (threadpool): async prefetch is added.
+    {
+        DB::ReadPipeline pipeline;
+        DB::ReadSettings read_settings;
+        dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+        String desc = pipeline.describe();
+        EXPECT_NE(desc.find("AsyncPrefetch"), String::npos) << "describe: " << desc;
+    }
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, ReadPipelineMultipleObjects)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+    std::string part1 = "FIRST_PART_DATA";
+    std::string part2 = "_SECOND_PART_DATA";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(part1, *wb);
+        wb->finalize();
+    }
+    {
+        auto wb = disk->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append, DB::WriteSettings{});
+        DB::writeText(part2, *wb);
+        wb->finalize();
+    }
+
+    waitBlobsCount(disk, 2);
+
+    /// The file is split across two blobs. Pipeline should read both seamlessly.
+    DB::ReadPipeline pipeline;
+    DB::ReadSettings read_settings;
+    dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+    EXPECT_EQ(pipeline.getStoredObjects().size(), 2u);
+
+    auto buf = pipeline.build(read_settings);
+    EXPECT_EQ(readAll(*buf), part1 + part2);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, ReadPipelineSeek)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = "0123456789ABCDEF";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    DB::ReadPipeline pipeline;
+    DB::ReadSettings read_settings;
+    dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+    auto buf = pipeline.build(read_settings);
+
+    /// Seek to offset 10, read the rest.
+    buf->seek(10, SEEK_SET);
+    EXPECT_EQ(readAll(*buf), "ABCDEF");
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, ReadPipelineClone)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = "clone test data";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    DB::ReadPipeline pipeline;
+    DB::ReadSettings read_settings;
+    dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+    /// Clone the pipeline and build both.
+    DB::ReadPipeline cloned = pipeline.clone();
+
+    auto buf1 = pipeline.build(read_settings);
+    auto buf2 = cloned.build(read_settings);
+
+    EXPECT_EQ(readAll(*buf1), file_content);
+    EXPECT_EQ(readAll(*buf2), file_content);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, ReadPipelineMatchesReadFile)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = "consistency check between readFile and pipeline";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    /// Read via readFile (which internally uses the pipeline).
+    DB::ReadSettings read_settings;
+    std::string via_read_file = readAll(*disk->readFile(file_name, read_settings));
+
+    /// Read via explicit prepareRead + build.
+    DB::ReadPipeline pipeline;
+    dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+    std::string via_pipeline = readAll(*pipeline.build(read_settings));
+
+    EXPECT_EQ(via_read_file, file_content);
+    EXPECT_EQ(via_pipeline, file_content);
+    EXPECT_EQ(via_read_file, via_pipeline);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
 }

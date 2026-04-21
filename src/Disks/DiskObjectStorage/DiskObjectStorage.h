@@ -20,6 +20,8 @@ namespace CurrentMetrics
 namespace DB
 {
 
+class ReadPipeline;
+
 /// Disk build on top of IObjectStorage. Use additional disk (local for example)
 /// for metadata storage. Metadata is a small files with mapping from local paths to
 /// objects in object storage, like:
@@ -157,6 +159,14 @@ public:
         const String & path,
         const ReadSettings & settings,
         std::optional<size_t> read_hint) const override;
+
+    /// Populate a ReadPipeline with the stages needed to read from this disk.
+    /// The pipeline can then be built with pipeline.build(settings).
+    void prepareRead(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const;
 
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const String & path,
