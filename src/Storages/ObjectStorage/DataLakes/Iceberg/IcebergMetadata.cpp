@@ -189,14 +189,15 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     }
     auto table_path = configuration->getPathForRead().path;
     return PersistentTableComponents{
-        std::make_shared<IcebergSchemaProcessor>(),
-        cache_ptr,
-        format_version,
-        table_location,
-        compression_method,
-        table_path,
-        table_uuid,
-        IcebergPathResolver(table_location, table_path, configuration->getTypeName(), configuration->getNamespace())};
+        .schema_processor = std::make_shared<IcebergSchemaProcessor>(),
+        .metadata_cache = cache_ptr,
+        .format_version = format_version,
+        .table_location = table_location,
+        .metadata_compression_method = compression_method,
+        .table_path = table_path,
+        .table_uuid = table_uuid,
+        .path_resolver = IcebergPathResolver(table_location, table_path, configuration->getTypeName(), configuration->getNamespace()),
+    };
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata) const
