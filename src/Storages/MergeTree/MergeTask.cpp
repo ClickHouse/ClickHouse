@@ -707,15 +707,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
 
+    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
+
     MergeTreeData::IMutationsSnapshot::Params params
     {
         .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(global_ctx->future_part->parts),
+        .min_part_metadata_version = parts_info.min_metadata_version,
         .min_part_data_versions = nullptr,
         .max_mutation_versions = nullptr,
         .need_data_mutations = false,
         .need_alter_mutations = !patch_parts.empty(),
         .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
