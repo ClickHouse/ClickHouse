@@ -389,7 +389,6 @@ _DARWIN_SKIP_TESTS = (
     "02126_fix_filelog",
     "02133_distributed_queries_formatting",
     "02141_clickhouse_local_interactive_table",
-    "02151_http_s_structure_set_eof",
     "02152_bool_type_parsing",
     "02163_shard_num",
     "02165_replicated_grouping_sets",

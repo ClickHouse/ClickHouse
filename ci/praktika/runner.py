@@ -443,7 +443,7 @@ class Runner:
                 settings = rewritten_settings
 
             local_env_flag = f"--env-file {self.LOCAL_ENV_FILE}" if Path(self.LOCAL_ENV_FILE).exists() else ""
-            cmd = f"docker run {tty} --init --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' {local_env_flag} --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' {local_env_flag} --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -482,17 +482,6 @@ class Runner:
 
             exit_code = process.wait()
 
-            # When running Docker containers as root (non-rootless mode), any files
-            # created by the job will be owned by root.  Fix ownership here, before
-            # reading the result file or writing the host-side result, so that the
-            # host user can open them without a PermissionError.
-            if job.run_in_docker and not no_docker and from_root:
-                print(f"--- Fixing file ownership after running docker as root")
-                uid = os.getuid()
-                gid = os.getgid()
-                chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-                Shell.run(chown_cmd)
-
             result = Result.from_fs(job.name)
             if exit_code != 0:
                 if not result.is_completed():
@@ -517,6 +506,19 @@ class Runner:
 
         print("INFO: disk status after running a job:")
         Shell.run("df -h")
+
+        # When running Docker containers as root (non-rootless mode), any files created
+        # by the job will be owned by root. This causes issues when:
+        # 1. Files need to be read/compressed/uploaded by subsequent steps
+        # 2. Root-owned files remain in the repository working directory
+        # The ownership fix below ensures all root-owned files are changed to the current user
+        if job.run_in_docker and not no_docker and from_root:
+            print(f"--- Fixing file ownership after running docker as root")
+            # Get host user's UID and GID (not from inside the container)
+            uid = os.getuid()
+            gid = os.getgid()
+            chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+            Shell.run(chown_cmd)
 
         return exit_code
 
