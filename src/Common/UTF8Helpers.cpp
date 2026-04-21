@@ -250,6 +250,9 @@ size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_lengt
 
 std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_length)
 {
+    if (in_length == 0)
+        return {};
+
     static const Poco::UTF8Encoding utf8;
     int res = utf8.queryConvert(
         reinterpret_cast<const uint8_t *>(in_bytes),
