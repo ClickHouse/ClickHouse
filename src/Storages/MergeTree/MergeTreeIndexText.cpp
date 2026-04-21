@@ -1663,10 +1663,24 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
 
 MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
-        return {1, getSubstreams()};
+    if (!indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
+        return {0, {}};
 
-    return {0, {}};
+    MergeTreeIndexSubstreams substreams =
+    {
+        {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
+    };
+
+    /// V2: positions file exists on disk.
+    if (indexFileExistsInChecksums(checksums, path_prefix + ".pos", ".idx"))
+    {
+        substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
+        return {2, std::move(substreams)};
+    }
+
+    return {1, std::move(substreams)};
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const

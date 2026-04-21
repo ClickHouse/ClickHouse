@@ -311,20 +311,24 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 
 void MergeTreeReaderTextIndex::initializePositionsStream()
 {
-    const auto & substreams = index.index->getSubstreams();
+    const auto & data_part = getDataPart();
 
-    /// The positions substream is the 4th one (index 3), only present when positions are enabled.
-    if (substreams.size() < 4)
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
+    if (index_format.version != 2)
         return;
 
-    const auto & data_part = getDataPart();
-    const auto & substream = substreams[3];
+    const auto positions_substream = std::ranges::find_if(
+        index_format.substreams,
+        [](const auto & substream) { return substream.type == MergeTreeIndexSubstream::Type::TextIndexPositions; });
+
+    if (positions_substream == index_format.substreams.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index.index->index.name);
 
     positions_stream = makeTextIndexInputStream(
         data_part->getDataPartStoragePtr(),
-        index.index->getFileName() + substream.suffix,
-        substream.extension,
-        MergeTreeIndexReader::patchSettings(settings, substream.type));
+        index.index->getFileName() + positions_substream->suffix,
+        positions_substream->extension,
+        MergeTreeIndexReader::patchSettings(settings, positions_substream->type));
 
     positions_stream->seekToStart();
 }
