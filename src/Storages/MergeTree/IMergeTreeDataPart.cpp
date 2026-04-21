@@ -1505,7 +1505,10 @@ void IMergeTreeDataPart::loadSourcePartsSet()
         return;
 
     if (auto in = readFileIfExists(SourcePartsSetForPatch::FILENAME))
-        source_parts_set.readBinary(*in);
+    {
+        auto main_metadata = storage.getInMemoryMetadataPtr(storage.getContext(), /*bypass_metadata_cache=*/ false);
+        source_parts_set.readBinary(*in, main_metadata);
+    }
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", SourcePartsSetForPatch::FILENAME, name);
 }

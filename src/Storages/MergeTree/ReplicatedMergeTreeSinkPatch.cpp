@@ -84,13 +84,8 @@ TemporaryPartPtr ReplicatedMergeTreeSinkPatch::writeNewTempPart(BlockWithPartiti
     auto partition_id = getPartitionIdForPatch(block.partition);
     auto data_version = getDataVersionInPartition(partition_id);
 
-    auto source_parts_set = buildSourceSetForPatch(*block.block, data_version);
-
-    if (v2_sorting_key_prefix_size.has_value())
-    {
-        source_parts_set.setFormatVersion(SourcePartsSetForPatch::V2_FORMAT_VERSION);
-        source_parts_set.setSortKeyPrefixSize(*v2_sorting_key_prefix_size);
-    }
+    auto main_metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    auto source_parts_set = buildSourceSetForPatch(*block.block, data_version, main_metadata, v2_sorting_key_prefix_size);
 
     return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);
 }

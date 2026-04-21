@@ -66,17 +66,8 @@ TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block
     auto partition_id = getPartitionIdForPatch(block.partition);
     UInt64 block_number = update_holder.block_holder->block.number;
 
-    auto source_parts_set = buildSourceSetForPatch(*block.block, block_number);
-
-    /// Stamp the v2 format-version byte so readers know to dispatch to `MergeOnKey` apply, and
-    /// record the length of the semantic sort-key prefix captured at the UPDATE's callsite —
-    /// this lets readers slice the target table's sort key to the patch's shape without
-    /// re-deriving the length from the rebuilt patch metadata.
-    if (v2_sorting_key_prefix_size.has_value())
-    {
-        source_parts_set.setFormatVersion(SourcePartsSetForPatch::V2_FORMAT_VERSION);
-        source_parts_set.setSortKeyPrefixSize(*v2_sorting_key_prefix_size);
-    }
+    auto main_metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    auto source_parts_set = buildSourceSetForPatch(*block.block, block_number, main_metadata, v2_sorting_key_prefix_size);
 
     return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);
 }

@@ -7,29 +7,7 @@
 namespace DB
 {
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-/// Derived view of a v2 patch's sort key. Computed once — at the point a `PatchPartInfo` is
-/// constructed — from the patch part's rebuilt `KeyDescription` sliced to the prefix length
-/// persisted in `SourcePartsSetForPatch::sorting_key_prefix_size`. See `makePatchSortKey` in
-/// `applyPatches.h` for the builder; see `MergeTreeData::getAlterConversionsForPart` for where it
-/// gets populated. Empty for v1 patches (`Merge` / `Join` modes).
-struct PatchSortKey
-{
-    /// Physical columns the sort-key expression reads. For a plain sort key these equal
-    /// `result_column_names`; for `ORDER BY cityHash64(id)` they collapse to `{id}`. This is what
-    /// `getVirtualsRequiredForPatch` reports to the main-part reader.
-    Names source_column_names;
-    /// Result column names of the sort-key expression — what the `MergeOnKey` merge compares on.
-    Names result_column_names;
-    /// Parallel to `result_column_names`; 1 = DESC.
-    std::vector<UInt8> reverse_flags;
-    /// `ExpressionActions` that materializes `result_column_names` from `source_column_names`.
-    /// Nullptr only for the degenerate empty-prefix case (`ORDER BY tuple()`), which skips the
-    /// sort-key compare entirely in the apply loop.
-    ExpressionActionsPtr expression;
-};
+struct KeyDescription;
 
 /** This directory contains classes functions with implementation of patch parts.
   * Patch parts are created on lightweight updates (UPDATE queies, ALTER UPDATE
@@ -126,10 +104,19 @@ struct PatchPartInfoBase
     /// If true convert columns from patch to current data types in table metadata.
     bool perform_alter_conversions = true;
 
-    /// Populated for `MergeOnKey` (v2) patches only, at construction time, via
-    /// `makePatchSortKey(patch->getMetadataSnapshot()->getSortingKey(), prefix_size)`.
-    /// Empty for `Merge`/`Join`. See the comment on `PatchSortKey` above.
-    PatchSortKey sorting_key;
+    /// Populated for `MergeOnKey` (v2) patches only, at `PatchPartInfo` construction time. Shares
+    /// a single `KeyDescription` instance — built once per `SourcePartsSetForPatch` by slicing
+    /// the target table's sort-key AST to the persisted prefix length (see
+    /// `SourcePartsSetForPatch::getSortingKeyPrefixDescription`). Nullptr for `Merge`/`Join`
+    /// (v1 patches). The shared_ptr is copied into each `PatchPartInfo` that needs it so
+    /// downstream consumers (`applyPatchMergeOnKey`, `MergeTreeReadersChain`,
+    /// `getVirtualsRequiredForPatch`, `MergeTreePatchReaderMergeOnKey`) read sort-key metadata
+    /// directly off the `KeyDescription` without rebuilding anything per application.
+    ///
+    /// Shape of the stored `KeyDescription`: the semantic sort-key prefix *only* — it does NOT
+    /// include the trailing `_block_number` / `_block_offset` identity columns that appear in
+    /// the patch part's own metadata. Those are handled separately by the apply path.
+    std::shared_ptr<const KeyDescription> sorting_key;
 
     String describe() const;
 };

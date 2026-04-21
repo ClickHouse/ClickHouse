@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/KeyDescription.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -313,13 +315,16 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
     /// themselves; for an expression sort key (e.g. `ORDER BY cityHash64(id)`) these are the
     /// expression inputs (`id`). The expression is *not* evaluated here — we defer it to
     /// `applyPatchMergeOnKey` (which runs on its own clone) to keep this routine purely
-    /// mechanical. The result columns materialize at apply time, same pattern as FINAL.
+    /// mechanical. The result columns materialize at apply time, same pattern as FINAL. Source
+    /// columns come straight off the shared prefix `KeyDescription` — no identity-column
+    /// filtering needed because the prefix `KeyDescription` doesn't include `_block_number`
+    /// or `_block_offset`.
     for (const auto & patch_reader : patch_readers)
     {
         const auto & patch = patch_reader->getPatchPart();
-        if (patch.mode != PatchMode::MergeOnKey)
+        if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key || !patch.sorting_key->expression)
             continue;
-        for (const auto & name : patch.sorting_key.source_column_names)
+        for (const auto & name : patch.sorting_key->expression->getRequiredColumns())
         {
             if (!to.has(name) && from.has(name))
                 to.insert(from.getByName(name));

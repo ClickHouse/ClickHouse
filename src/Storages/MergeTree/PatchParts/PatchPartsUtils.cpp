@@ -12,6 +12,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/KeyDescription.h>
 #include <base/range.h>
 
 namespace DB
@@ -347,10 +349,11 @@ Names getVirtualsRequiredForPatch(const PatchPartInfoForReader & patch)
             /// the two identity columns. For a plain sort key the source set equals the result
             /// set; for an expression sort key (e.g. `ORDER BY cityHash64(id)`) the source set
             /// is just `{id}` and the result column `cityHash64(id)` is materialized by
-            /// `sorting_key.expression` at apply time. Read straight off `patch.sorting_key`, which
-            /// was populated at `PatchPartInfo` construction from the patch's own rebuilt
-            /// metadata sliced to the persisted prefix length (see `makePatchSortKey`).
-            columns = patch.sorting_key.source_column_names;
+            /// `sorting_key.expression` at apply time. Source columns come straight off the shared
+            /// prefix `KeyDescription` (`patch.sorting_key`); no identity-column filter needed —
+            /// the prefix `KeyDescription` does not carry `_block_number`/`_block_offset`.
+            chassert(patch.sorting_key && patch.sorting_key->expression);
+            columns = patch.sorting_key->expression->getRequiredColumns();
             columns.emplace_back(BlockNumberColumn::name);
             columns.emplace_back(BlockOffsetColumn::name);
             break;

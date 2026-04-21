@@ -532,13 +532,14 @@ ColumnRawPtrs extractSortingKeyColumns(const Block & block, const Names & sortin
 /// Compares sort-key tuples at two (block, row) positions, honouring DESC flags. Both
 /// `SortKeyColumns` must have been resolved against the same ordered `sorting_key_column_names`;
 /// indices line up with `reverse_flags`. Returns <0, =0, or >0 using the same convention as
-/// `IColumn::compareAt` (NULL-aware, nan-last).
+/// `IColumn::compareAt` (NULL-aware, nan-last). `reverse_flags` is the `std::vector<bool>` carried
+/// directly from the patch's semantic-prefix `KeyDescription::reverse_flags`.
 ALWAYS_INLINE int compareSortKeyRows(
     const ColumnRawPtrs & lhs_columns,
     size_t lhs_row,
     const ColumnRawPtrs & rhs_columns,
     size_t rhs_row,
-    const std::vector<UInt8> & reverse_flags)
+    const std::vector<bool> & reverse_flags)
 {
     const size_t n = lhs_columns.size();
     chassert(n == rhs_columns.size());
@@ -581,7 +582,7 @@ ALWAYS_INLINE size_t gallopingBinarySearch(
     size_t end,
     const ColumnRawPtrs & patch_sorting_key,
     size_t patch_row,
-    const std::vector<UInt8> & reverse_flags)
+    const std::vector<bool> & reverse_flags)
 {
     auto compare = [&](size_t i)
     {
@@ -628,7 +629,7 @@ ALWAYS_INLINE UInt128 makeBlockIdentity(UInt64 block_number, UInt64 block_offset
 
 }
 
-PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const PatchSortKey & sorting_key)
+PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const KeyDescription & sorting_key)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchMergeOnKeyMicroseconds);
 
@@ -652,7 +653,7 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     if (sorting_key.expression)
         sorting_key.expression->execute(main_block_copy);
 
-    const auto & sorting_key_names = sorting_key.result_column_names;
+    const auto & sorting_key_names = sorting_key.column_names;
     const auto & reverse_flags = sorting_key.reverse_flags;
     const auto & main_block_number = getColumnUInt64Data(main_block_copy, BlockNumberColumn::name);
     const auto & main_block_offset = getColumnUInt64Data(main_block_copy, BlockOffsetColumn::name);
@@ -730,18 +731,24 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     }
 
     /// Remove all unneeded columns from patch block
-    /// and keep in block only the updated columns.
+    /// and keep in block only the updated columns. Source columns (physical inputs to
+    /// `sorting_key.expression`) are derived directly from the shared KeyDescription; for a plain
+    /// sort key they equal the result columns, for expression sort keys (e.g. `cityHash64(id)`)
+    /// they are the expression inputs (`id`).
     auto erase_column = [&](const String & column_name)
     {
         if (patch_block_copy.has(column_name))
             patch_block_copy.erase(column_name);
     };
 
-    for (const auto & column_name : sorting_key.result_column_names)
+    for (const auto & column_name : sorting_key.column_names)
         erase_column(column_name);
 
-    for (const auto & column_name : sorting_key.source_column_names)
-        erase_column(column_name);
+    if (sorting_key.expression)
+    {
+        for (const auto & column_name : sorting_key.expression->getRequiredColumns())
+            erase_column(column_name);
+    }
 
     erase_column(BlockNumberColumn::name);
     erase_column(BlockOffsetColumn::name);
@@ -877,48 +884,6 @@ void applyPatchesToBlock(
         applyPatchesToBlockRaw(result_block, versions_block, patches, updated_header, source_data_version);
     else
         applyPatchesToBlockCombined(result_block, versions_block, patches, updated_header, source_data_version);
-}
-
-PatchSortKey makePatchSortKey(const KeyDescription & sorting_key, UInt64 prefix_size)
-{
-    PatchSortKey info;
-
-    /// The v2 patch's sort key is laid out as `(<semantic_prefix>..., _block_number, _block_offset)`
-    /// — the last two entries are always identity columns, appended at write time. Slice both the
-    /// result-column names and the reverse flags at `prefix_size` to drop them.
-    if (prefix_size > sorting_key.column_names.size())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Patch sort-key prefix size {} exceeds sort-key column count {}",
-            prefix_size, sorting_key.column_names.size());
-    }
-
-    info.expression = sorting_key.expression;
-    info.result_column_names.assign(sorting_key.column_names.begin(), sorting_key.column_names.begin() + prefix_size);
-
-    if (sorting_key.reverse_flags.empty())
-    {
-        chassert(prefix_size <= sorting_key.reverse_flags.size());
-        info.reverse_flags.assign(sorting_key.reverse_flags.begin(), sorting_key.reverse_flags.begin() + prefix_size);
-    }
-
-    /// Source columns = physical inputs to the sort-key expression, minus the two identity
-    /// columns (those are plumbed through as main-table virtuals and are not sort-key sources).
-    if (info.expression)
-    {
-        NameSet seen;
-        for (const auto & input_name : info.expression->getRequiredColumns())
-        {
-            if (input_name == BlockNumberColumn::name || input_name == BlockOffsetColumn::name)
-                continue;
-
-            if (seen.insert(input_name).second)
-                info.source_column_names.push_back(input_name);
-        }
-    }
-
-    return info;
 }
 
 }
