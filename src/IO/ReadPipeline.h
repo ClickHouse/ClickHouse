@@ -13,15 +13,10 @@ namespace DB
 
 class ReadBufferFromFileBase;
 class FileCache;
-class FilesystemCacheLog;
-class FilesystemReadPrefetchesLog;
 class PageCache;
 class IAsynchronousReader;
-struct AsyncReadCounters;
 
 using FileCachePtr = std::shared_ptr<FileCache>;
-using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
-using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
 
 /// ReadPipeline: a declarative specification for creating a read buffer chain.
 ///
@@ -67,16 +62,13 @@ public:
     void setSource(StoredObjects objects, BufferCreator creator);
 
     /// -- Disk cache stage --
-    void needDiskCache(FileCachePtr cache, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
+    void needDiskCache(FileCachePtr cache);
 
     /// -- Memory cache stage --
     void needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix);
 
     /// -- Async prefetch stage --
-    void needAsyncPrefetch(
-        IAsynchronousReader & reader,
-        AsyncReadCountersPtr async_read_counters = nullptr,
-        FilesystemReadPrefetchesLogPtr prefetches_log = nullptr);
+    void needAsyncPrefetch(IAsynchronousReader & reader);
 
     /// -- Decompression stage --
     void needDecompression(bool allow_different_codecs = false);
@@ -105,7 +97,6 @@ private:
     struct DiskCacheStage
     {
         FileCachePtr cache;
-        std::shared_ptr<FilesystemCacheLog> cache_log;
     };
 
     struct MemoryCacheStage
@@ -117,8 +108,6 @@ private:
     struct AsyncPrefetchStage
     {
         IAsynchronousReader * reader = nullptr;
-        AsyncReadCountersPtr async_read_counters;
-        FilesystemReadPrefetchesLogPtr prefetches_log;
     };
 
     struct DecompressionStage

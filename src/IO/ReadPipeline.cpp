@@ -36,9 +36,9 @@ void ReadPipeline::setSource(StoredObjects objects, BufferCreator creator)
     source = SourceStage{.objects = std::move(objects), .creator = std::move(creator)};
 }
 
-void ReadPipeline::needDiskCache(FileCachePtr cache, std::shared_ptr<FilesystemCacheLog> cache_log)
+void ReadPipeline::needDiskCache(FileCachePtr cache)
 {
-    disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log)};
+    disk_cache = DiskCacheStage{.cache = std::move(cache)};
 }
 
 void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix)
@@ -46,15 +46,9 @@ void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cach
     memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix)};
 }
 
-void ReadPipeline::needAsyncPrefetch(
-    IAsynchronousReader & reader,
-    AsyncReadCountersPtr async_read_counters,
-    FilesystemReadPrefetchesLogPtr prefetches_log)
+void ReadPipeline::needAsyncPrefetch(IAsynchronousReader & reader)
 {
-    async_prefetch = AsyncPrefetchStage{
-        .reader = &reader,
-        .async_read_counters = std::move(async_read_counters),
-        .prefetches_log = std::move(prefetches_log)};
+    async_prefetch = AsyncPrefetchStage{.reader = &reader};
 }
 
 void ReadPipeline::needDecompression(bool allow_different_codecs)
@@ -85,8 +79,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
         gather_creator =
             [pipeline_creator = source->creator,
              cache_settings,
-             cache = disk_cache->cache,
-             cache_log = disk_cache->cache_log](
+             cache = disk_cache->cache](
                 bool restricted_seek, const StoredObject & object) mutable
                 -> std::unique_ptr<ReadBufferFromFileBase>
         {
@@ -111,7 +104,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
                 /* allow_seeks_after_first_read */ !restricted_seek,
                 /* use_external_buffer */ cache_settings.remote_read_buffer_use_external_buffer,
                 /* read_until_position */ std::nullopt,
-                cache_log);
+                /* cache_log */ nullptr);
         };
     }
     else
@@ -164,9 +157,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
             *async_prefetch->reader,
             settings,
             async_buffer_size,
-            settings.remote_read_min_bytes_for_seek,
-            async_prefetch->async_read_counters,
-            async_prefetch->prefetches_log);
+            settings.remote_read_min_bytes_for_seek);
     }
 
     /// -- Stages 6-7 (decrypt, decompress) in later steps --

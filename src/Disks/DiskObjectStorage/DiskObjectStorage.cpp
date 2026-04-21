@@ -14,6 +14,8 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadPipeline.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Interpreters/FileCache/FileCache.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
@@ -776,16 +778,23 @@ void DiskObjectStorage::prepareRead(
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
+    auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
-    /// Source: the existing object storage chain (CachedObjectStorage handles disk cache internally).
-    pipeline.setSource(
-        object_storages->takePointingTo(cluster->getLocalLocation()),
-        storage_objects,
-        read_hint);
+    /// Unwrap CachedObjectStorage: extract the file cache into a pipeline stage
+    /// and use the underlying (non-cached) storage as the source.
+    auto * cached_storage = dynamic_cast<CachedObjectStorage *>(storage.get());
+    if (cached_storage && read_settings.enable_filesystem_cache && cached_storage->getFileCache()->isInitialized())
+    {
+        pipeline.needDiskCache(cached_storage->getFileCache());
+        pipeline.setSource(cached_storage->getUnderlying(), storage_objects, read_hint);
+    }
+    else
+    {
+        pipeline.setSource(storage, storage_objects, read_hint);
+    }
 
     /// Memory cache (page cache).
-    const bool file_cache_enabled = object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache()
-        && read_settings.enable_filesystem_cache;
+    const bool file_cache_enabled = storage->supportsCache() && read_settings.enable_filesystem_cache;
     const bool use_page_cache =
         read_settings.page_cache
         && read_settings.use_page_cache_for_disks_without_file_cache
@@ -795,8 +804,8 @@ void DiskObjectStorage::prepareRead(
     {
         auto cache_path_prefix = fmt::format("{}:{}:",
             /*disk*/ name,
-            magic_enum::enum_name(object_storages->takePointingTo(cluster->getLocalLocation())->getType()));
-        const auto object_namespace = object_storages->takePointingTo(cluster->getLocalLocation())->getObjectsNamespace();
+            magic_enum::enum_name(storage->getType()));
+        const auto object_namespace = storage->getObjectsNamespace();
         if (!object_namespace.empty())
             cache_path_prefix += object_namespace + "/";
 
@@ -807,10 +816,7 @@ void DiskObjectStorage::prepareRead(
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        pipeline.needAsyncPrefetch(
-            reader,
-            global_context->getAsyncReadCounters(),
-            global_context->getFilesystemReadPrefetchesLog());
+        pipeline.needAsyncPrefetch(reader);
     }
 }
 
