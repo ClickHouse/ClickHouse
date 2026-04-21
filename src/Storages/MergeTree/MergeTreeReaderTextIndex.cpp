@@ -817,9 +817,9 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
         return;
 
     auto cache_key = search_query->getHash().get128();
-    auto cache_it = cached_phrase_results.find(cache_key);
+    auto doc_ids_it = phrase_search_doc_ids.find(cache_key);
 
-    if (cache_it == cached_phrase_results.end())
+    if (doc_ids_it == phrase_search_doc_ids.end())
     {
         /// Cache miss: read position data and compute phrase intersection.
         const auto & remaining_tokens = granule->getRemainingTokens();
@@ -842,7 +842,7 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
 
         if (position_offsets.empty())
         {
-            cache_it = cached_phrase_results.emplace(cache_key, std::vector<UInt32>{}).first;
+            doc_ids_it = phrase_search_doc_ids.emplace(cache_key, std::vector<UInt32>{}).first;
         }
         else
         {
@@ -858,11 +858,11 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
             }
 
             auto matching = TextIndexPhraseSearch::phraseSearch(position_lists);
-            cache_it = cached_phrase_results.emplace(cache_key, std::move(matching)).first;
+            doc_ids_it = phrase_search_doc_ids.emplace(cache_key, std::move(matching)).first;
         }
     }
 
-    const auto & matching_doc_ids = cache_it->second;
+    const auto & matching_doc_ids = doc_ids_it->second;
 
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     for (UInt32 doc_id : matching_doc_ids)
