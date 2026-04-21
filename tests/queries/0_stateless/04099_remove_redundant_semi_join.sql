@@ -21,12 +21,14 @@ DROP TABLE IF EXISTS users_pre;
 DROP TABLE IF EXISTS child_t;
 DROP TABLE IF EXISTS s_users;
 
-CREATE TABLE users    (uid Int32, age Int32, name String, active UInt8) ENGINE = MergeTree() ORDER BY uid;
-CREATE TABLE orders   (oid Int32, uid Int32, alt_uid Int32)             ENGINE = MergeTree() ORDER BY oid;
-CREATE TABLE extras   (eid Int32, uid Int32)                            ENGINE = MergeTree() ORDER BY eid;
-CREATE TABLE users_alt(uid Int32, id  Int32)                            ENGINE = MergeTree() ORDER BY uid;
+CREATE TABLE users    (uid Int32, age Int32, name String, active UInt8) ENGINE = Memory;
+CREATE TABLE orders   (oid Int32, uid Int32, alt_uid Int32)             ENGINE = Memory;
+CREATE TABLE extras   (eid Int32, uid Int32)                            ENGINE = Memory;
+CREATE TABLE users_alt(uid Int32, id  Int32)                            ENGINE = Memory;
+CREATE TABLE child_t  (cid Int32, uid Int32)                            ENGINE = Memory;
+-- users_pre stays MergeTree because T18 uses PREWHERE on it.
 CREATE TABLE users_pre(uid Int32, age Int32)                            ENGINE = MergeTree() ORDER BY uid;
-CREATE TABLE child_t  (cid Int32, uid Int32)                            ENGINE = MergeTree() ORDER BY cid;
+-- s_users stays MergeTree because T43/T44 use SAMPLE on it.
 CREATE TABLE s_users  (uid UInt32, age UInt32) ENGINE = MergeTree() ORDER BY intHash64(uid) SAMPLE BY intHash64(uid);
 
 INSERT INTO users    VALUES (1,20,'Alice',1),(2,33,'Bob',1),(3,40,'Charlie',0),(4,25,'Dave',1),(5,33,'Eve',0);
@@ -35,7 +37,7 @@ INSERT INTO extras   VALUES (100,1),(101,2),(102,999);
 INSERT INTO users_alt VALUES (1,100),(2,200),(3,300);
 INSERT INTO users_pre VALUES (1,20),(2,30),(3,40);
 INSERT INTO child_t  VALUES (1,10);
-INSERT INTO s_users   SELECT number, 20 + (number % 30) FROM numbers(1000);
+INSERT INTO s_users   SELECT number, 20 + (number % 30) FROM numbers(64);
 
 -- ============================================================================
 -- Cases that ARE optimised (expect: one fewer LEFT SEMI / LEFT ANTI join)
