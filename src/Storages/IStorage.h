@@ -22,6 +22,7 @@
 
 #include <expected>
 #include <optional>
+#include <list>
 
 
 namespace DB
@@ -41,7 +42,7 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;
