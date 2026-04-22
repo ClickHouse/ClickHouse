@@ -1173,10 +1173,9 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
             announcement.replica_num,
             replicas_count);
 
-    /// If the snapshot replica was pinned explicitly via setSnapshotReplicaNum, only that
-    /// replica can create a new stream coordinator. Announcements from non-snapshot replicas
-    /// for streams that don't exist yet are silently dropped — otherwise a follower could
-    /// initialize a split stream before the snapshot replica and lock in wrong ranges.
+    /// If the snapshot replica was pinned explicitly via setSnapshotReplicaNum,
+    /// only that replica can create a new stream coordinator. Announcements from
+    /// non-snapshot replicas for streams that don't exist yet are dropped.
     /// If the snapshot replica wasn't pinned, fall back to the first announcement.
     if (snapshot_replica_num)
     {
@@ -1232,6 +1231,9 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         auto coordinator = getCoordinator(request.stream_id);
         if (!coordinator)
         {
+            /// TODO(nickitat): respond to announcements with actual parts set for each stream (including empty for streams non-existing on the initiator).
+            /// Then this situation will be impossible, and we will throw a logical error here.
+            ///
             /// The requesting replica has a stream that the snapshot replica didn't create
             /// (e.g., it computed more in-order splits locally). Return an empty/finished response.
             LOG_DEBUG(

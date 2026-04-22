@@ -1324,13 +1324,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .total_query_nodes = total_query_nodes,
     };
 
-    /// In-order split support requires the analyzer. Without it, fall back to old behavior.
-    const bool analyzer_enabled = context->getSettingsRef()[Setting::allow_experimental_analyzer];
-    const bool is_local_plan_initiator = analyzer_enabled && isParallelReplicasLocalPlanForInitiator();
-    const bool is_local_plan_follower = analyzer_enabled && isParallelReplicasLocalPlanForFollower();
-    /// Splitting is needed for the initiator (genuine range splitting), followers (to determine
-    /// num_splits), and non-parallel-replicas (local parallelism). Skip for local_plan=0 or old analyzer.
-    const bool need_split = is_local_plan_initiator || is_local_plan_follower || !is_parallel_reading_from_replicas;
+    const bool is_local_plan_initiator = isParallelReplicasLocalPlanForInitiator();
+    const bool is_local_plan_follower = isParallelReplicasLocalPlanForFollower();
+    /// Genuine range splitting runs only for the initiator and for purely-local reads.
+    /// Followers use all parts for every split and only need `num_streams` as the split count,
+    /// since the initiator is the authority on split topology.
+    const bool need_split = is_local_plan_initiator || !is_parallel_reading_from_replicas;
 
     /// For non-initiator replicas with local plan, keep a copy of all parts before splitting.
     RangesInDataParts all_parts_for_replicas;
@@ -1369,8 +1368,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
                 /// We take full part if it contains enough marks or
                 /// if we know limit and part contains less than 'limit' rows.
-                bool take_full_part
-                    = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
+                bool take_full_part = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
 
                 /// We take the whole part if it is small enough.
                 if (take_full_part)
@@ -1443,9 +1441,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else if (is_local_plan_follower)
     {
-        /// Non-initiator with local_plan=1: N splits, each with ALL parts.
-        /// The coordinator uses the initiator's split structure for range partitioning.
-        const size_t num_splits = split_parts_and_ranges.size();
+        /// Non-initiator with local_plan=1: create `num_streams` pools, each with ALL parts.
+        /// We don't run the splitting loop here — the follower can't compute the authoritative
+        /// num_splits anyway (its part set differs from the initiator's), so use num_streams
+        /// directly as the split count.
+        const size_t num_splits = num_streams;
         const PoolSettings per_split_pool_settings = make_per_split_pool_settings(num_splits);
         for (size_t i = 0; i < num_splits; ++i)
         {

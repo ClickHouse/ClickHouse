@@ -192,11 +192,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     std::optional<ParallelReadResponse> response;
     try
     {
-        response = extension.sendReadInOrderRequest(
-            mode,
-            min_marks_per_request,
-            request // Send for compatibility with old initiators
-        );
+        response = extension.sendReadInOrderRequest(mode, min_marks_per_request, request);
         if (response)
         {
             LOG_DEBUG(log, "Got response: {}", response->describe());
