@@ -1191,6 +1191,18 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
+    DECLARE(Bool, allow_implicit_string_conversion_in_like, true, R"(
+When enabled, the haystack (left operand) of `LIKE`, `NOT LIKE`, `ILIKE`, and `NOT ILIKE` expressions is automatically
+cast to `String` when it is not already a string type. Supported types: numeric (`Int*`, `UInt*`, `Float*`, `Decimal*`),
+`Date`, `Date32`, `DateTime`, `DateTime64`, `UUID`, `IPv4`, `IPv6`, and `Enum`.
+
+This allows expressions such as:
+```sql
+SELECT number FROM system.numbers WHERE number LIKE '4%' LIMIT 5;
+```
+
+Disable this setting to restore the pre-26.4 behavior where non-string haystacks were rejected with an error.
+)", 0) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*().
 This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.

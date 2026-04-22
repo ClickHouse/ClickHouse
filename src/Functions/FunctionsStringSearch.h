@@ -22,6 +22,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool function_locate_has_mysql_compatible_argument_order;
+    extern const SettingsBool allow_implicit_string_conversion_in_like;
 }
 
 /** Search and replace functions in strings:
@@ -95,7 +96,16 @@ private:
         NeedleHaystack
     };
 
+    /// True only for LIKE-family functions (like, notLike, ilike, notILike).
+    static constexpr bool is_like_family = []() consteval -> bool
+    {
+        if constexpr (requires { Impl::is_like; })
+            return Impl::is_like;
+        return false;
+    }();
+
     ArgumentOrder argument_order = ArgumentOrder::HaystackNeedle;
+    bool convert_haystack_to_string = false;
 
 public:
     static constexpr auto name = Impl::name;
@@ -109,6 +119,8 @@ public:
             if (context->getSettingsRef()[Setting::function_locate_has_mysql_compatible_argument_order])
                 argument_order = ArgumentOrder::NeedleHaystack;
         }
+        if constexpr (is_like_family)
+            convert_haystack_to_string = context->getSettingsRef()[Setting::allow_implicit_string_conversion_in_like];
     }
 
     String getName() const override { return name; }
@@ -142,7 +154,17 @@ public:
         const auto & haystack_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
         const auto & needle_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1] : arguments[0];
 
-        if (!(isStringOrFixedString(haystack_type) || isEnum(haystack_type)))
+        bool haystack_ok = isStringOrFixedString(haystack_type) || isEnum(haystack_type);
+        if constexpr (is_like_family)
+        {
+            if (!haystack_ok && convert_haystack_to_string)
+                haystack_ok = isNumber(haystack_type)
+                    || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(haystack_type)
+                    || isUUID(haystack_type)
+                    || isIPv4(haystack_type)
+                    || isIPv6(haystack_type);
+        }
+        if (!haystack_ok)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
@@ -183,6 +205,11 @@ public:
 
         if (isEnum(haystack_argument.type))
             column_haystack = castColumn(haystack_argument, std::make_shared<DataTypeString>());
+        else if constexpr (is_like_family)
+        {
+            if (convert_haystack_to_string && !isStringOrFixedString(*haystack_argument.type))
+                column_haystack = castColumn(haystack_argument, std::make_shared<DataTypeString>());
+        }
 
         ColumnPtr column_start_pos = nullptr;
         if (arguments.size() >= 3)

@@ -3137,6 +3137,16 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         || func_name == "startsWithUTF8"
                         || func_name == "match");
 
+                    /// When the key column is non-string and the function is LIKE-family,
+                    /// the haystack is implicitly cast to String at execution time
+                    /// (see allow_implicit_string_conversion_in_like). Index analysis does
+                    /// not apply because there is no monotone mapping from the numeric key
+                    /// domain to the string pattern space.
+                    if (!isStringOrFixedString(key_expr_type_not_null)
+                        && (func_name == "like" || func_name == "notLike"
+                            || func_name == "ilike" || func_name == "notILike"))
+                        return false;
+
                     if (!should_keep_original_string_constant)
                     {
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
