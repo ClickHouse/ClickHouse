@@ -116,6 +116,27 @@ def test_stale_shard_num_single_shard_pr_cluster(start_cluster):
     result = n1.query("SELECT count() FROM t_dist", settings=pr_settings)
     assert result.strip() == "20", f"Unexpected result: {result!r}"
 
+    # Verify TCPHandler clamped max_parallel_replicas from 1 to 2 on remote n3
+    n3.query("SYSTEM FLUSH LOGS query_log")
+    remote_mpr = n3.query(
+        f"""
+        SELECT Settings['max_parallel_replicas']
+        FROM system.query_log
+        WHERE type = 'QueryFinish'
+          AND has(tables, 'default.t')
+          AND is_initial_query = 0
+          AND query NOT LIKE '%system.query_log%'
+          AND event_time_microseconds >= toDateTime64('{pre_query_timestamp}', 6)
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+        FORMAT TSVRaw
+        """
+    ).strip()
+    assert remote_mpr == "2", (
+        f"Expected remote to use max_parallel_replicas=2 (clamped from 1), "
+        f"but got {remote_mpr!r}"
+    )
+
     # Verify the WARNING was emitted on n3 (shard 2, _shard_num=2 > shard_count=1).
     # Note: system.text_log has query_id (not initial_query_id). In distributed queries,
     # the remote shard's query_id differs from the initiator's. We match by message pattern
