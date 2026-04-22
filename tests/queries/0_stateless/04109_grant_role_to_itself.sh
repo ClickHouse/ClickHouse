@@ -16,10 +16,10 @@ $CLICKHOUSE_CLIENT -q "CREATE ROLE ${role_a}"
 $CLICKHOUSE_CLIENT -q "CREATE ROLE ${role_b}"
 
 # Direct self-grant.
-$CLICKHOUSE_CLIENT -q "GRANT ${role_a} TO ${role_a}" 2>&1 | grep -o 'BAD_ARGUMENTS' | head -n1
+$CLICKHOUSE_CLIENT -q "GRANT ${role_a} TO ${role_a}" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
 
 # Multi-role grant with one self-grant must still be rejected.
-$CLICKHOUSE_CLIENT -q "GRANT ${role_a}, ${role_b} TO ${role_a}" 2>&1 | grep -o 'BAD_ARGUMENTS' | head -n1
+$CLICKHOUSE_CLIENT -q "GRANT ${role_a}, ${role_b} TO ${role_a}" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
 
 # Legitimate role-to-role grant still works.
 $CLICKHOUSE_CLIENT -q "GRANT ${role_a} TO ${role_b}"
