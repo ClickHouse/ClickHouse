@@ -13,7 +13,7 @@
 SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 SET serialize_query_plan = 0;
-SET enable_parallel_replicas = 2;
+SET allow_experimental_parallel_reading_from_replicas = 2;
 SET max_parallel_replicas = 3;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 
