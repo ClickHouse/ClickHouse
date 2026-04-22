@@ -16,8 +16,7 @@ public:
         SharedHeader output_header_,
         ASTPtr inner_query_,
         Names column_names_,
-        ContextPtr context_,
-        UInt64 seed_);
+        ContextPtr context_);
 
     String getName() const override { return "Obfuscate"; }
 

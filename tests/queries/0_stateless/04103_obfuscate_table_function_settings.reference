@@ -1,0 +1,8 @@
+--- two seeds produce different outputs ---
+0
+--- same seed produces identical output across invocations ---
+1
+--- empty seed produces different output each invocation (not always equal) ---
+0
+--- all markov parameters are accepted and do not error ---
+20

@@ -62,7 +62,7 @@ void StorageObfuscate::read(
 
     auto output_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 
-    auto obfuscation = std::make_unique<ObfuscateStep>(std::move(output_header), current_inner_query, column_names, context, /*seed=*/0);
+    auto obfuscation = std::make_unique<ObfuscateStep>(std::move(output_header), current_inner_query, column_names, context);
     query_plan.addStep(std::move(obfuscation));
 }
 

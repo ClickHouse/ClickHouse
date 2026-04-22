@@ -66,6 +66,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"enable_join_fixed_hash_table_conversion", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."},
+            {"obfuscate_seed", "", "", "New setting: seed string for the obfuscate table function."},
+            {"obfuscate_markov_order", 5, 5, "New setting: Markov model order for the obfuscate table function."},
+            {"obfuscate_markov_frequency_cutoff", 5, 5, "New setting: frequency cutoff for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_num_buckets_cutoff", 0, 0, "New setting: number-of-buckets cutoff for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_frequency_add", 0, 0, "New setting: constant added to every frequency count in the obfuscate table function's Markov model."},
+            {"obfuscate_markov_frequency_desaturate", 0.0, 0.0, "New setting: frequency desaturation factor in [0,1] for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_determinator_sliding_window_size", 8, 8, "New setting: sliding-window size used to seed the RNG in the obfuscate table function's Markov model."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
