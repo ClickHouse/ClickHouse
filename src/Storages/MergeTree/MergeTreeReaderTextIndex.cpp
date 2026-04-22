@@ -84,17 +84,29 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader * main_reader)
 {
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    if (condition_text.getAllSearchPatterns().empty())
+
+    /// Check if any virtual column may need a fallback path:
+    /// - Pattern queries (LIKE): fallback when dictionary scan is abandoned.
+    /// - Phrase queries (hasPhrase with Exact mode): fallback when estimated cardinality is too high
+    ///   and reading position data would be slower than evaluating directly.
+    bool has_fallback_candidates = !condition_text.getAllSearchPatterns().empty()
+        || std::ranges::any_of(
+            columns_to_read,
+            [&](const auto & column)
+            {
+                const auto search_query = condition_text.getSearchQueryForVirtualColumn(column.name);
+                return search_query && search_query->search_mode == TextSearchMode::Phrase
+                    && search_query->direct_read_mode == TextIndexDirectReadMode::Exact;
+            });
+
+    if (!has_fallback_candidates)
         return;
 
-    /// Build a fallback evaluation path for when the dictionary scan is cut short
-    /// (too many pattern-matching tokens exceed text_index_like_max_postings_to_read).
-    ///
-    /// Instead of reading the indexed column by name (which fails for expression-based
-    /// indices, e.g. INDEX idx lower(text) where column_names[0] = "lower(text)" is
-    /// not a physical column), we compile each virtual column's default expression
-    /// (the original search predicate) and determine the required physical columns
-    /// from it. The fallback reader is then created for those physical columns only.
+    /// Build a fallback evaluation path. Compile each virtual column's default expression
+    /// (the original search predicate) and determine the required physical columns from it.
+    /// Used when:
+    /// - The dictionary scan is cut short (LIKE pattern queries).
+    /// - Phrase search cardinality is too high (cheaper to evaluate hasPhrase on physical data).
     auto context_copy = createContextForDefaultExpressions();
     auto combined_columns = buildCombinedColumnsForDefaultExpressions();
 
@@ -110,7 +122,12 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     for (const auto & column : columns_to_read)
     {
         auto search_query = condition_text.getSearchQueryForVirtualColumn(column.name);
-        if (!search_query || search_query->patterns.empty())
+        if (!search_query)
+            continue;
+
+        bool needs_fallback = !search_query->patterns.empty()
+            || (search_query->search_mode == TextSearchMode::Phrase && search_query->direct_read_mode == TextIndexDirectReadMode::Exact);
+        if (!needs_fallback)
             continue;
 
         /// Compile the virtual column's default expression (the original search predicate).
@@ -249,6 +266,22 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         }
         else if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
         {
+            /// For phrase queries with positions, check selectivity before reading positional data.
+            /// Reading large position lists for common phrases is slower than evaluating `hasPhrase` on physical data via the fallback path.
+            if (search_query->search_mode == TextSearchMode::Phrase && fallback_reader)
+            {
+                const auto & settings = condition_text.getContext()->getSettingsRef();
+                double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];
+                size_t num_rows_in_part = data_part_info_for_read->getRowCount();
+                double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_part);
+
+                if (cardinality > static_cast<double>(num_rows_in_part) * selectivity_threshold)
+                {
+                    use_fallback[i] = true;
+                    continue;
+                }
+            }
+
             useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
         }
         else if (search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
