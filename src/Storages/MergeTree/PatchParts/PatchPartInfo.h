@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <memory>
 #include <vector>
+#include <Core/MergeTreeSerializationEnums.h>
 
 namespace DB
 {
@@ -16,7 +17,7 @@ struct KeyDescription;
   *
   * There are two on-disk formats:
   *
-  * Legacy format (v1, always used when `enable_v2_lightweight_update_patches = 0`):
+  * Legacy format (v1, used when `patch_parts_version = 'v1'`):
   * patch parts contain only updated columns and several system columns:
   *  - _part - the name of the original part.
   *  - _part_offset - the row in the original part.
@@ -25,7 +26,7 @@ struct KeyDescription;
   *  - _data_version - the data version of the updated data (block number allocated for UPDATE query).
   * Sorted by `(_part, _part_offset)`. Applied via `PatchMode::Merge` or `PatchMode::Join`.
   *
-  * New format (v2, when `enable_v2_lightweight_update_patches = 1`):
+  * New format (v2, used when `patch_parts_version = 'v2'`):
   * patch parts carry the main table's sort-key columns instead of `_part, _part_offset`:
   *  - <sorting_key_column_1>, ..., <sorting_key_column_n> - sort key columns of the target table.
   *  - _block_number - the block number of row in the original part.
@@ -126,5 +127,15 @@ using PatchPartInfoForReader = PatchPartInfoBase<DataPartInfoForReaderPtr>;
 
 using PatchParts = std::vector<PatchPartInfo>;
 using PatchPartsForReader = std::vector<PatchPartInfoForReader>;
+
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct PatchPartMetadata
+{
+    MergeTreePatchPartsVersion version;
+    StorageMetadataPtr metadata;
+    std::optional<UInt64> sorting_key_prefix_size;
+};
 
 }

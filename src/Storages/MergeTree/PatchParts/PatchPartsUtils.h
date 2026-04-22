@@ -21,8 +21,8 @@ using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPartPtr & patch_part);
 
 /// Returns metadata snapshot of a legacy (v1) patch part. Sort key is `(_part, _part_offset)`.
-StorageMetadataPtr getPatchPartMetadata(Block sample_block, ContextPtr local_context);
-StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, ContextPtr local_context);
 
 /// Returns metadata snapshot of a v2 patch part. Sort key is
 /// `(<sorting_key_expr_children[0..sorting_key_prefix_size]>..., _block_number, _block_offset)`, cloned

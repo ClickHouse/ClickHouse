@@ -1363,7 +1363,7 @@ public:
     bool canUsePolymorphicParts() const;
 
     /// Returns the metadata snapshot used to read a patch part, rebuilt deterministically from the
-    /// part's columns + source-parts set. v1 patches (format_version = 0) use `DB::getPatchPartMetadata`;
+    /// part's columns + source-parts set. v1 patches (format_version = 0) use `DB::getPatchPartMetadataV1`;
     /// v2 patches (format_version = 1) use `DB::getPatchPartMetadataV2` with the persisted sort-key
     /// prefix size from `SourcePartsSetForPatch`, slicing the target table's current sort key to that
     /// length (the partition-id hash isolates pre- and post-`ALTER MODIFY ORDER BY` patches into
@@ -1371,6 +1371,13 @@ public:
     /// patch's written shape). Cached by partition id (v1 and v2 patches never share a partition by
     /// construction of the partition-id hash).
     StorageMetadataPtr getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
+
+    /// Builds the patch-sink-side `PatchPartMetadata` bundle for a new patch: picks the format from
+    /// the `patch_parts_version` setting and produces the matching patch `StorageMetadataPtr`. For
+    /// v2 patches it also captures the sort-key prefix size (= the current main-table sort-key
+    /// column count) so the sink can persist it into the patch's `SourcePartsSetForPatch` and
+    /// so readers can recover the shape without walking the target table's metadata.
+    PatchPartMetadata getPatchPartMetadata(Block sample_block, MergeTreeSettingsPtr settings, ContextPtr local_context) const;
 
     static MergingParams getMergingParamsForPatchParts();
 

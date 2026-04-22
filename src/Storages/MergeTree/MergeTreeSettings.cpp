@@ -838,12 +838,19 @@ namespace ErrorCodes
     DECLARE(Bool, apply_patches_on_merge, true, R"(
     If true patch parts are applied on merges
     )", 0) \
-    DECLARE(Bool, enable_v2_lightweight_update_patches, true, R"(
-    If true, lightweight UPDATE queries produce patch parts in the new v2 on-disk format, sorted by
-    `(sorting_key_columns..., _block_number, _block_offset)` and applied with a single streaming
-    `MergeOnKey` pass. Memory usage during apply is bounded by the largest equal-sort-key run instead
-    of the whole patch size. Old-format patches on disk remain readable. Must be kept at the default
-    during rolling upgrades; flip to true only after every replica has been upgraded to a version
+    DECLARE(MergeTreePatchPartsVersion, patch_parts_version, "v2", R"(
+    On-disk serialization version for patch parts produced by lightweight UPDATE queries.
+
+    Possible values:
+    - `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
+      `(_part, _part_offset)`; applied via `PatchMode::Merge` / `PatchMode::Join`.
+    - `v2` - patch parts carry the main table's sort-key columns instead of `_part, _part_offset`, are
+      sorted by `(sorting_key_columns..., _block_number, _block_offset)` and applied with a single
+      streaming `MergeOnKey` pass. Memory usage during apply is bounded by the largest equal-sort-key
+      run instead of the whole patch size.
+
+    Old-format patches on disk remain readable regardless of this setting. Must be kept at the default
+    during rolling upgrades; switch to `v2` only after every replica has been upgraded to a version
     that recognises the v2 format.
     )", 0) \
     \

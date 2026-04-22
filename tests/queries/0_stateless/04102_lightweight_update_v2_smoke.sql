@@ -1,5 +1,5 @@
 -- v2 lightweight-update smoke test. Covers:
---  1. Basic UPDATE with enable_v2_lightweight_update_patches on, simple single-column sort key.
+--  1. Basic UPDATE with patch_parts_serialization_version = 'v2', simple single-column sort key.
 --  2. Composite sort key.
 --  3. Expression sort key (v2 persists physical source columns and replays the expression at
 --     apply time — same pattern FINAL uses, no fallback needed).
@@ -15,7 +15,7 @@ DROP TABLE IF EXISTS t_v2_cross_merge;
 CREATE TABLE t_v2_simple (id UInt64, payload UInt64)
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, enable_v2_lightweight_update_patches = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_serialization_version = 'v2';
 
 INSERT INTO t_v2_simple SELECT number, number FROM numbers(1000);
 UPDATE t_v2_simple SET payload = 42 WHERE id % 100 = 0;
@@ -28,7 +28,7 @@ SELECT 'v2-simple-check', count() FROM t_v2_simple WHERE payload = id AND id % 1
 CREATE TABLE t_v2_composite (a UInt64, b UInt64, payload String)
 ENGINE = MergeTree
 ORDER BY (a, b)
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, enable_v2_lightweight_update_patches = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_serialization_version = 'v2';
 
 INSERT INTO t_v2_composite SELECT number % 10, number, 'initial' FROM numbers(500);
 UPDATE t_v2_composite SET payload = 'patched' WHERE a = 3;
@@ -42,7 +42,7 @@ SELECT 'v2-composite-check', count() FROM t_v2_composite WHERE payload = 'initia
 CREATE TABLE t_v2_expr (id UInt64, payload UInt64)
 ENGINE = MergeTree
 ORDER BY (intHash32(id))
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, enable_v2_lightweight_update_patches = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_serialization_version = 'v2';
 
 INSERT INTO t_v2_expr SELECT number, number FROM numbers(200);
 UPDATE t_v2_expr SET payload = 7 WHERE id < 20;
@@ -55,7 +55,7 @@ SELECT 'v2-expr-fallback-check', count() FROM t_v2_expr WHERE payload = id AND i
 CREATE TABLE t_v2_cross_merge (id UInt64, payload UInt64)
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, enable_v2_lightweight_update_patches = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_serialization_version = 'v2';
 
 SYSTEM STOP MERGES t_v2_cross_merge;
 INSERT INTO t_v2_cross_merge SELECT number, number FROM numbers(0, 500);

@@ -233,7 +233,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
-    extern const MergeTreeSettingsBool enable_v2_lightweight_update_patches;
+    extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
 }
 
 namespace FailPoints
@@ -8431,27 +8431,12 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     }
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
-    const bool v2_patches_enabled = (*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches];
-    StorageMetadataPtr patch_metadata;
-    std::optional<UInt64> v2_sorting_key_prefix_size;
-
-    if (v2_patches_enabled)
-    {
-        auto main_metadata = getInMemoryMetadataPtr(context_copy, false);
-        const auto & main_sorting_key = main_metadata->getSortingKey();
-        v2_sorting_key_prefix_size = main_sorting_key.column_names.size();
-        patch_metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), main_sorting_key, *v2_sorting_key_prefix_size, context_copy);
-    }
-    else
-    {
-        patch_metadata = DB::getPatchPartMetadata(pipeline.getHeader(), context_copy);
-    }
+    auto patch_metadata = getPatchPartMetadata(pipeline.getHeader(), getSettings(), context_copy);
 
     auto sink = std::make_shared<ReplicatedMergeTreeSinkPatch>(
         *this,
         std::move(patch_metadata),
         std::move(update_holder),
-        v2_sorting_key_prefix_size,
         context_copy);
 
     chassert(!pipeline.completed());

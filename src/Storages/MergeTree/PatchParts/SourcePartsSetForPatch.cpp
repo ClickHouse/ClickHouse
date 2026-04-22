@@ -307,9 +307,6 @@ void SourcePartsSetForPatch::readBinary(ReadBuffer & in, const StorageMetadataPt
     if (format_version == V2_FORMAT_VERSION)
     {
         readBinaryLittleEndian(sorting_key_prefix_size, in);
-        /// Build the shared `KeyDescription` eagerly from the target table's metadata — same
-        /// shape as the explicit constructor takes for the sink path. This is the only point
-        /// where the prefix-`KeyDescription` is materialised on the disk-load path.
         sorting_key_prefix_description = buildSortingKeyPrefixDescription(metadata_snapshot, sorting_key_prefix_size);
     }
 

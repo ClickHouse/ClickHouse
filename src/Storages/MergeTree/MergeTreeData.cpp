@@ -291,7 +291,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
-    extern const MergeTreeSettingsBool enable_v2_lightweight_update_patches;
+    extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool enable_block_number_column;
@@ -9979,32 +9979,52 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
 StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const
 {
     std::lock_guard lock(patch_parts_metadata_mutex);
-
     const auto & patch_partition_id = patch_part.info.getPartitionId();
     auto & metadata_snapshot = patch_parts_metadata_cache[patch_partition_id];
+
     if (metadata_snapshot)
         return metadata_snapshot;
 
     const auto & source_parts_set = patch_part.getSourcePartsSet();
-    if (source_parts_set.getFormatVersion() == SourcePartsSetForPatch::V2_FORMAT_VERSION)
+
+    switch (source_parts_set.getFormatVersion())
     {
-        /// Rebuild v2 metadata from the current main-table sort key, sliced to the prefix
-        /// length the patch was written with (persisted in `source_parts.dat`). The partition
-        /// hash already isolates pre-ALTER-MODIFY-ORDER-BY patches in a different partition, so
-        /// the current main sort key's first `prefix_size` children match the patch's shape.
-        const auto & main_sorting_key = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false)->getSortingKey();
-        metadata_snapshot = DB::getPatchPartMetadataV2(
-            patch_part.getColumnsDescription(),
-            main_sorting_key,
-            source_parts_set.getSortKeyPrefixSize(),
-            local_context);
-    }
-    else
-    {
-        metadata_snapshot = DB::getPatchPartMetadata(patch_part.getColumnsDescription(), local_context);
+        case SourcePartsSetForPatch::V1_FORMAT_VERSION:
+            metadata_snapshot = DB::getPatchPartMetadataV1(patch_part.getColumnsDescription(), local_context);
+            break;
+        case SourcePartsSetForPatch::V2_FORMAT_VERSION:
+            auto main_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
+            const auto & main_sorting_key = main_metadata->getSortingKey();
+            metadata_snapshot = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), main_sorting_key, source_parts_set.getSortKeyPrefixSize(), local_context);
+            break;
     }
 
     return metadata_snapshot;
+}
+
+PatchPartMetadata MergeTreeData::getPatchPartMetadata(Block sample_block, MergeTreeSettingsPtr settings, ContextPtr local_context) const
+{
+    PatchPartMetadata result;
+    result.version = (*settings)[MergeTreeSetting::patch_parts_version];
+
+    switch (result.version)
+    {
+        case MergeTreePatchPartsVersion::V1:
+        {
+            result.metadata = DB::getPatchPartMetadataV1(std::move(sample_block), local_context);
+            break;
+        }
+        case MergeTreePatchPartsVersion::V2:
+        {
+            auto main_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
+            const auto & main_sorting_key = main_metadata->getSortingKey();
+            result.sorting_key_prefix_size = main_sorting_key.column_names.size();
+            result.metadata = DB::getPatchPartMetadataV2(std::move(sample_block), main_sorting_key, *result.sorting_key_prefix_size, local_context);
+            break;
+        }
+    }
+
+    return result;
 }
 
 MergeTreeData::MergingParams MergeTreeData::getMergingParamsForPatchParts()
@@ -10049,25 +10069,14 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
 
     MutationCommands commands_to_run;
     auto system_columns = getPatchPartSystemColumns();
-    bool lightweight_updates_v2 = (*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches];
-
-    if (lightweight_updates_v2)
-        system_columns.erase(std::ranges::find(system_columns, "_part_offset", &NameAndTypePair::name));
-
-    for (const auto & [name, type] : system_columns)
-    {
-        commands_to_run.push_back(MutationCommand
-        {
-            .type = MutationCommand::READ_COLUMN,
-            .column_name = name,
-            .data_type = type,
-        });
-    }
+    const auto patch_parts_version = (*getSettings())[MergeTreeSetting::patch_parts_version];
 
     /// For v2 patches, additionally read the **physical source columns** of the target table's
     /// sorting key expression through the mutation pipeline, so they land in every patch row.
-    if (lightweight_updates_v2)
+    if (patch_parts_version == MergeTreePatchPartsVersion::V2)
     {
+        system_columns.erase(std::ranges::find(system_columns, "_part_offset", &NameAndTypePair::name));
+
         NameSet already_read = system_columns.getNameSet();
         auto main_metadata = getInMemoryMetadataPtr(query_context, false);
         const auto & main_columns = main_metadata->getColumns();
@@ -10081,13 +10090,18 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
             if (!already_read.insert(name).second)
                 continue;
 
-            commands_to_run.push_back(MutationCommand
-            {
-                .type = MutationCommand::READ_COLUMN,
-                .column_name = name,
-                .data_type = main_columns.getPhysical(name).type,
-            });
+            system_columns.push_back(NameAndTypePair{name, main_columns.getPhysical(name).type});
         }
+    }
+
+    for (const auto & [name, type] : system_columns)
+    {
+        commands_to_run.push_back(MutationCommand
+        {
+            .type = MutationCommand::READ_COLUMN,
+            .column_name = name,
+            .data_type = type,
+        });
     }
 
     commands_to_run.insert(commands_to_run.end(), commands.begin(), commands.end());

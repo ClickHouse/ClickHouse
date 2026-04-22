@@ -427,6 +427,12 @@ IMPLEMENT_SETTING_ENUM(
      {"v3", MergeTreeDynamicSerializationVersion::V3}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreePatchPartsVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreePatchPartsVersion::V1},
+     {"v2", MergeTreePatchPartsVersion::V2}})
+
+IMPLEMENT_SETTING_ENUM(
     SearchOrphanedPartsDisks,
     ErrorCodes::BAD_ARGUMENTS,
     {{"any", SearchOrphanedPartsDisks::ANY},

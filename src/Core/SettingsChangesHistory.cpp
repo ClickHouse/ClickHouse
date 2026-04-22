@@ -1156,7 +1156,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-            {"enable_v2_lightweight_update_patches", true, true, "New setting to enable v2 lightweight update patches."},
+            {"patch_parts_version", "v2", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {

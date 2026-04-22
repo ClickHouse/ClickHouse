@@ -14,17 +14,16 @@ namespace ErrorCodes
 
 MergeTreeSinkPatch::MergeTreeSinkPatch(
     StorageMergeTree & storage_,
-    StorageMetadataPtr metadata_snapshot_,
+    PatchPartMetadata patch_metadata_,
     PlainLightweightUpdateHolder update_holder_,
-    std::optional<UInt64> v2_sorting_key_prefix_size_,
     ContextPtr context_)
     : MergeTreeSink(
         storage_,
-        std::move(metadata_snapshot_),
+        patch_metadata_.metadata,
         /*max_parts_per_block=*/ 0,
         std::move(context_))
     , update_holder(std::move(update_holder_))
-    , v2_sorting_key_prefix_size(v2_sorting_key_prefix_size_)
+    , patch_metadata(std::move(patch_metadata_))
 {
 }
 
@@ -67,9 +66,9 @@ TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block
     UInt64 block_number = update_holder.block_holder->block.number;
 
     auto main_metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-    auto source_parts_set = buildSourceSetForPatch(*block.block, block_number, main_metadata, v2_sorting_key_prefix_size);
+    auto source_parts_set = buildSourceSetForPatch(*block.block, block_number, main_metadata, patch_metadata.sorting_key_prefix_size);
 
-    return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);
+    return storage.writer.writeTempPatchPart(block, patch_metadata.metadata, std::move(partition_id), std::move(source_parts_set), context);
 }
 
 }

@@ -1,8 +1,7 @@
 #pragma once
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
+#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
-
-#include <optional>
 
 namespace DB
 {
@@ -12,9 +11,8 @@ class ReplicatedMergeTreeSinkPatch : public ReplicatedMergeTreeSink
 public:
     ReplicatedMergeTreeSinkPatch(
         StorageReplicatedMergeTree & storage_,
-        StorageMetadataPtr metadata_snapshot_,
+        PatchPartMetadata patch_metadata_,
         LightweightUpdateHolderInKeeper update_holder_,
-        std::optional<UInt64> v2_sorting_key_prefix_size_,
         ContextPtr context_);
 
     ~ReplicatedMergeTreeSinkPatch() override;
@@ -27,8 +25,9 @@ private:
     UInt64 getDataVersionInPartition(const String & original_partition_id) const;
 
     LightweightUpdateHolderInKeeper update_holder;
-    /// Semantic sort-key prefix length for v2 patches, unset for v1. See `MergeTreeSinkPatch`.
-    std::optional<UInt64> v2_sorting_key_prefix_size;
+    /// Format version + patch `StorageMetadataPtr` + (for v2) the semantic sort-key prefix size.
+    /// See `MergeTreeSinkPatch::patch_metadata`.
+    PatchPartMetadata patch_metadata;
 };
 
 }

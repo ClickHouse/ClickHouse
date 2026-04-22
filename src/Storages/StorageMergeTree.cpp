@@ -99,7 +99,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
-    extern const MergeTreeSettingsBool enable_v2_lightweight_update_patches;
+    extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
@@ -890,27 +890,12 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
-    const bool lightweight_updates_v2 = (*getSettings())[MergeTreeSetting::enable_v2_lightweight_update_patches];
-    StorageMetadataPtr patch_metadata;
-    std::optional<UInt64> sorting_key_prefix_size;
-
-    if (lightweight_updates_v2)
-    {
-        auto main_metadata = getInMemoryMetadataPtr(context_copy, false);
-        const auto & main_sorting_key = main_metadata->getSortingKey();
-        sorting_key_prefix_size = main_sorting_key.column_names.size();
-        patch_metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), main_sorting_key, *sorting_key_prefix_size, context_copy);
-    }
-    else
-    {
-        patch_metadata = DB::getPatchPartMetadata(pipeline.getHeader(), context_copy);
-    }
+    auto patch_metadata = getPatchPartMetadata(pipeline.getHeader(), getSettings(), context_copy);
 
     auto sink = std::make_shared<MergeTreeSinkPatch>(
         *this,
         std::move(patch_metadata),
         std::move(update_holder),
-        sorting_key_prefix_size,
         context_copy);
 
     chassert(!pipeline.completed());
