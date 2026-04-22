@@ -110,13 +110,16 @@ def test_stale_shard_num_single_shard_pr_cluster(start_cluster):
         "optimize_trivial_count_query": 0,
     }
 
+    # Get precise timestamp before query to avoid matching unrelated historical warnings
+    pre_query_timestamp = n3.query("SELECT now64(6) FORMAT TSVRaw").strip()
+
     result = n1.query("SELECT count() FROM t_dist", settings=pr_settings)
     assert result.strip() == "20", f"Unexpected result: {result!r}"
 
     # Verify the WARNING was emitted on n3 (shard 2, _shard_num=2 > shard_count=1).
     # Note: system.text_log has query_id (not initial_query_id). In distributed queries,
     # the remote shard's query_id differs from the initiator's. We match by message pattern
-    # and use a short time window, filtering by the query_id we set to reduce false positives.
+    # and use the pre-query timestamp to filter only warnings from this test execution.
     n3.query("SYSTEM FLUSH LOGS text_log")
     warning_count = n3.query(
         f"""
@@ -124,7 +127,7 @@ def test_stale_shard_num_single_shard_pr_cluster(start_cluster):
         FROM system.text_log
         WHERE level = 'Warning'
           AND message LIKE '%shard_num%greater than shard count%'
-          AND event_time >= now() - INTERVAL 30 SECOND
+          AND event_time_microseconds >= toDateTime64('{pre_query_timestamp}', 6)
         """
     )
     assert int(warning_count.strip()) > 0, (
