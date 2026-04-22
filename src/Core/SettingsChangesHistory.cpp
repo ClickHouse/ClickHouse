@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.5",
         {
-
+            {"optimize_remove_redundant_semi_join", false, true, "Remove redundant SEMI/ANTI JOINs when one right-hand side is a provable subset of another."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -76,7 +76,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_like_min_pattern_length", 4, 4, "New setting"},
             {"text_index_like_max_postings_to_read", 50, 50, "New setting"},
             {"analyzer_inline_views", false, false, "New setting"},
-            {"optimize_remove_redundant_semi_join", false, true, "Remove redundant SEMI/ANTI JOINs when one right-hand side is a provable subset of another."},
             {"distributed_cache_write_request_max_tries", 10, 10, "New setting"},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
