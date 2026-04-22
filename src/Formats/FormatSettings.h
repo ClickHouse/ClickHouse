@@ -244,6 +244,7 @@ struct FormatSettings
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
         bool allow_variable_number_of_columns = false;
+        UInt64 max_number_of_fields_per_row = 1'000'000;
     } custom{};
 
     struct JSON

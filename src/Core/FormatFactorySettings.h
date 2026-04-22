@@ -320,6 +320,9 @@ Automatically detect header with names and types in TSV format
     DECLARE(Bool, input_format_custom_detect_header, true, R"(
 Automatically detect header with names and types in CustomSeparated format
 )", 0) \
+    DECLARE(UInt64, input_format_custom_max_number_of_fields_per_row, 1'000'000, R"(
+Upper bound on the number of fields read from a single row in the `CustomSeparated` input format when the number of columns is unknown (header detection or `input_format_custom_allow_variable_number_of_columns`). Protects against malformed or adversarial inputs in which `format_custom_row_after_delimiter` never matches, causing unbounded memory consumption while accumulating fields. Reads exceeding this bound fail with `INCORRECT_DATA`. The default is high enough to accommodate all realistic schemas; lower it to harden against untrusted inputs, or raise it for legitimately ultra-wide data.
+)", 0) \
     DECLARE(Bool, input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference, false, R"(
 Skip columns with unsupported types while schema inference for format Parquet
 )", 0) \

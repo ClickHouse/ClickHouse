@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
@@ -209,8 +210,21 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
 
     if (columns == 0 || format_settings.custom.allow_variable_number_of_columns)
     {
+        /// Guard against pathological inputs (for example, fuzzer-generated data
+        /// where `format_custom_row_after_delimiter` never matches): without this
+        /// bound, the loop below can grow `values` unboundedly and allocate
+        /// many gigabytes of memory before anything detects the malformed input.
+        const size_t max_fields = format_settings.custom.max_number_of_fields_per_row;
         do
         {
+            if (values.size() >= max_fields)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Too many fields in a single row of CustomSeparated input (limit: {}). "
+                    "The configured `format_custom_row_after_delimiter` was likely not found in the input data. "
+                    "Increase `input_format_custom_max_number_of_fields_per_row` if this is a legitimate ultra-wide row.",
+                    max_fields);
+
             values.push_back(readFieldIntoString<mode>(values.empty(), false, true));
         } while (!checkForEndOfRow());
         columns = values.size();
