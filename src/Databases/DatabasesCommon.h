@@ -16,7 +16,7 @@ class IDisk;
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, bool validate_new_create_query = true);
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
-    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error);
+    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context);
 
 /// Cleans a CREATE QUERY from temporary flags like "IF NOT EXISTS", "OR REPLACE", "AS SELECT" (for non-views), etc.
 void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);

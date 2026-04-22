@@ -131,6 +131,7 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 class TransposedMetricLog;
+class HistogramMetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
@@ -440,6 +441,7 @@ public:
             partitions = rhs.partitions;
             projections = rhs.projections;
             views = rhs.views;
+            row_policies = rhs.row_policies;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -460,6 +462,7 @@ public:
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
+            std::swap(row_policies, rhs.row_policies);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -470,6 +473,7 @@ public:
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
+        std::set<std::string> row_policies TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -994,6 +998,7 @@ public:
 
     void addQueryAccessInfo(const Names & partition_names);
     void addViewAccessInfo(const String & view_name);
+    void addUsedRowPolicy(const String & policy_name);
 
     struct QualifiedProjectionName
     {
@@ -1507,6 +1512,7 @@ public:
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
+    std::shared_ptr<HistogramMetricLog> getHistogramMetricLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;

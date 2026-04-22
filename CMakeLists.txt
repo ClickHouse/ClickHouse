@@ -367,13 +367,10 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-if (NOT ENABLE_TESTS AND NOT ENABLE_CLANG_TIDY AND NOT SANITIZE AND OS_LINUX)
-    # https://clang.llvm.org/docs/ThinLTO.html
-    # Applies to clang and linux only.
-    # Disabled when building with tests or sanitizers.
-    # Also disabled with clang-tidy where we don't care about linking
-    option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
-endif()
+# https://clang.llvm.org/docs/ThinLTO.html
+# Applies to clang and linux only.
+# Disabled by default; explicitly enabled in CI for release and performance builds.
+option(ENABLE_THINLTO "Clang-specific link time optimization" OFF)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
