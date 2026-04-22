@@ -1272,6 +1272,7 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         auto [new_credentials, _] = getCredentialsAndEndpoint(config_object, location);
         return new_credentials;
     };
+}
 
 /// "alpha,alpha.a1,bravo,bravo.*,charlie,delta.d1,echo.*"
 /// allows tables from
