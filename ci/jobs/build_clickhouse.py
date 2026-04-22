@@ -208,8 +208,8 @@ def main():
             print(
                 "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
             )
-            info.add_workflow_report_message(
-                "WARNING: ClickHouse version has not been found in workflow kv storage"
+            info.add_workflow_warning(
+                "ClickHouse version has not been found in workflow kv storage"
             )
     assert version_dict
 

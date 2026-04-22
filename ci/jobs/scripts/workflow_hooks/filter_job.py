@@ -38,6 +38,13 @@ PRELIMINARY_JOBS = [
     "Build (arm_tidy)",
 ]
 
+BUILDS_FOR_TESTS = [
+    j.name
+    for j in JobConfigs.build_jobs
+    + JobConfigs.coverage_build_jobs
+    + JobConfigs.release_build_jobs
+]
+
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan_ubsan)",
     "Integration tests (amd_asan_ubsan, flaky)",
@@ -162,7 +169,7 @@ def should_skip_job(job_name):
 
     if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.INTEGRATION)
-        or job_name in JobConfigs.builds_for_tests
+        or job_name in BUILDS_FOR_TESTS
     ):
         return (
             True,
@@ -172,7 +179,7 @@ def should_skip_job(job_name):
     if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.STATELESS)
         or job_name.startswith(JobNames.STATEFUL)
-        or job_name in JobConfigs.builds_for_tests
+        or job_name in BUILDS_FOR_TESTS
         or "functional" in job_name.lower()  # Bugfix validation (functional tests)
     ):
         return (
@@ -229,12 +236,7 @@ def should_skip_job(job_name):
             except Exception as e:
                 print(f"Warning: failed to fetch previously-failed tests: {e}")
                 previously_failed = []
-            try:
-                relevant_tests, _ = targeter.get_most_relevant_tests()
-            except Exception as e:
-                print(f"Warning: failed to fetch relevant tests: {e}")
-                relevant_tests = []
-            if not changed_tests and not previously_failed and not relevant_tests:
+            if not changed_tests and not previously_failed:
                 return True, "Skipped, no tests to run"
         if "integration" in job_name.lower() and not has_new_integration_tests(
             changed_files

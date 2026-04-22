@@ -70,7 +70,7 @@ public:
         const auto & storage_snapshot = table_node->getStorageSnapshot();
         auto column_name_type = qbit_node->getColumn();
 
-        if (!storage->supportsOptimizationToSubcolumns() || storage->isVirtualColumn(column_name_type.name, storage_snapshot->metadata))
+        if (!storage->supportsOptimizationToSubcolumns() || storage_snapshot->metadata->isVirtualColumn(column_name_type.name))
             return;
 
         auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions::All, column_name_type.name);
