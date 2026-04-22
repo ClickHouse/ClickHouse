@@ -20,7 +20,9 @@
     , expected_exception)
 
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -37,6 +39,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INVALID_SETTING_VALUE;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 azure_min_upload_part_size;
 }
 
 /// A class which allows to test private methods of NamedCollectionFactory.
@@ -253,6 +261,49 @@ TEST(StorageAzureConfiguration, FromASTWithPartialExtraCredentials)
     StorageAzureConfigurationFriend conf;
 
     ASSERT_THROW_ERROR_CODE(conf.fromAST(engine_args, Context::getGlobalContextInstance(), false), Exception, ErrorCodes::BAD_ARGUMENTS, "'client_id' is missing");
+}
+
+TEST(AzureBlobStorageRequestSettings, RejectZeroMinUploadPartSizeFromSettings)
+{
+    Settings settings;
+    settings[Setting::azure_min_upload_part_size] = 0;
+
+    ASSERT_THROW_ERROR_CODE(
+        AzureBlobStorage::getRequestSettings(settings),
+        Exception,
+        ErrorCodes::INVALID_SETTING_VALUE,
+        "min_upload_part_size");
+}
+
+TEST(AzureBlobStorageRequestSettings, RejectZeroMinUploadPartSizeFromConfig)
+{
+    std::string xml(R"CONFIG(<clickhouse>
+    <storage_configuration>
+        <disks>
+            <blob_storage_disk>
+                <min_upload_part_size>0</min_upload_part_size>
+            </blob_storage_disk>
+        </disks>
+    </storage_configuration>
+    </clickhouse>)CONFIG");
+
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+
+    ASSERT_THROW_ERROR_CODE(
+        AzureBlobStorage::getRequestSettings(*config, "storage_configuration.disks.blob_storage_disk", Settings{}),
+        Exception,
+        ErrorCodes::INVALID_SETTING_VALUE,
+        "min_upload_part_size");
+}
+
+TEST(AzureBlobStorageRequestSettings, AcceptPositiveMinUploadPartSize)
+{
+    Settings settings;
+    settings[Setting::azure_min_upload_part_size] = 1;
+
+    ASSERT_NO_THROW(AzureBlobStorage::getRequestSettings(settings));
 }
 
 }
