@@ -1540,7 +1540,7 @@ SEMI LEFT JOIN
 (
     SELECT __table5.uid AS uid
     FROM default.users AS __table5
-    WHERE startsWith(__table5.name, \'B\')
+    WHERE __table5.name = \'Bob\'
 ) AS __table4 ON __table1.uid = __table4.uid
 SEMI LEFT JOIN
 (
@@ -1563,7 +1563,7 @@ SEMI LEFT JOIN
 (
     SELECT __table5.uid AS uid
     FROM default.users AS __table5
-    WHERE startsWith(__table5.name, \'B\')
+    WHERE __table5.name = \'Bob\'
 ) AS __table4 ON __table1.uid = __table4.uid
 ORDER BY __table1.uid ASC
 SETTINGS optimize_remove_redundant_semi_join = 1
