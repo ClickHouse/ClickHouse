@@ -53,6 +53,8 @@ namespace ErrorCodes
     extern const int INVALID_IDENTIFIER;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
+    extern const int TABLE_UUID_MISMATCH;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -209,45 +211,84 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         table_name = table_identifier[0];
     }
 
-    StorageID storage_id(database_name, table_name);
-    storage_id = context->resolveStorageID(storage_id);
-    bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
-
-    StoragePtr storage;
-    TableLockHolder storage_lock;
-
-    if (is_temporary_table)
-        storage = DatabaseCatalog::instance().getTable(storage_id, context);
-    else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
+    /// Re-resolve the table if its in-memory StorageID changed under us
+    /// because of a concurrent rename. The share lock does not block
+    /// renameInMemory, so after taking it we must check that the live
+    /// identity still matches what the catalog resolved.
+    static constexpr size_t max_resolve_attempts = 3;
+    for (size_t attempt = 0; attempt < max_resolve_attempts; ++attempt)
     {
-        /// If table is the target of a refreshable materialized view, it needs additional
-        /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
-        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+        StorageID storage_id(database_name, table_name);
+        storage_id = context->resolveStorageID(storage_id);
+        bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
+
+        StoragePtr storage;
+        TableLockHolder storage_lock;
+
+        try
+        {
+            if (is_temporary_table)
+                storage = DatabaseCatalog::instance().getTable(storage_id, context);
+            else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
+            {
+                /// If table is the target of a refreshable materialized view, it needs additional
+                /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
+                std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+            }
+            else
+                storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+        }
+        catch (const Exception & e)
+        {
+            /// UUID may have been purged between resolveStorageID and the
+            /// throwing getTable above. Retry, and pass UNKNOWN_TABLE through
+            /// on the last attempt so a genuinely-missing table stays as such.
+            if (e.code() != ErrorCodes::UNKNOWN_TABLE || attempt + 1 == max_resolve_attempts)
+                throw;
+            continue;
+        }
+
+        if (!storage && storage_id.hasUUID())
+        {
+            // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
+            // We try to get the table with the database name and the table name.
+            auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
+            if (database)
+                storage = database->tryGetTable(table_name, context);
+        }
+        if (!storage)
+            return {};
+
+        if (!storage_lock)
+            storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+        auto live_id = storage->getStorageID();
+        if (live_id.uuid != storage_id.uuid
+            || live_id.database_name != storage_id.database_name
+            || live_id.table_name != storage_id.table_name)
+        {
+            if (attempt + 1 == max_resolve_attempts)
+                throw Exception(ErrorCodes::TABLE_UUID_MISMATCH,
+                    "Table {}.{} was concurrently renamed; the UUID-to-name mapping diverged on every retry",
+                    database_name, table_name);
+            storage_lock = {};
+            storage.reset();
+            continue;
+        }
+
+        storage->updateExternalDynamicMetadataIfExists(context);
+        auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+        auto result = std::make_shared<TableNode>(
+            std::move(storage), storage_id, std::move(storage_lock), std::move(storage_snapshot));
+        if (is_temporary_table)
+            result->setTemporaryTableName(table_name);
+
+        return result;
     }
-    else
-        storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
-    if (!storage && storage_id.hasUUID())
-    {
-        // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
-        // We try to get the table with the database name and the table name.
-        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
-        if (database)
-            storage = database->tryGetTable(table_name, context);
-    }
-    if (!storage)
-        return {};
-
-
-    if (!storage_lock)
-        storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    storage->updateExternalDynamicMetadataIfExists(context);
-    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
-    auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
-    if (is_temporary_table)
-        result->setTemporaryTableName(table_name);
-
-    return result;
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Unreachable: tryResolveTableIdentifier retry loop exited without a decision for table {}.{}",
+        database_name, table_name);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
