@@ -17,6 +17,14 @@ namespace ErrorCodes
 }
 }
 
+namespace ProfileEvents
+{
+    extern const Event MemoryTrackerAllocations;
+    extern const Event MemoryTrackerAllocationsBytes;
+    extern const Event MemoryTrackerDeallocations;
+    extern const Event MemoryTrackerDeallocationsBytes;
+}
+
 namespace
 {
 
@@ -52,6 +60,8 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
         if (!current_thread)
         {
             /// total_memory_tracker only, ignore untracked_memory
+            ProfileEvents::increment(ProfileEvents::MemoryTrackerAllocations);
+            ProfileEvents::increment(ProfileEvents::MemoryTrackerAllocationsBytes, size);
             return memory_tracker->allocImpl(size, throw_if_memory_exceeded);
         }
 
@@ -76,6 +86,8 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
 
             try
             {
+                ProfileEvents::increment(ProfileEvents::MemoryTrackerAllocations);
+                ProfileEvents::increment(ProfileEvents::MemoryTrackerAllocationsBytes, current_untracked_memory);
                 auto res = memory_tracker->allocImpl(current_untracked_memory, throw_if_memory_exceeded);
                 current_thread->updateUntrackedMemoryLimit(memory_tracker->get());
                 return res;
@@ -96,7 +108,10 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
 void CurrentMemoryTracker::check()
 {
     if (auto * memory_tracker = getMemoryTracker())
+    {
+        ProfileEvents::increment(ProfileEvents::MemoryTrackerAllocations);
         std::ignore = memory_tracker->allocImpl(0, true);
+    }
 }
 
 Int64 CurrentMemoryTracker::get()
@@ -122,6 +137,8 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
     {
         if (!current_thread)
         {
+            ProfileEvents::increment(ProfileEvents::MemoryTrackerDeallocations);
+            ProfileEvents::increment(ProfileEvents::MemoryTrackerDeallocationsBytes, size);
             return memory_tracker->free(size);
         }
 
@@ -139,6 +156,9 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             Int64 untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
             current_thread->updateUntrackedMemoryLimit(memory_tracker->get() + untracked_memory);
+
+            ProfileEvents::increment(ProfileEvents::MemoryTrackerDeallocations);
+            ProfileEvents::increment(ProfileEvents::MemoryTrackerDeallocationsBytes, -untracked_memory);
             return memory_tracker->free(-untracked_memory);
         }
 
