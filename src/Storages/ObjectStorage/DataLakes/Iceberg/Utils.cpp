@@ -983,7 +983,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
     if (order_by)
     {
-        auto sort_columns_key_description = KeyDescription::getSortingKeyFromAST(order_by, columns, context, std::nullopt);
+        auto sort_columns_key_description = KeyDescription::getKeyFromAST(order_by, columns, {}, context);
 
         SortDescription sort_description;
         Names sort_columns = sort_columns_key_description.column_names;
@@ -1358,7 +1358,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     if (order_by_str.empty())
         return KeyDescription{};
     order_by_str.pop_back();
-    return KeyDescription::parse(order_by_str, column_description, local_context, true);
+    return KeyDescription::parse(order_by_str, column_description, {}, local_context, true);
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)

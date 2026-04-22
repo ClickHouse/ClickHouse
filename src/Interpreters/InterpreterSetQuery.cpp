@@ -123,7 +123,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                 }
 
                 if (engine_settings->changes.empty())
-                    create_query->storage->settings = nullptr;
+                    create_query->storage->reset(create_query->storage->settings);
             }
         }
     }
