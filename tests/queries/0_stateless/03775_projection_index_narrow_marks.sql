@@ -72,4 +72,52 @@ SELECT 'empty_range', count()
 FROM t_narrow WHERE trace_id > unhex('fffffffffffffffffffffffffffffffe')
 SETTINGS projection_index_narrow_marks = 1;
 
+-- 5. Read-in-order query shape (ORDER BY matches the table's sort key). Goes
+--    through MergeTreeReadPoolInOrder rather than the default pool.
+SELECT 'in_order_limit', id
+FROM t_narrow WHERE trace_id = unhex('00000000000000000000000000000042')
+ORDER BY id LIMIT 3
+SETTINGS projection_index_narrow_marks = 1, optimize_read_in_order = 1;
+
+-- 6. Concurrent readers. The batch-selection split in pickNextBatch + the
+--    narrow / continue loop in getTask have to stay correct when multiple
+--    threads are pulling batches and stealing from each other.
+SELECT 'parallel', id
+FROM t_narrow WHERE trace_id = unhex('00000000000000000000000000000042')
+ORDER BY id
+SETTINGS projection_index_narrow_marks = 1, max_threads = 4;
+
 DROP TABLE t_narrow;
+
+-- 7. Adaptive granularity: same shape as (1), but the table uses
+--    index_granularity_bytes so MergeTreeIndexGranularityAdaptive is selected
+--    and bitmapToMarkRanges exercises its monotonic-cursor path rather than
+--    the constant fast path.
+DROP TABLE IF EXISTS t_narrow_adaptive;
+CREATE TABLE t_narrow_adaptive
+(
+    id UInt64,
+    trace_id FixedString(16),
+    payload String,
+    PROJECTION by_trace_id (SELECT _part_offset ORDER BY trace_id)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 128, index_granularity_bytes = 1024;
+
+INSERT INTO t_narrow_adaptive SELECT number, if(number = 100, unhex('00000000000000000000000000000042'), unhex(hex(sipHash128(toString(number))))), 'x' FROM numbers(5000);
+INSERT INTO t_narrow_adaptive SELECT 5000 + number, unhex(hex(sipHash128(toString(5000 + number)))), 'x' FROM numbers(5000);
+INSERT INTO t_narrow_adaptive SELECT 10000 + number, if(number IN (50, 51, 100), unhex('00000000000000000000000000000042'), unhex(hex(sipHash128(toString(10000 + number))))), 'x' FROM numbers(5000);
+INSERT INTO t_narrow_adaptive SELECT 15000 + number, unhex(hex(sipHash128(toString(15000 + number)))), 'x' FROM numbers(5000);
+INSERT INTO t_narrow_adaptive SELECT 20000 + number, if(number = 10, unhex('00000000000000000000000000000042'), unhex(hex(sipHash128(toString(20000 + number))))), 'x' FROM numbers(5000);
+
+SELECT 'adaptive_off', id
+FROM t_narrow_adaptive WHERE trace_id = unhex('00000000000000000000000000000042')
+ORDER BY id
+SETTINGS projection_index_narrow_marks = 0;
+
+SELECT 'adaptive_on', id
+FROM t_narrow_adaptive WHERE trace_id = unhex('00000000000000000000000000000042')
+ORDER BY id
+SETTINGS projection_index_narrow_marks = 1;
+
+DROP TABLE t_narrow_adaptive;
