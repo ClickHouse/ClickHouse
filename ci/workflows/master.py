@@ -52,6 +52,7 @@ workflow = Workflow.Config(
         *JobConfigs.stress_test_azure_jobs,
         *JobConfigs.stress_test_serverfuzz_jobs,
         *JobConfigs.ast_fuzzer_jobs,
+        *JobConfigs.ast_fuzzer_oracle_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_serverfuzz_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,

@@ -40,6 +40,10 @@ function configure
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
 
+    if [[ -n "${FUZZER_ORACLE_ENABLED:-}" ]]; then
+        cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/oracle-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
+    fi
+
     if [[ -n "${SERVER_FUZZER_ENABLED:-}" ]]; then
         cat > $CONFIG_DIR/users.d/serverfuzz-tweaks.xml <<EOL
 <clickhouse>

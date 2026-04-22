@@ -40,6 +40,7 @@ def get_run_command(
     targeted_queries_file: Path | None = None,
     compatibility_setting: str | None = None,
     enable_server_fuzzer: bool = False,
+    enable_oracle: bool = False,
 ) -> str:
     from ci.jobs.ci_utils import is_extended_run
 
@@ -55,6 +56,8 @@ def get_run_command(
         envs.append(f"-e TARGETED_QUERIES_FILE='{container_queries_file}'")
     if compatibility_setting:
         envs.append(f"-e FUZZER_COMPATIBILITY='{compatibility_setting}'")
+    if enable_oracle:
+        envs.append("-e FUZZER_ORACLE_ENABLED=1")
 
     env_str = " ".join(envs)
 
@@ -152,6 +155,7 @@ def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
 def run_fuzz_job(check_name: str):
     logging.basicConfig(level=logging.INFO)
     is_targeted = "targeted" in check_name.lower()
+    is_oracle = "oracle" in check_name.lower()
     buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
     clickhouse_binary = Path(cwd) / "ci/tmp/clickhouse"
@@ -203,6 +207,7 @@ def run_fuzz_job(check_name: str):
         targeted_queries_file=targeted_queries_file,
         compatibility_setting=compatibility_setting,
         enable_server_fuzzer="serverfuzz" in job_name,
+        enable_oracle=is_oracle,
     )
     logging.info("Going to run %s", run_command)
 
