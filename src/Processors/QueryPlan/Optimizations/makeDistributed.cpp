@@ -373,6 +373,13 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
     if (read_from_merge_tree_step)
     {
+        /// Round-robin mark-range bucketing would split rows with the same sort key across buckets and
+        /// break FINAL dedup on engines with specialized merging (Replacing, Collapsing, ...). Fall back
+        /// to serial read until a correctness-preserving bucketing strategy exists.
+        if (read_from_merge_tree_step->isQueryWithFinal() &&
+            read_from_merge_tree_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+            return;
+
         /// Check if table is big enough for distributed read
         /// TODO: implement better logic for choosing number of parallel readers
         auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
