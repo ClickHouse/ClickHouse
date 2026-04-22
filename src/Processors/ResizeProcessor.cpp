@@ -32,7 +32,7 @@ IProcessor::Status ResizeProcessor::prepare(const UpdatedInputPorts & updated_in
 
     for (auto * output_port : updated_outputs)
     {
-        OutputStatus & status = output_status[output_port];
+        OutputStatus & status = output_status.at(output_port);
         if (output_port->isFinished())
         {
             if (status != OutputStatus::Finished)
@@ -71,7 +71,7 @@ IProcessor::Status ResizeProcessor::prepare(const UpdatedInputPorts & updated_in
 
     for (auto * input_port : updated_inputs)
     {
-        auto & status = input_status[input_port];
+        auto & status = input_status.at(input_port);
         if (input_port->isFinished())
         {
             if (status != InputStatus::Finished)
@@ -101,12 +101,12 @@ IProcessor::Status ResizeProcessor::prepare(const UpdatedInputPorts & updated_in
         inputs_with_data.pop();
 
         waiting_output->pushData(input_with_data->pullData());
-        input_status[input_with_data] = InputStatus::NotActive;
-        output_status[waiting_output] = OutputStatus::NotActive;
+        input_status.at(input_with_data) = InputStatus::NotActive;
+        output_status.at(waiting_output) = OutputStatus::NotActive;
 
         if (input_with_data->isFinished())
         {
-            input_status[input_with_data] = InputStatus::Finished;
+            input_status.at(input_with_data) = InputStatus::Finished;
             ++num_finished_inputs;
         }
     }
@@ -143,7 +143,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
 
     for (auto * output_port : updated_outputs)
     {
-        auto & state = output_port_state[output_port];
+        auto & state = output_port_state.at(output_port);
         if (output_port->isFinished())
         {
             if (state.status != OutputStatus::Finished)
@@ -177,7 +177,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
 
     for (auto * input_port : updated_inputs)
     {
-        auto & state = input_port_state[input_port];
+        auto & state = input_port_state.at(input_port);
         if (input_port->isFinished())
         {
             if (state.status != InputStatus::Finished)
@@ -203,14 +203,14 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
     while (!inputs_with_data.empty())
     {
         auto * input_port = inputs_with_data.front();
-        auto & input_state = input_port_state[input_port];
+        auto & input_state = input_port_state.at(input_port);
         inputs_with_data.pop();
 
         if (input_state.waiting_output == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No associated output for input with data");
 
         auto * waiting_output = input_state.waiting_output;
-        auto & output_state = output_port_state[waiting_output];
+        auto & output_state = output_port_state.at(waiting_output);
 
         if (output_state.status == OutputStatus::NotActive)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid status NotActive for associated output");
@@ -244,7 +244,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
     while (!abandoned_chunks.empty() && !waiting_outputs.empty())
     {
         auto * waiting_output = waiting_outputs.front();
-        auto & output_state = output_port_state[waiting_output];
+        auto & output_state = output_port_state.at(waiting_output);
         waiting_outputs.pop();
 
         waiting_output->pushData(std::move(abandoned_chunks.back()));
@@ -257,7 +257,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
     while (!disabled_input_ports.empty() && !waiting_outputs.empty())
     {
         auto * input_port = disabled_input_ports.front();
-        auto & input_state = input_port_state[input_port];
+        auto & input_state = input_port_state.at(input_port);
         disabled_input_ports.pop();
 
         input_port->setNeeded();
@@ -271,7 +271,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
     while (!waiting_outputs.empty())
     {
         auto * output_port = waiting_outputs.front();
-        auto & output_state = output_port_state[output_port];
+        auto & output_state = output_port_state.at(output_port);
         waiting_outputs.pop();
 
         if (output_state.status != OutputStatus::Finished)
