@@ -27,6 +27,7 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
@@ -477,7 +478,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         all_ranges_callback.value(),
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
+        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        data.getStorageID().getFullTableName()};
 
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         std::move(extension),
@@ -509,7 +511,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            lazy_materializing_rows);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -618,7 +621,8 @@ Pipe ReadFromMergeTree::readFromPool(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            lazy_materializing_rows);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -654,7 +658,8 @@ Pipe ReadFromMergeTree::readInOrder(
             all_ranges_callback.value(),
             read_task_callback.value(),
             number_of_current_replica.value_or(client_info.number_of_current_replica),
-            context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
+            context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+            data.getStorageID().getFullTableName()};
 
         CoordinationMode mode = read_type == ReadType::InOrder
             ? CoordinationMode::WithOrder
@@ -735,7 +740,8 @@ Pipe ReadFromMergeTree::readInOrder(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            lazy_materializing_rows);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -1388,7 +1394,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     part.parent_part,
                     part.part_index_in_query,
                     part.part_starting_offset_in_query,
-                    std::move(ranges_to_get_from_part));
+                    std::move(ranges_to_get_from_part),
+                    part.read_hints);
             }
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
@@ -1731,7 +1738,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     part_it->parent_part,
                     part_it->part_index_in_query,
                     part_it->part_starting_offset_in_query,
-                    part_it->ranges);
+                    part_it->ranges,
+                    part_it->read_hints);
                 current_ranges_marks += part_it->getMarksCount();
             }
 
@@ -2714,7 +2722,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                             it_parts->parent_part,
                             it_parts->part_index_in_query,
                             it_parts->part_starting_offset_in_query,
-                            std::move(diff_ranges));
+                            std::move(diff_ranges),
+                            it_parts->read_hints);
                     }
 
                     ++it_parts;
@@ -3158,13 +3167,13 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
             columns_to_keep.insert(input->result_name);
     }
 
-    auto virtuals = data.getVirtualsPtr();
+    const auto & virtuals = getStorageMetadata()->virtuals;
 
     Names new_column_names;
     Names columns_to_remove;
     for (const auto & column_name : all_column_names)
     {
-        if (columns_to_keep.contains(column_name) || virtuals->has(column_name))
+        if (columns_to_keep.contains(column_name) || virtuals.has(column_name))
             new_column_names.push_back(column_name);
         else
             columns_to_remove.push_back(column_name);
@@ -3415,7 +3424,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             all_ranges_callback.value(),
             read_task_callback.value(),
             number_of_current_replica.value_or(client_info.number_of_current_replica),
-            context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
+            context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+            data.getStorageID().getFullTableName()};
 
         auto get_coordination_mode = [&]
         {
@@ -3684,6 +3694,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "Skip";
         case ReadFromMergeTree::IndexType::PrimaryKeyExpand:
             return "PrimaryKeyExpand";
+        case ReadFromMergeTree::IndexType::NonIntersectingSplit:
+            return "NonIntersectingSplit";
     }
 }
 
@@ -3717,51 +3729,96 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
     }
 
     if (format_settings.pretty)
-        QueryPlanFormat::formatOutputColumns(format_settings.out, *this, prefix);
+        QueryPlanFormat::formatOutputColumns(format_settings.pretty_names, format_settings.out, *this, prefix);
 
     if (query_info.prewhere_info || query_info.row_level_filter)
     {
-        format_settings.out << prefix << "Prewhere info" << '\n';
-        if (query_info.prewhere_info)
-            format_settings.out << prefix << "Need filter: " << query_info.prewhere_info->need_filter << '\n';
+        if (!format_settings.pretty)
+        {
+            format_settings.out << prefix << "Prewhere info" << '\n';
+            if (query_info.prewhere_info)
+                format_settings.out << prefix << "Need filter: " << query_info.prewhere_info->need_filter << '\n';
 
-        prefix.push_back(format_settings.indent_char);
-        prefix.push_back(format_settings.indent_char);
+            prefix.push_back(format_settings.indent_char);
+            prefix.push_back(format_settings.indent_char);
+        }
     }
 
     if (query_info.prewhere_info)
     {
-        format_settings.out << prefix << "Prewhere filter" << '\n';
-        format_settings.out << prefix << "Prewhere filter column: " << query_info.prewhere_info->prewhere_column_name;
-        if (query_info.prewhere_info->remove_prewhere_column)
-            format_settings.out << " (removed)";
-        format_settings.out << '\n';
+        const auto pretty_expression = format_settings.pretty
+            ? QueryPlanFormat::formatColumnPretty(query_info.prewhere_info->prewhere_column_name, format_settings.pretty_names) : String{};
 
-        auto expression = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone());
+        if (!format_settings.pretty || !pretty_expression.empty())
+        {
+            format_settings.out << prefix << "Prewhere filter" << '\n';
+            format_settings.out << prefix << "Prewhere filter column: " << (format_settings.pretty ? pretty_expression : query_info.prewhere_info->prewhere_column_name);
+            if (!format_settings.pretty && query_info.prewhere_info->remove_prewhere_column)
+                format_settings.out << " (removed)";
+            format_settings.out << '\n';
+        }
+
+        if (format_settings.pretty)
+        {
+            const auto annotation = QueryPlanFormat::getColumnAnnotation(query_info.prewhere_info->prewhere_column_name, format_settings);
+            if (!annotation.empty())
+                format_settings.out << prefix << annotation << '\n';
+        }
+
         if (!format_settings.compact)
+        {
+            auto expression = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone());
             expression->describeActions(format_settings.out, prefix);
+        }
     }
 
     if (query_info.row_level_filter)
     {
-        format_settings.out << prefix << "Row level filter" << '\n';
-        format_settings.out << prefix << "Row level filter column: " << query_info.row_level_filter->column_name;
-        if (query_info.row_level_filter->do_remove_column)
-            format_settings.out << " (removed)";
-        format_settings.out << '\n';
+        const auto pretty_expression = format_settings.pretty
+            ? QueryPlanFormat::formatColumnPretty(query_info.row_level_filter->column_name, format_settings.pretty_names) : String{};
 
-        auto expression = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
+        if (!format_settings.pretty || !pretty_expression.empty())
+        {
+            format_settings.out << prefix << "Row level filter" << '\n';
+            format_settings.out << prefix << "Row level filter column: " << (format_settings.pretty ? pretty_expression : query_info.row_level_filter->column_name);
+            if (!format_settings.pretty && query_info.row_level_filter->do_remove_column)
+                format_settings.out << " (removed)";
+            format_settings.out << '\n';
+        }
+
+        if (format_settings.pretty)
+        {
+            const auto annotation = QueryPlanFormat::getColumnAnnotation(query_info.row_level_filter->column_name, format_settings);
+            if (!annotation.empty())
+                format_settings.out << prefix << annotation << '\n';
+        }
+
         if (!format_settings.compact)
+        {
+            auto expression = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
             expression->describeActions(format_settings.out, prefix);
+        }
     }
 
     if (deferred_prewhere_info || deferred_row_level_filter)
     {
         format_settings.out << prefix << "Deferred filters (applied after FINAL)" << '\n';
         if (deferred_row_level_filter)
-            format_settings.out << prefix << "  Deferred row level filter column: " << deferred_row_level_filter->column_name << '\n';
+        {
+            format_settings.out << prefix << "  Deferred row level filter column: "
+                << QueryPlanFormat::formatColumnPretty(deferred_row_level_filter->column_name, format_settings.pretty_names) << '\n';
+            const auto annotation = QueryPlanFormat::getColumnAnnotation(deferred_row_level_filter->column_name, format_settings);
+            if (!annotation.empty())
+                format_settings.out << prefix << "  " << annotation << '\n';
+        }
         if (deferred_prewhere_info)
-            format_settings.out << prefix << "  Deferred prewhere filter column: " << deferred_prewhere_info->prewhere_column_name << '\n';
+        {
+            format_settings.out << prefix << "  Deferred prewhere filter column: "
+                << QueryPlanFormat::formatColumnPretty(deferred_prewhere_info->prewhere_column_name, format_settings.pretty_names) << '\n';
+            const auto annotation = QueryPlanFormat::getColumnAnnotation(deferred_prewhere_info->prewhere_column_name, format_settings);
+            if (!annotation.empty())
+                format_settings.out << prefix << "  " << annotation << '\n';
+        }
     }
 
     if (virtual_row_conversion)
@@ -4093,7 +4150,8 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         all_ranges_callback.value(),
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
+        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        data.getStorageID().getFullTableName());
 }
 
 void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final)
@@ -4110,7 +4168,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     }
 
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
-    auto new_virtual_columns = std::make_shared<VirtualColumnsDescription>(*storage_snapshot->virtual_columns);
+    auto new_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_snapshot->metadata);
 
     for (const auto & [index_name, added_virtual_columns] : added_columns)
     {
@@ -4139,7 +4197,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} already added for reading", added_virtual_column.name);
 
             all_column_names.push_back(added_virtual_column.name);
-            new_virtual_columns->add(added_virtual_column);
+            new_metadata->virtuals.add(added_virtual_column);
             index_task.columns.emplace_back(added_virtual_column.name, added_virtual_column.type);
         }
     }
@@ -4157,8 +4215,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 
     storage_snapshot = std::make_shared<StorageSnapshot>(
         storage_snapshot->storage,
-        storage_snapshot->metadata,
-        std::move(new_virtual_columns));
+        std::move(new_metadata));
 
     if (output_header != nullptr)
     {

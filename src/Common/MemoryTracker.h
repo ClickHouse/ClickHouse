@@ -186,7 +186,26 @@ public:
         sample_probability = value;
     }
 
-    double getSampleProbability(UInt64 size);
+    struct SampleConfig
+    {
+        double probability = 0;
+        UInt64 min_allocation_size = 0;
+        UInt64 max_allocation_size = 0;
+    };
+
+    /// Resolve sample config by traversing the parent chain.
+    /// `sample_probability == -1` means "inherit from parent"; any non-negative value (including 0)
+    /// is an explicit override that stops the walk. Callers are expected to push the query-level
+    /// value only when the user actually changed it from the default, so that the default path
+    /// leaves the group tracker at -1 and falls through to `total_memory_tracker_sample_probability`.
+    SampleConfig getResolvedSampleConfig() const
+    {
+        if (sample_probability >= 0)
+            return {sample_probability, min_allocation_size_bytes, max_allocation_size_bytes};
+        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+            return loaded_next->getResolvedSampleConfig();
+        return {};
+    }
 
     void setSampleMinAllocationSize(UInt64 value)
     {
