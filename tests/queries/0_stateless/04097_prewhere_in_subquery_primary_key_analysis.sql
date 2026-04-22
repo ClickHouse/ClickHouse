@@ -25,6 +25,8 @@ ENGINE = MergeTree ORDER BY id;
 -- so this test does not pin it. It compares PREWHERE vs WHERE instead.
 INSERT INTO data SELECT number % 100, toDateTime('2020-01-01') + intDiv(number, 100), number FROM numbers(819200);
 
+OPTIMIZE TABLE data FINAL;
+
 INSERT INTO ids VALUES (1);
 
 CREATE TEMPORARY TABLE start_ts AS (SELECT now() AS ts);
