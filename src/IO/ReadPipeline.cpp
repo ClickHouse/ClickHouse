@@ -237,8 +237,8 @@ String ReadPipeline::describe() const
         append("DiskCache");
     if (source)
         append("Gather");
-    if (distributed_cache)
-        append("DistributedCache");
+    /// DistributedCache stage is not yet implemented in build().
+    /// Only show it in describe() when the implementation is wired up.
     if (memory_cache)
         append("MemoryCache");
     if (async_prefetch)

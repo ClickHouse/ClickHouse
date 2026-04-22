@@ -452,18 +452,44 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
-    ReadPipeline pipeline;
-    prepareRead(path, settings, read_hint, pipeline);
-
-    if (!pipeline.hasSource())
+    /// Try the pipeline path. If the delegate doesn't support prepareRead
+    /// (e.g. ReadOnlyDiskWrapper, DiskBackup), fall back to the old code.
+    try
     {
-        /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
-        auto wrapped_path = wrappedPath(path);
+        ReadPipeline pipeline;
+        prepareRead(path, settings, read_hint, pipeline);
+
+        if (!pipeline.hasSource())
+        {
+            auto wrapped_path = wrappedPath(path);
+            return std::make_unique<ReadBufferFromFileDecorator>(
+                std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
+        }
+
+        return pipeline.build(settings);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+            throw;
+    }
+
+    /// Fallback: delegate doesn't support prepareRead.
+    if (read_hint && *read_hint > 0)
+        read_hint = *read_hint + FileEncryption::Header::kSize;
+
+    auto wrapped_path = wrappedPath(path);
+    auto buffer = delegate->readFile(wrapped_path, settings, read_hint);
+    if (buffer->eof())
+    {
         return std::make_unique<ReadBufferFromFileDecorator>(
             std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
     }
-
-    return pipeline.build(settings);
+    auto encryption_settings = current_settings.get();
+    FileEncryption::Header header = readHeader(*buffer);
+    String key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
+    chassert(settings.local_fs_buffer_size != 0);
+    return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 
 size_t DiskEncrypted::getFileSize(const String & path) const
