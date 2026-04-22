@@ -1809,6 +1809,10 @@ struct HTTPContext : public IHTTPContext
 
     uint64_t getMaxFieldValueSize() const override;
 
+    uint64_t getMaxRequestHeaderSize() const override;
+
+    Poco::Timespan getHeadersReadTimeout() const override;
+
     Poco::Timespan getReceiveTimeout() const override;
 
     Poco::Timespan getSendTimeout() const override;
