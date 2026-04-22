@@ -100,7 +100,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
         /// Object storage path: wrap per-object buffers with optional disk cache,
         /// then join all objects via ReadBufferFromRemoteFSGather.
 
-        auto nested_settings = settings.withNestedBuffer();
+        const auto & base_settings = gather_settings_override.value_or(settings);
+        auto nested_settings = base_settings.withNestedBuffer();
         ReadBufferFromRemoteFSGather::ReadBufferCreator gather_creator;
 
         if (disk_cache && disk_cache->cache)
@@ -162,10 +163,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
         if (!use_external_buffer && total_objects_size > 0)
             buffer_size = std::min(buffer_size, total_objects_size);
 
+        const auto & gather_settings = gather_settings_override.value_or(settings);
         impl = std::make_unique<ReadBufferFromRemoteFSGather>(
             std::move(gather_creator),
             source->objects,
-            settings,
+            gather_settings,
             use_external_buffer,
             buffer_size);
 

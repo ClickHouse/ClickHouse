@@ -791,6 +791,9 @@ void DiskObjectStorage::prepareRead(
     /// Object storage files may be split across multiple blobs — gather joins them.
     pipeline.needGather();
 
+    /// Pass IO-scheduled settings to the gather (resource links for throttling).
+    pipeline.setGatherSettings(read_settings);
+
     /// Unwrap CachedObjectStorage: extract the file cache into a pipeline stage
     /// and use the underlying (non-cached) storage as the source.
     auto * cached_storage = dynamic_cast<CachedObjectStorage *>(storage.get());

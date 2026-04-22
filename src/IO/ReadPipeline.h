@@ -98,6 +98,10 @@ public:
     /// Used by DiskObjectStorage to implement prefer_bigger_buffer_size.
     void setBufferSize(size_t size) { buffer_size_override = size; }
 
+    /// Override settings used by gather (e.g. with IO scheduling resource links).
+    /// build uses these for the gather constructor instead of the caller's settings.
+    void setGatherSettings(ReadSettings settings) { gather_settings_override = std::move(settings); }
+
     /// -- Decryption stage --
     /// The key_finder callback is called at build time with the key fingerprint
     /// read from the encryption header. It must return the decryption key.
@@ -167,6 +171,7 @@ private:
     std::vector<DecryptionStage> decryption_stages;
     std::optional<DecompressionStage> decompression;
     std::optional<size_t> buffer_size_override;
+    std::optional<ReadSettings> gather_settings_override;
 };
 
 }
