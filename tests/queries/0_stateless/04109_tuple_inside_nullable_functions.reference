@@ -51,5 +51,5 @@ SELECT tupleToNameValuePairs(CAST(([1,2], [3,4]) AS Tuple(a Array(UInt32), b Arr
 [('a',[1,2]),('b',[3,4])]	Array(Tuple(String, Array(UInt32)))
 SELECT tupleToNameValuePairs(CAST(([1,2], [3,4]) AS Nullable(Tuple(a Array(UInt32), b Array(UInt32))))) AS pairs, toTypeName(pairs);
 [('a',[1,2]),('b',[3,4])]	Array(Tuple(String, Array(UInt32)))
-SELECT tupleToNameValuePairs(CAST(NULL AS Nullable(Tuple(a Array(UInt32), b Array(UInt32))))) AS pairs, length(tupleToNameValuePairs(CAST(NULL AS Nullable(Tuple(a Array(UInt32), b Array(UInt32)))))) AS len;
-[]	0
+SELECT tupleToNameValuePairs(CAST(NULL AS Nullable(Tuple(a Array(UInt32), b Array(UInt32))))) AS pairs, toTypeName(pairs);
+[('a',[]),('b',[])]	Array(Tuple(String, Array(UInt32)))

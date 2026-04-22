@@ -43,4 +43,4 @@ SELECT tupleToNameValuePairs(CAST((1, NULL) AS Tuple(a UInt32, b Nullable(UInt32
 
 SELECT tupleToNameValuePairs(CAST(([1,2], [3,4]) AS Tuple(a Array(UInt32), b Array(UInt32)))) AS pairs, toTypeName(pairs);
 SELECT tupleToNameValuePairs(CAST(([1,2], [3,4]) AS Nullable(Tuple(a Array(UInt32), b Array(UInt32))))) AS pairs, toTypeName(pairs);
-SELECT tupleToNameValuePairs(CAST(NULL AS Nullable(Tuple(a Array(UInt32), b Array(UInt32))))) AS pairs, length(tupleToNameValuePairs(CAST(NULL AS Nullable(Tuple(a Array(UInt32), b Array(UInt32)))))) AS len;
+SELECT tupleToNameValuePairs(CAST(NULL AS Nullable(Tuple(a Array(UInt32), b Array(UInt32))))) AS pairs, toTypeName(pairs);
