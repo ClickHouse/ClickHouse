@@ -15,7 +15,7 @@ INSERT INTO t_replacing_final_correctness SELECT number, 2, 'new' FROM numbers(1
 SELECT '-- Local';
 SELECT count(), sum(version), uniqExact(pk) FROM t_replacing_final_correctness FINAL;
 
-SELECT '-- Distibuted';
+SELECT '-- Distributed';
 SELECT count(), sum(version), uniqExact(pk) FROM t_replacing_final_correctness FINAL
 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0;
 
