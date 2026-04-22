@@ -1,4 +1,4 @@
--- Tags: stateful
+-- Tags: stateful, no-random-settings
 SET max_bytes_before_external_group_by = 200000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 
