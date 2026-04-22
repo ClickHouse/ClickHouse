@@ -848,21 +848,20 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
-    auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
-
     ReadPipeline pipeline;
-    prepareRead(path, read_settings, read_hint, pipeline);
+    prepareRead(path, settings, read_hint, pipeline);
 
     /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
-    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
-        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+    auto build_settings = settings;
+    bool prefer_bigger_buffer_size = settings.filesystem_cache_prefer_bigger_buffer_size
+        && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
         && object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache()
-        && read_settings.enable_filesystem_cache;
+        && settings.enable_filesystem_cache;
 
     if (prefer_bigger_buffer_size)
-        read_settings.remote_fs_buffer_size = std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size);
+        build_settings.remote_fs_buffer_size = std::max<size_t>(settings.remote_fs_buffer_size, settings.prefetch_buffer_size);
 
-    return pipeline.build(read_settings);
+    return pipeline.build(build_settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(

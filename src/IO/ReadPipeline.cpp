@@ -107,10 +107,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
             auto cache_key = FileCacheKey::fromPath(object.remote_path);
             auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
 
-            auto impl_creator = [pipeline_creator, cache_settings, object]() mutable
+            auto source_settings = cache_settings;
+            source_settings.remote_read_buffer_restrict_seek = restricted_seek;
+
+            auto impl_creator = [pipeline_creator, source_settings, object]() mutable
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                return pipeline_creator(object, cache_settings);
+                return pipeline_creator(object, source_settings);
             };
 
             return std::make_unique<CachedOnDiskReadBufferFromFile>(
