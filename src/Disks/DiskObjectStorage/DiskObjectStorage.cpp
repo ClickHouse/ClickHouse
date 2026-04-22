@@ -793,7 +793,7 @@ void DiskObjectStorage::prepareRead(
     auto * cached_storage = dynamic_cast<CachedObjectStorage *>(storage.get());
     if (cached_storage && read_settings.enable_filesystem_cache && cached_storage->getFileCache()->isInitialized())
     {
-        pipeline.needDiskCache(cached_storage->getFileCache());
+        pipeline.needDiskCache(cached_storage->getFileCache(), global_context->getFilesystemCacheLog());
         pipeline.setSource(cached_storage->getUnderlying(), storage_objects, read_hint);
     }
     else
@@ -836,7 +836,10 @@ void DiskObjectStorage::prepareRead(
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        pipeline.needAsyncPrefetch(reader);
+        pipeline.needAsyncPrefetch(
+            reader,
+            global_context->getAsyncReadCounters(),
+            global_context->getFilesystemReadPrefetchesLog());
     }
 }
 
@@ -849,6 +852,16 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 
     ReadPipeline pipeline;
     prepareRead(path, read_settings, read_hint, pipeline);
+
+    /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
+    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
+        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+        && object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache()
+        && read_settings.enable_filesystem_cache;
+
+    if (prefer_bigger_buffer_size)
+        read_settings.remote_fs_buffer_size = std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size);
+
     return pipeline.build(read_settings);
 }
 
