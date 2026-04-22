@@ -1,3 +1,4 @@
+-- Tags: no-random-merge-tree-settings, no-random-settings
 -- Coverage matrix for `RemoveRedundantSemiJoinPass`.
 --
 -- Each test prints, in order:
