@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.5",
         {
-
+            {"optimize_use_skip_index_aggregation", false, true, "New setting to enable skip index aggregation optimization for min/max/uniq queries"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -80,7 +80,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
-            {"optimize_use_skip_index_aggregation", false, true, "New setting to enable skip index aggregation optimization for min/max/uniq queries"},
             {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
             {"enable_join_fixed_hash_table_conversion", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."},
             {"allow_experimental_ai_functions", false, false, "New setting"},
