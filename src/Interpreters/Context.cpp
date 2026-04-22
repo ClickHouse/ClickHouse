@@ -291,6 +291,8 @@ namespace Setting
     extern const SettingsUInt64 http_max_fields;
     extern const SettingsUInt64 http_max_field_name_size;
     extern const SettingsUInt64 http_max_field_value_size;
+    extern const SettingsUInt64 http_max_request_header_size;
+    extern const SettingsSeconds http_headers_read_timeout;
     extern const SettingsUInt64 http_max_tries;
     extern const SettingsUInt64 http_max_uri_size;
     extern const SettingsSeconds http_receive_timeout;
@@ -7781,6 +7783,16 @@ uint64_t HTTPContext::getMaxFieldNameSize() const
 uint64_t HTTPContext::getMaxFieldValueSize() const
 {
     return context->getSettingsRef()[Setting::http_max_field_value_size];
+}
+
+uint64_t HTTPContext::getMaxRequestHeaderSize() const
+{
+    return context->getSettingsRef()[Setting::http_max_request_header_size];
+}
+
+Poco::Timespan HTTPContext::getHeadersReadTimeout() const
+{
+    return context->getSettingsRef()[Setting::http_headers_read_timeout];
 }
 
 Poco::Timespan HTTPContext::getReceiveTimeout() const
