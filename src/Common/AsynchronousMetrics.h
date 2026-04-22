@@ -7,6 +7,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/SharedMutex.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Server/ServerType.h>
 
 #include <condition_variable>
 #include <string>
@@ -43,6 +44,7 @@ struct ProtocolServerMetrics
     String port_name;
     size_t current_threads;
     size_t rejected_connections;
+    ServerType::Type server_type = ServerType::Type::END;
 };
 
 /** Periodically (by default, each second)

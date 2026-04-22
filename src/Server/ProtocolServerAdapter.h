@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <base/types.h>
+#include <Server/ServerType.h>
 #include <memory>
 #include <string>
 
@@ -64,6 +65,11 @@ public:
 
     const std::string & getDescription() const { return description; }
 
+    /// Server type is currently set only for endpoints defined under <protocols>, whose port names
+    /// don't match the fixed tcp_port/http_port/... strings used for thread-count metrics.
+    ServerType::Type getServerType() const { return server_type; }
+    void setServerType(ServerType::Type type) { server_type = type; }
+
 private:
     class Impl
     {
@@ -85,6 +91,7 @@ private:
     std::string description;
     std::unique_ptr<Impl> impl;
     bool supports_runtime_reconfiguration = true;
+    ServerType::Type server_type = ServerType::Type::END;
 };
 
 }

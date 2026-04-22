@@ -209,3 +209,32 @@ def test_http_proxy_1():
     port = proxy.start((server.ip_address, 8223))
 
     assert execute_query_http("localhost", port, "SELECT 1") == "1\n"
+
+
+# regression for https://github.com/ClickHouse/ClickHouse/issues/80759 --
+# TCPThreads / HTTPThreads / ...Threads metrics must be produced even when the
+# servers are defined under <protocols> (port_name "protocols.<name>.port" does
+# not match the fixed tcp_port/http_port/... strings in AsynchronousMetrics).
+def test_protocols_threads_metrics():
+    import time
+
+    tcp_client = Client(server.ip_address, 9000, command=cluster.client_bin_path)
+    assert tcp_client.query("SELECT 1") == "1\n"
+    assert execute_query_http(server.ip_address, 8123, "SELECT 1") == "1\n"
+
+    expected = {"TCPThreads", "TCPSecureThreads", "HTTPThreads", "HTTPSecureThreads"}
+
+    probe = Client(server.ip_address, 9000, command=cluster.client_bin_path)
+    present = set()
+    for _ in range(15):
+        rows = probe.query(
+            "SELECT metric FROM system.asynchronous_metrics "
+            "WHERE metric IN ('TCPThreads','TCPSecureThreads','HTTPThreads','HTTPSecureThreads') "
+            "FORMAT TSV"
+        ).strip()
+        present = set(rows.split("\n")) if rows else set()
+        if expected.issubset(present):
+            break
+        time.sleep(1)
+
+    assert expected.issubset(present), f"missing async metrics: {expected - present}"

@@ -2406,14 +2406,83 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             return it->second;
         };
 
+        /// Endpoints defined under <protocols> use port names like "protocols.<name>.port" that
+        /// don't match the fixed table above. Route them via the explicit ServerType::Type set on
+        /// the adapter so the same TCPThreads/HTTPThreads/... metrics are still produced.
+        auto threads_get_metric_name_doc_for_type = [](ServerType::Type type) -> std::pair<const char *, const char *>
+        {
+            switch (type)
+            {
+                case ServerType::Type::TCP:
+                case ServerType::Type::TCP_WITH_PROXY:
+                    return {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."};
+                case ServerType::Type::TCP_SECURE:
+                    return {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."};
+                case ServerType::Type::HTTP:
+                    return {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."};
+                case ServerType::Type::HTTPS:
+                    return {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."};
+                case ServerType::Type::MYSQL:
+                    return {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."};
+                case ServerType::Type::POSTGRESQL:
+                    return {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."};
+                case ServerType::Type::GRPC:
+                    return {"GRPCThreads", "Number of threads in the server of the GRPC protocol."};
+                case ServerType::Type::PROMETHEUS:
+                    return {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."};
+                case ServerType::Type::INTERSERVER_HTTP:
+                    return {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."};
+                case ServerType::Type::INTERSERVER_HTTPS:
+                    return {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."};
+                default:
+                    return {nullptr, nullptr};
+            }
+        };
+
+        auto rejected_get_metric_name_doc_for_type = [](ServerType::Type type) -> std::pair<const char *, const char *>
+        {
+            switch (type)
+            {
+                case ServerType::Type::TCP:
+                case ServerType::Type::TCP_WITH_PROXY:
+                    return {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."};
+                case ServerType::Type::TCP_SECURE:
+                    return {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."};
+                case ServerType::Type::HTTP:
+                    return {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."};
+                case ServerType::Type::HTTPS:
+                    return {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."};
+                case ServerType::Type::MYSQL:
+                    return {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."};
+                case ServerType::Type::POSTGRESQL:
+                    return {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."};
+                case ServerType::Type::GRPC:
+                    return {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."};
+                case ServerType::Type::PROMETHEUS:
+                    return {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."};
+                case ServerType::Type::INTERSERVER_HTTP:
+                    return {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."};
+                case ServerType::Type::INTERSERVER_HTTPS:
+                    return {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."};
+                default:
+                    return {nullptr, nullptr};
+            }
+        };
+
         const auto server_metrics = protocol_server_metrics_func();
         for (const auto & server_metric : server_metrics)
         {
-            if (auto name_doc = threads_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
-                new_values[name_doc.first] = { server_metric.current_threads, name_doc.second };
+            auto threads_name_doc = threads_get_metric_name_doc(server_metric.port_name);
+            if (threads_name_doc.first == nullptr)
+                threads_name_doc = threads_get_metric_name_doc_for_type(server_metric.server_type);
+            if (threads_name_doc.first != nullptr)
+                new_values[threads_name_doc.first] = { server_metric.current_threads, threads_name_doc.second };
 
-            if (auto name_doc = rejected_connections_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
-                new_values[name_doc.first] = { server_metric.rejected_connections, name_doc.second };
+            auto rejected_name_doc = rejected_connections_get_metric_name_doc(server_metric.port_name);
+            if (rejected_name_doc.first == nullptr)
+                rejected_name_doc = rejected_get_metric_name_doc_for_type(server_metric.server_type);
+            if (rejected_name_doc.first != nullptr)
+                new_values[rejected_name_doc.first] = { server_metric.rejected_connections, rejected_name_doc.second };
         }
     }
 

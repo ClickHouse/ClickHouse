@@ -1458,10 +1458,10 @@ try
         metrics.reserve(servers_to_start_before_tables.size() + servers.size());
 
         for (const auto & server : servers_to_start_before_tables)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections(), server.getServerType()});
 
         for (const auto & server : servers)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections(), server.getServerType()});
         return metrics;
     };
     const unsigned async_metrics_update_period_s = server_settings[ServerSetting::asynchronous_metrics_update_period_s];
@@ -3225,7 +3225,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const std::string & protocol,
     Poco::Net::HTTPServerParams::Ptr http_params,
     AsynchronousMetrics & async_metrics,
-    bool & is_secure)
+    bool & is_secure,
+    ServerType::Type & base_type)
 {
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
@@ -3293,6 +3294,20 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
                 is_secure = true;
             }
+            else if (type == "tcp")
+                base_type = ServerType::Type::TCP;
+            else if (type == "proxy1")
+                base_type = ServerType::Type::TCP_WITH_PROXY;
+            else if (type == "http")
+                base_type = ServerType::Type::HTTP;
+            else if (type == "mysql")
+                base_type = ServerType::Type::MYSQL;
+            else if (type == "postgres")
+                base_type = ServerType::Type::POSTGRESQL;
+            else if (type == "prometheus")
+                base_type = ServerType::Type::PROMETHEUS;
+            else if (type == "interserver")
+                base_type = ServerType::Type::INTERSERVER_HTTP;
 
             stack->append(create_factory(type, conf_name));
         }
@@ -3305,6 +3320,17 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
 
         if (!pset.insert(conf_name).second)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
+    }
+
+    /// Promote to the secure variant if a TLS layer was seen anywhere in the chain.
+    if (is_secure)
+    {
+        if (base_type == ServerType::Type::TCP || base_type == ServerType::Type::TCP_WITH_PROXY)
+            base_type = ServerType::Type::TCP_SECURE;
+        else if (base_type == ServerType::Type::HTTP)
+            base_type = ServerType::Type::HTTPS;
+        else if (base_type == ServerType::Type::INTERSERVER_HTTP)
+            base_type = ServerType::Type::INTERSERVER_HTTPS;
     }
 
     return stack;
@@ -3368,7 +3394,8 @@ void Server::createServers(
         for (const auto & host : hosts)
         {
             bool is_secure = false;
-            auto stack = buildProtocolStackFromConfig(config, server_settings, protocol, http_params, async_metrics, is_secure);
+            ServerType::Type base_type = ServerType::Type::END;
+            auto stack = buildProtocolStackFromConfig(config, server_settings, protocol, http_params, async_metrics, is_secure, base_type);
 
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
@@ -3380,7 +3407,7 @@ void Server::createServers(
                 socket.setReceiveTimeout(settings[Setting::receive_timeout]);
                 socket.setSendTimeout(settings[Setting::send_timeout]);
 
-                return ProtocolServerAdapter(
+                ProtocolServerAdapter adapter(
                     host,
                     port_name.c_str(),
                     description + ": " + address.toString(),
@@ -3390,6 +3417,8 @@ void Server::createServers(
                         socket,
                         makeServerParams(server_settings),
                         connection_filter));
+                adapter.setServerType(base_type);
+                return adapter;
             });
         }
     }
