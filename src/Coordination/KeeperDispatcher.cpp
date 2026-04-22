@@ -47,7 +47,6 @@
 namespace CurrentMetrics
 {
     extern const Metric KeeperAliveConnections;
-    extern const Metric KeeperTTLRemoveRequests;
     extern const Metric KeeperOutstandingRequests;
 }
 
@@ -61,6 +60,8 @@ namespace ProfileEvents
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
     extern const Event KeeperStaleRequestsSkipped;
     extern const Event KeeperLiveSessionsLockWaitMicroseconds;
+    extern const Event KeeperTTLRemoveRequestsEnqueued;
+    extern const Event KeeperTTLRemoveRequestsDropped;
     extern const Event KeeperSessionCallbackLockWaitMicroseconds;
     extern const Event KeeperReadRequestQueueLockWaitMicroseconds;
 }
@@ -637,9 +638,15 @@ void KeeperDispatcher::garbageCollectorThread()
                     info.time = time;
                     info.request = std::move(request);
 
-                    if (!requests_queue->push(std::move(info)))
+                    info.request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, info.request->tracing_context.get());
+
+                    if (requests_queue->push(std::move(info)))
+                        ProfileEvents::increment(ProfileEvents::KeeperTTLRemoveRequestsEnqueued);
+                    else
+                    {
+                        ProfileEvents::increment(ProfileEvents::KeeperTTLRemoveRequestsDropped);
                         LOG_WARNING(log, "Garbage collector: queue full, drop path retry next tick");
-                    CurrentMetrics::add(CurrentMetrics::KeeperTTLRemoveRequests);
+                    }
                 }
             }
         }
@@ -731,8 +738,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (keeper_context->isShutdownCalled())
         return false;
 
-    if (session_id != keeper_internal_ttl_garbage_collector_session_id)
-        request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
+    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
@@ -1083,8 +1089,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
 
-                    if (dead_session != keeper_internal_ttl_garbage_collector_session_id)
-                        request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
+                    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
                     using namespace std::chrono;
                     KeeperRequestForSession request_info

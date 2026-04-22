@@ -578,6 +578,8 @@ struct RemoveNodeDelta
     NodeStats stat;
     Coordination::ACLs acls;
     String data;
+    std::optional<int64_t> destroy_time;
+    std::optional<int64_t> ttl;
 };
 
 struct UpdateNodeStatDelta
@@ -981,6 +983,8 @@ void KeeperStorage<Container>::UncommittedState::rollbackDelta(const Delta & del
                 node = std::make_shared<Node>();
                 node->stats = operation.stat;
                 node->setData(operation.data);
+                node->destroy_time = operation.destroy_time;
+                node->ttl = operation.ttl;
                 acls = operation.acls;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta>)
@@ -2138,7 +2142,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     new_deltas.emplace_back(
         zk_request.path,
         zxid,
-        RemoveNodeDelta{zk_request.version, node->stats, storage.uncommitted_state.getACLs(zk_request.path), std::string{node->getData()}});
+        RemoveNodeDelta{zk_request.version, node->stats, storage.uncommitted_state.getACLs(zk_request.path), std::string{node->getData()}, node->destroy_time, node->ttl});
 
     if (node->stats.isEphemeral())
     {
@@ -2288,7 +2292,7 @@ private:
             if (checkLimits(child_node))
                 return CollectStatus::LimitExceeded;
 
-            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()});
+            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()}, child_node.destroy_time, child_node.ttl);
         }
 
         return CollectStatus::Ok;
@@ -2318,7 +2322,7 @@ private:
             if (checkLimits(child_node))
                 return CollectStatus::LimitExceeded;
 
-            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()});
+            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()}, child_node.destroy_time, child_node.ttl);
         }
 
         return CollectStatus::Ok;
@@ -2343,15 +2347,16 @@ private:
                 return CollectStatus::LimitExceeded;
 
             uncommitted_node->materializeACL(storage.acl_map);
-            addDelta(std::string{node_path}, node_ptr->stats, *uncommitted_node->acls, std::string{node_ptr->getData()});
+            addDelta(std::string{node_path}, node_ptr->stats, *uncommitted_node->acls, std::string{node_ptr->getData()}, node_ptr->destroy_time, node_ptr->ttl);
         }
 
         return CollectStatus::Ok;
     }
 
-    void addDelta(std::string_view path, const NodeStats & stats, Coordination::ACLs acls, std::string data)
+    void addDelta(std::string_view path, const NodeStats & stats, Coordination::ACLs acls, std::string data,
+                  std::optional<int64_t> destroy_time, std::optional<int64_t> ttl)
     {
-        deltas.emplace_front(std::string{path}, zxid, RemoveNodeDelta{/*version=*/-1, stats, std::move(acls), std::move(data)});
+        deltas.emplace_front(std::string{path}, zxid, RemoveNodeDelta{/*version=*/-1, stats, std::move(acls), std::move(data), destroy_time, ttl});
     }
 
     bool checkLimits(const Storage::Node & node)
@@ -3884,7 +3889,7 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
                     new_deltas.emplace_back(
                         ephemeral_path,
                         transaction->zxid,
-                        RemoveNodeDelta{.stat = node->stats, .acls = uncommitted_state.getACLs(ephemeral_path), .data = std::string{node->getData()}});
+                        RemoveNodeDelta{.stat = node->stats, .acls = uncommitted_state.getACLs(ephemeral_path), .data = std::string{node->getData()}, .destroy_time = node->destroy_time, .ttl = node->ttl});
                 }
             }
         };
