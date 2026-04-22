@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 MergeTreeReaderStream::MergeTreeReaderStream(
@@ -81,17 +82,31 @@ void MergeTreeReaderStream::init()
 
     auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        ReadPipeline pipeline;
-        data_part_storage->prepareRead(
+        try
+        {
+            ReadPipeline pipeline;
+            data_part_storage->prepareRead(
+                path_prefix + data_file_extension,
+                read_settings,
+                estimated_sum_mark_range_bytes,
+                pipeline);
+
+            if (!pipeline.hasSource())
+                return std::make_unique<ReadBufferFromEmptyFile>();
+
+            return pipeline.build(read_settings);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                throw;
+        }
+
+        /// Fallback for disks that don't support prepareRead (e.g. DiskBackup).
+        return data_part_storage->readFile(
             path_prefix + data_file_extension,
             read_settings,
-            estimated_sum_mark_range_bytes,
-            pipeline);
-
-        if (!pipeline.hasSource())
-            return std::make_unique<ReadBufferFromEmptyFile>();
-
-        return pipeline.build(read_settings);
+            estimated_sum_mark_range_bytes);
     };
 
     /// Initialize the objects that shall be used to perform read operations.
@@ -114,17 +129,30 @@ void MergeTreeReaderStream::init()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
-                ReadPipeline pipeline;
-                data_part_storage->prepareRead(
+                try
+                {
+                    ReadPipeline pipeline;
+                    data_part_storage->prepareRead(
+                        path_prefix + data_file_extension,
+                        read_settings,
+                        estimated_sum_mark_range_bytes,
+                        pipeline);
+
+                    if (!pipeline.hasSource())
+                        return std::make_unique<ReadBufferFromEmptyFile>();
+
+                    return pipeline.build(read_settings);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                        throw;
+                }
+
+                return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes,
-                    pipeline);
-
-                if (!pipeline.hasSource())
-                    return std::make_unique<ReadBufferFromEmptyFile>();
-
-                return pipeline.build(read_settings);
+                    estimated_sum_mark_range_bytes);
             },
             uncompressed_cache,
             settings.allow_different_codecs);
