@@ -1156,7 +1156,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-
+            {"enable_v2_lightweight_update_patches", true, true, "New setting to enable v2 lightweight update patches."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
@@ -1168,7 +1168,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 1800, "Increase default replica set background update interval to 30 minutes"},
             {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"compress_per_column_in_compact_parts", true, true, "New setting"},
-            {"enable_v2_lightweight_update_patches", true, true, "New setting to enable v2 lightweight update patches."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {

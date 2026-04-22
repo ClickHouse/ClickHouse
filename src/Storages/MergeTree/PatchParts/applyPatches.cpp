@@ -567,25 +567,28 @@ ALWAYS_INLINE int compareSortKeyRows(
     return 0;
 }
 
-/// Galloping (exponential) partition-point search on the main side: returns the smallest `i` in
-/// `[begin, end)` such that `compareSortKeyRows(main[i], patch[p_row])` is `< 0` when
+/// Galloping (exponential) partition-point search: returns the smallest `i` in `[begin, end)`
+/// such that `compareSortKeyRows(search_key[i], pivot_key[pivot_row])` is `< 0` when
 /// `is_lower_bound == true` (lower bound), or `>= 0` when `is_lower_bound == false` (upper bound).
-/// When `patch_rows ≪ main_rows`, this collapses merge complexity from `O(m + p)` to
-/// `O(p log(m/p))` comparisons, matching the information-theoretic optimum for merging unbalanced
-/// sorted streams. With `gap = 1` (dense patches) it degrades to 1–2 extra comparisons per step
-/// vs. linear scan, so no adaptive fallback is needed.
+/// Used in two directions here: driven from the patch side into main to advance past runs of
+/// equal main keys, and driven from the main side into patch to skip patch rows that fall
+/// before/after the main block's key range when a patch is shared across several main blocks.
+/// When one side is much smaller, this collapses merge complexity from `O(m + p)` to
+/// `O(min(m, p) * log(max(m, p) / min(m, p)))` comparisons, matching the information-theoretic
+/// optimum for merging unbalanced sorted streams. With `gap = 1` (dense patches) it degrades to
+/// 1–2 extra comparisons per step vs. linear scan, so no adaptive fallback is needed.
 template <bool is_lower_bound>
 ALWAYS_INLINE size_t gallopingBinarySearch(
-    const ColumnRawPtrs & main_sorting_key,
+    const ColumnRawPtrs & search_key,
     size_t begin,
     size_t end,
-    const ColumnRawPtrs & patch_sorting_key,
-    size_t patch_row,
+    const ColumnRawPtrs & pivot_key,
+    size_t pivot_row,
     const std::vector<bool> & reverse_flags)
 {
     auto compare = [&](size_t i)
     {
-        int res = compareSortKeyRows(main_sorting_key, i, patch_sorting_key, patch_row, reverse_flags);
+        int res = compareSortKeyRows(search_key, i, pivot_key, pivot_row, reverse_flags);
         if constexpr (is_lower_bound)
             return res < 0;
         else
@@ -666,7 +669,13 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     /// block on both sides. We fall through to the hash-map branch and build a map over the full
     /// patch — this mirrors today's Join-mode memory profile exactly, by user-locked decision.
     size_t main_idx = 0;
-    size_t patch_idx = 0;
+
+    /// A single patch block can be shared across several main blocks, so it often carries a long
+    /// prefix of rows whose sort key is strictly below `main[0]`. Those rows cannot match anything
+    /// in this main block. Without this jump, each one costs a full pass through the merge loop
+    /// (galloping search on main returns 0, we compare, we `++patch_idx`) — `O(prefix)` work. One
+    /// galloping binary search on the patch side finds the first candidate in `O(log prefix)`.
+    size_t patch_idx = gallopingBinarySearch<true>(patch_sorting_key, 0, patch_rows, main_sorting_key, 0, reverse_flags);
 
     /// The patch stream is typically much smaller than the main stream, so we drive the merge
     /// from the patch side using galloping search into main. This skips over long runs of main
