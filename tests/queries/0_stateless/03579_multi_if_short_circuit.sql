@@ -29,3 +29,11 @@ SELECT and(materialize(0), if(0, toFixedString('str_1', 5), [1, 2, 3]) IS NOT NU
 -- Sanity: valid constant folding paths still work.
 SELECT if(1, 2, 3);
 SELECT multiIf(1, 'a', 0, 'b', 'c');
+
+-- Regression: constant multiIf must preserve common-supertype semantics.
+-- The early-fold path must fall through when dead branches resolve cleanly, so that
+-- FunctionMultiIf::build runs normal type unification instead of replacing the node
+-- with the (narrower) winning branch.
+SELECT toTypeName(multiIf(1, toUInt8(1), toUInt16(2)));
+SELECT toTypeName(multiIf(0, toUInt8(1), 1, toUInt16(2), toUInt32(3)));
+SELECT toTypeName(multiIf(1, toNullable(toUInt8(1)), toUInt16(2)));

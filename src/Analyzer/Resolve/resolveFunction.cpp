@@ -520,24 +520,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /** Handle multiIf analogously to the `if` special-case above: when every condition up to
-      * the selected branch is a compile-time constant, replace the whole multiIf node with its
-      * live branch and swallow analysis errors in the statically unreachable branches. This
-      * matches documented short-circuit semantics for queries like
-      *     WITH 0 AS n SELECT multiIf(n = 0, 0, intDiv(100, n))
-      * whose dead branch would otherwise fail eager constant folding at analysis time.
-      *
-      * An outer guard on `IFunctionBase::isShortCircuit` at the main fold gate is not sufficient:
-      * the failing expression (e.g. `intDiv(100, 0)`) is recursively resolved as part of the
-      * multiIf arguments long before control returns to that gate, so its exception escapes
-      * before any short-circuit attribute could be consulted. Likewise, relying on runtime
-      * short-circuit alone does not help because `FunctionMultiIf::executeImpl` on all-constant
-      * inputs evaluates every branch eagerly.
+      * the selected branch is a compile-time constant and resolving the statically unreachable
+      * branches throws, replace the whole multiIf node with its live branch. Mirrors the `if`
+      * special-case: the fall-through path leaves the node intact so that
+      * `FunctionMultiIf::build` performs normal common-supertype unification — replacing
+      * unconditionally would bypass it (e.g. `toTypeName(multiIf(1, toUInt8(1), toUInt16(2)))`
+      * must stay `UInt16`, not collapse to `UInt8`).
       *
       * multiIf(cond1, val1, cond2, val2, ..., condN, valN, else): arity is odd and >= 3.
       * Walk conditions left to right. When a condition is a true constant the corresponding
-      * value becomes the live branch; when a condition is a false constant the corresponding
-      * value is dead. If all conditions are false constants the else branch is live. Once a
-      * non-constant condition is seen folding stops and the generic path takes over.
+      * value becomes the live branch; when a condition is a false constant the paired value is
+      * dead. If every condition is a false constant the else branch is live. Once a
+      * non-constant condition is seen we fall through to the generic path.
       */
     if (is_special_function_multi_if && !function_node_ptr->getArguments().getNodes().empty())
     {
@@ -581,16 +575,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Constant false: the paired value is unreachable at run time.
             }
 
-            /// Only fold when the winner is statically determined. If a non-constant condition
-            /// was encountered we fall through to the generic path unchanged — attempting a
-            /// partial fold of earlier dead values would have no net effect, because the
-            /// generic resolver does not cache failed resolutions and would re-throw the same
-            /// exceptions on its own traversal.
+            /// Only fold when the winner is statically determined. Otherwise fall through to
+            /// the generic path which resolves the remaining arguments and lets
+            /// `FunctionMultiIf::build` run normal type unification.
             if (!stopped_on_nonconstant)
             {
-                /// Resolve every branch that cannot execute. Swallow analysis errors:
-                /// the runtime never evaluates these expressions.
-                auto try_resolve_dead_branch = [&scope, allow_niladic_functions, this](QueryTreeNodePtr & branch)
+                /// Try to resolve every dead branch. If any throws we apply the fold, mirroring
+                /// the `if` special-case: only then do we replace the node and swallow the
+                /// analysis error in the unreachable branch. If every dead branch resolves
+                /// cleanly we fall through so that normal type inference (common-supertype
+                /// unification) still runs on the full `multiIf`.
+                bool apply_constant_multi_if_optimization = false;
+
+                auto try_resolve_dead_branch = [&](QueryTreeNodePtr & branch)
                 {
                     try
                     {
@@ -600,11 +597,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             false /*allow_table_expression*/,
                             allow_niladic_functions);
                     }
-                    catch (const Exception &) // NOLINT(bugprone-empty-catch)
+                    catch (const Exception &)
                     {
-                        /// Intentionally swallowed: this branch is statically unreachable
-                        /// under the known-constant conditions above, so analysis errors
-                        /// in it must not abort the query.
+                        apply_constant_multi_if_optimization = true;
                     }
                 };
 
@@ -617,8 +612,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (val_idx == winner_index)
                         continue;
 
-                    /// Earlier pairs already had their condition resolved (constant false).
-                    /// Only the paired value is dead.
+                    /// Earlier pairs already had their condition resolved (constant false);
+                    /// only the paired value is dead.
                     if (val_idx < winner_index)
                     {
                         try_resolve_dead_branch(multi_if_args[val_idx]);
@@ -635,14 +630,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (found_true_branch)
                     try_resolve_dead_branch(multi_if_args[else_index]);
 
-                /// Resolve the live branch normally and replace the whole multiIf node with it.
-                auto result_projection_names = resolveExpressionNode(multi_if_args[winner_index],
-                    scope,
-                    false /*allow_lambda_expression*/,
-                    false /*allow_table_expression*/,
-                    allow_niladic_functions);
-                node = std::move(multi_if_args[winner_index]);
-                return result_projection_names;
+                if (apply_constant_multi_if_optimization)
+                {
+                    /// Resolve the live branch normally and replace the whole multiIf node with it.
+                    auto result_projection_names = resolveExpressionNode(multi_if_args[winner_index],
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/,
+                        allow_niladic_functions);
+                    node = std::move(multi_if_args[winner_index]);
+                    return result_projection_names;
+                }
+                /// All dead branches resolved cleanly: fall through to the generic path so that
+                /// `FunctionMultiIf::build` can perform common-supertype unification.
             }
         }
     }
@@ -1652,25 +1652,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// Even though whole expression is constant, code handling ASOF JOIN may expect presence of comparison function,
             /// and consider query as malformed if we replace it to constant.
             allow_constant_folding = false;
-        }
-
-        /// Disable constant folding for short-circuit functions (e.g. `if`, `multiIf`, `and`, `or`, `dictGetOrDefault`).
-        ///
-        /// Eagerly evaluating such functions during analysis defeats their short-circuit semantics:
-        /// an argument that would never be evaluated at runtime (e.g. the `else` branch when the condition
-        /// is a constant truthy value) may still be executed here and raise an exception, e.g.
-        ///   SELECT multiIf(1, 1, intDiv(1, 0))
-        /// must return `1`, not throw a division-by-zero error.
-        ///
-        /// The execution pipeline (`ExpressionActions::execute` / `ColumnFunction`) honors short-circuit
-        /// evaluation, so leaving the function un-folded here yields the correct behavior without any
-        /// additional handling. The fold is skipped regardless of whether all arguments happen to be
-        /// constants at this point, because folding with constant arguments still forces eager evaluation
-        /// of every branch.
-        {
-            IFunctionBase::ShortCircuitSettings short_circuit_settings;
-            if (function_base->isShortCircuit(short_circuit_settings, argument_columns.size()))
-                allow_constant_folding = false;
         }
 
         /** If function is suitable for constant folding try to convert it to constant.

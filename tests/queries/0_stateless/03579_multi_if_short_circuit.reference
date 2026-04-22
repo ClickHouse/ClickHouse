@@ -5,3 +5,6 @@ ok
 0
 2
 a
+UInt16
+UInt32
+Nullable(UInt16)
