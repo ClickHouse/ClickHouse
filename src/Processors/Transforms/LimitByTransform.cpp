@@ -35,7 +35,7 @@ struct GroupingKeys
 };
 
 /// Collect grouping keys whose header-sample column is not `ColumnConst`.
-/// Constant columns does not help distinguish groups because they have the same value on every row.
+/// Constant columns do not help distinguish groups because they have the same value on every row.
 GroupingKeys filterNonConstKeys(const SharedHeader & header, const Names & column_names)
 
 {
