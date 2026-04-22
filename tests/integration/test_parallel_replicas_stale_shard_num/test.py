@@ -6,9 +6,9 @@ cluster.
 Root cause: the cluster override in ReadFromRemote::addPipe that aligns
 _shard_num with cluster_for_parallel_replicas only fires when
 canUseTaskBasedParallelReplicas()=true on the initiator. When the initiator
-has PR disabled (e.g. max_parallel_replicas=1) but a remote node has a
-constraint that silently clamps the setting to a higher value, the remote
-enables PR with a stale _shard_num that exceeds shard_count of
+sends max_parallel_replicas=1 (PR disabled) but the remote node has a
+max_parallel_replicas constraint <min>2</min> that silently clamps 1→2,
+the remote enables PR with a stale _shard_num that exceeds shard_count of
 cluster_for_parallel_replicas.
 
 Trigger scenario (max_parallel_replicas constraint mismatch):
