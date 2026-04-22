@@ -478,11 +478,11 @@ def main():
                 #             "WARNING: Failed to start log export"
                 #         )
                 #         print("Failed to start log export")
-                if not CH.create_minio_log_tables():
-                    info.add_workflow_report_message(
-                        "WARNING: Failed to create minio log tables"
-                    )
-                    print("Failed to create minio log tables")
+                # if not CH.create_minio_log_tables():
+                #     info.add_workflow_report_message(
+                #         "WARNING: Failed to create minio log tables"
+                #     )
+                #     print("Failed to create minio log tables")
 
                 if has_stateful_tests:
                     res = (
@@ -685,15 +685,14 @@ def main():
             if success_after_rerun or failed_after_rerun:
                 for test_case in test_result.results:
                     if test_case.name in success_after_rerun:
-                        if is_llvm_coverage:
-                            print(
-                                f"Test {test_case.name} has succeeded after rerun. Mark it as OK"
-                            )
-                            test_case.remove_label(Result.Status.FAILED)
-                            test_case.remove_label(Result.StatusExtended.FAIL)
-                            test_case.set_status(Result.StatusExtended.OK)
-                        else:
-                            test_case.set_label(Result.Label.OK_ON_RETRY)
+                        # NOTE (strtgbb): Tweaked to always mark a test that is ok on retry as ok. We want to ignore flaky tests.
+                        print(
+                            f"Test {test_case.name} has succeeded after rerun. Mark it as OK"
+                        )
+                        test_case.remove_label(Result.Status.FAILED)
+                        test_case.remove_label(Result.StatusExtended.FAIL)
+                        test_case.set_status(Result.StatusExtended.OK)
+                        test_case.set_label(Result.Label.OK_ON_RETRY)
                     elif test_case.name in failed_after_rerun:
                         test_case.set_label(Result.Label.FAILED_ON_RETRY)
             results.append(retry_result)
