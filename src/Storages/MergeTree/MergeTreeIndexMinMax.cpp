@@ -738,6 +738,57 @@ bool isNegInfNull(const Field & f)
 
 }
 
+namespace
+{
+
+/// Classify an index column's type for the native-width read fast path. Any Nullable type (or
+/// wrapper that prefixes bytes onto the value) is excluded: the v1 format inserts a per-value
+/// is_null byte, and v2 uses a Null-tagged Field for all-NULL granules. The slow path handles
+/// both correctly; we only take the fast path when the on-disk layout is exactly a raw POD
+/// ColumnVector<T> element per min / per max.
+MergeTreeIndexBulkGranulesMinMaxFast::FastKind classifyFastKind(const IDataType & type)
+{
+    using FastKind = MergeTreeIndexBulkGranulesMinMaxFast::FastKind;
+    if (type.isNullable())
+        return FastKind::None;
+    WhichDataType which(type);
+    if (which.isUInt8() || which.isEnum8())
+        return FastKind::U8;
+    if (which.isUInt16() || which.isDate())
+        return FastKind::U16;
+    if (which.isUInt32() || which.isDateTime())
+        return FastKind::U32;
+    if (which.isUInt64())
+        return FastKind::U64;
+    if (which.isInt8())
+        return FastKind::I8;
+    if (which.isInt16() || which.isEnum16())
+        return FastKind::I16;
+    if (which.isInt32() || which.isDate32())
+        return FastKind::I32;
+    if (which.isInt64())
+        return FastKind::I64;
+    if (which.isFloat32())
+        return FastKind::F32;
+    if (which.isFloat64())
+        return FastKind::F64;
+    return FastKind::None;
+}
+
+template <typename T>
+ALWAYS_INLINE void fastReadPair(IColumn & min_col, IColumn & max_col, ReadBuffer & istr)
+{
+    auto & min_data = assert_cast<ColumnVector<T> &>(min_col).getData();
+    auto & max_data = assert_cast<ColumnVector<T> &>(max_col).getData();
+    T raw;
+    readPODBinary(raw, istr);
+    min_data.push_back(raw);
+    readPODBinary(raw, istr);
+    max_data.push_back(raw);
+}
+
+}
+
 MergeTreeIndexBulkGranulesMinMaxFast::MergeTreeIndexBulkGranulesMinMaxFast(
     const Block & index_sample_block_, size_t size_hint)
     : index_sample_block(index_sample_block_)
@@ -759,10 +810,16 @@ MergeTreeIndexBulkGranulesMinMaxFast::MergeTreeIndexBulkGranulesMinMaxFast(
         pc.max_col = type->createColumn();
         pc.min_col->reserve(size_hint);
         pc.max_col->reserve(size_hint);
-        pc.min_is_neg_inf.reserve(size_hint);
-        pc.min_is_pos_inf.reserve(size_hint);
-        pc.max_is_neg_inf.reserve(size_hint);
-        pc.max_is_pos_inf.reserve(size_hint);
+        /// inf flag arrays are only populated on the slow path; skip the reserve when we know
+        /// we'll never touch them.
+        pc.fast_kind = classifyFastKind(*type);
+        if (pc.fast_kind == FastKind::None)
+        {
+            pc.min_is_neg_inf.reserve(size_hint);
+            pc.min_is_pos_inf.reserve(size_hint);
+            pc.max_is_neg_inf.reserve(size_hint);
+            pc.max_is_pos_inf.reserve(size_hint);
+        }
     }
 }
 
@@ -781,9 +838,31 @@ void MergeTreeIndexBulkGranulesMinMaxFast::deserializeBinary(
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto & pc = cols[i];
-        const auto & dtype = datatypes[i];
 
-        /// Mirrors MergeTreeIndexGranuleMinMax::deserializeBinary.
+        /// Fast path: the column is a fixed-width numeric, non-Nullable type. The on-disk
+        /// serialization in v1 and v2 is the raw native bytes, so we can skip the `Field`
+        /// round-trip and push straight into `ColumnVector<T>::getData()`.
+        if (pc.fast_kind != FastKind::None)
+        {
+            switch (pc.fast_kind)
+            {
+                case FastKind::U8:  fastReadPair<UInt8>(*pc.min_col, *pc.max_col, istr); break;
+                case FastKind::U16: fastReadPair<UInt16>(*pc.min_col, *pc.max_col, istr); break;
+                case FastKind::U32: fastReadPair<UInt32>(*pc.min_col, *pc.max_col, istr); break;
+                case FastKind::U64: fastReadPair<UInt64>(*pc.min_col, *pc.max_col, istr); break;
+                case FastKind::I8:  fastReadPair<Int8>(*pc.min_col, *pc.max_col, istr); break;
+                case FastKind::I16: fastReadPair<Int16>(*pc.min_col, *pc.max_col, istr); break;
+                case FastKind::I32: fastReadPair<Int32>(*pc.min_col, *pc.max_col, istr); break;
+                case FastKind::I64: fastReadPair<Int64>(*pc.min_col, *pc.max_col, istr); break;
+                case FastKind::F32: fastReadPair<Float32>(*pc.min_col, *pc.max_col, istr); break;
+                case FastKind::F64: fastReadPair<Float64>(*pc.min_col, *pc.max_col, istr); break;
+                case FastKind::None: chassert(false); break;
+            }
+            continue;
+        }
+
+        /// Slow path: mirrors `MergeTreeIndexGranuleMinMax::deserializeBinary`.
+        const auto & dtype = datatypes[i];
         switch (version)
         {
             case 1:

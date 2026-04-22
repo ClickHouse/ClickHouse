@@ -148,6 +148,18 @@ struct MergeTreeIndexBulkGranulesMinMaxFast final : public IMergeTreeIndexBulkGr
     explicit MergeTreeIndexBulkGranulesMinMaxFast(const Block & index_sample_block_, size_t size_hint);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
+    /// Which native type we can read with `readPODBinary` straight into
+    /// `ColumnVector<T>::Container`, skipping the `Field` round-trip. Populated at
+    /// `PerColumn` construction time; stays `None` for columns we can't (or won't) fast-read
+    /// (`Nullable`, `Decimal`, `String`, `UUID`, `DateTime64`, `IPv4/6`, ...).
+    enum class FastKind : UInt8
+    {
+        None = 0,
+        U8, U16, U32, U64,
+        I8, I16, I32, I64,
+        F32, F64,
+    };
+
     struct PerColumn
     {
         /// Columns of the index column's exact DataType, one row per deserialized granule.
@@ -160,6 +172,8 @@ struct MergeTreeIndexBulkGranulesMinMaxFast final : public IMergeTreeIndexBulkGr
         PaddedPODArray<UInt8> min_is_pos_inf;
         PaddedPODArray<UInt8> max_is_neg_inf;
         PaddedPODArray<UInt8> max_is_pos_inf;
+        /// Non-`None` enables the raw-bytes read path in `deserializeBinary`.
+        FastKind fast_kind = FastKind::None;
     };
 
     Block index_sample_block;
