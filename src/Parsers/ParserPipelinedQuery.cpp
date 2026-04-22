@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int WITH_TIES_WITHOUT_ORDER_BY;
+}
+
 namespace
 {
 
@@ -28,6 +33,14 @@ enum SQLClauseOrder : int
     ORDER_BY = 5,
     LIMIT_OFFSET = 6
 };
+
+void checkConstraints(ASTSelectQuery & query)
+{
+    if (query.limit_with_ties && !query.orderBy())
+    {
+        throw Exception(ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY, "Can not use WITH TIES without ORDER BY");
+    }
+}
 
 ASTPtr wrapInSubquery(ASTPtr current_query, size_t seqno)
 {
@@ -125,6 +138,8 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     auto wrap_current_query = [&]()
     {
+        checkConstraints(current_query->as<ASTSelectQuery &>());
+
         current_query = wrapInSubquery(current_query, subquery_seqno++)->as<ASTSelectQuery>();
         highest_op = SQLClauseOrder::NONE;
     };
