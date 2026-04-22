@@ -36,4 +36,16 @@ SELECT
     num_sources >= 4
 FROM (EXPLAIN PIPELINE SELECT a FROM t_in_order_splits ORDER BY a);
 
+-- Same check for ReverseOrder (ORDER BY ... DESC).
+SELECT
+    'num_merging_sorted',
+    count() FILTER (WHERE explain LIKE '%MergingSorted%') >= 1,
+    'num_sources',
+    sumIf(
+        toUInt64OrDefault(extract(explain, '× (\d+)'), toUInt64(1)),
+        explain LIKE '%MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder%'
+    ) AS num_sources,
+    num_sources >= 4
+FROM (EXPLAIN PIPELINE SELECT a FROM t_in_order_splits ORDER BY a DESC);
+
 DROP TABLE t_in_order_splits;

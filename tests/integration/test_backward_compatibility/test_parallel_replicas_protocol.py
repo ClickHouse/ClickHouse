@@ -119,5 +119,59 @@ def test_backward_compatability(start_cluster):
             == "99999\n" * 10
         )
 
+    # Split-stream coverage: with parallel_replicas_local_plan = 1 and max_threads > 1 the
+    # initiator splits the in-order read into multiple per-split streams. Verify cross-version
+    # behavior for extra/missing split streams: the initiator may be a newer version that
+    # creates splits the older follower doesn't know about, or vice versa.
+    for node in nodes:
+        assert (
+            node.query(
+                """
+                select a
+                from t
+                order by a
+                limit 10
+                """,
+                settings={
+                    "cluster_for_parallel_replicas": "parallel_replicas",
+                    "max_parallel_replicas": 3,
+                    "allow_experimental_parallel_reading_from_replicas": 1,
+                    "parallel_replicas_for_non_replicated_merge_tree": 1,
+                    "merge_tree_min_rows_for_concurrent_read": 0,
+                    "merge_tree_min_bytes_for_concurrent_read": 0,
+                    "merge_tree_min_read_task_size": 1,
+                    "optimize_read_in_order": 1,
+                    "parallel_replicas_local_plan": 1,
+                    "max_threads": 4,
+                },
+            )
+            == "0\n" * 10
+        )
+
+    for node in nodes:
+        assert (
+            node.query(
+                """
+                select a
+                from t
+                order by a desc
+                limit 10
+                """,
+                settings={
+                    "cluster_for_parallel_replicas": "parallel_replicas",
+                    "max_parallel_replicas": 3,
+                    "allow_experimental_parallel_reading_from_replicas": 1,
+                    "parallel_replicas_for_non_replicated_merge_tree": 1,
+                    "merge_tree_min_rows_for_concurrent_read": 0,
+                    "merge_tree_min_bytes_for_concurrent_read": 0,
+                    "merge_tree_min_read_task_size": 1,
+                    "optimize_read_in_order": 1,
+                    "parallel_replicas_local_plan": 1,
+                    "max_threads": 4,
+                },
+            )
+            == "99999\n" * 10
+        )
+
     for node in nodes:
         node.query("drop table t sync")

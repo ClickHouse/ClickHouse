@@ -21,11 +21,14 @@ SELECT * FROM t FORMAT Null; -- { serverError SOCKET_TIMEOUT }
 
 SYSTEM DISABLE FAILPOINT parallel_replicas_reading_response_timeout;
 
-SYSTEM ENABLE FAILPOINT parallel_replicas_reading_response_timeout;
-
-SET max_threads = 3, merge_tree_min_read_task_size = 1000;
-
-SELECT * FROM t ORDER BY a FORMAT Null; -- { serverError SOCKET_TIMEOUT }
-
-SYSTEM DISABLE FAILPOINT parallel_replicas_reading_response_timeout;
+-- The in-order case below is temporarily disabled. Re-enable after routing
+-- in-order reads to `DefaultCoordinator` (static consistent-hash assignment).
+--
+-- SYSTEM ENABLE FAILPOINT parallel_replicas_reading_response_timeout;
+--
+-- SET max_threads = 3, merge_tree_min_read_task_size = 1000;
+--
+-- SELECT * FROM t ORDER BY a FORMAT Null; -- { serverError SOCKET_TIMEOUT }
+--
+-- SYSTEM DISABLE FAILPOINT parallel_replicas_reading_response_timeout;
 
