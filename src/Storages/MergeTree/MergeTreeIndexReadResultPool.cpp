@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
-#include <base/scope_guard.h>
 
 namespace CurrentMetrics
 {
@@ -354,70 +353,154 @@ template void ProjectionIndexBitmap::add<UInt64>(UInt64 value);
 template void ProjectionIndexBitmap::addBulk<UInt32>(const UInt32 * values, size_t size);
 template void ProjectionIndexBitmap::addBulk<UInt64>(const UInt64 * values, size_t size);
 
-MarkRanges bitmapToMarkRanges(
-    const ProjectionIndexBitmap & bitmap,
-    const MergeTreeIndexGranularity & index_granularity)
+namespace
 {
-    MarkRanges result;
-    size_t prev_mark = SIZE_MAX;
-    const size_t num_marks = index_granularity.getMarksCount();
 
-    /// Only coalesces with the immediately adjacent mark. Seek-distance
-    /// coalescing (merging across sub-`min_marks_for_seek` gaps) is deliberately
-    /// left to `intersectMarkRanges`, so this result stays independent of any
-    /// reader settings and can be cached per-part via `std::call_once`.
-    auto process_offset = [&](UInt64 offset)
+/// Cursor adapter over a 32-bit roaring iterator. `moveTo(target)` seeks the
+/// iterator to the first value >= target in amortized O(1) (bitset containers)
+/// or O(log) (array/run containers) -- critically, without walking the entries
+/// between the current position and `target`.
+///
+/// Mirrors the duck-typed interface of `Roaring64Cursor` so `walkBitmapToMarkRanges`
+/// can be templated over cursor type. Holds an embedded iterator (no heap
+/// allocation); pass by reference, do not copy.
+struct Roaring32Cursor
+{
+    roaring::api::roaring_uint32_iterator_t it;
+
+    explicit Roaring32Cursor(const roaring::api::roaring_bitmap_t * bitmap)
     {
-        size_t mark = index_granularity.getMarkRangeForRowOffset(offset).begin;
-        /// A bitmap offset past the part's rows would emit a mark beyond the
-        /// part -- silently dropped downstream, but a corrupt projection index
-        /// should not reach here. Tripwire for that.
+        roaring_iterator_init(bitmap, &it);
+    }
+
+    bool hasValue() const { return it.has_value; }
+    UInt64 value() const { return it.current_value; }
+
+    void moveTo(UInt64 target)
+    {
+        /// 32-bit bitmap is chosen only when all row offsets fit in UInt32, so
+        /// the saturated target is safe. A target past UInt32::max() can only
+        /// arise at end-of-part and we short-circuit before reaching here.
+        chassert(target <= std::numeric_limits<UInt32>::max());
+        roaring::api::roaring_uint32_iterator_move_equalorlarger(&it, static_cast<UInt32>(target));
+    }
+};
+
+/// Cursor adapter over a 64-bit roaring iterator. Heap-allocated via
+/// `roaring64_iterator_create`; freed in the destructor.
+struct Roaring64Cursor
+{
+    roaring::api::roaring64_iterator_t * it;
+
+    explicit Roaring64Cursor(const roaring::api::roaring64_bitmap_t * bitmap)
+        : it(roaring::api::roaring64_iterator_create(bitmap))
+    {
+        if (!it)
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failed to allocate roaring64 iterator");
+    }
+
+    Roaring64Cursor(const Roaring64Cursor &) = delete;
+    Roaring64Cursor & operator=(const Roaring64Cursor &) = delete;
+
+    ~Roaring64Cursor() { roaring::api::roaring64_iterator_free(it); }
+
+    bool hasValue() const { return roaring::api::roaring64_iterator_has_value(it); }
+    UInt64 value() const { return roaring::api::roaring64_iterator_value(it); }
+    void moveTo(UInt64 target) { roaring::api::roaring64_iterator_move_equalorlarger(it, target); }
+};
+
+/// Walk a roaring bitmap, emitting one mark range per granule that contains at
+/// least one hit. The work is O(number_of_hit_granules), not O(cardinality):
+/// after emitting a mark we seek the cursor past that granule's row range so a
+/// dense cluster inside one granule costs one probe instead of one step per
+/// entry.
+///
+/// Two granularity paths:
+///   - Constant: `mark = offset / gr`; seek to `(mark + 1) * gr`. One divide,
+///     no index-side lookups.
+///   - Adaptive: keep a monotonic cursor over the part's mark rows; since the
+///     bitmap emits values in ascending order we only ever advance forward
+///     through `marks_rows_partial_sums`, amortising per-offset `lower_bound`
+///     away.
+template <typename Cursor>
+void walkBitmapToMarkRanges(
+    Cursor & cursor,
+    const MergeTreeIndexGranularity & index_granularity,
+    MarkRanges & result)
+{
+    const size_t num_marks = index_granularity.getMarksCount();
+    if (num_marks == 0 || !cursor.hasValue())
+        return;
+
+    auto append_mark = [&](size_t mark)
+    {
         chassert(mark < num_marks);
-
-        if (mark == prev_mark)
-            return; /// Same granule as previous offset, skip.
-
-        prev_mark = mark;
-
+        /// Only coalesces with the immediately adjacent mark. Seek-distance
+        /// coalescing (merging across sub-`min_marks_for_seek` gaps) is
+        /// deliberately left to `intersectMarkRanges`, so this result stays
+        /// independent of any reader settings and can be cached per-part via
+        /// `std::call_once`.
         if (!result.empty() && result.back().end == mark)
             result.back().end = mark + 1;
         else
             result.emplace_back(mark, mark + 1);
     };
 
-    /// Use batch read APIs for efficiency -- reads up to `batch_size` values per call
-    /// instead of advancing the iterator one value at a time.
-    static constexpr size_t batch_size = 256;
+    if (auto constant_opt = index_granularity.getConstantGranularity(); constant_opt.has_value())
+    {
+        const size_t gr = *constant_opt;
+        chassert(gr > 0);
+        while (cursor.hasValue())
+        {
+            const size_t mark = std::min<size_t>(cursor.value() / gr, num_marks - 1);
+            append_mark(mark);
+
+            if (mark + 1 == num_marks)
+                break; /// No granule past the last; any later hits are bogus.
+
+            cursor.moveTo(static_cast<UInt64>(mark + 1) * gr);
+        }
+        return;
+    }
+
+    /// Adaptive: monotonic cursor through marks, driven by the bitmap's ascending
+    /// offsets.
+    size_t current_mark = 0;
+    size_t current_mark_end_row = index_granularity.getMarkRows(0);
+    while (cursor.hasValue())
+    {
+        const UInt64 offset = cursor.value();
+        while (offset >= current_mark_end_row && current_mark + 1 < num_marks)
+        {
+            ++current_mark;
+            current_mark_end_row += index_granularity.getMarkRows(current_mark);
+        }
+        append_mark(current_mark);
+
+        if (current_mark + 1 == num_marks)
+            break;
+
+        cursor.moveTo(current_mark_end_row);
+    }
+}
+
+}
+
+MarkRanges bitmapToMarkRanges(
+    const ProjectionIndexBitmap & bitmap,
+    const MergeTreeIndexGranularity & index_granularity)
+{
+    MarkRanges result;
 
     if (bitmap.type == ProjectionIndexBitmap::BitmapType::Bitmap32)
     {
-        UInt32 buf[batch_size];
-        roaring::api::roaring_uint32_iterator_t it;
-        roaring_iterator_init(bitmap.data.bitmap32, &it);
-        while (it.has_value)
-        {
-            uint32_t n = roaring_uint32_iterator_read(&it, buf, batch_size);
-            for (uint32_t i = 0; i < n; ++i)
-                process_offset(buf[i]);
-        }
+        Roaring32Cursor cursor(bitmap.data.bitmap32);
+        walkBitmapToMarkRanges(cursor, index_granularity, result);
     }
     else
     {
-        auto * it = roaring::api::roaring64_iterator_create(bitmap.data.bitmap64);
-        if (!it)
-            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failed to allocate roaring64 iterator");
-        /// RAII: `process_offset` can throw on OOM (devector emplace_back), and
-        /// the iterator owns a heap allocation. Without the guard an exception
-        /// path would leak.
-        SCOPE_EXIT(roaring::api::roaring64_iterator_free(it));
-
-        UInt64 buf[batch_size];
-        while (roaring::api::roaring64_iterator_has_value(it))
-        {
-            uint64_t n = roaring::api::roaring64_iterator_read(it, buf, batch_size);
-            for (uint64_t i = 0; i < n; ++i)
-                process_offset(buf[i]);
-        }
+        Roaring64Cursor cursor(bitmap.data.bitmap64);
+        walkBitmapToMarkRanges(cursor, index_granularity, result);
     }
 
     return result;
