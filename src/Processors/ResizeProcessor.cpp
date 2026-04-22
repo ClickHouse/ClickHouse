@@ -94,10 +94,10 @@ IProcessor::Status ResizeProcessor::prepare(const UpdatedInputPorts & updated_in
 
     while (!waiting_outputs.empty() && !inputs_with_data.empty())
     {
-        auto & waiting_output = waiting_outputs.front();
+        auto * waiting_output = waiting_outputs.front();
         waiting_outputs.pop();
 
-        auto & input_with_data = inputs_with_data.front();
+        auto * input_with_data = inputs_with_data.front();
         inputs_with_data.pop();
 
         waiting_output->pushData(input_with_data->pullData());
