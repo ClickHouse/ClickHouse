@@ -94,6 +94,10 @@ public:
         AsyncReadCountersPtr async_read_counters = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log = nullptr);
 
+    /// Override the buffer size used by gather and async prefetch in build.
+    /// Used by DiskObjectStorage to implement prefer_bigger_buffer_size.
+    void setBufferSize(size_t size) { buffer_size_override = size; }
+
     /// -- Decryption stage --
     /// The key_finder callback is called at build time with the key fingerprint
     /// read from the encryption header. It must return the decryption key.
@@ -162,6 +166,7 @@ private:
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::vector<DecryptionStage> decryption_stages;
     std::optional<DecompressionStage> decompression;
+    std::optional<size_t> buffer_size_override;
 };
 
 }

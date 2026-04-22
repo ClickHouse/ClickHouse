@@ -844,6 +844,15 @@ void DiskObjectStorage::prepareRead(
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
     }
+
+    /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
+    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
+        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+        && storage->supportsCache()
+        && read_settings.enable_filesystem_cache;
+
+    if (prefer_bigger_buffer_size)
+        pipeline.setBufferSize(std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
@@ -853,18 +862,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 {
     ReadPipeline pipeline;
     prepareRead(path, settings, read_hint, pipeline);
-
-    /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
-    auto build_settings = settings;
-    bool prefer_bigger_buffer_size = settings.filesystem_cache_prefer_bigger_buffer_size
-        && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-        && object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache()
-        && settings.enable_filesystem_cache;
-
-    if (prefer_bigger_buffer_size)
-        build_settings.remote_fs_buffer_size = std::max<size_t>(settings.remote_fs_buffer_size, settings.prefetch_buffer_size);
-
-    return pipeline.build(build_settings);
+    return pipeline.build(settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(

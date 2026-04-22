@@ -157,7 +157,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
         bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value() || distributed_cache;
 
         size_t total_objects_size = getTotalSize(source->objects);
-        size_t buffer_size = use_external_buffer ? 0 : settings.remote_fs_buffer_size;
+        size_t effective_buffer_size = buffer_size_override.value_or(settings.remote_fs_buffer_size);
+        size_t buffer_size = use_external_buffer ? 0 : effective_buffer_size;
         if (!use_external_buffer && total_objects_size > 0)
             buffer_size = std::min(buffer_size, total_objects_size);
 
@@ -202,7 +203,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
     if (async_prefetch && async_prefetch->reader)
     {
         size_t total_size = getTotalSize(source->objects);
-        size_t async_buffer_size = settings.remote_fs_buffer_size;
+        size_t async_buffer_size = buffer_size_override.value_or(settings.remote_fs_buffer_size);
         if (total_size > 0)
             async_buffer_size = std::min(async_buffer_size, total_size);
 
