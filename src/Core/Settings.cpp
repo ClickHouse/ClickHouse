@@ -1883,6 +1883,18 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
     DECLARE(Bool, secondary_indices_enable_bulk_filtering, true, R"(
 Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
 )", 0) \
+    DECLARE(Bool, use_minmax_index_bulk_filtering, false, R"(
+Evaluate minmax skip indexes across every granule of a part in a single vectorized pass, instead of one granule at a time. Benefits queries with wide parts and fine-grained (e.g. `GRANULARITY 1`) minmax indexes, where per-granule evaluation cost dominates.
+
+Some condition shapes (space-filling curves, polygon predicates, non-collapsed `IN`, relaxed predicates such as `match`) are not eligible for the vectorized path and fall back to per-granule evaluation.
+
+Composes with [use_skip_indexes_for_disjunctions](#use_skip_indexes_for_disjunctions) for the common observability shape `(time_range) AND (OR over another column)`. Queries where the index's own predicate contains an `OR` fall back to per-granule evaluation to preserve disjunction-merge precision.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
 )", 0) \

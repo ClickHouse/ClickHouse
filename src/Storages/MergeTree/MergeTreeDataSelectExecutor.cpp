@@ -1935,6 +1935,33 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     /// Whether we should use a more optimal filtering.
     bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions;
 
+    /// MinMax supportsBulkFiltering() returns true, but the bulk path is gated on a dedicated
+    /// session setting so it can be rolled out incrementally. When the condition's RPN cannot
+    /// be lowered into a column-engine expression (monotonic function chains, space-filling
+    /// curves, polygons, bloom filters, non-collapsed IN_SET, relaxed predicates), the bulk
+    /// path's `getPossibleGranules` would conservatively return "all granules pass" without
+    /// any pruning benefit. In that case skip bulk entirely and let the generic scalar path
+    /// evaluate granules on demand.
+    ///
+    /// The disjunction-merge path is compatible with bulk for this index when the projected
+    /// per-index condition is a pure conjunction: bulk does not populate the partial-
+    /// disjunction bitset, but for AND-only index conditions the bitset's `true` default
+    /// matches what per-granule evaluation would have written, so merge precision is
+    /// preserved. We therefore re-enable bulk for minmax in that case even when the outer
+    /// blanket disabled it for the disjunction setting.
+    const auto * minmax_index = typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get());
+    const auto * minmax_cond = minmax_index ? typeid_cast<const MergeTreeIndexConditionMinMax *>(condition.get()) : nullptr;
+    if (minmax_index)
+    {
+        const bool minmax_bulk_applicable
+            = reader_settings.secondary_indices_enable_bulk_filtering
+            && reader_settings.use_minmax_index_bulk_filtering
+            && minmax_cond
+            && minmax_cond->hasBulkFastPath()
+            && (!use_skip_indexes_for_disjunctions || minmax_cond->indexConditionHasOnlyConjunctions());
+        bulk_filtering = minmax_bulk_applicable;
+    }
+
     auto skip_index_granularity = index_helper->index.granularity;
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
 

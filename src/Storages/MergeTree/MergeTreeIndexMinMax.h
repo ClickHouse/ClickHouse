@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -64,8 +65,48 @@ public:
 
     std::string getDescription() const override;
 
+    /// Bulk entry point: evaluates the condition on every granule held by the provided bulk
+    /// container in a single column-wise pass via the pre-built ActionsDAG. Returns the sorted
+    /// list of surviving granule numbers. When the DAG couldn't be built (unsupported RPN
+    /// shape), returns "all granules pass" and the caller is expected to have already opted
+    /// out via `hasBulkFastPath()`.
+    FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
+
+    /// Whether the ActionsDAG-based bulk fast path is available. When true,
+    /// `getPossibleGranules` will produce useful per-granule filtering; when false, the
+    /// bulk call would just return "all granules pass" and the caller should skip it to
+    /// avoid paying deserialization cost for no benefit.
+    bool hasBulkFastPath() const { return minmax_actions != nullptr; }
+
+    /// Whether the per-index condition's RPN is a pure conjunction of leaves (no
+    /// FUNCTION_OR). Used to decide if bulk evaluation is precision-preserving when
+    /// running alongside `use_skip_indexes_for_disjunctions`: bulk does not populate
+    /// the partial-disjunction bitset, so any leaves this index owns stay at the
+    /// bitset's `true` default. When the projected per-index condition is AND-only,
+    /// those defaults coincide with the values per-granule evaluation would have
+    /// written, and merge precision is preserved.
+    bool indexConditionHasOnlyConjunctions() const { return condition.hasOnlyConjunctions(); }
+
+
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
+    /// Pre-built ExpressionActions that evaluates the KeyCondition against paired
+    /// (min_c, max_c) columns per index column, producing two UInt8 output columns
+    /// `__minmax_can_be_true` and `__minmax_can_be_false`. Non-null when every RPN
+    /// element was representable as a column-engine expression (no monotonic chains,
+    /// no space-filling curves, no polygon, no relaxed predicates, no `FUNCTION_IN_SET`
+    /// that didn't collapse to a single range, no bloom filter).
+    ///
+    /// This is the fast path that powers `getPossibleGranules` (bulk) and optionally
+    /// `mayBeTrueOnGranule` (scalar, 1-row block). When null, the caller falls back
+    /// to the generic `Field`-based path.
+    ExpressionActionsPtr minmax_actions;
+    /// For each index column, the paired input names in the DAG, in order.
+    std::vector<std::pair<String, String>> minmax_input_names;
+    /// Names of the two output UInt8 columns produced by `minmax_actions`.
+    static constexpr const char * OUTPUT_CAN_BE_TRUE = "__minmax_can_be_true";
+    static constexpr const char * OUTPUT_CAN_BE_FALSE = "__minmax_can_be_false";
+
     DataTypes index_data_types;
     KeyCondition condition;
 };
@@ -83,11 +124,51 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
+    /// Bulk filtering: see MergeTreeIndexBulkGranulesMinMaxFast. The caller (filterMarksUsingIndex)
+    /// additionally gates this on the `use_minmax_index_bulk_filtering` setting.
+    bool supportsBulkFiltering() const override { return true; }
+    MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const override;
+
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override; /// NOLINT
+};
+
+/// Bulk container for minmax skip indexes: holds the min and the max of every deserialized granule
+/// as columns (one row per granule, one pair of columns per index column), plus side flags for
+/// granules whose min/max were serialized as NULL (version-2 NULL_LAST, treated as +∞).
+///
+/// Paired with `MergeTreeIndexConditionMinMax::getPossibleGranules`, which walks the RPN
+/// element-by-element and evaluates each FUNCTION_IN_RANGE / FUNCTION_NOT_IN_RANGE as a vectorized
+/// compare across all granules. AND/OR/NOT are byte-wise mask ops over per-granule BoolMasks.
+struct MergeTreeIndexBulkGranulesMinMaxFast final : public IMergeTreeIndexBulkGranules
+{
+    explicit MergeTreeIndexBulkGranulesMinMaxFast(const Block & index_sample_block_, size_t size_hint);
+    void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+
+    struct PerColumn
+    {
+        /// Columns of the index column's exact DataType, one row per deserialized granule.
+        MutableColumnPtr min_col;
+        MutableColumnPtr max_col;
+        /// Side flags for granules whose min/max were serialized as NULL (v2 format maps
+        /// all-NULL granules to POSITIVE_INFINITY). Currently unused by the DAG bulk path,
+        /// which assumes no-NULL granules; see RESULTS.md for the known limitation.
+        PaddedPODArray<UInt8> min_is_neg_inf;
+        PaddedPODArray<UInt8> min_is_pos_inf;
+        PaddedPODArray<UInt8> max_is_neg_inf;
+        PaddedPODArray<UInt8> max_is_pos_inf;
+    };
+
+    Block index_sample_block;
+    DataTypes datatypes;
+    Serializations serializations;
+    FormatSettings format_settings;
+    std::vector<PerColumn> cols;
+    /// Number of granules appended so far. Granule numbers are implicit row positions 0..size-1.
+    size_t size = 0;
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules

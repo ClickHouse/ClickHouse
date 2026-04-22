@@ -1,0 +1,11 @@
+i32 range	1	1
+u32 equality	1
+f64 OR	1
+NOT IN RANGE (via NOT BETWEEN)	1
+AND of two columns	1
+Date range	1
+DateTime range	1
+Nullable, fallback path	1
+Enum8	1
+bulk observability parity	1	100
+bulk own-disjunction parity	1	1999
