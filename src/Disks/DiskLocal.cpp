@@ -383,6 +383,8 @@ void DiskLocal::prepareRead(
     size_t file_size = fs::file_size(full_path);
     StoredObject obj(full_path.string(), full_path.string(), file_size);
 
+    /// No gather for local disk — the source buffer is returned directly.
+    /// Page cache and O_DIRECT are handled inside createReadBufferFromFileBase.
     auto path_str = full_path.string();
     pipeline.setSource(
         StoredObjects{obj},

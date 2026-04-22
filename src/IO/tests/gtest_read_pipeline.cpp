@@ -92,15 +92,39 @@ StoredObject testObject(size_t size = 100)
 }
 
 
-/// -- Source + Gather: single object --
+/// -- Source only (no gather): single object --
 
-TEST(ReadPipeline, BuildSingleObject)
+TEST(ReadPipeline, BuildSingleObjectNoGather)
 try
 {
     std::string data = "hello world";
 
     ReadPipeline pipeline;
     pipeline.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data));
+
+    auto buf = pipeline.build(ReadSettings{});
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, "hello world");
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+/// -- Source + Gather: single object --
+
+TEST(ReadPipeline, BuildSingleObjectWithGather)
+try
+{
+    std::string data = "hello world";
+
+    ReadPipeline pipeline;
+    pipeline.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data));
+    pipeline.needGather();
 
     auto buf = pipeline.build(ReadSettings{});
     ASSERT_TRUE(buf != nullptr);
@@ -133,6 +157,7 @@ try
     pipeline.setSource(
         StoredObjects{testObject("obj/a", data_a.size()), testObject("obj/b", data_b.size())},
         std::move(creator));
+    pipeline.needGather();
 
     auto buf = pipeline.build(ReadSettings{});
     ASSERT_TRUE(buf != nullptr);
@@ -161,6 +186,7 @@ try
     pipeline.setSource(
         StoredObjects{testObject("obj/a", 3), testObject("obj/b", 3), testObject("obj/c", 3)},
         std::move(creator));
+    pipeline.needGather();
 
     auto buf = pipeline.build(ReadSettings{});
 
@@ -216,7 +242,7 @@ TEST(ReadPipeline, DescribeSourceOnly)
 {
     ReadPipeline pipeline;
     pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""));
-    EXPECT_EQ(pipeline.describe(), "Source -> Gather");
+    EXPECT_EQ(pipeline.describe(), "Source");
 }
 
 
@@ -226,6 +252,7 @@ TEST(ReadPipeline, DescribeMultipleStages)
     pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""));
     pipeline.needDiskCache(nullptr);
     pipeline.needDecompression();
+    pipeline.needGather();
     EXPECT_EQ(pipeline.describe(), "Source -> DiskCache -> Gather -> Decompress");
 }
 
@@ -285,7 +312,7 @@ try
     ReadPipeline cloned = original.clone();
 
     EXPECT_TRUE(cloned.hasSource());
-    EXPECT_EQ(cloned.describe(), "Source -> Gather");
+    EXPECT_EQ(cloned.describe(), "Source");
 
     auto buf = cloned.build(ReadSettings{});
     String result;

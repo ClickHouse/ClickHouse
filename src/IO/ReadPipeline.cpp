@@ -40,6 +40,11 @@ void ReadPipeline::setSource(StoredObjects objects, BufferCreator creator)
     source = SourceStage{.objects = std::move(objects), .creator = std::move(creator)};
 }
 
+void ReadPipeline::needGather()
+{
+    gather = true;
+}
+
 void ReadPipeline::needDiskCache(FileCachePtr cache, std::shared_ptr<FilesystemCacheLog> cache_log)
 {
     disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log)};
@@ -87,80 +92,99 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
     if (decompression)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReadPipeline: decompression stage is not yet implemented");
 
-    /// -- Stages 1+2+3: Source + DiskCache + Gather --
+    std::unique_ptr<ReadBufferFromFileBase> impl;
 
-    auto nested_settings = settings.withNestedBuffer();
-    ReadBufferFromRemoteFSGather::ReadBufferCreator gather_creator;
-
-    if (disk_cache && disk_cache->cache)
+    if (gather)
     {
-        auto cache_settings = nested_settings.withNestedBuffer();
+        /// -- Stages 1+2+3: Source + DiskCache + Gather --
+        /// Object storage path: wrap per-object buffers with optional disk cache,
+        /// then join all objects via ReadBufferFromRemoteFSGather.
 
-        gather_creator =
-            [pipeline_creator = source->creator,
-             cache_settings,
-             cache = disk_cache->cache,
-             cache_log = disk_cache->cache_log](
-                bool restricted_seek, const StoredObject & object) mutable
-                -> std::unique_ptr<ReadBufferFromFileBase>
+        auto nested_settings = settings.withNestedBuffer();
+        ReadBufferFromRemoteFSGather::ReadBufferCreator gather_creator;
+
+        if (disk_cache && disk_cache->cache)
         {
-            auto cache_key = FileCacheKey::fromPath(object.remote_path);
-            auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
+            auto cache_settings = nested_settings.withNestedBuffer();
 
-            auto source_settings = cache_settings;
-            source_settings.remote_read_buffer_restrict_seek = restricted_seek;
-
-            auto impl_creator = [pipeline_creator, source_settings, object]() mutable
-                -> std::unique_ptr<ReadBufferFromFileBase>
+            gather_creator =
+                [pipeline_creator = source->creator,
+                 cache_settings,
+                 cache = disk_cache->cache,
+                 cache_log = disk_cache->cache_log](
+                    bool restricted_seek, const StoredObject & object) mutable
+                    -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                return pipeline_creator(object, source_settings);
-            };
+                auto cache_key = FileCacheKey::fromPath(object.remote_path);
+                auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
 
-            return std::make_unique<CachedOnDiskReadBufferFromFile>(
-                object.remote_path,
-                cache_key,
-                cache,
-                origin,
-                std::move(impl_creator),
-                cache_settings,
-                std::string(CurrentThread::getQueryId()),
-                object.bytes_size,
-                /* allow_seeks_after_first_read */ !restricted_seek,
-                /* use_external_buffer */ cache_settings.remote_read_buffer_use_external_buffer,
-                /* read_until_position */ std::nullopt,
-                cache_log);
-        };
+                auto source_settings = cache_settings;
+                source_settings.remote_read_buffer_restrict_seek = restricted_seek;
+
+                auto impl_creator = [pipeline_creator, source_settings, object]() mutable
+                    -> std::unique_ptr<ReadBufferFromFileBase>
+                {
+                    return pipeline_creator(object, source_settings);
+                };
+
+                return std::make_unique<CachedOnDiskReadBufferFromFile>(
+                    object.remote_path,
+                    cache_key,
+                    cache,
+                    origin,
+                    std::move(impl_creator),
+                    cache_settings,
+                    std::string(CurrentThread::getQueryId()),
+                    object.bytes_size,
+                    /* allow_seeks_after_first_read */ !restricted_seek,
+                    /* use_external_buffer */ cache_settings.remote_read_buffer_use_external_buffer,
+                    /* read_until_position */ std::nullopt,
+                    cache_log);
+            };
+        }
+        else
+        {
+            gather_creator =
+                [pipeline_creator = source->creator, nested_settings](
+                    bool restricted_seek, const StoredObject & object) mutable
+                    -> std::unique_ptr<ReadBufferFromFileBase>
+            {
+                nested_settings.remote_read_buffer_restrict_seek = restricted_seek;
+                return pipeline_creator(object, nested_settings);
+            };
+        }
+
+        bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value() || distributed_cache;
+
+        size_t total_objects_size = getTotalSize(source->objects);
+        size_t buffer_size = use_external_buffer ? 0 : settings.remote_fs_buffer_size;
+        if (!use_external_buffer && total_objects_size > 0)
+            buffer_size = std::min(buffer_size, total_objects_size);
+
+        impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+            std::move(gather_creator),
+            source->objects,
+            settings,
+            use_external_buffer,
+            buffer_size);
+
+        /// -- Stage 3.5: Distributed cache --
+        /// TODO: when ENABLE_DISTRIBUTED_CACHE, wrap impl with ReadBufferFromDistributedCache here.
+        /// Also adjust use_page_cache condition (use_page_cache_with_distributed_cache)
+        /// and min_bytes_for_seek in AsyncPrefetch (distributed_cache_settings.min_bytes_for_seek).
     }
     else
     {
-        gather_creator =
-            [pipeline_creator = source->creator, nested_settings](
-                bool restricted_seek, const StoredObject & object) mutable
-                -> std::unique_ptr<ReadBufferFromFileBase>
-        {
-            nested_settings.remote_read_buffer_restrict_seek = restricted_seek;
-            return pipeline_creator(object, nested_settings);
-        };
+        /// -- Stage 1 only: Source (no gather) --
+        /// Local disk path: create the buffer directly, no gather wrapping.
+
+        if (source->objects.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ReadPipeline without gather requires exactly 1 stored object, got {}",
+                source->objects.size());
+
+        impl = source->creator(source->objects[0], settings);
     }
-
-    bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value() || distributed_cache;
-
-    size_t total_objects_size = getTotalSize(source->objects);
-    size_t buffer_size = use_external_buffer ? 0 : settings.remote_fs_buffer_size;
-    if (!use_external_buffer && total_objects_size > 0)
-        buffer_size = std::min(buffer_size, total_objects_size);
-
-    std::unique_ptr<ReadBufferFromFileBase> impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(gather_creator),
-        source->objects,
-        settings,
-        use_external_buffer,
-        buffer_size);
-
-    /// -- Stage 3.5: Distributed cache --
-    /// TODO: when ENABLE_DISTRIBUTED_CACHE, wrap impl with ReadBufferFromDistributedCache here.
-    /// Also adjust use_page_cache condition (use_page_cache_with_distributed_cache)
-    /// and min_bytes_for_seek in AsyncPrefetch (distributed_cache_settings.min_bytes_for_seek).
 
     /// -- Stage 4: Memory cache --
 
@@ -177,9 +201,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
 
     if (async_prefetch && async_prefetch->reader)
     {
+        size_t total_size = getTotalSize(source->objects);
         size_t async_buffer_size = settings.remote_fs_buffer_size;
-        if (total_objects_size > 0)
-            async_buffer_size = std::min(async_buffer_size, total_objects_size);
+        if (total_size > 0)
+            async_buffer_size = std::min(async_buffer_size, total_size);
 
         impl = std::make_unique<AsynchronousBoundedReadBuffer>(
             std::move(impl),
@@ -238,7 +263,7 @@ String ReadPipeline::describe() const
         append("Source");
     if (disk_cache)
         append("DiskCache");
-    if (source)
+    if (gather)
         append("Gather");
     /// DistributedCache stage is not yet implemented in build().
     /// Only show it in describe() when the implementation is wired up.

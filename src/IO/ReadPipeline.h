@@ -70,6 +70,12 @@ public:
     /// Set source with a custom buffer creator (useful for testing or custom backends).
     void setSource(StoredObjects objects, BufferCreator creator);
 
+    /// -- Gather stage (ReadBufferFromRemoteFSGather) --
+    /// Joins multiple stored objects into a single seekable buffer.
+    /// Required for object storage where one logical file maps to multiple blobs.
+    /// Not needed for local disk where one file = one file.
+    void needGather();
+
     /// -- Disk cache stage --
     void needDiskCache(FileCachePtr cache, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
@@ -149,6 +155,7 @@ private:
     };
 
     std::optional<SourceStage> source;
+    bool gather = false;
     std::optional<DiskCacheStage> disk_cache;
     std::optional<MemoryCacheStage> memory_cache;
     bool distributed_cache = false;
