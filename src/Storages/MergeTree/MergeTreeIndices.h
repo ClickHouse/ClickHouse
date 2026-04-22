@@ -126,6 +126,16 @@ struct IMergeTreeIndexBulkGranules
 {
     virtual ~IMergeTreeIndexBulkGranules() = default;
     virtual void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
+
+    /// Read `count` consecutive granules from `istr` in one call. Default implementation just
+    /// loops over the per-granule API; implementations for indexes with trivially-bulk-readable
+    /// on-disk formats (e.g. fixed-width numeric minmax) can override to amortize per-granule
+    /// dispatch over the chunk. Used by `MergeTreeIndexReader::readRange`.
+    virtual void deserializeBinaryBulk(size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
+    {
+        for (size_t i = 0; i < count; ++i)
+            deserializeBinary(i, istr, version);
+    }
 };
 
 using MergeTreeIndexBulkGranulesPtr = std::shared_ptr<IMergeTreeIndexBulkGranules>;

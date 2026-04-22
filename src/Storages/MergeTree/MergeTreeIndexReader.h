@@ -30,6 +30,15 @@ public:
 
     void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule);
     void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
+
+    /// Read `[mark_begin, mark_end)` into `granules` in a single deserialization call.
+    /// Equivalent to calling `read(mark_begin + i, i, granules)` for each `i` in
+    /// `[0, mark_end - mark_begin)` but with one virtual dispatch and one position adjustment
+    /// (the underlying `CompressedReadBuffer` streams through adjacent blocks as needed).
+    /// For the bulk minmax path this reduces per-granule overhead to near-zero; compressed
+    /// block boundaries are still handled transparently by the reader stream.
+    void readRange(size_t mark_begin, size_t mark_end, MergeTreeIndexBulkGranulesPtr & granules);
+
     void adjustRightMark(size_t right_mark);
     void prefetchBeginOfRange(size_t from_mark, Priority priority);
     const StreamMap & getStreams() { return streams; }

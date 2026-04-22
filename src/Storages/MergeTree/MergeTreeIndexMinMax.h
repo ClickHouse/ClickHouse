@@ -147,6 +147,11 @@ struct MergeTreeIndexBulkGranulesMinMaxFast final : public IMergeTreeIndexBulkGr
 {
     explicit MergeTreeIndexBulkGranulesMinMaxFast(const Block & index_sample_block_, size_t size_hint);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    /// Optimized bulk read for fast-kind columns: one virtual call per chunk (instead of per
+    /// granule) and a tight inner `readPODBinary` loop. For columns whose `fast_kind` is
+    /// `None` (Nullable, Decimal, DateTime64, UUID, String, ...) this falls back to
+    /// looping over the per-granule `deserializeBinary`.
+    void deserializeBinaryBulk(size_t count, ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     /// Which native type we can read with `readPODBinary` straight into
     /// `ColumnVector<T>::Container`, skipping the `Field` round-trip. Populated at

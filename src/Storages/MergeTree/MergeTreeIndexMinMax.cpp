@@ -922,6 +922,85 @@ void MergeTreeIndexBulkGranulesMinMaxFast::deserializeBinary(
     ++size;
 }
 
+namespace
+{
+
+/// Per-column helper that appends one (min, max) pair read via `readPODBinary` to its columns.
+/// Resolved at deserializeBinaryBulk() entry so the type-dispatch happens once per chunk (not
+/// once per granule or once per (granule, column) pair).
+template <typename T>
+ALWAYS_INLINE void fastReadOnePair(IColumn & min_col, IColumn & max_col, ReadBuffer & istr)
+{
+    auto & min_data = assert_cast<ColumnVector<T> &>(min_col).getData();
+    auto & max_data = assert_cast<ColumnVector<T> &>(max_col).getData();
+    T raw;
+    readPODBinary(raw, istr);
+    min_data.push_back(raw);
+    readPODBinary(raw, istr);
+    max_data.push_back(raw);
+}
+
+using FastReadOnePairFn = void (*)(IColumn &, IColumn &, ReadBuffer &);
+
+FastReadOnePairFn fastReadOnePairFn(MergeTreeIndexBulkGranulesMinMaxFast::FastKind kind)
+{
+    using FastKind = MergeTreeIndexBulkGranulesMinMaxFast::FastKind;
+    switch (kind)
+    {
+        case FastKind::U8:  return &fastReadOnePair<UInt8>;
+        case FastKind::U16: return &fastReadOnePair<UInt16>;
+        case FastKind::U32: return &fastReadOnePair<UInt32>;
+        case FastKind::U64: return &fastReadOnePair<UInt64>;
+        case FastKind::I8:  return &fastReadOnePair<Int8>;
+        case FastKind::I16: return &fastReadOnePair<Int16>;
+        case FastKind::I32: return &fastReadOnePair<Int32>;
+        case FastKind::I64: return &fastReadOnePair<Int64>;
+        case FastKind::F32: return &fastReadOnePair<Float32>;
+        case FastKind::F64: return &fastReadOnePair<Float64>;
+        case FastKind::None: return nullptr;
+    }
+    return nullptr;
+}
+
+}
+
+void MergeTreeIndexBulkGranulesMinMaxFast::deserializeBinaryBulk(size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
+{
+    const size_t num_columns = index_sample_block.columns();
+
+    /// Resolve per-column fast-path function pointers once per chunk. For an index whose
+    /// every column qualifies we avoid the switch-per-granule; for one that has any
+    /// non-fast-path column we drop to the per-granule slow path.
+    std::vector<FastReadOnePairFn> fns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        fns[i] = fastReadOnePairFn(cols[i].fast_kind);
+        if (!fns[i])
+        {
+            for (size_t g = 0; g < count; ++g)
+                deserializeBinary(size + g, istr, version);
+            return;
+        }
+    }
+
+    /// Reserve once for the whole chunk, then loop. On-disk layout is per-granule
+    /// interleaved (granule0 = col0_min col0_max col1_min col1_max ..., then granule1,
+    /// ...), so the outer loop has to be over granules with the column loop inside;
+    /// bulk reads per-column would stride non-contiguously through the stream.
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        cols[i].min_col->reserve(cols[i].min_col->size() + count);
+        cols[i].max_col->reserve(cols[i].max_col->size() + count);
+    }
+
+    for (size_t g = 0; g < count; ++g)
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+            fns[i](*cols[i].min_col, *cols[i].max_col, istr);
+    }
+    size += count;
+}
+
 MergeTreeIndexBulkGranulesPtr MergeTreeIndexMinMax::createIndexBulkGranules() const
 {
     return std::make_shared<MergeTreeIndexBulkGranulesMinMaxFast>(index.sample_block, /*size_hint=*/1024);
