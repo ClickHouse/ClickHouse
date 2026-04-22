@@ -1082,7 +1082,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
             TableFunctionFactory::instance().get(src_distributed.remote_table_function_ptr, local_context);
         if (const TableFunctionView * view_function = typeid_cast<const TableFunctionView *>(src_table_function.get()))
         {
-            new_query->select = view_function->getSelectQuery().clone();
+            new_query->setOrReplace(new_query->select, view_function->getSelectQuery().clone());
         }
         else
         {
@@ -1098,7 +1098,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
             select_with_union_query->list_of_selects->children.push_back(select->clone());
 
-            new_query->select = select_with_union_query;
+            new_query->setOrReplace(new_query->select, select_with_union_query);
         }
     }
     else
@@ -1112,7 +1112,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
         new_select_query->replaceDatabaseAndTable(src_distributed.getRemoteDatabaseName(), src_distributed.getRemoteTableName());
 
-        new_query->select = select_with_union_query;
+        new_query->setOrReplace(new_query->select, select_with_union_query);
     }
 
     const auto src_cluster = src_distributed.getCluster();
@@ -1144,7 +1144,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     {
         new_query->table_id = StorageID(getRemoteDatabaseName(), getRemoteTableName());
         /// Reset table function for INSERT INTO remote()/cluster()
-        new_query->table_function.reset();
+        new_query->reset(new_query->table_function);
     }
 
     const auto & shards_info = dst_cluster->getShardsInfo();
@@ -1279,7 +1279,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     {
         new_query->table_id = StorageID(getRemoteDatabaseName(), getRemoteTableName());
         /// Reset table function for INSERT INTO remote()/cluster()
-        new_query->table_function.reset();
+        new_query->reset(new_query->table_function);
     }
 
     String new_query_str;

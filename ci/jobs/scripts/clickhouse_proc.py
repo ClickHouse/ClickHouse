@@ -899,8 +899,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         except Exception as e:
             print(f"WARNING: Failed to collect logs: {e}")
             traceback.print_exc()
-            info.add_workflow_report_message(
-                f"Failed to collect all logs in job [{info.job_name}], ex [{e}], see job.log"
+            info.add_workflow_warning(
+                f"Failed to collect all logs, ex [{e}], see job.log"
             )
         return res
 
@@ -1032,7 +1032,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     Result.create_from(
                         name="Sanitizer assert or Fatal messages in server logs",
                         info="no server logs found",
-                        status=Result.StatusExtended.FAIL,
+                        status=Result.Status.FAIL,
                         labels=[Result.Label.BLOCKER],  # to explicitly block the merge
                     )
                 )
@@ -1048,7 +1048,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         Result.create_from(
                             name=name,
                             info=description,
-                            status=Result.StatusExtended.FAIL,
+                            status=Result.Status.FAIL,
                             files=files,
                             labels=[
                                 Result.Label.BLOCKER
@@ -1060,7 +1060,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         Result.create_from(
                             name="Failed to parse sanitizer/fatal failure from server logs",
                             info=traceback.format_exc(),
-                            status=Result.StatusExtended.FAIL,
+                            status=Result.Status.FAIL,
                             labels=[
                                 Result.Label.BLOCKER
                             ],  # to explicitly block the merge
@@ -1099,9 +1099,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # convert statuses to CH tests notation
         for result in results:
             if result.is_ok():
-                result.set_status(Result.StatusExtended.OK)
+                result.set_status(Result.Status.OK)
             else:
-                result.set_status(Result.StatusExtended.FAIL)
+                result.set_status(Result.Status.FAIL)
         return results
 
     def dump_system_tables(self):
@@ -1168,7 +1168,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             for cache_status_path in cache_status_files:
                 Shell.check(f"rm {cache_status_path}", verbose=True)
 
-        scraping_system_table = Result(name=f"Scraping system tables", status="OK")
+        scraping_system_table = Result(name=f"Scraping system tables", status=Result.Status.OK)
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1248,7 +1248,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         )
 
         if scraping_system_table.info:
-            scraping_system_table.set_status(Result.StatusExtended.FAIL)
+            scraping_system_table.set_status(Result.Status.FAIL)
             self.extra_tests_results.append(scraping_system_table)
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 

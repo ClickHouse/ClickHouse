@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageView.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 namespace DB
@@ -30,6 +31,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
 }
 
 namespace ErrorCodes
@@ -38,26 +40,14 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context [[maybe_unused]])
+bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context)
 {
-    auto storage = table_node.getStorage();
-    const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get());
-    if (mv)
-    {
-        if (!context->getSettingsRef()[Setting::parallel_replicas_allow_materialized_views])
-            return false;
-
-        // address refreshable MVs separately, currently leads to logical error
-        if (mv->isRefreshable())
-            return false;
-
-        storage = mv->getTargetTable();
-    }
+    const auto & settings = context->getSettingsRef();
 
     if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
         return false;
 
-    if (!storage->supportsReplication() && !context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree])
+    if (!storage->supportsReplication() && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
         return false;
 
     /// Parallel replicas not supported with FINAL.
@@ -65,6 +55,40 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
         return false;
 
     return true;
+}
+
+static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    auto storage = table_node.getStorage();
+
+    if (settings[Setting::parallel_replicas_allow_view_over_mergetree])
+    {
+        const auto * view = typeid_cast<const StorageView *>(storage.get());
+        if (view)
+        {
+            auto underlying_storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
+            if (!underlying_storage)
+                return false;
+
+            return true;
+        }
+    }
+
+    const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get());
+    if (mv)
+    {
+        if (!settings[Setting::parallel_replicas_allow_materialized_views])
+            return false;
+
+        /// Address refreshable MVs separately, currently leads to logical error.
+        if (mv->isRefreshable())
+            return false;
+
+        storage = mv->getTargetTable();
+    }
+
+    return isTableNodeEligibleForParallelReplicas(table_node, storage, context);
 }
 
 /// Returns a list of (sub)queries (candidates) which may support parallel replicas.
@@ -355,7 +379,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     auto updated_query_tree = replaceTablesWithDummyTables(query_tree_node, mutable_context);
 
     SelectQueryOptions options;
-    Planner planner(updated_query_tree, options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+    Planner planner(updated_query_tree, options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
     planner.buildQueryPlanIfNeeded();
 
     /// This part is a bit clumsy.
@@ -495,6 +519,85 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
         return nullptr;
 
     return findTableForParallelReplicas(query_tree_node.get(), context);
+}
+
+/// Walk the query tree looking for a UNION node whose every child query
+/// ultimately reads from a table eligible for parallel replicas.
+/// Returns the first such UNION node, or nullptr if none found.
+static const UnionNode * findTableUnionForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
+{
+    while (query_tree_node)
+    {
+        switch (query_tree_node->getNodeType())
+        {
+            case QueryTreeNodeType::QUERY:
+            {
+                const auto & query_node = query_tree_node->as<QueryNode &>();
+                query_tree_node = query_node.getJoinTree().get();
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                const auto & union_node = query_tree_node->as<UnionNode &>();
+                if (union_node.getUnionMode() != SelectUnionMode::UNION_ALL)
+                    return nullptr;
+
+                const auto & union_queries = union_node.getQueries().getNodes();
+
+                if (union_queries.empty())
+                    return nullptr;
+
+                /// Check that every child query in the UNION has an eligible table.
+                bool all_children_support_parallel_replicas = true;
+                for (const auto & child : union_queries)
+                {
+                    if (!findTableForParallelReplicas(child.get(), context))
+                    {
+                        all_children_support_parallel_replicas = false;
+                        break;
+                    }
+                }
+
+                if (all_children_support_parallel_replicas)
+                    return &union_node;
+
+                return nullptr;
+            }
+            case QueryTreeNodeType::TABLE:
+            {
+                /// Single table, not a UNION — no UNION node to return.
+                return nullptr;
+            }
+            default:
+                return nullptr;
+        }
+    }
+    return nullptr;
+}
+
+const UnionNode * findTableUnionForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
+{
+    if (select_query_options.only_analyze)
+        return nullptr;
+
+    auto * query_node = query_tree_node->as<QueryNode>();
+    auto * union_node = query_tree_node->as<UnionNode>();
+
+    if (!query_node && !union_node)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Expected QUERY or UNION node. Actual {}",
+            query_tree_node->formatASTForErrorMessage());
+
+    auto context = query_node ? query_node->getContext() : union_node->getContext();
+
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::parallel_replicas_allow_view_over_mergetree])
+        return nullptr;
+
+    if (!settings[Setting::serialize_query_plan] && !context->canUseParallelReplicasOnFollower())
+        return nullptr;
+
+    return findTableUnionForParallelReplicas(query_tree_node.get(), context);
 }
 
 JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
