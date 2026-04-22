@@ -11,6 +11,7 @@
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
@@ -246,9 +247,10 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
-    /// We materialize columns here to avoid materializing them multiple times on different threads
+    /// We materialize columns and build the row store here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
+    RowDataStorePtr block_row_store = hash_joins[0]->data->createRowStoreForBlock(right_block);
 
     auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
     size_t blocks_left = 0;
@@ -282,7 +284,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 }
 
                 auto [block, selector] = std::move(dispatched_block).detachData();
-                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits, block_row_store);
 
                 dispatched_block = {};
                 blocks_left--;

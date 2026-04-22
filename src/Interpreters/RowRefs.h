@@ -18,28 +18,19 @@ class ColumnReplicated;
 
 struct ColumnsInfo
 {
-    struct AccessIndex
-    {
-        enum Type : uint8_t { Columns, RowStore };
-        Type type;
-        size_t index;
-    };
-
-    using AccessIndexes = std::vector<AccessIndex>;
-
     explicit ColumnsInfo(Columns && columns_);
+    ColumnsInfo(Columns && columns_, RowDataStorePtr && row_store_);
 
     Columns columns;
     /// Row-major store for fixed size contiguous columns.
-    std::optional<RowDataStore> row_store;
+    RowDataStorePtr row_store;
     /// Sometimes we need to insert rows into a regular column from a Replicated column.
     /// And to avoid virtual calls and casts per each row insertion we store pointer
     /// to the replicated column for each column in the list above.
     /// If columns is not Replicated, pointer will be nullptr.
     PODArray<const ColumnReplicated *> replicated_columns;
 
-    bool hasRowStore() const { return row_store.has_value(); }
-    void transferColumnsToRowStore(const AccessIndexes & access_indexes);
+    bool hasRowStore() const { return row_store != nullptr; }
 
     size_t allocatedBytes() const;
     size_t rows() const;

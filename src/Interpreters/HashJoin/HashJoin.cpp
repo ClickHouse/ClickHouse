@@ -112,6 +112,26 @@ Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, 
 
     return block;
 }
+
+std::pair<Columns, Columns> extractRowStoreColumns(const Columns & columns, const HashJoin::ColumnAccessIndexes & access_indexes)
+{
+    Columns row_store_columns;
+    Columns remaining_columns;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const auto & [type, _] = access_indexes[i];
+        if (type == HashJoin::ColumnAccessIndex::Type::RowStore)
+            /// For now replicated columns are materialized to make sure all blocks have
+            /// the same split of columnar and row store columns.
+            /// TODO: try to allow columns to be in row store in some blocks and remain columnar
+            /// in others (in case of replicated columns).
+            row_store_columns.push_back(columns[i]->convertToFullColumnIfReplicated());
+        else
+            remaining_columns.push_back(columns[i]);
+    }
+
+    return {row_store_columns, remaining_columns};
+}
 }
 
 static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable)
@@ -596,16 +616,16 @@ void HashJoin::initRowStore()
 
     /// Extract columns suitable for row store.
     const auto & columns = data->sample_block.getColumns();
-    ColumnsInfo::AccessIndexes access_indexes;
+    ColumnAccessIndexes access_indexes;
     access_indexes.reserve(columns.size());
     size_t row_store_columns = 0;
     size_t remaining_columns = 0;
     for (const auto & column : columns)
     {
         if (isRowStorageUseful(column))
-            access_indexes.push_back({ColumnsInfo::AccessIndex::Type::RowStore, row_store_columns++});
+            access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_columns++});
         else
-            access_indexes.push_back({ColumnsInfo::AccessIndex::Type::Columns, remaining_columns++});
+            access_indexes.push_back({ColumnAccessIndex::Type::Columns, remaining_columns++});
     }
 
     if (row_store_columns >= table_join->minColumnsForHashJoinRowStore())
@@ -648,6 +668,15 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
+RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const
+{
+    if (!data->use_row_store)
+        return nullptr;
+    Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
+    auto [columns, _] = extractRowStoreColumns(block_to_save.getColumns(), data->column_access_indexes);
+    return RowDataStore::create(columns);
+}
+
 bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
 {
     auto materialized = materializeColumnsFromRightBlock(source_block);
@@ -666,7 +695,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t num_rows, bool 
     return addBlockToJoin(materialized, ScatteredBlock::Selector(rows), check_limits);
 }
 
-bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits)
+bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
@@ -768,12 +797,17 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             have_compressed = true;
         }
 
-        ColumnsInfo columns_info(block_to_save.getColumns());
+        Columns columns = block_to_save.getColumns();
         if (data->use_row_store)
-            columns_info.transferColumnsToRowStore(data->column_access_indexes);
+        {
+            auto [row_store_columns, remaining_columns] = extractRowStoreColumns(columns, data->column_access_indexes);
+            columns = remaining_columns;
+            if (!row_store)
+                row_store = RowDataStore::create(row_store_columns);
+        }
 
         doDebugAsserts();
-        data->columns.emplace_back(std::move(columns_info), std::move(selector));
+        data->columns.emplace_back(ColumnsInfo(std::move(columns), std::move(row_store)), std::move(selector));
         const auto * stored_columns = &data->columns.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         data->allocated_size += data_allocated_bytes;
@@ -1482,7 +1516,7 @@ public:
         const auto & access_indexes = parent.data->column_access_indexes;
         for (size_t i = 0; i < columns_right.size(); ++i)
         {
-            if (access_indexes.empty() || access_indexes[i].type == ColumnsInfo::AccessIndex::Columns)
+            if (access_indexes.empty() || access_indexes[i].type == HashJoin::ColumnAccessIndex::Type::Columns)
                 columnar_columns.push_back(columns_right[i].get());
             else
                 row_store_columns.push_back(columns_right[i].get());
@@ -1816,7 +1850,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         for (size_t i = 0; i < access_indexes.size(); ++i)
         {
             auto [type, idx] = access_indexes[i];
-            if (type == ColumnsInfo::AccessIndex::RowStore)
+            if (type == ColumnAccessIndex::Type::RowStore)
                 all_columns[i] = std::move(row_store_columns[idx]);
             else
                 all_columns[i] = info.columns[idx];

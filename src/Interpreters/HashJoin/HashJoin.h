@@ -141,7 +141,7 @@ public:
     bool addBlockToJoin(const Block & source_block_, size_t num_rows, bool check_limits) override;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
-    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
+    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store = nullptr);
 
     void checkTypesOfKeys(const Block & block) const override;
 
@@ -389,6 +389,15 @@ public:
     using NullmapList = std::deque<NullMapHolder>;
     using ScatteredColumnsList = std::list<ScatteredColumns>;
 
+    struct ColumnAccessIndex
+    {
+        enum Type : uint8_t { Columns, RowStore };
+        Type type;
+        size_t index;
+    };
+
+    using ColumnAccessIndexes = std::vector<ColumnAccessIndex>;
+
     struct RightTableData
     {
         Type type = Type::EMPTY;
@@ -400,9 +409,9 @@ public:
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
         ScatteredColumnsList columns; /// Columns of "right" table.
-        /// Track index of "right" table columns in columns list or row store.
-        ColumnsInfo::AccessIndexes column_access_indexes;
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+        /// Track index of "right" table columns in columns list or row store.
+        ColumnAccessIndexes column_access_indexes;
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
@@ -463,6 +472,8 @@ public:
 
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
+
+    RowDataStorePtr createRowStoreForBlock(const Block & block) const;
 
     bool rightTableCanBeReranged() const override;
     void tryRerangeRightTableData() override;

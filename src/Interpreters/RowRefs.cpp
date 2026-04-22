@@ -222,37 +222,18 @@ private:
 
 }
 
-ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_)), row_store(std::nullopt)
+ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_)), row_store(nullptr)
 {
     replicated_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());
 }
 
-void ColumnsInfo::transferColumnsToRowStore(const AccessIndexes & access_indexes)
+ColumnsInfo::ColumnsInfo(Columns && columns_, RowDataStorePtr && row_store_) : columns(std::move(columns_)), row_store(std::move(row_store_))
 {
-    Columns row_store_columns;
-    Columns remaining_columns;
-    PODArray<const ColumnReplicated *> remaining_replicated_columns;
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        const auto & [type, _] = access_indexes[i];
-        if (type == AccessIndex::Type::RowStore)
-            /// For now replicated columns are materialized to make sure all blocks have
-            /// the same split of columnar and row store columns.
-            /// TODO: try to allow columns to be in row store in some blocks and remain columnar
-            /// in others (in case of replicated columns).
-            row_store_columns.push_back(columns[i]->convertToFullColumnIfReplicated());
-        else
-        {
-            remaining_columns.push_back(columns[i]);
-            remaining_replicated_columns.push_back(replicated_columns[i]);
-        }
-    }
-
-    row_store = RowDataStore::create(row_store_columns);
-    columns = std::move(remaining_columns);
-    replicated_columns = std::move(remaining_replicated_columns);
+    replicated_columns.resize(columns.size());
+    for (size_t i = 0; i != columns.size(); ++i)
+        replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());
 }
 
 size_t ColumnsInfo::allocatedBytes() const

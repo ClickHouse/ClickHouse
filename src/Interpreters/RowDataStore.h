@@ -17,6 +17,9 @@ namespace DB
 ///   [fixed_field_0 | fixed_field_1 | ... | fixed_field_n ]
 ///
 /// The order of field matches the order of source columns.
+class RowDataStore;
+using RowDataStorePtr = std::shared_ptr<RowDataStore>;
+
 class RowDataStore
 {
 private:
@@ -41,7 +44,7 @@ private:
     explicit RowDataStore(RowLayout && layout_);
 
 public:
-    static RowDataStore create(const Columns & columns);
+    static std::shared_ptr<RowDataStore> create(const Columns & columns);
 
     void gatherRows(const Columns & columns, size_t start, size_t length);
     void gatherRow(const Columns & columns, size_t row_num);

@@ -46,12 +46,12 @@ RowDataStore::RowDataStore(RowLayout && layout_)
 {
 }
 
-RowDataStore RowDataStore::create(const Columns & columns)
+std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
 {
     RowLayout layout = initLayout(columns);
-    RowDataStore row_store(std::move(layout));
+    auto row_store = std::shared_ptr<RowDataStore>(new RowDataStore(std::move(layout)));
     if (!columns.empty() && columns[0]->size() > 0)
-        row_store.gatherRows(columns, 0, columns[0]->size());
+        row_store->gatherRows(columns, 0, columns[0]->size());
     return row_store;
 }
 

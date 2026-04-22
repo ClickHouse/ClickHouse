@@ -204,10 +204,11 @@ public:
 
         if (join.getJoinedData()->use_row_store)
         {
+            using AccessType = HashJoin::ColumnAccessIndex::Type;
             Columns row_store_sample_columns;
             for (size_t i = 0; i < saved_block_sample.columns(); ++i)
             {
-                if (access_indexes[i].type == ColumnsInfo::AccessIndex::RowStore)
+                if (access_indexes[i].type == AccessType::RowStore)
                     row_store_sample_columns.push_back(saved_block_sample.getByPosition(i).column->cloneEmpty());
             }
             auto sample_row_store = RowDataStore::create(row_store_sample_columns);
@@ -215,9 +216,9 @@ public:
             for (size_t i = 0; i < right_indexes.size(); ++i)
             {
                 auto idx = access_indexes[right_indexes[i]];
-                if (idx.type == ColumnsInfo::AccessIndex::Type::RowStore)
+                if (idx.type == AccessType::RowStore)
                 {
-                    auto [offset, size] = sample_row_store.getFieldOffsetAndSize(idx.index);
+                    auto [offset, size] = sample_row_store->getFieldOffsetAndSize(idx.index);
                     lazy_output.row_store_outputs.push_back({i, offset, size});
                 }
                 else

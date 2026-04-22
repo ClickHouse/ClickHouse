@@ -1,0 +1,26 @@
+--- INNER JOIN, mixed right columns ---
+1
+--- INNER JOIN, all-fixed right columns (every column goes to row store) ---
+1
+--- LEFT JOIN with unmatched rows ---
+1
+--- RIGHT JOIN (save_key_columns triggers prepended keys in saved_block_sample) ---
+1
+--- FULL JOIN, non-joined right rows go through NonJoinedBlockInputStream ---
+1
+--- ASOF JOIN (ASOF key prepended to saved_block_sample) ---
+1
+--- Multi-disjunct ON (forces save_key_columns) ---
+1
+--- parallel_hash algorithm with NULL right keys (ConcurrentHashJoin nullmap path) ---
+1
+--- Row-list path (many duplicate right keys, ALL strictness) ---
+1
+--- max_joined_block_bytes split (buildOutputFromBlocksLimitAndOffset) ---
+1
+--- joinGet on Join engine storage ---
+1
+--- joinGetOrNull (result columns nullable while source is not) ---
+1
+--- Threshold honored: setting=10 leaves the feature inactive here ---
+1
