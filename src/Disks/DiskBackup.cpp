@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/ReadPipeline.h>
 #include <IO/WriteHelpers.h>
 
 #include <Backups/BackupFactory.h>
@@ -148,6 +149,26 @@ DiskBackup::readFile(const String & path, const ReadSettings &, std::optional<si
 {
     std::string replaced_path = replacePathPrefix(path);
     return backup->readFile(replaced_path);
+}
+
+void DiskBackup::prepareRead(
+    const String & path,
+    const ReadSettings & /* settings */,
+    std::optional<size_t> /* read_hint */,
+    ReadPipeline & pipeline) const
+{
+    auto replaced_path = replacePathPrefix(path);
+    auto file_size = backup->getFileSize(replaced_path);
+    StoredObject obj(replaced_path, replaced_path, file_size);
+
+    auto backup_ptr = backup;
+    pipeline.setSource(
+        StoredObjects{obj},
+        [backup_ptr, replaced_path](const StoredObject & /* object */, const ReadSettings & /* read_settings */)
+            -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return backup_ptr->readFile(replaced_path);
+        });
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskBackup::writeFile(const String &, size_t, WriteMode, const WriteSettings &)
