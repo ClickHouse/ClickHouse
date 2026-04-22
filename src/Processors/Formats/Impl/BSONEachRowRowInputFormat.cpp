@@ -1,7 +1,5 @@
 #include <IO/ReadBufferFromString.h>
 
-#include <Core/CaseAwareBlockNameMap.h>
-
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/BSONTypes.h>
@@ -29,9 +27,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationTuple.h>
-#include <DataTypes/Serializations/SerializationMap.h>
 
 
 namespace DB
@@ -51,7 +46,6 @@ namespace
     enum
     {
         UNKNOWN_FIELD = size_t(-1),
-        NOT_INITIALIZED = size_t(-2)
     };
 }
 
@@ -59,11 +53,10 @@ BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
     ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , name_map(format_settings_.input_format_column_matching_case_sensitivity)
-    , prev_positions(header_->columns(), {std::string_view{}, NOT_INITIALIZED})
+    , prev_positions(header_->columns())
     , types(header_->getDataTypes())
 {
-    name_map.initFromBlock(getPort().getHeader());
+    name_map = getNamesToIndexesMap(getPort().getHeader());
 }
 
 inline size_t BSONEachRowRowInputFormat::columnIndex(std::string_view name, size_t key_index)
@@ -71,19 +64,21 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(std::string_view name, size
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
-    if (prev_positions.size() > key_index && prev_positions[key_index].second != NOT_INITIALIZED
-        && name_map.equal(name, prev_positions[key_index].first))
+    if (prev_positions.size() > key_index
+        && prev_positions[key_index] != BlockNameMap::const_iterator{}
+        && name == prev_positions[key_index]->first)
     {
-        return prev_positions[key_index].second;
+        return prev_positions[key_index]->second;
     }
 
-    auto position = name_map.get(name);
-    if (position != CaseAwareBlockNameMap::NOT_FOUND)
-    {
-        if (key_index < prev_positions.size() && position < getPort().getHeader().columns())
-            prev_positions[key_index] = {getPort().getHeader().getByPosition(position).name, position};
+    const auto it = name_map.find(name);
 
-        return position;
+    if (it != name_map.end())
+    {
+        if (key_index < prev_positions.size())
+            prev_positions[key_index] = it;
+
+        return it->second;
     }
     return UNKNOWN_FIELD;
 }
@@ -376,20 +371,15 @@ void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & 
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
 
-    auto read_array = [&]()
+    while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
-        while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
-        {
-            auto nested_bson_type = getBSONType(readBSONType(*in));
-            readBSONKeyName(*in, current_key_name);
-            readField(nested_column, nested_type, nested_bson_type);
-        }
+        auto nested_bson_type = getBSONType(readBSONType(*in));
+        readBSONKeyName(*in, current_key_name);
+        readField(nested_column, nested_type, nested_bson_type);
+    }
 
-        assertChar(BSON_DOCUMENT_END, *in);
-        array_column.getOffsets().push_back(array_column.getData().size());
-    };
-
-    SerializationArray::readArraySafe(column, read_array);
+    assertChar(BSON_DOCUMENT_END, *in);
+    array_column.getOffsets().push_back(array_column.getData().size());
 }
 
 void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
@@ -411,52 +401,52 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
 
-    auto read_tuple = [&]()
+    while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
-        while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
+        auto nested_bson_type = getBSONType(readBSONType(*in));
+        auto name = readBSONKeyName(*in, current_key_name);
+
+        size_t index = read_nested_columns;
+        if (use_key_names)
         {
-            auto nested_bson_type = getBSONType(readBSONType(*in));
-            auto name = readBSONKeyName(*in, current_key_name);
-
-            size_t index = read_nested_columns;
-            if (use_key_names)
-            {
-                auto try_get_index = data_type_tuple->tryGetPositionByName(name);
-                if (!try_get_index)
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "Cannot parse tuple column with type {} from BSON array/embedded document field: "
-                        "tuple doesn't have element with name \"{}\"",
-                        data_type->getName(),
-                        name);
-                index = *try_get_index;
-            }
-
-            if (index >= data_type_tuple->getElements().size())
+            auto try_get_index = data_type_tuple->tryGetPositionByName(name);
+            if (!try_get_index)
                 throw Exception(
-                                ErrorCodes::INCORRECT_DATA,
-                                "Cannot parse tuple column with type {} from BSON array/embedded document field: "
-                                "the number of fields BSON document exceeds the number of fields in tuple",
-                                data_type->getName());
-
-            readField(tuple_column.getColumn(index), data_type_tuple->getElement(index), nested_bson_type);
-            ++read_nested_columns;
+                    ErrorCodes::INCORRECT_DATA,
+                    "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                    "tuple doesn't have element with name \"{}\"",
+                    data_type->getName(),
+                    name);
+            index = *try_get_index;
         }
 
-        assertChar(BSON_DOCUMENT_END, *in);
-
-        const auto elements_size = data_type_tuple->getElements().size();
-        if (read_nested_columns != elements_size)
+        if (index >= data_type_tuple->getElements().size())
             throw Exception(
                             ErrorCodes::INCORRECT_DATA,
-                            "Cannot parse tuple column with type {} from BSON array/embedded document field, "
-                            "the number of fields in tuple and BSON document doesn't match: {} != {}",
-                            data_type->getName(),
-                            elements_size,
-                            read_nested_columns);
-    };
+                            "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                            "the number of fields BSON document exceeds the number of fields in tuple",
+                            data_type->getName());
 
-    SerializationTuple::readElementsSafe(column, read_tuple);
+        readField(tuple_column.getColumn(index), data_type_tuple->getElement(index), nested_bson_type);
+        ++read_nested_columns;
+    }
+
+    assertChar(BSON_DOCUMENT_END, *in);
+
+    const auto elements_size = data_type_tuple->getElements().size();
+    if (read_nested_columns != elements_size)
+        throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Cannot parse tuple column with type {} from BSON array/embedded document field, "
+                        "the number of fields in tuple and BSON document doesn't match: {} != {}",
+                        data_type->getName(),
+                        elements_size,
+                        read_nested_columns);
+
+    /// There are no nested columns to grow, so we must explicitly increment the column size.
+    /// Otherwise, `column.size()` will return 0 for empty tuples columns.
+    if (elements_size == 0)
+        tuple_column.addSize(1);
 }
 
 void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
@@ -478,22 +468,17 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
 
-    auto read_map = [&]()
+    while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
-        while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
-        {
-            auto nested_bson_type = getBSONType(readBSONType(*in));
-            auto name = readBSONKeyName(*in, current_key_name);
-            ReadBufferFromMemory buf(name);
-            key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
-            readField(value_column, value_data_type, nested_bson_type);
-        }
+        auto nested_bson_type = getBSONType(readBSONType(*in));
+        auto name = readBSONKeyName(*in, current_key_name);
+        ReadBufferFromMemory buf(name);
+        key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
+        readField(value_column, value_data_type, nested_bson_type);
+    }
 
-        assertChar(BSON_DOCUMENT_END, *in);
-        offsets.push_back(key_column.size());
-    };
-
-    SerializationMap::readMapSafe(column, read_map);
+    assertChar(BSON_DOCUMENT_END, *in);
+    offsets.push_back(key_column.size());
 }
 
 

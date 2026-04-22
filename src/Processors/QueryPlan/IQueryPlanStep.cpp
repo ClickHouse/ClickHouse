@@ -1,11 +1,9 @@
-#include <Common/CurrentThread.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Common/CurrentThread.h>
+
 #include <fmt/format.h>
 
 namespace DB
@@ -37,13 +35,6 @@ void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
 
     input_headers[idx] = input_header;
     updateOutputHeader();
-}
-
-void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater)
-{
-    if (!supportsDataflowStatisticsCollection())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step {} doesn't support dataflow statistics collection", getName());
-    dataflow_cache_updater = std::move(updater);
 }
 
 IQueryPlanStep::RemovedUnusedColumns IQueryPlanStep::removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/)
@@ -177,7 +168,7 @@ static void doDescribeProcessor(const IProcessor & processor, size_t count, IQue
     if (!processor.getDescription().empty())
         settings.out << String(settings.offset, settings.indent_char) << "Description: " << processor.getDescription() << '\n';
 
-    settings.offset += settings.base_indent;
+    settings.offset += settings.indent;
 }
 
 void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)

@@ -2,14 +2,19 @@
 
 #include <cstddef>
 #include <cstring>
+#include <deque>
+#include <vector>
 
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/DequeWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
@@ -127,7 +132,7 @@ private:
     }
 
     void fillResultValue(const TimestampType current_timestamp,
-        const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
+        const std::deque<std::pair<TimestampType, ValueType>> & samples_in_window,
         ValueType & result, UInt8 & null) const
     {
         size_t n = samples_in_window.size();
@@ -219,8 +224,8 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
+        std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
 
 
         /// Fill the data for missing buckets

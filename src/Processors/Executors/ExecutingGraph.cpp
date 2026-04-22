@@ -20,6 +20,7 @@ ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool pro
 {
     uint64_t num_processors = processors->size();
     nodes.reserve(num_processors);
+    source_processors.reserve(num_processors);
 
     /// Create nodes.
     for (uint64_t node = 0; node < num_processors; ++node)
@@ -27,6 +28,9 @@ ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool pro
         IProcessor * proc = processors->at(node).get();
         processors_map[proc] = node;
         nodes.emplace_back(std::make_unique<Node>(proc, node));
+
+        bool is_source = proc->getInputs().empty();
+        source_processors.emplace_back(is_source);
     }
 
     /// Create edges.
@@ -113,23 +117,17 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(boost::container
 
     {
         std::lock_guard guard(processors_mutex);
-
-        /// Even if the query was already cancelled, we must still add the new processors to the list
-        /// to keep them alive, because their ports are already connected to existing processors.
-        /// Destroying them here would leave dangling port references, causing use-after-free
-        /// (e.g. pure virtual call in `dumpPipeline`).
+        /// Do not add new processors to existing list, since the query was already cancelled.
+        if (cancelled)
+        {
+            for (auto & processor : new_processors)
+                processor->cancel();
+            return UpdateNodeStatus::Cancelled;
+        }
         processors->insert(processors->end(), new_processors.begin(), new_processors.end());
 
-        if (cancel_reason != IProcessor::CancelReason::NotCancelled)
-        {
-            /// Propagate the cancellation reason to newly added processors. They decide how to react.
-            for (auto & processor : new_processors)
-                processor->cancel(cancel_reason);
-
-            /// For PartialResult the pipeline must still run to drain all left data, so continue normally.
-            if (cancel_reason != IProcessor::CancelReason::PartialResult)
-                return UpdateNodeStatus::Cancelled;
-        }
+        // Do not consider sources added during pipeline expansion as cancelable to avoid tricky corner cases (e.g. ConvertingAggregatedToChunksWithMergingSource cancellation)
+        source_processors.resize(source_processors.size() + new_processors.size(), false);
     }
 
     uint64_t num_processors = processors->size();
@@ -403,24 +401,25 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
     return UpdateNodeStatus::Done;
 }
 
-void ExecutingGraph::cancel(IProcessor::CancelReason reason)
+void ExecutingGraph::cancel(bool cancel_all_processors)
 {
     std::exception_ptr exception_ptr;
 
     {
         std::lock_guard guard(processors_mutex);
-
-        if (cancel_reason == IProcessor::CancelReason::NotCancelled)
-            cancel_reason = reason;
-        else if (cancel_reason == IProcessor::CancelReason::PartialResult && reason != IProcessor::CancelReason::PartialResult)
-            cancel_reason = reason;
-
         uint64_t num_processors = processors->size();
         for (uint64_t proc = 0; proc < num_processors; ++proc)
         {
             try
             {
-                processors->at(proc)->cancel(cancel_reason);
+                /// Stop all processors in the general case, but in a specific case
+                /// where the pipeline needs to return a result on a partially read table,
+                /// stop only the processors that read from the source
+                if (cancel_all_processors || source_processors.at(proc))
+                {
+                    IProcessor * processor = processors->at(proc).get();
+                    processor->cancel();
+                }
             }
             catch (...)
             {
@@ -435,6 +434,8 @@ void ExecutingGraph::cancel(IProcessor::CancelReason reason)
                 tryLogCurrentException("ExecutingGraph");
             }
         }
+        if (cancel_all_processors)
+            cancelled = true;
     }
 
     if (exception_ptr)

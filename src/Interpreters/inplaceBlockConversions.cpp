@@ -237,7 +237,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);
 
-    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
     collectSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
@@ -310,17 +310,13 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
-
     return createExpressions(header, expr_list, save_unneeded_columns, context);
 }
 
 static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
-    const NamesAndTypesList & available_columns, const Columns & res_columns, bool share_nested_offsets)
+    const NamesAndTypesList & available_columns, const Columns & res_columns)
 {
     std::unordered_map<String, ColumnPtr> offsets_columns;
-
-    ISerialization::StreamFileNameSettings stream_settings;
-    stream_settings.share_nested_offsets = share_nested_offsets;
 
     auto available_column = available_columns.begin();
     for (size_t i = 0; i < available_columns.size(); ++i, ++available_column)
@@ -338,7 +334,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, stream_settings);
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -389,16 +385,17 @@ static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const
     return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
 }
 
-static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
+static bool hasDefault(const StorageMetadataPtr & metadata_snapshot, const NameAndTypePair & column)
 {
-    if (!storage_snapshot)
+    if (!metadata_snapshot)
         return false;
 
-    if (storage_snapshot->getDefault(column.name).has_value())
-        return true;
+    const auto & columns = metadata_snapshot->getColumns();
+    if (columns.has(column.name))
+        return columns.hasDefault(column.name);
 
     auto name_in_storage = column.getNameInStorage();
-    return storage_snapshot->getDefault(name_in_storage).has_value();
+    return columns.hasDefault(name_in_storage);
 }
 
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
@@ -424,8 +421,7 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageSnapshotPtr storage_snapshot,
-    bool share_nested_offsets)
+    StorageMetadataPtr metadata_snapshot)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -438,10 +434,7 @@ void fillMissingColumns(
     /// but a column of arrays of correct length.
 
     /// First, collect offset columns for all arrays in the block.
-    auto offsets_columns = collectOffsetsColumns(available_columns, res_columns, share_nested_offsets);
-
-    ISerialization::StreamFileNameSettings stream_settings;
-    stream_settings.share_nested_offsets = share_nested_offsets;
+    auto offsets_columns = collectOffsetsColumns(available_columns, res_columns);
 
     /// Insert default values only for columns without default expressions.
     auto requested_column = requested_columns.begin();
@@ -450,8 +443,8 @@ void fillMissingColumns(
         if (res_columns[i] && partially_read_columns.contains(requested_column->name))
             res_columns[i] = nullptr;
 
-        /// Nothing to fill or default should be filled in evaluateMissingDefaults.
-        if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+        /// Nothing to fill or default should be filled in evaluateMissingDefaults
+        if (res_columns[i] || hasDefault(metadata_snapshot, *requested_column))
             continue;
 
         std::vector<ColumnPtr> current_offsets;
@@ -474,7 +467,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, stream_settings);
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;

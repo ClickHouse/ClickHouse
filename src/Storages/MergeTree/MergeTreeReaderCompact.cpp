@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
@@ -10,11 +9,6 @@
 
 namespace DB
 {
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool share_nested_offsets;
-}
 
 namespace ErrorCodes
 {
@@ -78,10 +72,6 @@ void MergeTreeReaderCompact::fillColumnPositions()
         auto & column_to_read = columns_to_read[i];
         auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
 
-        /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
-        if (position.has_value() && isColumnDroppedByPendingMutation(i))
-            position.reset();
-
         if (position.has_value() && column_to_read.isSubcolumn())
         {
             auto name_in_storage = column_to_read.getNameInStorage();
@@ -109,9 +99,6 @@ void MergeTreeReaderCompact::fillColumnPositions()
 
 NameAndTypePair MergeTreeReaderCompact::getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column)
 {
-    if (!(*storage_settings)[MergeTreeSetting::share_nested_offsets])
-        return column;
-
     if (!isArray(column.type))
         return column;
 
@@ -137,9 +124,6 @@ NameAndTypePair MergeTreeReaderCompact::getColumnConvertedToSubcolumnOfNested(co
 
 void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
 {
-    if (!(*storage_settings)[MergeTreeSetting::share_nested_offsets])
-        return;
-
     auto & column = columns_to_read[pos];
 
     bool is_array = isArray(column.type);

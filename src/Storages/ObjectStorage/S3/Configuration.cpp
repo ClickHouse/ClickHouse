@@ -45,7 +45,6 @@ namespace Setting
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_s3;
     extern const SettingsBool compatibility_s3_presigned_url_query_in_path;
-    extern const SettingsS3UriStyle s3_uri_style;
 }
 
 namespace S3AuthSetting
@@ -63,9 +62,6 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
-    extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 namespace S3RequestSetting
@@ -157,7 +153,7 @@ StorageObjectStorageQuerySettings StorageS3Configuration::getQuerySettings(const
     };
 }
 
-ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */, CredentialsConfigurationCallback refresh_credentials_callback) /// NOLINT
+ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
 {
     assertInitialized();
 
@@ -169,14 +165,6 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     }
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
-
-    auto client_refresher = [refresh_credentials_callback, this, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
-    {
-        if (!refresh_credentials_callback)
-            return nullptr;
-        auto new_client = getClient(url, *s3_settings, context_, /* for_disk_s3 */false, /*opt_disk_name*/ {}, refresh_credentials_callback);
-        return new_client;
-    };
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
         std::make_unique<S3Settings>(*s3_settings),
@@ -184,8 +172,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         *s3_capabilities,
         /*key_generator=*/nullptr,
         "StorageS3",
-        false,
-        client_refresher);
+        false);
 }
 
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
@@ -198,14 +185,12 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         url = S3::URI(
             std::filesystem::path(collection.get<String>("url")) / filename,
             settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
-            /*uri_style*/ settings[Setting::s3_uri_style]);
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
     else
         url = S3::URI(
             collection.get<String>("url"),
             settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
-            /*uri_style*/ settings[Setting::s3_uri_style]);
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
 
     const auto & config = context->getConfigRef();
 
@@ -603,8 +588,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     url = S3::URI(
         checkAndGetLiteralArgument<String>(args[0], "url"),
         context->getSettingsRef()[Setting::allow_archive_path_syntax],
-        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
-        /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
+        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path]);
 
     s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(
@@ -1014,13 +998,6 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     assert(s3_settings != nullptr);
-    if (!biglake_adc_client_id.empty())
-    {
-        s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
-        s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = biglake_adc_client_id;
-        s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = biglake_adc_client_secret;
-        s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = biglake_adc_refresh_token;
-    }
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 }

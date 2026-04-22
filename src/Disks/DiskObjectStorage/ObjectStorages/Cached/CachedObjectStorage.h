@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/FileCache/FileCacheKey.h>
-#include <Interpreters/FileCache/FileCacheSettings.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
 #include "config.h"
 
 namespace Poco
@@ -95,6 +95,10 @@ public:
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
 
+    const std::string & getCacheConfigName() const { return cache_config_name; }
+
+    ObjectStoragePtr getWrappedObjectStorage() { return object_storage; }
+
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
@@ -108,11 +112,6 @@ public:
     AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override
     {
         return object_storage->getAzureBlobStorageAuthMethod();
-    }
-
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override
-    {
-        return object_storage->getAzureBlobStorageConnectionParams();
     }
 #endif
 
@@ -134,8 +133,6 @@ public:
         object_storage->tagObjects(objects, tag_key, tag_value);
     }
 #endif
-
-    ObjectStoragePtr getUnderlying() override { return object_storage; }
 
 private:
     FileCacheKey getCacheKey(const std::string & path) const;
