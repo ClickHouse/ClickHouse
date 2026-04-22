@@ -223,6 +223,8 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         }
     }
 
+    checkConstraints(current_query->as<ASTSelectQuery &>());
+
     auto list_of_selects = make_intrusive<ASTExpressionList>();
     list_of_selects->children.push_back(current_query);
 
