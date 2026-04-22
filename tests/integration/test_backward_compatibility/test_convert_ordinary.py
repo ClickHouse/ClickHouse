@@ -74,11 +74,13 @@ def check_convert_system_db_to_atomic():
         == node.query("SELECT name FROM system.databases ORDER BY name")
     )
 
-    errors_count = node.count_in_log("<Error>")
-    assert "0\n" == errors_count or (
-        "1\n" == errors_count
-        and "1\n" == node.count_in_log("Can't receive Netlink response")
+    errors_count = int(node.count_in_log("<Error>"))
+    allowed_errors_count = int(node.count_in_log("Can't receive Netlink response")) + int(
+        node.count_in_log( # NOTE (strtgbb): cgroups error occurs in our environment
+            "CgroupsReader: Cannot find 'kernel' in '/sys/fs/cgroup/memory.stat'"
+        )
     )
+    assert errors_count == allowed_errors_count
     assert "0\n" == node.count_in_log("<Warning> Database")
     errors_count = node.count_in_log("always include the lines below")
     assert "0\n" == errors_count or (
