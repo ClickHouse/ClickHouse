@@ -78,6 +78,15 @@ public:
     /// Please note: addresses are also available in the system.stack_trace and system.trace_log tables.
     static void setShowAddresses(bool show);
 
+    /// Converts a runtime (virtual) address, as captured by `unw_backtrace` or stored in a frame pointer,
+    /// into an address that corresponds to an offset inside the containing ELF binary, i.e. subtracts the
+    /// address at which the object was loaded. For `PIE` executables and shared libraries the runtime
+    /// address changes between runs due to `ASLR`, while the returned offset is stable and can be fed
+    /// directly to `addr2line -e <binary>` / `llvm-symbolizer`.
+    /// On macOS (Mach-O), `SymbolIndex` already keeps absolute virtual addresses, so this returns its input.
+    /// Addresses that do not belong to any known object are returned unchanged.
+    static const void * getPhysicalAddress(const void * virtual_addr);
+
 protected:
     void tryCapture();
 

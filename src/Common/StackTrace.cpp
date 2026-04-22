@@ -66,6 +66,20 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
+const void * StackTrace::getPhysicalAddress(const void * virtual_addr)
+{
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    const auto * object = symbol_index.findObject(virtual_addr);
+    uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
+    return reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
+#else
+    /// On macOS, SymbolIndex stores absolute virtual addresses, so no conversion is needed.
+    /// On FreeBSD / other platforms we don't have a SymbolIndex, so keep the raw address.
+    return virtual_addr;
+#endif
+}
+
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);

@@ -493,13 +493,15 @@ try
         /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
         /// NOTE: This still require memory allocations and mutex lock inside logger.
         ///       BTW we can also print it to stderr using write syscalls.
+        /// Addresses are normalized to file offsets (ASLR-independent) so they can be passed directly
+        /// to `addr2line -e <binary>` / `llvm-symbolizer` even for a `PIE` binary.
 
         WriteBufferFromOwnString bare_stacktrace;
         writeString("Stack trace:", bare_stacktrace);
         for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
         {
             writeChar(' ', bare_stacktrace);
-            writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
+            writePointerHex(StackTrace::getPhysicalAddress(stack_trace.getFramePointers()[i]), bare_stacktrace);
         }
 
         LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
@@ -562,7 +564,7 @@ try
                                 [&bare_stacktrace](const void * ptr)
                                 {
                                     writeChar(' ', bare_stacktrace);
-                                    writePointerHex(ptr, bare_stacktrace);
+                                    writePointerHex(StackTrace::getPhysicalAddress(ptr), bare_stacktrace);
                                 }
                 );
 
