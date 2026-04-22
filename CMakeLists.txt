@@ -453,18 +453,6 @@ endif ()
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
 # Always build ClickHouse as a Position Independent Executable:
-# 1. PIE binaries have no limit on the maximum relocation size, which avoids multiple sophisticated
-#    problems like linking with sanitizers or linking of Rust libraries (e.g. with `ThinLTO` we hit
-#    `rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC`).
-# 2. PIE makes stack traces and symbol offsets correspond directly to file offsets in the ELF binary,
-#    so the addresses emitted by the server can be fed to `addr2line`/`llvm-symbolizer` without any
-#    load-base arithmetic. `system.stack_trace`, `system.trace_log` and fatal crash traces all
-#    normalize addresses to this file offset representation.
-# 3. PIE is required for `ASLR` to apply to the executable itself and is required by `Android`, by
-#    `AddressSanitizer` (to avoid running into the maximum relocation size) and by recent toolchains
-#    on most distributions by default.
-# The performance difference vs. a position dependent binary is negligible in practice and is worth
-# the benefits above.
 set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
 
