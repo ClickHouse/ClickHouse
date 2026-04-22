@@ -51,11 +51,14 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 
     if (stream_settings.has_value())
     {
-        for (const auto & entry : cursorTreeToMap(stream_settings->cursor_tree))
+        if (stream_settings->cursor_tree)
         {
-            const auto & tuple = entry.safeGet<Tuple>();
-            hash_state.update(tuple.at(0).safeGet<String>());
-            hash_state.update(tuple.at(1).safeGet<Int64>());
+            for (const auto & entry : cursorTreeToMap(stream_settings->cursor_tree))
+            {
+                const auto & tuple = entry.safeGet<Tuple>();
+                hash_state.update(tuple.at(0).safeGet<String>());
+                hash_state.update(tuple.at(1).safeGet<Int64>());
+            }
         }
     }
 }
