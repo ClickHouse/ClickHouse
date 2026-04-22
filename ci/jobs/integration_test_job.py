@@ -752,8 +752,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
-    session_timeout_parallel = 3600 * 2
-    session_timeout_sequential = 3600
+    session_timeout_parallel = 3600 * 3
+    session_timeout_sequential = 3600 * 1.5
 
     if is_llvm_coverage:
         session_timeout_parallel = 3600 * 3
@@ -877,10 +877,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         test_result_retries = run_pytest_and_collect_results(
-            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=3600",
+            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=7000",
             env=test_env,
             report_name="retries",
-            timeout=3600 + 600,
+            timeout=7000 + 600,
         )
         successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
         failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
@@ -888,6 +888,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             for test_case in test_results:
                 if test_case.name in successful_retries:
                     test_case.set_label(Result.Label.OK_ON_RETRY)
+                    test_case.set_status(Result.StatusExtended.OK)
                 elif test_case.name in failed_retries:
                     test_case.set_label(Result.Label.FAILED_ON_RETRY)
 

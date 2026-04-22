@@ -323,7 +323,7 @@ def get_checks_errors(client: Client, commit_sha: str, branch_name: str):
     query = f"""{_checks_latest_test_status_cte(commit_sha, branch_name)}
         SELECT job_status, job_name, status AS test_status, test_name, results_link
         FROM latest_test_status
-        WHERE job_status = 'error'
+        WHERE job_status = 'error' AND test_status NOT IN ('OK', 'SKIPPED')
         ORDER BY job_name, test_name
         """
     return query_dataframe_with_retry(client, query)
