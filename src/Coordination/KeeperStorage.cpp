@@ -2237,7 +2237,7 @@ public:
                 uncommitted_children[node_path] = &uncommitted_node;
         }
 
-        addDelta(root_path, root_node.stats, storage.uncommitted_state.getACLs(root_path), std::string{root_node.getData()});
+        addDelta(root_path, root_node.stats, storage.uncommitted_state.getACLs(root_path), std::string{root_node.getData()}, root_node.destroy_time, root_node.ttl);
 
         for (auto current_delta_it = deltas.rbegin(); current_delta_it != deltas.rend(); ++current_delta_it)
         {
