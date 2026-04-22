@@ -1,28 +1,16 @@
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Storages/StorageObfuscate.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageSnapshot.h>
 
-#include <Common/typeid_cast.h>
-
-#include <QueryPipeline/Pipe.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ObfuscateStep.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -72,21 +60,9 @@ void StorageObfuscate::read(
         current_inner_query = query_info.view_query->clone();
     }
 
-    auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, options, column_names);
-    interpreter.addStorageLimits(*query_info.storage_limits);
-    interpreter.buildQueryPlan(query_plan);
+    auto output_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 
-    /// It's expected that the columns read from storage are not constant.
-    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-    materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
-
-    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
-    materializing->setStepDescription("Materialize constants after VIEW subquery");
-    query_plan.addStep(std::move(materializing));
-
-    auto obfuscation = std::make_unique<ObfuscateStep>(query_plan.getCurrentHeader(), context->getTempDataOnDisk());
+    auto obfuscation = std::make_unique<ObfuscateStep>(std::move(output_header), current_inner_query, column_names, context, /*seed=*/0);
     query_plan.addStep(std::move(obfuscation));
 }
 

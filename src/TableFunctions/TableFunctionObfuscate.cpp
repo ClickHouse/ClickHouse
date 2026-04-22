@@ -1,4 +1,7 @@
 #include <Core/Names.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -11,6 +14,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -20,6 +28,11 @@ namespace ErrorCodes
 const ASTSelectWithUnionQuery & TableFunctionObfuscate::getSelectQuery() const
 {
     return *create.select;
+}
+
+std::vector<size_t> TableFunctionObfuscate::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
+{
+    return {0};
 }
 
 void TableFunctionObfuscate::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
@@ -41,8 +54,15 @@ ColumnsDescription TableFunctionObfuscate::getActualTableStructure(ContextPtr co
     assert(create.select);
     assert(create.children.size() == 1);
     assert(create.children[0]->as<ASTSelectWithUnionQuery>());
-    auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
-    return ColumnsDescription(sample->getNamesAndTypesList());
+
+    SharedHeader sample_block;
+
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+    else
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+
+    return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
 
 StoragePtr TableFunctionObfuscate::executeImpl(

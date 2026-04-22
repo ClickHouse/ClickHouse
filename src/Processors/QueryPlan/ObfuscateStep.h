@@ -1,32 +1,37 @@
 #pragma once
 
-#include <Processors/QueryPlan/ITransformingStep.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
+#include <Common/Obfuscator/Obfuscator.h>
+#include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 
 namespace DB
 {
 
-class ObfuscateStep : public ITransformingStep
+class ObfuscateStep : public ISourceStep
 {
 public:
     ObfuscateStep(
-        const SharedHeader & input_header_,
-        TemporaryDataOnDiskScopePtr tmp_data_scope_);
+        SharedHeader output_header_,
+        ASTPtr inner_query_,
+        Names column_names_,
+        ContextPtr context_,
+        UInt64 seed_);
 
     String getName() const override { return "Obfuscate"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void updateOutputHeader() override
-    {
-        output_header = input_headers.front();
-    }
-
 private:
-    TemporaryDataOnDiskScopePtr tmp_data_scope;
+    ASTPtr inner_query;
+    Names column_names;
+    ContextPtr context;
+    MarkovModelParameters markov_model_params;
+    UInt64 seed;
 };
 
 }
