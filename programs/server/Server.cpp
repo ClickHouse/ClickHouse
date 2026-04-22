@@ -59,6 +59,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/SymbolIndex.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -1118,6 +1119,9 @@ try
     ::ssh::LibSSHInitializer::instance();
     ::ssh::libsshLogger::initialize();
 #endif
+
+    /// Initialize SymbolIndex explicitly.
+    DB::SymbolIndex::instance();
 
     Stopwatch startup_watch;
     Poco::Logger * log = &logger();

@@ -4,6 +4,7 @@
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Common/SymbolIndex.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
@@ -1349,6 +1350,9 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
     DB::MainThreadStatus::getInstance();
+
+    /// Initialize SymbolIndex explicitly.
+    DB::SymbolIndex::instance();
 
     try
     {
