@@ -545,14 +545,14 @@ void MemoryWorker::setDirtyDecayForAllArenas(size_t decay_ms)
             {
                 Jemalloc::setValue(arena_path.c_str(), decay_ms);
             }
-            catch (...) // Ok: some arenas might not exist or be accessible, skip them
+            catch (...)
             {
                 /// Some arenas might not exist or be accessible, skip them
                 LOG_TRACE(log, "Failed to set dirty_decay_ms for arena {}", i);
             }
         }
     }
-    catch (...) // Ok: jemalloc arena config is best-effort
+    catch (...)
     {
         tryLogCurrentException(log, "Failed to set dirty_decay_ms");
     }

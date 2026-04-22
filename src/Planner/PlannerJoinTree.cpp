@@ -29,7 +29,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
-#include <Storages/StorageView.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -136,7 +135,6 @@ namespace Setting
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
-    extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
 }
 
 namespace ErrorCodes
@@ -403,9 +401,19 @@ bool applyTrivialCountIfPossible(
     auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
     column->insertFrom(place);
 
+    /// get count() argument type
+    DataTypes argument_types;
+    argument_types.reserve(columns_names.size());
+    {
+        const Block source_header = table_node ? table_node->getStorageSnapshot()->getSampleBlockForColumns(columns_names)
+                                               : table_function_node->getStorageSnapshot()->getSampleBlockForColumns(columns_names);
+        for (const auto & column_name : columns_names)
+            argument_types.push_back(source_header.getByName(column_name).type);
+    }
+
     auto block_with_count = std::make_shared<const Block>(Block{
         {std::move(column),
-         std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), agg_count.getArgumentTypes(), Array{}),
+         std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), argument_types, Array{}),
          columns_names.front()}});
 
     auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
@@ -562,8 +570,6 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
     for (const auto & row_policy : row_policy_filter->policies)
     {
         auto name = row_policy->getFullName().toString();
-        if (query_context->hasQueryContext())
-            query_context->getQueryContext()->addUsedRowPolicy(name);
         used_row_policies.emplace(std::move(name));
     }
 
@@ -597,7 +603,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         {settings[Setting::parallel_replicas_mode],
          settings[Setting::parallel_replicas_custom_key_range_lower],
          settings[Setting::parallel_replicas_custom_key_range_upper]},
-        storage->getInMemoryMetadataPtr(query_context, false)->columns,
+        storage->getInMemoryMetadataPtr()->columns,
         query_context);
 
     return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
@@ -733,6 +739,37 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
     auto alias_column_step = std::make_unique<ExpressionStep>(current_header, std::move(merged_alias_columns_actions_dag));
     alias_column_step->setStepDescription("Compute alias columns");
     return alias_column_step;
+}
+
+bool extractRequiredNonTableColumnsFromStorage(
+    const Names & columns_names,
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    const QueryProcessingStage::Enum processed_stage,
+    Names & extracted_column_names)
+{
+    if (processed_stage != QueryProcessingStage::FetchColumns)
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageMerge>(storage))
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageDistributed>(storage))
+        return false;
+
+    bool has_table_virtual_column = false;
+    for (const auto & column_name : columns_names)
+    {
+        if (column_name == "_table" && storage->isVirtualColumn(column_name, storage_snapshot->metadata))
+            has_table_virtual_column = true;
+        else
+            extracted_column_names.push_back(column_name);
+    }
+
+    if (has_table_virtual_column && extracted_column_names.empty())
+        extracted_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+
+    return has_table_virtual_column;
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
@@ -1008,9 +1045,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     till_stage = storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
+                Names extracted_column_names;
+                bool has_table_virtual_column
+                        = extractRequiredNonTableColumnsFromStorage(columns_names, storage, storage_snapshot, till_stage, extracted_column_names);
+                const auto & storage_column_names = has_table_virtual_column ? extracted_column_names : columns_names;
+
                 if (select_query_options.build_logical_plan)
                 {
-                    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_names));
+                    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(storage_column_names));
 
                     if (table_node)
                     {
@@ -1061,34 +1103,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
-                        bool disable_parallel_replicas_for_storage = true;
-                        ContextPtr updated_context = query_context;
-                        if (const UnionNode * table_union = planner_context->getGlobalPlannerContext()->parallel_replicas_table_union)
-                        {
-                            SelectQueryOptions options;
-                            for (const auto & child : table_union->getQueries().getNodes())
-                            {
-                                if (table_node == findTableForParallelReplicas(child, options))
-                                {
-                                    disable_parallel_replicas_for_storage = false;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (disable_parallel_replicas_for_storage)
-                        {
-                            auto mutable_context = Context::createCopy(query_context);
-                            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                            updated_context = mutable_context;
-                        }
-
+                        auto mutable_context = Context::createCopy(query_context);
+                        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                         storage->read(
                             query_plan,
-                            columns_names,
+                            storage_column_names,
                             storage_snapshot,
                             table_expression_query_info,
-                            std::move(updated_context),
+                            std::move(mutable_context),
                             till_stage,
                             max_block_size,
                             max_streams);
@@ -1097,7 +1119,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         storage->read(
                             query_plan,
-                            columns_names,
+                            storage_column_names,
                             storage_snapshot,
                             table_expression_query_info,
                             query_context,
@@ -1107,25 +1129,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
-                auto parallel_replicas_enabled_for_storage
-                    = [](const StoragePtr & current_storage, const ContextPtr & context, const Settings & query_settings)
+                auto parallel_replicas_enabled_for_storage = [](const StoragePtr & current_storage, const Settings & query_settings)
                 {
-                    const auto * table_ptr = current_storage.get();
-
-                    if (query_settings[Setting::parallel_replicas_allow_view_over_mergetree])
-                    {
-                        const auto * view = typeid_cast<const StorageView *>(current_storage.get());
-                        if (view)
-                        {
-                            auto underlying_storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
-                            if (!underlying_storage)
-                                return false;
-
-                            table_ptr = underlying_storage.get();
-                        }
-                    }
-
                     const auto * mv = typeid_cast<const StorageMaterializedView *>(current_storage.get());
+                    const auto * table_ptr = current_storage.get();
                     if (mv)
                     {
                         if (!query_settings[Setting::parallel_replicas_allow_materialized_views])
@@ -1149,12 +1156,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
-                    && parallel_replicas_enabled_for_storage(storage, query_context, settings))
+                    && parallel_replicas_enabled_for_storage(storage, settings))
                 {
                     /// we need to decide if parallel replicas is supported for join tree while visiting left table expression
                     /// therefore, here both join sides are analysed
                     auto allow_parallel_replicas_for_join_tree
-                        = [&parallel_replicas_enabled_for_storage](const QueryTreeNodePtr & join_tree_node, const ContextPtr & context, const Settings & query_settings)
+                        = [&parallel_replicas_enabled_for_storage](const QueryTreeNodePtr & join_tree_node, const Settings & query_settings)
                     {
                         if (join_tree_node->as<CrossJoinNode>())
                             return false;
@@ -1174,11 +1181,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         {
                             // check that left table expression can be used for parallel replicas
                             if (left_table)
-                                return parallel_replicas_enabled_for_storage(left_table->getStorage(), context, query_settings);
+                                return parallel_replicas_enabled_for_storage(left_table->getStorage(), query_settings);
 
                             const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
                             if (left_table_function)
-                                return parallel_replicas_enabled_for_storage(left_table_function->getStorage(), context, query_settings);
+                                return parallel_replicas_enabled_for_storage(left_table_function->getStorage(), query_settings);
 
                             // check if left one is not subquery
                             return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
@@ -1202,11 +1209,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 return false;
 
                             const auto right_storage = right_table ? right_table->getStorage() : right_table_function->getStorage();
-                            if (parallel_replicas_enabled_for_storage(right_storage, context, query_settings))
+                            if (parallel_replicas_enabled_for_storage(right_storage, query_settings))
                             {
                                 const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
                                 const auto left_storage = (left_table ? left_table->getStorage() : left_table_function->getStorage());
-                                if (!parallel_replicas_enabled_for_storage(left_storage, context, query_settings))
+                                if (!parallel_replicas_enabled_for_storage(left_storage, query_settings))
                                     // TODO: support parallel replicas for (non_mt_table RIGHT JOIN mt_table) later
                                     return false;
 
@@ -1231,7 +1238,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 query_plan_parallel_replicas,
                                 storage->getStorageID(),
                                 modified_query_info,
-                                storage->getInMemoryMetadataPtr(query_context, false)->getColumns(),
+                                storage->getInMemoryMetadataPtr()->getColumns(),
                                 storage_snapshot,
                                 till_stage,
                                 table_expression_query_info.query_tree,
@@ -1241,7 +1248,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && allow_parallel_replicas_for_join_tree(parent_join_tree, query_context, settings))
+                        && allow_parallel_replicas_for_join_tree(parent_join_tree, settings))
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
@@ -1252,13 +1259,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             if (reading)
                                 break;
 
-                            /// Empty table or all data pruned — nothing to read, skip parallel replicas.
-                            if (typeid_cast<ReadNothingStep *>(node->step.get()))
-                                break;
-
                             QueryPlan::Node * prev_node = node;
                             if (!node->children.empty())
                             {
+                                chassert(node->children.size() == 1);
                                 node = node->children.at(0);
                             }
                             else
@@ -1270,8 +1274,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             }
                         }
 
+                        chassert(reading);
+
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
-                        if (reading && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
+                        if (settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
                             auto result_ptr = reading->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
@@ -1305,7 +1311,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         }
 
                         // (3) if parallel replicas still enabled - replace reading step
-                        if (reading && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
+                        if (planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
                             till_stage = QueryProcessingStage::WithMergeableState;
                             QueryPlan query_plan_parallel_replicas;
@@ -1326,7 +1332,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             QueryPlan query_plan_no_parallel_replicas;
                             storage->read(
                                 query_plan_no_parallel_replicas,
-                                columns_names,
+                                storage_column_names,
                                 storage_snapshot,
                                 table_expression_query_info,
                                 query_context,
@@ -1335,6 +1341,27 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 max_streams);
                             query_plan = std::move(query_plan_no_parallel_replicas);
                         }
+                    }
+                }
+
+                if (has_table_virtual_column && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
+                {
+                    const auto & data_header = query_plan.getCurrentHeader();
+                    if (!data_header->findByName(static_cast<std::string_view>("_table")))
+                    {
+                        String table_name;
+                        if (table_node && !(table_node->getTemporaryTableName().empty()))
+                            table_name = table_node->getTemporaryTableName();
+                        else
+                            table_name = storage->getStorageID().getTableName();
+                        ColumnWithTypeAndName column;
+                        column.name = "_table";
+                        column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                        column.column = column.type->createColumnConst(0, Field(table_name));
+
+                        auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+                        auto expression_step = std::make_unique<ExpressionStep>(data_header, std::move(adding_column_dag));
+                        query_plan.addStep(std::move(expression_step));
                     }
                 }
 
@@ -1419,7 +1446,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         {
             std::shared_ptr<GlobalPlannerContext> subquery_planner_context;
             if (wrap_read_columns_in_subquery)
-                subquery_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+                subquery_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
             else
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
@@ -1640,56 +1667,10 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     size_t max_step_description_length)
 {
     const auto & left_header = left_plan.getCurrentHeader();
-    auto right_header = right_plan.getCurrentHeader();
+    const auto & right_header = right_plan.getCurrentHeader();
 
     auto columns_from_left_table = left_header->getNamesAndTypesList();
     auto columns_from_right_table = right_header->getNamesAndTypesList();
-
-    /// Remove non-key right columns that overlap with left column names.
-    /// Such columns cause a count mismatch in `HashJoin::getNonJoinedBlocks` because
-    /// `AddedColumns` skips right columns matching left column names (deduplication),
-    /// but the assertion expects the arithmetic sum.
-    {
-        NameSet left_column_names;
-        for (const auto & col : columns_from_left_table)
-            left_column_names.insert(col.name);
-
-        NameSet right_key_names;
-        for (const auto & clause : table_join->getClauses())
-            for (const auto & key_name : clause.key_names_right)
-                right_key_names.insert(key_name);
-
-        bool has_overlapping = false;
-        for (const auto & col : columns_from_right_table)
-        {
-            if (left_column_names.contains(col.name) && !right_key_names.contains(col.name))
-            {
-                has_overlapping = true;
-                break;
-            }
-        }
-
-        if (has_overlapping)
-        {
-            ActionsDAG dag(right_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-            ActionsDAG::NodeRawConstPtrs updated_outputs;
-            for (const auto * output : dag.getOutputs())
-            {
-                if (!left_column_names.contains(output->result_name)
-                    || right_key_names.contains(output->result_name))
-                    updated_outputs.push_back(output);
-            }
-            dag.getOutputs() = std::move(updated_outputs);
-
-            auto step = std::make_unique<ExpressionStep>(
-                right_plan.getCurrentHeader(), std::move(dag));
-            step->setStepDescription("Remove columns overlapping with left side of JOIN");
-            right_plan.addStep(std::move(step));
-
-            right_header = right_plan.getCurrentHeader();
-            columns_from_right_table = right_header->getNamesAndTypesList();
-        }
-    }
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1833,17 +1814,6 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
         }
 
         auto join_pipeline_type = join_algorithm->pipelineType();
-
-        /// `required_columns_after_join` starts as `outer_scope_columns`, which may
-        /// include columns from unrelated tables (e.g. from the right side of a CROSS
-        /// JOIN that wraps this join). Remove columns that don't exist in either join
-        /// input — the join cannot produce them and their presence confuses the
-        /// JoinStep's column-permutation logic (it treats "no matching required columns"
-        /// as "keep all columns", which breaks when the join output changes after swap).
-        std::erase_if(required_columns_after_join, [&](const String & name)
-        {
-            return !left_header->has(name) && !right_header->has(name);
-        });
 
         if (required_columns_after_join.empty())
         {

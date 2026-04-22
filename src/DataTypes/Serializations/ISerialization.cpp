@@ -6,18 +6,16 @@
 #include <Common/Exception.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <absl/strings/str_split.h>
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <base/types.h>
+#include <boost/algorithm/string_regex.hpp>
 
 namespace DB
 {
@@ -25,7 +23,6 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool escape_variant_subcolumn_filenames;
-    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace ErrorCodes
@@ -48,23 +45,6 @@ void throwInvalidSerializationState(const ISerialization * serialization, const 
             demangle(typeid(*serialization).name()),
             demangle(expected.name()),
             demangle(got.name()));
-}
-
-UInt128 ISerialization::getHash() const
-{
-    if (!cached_hash)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash is not set for serialization {}", typeid(*this).name());
-    return *cached_hash;
-}
-
-SerializationPtr ISerialization::pooled(UInt128 hash, std::function<ISerialization *()> creator)
-{
-    return SerializationObjectPool::getOrCreate(hash, [hash, c = std::move(creator)]() -> ISerialization *
-    {
-        auto * obj = c();
-        obj->cached_hash = hash;
-        return obj;
-    });
 }
 
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
@@ -128,7 +108,7 @@ String ISerialization::kindStackToString(const KindStack & kind_stack)
     return result;
 }
 
-static ISerialization::Kind stringToKind(std::string_view str)
+static ISerialization::Kind stringToKind(const String & str)
 {
     if (str == "Default")
         return ISerialization::Kind::DEFAULT;
@@ -143,7 +123,8 @@ static ISerialization::Kind stringToKind(std::string_view str)
 
 ISerialization::KindStack ISerialization::stringToKindStack(const String & str)
 {
-    std::vector<std::string_view> kind_strings = absl::StrSplit(str, absl::ByString("Over"));
+    std::vector<String> kind_strings;
+    boost::algorithm::split_regex(kind_strings, str, boost::regex("Over"));
     KindStack kind_stack;
     for (size_t i = 0; i != kind_strings.size(); ++i)
     {
@@ -364,10 +345,8 @@ String getNameForSubstreamPath(
             stream_name += ".object_structure";
         else if (it->type == SubstreamType::ObjectSharedData)
             stream_name += ".object_shared_data";
-        else if (it->type == SubstreamType::Bucket)
-            stream_name += "." + std::to_string(it->bucket);
-        else if (it->type == SubstreamType::MapBucketsInfo)
-            stream_name += ".buckets_info";
+        else if (it->type == SubstreamType::ObjectSharedDataBucket)
+            stream_name +=   "." + std::to_string(it->object_shared_data_bucket);
         else if (it->type == SubstreamType::ObjectSharedDataStructure)
             stream_name += ".structure";
         else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
@@ -431,18 +410,11 @@ static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path
 String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings)
 {
     String stream_name;
-    if (settings.share_nested_offsets)
-    {
-        auto nested_storage_name = Nested::extractTableName(name_in_storage);
-        if (name_in_storage != nested_storage_name && isPossibleOffsetsOfNested(path))
-            stream_name = escapeForFileName(nested_storage_name);
-        else
-            stream_name = escapeForFileName(name_in_storage);
-    }
+    auto nested_storage_name = Nested::extractTableName(name_in_storage);
+    if (name_in_storage != nested_storage_name && isPossibleOffsetsOfNested(path))
+        stream_name = escapeForFileName(nested_storage_name);
     else
-    {
         stream_name = escapeForFileName(name_in_storage);
-    }
 
     return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
 }
@@ -569,7 +541,7 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
         deserialize(column);
         return true;
     }
-    catch (...) // Ok: tryDeserializeText is a try-pattern
+    catch (...)
     {
         if (column.size() > prev_size)
             column.popBack(column.size() - prev_size);
@@ -696,13 +668,12 @@ bool ISerialization::isLowCardinalityDictionarySubcolumn(const DB::ISerializatio
     return path[path.size() - 1].type == SubstreamType::DictionaryKeys;
 }
 
-bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & path)
+bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerialization::SubstreamPath & path)
 {
     if (path.empty())
         return false;
 
-    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure
-        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
+    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
 }
 
 bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams)
@@ -734,14 +705,6 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
 
     ssize_t last_elem = prefix_len - 1;
     auto res = path[last_elem].data;
-
-    /// Materialize the column on demand via a lazy creator if one is attached.
-    /// This supports deferred column creation for derived subcolumns like
-    /// String `.size`, whose data is computed from a parent column and should
-    /// only be materialized when actually requested.
-    if (!res.column && res.lazy_column_creator)
-        res.column = res.lazy_column_creator();
-
     for (ssize_t i = last_elem - 1; i >= 0; --i)
     {
         const auto & creator = path[i].creator;
@@ -773,7 +736,6 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
 ISerialization::StreamFileNameSettings::StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings)
 {
     escape_variant_substreams = merge_tree_settings[MergeTreeSetting::escape_variant_subcolumn_filenames];
-    share_nested_offsets = merge_tree_settings[MergeTreeSetting::share_nested_offsets];
 }
 
 void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath & path, const ISerialization::StreamCallback & callback, ISerialization::Substream substream) const
