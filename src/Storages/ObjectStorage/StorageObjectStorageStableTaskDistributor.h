@@ -41,6 +41,8 @@ private:
 
     void saveLastNodeActivity(size_t number_of_current_replica);
 
+    String getFileIdentifier(ObjectInfoPtr file_object, bool write_to_log = false) const;
+
     const std::shared_ptr<IObjectIterator> iterator;
     const bool send_over_whole_archive;
 
