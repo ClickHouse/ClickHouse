@@ -27,7 +27,7 @@ CREATE TABLE t_v2_eager_discard (a UInt64) ENGINE = MergeTree ORDER BY a
 SETTINGS enable_block_number_column = 1,
          enable_block_offset_column = 1,
          apply_patches_on_merge = 0,
-         patch_parts_serialization_version = 'v2',
+         patch_parts_version = 'v2',
          index_granularity = 1024;
 
 -- Five separate inserts → five main parts covering disjoint `a` ranges. One DELETE per part

@@ -9997,6 +9997,8 @@ StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart 
             const auto & main_sorting_key = main_metadata->getSortingKey();
             metadata_snapshot = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), main_sorting_key, source_parts_set.getSortKeyPrefixSize(), local_context);
             break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown patch part format version: {}", source_parts_set.getFormatVersion());
     }
 
     return metadata_snapshot;
