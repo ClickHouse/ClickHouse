@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Common/CurrentThread.h>
 
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/Stopwatch.h>
@@ -773,7 +774,16 @@ void DiskObjectStorage::prepareRead(
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
     if (storage_objects.empty())
-        return;  /// No source set — caller checks hasSource() and returns empty buffer.
+    {
+        pipeline.setSource(
+            StoredObjects{StoredObject("", "", 0)},
+            [](const StoredObject &, const ReadSettings &, bool, bool)
+            {
+                return std::make_unique<ReadBufferFromEmptyFile>();
+            });
+        pipeline.setReadSettings(settings);
+        return;
+    }
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
