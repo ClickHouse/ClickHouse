@@ -1,9 +1,5 @@
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/Streaming/CommitOrderStrategy.h>
-
-#include <Processors/IProcessor.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -11,7 +7,6 @@
 
 #include <Core/Block.h>
 
-#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -19,18 +14,12 @@ namespace DB
 
 MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     SharedHeader header_,
-    const MergeTreeData & storage_,
-    StorageSnapshotPtr storage_snapshot_,
-    RangesInDataPartStreamSubscriptionPtr subscription_,
-    Names columns_to_read_,
-    ContextPtr context_)
+    CommitOrderReadStrategyPtr read_strategy_,
+    RangesInDataPartStreamSubscriptionPtr subscription_)
     : IProcessor({}, {Block(*header_)})
     , header(std::move(header_))
-    , storage(storage_)
-    , storage_snapshot(std::move(storage_snapshot_))
+    , read_strategy(std::move(read_strategy_))
     , subscription(std::move(subscription_))
-    , columns_to_read(std::move(columns_to_read_))
-    , context(std::move(context_))
     , log(getLogger("MergeTreeCommitOrderSequentialSource"))
 {
 }
@@ -110,12 +99,8 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
         inputs.emplace_back(*header, this);
 
     auto ranges = std::move(pending.front());
+    Pipe sub_pipe = read_strategy->createReadStream(ranges);
     pending.pop_front();
-
-    auto strategy = chooseCommitOrderReadStrategy(ranges, storage_snapshot->metadata);
-    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).mutations_snapshot, context);
-    Pipe sub_pipe = createCommitOrderReadStream(storage, storage_snapshot, std::move(alter_conversions), columns_to_read, strategy, context);
-    LOG_DEBUG(log, "Strategy for reading {}: kind: {}, part: {}", ranges.getDescription().describe(), strategy.kind, strategy.ranges_to_read.getDescription().describe());
 
     chassert(sub_pipe.numOutputPorts() == 1);
     auto * sub_output = sub_pipe.getOutputPort(0);

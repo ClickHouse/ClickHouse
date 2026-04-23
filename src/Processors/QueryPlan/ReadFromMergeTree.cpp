@@ -57,6 +57,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
@@ -3092,6 +3093,19 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
 
     auto parts_index = buildRightPartsIndex(std::move(result.parts_with_ranges));
     auto promoters = data.buildPromoters();
+    auto strategy = std::make_shared<const CommitOrderReadStrategy>(
+        data,
+        std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->storage.getInMemoryMetadataPtr(context, true)),
+        mutations_snapshot,
+        all_column_names,
+        reader_settings,
+        actions_settings,
+        block_size,
+        shared_virtual_fields,
+        index_read_tasks,
+        query_info.prewhere_info,
+        query_info.row_level_filter,
+        context);
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -3101,7 +3115,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
         auto subscription = std::make_shared<RangesInDataPartStreamSubscription>(num_streams, i);
         enrichSubscription(subscription, data, parts_index, promoters);
 
-        auto coordinator = std::make_shared<MergeTreeCommitOrderSequentialSource>(header, data, storage_snapshot, subscription, all_column_names, context);
+        auto coordinator = std::make_shared<MergeTreeCommitOrderSequentialSource>(header, strategy, subscription);
 
         pipes.emplace_back(std::move(coordinator));
     }
