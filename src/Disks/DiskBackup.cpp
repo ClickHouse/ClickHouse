@@ -144,16 +144,9 @@ void DiskBackup::replaceFile(const String &, const String &)
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support replaceFile method");
 }
 
-std::unique_ptr<ReadBufferFromFileBase>
-DiskBackup::readFile(const String & path, const ReadSettings &, std::optional<size_t>) const
-{
-    std::string replaced_path = replacePathPrefix(path);
-    return backup->readFile(replaced_path);
-}
-
 void DiskBackup::prepareRead(
     const String & path,
-    const ReadSettings & /* settings */,
+    const ReadSettings & settings,
     std::optional<size_t> /* read_hint */,
     ReadPipeline & pipeline) const
 {
@@ -164,11 +157,14 @@ void DiskBackup::prepareRead(
     auto backup_ptr = backup;
     pipeline.setSource(
         StoredObjects{obj},
-        [backup_ptr, replaced_path](const StoredObject & /* object */, const ReadSettings & /* read_settings */)
+        [backup_ptr, replaced_path](const StoredObject & /* object */, const ReadSettings & /* read_settings */,
+            bool /* use_external_buffer */, bool /* restrict_seek */)
             -> std::unique_ptr<ReadBufferFromFileBase>
         {
             return backup_ptr->readFile(replaced_path);
         });
+
+    pipeline.setReadSettings(settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskBackup::writeFile(const String &, size_t, WriteMode, const WriteSettings &)

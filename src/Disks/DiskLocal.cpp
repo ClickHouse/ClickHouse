@@ -368,11 +368,6 @@ bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const st
     return DB::renameExchangeIfSupported(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
-{
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, /*file_size*/ std::nullopt, /*flags*/ -1, /*existing_memory*/ nullptr, settings.use_page_cache_for_local_disks);
-}
-
 void DiskLocal::prepareRead(
     const String & path,
     const ReadSettings & settings,
@@ -397,7 +392,8 @@ void DiskLocal::prepareRead(
     pipeline.setSource(
         StoredObjects{obj},
         [path_str, read_hint, use_page_cache = settings.use_page_cache_for_local_disks](
-            const StoredObject & /* object */, const ReadSettings & read_settings)
+            const StoredObject & /* object */, const ReadSettings & read_settings,
+            bool /* use_external_buffer */, bool /* restrict_seek */)
             -> std::unique_ptr<ReadBufferFromFileBase>
         {
             return createReadBufferFromFileBase(
@@ -405,6 +401,8 @@ void DiskLocal::prepareRead(
                 /*file_size*/ std::nullopt, /*flags*/ -1,
                 /*existing_memory*/ nullptr, use_page_cache);
         });
+
+    pipeline.setReadSettings(settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

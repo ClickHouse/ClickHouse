@@ -53,13 +53,15 @@ CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
     const std::string & source_file_path_,
     ImplementationBufferCreator impl_creator_,
     bool use_external_buffer_,
-    const ReadSettings & read_settings_,
+    const FilesystemCacheSettings & cache_settings_,
+    size_t local_fs_buffer_size_,
     size_t read_until_position_)
     : cache_key(cache_key_)
     , source_file_path(source_file_path_)
     , implementation_buffer_creator(impl_creator_)
     , use_external_buffer(use_external_buffer_)
-    , settings(read_settings_)
+    , cache_settings(cache_settings_)
+    , local_fs_buffer_size(local_fs_buffer_size_)
     , read_until_position(read_until_position_)
 {
 }
@@ -77,7 +79,9 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     FileCachePtr cache_,
     const FileCacheOriginInfo & origin_,
     ImplementationBufferCreator implementation_buffer_creator_,
-    const ReadSettings & settings_,
+    const FilesystemCacheSettings & cache_settings_,
+    size_t remote_fs_buffer_size_,
+    size_t local_fs_buffer_size_,
     const String & query_id_,
     size_t file_size_,
     bool allow_seeks_after_first_read_,
@@ -85,7 +89,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
     : ReadBufferFromFileBase(
-        /* buf_size */use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size,
+        /* buf_size */use_external_buffer_ ? 0 : remote_fs_buffer_size_,
         /* existing_memory */nullptr,
         /* alignment */0,
         /* file_size */file_size_ ? std::optional<size_t>(file_size_) : std::nullopt)
@@ -100,22 +104,23 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , current_buffer_id(getRandomASCIIString(8))
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
-    , cache_log(settings_.enable_filesystem_cache_log ? cache_log_ : nullptr)
-    , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
+    , cache_log(cache_settings_.enable_filesystem_cache_log ? cache_log_ : nullptr)
+    , query_context_holder(cache_->getQueryContextHolder(query_id, cache_settings_))
     , skip_cache_on_disk_failure(cache_->skipCacheOnDiskFailure())
     , info(
         cache_key_,
         source_file_path_,
         implementation_buffer_creator_,
         use_external_buffer_,
-        settings_,
+        cache_settings_,
+        local_fs_buffer_size_,
         read_until_position_.value_or(file_size_))
 {
     LOG_TEST(
         log, "Cache key: {}, source file path: {}, boundary alignment: {}, "
         "external buffer: {}, allow seeks after first read: {}, file size: {}",
         cache_key_.toString(), source_file_path_,
-        settings_.filesystem_cache_boundary_alignment.has_value() ? DB::toString(settings_.filesystem_cache_boundary_alignment.value()) : "None",
+        cache_settings_.filesystem_cache_boundary_alignment.has_value() ? DB::toString(cache_settings_.filesystem_cache_boundary_alignment.value()) : "None",
         use_external_buffer_, allow_seeks_after_first_read, file_size_);
 }
 
@@ -183,13 +188,13 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
     if (!size)
         return false;
 
-    if (info.settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (info.cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         info.file_segments = cache->get(
             info.cache_key,
             file_offset_of_buffer_end,
             size,
-            info.settings.filesystem_cache_segments_batch_size,
+            info.cache_settings.filesystem_cache_segments_batch_size,
             origin.user_id);
     }
     else
@@ -203,9 +208,9 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
             size,
             object_size,
             create_settings,
-            info.settings.filesystem_cache_segments_batch_size,
+            info.cache_settings.filesystem_cache_segments_batch_size,
             origin,
-            info.settings.filesystem_cache_boundary_alignment);
+            info.cache_settings.filesystem_cache_boundary_alignment);
     }
 
     return !info.file_segments->empty();
@@ -257,11 +262,9 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
         info.cache_file_reader.reset();
     }
 
-    ReadSettings local_read_settings{info.settings};
+    ReadSettings local_read_settings;
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
-
-    if (info.use_external_buffer)
-        local_read_settings.local_fs_buffer_size = 0;
+    local_read_settings.local_fs_buffer_size = info.use_external_buffer ? 0 : info.local_fs_buffer_size;
 
     info.cache_file_reader
         = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
@@ -392,7 +395,7 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
     };
 
     auto download_state = file_segment.state();
-    if (info_.settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (info_.cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         if (download_state == FileSegment::State::DOWNLOADED)
             return create(ReadType::CACHED);
@@ -649,7 +652,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     info.remote_file_reader.reset();
 
     info.file_segments->completeAndPopFront(
-        info.settings.filesystem_cache_allow_background_download,
+        info.cache_settings.filesystem_cache_allow_background_download,
         /*force_shrink_to_downloaded_size=*/false);
 
     if (info.file_segments->empty() && !nextFileSegmentsBatch())
@@ -677,7 +680,7 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
     if (info.file_segments && !info.file_segments->empty() && !info.file_segments->front().isCompleted())
     {
         info.file_segments->completeAndPopFront(
-            info.settings.filesystem_cache_allow_background_download,
+            info.cache_settings.filesystem_cache_allow_background_download,
             /*force_shrink_to_downloaded_size=*/false);
 
         info.file_segments = {};
@@ -802,7 +805,7 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
             std::string failure_reason;
             bool continue_predownload = file_segment.reserve(
                 size,
-                info.settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
+                info.cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason);
 
             if (continue_predownload)
@@ -1064,8 +1067,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     {
         /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
         /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
-        if (info.settings.local_fs_buffer_size && info.settings.local_fs_buffer_size < internal_buffer.size())
-            internal_buffer.resize(info.settings.local_fs_buffer_size);
+        if (info.local_fs_buffer_size && info.local_fs_buffer_size < internal_buffer.size())
+            internal_buffer.resize(info.local_fs_buffer_size);
 
         /// It would make sense to reduce buffer size to what is left to read
         /// (when we read the last segment) regardless of the read_type.
@@ -1240,7 +1243,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             std::string failure_reason;
             bool success = file_segment.reserve(
                 size,
-                info.settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
+                info.cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason);
 
             if (success)
@@ -1415,9 +1418,10 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 {
     ReadInfo current_info(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
-        info.use_external_buffer, info.settings, /* read_until_position */range_begin + n);
+        info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
+        /* read_until_position */range_begin + n);
 
-    if (info.settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (info.cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         current_info.file_segments = cache->get(
             info.cache_key,
@@ -1480,7 +1484,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
         {
             current_info.cache_file_reader.reset();
             current_info.file_segments->completeAndPopFront(
-                info.settings.filesystem_cache_allow_background_download,
+                info.cache_settings.filesystem_cache_allow_background_download,
                 /* force_shrink_to_downloaded_size */false);
 
             current_state.reset();

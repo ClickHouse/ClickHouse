@@ -26,11 +26,6 @@ public:
     std::vector<std::string> getRemotePaths(const std::string & file_name) const override;
     String getUniqueId() const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const std::string & name,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
-
     void prepareRead(
         const std::string & name,
         const ReadSettings & settings,

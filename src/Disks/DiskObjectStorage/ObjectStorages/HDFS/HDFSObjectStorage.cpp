@@ -77,7 +77,9 @@ bool HDFSObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>) const
+    std::optional<size_t>,
+    bool use_external_buffer,
+    bool /* restrict_seek */) const
 {
     initializeHDFSFS();
     auto path = extractObjectKeyFromURL(object);
@@ -87,7 +89,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
         config,
         patchSettings(read_settings),
         /* read_until_position */0,
-        read_settings.remote_read_buffer_use_external_buffer);
+        use_external_buffer);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT

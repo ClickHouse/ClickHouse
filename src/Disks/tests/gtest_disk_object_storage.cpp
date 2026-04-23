@@ -828,7 +828,7 @@ try
     EXPECT_TRUE(pipeline.hasSource());
     ASSERT_EQ(pipeline.getStoredObjects().size(), 1u);
 
-    auto buf = pipeline.build(read_settings);
+    auto buf = pipeline.build();
     ASSERT_NE(buf, nullptr);
     EXPECT_EQ(readAll(*buf), file_content);
 }
@@ -914,7 +914,7 @@ try
 
     EXPECT_EQ(pipeline.getStoredObjects().size(), 2u);
 
-    auto buf = pipeline.build(read_settings);
+    auto buf = pipeline.build();
     EXPECT_EQ(readAll(*buf), part1 + part2);
 }
 catch (...)
@@ -943,7 +943,7 @@ try
     DB::ReadSettings read_settings;
     dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
 
-    auto buf = pipeline.build(read_settings);
+    auto buf = pipeline.build();
 
     /// Seek to offset 10, read the rest.
     buf->seek(10, SEEK_SET);
@@ -978,8 +978,8 @@ try
     /// Clone the pipeline and build both.
     DB::ReadPipeline cloned = pipeline.clone();
 
-    auto buf1 = pipeline.build(read_settings);
-    auto buf2 = cloned.build(read_settings);
+    auto buf1 = pipeline.build();
+    auto buf2 = cloned.build();
 
     EXPECT_EQ(readAll(*buf1), file_content);
     EXPECT_EQ(readAll(*buf2), file_content);
@@ -1013,7 +1013,7 @@ try
     /// Read via explicit prepareRead + build.
     DB::ReadPipeline pipeline;
     dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
-    std::string via_pipeline = readAll(*pipeline.build(read_settings));
+    std::string via_pipeline = readAll(*pipeline.build());
 
     EXPECT_EQ(via_read_file, file_content);
     EXPECT_EQ(via_pipeline, file_content);
@@ -1067,7 +1067,7 @@ try
     EXPECT_NE(desc.find("Source"), String::npos) << "describe: " << desc;
     EXPECT_NE(desc.find("Decrypt"), String::npos) << "describe: " << desc;
 
-    auto buf = pipeline.build(read_settings);
+    auto buf = pipeline.build();
     std::string via_pipeline = readAll(*buf);
     EXPECT_EQ(via_pipeline, file_content);
 }

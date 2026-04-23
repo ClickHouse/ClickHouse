@@ -57,7 +57,9 @@ bool CachedObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    bool use_external_buffer,
+    bool restrict_seek) const
 {
     if (read_settings.enable_filesystem_cache)
     {
@@ -65,7 +67,6 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
         {
             auto cache_key = FileCacheKey::fromPath(object.remote_path);
             auto global_context = Context::getGlobalContextInstance();
-            auto modified_read_settings = read_settings.withNestedBuffer();
 
             auto read_buffer_creator = [this, object, read_settings, read_hint]()
             {
@@ -78,11 +79,13 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
                 cache,
                 cache->getCommonOriginWithSegmentKeyType(object.local_path),
                 read_buffer_creator,
-                modified_read_settings,
+                read_settings.getFilesystemCacheSettings(),
+                read_settings.remote_fs_buffer_size,
+                read_settings.local_fs_buffer_size,
                 std::string(CurrentThread::getQueryId()),
                 object.bytes_size,
-                /* allow_seeks */!read_settings.remote_read_buffer_restrict_seek,
-                /* use_external_buffer */read_settings.remote_read_buffer_use_external_buffer,
+                /* allow_seeks */!restrict_seek,
+                /* use_external_buffer */use_external_buffer,
                 /* read_until_position */std::nullopt,
                 global_context->getFilesystemCacheLog());
         }
@@ -92,7 +95,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
         }
     }
 
-    return object_storage->readObject(object, patchSettings(read_settings), read_hint);
+    return object_storage->readObject(object, patchSettings(read_settings), read_hint, use_external_buffer, restrict_seek);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// NOLINT

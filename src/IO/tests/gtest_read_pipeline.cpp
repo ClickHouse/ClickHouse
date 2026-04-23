@@ -59,7 +59,8 @@ private:
 /// Helper: creates a BufferCreator that returns a TestReadBuffer with the given data.
 ReadPipeline::BufferCreator memoryCreator(const std::string & data)
 {
-    return [data](const StoredObject & /* object */, const ReadSettings & /* settings */)
+    return [data](const StoredObject & /* object */, const ReadSettings & /* settings */,
+        bool /* use_external_buffer */, bool /* restrict_seek */)
         -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<TestReadBuffer>(data);
@@ -69,7 +70,8 @@ ReadPipeline::BufferCreator memoryCreator(const std::string & data)
 /// Per-object memory creator: each object's remote_path maps to its data chunk.
 ReadPipeline::BufferCreator perObjectCreator(std::map<String, String> object_data)
 {
-    return [data = std::move(object_data)](const StoredObject & object, const ReadSettings & /* settings */)
+    return [data = std::move(object_data)](const StoredObject & object, const ReadSettings & /* settings */,
+        bool /* use_external_buffer */, bool /* restrict_seek */)
         -> std::unique_ptr<ReadBufferFromFileBase>
     {
         auto it = data.find(object.remote_path);
@@ -102,7 +104,8 @@ try
     ReadPipeline pipeline;
     pipeline.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data));
 
-    auto buf = pipeline.build(ReadSettings{});
+    pipeline.setReadSettings(ReadSettings{});
+    auto buf = pipeline.build();
     ASSERT_TRUE(buf != nullptr);
 
     String result;
@@ -126,7 +129,8 @@ try
     pipeline.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data));
     pipeline.needGather();
 
-    auto buf = pipeline.build(ReadSettings{});
+    pipeline.setReadSettings(ReadSettings{});
+    auto buf = pipeline.build();
     ASSERT_TRUE(buf != nullptr);
 
     String result;
@@ -159,7 +163,8 @@ try
         std::move(creator));
     pipeline.needGather();
 
-    auto buf = pipeline.build(ReadSettings{});
+    pipeline.setReadSettings(ReadSettings{});
+    auto buf = pipeline.build();
     ASSERT_TRUE(buf != nullptr);
 
     String result;
@@ -188,7 +193,8 @@ try
         std::move(creator));
     pipeline.needGather();
 
-    auto buf = pipeline.build(ReadSettings{});
+    pipeline.setReadSettings(ReadSettings{});
+    auto buf = pipeline.build();
 
     /// Seek to offset 4 (middle of second object) and read the rest.
     buf->seek(4, SEEK_SET);
@@ -208,7 +214,8 @@ TEST(ReadPipeline, BuildWithoutSourceThrows)
 try
 {
     ReadPipeline pipeline;
-    EXPECT_THROW(pipeline.build(ReadSettings{}), Exception);
+    pipeline.setReadSettings(ReadSettings{});
+    EXPECT_THROW(pipeline.build(), Exception);
 }
 catch (...)
 {
@@ -221,7 +228,8 @@ try
 {
     ReadPipeline pipeline;
     pipeline.setSource(StoredObjects{}, memoryCreator("data"));
-    EXPECT_THROW(pipeline.build(ReadSettings{}), Exception);
+    pipeline.setReadSettings(ReadSettings{});
+    EXPECT_THROW(pipeline.build(), Exception);
 }
 catch (...)
 {
@@ -314,7 +322,8 @@ try
     EXPECT_TRUE(cloned.hasSource());
     EXPECT_EQ(cloned.describe(), "Source");
 
-    auto buf = cloned.build(ReadSettings{});
+    cloned.setReadSettings(ReadSettings{});
+    auto buf = cloned.build();
     String result;
     readStringUntilEOF(result, *buf);
     EXPECT_EQ(result, "clone test data");
@@ -334,12 +343,14 @@ try
     ReadPipeline cloned = original.clone();
     cloned.setSource(StoredObjects{testObject()}, memoryCreator("cloned"));
 
-    auto buf1 = original.build(ReadSettings{});
+    original.setReadSettings(ReadSettings{});
+    auto buf1 = original.build();
     String result1;
     readStringUntilEOF(result1, *buf1);
     EXPECT_EQ(result1, "original");
 
-    auto buf2 = cloned.build(ReadSettings{});
+    cloned.setReadSettings(ReadSettings{});
+    auto buf2 = cloned.build();
     String result2;
     readStringUntilEOF(result2, *buf2);
     EXPECT_EQ(result2, "cloned");

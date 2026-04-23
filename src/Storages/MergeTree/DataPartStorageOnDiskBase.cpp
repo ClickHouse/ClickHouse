@@ -5,7 +5,9 @@
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadPipeline.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
@@ -27,19 +29,21 @@ namespace ErrorCodes
 {
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int NOT_ENOUGH_SPACE;
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
 }
 
-void IDataPartStorage::prepareRead(
-    const std::string & /* name */,
-    const ReadSettings & /* settings */,
-    std::optional<size_t> /* read_hint */,
-    ReadPipeline & /* pipeline */) const
+std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReadPipeline is not supported by this data part storage");
+    ReadPipeline pipeline;
+    prepareRead(name, settings, read_hint, pipeline);
+    if (!pipeline.hasReadSettings())
+        pipeline.setReadSettings(settings);
+    return pipeline.build();
 }
 
 DataPartStorageOnDiskBase::DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_)

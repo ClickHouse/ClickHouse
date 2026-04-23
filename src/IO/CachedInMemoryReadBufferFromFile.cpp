@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
-    PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_)
+    PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const PageCacheSettings & settings_)
     : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize()), cache_key(cache_key_), cache(cache_)
     , settings(settings_)
     , in(std::move(in_)), read_until_position(file_size.value())

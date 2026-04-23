@@ -28,9 +28,10 @@ namespace ErrorCodes
 void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects objects, std::optional<size_t> read_hint)
 {
     auto creator = [storage = std::move(object_storage), read_hint](
-        const StoredObject & object, const ReadSettings & settings) -> std::unique_ptr<ReadBufferFromFileBase>
+        const StoredObject & object, const ReadSettings & settings,
+        bool use_external_buffer, bool restrict_seek) -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        return storage->readObject(object, settings, read_hint);
+        return storage->readObject(object, settings, read_hint, use_external_buffer, restrict_seek);
     };
     source = SourceStage{.objects = std::move(objects), .creator = std::move(creator)};
 }
@@ -47,12 +48,22 @@ void ReadPipeline::needGather()
 
 void ReadPipeline::needDiskCache(FileCachePtr cache, std::shared_ptr<FilesystemCacheLog> cache_log)
 {
-    disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log)};
+    disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::nullopt};
+}
+
+void ReadPipeline::needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log)
+{
+    disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::move(cache_settings)};
 }
 
 void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix)
 {
-    memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix)};
+    memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix), .page_cache_settings = std::nullopt};
+}
+
+void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings)
+{
+    memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix), .page_cache_settings = std::move(page_cache_settings)};
 }
 
 void ReadPipeline::needDistributedCache()
@@ -81,10 +92,15 @@ void ReadPipeline::needDecompression(bool allow_different_codecs)
     decompression = DecompressionStage{.allow_different_codecs = allow_different_codecs};
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings & settings) const
+std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 {
     if (!source)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source stage is not set, call setSource first");
+
+    if (!read_settings)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: read settings are not set, call setReadSettings first");
+
+    const auto & settings = *read_settings;
 
     if (source->objects.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source has no stored objects");
@@ -100,17 +116,16 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
         /// Object storage path: wrap per-object buffers with optional disk cache,
         /// then join all objects via ReadBufferFromRemoteFSGather.
 
-        const auto & base_settings = gather_settings_override.value_or(settings);
-        auto nested_settings = base_settings.withNestedBuffer();
         ReadBufferFromRemoteFSGather::ReadBufferCreator gather_creator;
 
         if (disk_cache && disk_cache->cache)
         {
-            auto cache_settings = nested_settings.withNestedBuffer();
+            auto fs_cache_settings = disk_cache->cache_settings.value_or(settings.getFilesystemCacheSettings());
 
             gather_creator =
                 [pipeline_creator = source->creator,
-                 cache_settings,
+                 read_settings = settings,
+                 fs_cache_settings,
                  cache = disk_cache->cache,
                  cache_log = disk_cache->cache_log](
                     bool restricted_seek, const StoredObject & object) mutable
@@ -119,13 +134,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
                 auto cache_key = FileCacheKey::fromPath(object.remote_path);
                 auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
 
-                auto source_settings = cache_settings;
-                source_settings.remote_read_buffer_restrict_seek = restricted_seek;
-
-                auto impl_creator = [pipeline_creator, source_settings, object]() mutable
+                auto impl_creator = [pipeline_creator, read_settings, restricted_seek, object]() mutable
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    return pipeline_creator(object, source_settings);
+                    return pipeline_creator(object, read_settings, /* use_external_buffer */ true, restricted_seek);
                 };
 
                 return std::make_unique<CachedOnDiskReadBufferFromFile>(
@@ -134,11 +146,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
                     cache,
                     origin,
                     std::move(impl_creator),
-                    cache_settings,
+                    fs_cache_settings,
+                    read_settings.remote_fs_buffer_size,
+                    read_settings.local_fs_buffer_size,
                     std::string(CurrentThread::getQueryId()),
                     object.bytes_size,
                     /* allow_seeks_after_first_read */ !restricted_seek,
-                    /* use_external_buffer */ cache_settings.remote_read_buffer_use_external_buffer,
+                    /* use_external_buffer */ true,
                     /* read_until_position */ std::nullopt,
                     cache_log);
             };
@@ -146,28 +160,26 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
         else
         {
             gather_creator =
-                [pipeline_creator = source->creator, nested_settings](
+                [pipeline_creator = source->creator, read_settings = settings](
                     bool restricted_seek, const StoredObject & object) mutable
                     -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                nested_settings.remote_read_buffer_restrict_seek = restricted_seek;
-                return pipeline_creator(object, nested_settings);
+                return pipeline_creator(object, read_settings, /* use_external_buffer */ true, restricted_seek);
             };
         }
 
         bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value() || distributed_cache;
 
         size_t total_objects_size = getTotalSize(source->objects);
-        size_t effective_buffer_size = buffer_size_override.value_or(settings.remote_fs_buffer_size);
+        size_t effective_buffer_size = settings.remote_fs_buffer_size;
         size_t buffer_size = use_external_buffer ? 0 : effective_buffer_size;
         if (!use_external_buffer && total_objects_size > 0)
             buffer_size = std::min(buffer_size, total_objects_size);
 
-        const auto & gather_settings = gather_settings_override.value_or(settings);
         impl = std::make_unique<ReadBufferFromRemoteFSGather>(
             std::move(gather_creator),
             source->objects,
-            gather_settings,
+            settings,
             use_external_buffer,
             buffer_size);
 
@@ -186,7 +198,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
                 "ReadPipeline without gather requires exactly 1 stored object, got {}",
                 source->objects.size());
 
-        impl = source->creator(source->objects[0], settings);
+        impl = source->creator(source->objects[0], settings, /* use_external_buffer */ false, /* restrict_seek */ false);
     }
 
     /// -- Stage 4: Memory cache --
@@ -196,8 +208,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
         const auto & first_object = source->objects.at(0);
         PageCacheKey cache_key{.path = memory_cache->cache_path_prefix + first_object.remote_path};
 
+        auto page_cache_settings = memory_cache->page_cache_settings.value_or(settings.getPageCacheSettings());
         impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
-            cache_key, memory_cache->cache, std::move(impl), settings);
+            cache_key, memory_cache->cache, std::move(impl), page_cache_settings);
     }
 
     /// -- Stage 5: Async prefetch --
@@ -205,7 +218,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build(const ReadSettings &
     if (async_prefetch && async_prefetch->reader)
     {
         size_t total_size = getTotalSize(source->objects);
-        size_t async_buffer_size = buffer_size_override.value_or(settings.remote_fs_buffer_size);
+        size_t async_buffer_size = settings.remote_fs_buffer_size;
         if (total_size > 0)
             async_buffer_size = std::min(async_buffer_size, total_size);
 

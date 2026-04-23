@@ -31,11 +31,8 @@ using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesL
 ///
 /// Usage:
 ///   ReadPipeline pipeline;
-///   objectStorage->prepareRead(path, pipeline);     // sets source
-///   cachedStorage->prepareRead(path, pipeline);     // adds disk cache
-///   diskObjectStorage->prepareRead(path, pipeline); // adds async, memory cache
-///   diskEncrypted->prepareRead(path, pipeline);     // adds decryption
-///   auto buf = pipeline.build(read_settings);
+///   disk->prepareRead(path, settings, read_hint, pipeline);  // sets source, settings, stages
+///   auto buf = pipeline.build();
 ///
 /// Stage ordering (innermost to outermost, fixed at build time):
 ///   1. Source        -- base ReadBuffer (S3, Azure, HDFS, local file)
@@ -51,7 +48,9 @@ public:
     /// Function that creates a ReadBuffer for a single stored object.
     using BufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(
         const StoredObject & object,
-        const ReadSettings & settings)>;
+        const ReadSettings & settings,
+        bool use_external_buffer,
+        bool restrict_seek)>;
 
     /// Function that finds an encryption key by its fingerprint.
     using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
@@ -78,9 +77,11 @@ public:
 
     /// -- Disk cache stage --
     void needDiskCache(FileCachePtr cache, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
+    void needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
     /// -- Memory cache stage --
     void needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix);
+    void needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings);
 
     /// -- Distributed cache stage (sits between Gather and MemoryCache) --
     /// Implementation is in the DistributedCache module (ENABLE_DISTRIBUTED_CACHE).
@@ -94,13 +95,10 @@ public:
         AsyncReadCountersPtr async_read_counters = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log = nullptr);
 
-    /// Override the buffer size used by gather and async prefetch in build.
-    /// Used by DiskObjectStorage to implement prefer_bigger_buffer_size.
-    void setBufferSize(size_t size) { buffer_size_override = size; }
-
-    /// Override settings used by gather (e.g. with IO scheduling resource links).
-    /// build uses these for the gather constructor instead of the caller's settings.
-    void setGatherSettings(ReadSettings settings) { gather_settings_override = std::move(settings); }
+    /// Set the read settings used by build() to construct the buffer chain.
+    /// Must be called before build(). Typically called by prepareRead() after
+    /// applying disk-specific adjustments (e.g. IO scheduling).
+    void setReadSettings(ReadSettings settings) { read_settings = std::move(settings); }
 
     /// -- Decryption stage --
     /// The key_finder callback is called at build time with the key fingerprint
@@ -111,7 +109,8 @@ public:
     void needDecompression(bool allow_different_codecs = false);
 
     /// -- Build the final ReadBuffer chain --
-    std::unique_ptr<ReadBufferFromFileBase> build(const ReadSettings & settings) const;
+    /// Uses the ReadSettings stored via setReadSettings().
+    std::unique_ptr<ReadBufferFromFileBase> build() const;
 
     /// Returns a human-readable description of active stages,
     /// e.g. "Source -> DiskCache -> Gather -> Async".
@@ -122,6 +121,7 @@ public:
 
     /// Queries.
     bool hasSource() const { return source.has_value(); }
+    bool hasReadSettings() const { return read_settings.has_value(); }
     const StoredObjects & getStoredObjects() const;
 
 private:
@@ -135,12 +135,14 @@ private:
     {
         FileCachePtr cache;
         std::shared_ptr<FilesystemCacheLog> cache_log;
+        std::optional<FilesystemCacheSettings> cache_settings;
     };
 
     struct MemoryCacheStage
     {
         std::shared_ptr<PageCache> cache;
         String cache_path_prefix;
+        std::optional<PageCacheSettings> page_cache_settings;
     };
 
     struct AsyncPrefetchStage
@@ -170,8 +172,7 @@ private:
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::vector<DecryptionStage> decryption_stages;
     std::optional<DecompressionStage> decompression;
-    std::optional<size_t> buffer_size_override;
-    std::optional<ReadSettings> gather_settings_override;
+    std::optional<ReadSettings> read_settings;
 };
 
 }

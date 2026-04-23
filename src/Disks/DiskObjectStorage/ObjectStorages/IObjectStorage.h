@@ -215,7 +215,9 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const = 0;
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const = 0;
 
     /// Read small object into memory and return it as string
     /// Also contain consistent object metadata if available in this object storage.

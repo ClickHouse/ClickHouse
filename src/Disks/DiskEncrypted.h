@@ -124,11 +124,6 @@ public:
         const WriteSettings & write_settings,
         const std::function<void()> & cancellation_hook) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
-
     void prepareRead(
         const String & path,
         const ReadSettings & settings,

@@ -2,6 +2,7 @@
 #include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -76,13 +77,16 @@ void IDisk::copyFile( /// NOLINT
     out->finalize();
 }
 
-void IDisk::prepareRead(
-    const String & /* path */,
-    const ReadSettings & /* settings */,
-    std::optional<size_t> /* read_hint */,
-    ReadPipeline & /* pipeline */) const
+std::unique_ptr<ReadBufferFromFileBase> IDisk::readFile(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReadPipeline is not supported by disk {}", getName());
+    ReadPipeline pipeline;
+    prepareRead(path, settings, read_hint, pipeline);
+    if (!pipeline.hasReadSettings())
+        pipeline.setReadSettings(settings);
+    return pipeline.build();
 }
 
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT

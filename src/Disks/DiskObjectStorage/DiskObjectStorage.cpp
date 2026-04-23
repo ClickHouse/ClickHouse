@@ -791,8 +791,8 @@ void DiskObjectStorage::prepareRead(
     /// Object storage files may be split across multiple blobs — gather joins them.
     pipeline.needGather();
 
-    /// Pass IO-scheduled settings to the gather (resource links for throttling).
-    pipeline.setGatherSettings(read_settings);
+    /// Note: read_settings (with IO scheduling applied) are stored in the pipeline
+    /// at the end of this method, after all adjustments are finalized.
 
     /// Unwrap CachedObjectStorage: extract the file cache into a pipeline stage
     /// and use the underlying (non-cached) storage as the source.
@@ -811,7 +811,7 @@ void DiskObjectStorage::prepareRead(
 #if ENABLE_DISTRIBUTED_CACHE
     bool use_distributed_cache = enable_distributed_cache
         && DistributedCache::canUseDistributedCacheForRead(
-            read_settings.withNestedBuffer(), *storage);
+            read_settings, *storage);
     if (use_distributed_cache)
         pipeline.needDistributedCache();
 #else
@@ -855,17 +855,10 @@ void DiskObjectStorage::prepareRead(
         && read_settings.enable_filesystem_cache;
 
     if (prefer_bigger_buffer_size)
-        pipeline.setBufferSize(std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size));
-}
+        read_settings.remote_fs_buffer_size = std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size);
 
-std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
-    const String & path,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
-{
-    ReadPipeline pipeline;
-    prepareRead(path, settings, read_hint, pipeline);
-    return pipeline.build(settings);
+    /// Update the stored settings with the final buffer size.
+    pipeline.setReadSettings(read_settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(

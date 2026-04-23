@@ -903,7 +903,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         StoredObject object(path, "", object_size);
         auto read_buffer_creator = [path, object_size, modified_read_settings, object_storage]()
         {
-            return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings.withNestedBuffer(/* seekable */false));
+            return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings, {}, /* use_external_buffer */ true, /* restrict_seek */ true);
         };
 
         impl = std::make_unique<ReadBufferFromDistributedCache>(
@@ -938,11 +938,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
             auto read_buffer_creator = [
                 path = object_info.getPath(),
-                nested_buffer_read_settings = modified_read_settings.withNestedBuffer(/* seekable */false),
+                modified_read_settings,
                 object_size,
                 object_storage]()
             {
-                return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
+                return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings, {}, /* use_external_buffer */ true, /* restrict_seek */ true);
             };
 
             impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
@@ -951,7 +951,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 cache,
                 FileCache::getCommonOrigin(),
                 read_buffer_creator,
-                use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings,
+                modified_read_settings.getFilesystemCacheSettings(),
+                modified_read_settings.remote_fs_buffer_size,
+                modified_read_settings.local_fs_buffer_size,
                 std::string(CurrentThread::getQueryId()),
                 object_size,
                 /* allow_seeks */true,
@@ -973,13 +975,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     {
         impl = object_storage->readObject(
             StoredObject(object_info.getPath(), "", object_size),
-            use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings);
+            modified_read_settings, {}, /* use_external_buffer */ use_async_buffer, /* restrict_seek */ false);
     }
 
     if (use_page_cache)
     {
         PageCacheKey key = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
-        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(key, effective_read_settings.page_cache, std::move(impl), modified_read_settings);
+        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(key, effective_read_settings.page_cache, std::move(impl), modified_read_settings.getPageCacheSettings());
     }
 
     if (!use_async_buffer)

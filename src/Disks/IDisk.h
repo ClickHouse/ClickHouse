@@ -242,18 +242,19 @@ public:
     virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
+    /// Convenience wrapper: calls prepareRead() + pipeline.build().
+    std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint = {}) const = 0;
+        std::optional<size_t> read_hint = {}) const;
 
     /// Populate a ReadPipeline with the stages needed to read from this disk.
-    /// Override in disk implementations that support the pipeline model.
+    /// Every disk implementation must override this method.
     virtual void prepareRead(
         const String & path,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const;
+        ReadPipeline & pipeline) const = 0;
 
     /// Returns nullptr if the file does not exist, otherwise opens it for reading.
     /// This method can save a request. The default implementation will do a separate `exists` call.
