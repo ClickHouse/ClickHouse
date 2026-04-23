@@ -79,4 +79,9 @@ bool RocksDBSettings::hasBuiltin(std::string_view name)
 {
     return RocksDBSettingsImpl::hasBuiltin(name);
 }
+
+void RocksDBSettings::checkCanSet(std::string_view name, const Field & value)
+{
+    RocksDBSettingsImpl::checkCanSet(name, value);
+}
 }
