@@ -1897,9 +1897,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// Other logging
         "query_masking_rules",
 
-        /// Experimental features
-        "experimental_features",
-
         /// Engine-specific
         "kafka",
         "rabbitmq",
