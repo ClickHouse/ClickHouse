@@ -359,24 +359,29 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             auto cache_key = disk_cache->custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
             auto origin = disk_cache->custom_origin.value_or(disk_cache->cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
+            /// use_external_buffer must be true only when a downstream stage (memory cache,
+            /// async prefetch) manages the working buffer. Otherwise the cached buffer
+            /// manages its own buffer and the source must do the same.
+            bool use_ext_buf = memory_cache.has_value() || async_prefetch.has_value();
+
             CachedOnDiskReadBufferFromFile::ImplementationBufferCreator impl_creator;
 
             if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
             {
                 impl_creator = [storage = obj_src->storage, read_hint = obj_src->read_hint,
-                                captured_object = object, captured_settings = settings]()
+                                captured_object = object, captured_settings = settings, use_ext_buf]()
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
                     return storage->readObject(captured_object, captured_settings, read_hint,
-                        /* use_external_buffer */ true, /* restrict_seek */ false);
+                        use_ext_buf, /* restrict_seek */ false);
                 };
             }
             else if (const auto * cust_src = std::get_if<CustomSource>(&source->source))
             {
-                impl_creator = [creator = cust_src->creator, captured_object = object, captured_settings = settings]()
+                impl_creator = [creator = cust_src->creator, captured_object = object, captured_settings = settings, use_ext_buf]()
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    return creator(captured_object, captured_settings, /* use_external_buffer */ true, /* restrict_seek */ false);
+                    return creator(captured_object, captured_settings, use_ext_buf, /* restrict_seek */ false);
                 };
             }
             else
@@ -397,7 +402,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 std::string(CurrentThread::getQueryId()),
                 object.bytes_size,
                 /* allow_seeks_after_first_read */ true,
-                /* use_external_buffer */ true,
+                use_ext_buf,
                 /* read_until_position */ std::nullopt,
                 disk_cache->cache_log);
         }
