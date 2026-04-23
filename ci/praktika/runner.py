@@ -489,18 +489,19 @@ class Runner:
                         print(
                             f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
                         )
-                        info = ResultInfo.TIMEOUT
+                        result.add_error(ResultInfo.TIMEOUT)
                     elif result.is_running():
-                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]."
-                        print(info)
+                        info = f"Job killed, exit code [{exit_code}]"
+                        print(f"ERROR: {info}")
+                        result.add_error(info)
                     else:
-                        info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
-                        print(info)
+                        info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
+                        print(f"ERROR: {info}")
+                        result.add_error(info)
                     result.set_status(Result.Status.ERROR)
-                    result.set_info(info)
-                    result.set_info("---").set_info(
+                    result.set_info(
                         process.get_latest_log(max_lines=20)
-                    ).set_info("---")
+                    )
             result.dump()
 
         print("INFO: disk status after running a job:")
@@ -527,37 +528,29 @@ class Runner:
         result_exist = Result.exist(job.name)
 
         if setup_env_exit_code != 0:
-            info = f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}"
-            print(info)
-            # set Result with error and logs
+            print(f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}")
             Result(
                 name=job.name,
                 status=Result.Status.ERROR,
                 start_time=Utils.timestamp(),
                 duration=0.0,
-                info=info,
-            ).dump()
+            ).add_error(ResultInfo.SETUP_ENV_JOB_FAILED).dump()
         elif prerun_exit_code != 0:
-            info = ResultInfo.PRE_JOB_FAILED
-            print(info)
-            # set Result with error and logs
+            print(f"ERROR: {ResultInfo.PRE_JOB_FAILED}")
             Result(
                 name=job.name,
                 status=Result.Status.ERROR,
                 start_time=Utils.timestamp(),
                 duration=0.0,
-                info=info,
-            ).dump()
+            ).add_error(ResultInfo.PRE_JOB_FAILED).dump()
         elif not result_exist:
-            info = f"ERROR: {ResultInfo.NOT_FOUND_IMPOSSIBLE}"
-            print(info)
+            print(f"ERROR: {ResultInfo.NOT_FOUND_IMPOSSIBLE}")
             Result(
                 name=job.name,
                 start_time=Utils.timestamp(),
                 duration=None,
                 status=Result.Status.ERROR,
-                info=ResultInfo.NOT_FOUND_IMPOSSIBLE,
-            ).dump()
+            ).add_error(ResultInfo.NOT_FOUND_IMPOSSIBLE).dump()
 
         try:
             result = Result.from_fs(job.name)
@@ -570,9 +563,8 @@ class Runner:
             ).dump()
 
         if not result.is_completed():
-            info = f"ERROR: {ResultInfo.KILLED}"
-            print(info)
-            result.set_info(info).set_status(Result.Status.ERROR).dump()
+            print(f"ERROR: {ResultInfo.KILLED}")
+            result.add_error(ResultInfo.KILLED).set_status(Result.Status.ERROR).dump()
 
         if result.is_error() and result.get_on_error_hook():
             print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
@@ -586,10 +578,8 @@ class Runner:
     def _post_run(
         self, result, workflow, job, run_exit_code,
     ) -> bool:
-        info_errors = []
         env = _Environment.get()
         is_ok = True
-
 
         is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
         is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
@@ -639,9 +629,9 @@ class Runner:
                                 result.set_link(link)
                                 artifact_links.append(link)
                         except Exception as e:
-                            error = f"ERROR: Failed to upload artifact [{artifact.name}:{artifact_path}], ex [{e}]"
-                            print(error)
-                            info_errors.append(error)
+                            error = f"Failed to upload artifact [{artifact.name}:{artifact_path}], ex [{e}]"
+                            print(f"ERROR: {error}")
+                            env.add_workflow_error(error)
                             result.set_status(Result.Status.ERROR)
                             is_ok = False
                 if artifact_links:
@@ -692,9 +682,9 @@ class Runner:
                 ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
-                error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
-                print(error)
-                info_errors.append(error)
+                error = f"Failed to insert data into CI DB, exception [{ex}]"
+                print(f"ERROR: {error}")
+                env.add_workflow_error(error)
 
             try:
                 test_cases_result = result.get_sub_result_by_name(
@@ -703,9 +693,9 @@ class Runner:
                 if test_cases_result and not test_cases_result.is_ok() and ci_db:
                     for test_case_result in test_cases_result.results:
                         if not test_case_result.is_ok():
-                            test_case_result.set_clickable_label(
-                                "cidb",
-                                ci_db.get_link_to_test_case_statistics(
+                            test_case_result.set_label(
+                                Result.Label.CIDB,
+                                link=ci_db.get_link_to_test_case_statistics(
                                     test_case_result.name,
                                     failure_patterns=Settings.TEST_FAILURE_PATTERNS,
                                     test_output=test_case_result.info,
@@ -720,11 +710,10 @@ class Runner:
                             )
                     result.dump()
             except Exception as ex:
-                if not info_errors:
-                    traceback.print_exc()
-                    error = f"ERROR: Failed to set clickable label for test cases, exception [{ex}]"
-                    print(error)
-                    info_errors.append(error)
+                traceback.print_exc()
+                error = f"Failed to set CIDB label for test cases, exception [{ex}]"
+                print(f"ERROR: {error}")
+                env.add_workflow_error(error)
 
         if env.TRACEBACKS:
             result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
@@ -737,7 +726,7 @@ class Runner:
                 CacheRunnerHooks.post_run(workflow, job)
 
         if workflow.enable_open_issues_check:
-            # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            # should be done before HtmlRunnerHooks.post_run(workflow, job)
             #   to upload updated job and workflow results to S3
             try:
                 if is_final_job:
@@ -750,18 +739,36 @@ class Runner:
                 print(f"ERROR: failed to check open issues: {e}")
                 traceback.print_exc()
                 if is_final_job:
-                    env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
+                    env.add_workflow_error(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
+
+        info = Info()
+        report_url = info.get_job_report_url(latest=False)
+
+        if (
+            workflow.enable_commit_status_on_failure and not result.is_ok()
+        ) or job.enable_commit_status:
+            if _GH_Auth():
+                if not GH.post_commit_status(
+                    name=job.name,
+                    status=result.status,
+                    description=result.info.splitlines()[0] if result.info else "",
+                    url=report_url,
+                ):
+                    env.add_workflow_error(
+                        "Failed to post GH commit status for the job"
+                    )
+                    print(f"ERROR: Failed to post commit status for the job")
 
         # Always run report generation at the end to finalize workflow status with latest job result
         if workflow.enable_report:
             print(f"Run html report hook")
-            status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            status_updated = HtmlRunnerHooks.post_run(workflow, job)
             if status_updated:
                 print(f"Update GH commit status [{result.name}]: [{status_updated}]")
                 if _GH_Auth():
                     GH.post_commit_status(
                         name=workflow.name,
-                        status=GH.convert_to_gh_status(status_updated),
+                        status=status_updated,
                         description="",
                         url=Info().get_report_url(latest=False),
                     )
@@ -786,9 +793,6 @@ class Runner:
                     )
                     ci_db.insert_compute_usage(workflow_compute_usage)
 
-        info = Info()
-        report_url = info.get_job_report_url(latest=False)
-
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
         ) and _GH_Auth():
@@ -805,19 +809,6 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: failed to post CI summary, ex: {e}")
                 traceback.print_exc()
-
-        if (
-            workflow.enable_commit_status_on_failure and not result.is_ok()
-        ) or job.enable_commit_status:
-            if _GH_Auth():
-                if not GH.post_commit_status(
-                    name=job.name,
-                    status=result.status,
-                    description=result.info.splitlines()[0] if result.info else "",
-                    url=report_url,
-                ):
-                    env.add_info("Failed to post GH commit status for the job")
-                    print(f"ERROR: Failed to post commit status for the job")
 
         if workflow.enable_report:
             # to make it visible in GH Actions annotations
@@ -843,13 +834,15 @@ class Runner:
                 traceback.print_exc()
 
         # finally, set the status flag for GH Actions
-        pipeline_status = Result.Status.SUCCESS
+        # These are GH Actions output values matched by workflow YAML conditions,
+        # not Result.Status values — must stay lowercase "success"/"failure".
+        pipeline_status = "success"
         if not result.is_ok():
             if result.is_failure() and result.do_not_block_pipeline_on_failure():
                 # job explicitly says to not block ci even though result is failure
                 pass
             else:
-                pipeline_status = Result.Status.FAILED
+                pipeline_status = "failure"
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
                 f"pipeline_status={pipeline_status}",

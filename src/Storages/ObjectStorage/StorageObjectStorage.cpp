@@ -310,7 +310,7 @@ StorageObjectStorage::StorageObjectStorage(
     if (configuration->partition_strategy)
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context,
         format_settings,
@@ -397,7 +397,11 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             new_metadata = *metadata_snapshot;
     }
 
-    setInMemoryMetadata(new_metadata);
+    setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        new_metadata.columns,
+        query_context,
+        format_settings,
+        configuration->partition_strategy_type)));
 }
 
 
@@ -527,7 +531,7 @@ void StorageObjectStorage::read(
         object_storage,
         configuration,
         column_names,
-        getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         query_info,
         storage_snapshot,
         modified_format_settings,
