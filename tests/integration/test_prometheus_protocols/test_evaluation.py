@@ -2490,15 +2490,12 @@ def test_histogram_quantile():
 
     # histogram_quantile(0.9, http_request_duration_seconds_bucket)
     # 90th percentile: 54th request out of 60 total = 0.9 * 60 = 54
-    # Falls in bucket [1.0, +Inf]: interpolate between 50 (at 1.0) and 60 (at +Inf)
-    # Result depends on quantilePrometheusHistogram interpolation logic.
-    # Linear interpolation: 1.0 + (54 - 50) / (60 - 50) * (+Inf - 1.0)
-    # Since upper bound is +Inf, result should be clamped or extrapolated reasonably.
-    # Based on Prometheus behavior, this typically results in a value slightly above 1.0.
-    # We'll verify the actual result matches Prometheus.
+    # Falls in bucket [1.0, +Inf]: Prometheus returns the lower bound of the +Inf bucket.
+    # According to Prometheus behavior, when a quantile falls in the +Inf bucket,
+    # it returns the upper bound of the last finite bucket (1.0 in this case).
     do_query_test(
         "histogram_quantile(0.9, http_request_duration_seconds_bucket)",
         300,
-        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "1.4"]}]}',
-        [["[('job','api')]", "1970-01-01 00:05:00.000", "1.4"]],
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "1"]],
     )
