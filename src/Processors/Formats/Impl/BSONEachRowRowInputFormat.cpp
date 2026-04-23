@@ -1,5 +1,7 @@
 #include <IO/ReadBufferFromString.h>
 
+#include <Core/CaseAwareBlockNameMap.h>
+
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/BSONTypes.h>
@@ -49,6 +51,7 @@ namespace
     enum
     {
         UNKNOWN_FIELD = size_t(-1),
+        NOT_INITIALIZED = size_t(-2)
     };
 }
 
@@ -56,10 +59,11 @@ BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
     ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , prev_positions(header_->columns())
+    , name_map(format_settings_.input_format_column_matching_case_sensitivity)
+    , prev_positions(header_->columns(), {std::string_view{}, NOT_INITIALIZED})
     , types(header_->getDataTypes())
 {
-    name_map = getNamesToIndexesMap(getPort().getHeader());
+    name_map.initFromBlock(getPort().getHeader());
 }
 
 inline size_t BSONEachRowRowInputFormat::columnIndex(std::string_view name, size_t key_index)
@@ -67,21 +71,19 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(std::string_view name, size
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
-    if (prev_positions.size() > key_index
-        && prev_positions[key_index] != BlockNameMap::const_iterator{}
-        && name == prev_positions[key_index]->first)
+    if (prev_positions.size() > key_index && prev_positions[key_index].second != NOT_INITIALIZED
+        && name_map.equal(name, prev_positions[key_index].first))
     {
-        return prev_positions[key_index]->second;
+        return prev_positions[key_index].second;
     }
 
-    const auto it = name_map.find(name);
-
-    if (it != name_map.end())
+    auto position = name_map.get(name);
+    if (position != CaseAwareBlockNameMap::NOT_FOUND)
     {
-        if (key_index < prev_positions.size())
-            prev_positions[key_index] = it;
+        if (key_index < prev_positions.size() && position < getPort().getHeader().columns())
+            prev_positions[key_index] = {getPort().getHeader().getByPosition(position).name, position};
 
-        return it->second;
+        return position;
     }
     return UNKNOWN_FIELD;
 }
@@ -521,8 +523,14 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             auto & nullable_column = assert_cast<ColumnNullable &>(column);
             auto & nested_column = nullable_column.getNestedColumn();
             const auto & nested_type = assert_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
+            /// Read into the nested column first. If `readField` throws, we must not leave
+            /// the `null_map` out of sync with the nested column — otherwise subsequent
+            /// rollback (e.g. `SerializationArray::readArraySafe` calling
+            /// `ColumnNullable::popBack`) would trip an assertion because
+            /// `ColumnNullable::size()` reflects `null_map.size()`.
+            auto result = readField(nested_column, nested_type, bson_type);
             nullable_column.getNullMapColumn().insertValue(0);
-            return readField(nested_column, nested_type, bson_type);
+            return result;
         }
         case TypeIndex::LowCardinality:
         {
