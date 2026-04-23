@@ -341,7 +341,9 @@ void ColumnLowCardinality::updateHashFast(SipHash & hash) const
 
 MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 {
-    auto unique_ptr = dictionary.getColumnUniquePtr();
+    /// Hold as `ColumnPtr` (immutable) to avoid triggering the `use_count == 1` assertion
+    /// on the non-const `WrappedPtr::operator->` — the dictionary still shares the column with us.
+    ColumnPtr unique_ptr = dictionary.getColumnUniquePtr();
     if (size == 0)
         unique_ptr = unique_ptr->cloneEmpty();
 
