@@ -5,8 +5,6 @@
 #include <memory>
 #include <type_traits>
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -14,7 +12,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -62,11 +59,17 @@ public:
         UnorderedMapWithMemoryTracking<size_t, Bucket> buckets;
     };
 
-    explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_, const Array & parameters_,
+    explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_)
         : Base(
             argument_types_,
-            parameters_,
+            {
+                /// Normalize all parameters to decimals with the same scale as the scale of timestamp argument
+                DecimalField<Decimal64>(start_timestamp_, timestamp_scale_),
+                DecimalField<Decimal64>(end_timestamp_, timestamp_scale_),
+                DecimalField<Decimal64>(step_, timestamp_scale_),
+                DecimalField<Decimal64>(window_, timestamp_scale_)
+            },
             createResultType())
         , bucket_count(bucketCount(start_timestamp_, end_timestamp_, step_))
         , start_timestamp(start_timestamp_)
