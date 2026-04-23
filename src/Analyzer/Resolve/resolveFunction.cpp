@@ -580,28 +580,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// `FunctionMultiIf::build` run normal type unification.
             if (!stopped_on_nonconstant)
             {
-                /// Try to resolve every dead branch. If any throws we apply the fold, mirroring
-                /// the `if` special-case: only then do we replace the node and swallow the
-                /// analysis error in the unreachable branch. If every dead branch resolves
-                /// cleanly we fall through so that normal type inference (common-supertype
-                /// unification) still runs on the full `multiIf`.
-                bool apply_constant_multi_if_optimization = false;
-
-                auto try_resolve_dead_branch = [&](QueryTreeNodePtr & branch)
-                {
-                    try
-                    {
-                        resolveExpressionNode(branch,
-                            scope,
-                            false /*allow_lambda_expression*/,
-                            false /*allow_table_expression*/,
-                            allow_niladic_functions);
-                    }
-                    catch (const Exception &)
-                    {
-                        apply_constant_multi_if_optimization = true;
-                    }
-                };
+                /// Snapshot the live branch and every dead branch into local shared_ptr
+                /// copies before calling `resolveExpressionNode` on them. Mirrors the `if`
+                /// special case above: we must not index back into `multi_if_args` after
+                /// nested resolution, because resolving a branch may rewrite neighbouring
+                /// slots (matcher expansion, sub-node replacement, etc.) and leave a stale
+                /// pointer in the original vector slot.
+                QueryTreeNodePtr live_branch_copy = multi_if_args[winner_index];
+                std::vector<QueryTreeNodePtr> dead_branch_copies;
+                dead_branch_copies.reserve(arg_count);
 
                 for (size_t pair = 0; pair < num_pairs; ++pair)
                 {
@@ -616,29 +603,52 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// only the paired value is dead.
                     if (val_idx < winner_index)
                     {
-                        try_resolve_dead_branch(multi_if_args[val_idx]);
+                        dead_branch_copies.push_back(multi_if_args[val_idx]);
                         continue;
                     }
 
                     /// Pairs after the winner: both the condition and the value are
                     /// unreachable and have not been resolved yet.
-                    try_resolve_dead_branch(multi_if_args[cond_idx]);
-                    try_resolve_dead_branch(multi_if_args[val_idx]);
+                    dead_branch_copies.push_back(multi_if_args[cond_idx]);
+                    dead_branch_copies.push_back(multi_if_args[val_idx]);
                 }
 
                 /// When a true condition wins, the else slot is dead too.
                 if (found_true_branch)
-                    try_resolve_dead_branch(multi_if_args[else_index]);
+                    dead_branch_copies.push_back(multi_if_args[else_index]);
+
+                /// Try to resolve every dead branch. If any throws we apply the fold,
+                /// mirroring the `if` special case: only then do we replace the node and
+                /// swallow the analysis error in the unreachable branch. If every dead
+                /// branch resolves cleanly we fall through so that normal type inference
+                /// (common-supertype unification) still runs on the full `multiIf`.
+                bool apply_constant_multi_if_optimization = false;
+                for (auto & dead_branch : dead_branch_copies)
+                {
+                    try
+                    {
+                        resolveExpressionNode(dead_branch,
+                            scope,
+                            false /*allow_lambda_expression*/,
+                            false /*allow_table_expression*/,
+                            allow_niladic_functions);
+                    }
+                    catch (const Exception &)
+                    {
+                        apply_constant_multi_if_optimization = true;
+                    }
+                }
 
                 if (apply_constant_multi_if_optimization)
                 {
-                    /// Resolve the live branch normally and replace the whole multiIf node with it.
-                    auto result_projection_names = resolveExpressionNode(multi_if_args[winner_index],
+                    /// Resolve the live branch via the local copy and replace the whole
+                    /// multiIf node with it.
+                    auto result_projection_names = resolveExpressionNode(live_branch_copy,
                         scope,
                         false /*allow_lambda_expression*/,
                         false /*allow_table_expression*/,
                         allow_niladic_functions);
-                    node = std::move(multi_if_args[winner_index]);
+                    node = std::move(live_branch_copy);
                     return result_projection_names;
                 }
                 /// All dead branches resolved cleanly: fall through to the generic path so that
