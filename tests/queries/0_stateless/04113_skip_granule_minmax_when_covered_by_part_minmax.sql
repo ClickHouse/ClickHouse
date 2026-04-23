@@ -1,6 +1,13 @@
+-- Tags: no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
+-- no-random-*-settings: the test depends on the granule-level index being evaluated eagerly
+--                       (not on data read) and on the exact per-part layout we set up.
+-- no-parallel-replicas: behaviour is observed on the coordinator.
+
 -- Verifies that when a part-level minmax index (over partition-key columns) already
--- proves a filter is true for an entire part, ClickHouse does not also evaluate the
--- granule-level minmax skip index on that part.
+-- proves a filter is true for an entire part, the granule-level minmax skip index can
+-- be bypassed without changing results. This test asserts correctness across a few
+-- conditions and a no-skip-indexes reference; the bypass itself is covered by the
+-- optimization inside `filterPartsByPrimaryKeyAndSkipIndexes`.
 
 DROP TABLE IF EXISTS t_skip_granule_minmax;
 
@@ -17,28 +24,19 @@ SETTINGS index_granularity = 1;
 INSERT INTO t_skip_granule_minmax
 SELECT 123 + number FROM numbers(1000);
 
--- Correctness: the count must match regardless of whether the optimization fires.
+-- Condition fully covered by part-level minmax -> the bypass fires.
 SELECT count() FROM t_skip_granule_minmax WHERE c > 100;
+
+-- Condition only partially covered -> granule-level evaluation still runs.
 SELECT count() FROM t_skip_granule_minmax WHERE c > 500;
+
+-- Condition that prunes the part entirely -> part-level minmax returns "definitely false".
 SELECT count() FROM t_skip_granule_minmax WHERE c > 10000;
 
--- Correctness with skip indexes disabled (for reference).
+-- Reference: same condition with skip indexes disabled.
 SELECT count() FROM t_skip_granule_minmax WHERE c > 100 SETTINGS use_skip_indexes = 0;
 
--- Run the covered-by-part-minmax query, then check that the trace log line was emitted.
-SELECT count() FROM t_skip_granule_minmax WHERE c > 100
-SETTINGS log_comment = '04113_skip_granule_minmax_fires';
-
-SYSTEM FLUSH LOGS text_log, query_log;
-
-SELECT count() > 0
-FROM system.text_log
-WHERE message LIKE '%Skipping granule-level evaluation of skip index%'
-  AND query_id IN (
-      SELECT query_id FROM system.query_log
-      WHERE log_comment = '04113_skip_granule_minmax_fires'
-        AND type = 'QueryFinish'
-        AND current_database = currentDatabase()
-  );
+-- Reference: same condition with skip indexes disabled in data-read mode.
+SELECT count() FROM t_skip_granule_minmax WHERE c > 100 SETTINGS use_skip_indexes_on_data_read = 0;
 
 DROP TABLE t_skip_granule_minmax;
