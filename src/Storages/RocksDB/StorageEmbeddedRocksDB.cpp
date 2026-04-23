@@ -1044,12 +1044,8 @@ void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands
         if (!command.isCommentAlter() && !command.isSettingsAlter())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
 
-        /// Validate setting values here, before `IStorage::alter` persists the new metadata to disk.
-        /// Without this pre-validation, `MODIFY SETTING` with an invalid value (e.g. a non-boolean
-        /// string for a `Bool` setting) would be written to the metadata file before the value is
-        /// validated in `StorageEmbeddedRocksDB::alter`. The subsequent validation throws, but the
-        /// metadata on disk is already corrupted, and the server fails to attach the table on the
-        /// next restart with `CANNOT_PARSE_BOOL` (or similar parsing errors). See issue #88443.
+        /// Validate setting values before `IStorage::alter` persists the metadata file,
+        /// otherwise an invalid value blocks attach on the next restart. See issue #88443.
         if (command.type == AlterCommand::MODIFY_SETTING)
         {
             for (const auto & change : command.settings_changes)
