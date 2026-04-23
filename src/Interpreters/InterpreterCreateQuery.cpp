@@ -1733,7 +1733,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
-    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" &&
+        (create.select || create.is_populate || create.has_and_insert || create.has_as_insert || create.insert_select))
     {
         const bool allow_create_select_for_replicated
             = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
@@ -1802,7 +1803,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (create.has_and_insert)
         {
             auto existing_table = DatabaseCatalog::instance().getTable(
-            {create.getDatabase(), create.getTable()}, getContext());
+                {create.getDatabase(), create.getTable()}, getContext());
             create.uuid = existing_table->getStorageID().uuid;
             return fillTableIfNeeded(create);
         }

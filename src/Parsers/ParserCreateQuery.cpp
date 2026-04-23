@@ -1031,7 +1031,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             bool has_as = false;
             if (is_create_empty || is_clone_as)
             {
-                 /// ENGINE can not be specified for table functions.
+                /// ENGINE can not be specified for table functions.
                 if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
                     return false;
                 has_as = true;
