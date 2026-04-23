@@ -211,10 +211,8 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         table_name = table_identifier[0];
     }
 
-    /// Re-resolve the table if its in-memory StorageID changed under us
-    /// because of a concurrent rename. The share lock does not block
-    /// renameInMemory, so after taking it we must check that the live
-    /// identity still matches what the catalog resolved.
+    /// Re-resolve the table if its in-memory StorageID changed under us due
+    /// to a concurrent rename (the share lock does not block renameInMemory).
     static constexpr size_t max_resolve_attempts = 3;
     for (size_t attempt = 0; attempt < max_resolve_attempts; ++attempt)
     {
@@ -240,9 +238,8 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         }
         catch (const Exception & e)
         {
-            /// UUID may have been purged between resolveStorageID and the
-            /// throwing getTable above. Retry, and pass UNKNOWN_TABLE through
-            /// on the last attempt so a genuinely-missing table stays as such.
+            /// Retry if the UUID was purged between resolve and getTable; pass
+            /// UNKNOWN_TABLE through on the last attempt.
             if (e.code() != ErrorCodes::UNKNOWN_TABLE || attempt + 1 == max_resolve_attempts)
                 throw;
             continue;
@@ -255,6 +252,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
             auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
             if (database)
                 storage = database->tryGetTable(table_name, context);
+            /// Adopt the replacement's identity so TableNode stays resolvable by UUID.
+            if (storage)
+                storage_id = storage->getStorageID();
         }
         if (!storage)
             return {};
@@ -262,10 +262,13 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         if (!storage_lock)
             storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
+        /// `renameInMemory` preserves UUID but changes the name; retry only
+        /// when the UUID still matches. Other identity differences (file-path
+        /// tables, the fallback above) are legitimate.
         auto live_id = storage->getStorageID();
-        if (live_id.uuid != storage_id.uuid
-            || live_id.database_name != storage_id.database_name
-            || live_id.table_name != storage_id.table_name)
+        if (storage_id.hasUUID() && live_id.uuid == storage_id.uuid
+            && (live_id.database_name != storage_id.database_name
+                || live_id.table_name != storage_id.table_name))
         {
             if (attempt + 1 == max_resolve_attempts)
                 throw Exception(ErrorCodes::TABLE_UUID_MISMATCH,
