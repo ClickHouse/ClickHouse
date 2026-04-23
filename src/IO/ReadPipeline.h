@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <variant>
 
 namespace DB
 {
@@ -17,6 +18,7 @@ class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class PageCache;
 class IAsynchronousReader;
+class IBackup;
 struct AsyncReadCounters;
 
 using FileCachePtr = std::shared_ptr<FileCache>;
@@ -45,12 +47,41 @@ using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesL
 class ReadPipeline
 {
 public:
-    /// Function that creates a ReadBuffer for a single stored object.
+    /// Source descriptor types — store WHAT to read, not HOW.
+
+    /// Object storage source (S3, Azure, HDFS, etc.)
+    struct ObjectStorageSource
+    {
+        ObjectStoragePtr storage;
+        std::optional<size_t> read_hint;
+    };
+
+    /// Local filesystem source.
+    struct LocalFileSource
+    {
+        String path;
+        std::optional<size_t> read_hint;
+        bool use_page_cache = false;
+    };
+
+    /// Backup storage source.
+    struct BackupSource
+    {
+        std::shared_ptr<IBackup> backup;
+        String path;
+    };
+
+    /// Custom source for testing or special backends.
     using BufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(
         const StoredObject & object,
         const ReadSettings & settings,
         bool use_external_buffer,
         bool restrict_seek)>;
+
+    struct CustomSource
+    {
+        BufferCreator creator;
+    };
 
     /// Function that finds an encryption key by its fingerprint.
     using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
@@ -63,10 +94,16 @@ public:
 
     /// -- Source stage --
 
-    /// Set source from an object storage (creates a BufferCreator internally).
+    /// Set source from an object storage.
     void setSource(ObjectStoragePtr storage, StoredObjects objects, std::optional<size_t> read_hint = {});
 
-    /// Set source with a custom buffer creator (useful for testing or custom backends).
+    /// Set source from a local file path.
+    void setLocalFileSource(String path, StoredObjects objects, std::optional<size_t> read_hint = {}, bool use_page_cache = false);
+
+    /// Set source from a backup.
+    void setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects);
+
+    /// Set source with a custom buffer creator (for testing or custom backends).
     void setSource(StoredObjects objects, BufferCreator creator);
 
     /// -- Gather stage (ReadBufferFromRemoteFSGather) --
@@ -128,7 +165,7 @@ private:
     struct SourceStage
     {
         StoredObjects objects;
-        BufferCreator creator;
+        std::variant<ObjectStorageSource, LocalFileSource, BackupSource, CustomSource> source;
     };
 
     struct DiskCacheStage

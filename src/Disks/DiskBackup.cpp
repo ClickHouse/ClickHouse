@@ -154,15 +154,7 @@ void DiskBackup::prepareRead(
     auto file_size = backup->getFileSize(replaced_path);
     StoredObject obj(replaced_path, replaced_path, file_size);
 
-    auto backup_ptr = backup;
-    pipeline.setSource(
-        StoredObjects{obj},
-        [backup_ptr, replaced_path](const StoredObject & /* object */, const ReadSettings & /* read_settings */,
-            bool /* use_external_buffer */, bool /* restrict_seek */)
-            -> std::unique_ptr<ReadBufferFromFileBase>
-        {
-            return backup_ptr->readFile(replaced_path);
-        });
+    pipeline.setBackupSource(backup, replaced_path, StoredObjects{obj});
 
     pipeline.setReadSettings(settings);
 }

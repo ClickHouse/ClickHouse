@@ -388,19 +388,11 @@ void DiskLocal::prepareRead(
 
     /// No gather for local disk — the source buffer is returned directly.
     /// Page cache and O_DIRECT are handled inside createReadBufferFromFileBase.
-    auto path_str = full_path.string();
-    pipeline.setSource(
+    pipeline.setLocalFileSource(
+        full_path.string(),
         StoredObjects{obj},
-        [path_str, read_hint, use_page_cache = settings.use_page_cache_for_local_disks](
-            const StoredObject & /* object */, const ReadSettings & read_settings,
-            bool /* use_external_buffer */, bool /* restrict_seek */)
-            -> std::unique_ptr<ReadBufferFromFileBase>
-        {
-            return createReadBufferFromFileBase(
-                path_str, read_settings, read_hint,
-                /*file_size*/ std::nullopt, /*flags*/ -1,
-                /*existing_memory*/ nullptr, use_page_cache);
-        });
+        read_hint,
+        settings.use_page_cache_for_local_disks);
 
     pipeline.setReadSettings(settings);
 }

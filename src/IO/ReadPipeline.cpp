@@ -1,9 +1,11 @@
 #include <IO/ReadPipeline.h>
 
+#include <Backups/IBackup.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -14,6 +16,15 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+
+/// Helper for std::visit with multiple lambdas.
+template <class... Ts>
+struct overloaded : Ts...
+{
+    using Ts::operator()...;
+};
+template <class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
 
 
 namespace DB
@@ -27,18 +38,30 @@ namespace ErrorCodes
 
 void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects objects, std::optional<size_t> read_hint)
 {
-    auto creator = [storage = std::move(object_storage), read_hint](
-        const StoredObject & object, const ReadSettings & settings,
-        bool use_external_buffer, bool restrict_seek) -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return storage->readObject(object, settings, read_hint, use_external_buffer, restrict_seek);
-    };
-    source = SourceStage{.objects = std::move(objects), .creator = std::move(creator)};
+    source = SourceStage{
+        .objects = std::move(objects),
+        .source = ObjectStorageSource{.storage = std::move(object_storage), .read_hint = read_hint}};
+}
+
+void ReadPipeline::setLocalFileSource(String path, StoredObjects objects, std::optional<size_t> read_hint, bool use_page_cache)
+{
+    source = SourceStage{
+        .objects = std::move(objects),
+        .source = LocalFileSource{.path = std::move(path), .read_hint = read_hint, .use_page_cache = use_page_cache}};
+}
+
+void ReadPipeline::setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects)
+{
+    source = SourceStage{
+        .objects = std::move(objects),
+        .source = BackupSource{.backup = std::move(backup), .path = std::move(path)}};
 }
 
 void ReadPipeline::setSource(StoredObjects objects, BufferCreator creator)
 {
-    source = SourceStage{.objects = std::move(objects), .creator = std::move(creator)};
+    source = SourceStage{
+        .objects = std::move(objects),
+        .source = CustomSource{.creator = std::move(creator)}};
 }
 
 void ReadPipeline::needGather()
@@ -116,56 +139,117 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         /// Object storage path: wrap per-object buffers with optional disk cache,
         /// then join all objects via ReadBufferFromRemoteFSGather.
 
+        auto * obj_source = std::get_if<ObjectStorageSource>(&source->source);
+        auto * custom_source = std::get_if<CustomSource>(&source->source);
+        if (!obj_source && !custom_source)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ReadPipeline: gather requires ObjectStorageSource or CustomSource");
+
         ReadBufferFromRemoteFSGather::ReadBufferCreator gather_creator;
 
         if (disk_cache && disk_cache->cache)
         {
             auto fs_cache_settings = disk_cache->cache_settings.value_or(settings.getFilesystemCacheSettings());
 
-            gather_creator =
-                [pipeline_creator = source->creator,
-                 captured_settings = settings,
-                 fs_cache_settings,
-                 cache = disk_cache->cache,
-                 cache_log = disk_cache->cache_log](
-                    bool restricted_seek, const StoredObject & object) mutable
-                    -> std::unique_ptr<ReadBufferFromFileBase>
+            if (obj_source)
             {
-                auto cache_key = FileCacheKey::fromPath(object.remote_path);
-                auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
-
-                auto impl_creator = [pipeline_creator, captured_settings, restricted_seek, object]() mutable
-                    -> std::unique_ptr<ReadBufferFromFileBase>
+                gather_creator =
+                    [storage = obj_source->storage,
+                     read_hint = obj_source->read_hint,
+                     captured_settings = settings,
+                     fs_cache_settings,
+                     cache = disk_cache->cache,
+                     cache_log = disk_cache->cache_log](
+                        bool restricted_seek, const StoredObject & object) mutable
+                        -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    return pipeline_creator(object, captured_settings, /* use_external_buffer */ true, restricted_seek);
-                };
+                    auto cache_key = FileCacheKey::fromPath(object.remote_path);
+                    auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
 
-                return std::make_unique<CachedOnDiskReadBufferFromFile>(
-                    object.remote_path,
-                    cache_key,
-                    cache,
-                    origin,
-                    std::move(impl_creator),
-                    fs_cache_settings,
-                    captured_settings.remote_fs_buffer_size,
-                    captured_settings.local_fs_buffer_size,
-                    std::string(CurrentThread::getQueryId()),
-                    object.bytes_size,
-                    /* allow_seeks_after_first_read */ !restricted_seek,
-                    /* use_external_buffer */ true,
-                    /* read_until_position */ std::nullopt,
-                    cache_log);
-            };
+                    auto impl_creator = [storage, read_hint, captured_settings, restricted_seek, object]() mutable
+                        -> std::unique_ptr<ReadBufferFromFileBase>
+                    {
+                        return storage->readObject(object, captured_settings, read_hint, /* use_external_buffer */ true, restricted_seek);
+                    };
+
+                    return std::make_unique<CachedOnDiskReadBufferFromFile>(
+                        object.remote_path,
+                        cache_key,
+                        cache,
+                        origin,
+                        std::move(impl_creator),
+                        fs_cache_settings,
+                        captured_settings.remote_fs_buffer_size,
+                        captured_settings.local_fs_buffer_size,
+                        std::string(CurrentThread::getQueryId()),
+                        object.bytes_size,
+                        /* allow_seeks_after_first_read */ !restricted_seek,
+                        /* use_external_buffer */ true,
+                        /* read_until_position */ std::nullopt,
+                        cache_log);
+                };
+            }
+            else
+            {
+                gather_creator =
+                    [pipeline_creator = custom_source->creator,
+                     captured_settings = settings,
+                     fs_cache_settings,
+                     cache = disk_cache->cache,
+                     cache_log = disk_cache->cache_log](
+                        bool restricted_seek, const StoredObject & object) mutable
+                        -> std::unique_ptr<ReadBufferFromFileBase>
+                {
+                    auto cache_key = FileCacheKey::fromPath(object.remote_path);
+                    auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
+
+                    auto impl_creator = [pipeline_creator, captured_settings, restricted_seek, object]() mutable
+                        -> std::unique_ptr<ReadBufferFromFileBase>
+                    {
+                        return pipeline_creator(object, captured_settings, /* use_external_buffer */ true, restricted_seek);
+                    };
+
+                    return std::make_unique<CachedOnDiskReadBufferFromFile>(
+                        object.remote_path,
+                        cache_key,
+                        cache,
+                        origin,
+                        std::move(impl_creator),
+                        fs_cache_settings,
+                        captured_settings.remote_fs_buffer_size,
+                        captured_settings.local_fs_buffer_size,
+                        std::string(CurrentThread::getQueryId()),
+                        object.bytes_size,
+                        /* allow_seeks_after_first_read */ !restricted_seek,
+                        /* use_external_buffer */ true,
+                        /* read_until_position */ std::nullopt,
+                        cache_log);
+                };
+            }
         }
         else
         {
-            gather_creator =
-                [pipeline_creator = source->creator, captured_settings = settings](
-                    bool restricted_seek, const StoredObject & object) mutable
-                    -> std::unique_ptr<ReadBufferFromFileBase>
+            if (obj_source)
             {
-                return pipeline_creator(object, captured_settings, /* use_external_buffer */ true, restricted_seek);
-            };
+                gather_creator =
+                    [storage = obj_source->storage, read_hint = obj_source->read_hint,
+                     captured_settings = settings](
+                        bool restricted_seek, const StoredObject & object) mutable
+                        -> std::unique_ptr<ReadBufferFromFileBase>
+                {
+                    return storage->readObject(object, captured_settings, read_hint, /* use_external_buffer */ true, restricted_seek);
+                };
+            }
+            else
+            {
+                gather_creator =
+                    [pipeline_creator = custom_source->creator, captured_settings = settings](
+                        bool restricted_seek, const StoredObject & object) mutable
+                        -> std::unique_ptr<ReadBufferFromFileBase>
+                {
+                    return pipeline_creator(object, captured_settings, /* use_external_buffer */ true, restricted_seek);
+                };
+            }
         }
 
         bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value() || distributed_cache;
@@ -198,7 +282,27 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 "ReadPipeline without gather requires exactly 1 stored object, got {}",
                 source->objects.size());
 
-        impl = source->creator(source->objects[0], settings, /* use_external_buffer */ false, /* restrict_seek */ false);
+        impl = std::visit(overloaded{
+            [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+            {
+                return s.storage->readObject(source->objects[0], settings, s.read_hint, /* use_external_buffer */ false, /* restrict_seek */ false);
+            },
+            [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+            {
+                return createReadBufferFromFileBase(
+                    s.path, settings, s.read_hint,
+                    /*file_size*/ std::nullopt, /*flags*/ -1,
+                    /*existing_memory*/ nullptr, s.use_page_cache);
+            },
+            [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+            {
+                return s.backup->readFile(s.path);
+            },
+            [&](const CustomSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+            {
+                return s.creator(source->objects[0], settings, /* use_external_buffer */ false, /* restrict_seek */ false);
+            }
+        }, source->source);
     }
 
     /// -- Stage 4: Memory cache --
@@ -276,7 +380,14 @@ String ReadPipeline::describe() const
     };
 
     if (source)
-        append("Source");
+    {
+        std::visit(overloaded{
+            [&](const ObjectStorageSource &) { append("Source(ObjectStorage)"); },
+            [&](const LocalFileSource &) { append("Source(LocalFile)"); },
+            [&](const BackupSource &) { append("Source(Backup)"); },
+            [&](const CustomSource &) { append("Source(Custom)"); }
+        }, source->source);
+    }
     if (disk_cache)
         append("DiskCache");
     if (gather)

@@ -250,7 +250,7 @@ TEST(ReadPipeline, DescribeSourceOnly)
 {
     ReadPipeline pipeline;
     pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""));
-    EXPECT_EQ(pipeline.describe(), "Source");
+    EXPECT_EQ(pipeline.describe(), "Source(Custom)");
 }
 
 
@@ -261,7 +261,7 @@ TEST(ReadPipeline, DescribeMultipleStages)
     pipeline.needDiskCache(nullptr);
     pipeline.needDecompression();
     pipeline.needGather();
-    EXPECT_EQ(pipeline.describe(), "Source -> DiskCache -> Gather -> Decompress");
+    EXPECT_EQ(pipeline.describe(), "Source(Custom) -> DiskCache -> Gather -> Decompress");
 }
 
 
@@ -320,7 +320,7 @@ try
     ReadPipeline cloned = original.clone();
 
     EXPECT_TRUE(cloned.hasSource());
-    EXPECT_EQ(cloned.describe(), "Source");
+    EXPECT_EQ(cloned.describe(), "Source(Custom)");
 
     cloned.setReadSettings(ReadSettings{});
     auto buf = cloned.build();
