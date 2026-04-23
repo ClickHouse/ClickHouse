@@ -349,26 +349,33 @@ struct JoinActionRefPairHash
     }
 };
 
-std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+/// Walk the equi-join predicates of a JoinOperator, invoking `callback(lhs, rhs)` for each
+/// Equals / NullSafeEquals predicate with `lhs` normalised to the left side and `rhs` to the right.
+template <typename Callback>
+void forEachEquiJoinKey(const JoinOperator & join_operator, Callback && callback)
 {
-    std::vector<JoinActionRefPair> joining_keys;
     for (const auto & predicate : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
             continue;
-
         if (lhs.fromRight() && rhs.fromLeft())
             std::swap(lhs, rhs);
         else if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
-
-        auto left_column = lhs.getColumn();
-        auto right_column = rhs.getColumn();
-        if (!left_column.type->equals(*right_column.type))
-            continue;
-        joining_keys.emplace_back(lhs, rhs);
+        callback(lhs, rhs);
     }
+}
+
+std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+{
+    std::vector<JoinActionRefPair> joining_keys;
+    forEachEquiJoinKey(join_operator, [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
+    {
+        if (!lhs.getColumn().type->equals(*rhs.getColumn().type))
+            return;
+        joining_keys.emplace_back(lhs, rhs);
+    });
     return joining_keys;
 }
 
@@ -670,38 +677,25 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
 
     /// `buildEquialentSetsForJoinStepLogical` only returns equi-key pairs whose two sides share
-    /// the exact same type, because those pairs feed a Union-Find equivalence class that relies
-    /// on type equality. For outer joins where one side's generic pushdown is forbidden
-    /// (LEFT/RIGHT/FULL), we still want the equi-key bridge to work even when types differ
-    /// (UInt8-vs-UInt64 `USING` case is typical). A pure column-name substitution is sufficient
-    /// here: ClickHouse coerces constants at the comparison site, and `KeyCondition` understands
-    /// cross-type comparisons against the key. Walk `join_operator.expression` directly and
-    /// register every Equals predicate, ignoring the type check. Gated on at least one side
-    /// being restricted so INNER JOIN (both sides freely pushable) is unaffected.
+    /// the same type, because those pairs feed a Union-Find equivalence class. For outer joins
+    /// where one side's generic pushdown is forbidden, a pure column-name substitution is
+    /// sufficient even when types differ — `KeyCondition` handles cross-type comparisons against
+    /// the key. Registering all equi-key pairs without the type check here is what enables e.g.
+    /// `UInt8`-vs-`UInt64` `USING` filters to reach the opposite-side `MergeTree` as index
+    /// conditions. Gated on at least one side being restricted so `INNER JOIN` is unaffected.
     if (logical_join
         && (!left_stream_filter_push_down_input_columns_available
             || !right_stream_filter_push_down_input_columns_available))
     {
-        for (const auto & predicate : logical_join->getJoinOperator().expression)
+        forEachEquiJoinKey(logical_join->getJoinOperator(), [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
         {
-            auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
-            if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
-                continue;
-            if (lhs.fromRight() && rhs.fromLeft())
-                std::swap(lhs, rhs);
-            else if (!lhs.fromLeft() || !rhs.fromRight())
-                continue;
-
             const auto & lhs_name = lhs.getColumnName();
             const auto & rhs_name = rhs.getColumnName();
-            auto lhs_col = lhs.getColumn();
-            auto rhs_col = rhs.getColumn();
-
             if (!equivalent_left_stream_column_to_right_stream_column.contains(lhs_name))
-                equivalent_left_stream_column_to_right_stream_column[lhs_name] = rhs_col;
+                equivalent_left_stream_column_to_right_stream_column[lhs_name] = rhs.getColumn();
             if (!equivalent_right_stream_column_to_left_stream_column.contains(rhs_name))
-                equivalent_right_stream_column_to_left_stream_column[rhs_name] = lhs_col;
-        }
+                equivalent_right_stream_column_to_left_stream_column[rhs_name] = lhs.getColumn();
+        });
     }
 
     Names left_stream_available_columns_to_push_down = get_available_columns_for_filter(true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available);
@@ -719,16 +713,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         if (!logical_join->typeChangingSides().contains(JoinTableSide::Left))
         {
-            /// For RIGHT / FULL JOIN, arbitrary left-side filters are not pushable because
-            /// unmatched right rows must be preserved. But equi-key conjunctions are safe to
-            /// duplicate to the left input: any left row that is dropped could only have
-            /// contributed matched output rows whose equi-key value violates the top-level WHERE.
-            ///
-            /// For RIGHT JOIN with USING, the output `k` column resolves to `__tableN.k` of the
-            /// right side, so the WHERE filter DAG references right-stream equi-key names.
-            /// Adding those right-stream names to `equivalent_columns_to_push_down` lets the
-            /// splitter recognise those conjunctions; `replace_equivalent_columns_in_filter`
-            /// then rewrites them to the left-stream column when building the left-input filter.
+            /// For RIGHT / FULL JOIN the `USING` output resolves to the right-side internal name,
+            /// so the filter references right-stream equi-key names. Add them to the push-down
+            /// set; `replace_equivalent_columns_in_filter` rewrites them to the left-stream
+            /// column when materialising the left-input filter.
             for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
                 equivalent_columns_to_push_down.push_back(name);
         }
@@ -746,10 +734,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         if (!logical_join->typeChangingSides().contains(JoinTableSide::Right))
         {
-            /// Symmetric to the RIGHT/FULL case above. For LEFT JOIN the WHERE filter typically
-            /// references left-stream equi-key names (since output `k` resolves to `__tableN.k`
-            /// of the left side); adding left-stream names here lets the splitter find those
-            /// conjunctions and push them as equi-key hints to the right input.
+            /// Symmetric to the RIGHT / FULL case above.
             for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
                 equivalent_columns_to_push_down.push_back(name);
         }
