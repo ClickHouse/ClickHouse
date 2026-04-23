@@ -332,7 +332,7 @@
         }
 
         .disabled {
-            white-space: pre-wrap;
+            white-space: pre;
         }
 
         .status-column span[style*="pointer"] {
@@ -711,6 +711,10 @@
 
             return `${formattedHours}${formattedMinutes}${formattedSeconds}`.trim();
         } else {
+            if (duration < 1) {
+                // Sub-second durations: show milliseconds
+                return `${Math.floor(duration * 1000)}ms`;
+            }
             // Format in the default format with seconds and milliseconds
             const seconds = Math.floor(duration);
             const milliseconds = Math.floor((duration % 1) * 1000);
