@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include <Common/FailPoint.h>
+#include <Poco/URI.h>
 
 namespace DB::ErrorCodes
 {
@@ -148,12 +149,12 @@ std::string TableMetadata::getLocation() const
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
     if (!endpoint.empty())
-        return constructLocation(endpoint);
+        return constructLocation(endpoint, DB::S3UriStyle::AUTO);
 
     return std::filesystem::path(location_without_path) / path;
 }
 
-std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_) const
+std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style) const
 {
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
@@ -161,10 +162,10 @@ std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_
     if (endpoint_.empty())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Passed endpoint is empty");
 
-    return constructLocation(endpoint_);
+    return constructLocation(endpoint_, uri_style);
 }
 
-std::string TableMetadata::constructLocation(const std::string & endpoint_) const
+std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const
 {
     std::string location = endpoint_;
     if (location.ends_with('/'))
@@ -185,6 +186,32 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_) cons
         if (location.ends_with(bucket))
             return std::filesystem::path(location) / effective_path / "";
         return std::filesystem::path(location) / bucket / effective_path / "";
+    }
+
+    if (uri_style == DB::S3UriStyle::VIRTUAL_HOSTED)
+    {
+        /// Virtual-hosted style: embed the bucket name in the hostname.
+        /// Transform https://endpoint.com[:port] -> https://bucket.endpoint.com[:port]/path/
+        /// If the endpoint hostname already starts with the bucket (already virtual-hosted), don't add it again.
+        Poco::URI endpoint_uri(location);
+        const std::string & host = endpoint_uri.getHost();
+        if (!host.starts_with(bucket + "."))
+            endpoint_uri.setHost(bucket + "." + host);
+        std::string vhosted_base = endpoint_uri.toString();
+        if (vhosted_base.ends_with('/'))
+            vhosted_base.pop_back();
+        return std::filesystem::path(vhosted_base) / path / "";
+    }
+
+    if (uri_style == DB::S3UriStyle::PATH)
+    {
+        Poco::URI endpoint_uri(location);
+        if (endpoint_uri.getHost().starts_with(bucket + "."))
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use PATH addressing style with endpoint '{}': "
+                "the hostname already embeds bucket '{}' in virtual-hosted form",
+                endpoint_uri.getHost(), bucket);
     }
 
     if (location.ends_with(bucket))

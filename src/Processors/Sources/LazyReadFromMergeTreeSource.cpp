@@ -132,7 +132,7 @@ RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts par
     return split_parts_and_ranges;
 }
 
-IProcessor::Status LazyReadFromMergeTreeSource::prepare(const PortNumbers & updated_input_ports, const PortNumbers & /*updated_output_ports*/)
+IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & /*updated_output_ports*/)
 {
     auto & output = outputs.front();
     if (output.isFinished())
@@ -154,11 +154,10 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const PortNumbers & upda
 
     if (next_input_to_process != inputs.end())
     {
-        for (auto input_num : updated_input_ports)
+        for (const auto * input_port : updated_input_ports)
         {
-            auto it = inputs.begin();
-            std::advance(it, input_num);
-            auto & input = *it;
+            const auto input_num = input_port_to_index.at(input_port);
+            auto & input = *const_cast<InputPort *>(input_port);
             if (!input.isFinished() && input.hasData())
             {
                 auto chunk = input.pull();
@@ -212,6 +211,7 @@ Processors LazyReadFromMergeTreeSource::expandPipeline()
         inputs.emplace_back(output.getHeader(), this);
         connect(output, inputs.back());
         inputs.back().setNeeded();
+        input_port_to_index[&inputs.back()] = input_port_to_index.size();
     }
 
     next_input_to_process = inputs.begin();

@@ -230,6 +230,16 @@ public:
 
     String getName() const override { return "ConvertingAggregatedToChunksWithMergingSource"; }
 
+    void cancel(CancelReason reason) noexcept override
+    {
+        /// When 2-level aggregation is being used ConvertingAggregatedToChunksTransform expects
+        /// to receive data from all sources, so we do not need to stop the processor here.
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+
 protected:
     Chunk generate() override
     {
@@ -764,7 +774,6 @@ private:
     void createSources()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
-        processors.reserve(num_threads);
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
@@ -783,7 +792,6 @@ private:
         /// Disable min max optimization to avoid race condition.
         params->aggregator.disableMinMaxOptimizationForFixedHashMaps(*data);
 
-        processors.reserve(num_threads);
         AggregatedDataVariantsPtr & first = data->at(0);
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
