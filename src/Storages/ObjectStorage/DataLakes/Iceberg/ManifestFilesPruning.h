@@ -47,7 +47,8 @@ private:
     /// NOTE: tricky part to support RENAME column.
     /// Takes ActionDAG representation of user's WHERE expression and
     /// rename columns to the their origina numeric ID's in iceberg
-    std::unique_ptr<DB::ActionsDAG> transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const;
+    std::unique_ptr<DB::ActionsDAG> transformFilterDagForManifest(
+        const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter, const DB::ContextPtr & context) const;
 
 public:
     ManifestFilesPruner(
