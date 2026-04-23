@@ -417,6 +417,10 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
+# Build ClickHouse as a Position-Independent Executable.
+set (CMAKE_POSITION_INDEPENDENT_CODE ON)
+set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
+
 add_library(global-group INTERFACE)
 if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
@@ -451,10 +455,6 @@ endif ()
 ######################################
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
-
-# Always build ClickHouse as a Position Independent Executable:
-set (CMAKE_POSITION_INDEPENDENT_CODE ON)
-set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
 
 if (ENABLE_TESTS)
     message (STATUS "Unit tests are enabled")
