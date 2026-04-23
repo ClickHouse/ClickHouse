@@ -70,6 +70,7 @@ static struct InitFiu
     REGULAR(cache_filesystem_failure) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
+    ONCE(distributed_cache_simulate_stale_connection) \
     REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \

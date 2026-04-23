@@ -160,7 +160,7 @@ void QueryPipelineBuilder::addDelayedStream(ProcessorPtr source)
     checkSource(source, false);
     assertBlocksHaveEqualStructure(getHeader(), source->getOutputs().front().getHeader(), "QueryPipeline");
 
-    IProcessor::PortNumbers delayed_streams = { pipe.numOutputPorts() };
+    std::vector<UInt64> delayed_streams = { pipe.numOutputPorts() };
     pipe.addSource(std::move(source));
 
     auto processor = std::make_shared<DelayedPortsProcessor>(getSharedHeader(), pipe.numOutputPorts(), delayed_streams);
@@ -648,7 +648,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     if (delayed_root || use_parallel_non_joined)
     {
         // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
-        DelayedPortsProcessor::PortNumbers delayed_ports_numbers;
+        std::vector<UInt64> delayed_ports_numbers;
         delayed_ports_numbers.reserve(joined_output_ports.size() / 2);
         for (size_t i = 1; i < joined_output_ports.size(); i += 2)
             delayed_ports_numbers.push_back(i);
@@ -831,8 +831,8 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
     bool has_totals = pipe.getTotalsPort();
     bool has_extremes = pipe.getExtremesPort();
     size_t num_extra_ports = (has_totals ? 1 : 0) + (has_extremes ? 1 : 0);
-    IProcessor::PortNumbers delayed_streams(pipe.numOutputPorts() + num_extra_ports);
-    iota(delayed_streams.data(), delayed_streams.size(), IProcessor::PortNumbers::value_type(0));
+    std::vector<UInt64> delayed_streams(pipe.numOutputPorts() + num_extra_ports);
+    iota(delayed_streams.data(), delayed_streams.size(), UInt64{0});
 
     auto * collected_processors = pipe.collected_processors;
 
