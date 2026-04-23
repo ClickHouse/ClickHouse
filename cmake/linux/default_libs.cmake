@@ -51,16 +51,6 @@ if (OS_ANDROID)
     # pthread and rt are included in libc
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
-    # `-static-pie` (instead of plain `-static`) is required to link a
-    # statically-linked Position-Independent Executable — which is what
-    # this PR wants for every ClickHouse binary. With plain `-static`,
-    # the driver picks the non-PIC `crtbeginT.o` / `crtend.o` static-exe
-    # CRT and lld refuses to emit absolute relocations into the PIE
-    # output. With `-static-pie`, the driver instead picks the PIC
-    # `rcrt1.o` / `crtbeginS.o` / `crtendS.o` that we now ship in
-    # contrib/sysroot/linux-x86_64-musl/lib/ (see refresh-linux-sysroot.sh
-    # for provenance), and the existing PIC-clean musl libc.a / crti.o /
-    # crtn.o are used unchanged.
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -static-pie -lc")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
