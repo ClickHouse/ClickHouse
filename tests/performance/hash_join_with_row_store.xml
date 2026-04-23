@@ -1,0 +1,86 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>row_store</name>
+            <values>
+                <value>0</value>
+                <value>3</value>
+            </values>
+        </substitution>
+        <!-- Match rate determines the join selectivity -->
+        <substitution>
+            <name>match_rate</name>
+            <values>
+                <value>0.9</value>
+                <value>0.1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Unique keys -->
+    <create_query>CREATE TABLE rs_right_1k (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rs_right_100k (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rs_right_10m (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rs_right_100k_nullable (k UInt64, a Nullable(Int32), b Nullable(Int64), c Nullable(UInt8), d Nullable(Float64), e Nullable(UInt32), f Nullable(Int16), g Nullable(FixedString(16)), h Nullable(Int8)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rs_right_10m_nullable (k UInt64, a Nullable(Int32), b Nullable(Int64), c Nullable(UInt8), d Nullable(Float64), e Nullable(UInt32), f Nullable(Int16), g Nullable(FixedString(16)), h Nullable(Int8)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <!-- 10 matches per key -->
+    <create_query>CREATE TABLE rs_right_1k_x10 (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rs_right_1m_x10 (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rs_right_1m_nullable_x10 (k UInt64, a Nullable(Int32), b Nullable(Int64), c Nullable(UInt8), d Nullable(Float64), e Nullable(UInt32), f Nullable(Int16), g Nullable(FixedString(16)), h Nullable(Int8)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    
+    <!-- Mix of fixed sized and String columns -->
+    <create_query>CREATE TABLE rs_right_mixed_1m (k UInt64, a Int32, b Int64, c UInt8, d Float64, s1 String, s2 String, s3 String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <create_query>CREATE TABLE rs_probe_200m (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO rs_right_1k SELECT number, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(1000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO rs_right_100k SELECT number, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(100000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO rs_right_10m SELECT number, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(10000000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO rs_right_100k_nullable WITH if(number % 7 = 0, NULL, number) AS n, if(number % 7 = 0, NULL, reinterpret(number, 'FixedString(16)')) AS fs SELECT number, n, n, n, n, n, n, fs, n FROM numbers(100000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO rs_right_10m_nullable WITH if(number % 7 = 0, NULL, number) AS n, if(number % 7 = 0, NULL, reinterpret(number, 'FixedString(16)')) AS fs SELECT number, n, n, n, n, n, n, fs, n FROM numbers(10000000) ORDER BY rand()</fill_query>
+
+    <fill_query>INSERT INTO rs_right_1k_x10 SELECT number % 1000, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(10000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO rs_right_1m_x10 SELECT number % 1000000, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(10000000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO rs_right_1m_nullable_x10 WITH if(number % 7 = 0, NULL, number) AS n, if(number % 7 = 0, NULL, reinterpret(number, 'FixedString(16)')) AS fs SELECT number % 1000000, n, n, n, n, n, n, fs, n FROM numbers(10000000) ORDER BY rand()</fill_query>
+
+    <fill_query>INSERT INTO rs_right_mixed_1m WITH concat('s', toString(number)) AS s SELECT number, number, number, number, number, s, s, s FROM numbers(1000000) ORDER BY rand()</fill_query>
+
+    <fill_query>INSERT INTO rs_probe_200m SELECT number FROM numbers(200000000) ORDER BY rand()</fill_query>
+
+    <!-- Unique keys + non-nullable payload -->
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_1k r ON (l.k % toUInt64(1000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+
+    <!-- Unique keys + nullable payload -->
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k_nullable r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_10m_nullable r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+
+    <!-- Other JOIN types -->
+    <query>SELECT * FROM rs_probe_200m l ANY JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM rs_probe_200m l LEFT JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM rs_probe_200m l RIGHT JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM rs_probe_200m l FULL JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+
+    <!-- 10 matches per key + non-nullable payload -->
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_1k_x10 r ON (l.k % toUInt64(1000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM (SELECT * FROM rs_probe_200m LIMIT 20000000) l JOIN rs_right_1m_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+
+    <!-- 10 matches per key + nullable payload -->
+    <query>SELECT * FROM (SELECT * FROM rs_probe_200m LIMIT 20000000) l JOIN rs_right_1m_nullable_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+
+    <!-- Mix of fixed sized and String columns. -->
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_mixed_1m r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+
+    <drop_query>DROP TABLE IF EXISTS rs_probe_200m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_right_1k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_right_100k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_right_10m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_right_1k_x10</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_right_1m_x10</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_right_mixed_1m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_right_100k_nullable</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_right_10m_nullable</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_right_1m_nullable_x10</drop_query>
+</test>
