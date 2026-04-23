@@ -387,12 +387,14 @@ void DiskLocal::prepareRead(
     StoredObject obj(full_path.string(), full_path.string(), file_size);
 
     /// No gather for local disk — the source buffer is returned directly.
-    /// Page cache and O_DIRECT are handled inside createReadBufferFromFileBase.
     pipeline.setLocalFileSource(
         full_path.string(),
         StoredObjects{obj},
-        read_hint,
-        settings.use_page_cache_for_local_disks);
+        read_hint);
+
+    /// Page cache for local disk reads — handled as a pipeline stage.
+    if (settings.use_page_cache_for_local_disks && settings.page_cache)
+        pipeline.needMemoryCache(settings.page_cache, "local:");
 
     pipeline.setReadSettings(settings);
 }

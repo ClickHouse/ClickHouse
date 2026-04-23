@@ -43,11 +43,11 @@ void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects obje
         .source = ObjectStorageSource{.storage = std::move(object_storage), .read_hint = read_hint}};
 }
 
-void ReadPipeline::setLocalFileSource(String path, StoredObjects objects, std::optional<size_t> read_hint, bool use_page_cache)
+void ReadPipeline::setLocalFileSource(String path, StoredObjects objects, std::optional<size_t> read_hint)
 {
     source = SourceStage{
         .objects = std::move(objects),
-        .source = LocalFileSource{.path = std::move(path), .read_hint = read_hint, .use_page_cache = use_page_cache}};
+        .source = LocalFileSource{.path = std::move(path), .read_hint = read_hint}};
 }
 
 void ReadPipeline::setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects)
@@ -290,9 +290,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 return createReadBufferFromFileBase(
-                    s.path, settings, s.read_hint,
-                    /*file_size*/ std::nullopt, /*flags*/ -1,
-                    /*existing_memory*/ nullptr, s.use_page_cache);
+                    s.path, settings, s.read_hint);
             },
             [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
             {

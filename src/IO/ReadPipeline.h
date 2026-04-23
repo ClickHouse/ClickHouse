@@ -61,7 +61,6 @@ public:
     {
         String path;
         std::optional<size_t> read_hint;
-        bool use_page_cache = false;
     };
 
     /// Backup storage source.
@@ -98,7 +97,7 @@ public:
     void setSource(ObjectStoragePtr storage, StoredObjects objects, std::optional<size_t> read_hint = {});
 
     /// Set source from a local file path.
-    void setLocalFileSource(String path, StoredObjects objects, std::optional<size_t> read_hint = {}, bool use_page_cache = false);
+    void setLocalFileSource(String path, StoredObjects objects, std::optional<size_t> read_hint = {});
 
     /// Set source from a backup.
     void setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects);

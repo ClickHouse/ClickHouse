@@ -1,6 +1,7 @@
 #include <Disks/IDisk.h>
 #include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -84,6 +85,8 @@ std::unique_ptr<ReadBufferFromFileBase> IDisk::readFile(
 {
     ReadPipeline pipeline;
     prepareRead(path, settings, read_hint, pipeline);
+    if (!pipeline.hasSource())
+        return std::make_unique<ReadBufferFromEmptyFile>();
     if (!pipeline.hasReadSettings())
         pipeline.setReadSettings(settings);
     return pipeline.build();

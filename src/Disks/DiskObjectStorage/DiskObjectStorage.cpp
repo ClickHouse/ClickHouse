@@ -2,7 +2,6 @@
 #include <Common/CurrentThread.h>
 
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/Stopwatch.h>
 #include <Common/checkStackSize.h>
@@ -774,15 +773,7 @@ void DiskObjectStorage::prepareRead(
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
     if (storage_objects.empty())
-    {
-        pipeline.setSource(
-            StoredObjects{StoredObject("", "", 0)},
-            [](const StoredObject &, const ReadSettings &, bool, bool)
-            {
-                return std::make_unique<ReadBufferFromEmptyFile>();
-            });
-        return;
-    }
+        return;  /// No source set — caller checks hasSource() and returns empty buffer.
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
