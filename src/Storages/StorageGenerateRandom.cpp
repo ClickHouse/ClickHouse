@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
@@ -924,7 +925,7 @@ StorageGenerateRandom::StorageGenerateRandom(
     UInt64 max_array_length_,
     UInt64 max_string_length_,
     const std::optional<UInt64> & random_seed_)
-    : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
+    : StorageWithCommonVirtualColumns(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
     static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
     static constexpr size_t MAX_STRING_SIZE = 1 << 30;
@@ -940,7 +941,16 @@ StorageGenerateRandom::StorageGenerateRandom(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageGenerateRandom::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 

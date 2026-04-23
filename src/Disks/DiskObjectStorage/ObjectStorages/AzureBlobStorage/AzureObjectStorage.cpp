@@ -575,12 +575,10 @@ void AzureObjectStorage::applyNewSettings(
 
     bool is_client_for_disk = client.get()->IsClientForDisk();
 
-    AzureBlobStorage::ConnectionParams params
-    {
-        .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
-        .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-        .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk),
-    };
+    AzureBlobStorage::ConnectionParams params;
+    params.endpoint = AzureBlobStorage::processEndpoint(config, config_prefix);
+    params.auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix);
+    params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk);
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
     client.set(std::move(new_client));

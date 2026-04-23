@@ -141,7 +141,7 @@ public:
     /// (So e.g. we can't remove session ID from this map when the session is closed.)
     std::unordered_map<SessionAndXID, KeeperRequestsForSessions, SessionAndXIDHash> read_request_queue;
 
-    /// Just allocate some objects, real initialization is done by `intialize method`
+    /// Just allocate some objects, real initialization is done by `initialize method`
     KeeperDispatcher();
 
     /// Call shutdown
@@ -183,9 +183,6 @@ public:
 
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
-
-    /// Put local read request to ClickHouse Keeper
-    bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);

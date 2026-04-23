@@ -31,6 +31,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
+#include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -46,6 +47,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
+#include <Interpreters/HistogramMetricLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -361,6 +363,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
     }
 
+    if (histogram_metric_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("histogram_metric_log.collect_interval_milliseconds",
+                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        histogram_metric_log->startCollect(ThreadName::HISTOGRAM_METRIC_LOG, collect_interval_milliseconds);
+    }
+
     if (background_schedule_pool_log)
     {
         size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 30);
@@ -560,7 +569,7 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>())
+    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
 {
     create_query = getCreateTableQuery()->formatWithSecretsOneLine();
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
@@ -844,7 +853,8 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
     /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
-    /// `true` for `SharedSystemLogFlushPolicy` and `false` for `DefaultSystemLogFlushPolicy`.
+    /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
+    /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
     if (!flush_policy->shouldSkipAliasColumns())
         ordinary_columns.setAliases(alias_columns);
 

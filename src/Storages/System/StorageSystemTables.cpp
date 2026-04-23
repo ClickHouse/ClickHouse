@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -26,6 +27,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/typeid_cast.h>
@@ -159,7 +161,7 @@ ColumnPtr getFilteredTables(
 }
 
 StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -237,7 +239,16 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
     });
 
     storage_metadata.setColumns(std::move(description));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemTables::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 class TablesBlockSource : public ISource
@@ -279,7 +290,7 @@ protected:
     {
         if (table)
         {
-            StorageMetadataPtr metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
+            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
             if (!metadata_snapshot)
             {
                 columns[res_index++]->insertDefault();
@@ -584,7 +595,7 @@ protected:
 
                 StorageMetadataPtr metadata_snapshot;
                 if (table)
-                    metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
+                    metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
 
                 if (columns_mask[src_index++])
                 {
@@ -957,7 +968,7 @@ private:
     ColumnPtr filtered_tables_column;
 };
 
-void StorageSystemTables::read(
+void StorageSystemTables::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

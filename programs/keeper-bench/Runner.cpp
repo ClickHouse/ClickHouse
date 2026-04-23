@@ -407,11 +407,10 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
         if (enable_tracing)
         {
-            DB::OpenTelemetry::TracingContext tracing_context;
-            tracing_context.trace_id = DB::UUIDHelpers::generateV4();
-            tracing_context.span_id = 0;
-            tracing_context.trace_flags = DB::OpenTelemetry::TRACE_FLAG_SAMPLED | DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS;
-            request->tracing_context = tracing_context;
+            request->tracing_context = std::make_shared<DB::OpenTelemetry::TracingContext>();
+            request->tracing_context->trace_id = DB::UUIDHelpers::generateV4();
+            request->tracing_context->span_id = 0;
+            request->tracing_context->trace_flags = DB::OpenTelemetry::TRACE_FLAG_SAMPLED | DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS;
         }
 
         InFlightRequest slot;
@@ -964,7 +963,7 @@ struct SetupNodeCollector
 
         auto multi_create_request = std::make_shared<Coordination::ZooKeeperMultiRequest>(create_ops, default_acls);
         initial_storage->preprocessRequest(multi_create_request, 1, 0, next_zxid, /* check_acl = */ false);
-        auto responses = initial_storage->processRequest(multi_create_request, 1, next_zxid, /* check_acl = */ false);
+        auto responses = initial_storage->processRequest(multi_create_request, 1, next_zxid);
         if (responses.size() > 1 || responses[0].response->error != Coordination::Error::ZOK)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid response after trying to create a node {}", responses[0].response->error);
     }
