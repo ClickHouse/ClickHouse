@@ -1,0 +1,16 @@
+RIGHT JOIN USING, equi-key WHERE, matched types: left MergeTree prunes granules
+1
+RIGHT JOIN USING, equi-key WHERE, UInt8/UInt64 mismatch: left MergeTree prunes granules
+1
+RIGHT JOIN USING, equi-key WHERE: result
+1
+RIGHT ALL JOIN ON, equi-key WHERE: left MergeTree prunes granules
+1
+RIGHT ANTI JOIN USING, equi-key WHERE: correctness preserved
+1000000000
+FULL JOIN USING, equi-key WHERE: result (matched row)
+1
+FULL JOIN USING, equi-key WHERE: result (right-only contributing row preserved)
+1000000000
+FULL JOIN USING, equi-key WHERE: left-only rows still reachable via filter
+1
