@@ -1637,6 +1637,29 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
+    /// For index columns, which have minmax_idx values, adjust tigher bounds than [-inf, +inf]
+    std::vector<FieldRef> pk_min_bound(used_key_size, NEGATIVE_INFINITY);
+    std::vector<FieldRef> pk_max_bound(used_key_size, POSITIVE_INFINITY);
+    if (part->minmax_idx && part->minmax_idx->initialized)
+    {
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        const auto minmax_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+        const auto & hyperrectangle = part->minmax_idx->hyperrectangle;
+        if (hyperrectangle.size() == minmax_names.size())
+        {
+            for (size_t i = 0; i < used_key_size; ++i)
+            {
+                auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
+                if (it == minmax_names.end())
+                    continue;
+                size_t slot = it - minmax_names.begin();
+                pk_min_bound[i] = hyperrectangle[slot].left;
+                pk_max_bound[i] = hyperrectangle[slot].right;
+            }
+        }
+    }
+
+
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
         = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
@@ -1656,9 +1679,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     if ((*index_columns)[i].column)
                         create_field_ref(range.begin, i, left);
                     else
-                        left = NEGATIVE_INFINITY;
+                        left = pk_min_bound[i];
 
-                    right = POSITIVE_INFINITY;
+                    right = pk_max_bound[i];
                 }
             }
             else
@@ -1674,9 +1697,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                     else
                     {
-                        /// If the PK column was not loaded in memory - exclude it from the analysis.
-                        left = NEGATIVE_INFINITY;
-                        right = POSITIVE_INFINITY;
+                        /// If the PK column was not loaded in memory - fall back to tightest bound we have for index column.
+                        left = pk_min_bound[i];
+                        right = pk_max_bound[i];
                     }
                 }
             }
