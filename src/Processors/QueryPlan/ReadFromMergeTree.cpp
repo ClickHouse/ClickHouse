@@ -1427,6 +1427,17 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 || split_parts_and_ranges.size() <= 1)
                 return false;
 
+            /// Only enable PrefetchingConcat when there is per-chunk CPU work
+            /// (a PREWHERE filter or a row-level security filter). The benefit
+            /// of `PrefetchingConcat` is parallelizing that work across streams.
+            /// For pure pass-through reads (`SELECT * ... ORDER BY pk`) the
+            /// single-output `MergingSortedTransform` is already efficient for
+            /// non-overlapping ranges, and adding a concat with its own buffering
+            /// just introduces scheduling overhead — see perf regressions in the
+            /// `monotonous_order_by` test.
+            if (!query_info.prewhere_info && !query_info.row_level_filter)
+                return false;
+
             /// PrefetchingConcat is only safe when all streams reference the same
             /// single data part. Ranges from a single part are non-overlapping and
             /// pre-sorted, so concatenation preserves order.
