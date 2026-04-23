@@ -50,6 +50,91 @@ INSERT INTO t VALUES
     (4, 'd'),
     (5, 'R');
 
+-- Add a key that doesn't exist in the dictionary to test missing key behavior
+INSERT INTO t VALUES (99, 'missing_key');
+
+-- Test IN with default value in list - should produce NOT(key IN (SELECT ... WHERE attr NOT IN S))
+-- Default value for String is '', so '' IN ('') should match missing keys
+SELECT 'IN with default value - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) IN ('')
+ORDER BY color_id, payload;
+
+-- Missing key 99 should match because '' (default) IN ('') = true
+SELECT 'IN with default value - result';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) IN ('')
+ORDER BY color_id, payload;
+
+-- Test IN with default value in list (multiple values including default)
+SELECT 'IN with default value among others - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) IN ('red', '')
+ORDER BY color_id, payload;
+
+SELECT 'IN with default value among others - result';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) IN ('red', '')
+ORDER BY color_id, payload;
+
+-- Test notIn with default value in list - should NOT have OR clause
+-- Missing key returns '', '' NOT IN ('') = false, so missing keys should not match
+SELECT 'notIn with default value - plan (should NOT have OR clause)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) NOT IN ('')
+ORDER BY color_id, payload;
+
+-- Missing key 99 should NOT match because '' NOT IN ('') = false
+SELECT 'notIn with default value - result';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) NOT IN ('')
+ORDER BY color_id, payload;
+
+-- Test notIn with default value NOT in list - should produce NOT(key IN (SELECT ... WHERE attr IN S))
+-- Missing key returns '', '' NOT IN ('red', 'blue') = true, so missing keys should match
+SELECT 'notIn without default value - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) NOT IN ('red', 'blue')
+ORDER BY color_id, payload;
+
+-- Missing key 99 should match because '' NOT IN ('red', 'blue') = true
+SELECT 'notIn without default value - result';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) NOT IN ('red', 'blue')
+ORDER BY color_id, payload;
+
+-- Test IN with numeric attribute where default (0) is in the list
+-- Default for UInt64 is 0, so this tests numeric default handling
+SELECT 'IN with numeric default - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetUInt64('colors', 'n', color_id) IN (0)
+ORDER BY color_id, payload;
+
+-- Missing key 99 should match because 0 (default) IN (0) = true
+-- Also key 4 matches because its n value is 0
+SELECT 'IN with numeric default - result';
+SELECT color_id, payload
+FROM t
+WHERE dictGetUInt64('colors', 'n', color_id) IN (0)
+ORDER BY color_id, payload;
+
+-- Clean up the extra row before other tests
+DELETE FROM t WHERE color_id = 99;
+
 -- Test IN with constant tuple
 SELECT 'IN with constant tuple - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
@@ -105,6 +190,39 @@ SELECT color_id, payload
 FROM t
 WHERE dictGetString('colors', 'name', color_id) IN ('red')
 ORDER BY color_id, payload;
+
+-- Test IN with Array form (should work the same as Tuple)
+SELECT 'IN with Array form - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) IN ['red', 'blue']
+ORDER BY color_id, payload;
+
+SELECT 'IN with Array form';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) IN ['red', 'blue']
+ORDER BY color_id, payload;
+
+-- Test IN with Array form and default value
+-- Re-add missing key for this test
+INSERT INTO t VALUES (99, 'missing_key');
+
+SELECT 'IN with Array form, default value - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) IN ['', 'red']
+ORDER BY color_id, payload;
+
+SELECT 'IN with Array form, default value - result';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) IN ['', 'red']
+ORDER BY color_id, payload;
+
+DELETE FROM t WHERE color_id = 99;
 
 -- Test combination with AND
 SELECT 'IN combined with AND - plan';
@@ -214,6 +332,60 @@ INSERT INTO fact VALUES
     (2, 'a', 'z'),
     (2, 'b', 'w'),
     (3, 'c', 'u');
+
+-- Add a composite key that doesn't exist in the dictionary to test missing key behavior
+INSERT INTO fact VALUES (99, 'z', 'missing_composite_key');
+
+-- Test IN with composite key and default value in list
+-- Default value for String (tag) is '', so this tests missing key handling
+SELECT 'IN with composite key, default value - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT k1, k2, payload
+FROM fact
+WHERE dictGet('dict_prices', 'tag', (k1, k2)) IN ('')
+ORDER BY k1, k2, payload;
+
+-- Missing key (99, 'z') should match because '' (default) IN ('') = true
+SELECT 'IN with composite key, default value - result';
+SELECT k1, k2, payload
+FROM fact
+WHERE dictGet('dict_prices', 'tag', (k1, k2)) IN ('')
+ORDER BY k1, k2, payload;
+
+-- Test notIn with composite key and default value NOT in list
+-- Missing key returns '', '' NOT IN ('pro', 'basic') = true, so missing keys should match
+SELECT 'notIn with composite key, no default - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT k1, k2, payload
+FROM fact
+WHERE dictGet('dict_prices', 'tag', (k1, k2)) NOT IN ('pro', 'basic')
+ORDER BY k1, k2, payload;
+
+-- Missing key (99, 'z') should match because '' NOT IN ('pro', 'basic') = true
+SELECT 'notIn with composite key, no default - result';
+SELECT k1, k2, payload
+FROM fact
+WHERE dictGet('dict_prices', 'tag', (k1, k2)) NOT IN ('pro', 'basic')
+ORDER BY k1, k2, payload;
+
+-- Test IN with composite key, numeric attribute and default value
+-- Default for UInt64 (price) is 0
+SELECT 'IN with composite key, numeric default - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT k1, k2, payload
+FROM fact
+WHERE dictGetUInt64('dict_prices', 'price', (k1, k2)) IN (0)
+ORDER BY k1, k2, payload;
+
+-- Missing key (99, 'z') should match because 0 (default) IN (0) = true
+SELECT 'IN with composite key, numeric default - result';
+SELECT k1, k2, payload
+FROM fact
+WHERE dictGetUInt64('dict_prices', 'price', (k1, k2)) IN (0)
+ORDER BY k1, k2, payload;
+
+-- Clean up the extra row before other tests
+DELETE FROM fact WHERE k1 = 99 AND k2 = 'z';
 
 -- Test IN with composite key
 SELECT 'IN with composite key - plan';

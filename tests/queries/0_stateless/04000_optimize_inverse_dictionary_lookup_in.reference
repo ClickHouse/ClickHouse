@@ -1,3 +1,87 @@
+IN with default value - plan (should have negated IN)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT IN (\'\')
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with default value - result
+99	missing_key
+IN with default value among others - plan (should have negated IN)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT IN (\'red\', \'\')
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with default value among others - result
+1	a
+3	c
+99	missing_key
+notIn with default value - plan (should NOT have OR clause)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT IN (\'\')
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+notIn with default value - result
+1	a
+2	b
+3	c
+4	d
+5	R
+notIn without default value - plan (should have negated IN)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN (\'red\', \'blue\')
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+notIn without default value - result
+4	d
+5	R
+99	missing_key
+IN with numeric default - plan (should have negated IN)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.n NOT IN (0)
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with numeric default - result
+4	d
+99	missing_key
 IN with constant tuple - plan
 SELECT
     __table1.color_id AS color_id,
@@ -20,11 +104,11 @@ SELECT
     __table1.color_id AS color_id,
     __table1.payload AS payload
 FROM default.t AS __table1
-WHERE __table1.color_id IN (
+WHERE not(__table1.color_id IN (
     SELECT __table1.id AS id
     FROM dictionary(\'colors\') AS __table1
-    WHERE __table1.name NOT IN (\'red\', \'blue\')
-)
+    WHERE __table1.name IN (\'red\', \'blue\')
+))
 ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
@@ -63,6 +147,40 @@ ORDER BY
 IN with single value
 1	a
 3	c
+IN with Array form - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name IN [\'red\', \'blue\']
+)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with Array form
+1	a
+2	b
+3	c
+IN with Array form, default value - plan (should have negated IN)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE not(__table1.color_id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name NOT IN [\'\', \'red\']
+))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+IN with Array form, default value - result
+1	a
+3	c
+99	missing_key
 IN combined with AND - plan
 SELECT
     __table1.color_id AS color_id,
@@ -130,6 +248,68 @@ ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
 Negative: IN with table column
+IN with composite key, default value - plan (should have negated IN)
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE not((__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.tag NOT IN (\'\')
+))
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+IN with composite key, default value - result
+2	b	w
+99	z	missing_composite_key
+notIn with composite key, no default - plan (should have negated IN)
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE not((__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.tag IN (\'pro\', \'basic\')
+))
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+notIn with composite key, no default - result
+2	a	z
+2	b	w
+3	c	u
+99	z	missing_composite_key
+IN with composite key, numeric default - plan (should have negated IN)
+SELECT
+    __table1.k1 AS k1,
+    __table1.k2 AS k2,
+    __table1.payload AS payload
+FROM default.fact AS __table1
+WHERE not((__table1.k1, __table1.k2) IN (
+    SELECT
+        __table1.k1 AS k1,
+        __table1.k2 AS k2
+    FROM dictionary(\'dict_prices\') AS __table1
+    WHERE __table1.price NOT IN (0)
+))
+ORDER BY
+    __table1.k1 ASC,
+    __table1.k2 ASC,
+    __table1.payload ASC
+IN with composite key, numeric default - result
+2	b	w
+99	z	missing_composite_key
 IN with composite key - plan
 SELECT
     __table1.k1 AS k1,
@@ -156,19 +336,20 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.fact AS __table1
-WHERE (__table1.k1, __table1.k2) IN (
+WHERE not((__table1.k1, __table1.k2) IN (
     SELECT
         __table1.k1 AS k1,
         __table1.k2 AS k2
     FROM dictionary(\'dict_prices\') AS __table1
-    WHERE __table1.tag NOT IN (\'pro\', \'basic\')
-)
+    WHERE __table1.tag IN (\'pro\', \'basic\')
+))
 ORDER BY
     __table1.k1 ASC,
     __table1.k2 ASC,
     __table1.payload ASC
 notIn with composite key
 2	a	z
+2	b	w
 3	c	u
 IN with composite key, numeric attribute - plan
 SELECT
