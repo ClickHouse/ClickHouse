@@ -211,7 +211,6 @@ public:
         }
         else
         {
-            function_t = FunctionT::invalid_t;
             return;
         }
 
