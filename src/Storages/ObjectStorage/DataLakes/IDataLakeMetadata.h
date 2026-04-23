@@ -178,12 +178,17 @@ public:
 
     virtual void drop(ContextPtr) { }
 
+<<<<<<< HEAD
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/, StorageObjectStorage & /*storage_object_storage*/) { return false; }
     virtual void finishAllBackgroundJobs() {}
     virtual Int32 getBiasBackoffSeconds() const { return 0; }
     virtual bool isBackgroundExecutable() const { return false; }
+=======
+    virtual std::optional<String> partitionKey(ContextPtr) const { return {}; }
+    virtual std::optional<String> sortingKey(ContextPtr) const { return {}; }
+>>>>>>> e7bb1535551 (Merge pull request #1662 from Altinity/feature/antalya-26.3/pr-1432)
 
 protected:
     virtual ObjectIterator
