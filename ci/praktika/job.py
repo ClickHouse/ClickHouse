@@ -31,6 +31,7 @@ class Job:
         provides: Optional[List[str]] = None
         requires: Optional[List[str]] = None
         timeout: Optional[int] = None
+        command: Optional[str] = None
 
     @dataclass
     class Config:
@@ -99,9 +100,12 @@ class Job:
                 assert (
                     not obj.provides
                 ), "Job.Config.provides must be empty for parametrized jobs"
+                if param_set.command:
+                    obj.command = param_set.command
                 if param_set.parameter:
                     obj.parameter = param_set.parameter
-                    obj.command = obj.command.format(PARAMETER=param_set.parameter)
+                    if not param_set.command:
+                        obj.command = obj.command.format(PARAMETER=param_set.parameter)
                 if param_set.runs_on:
                     obj.runs_on = param_set.runs_on
                 if param_set.timeout:

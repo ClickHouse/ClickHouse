@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"optimize_remove_redundant_semi_join", false, true, "Remove redundant SEMI/ANTI JOINs when one right-hand side is a provable subset of another."},
+            {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
