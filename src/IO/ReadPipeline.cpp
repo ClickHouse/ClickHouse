@@ -172,8 +172,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         /// Object storage path: wrap per-object buffers with optional disk cache,
         /// then join all objects via ReadBufferFromRemoteFSGather.
 
-        const auto * obj_source = std::get_if<ObjectStorageSource>(&source->source);
-        const auto * custom_source = std::get_if<CustomSource>(&source->source);
+        auto * obj_source = std::get_if<ObjectStorageSource>(&source->source);
+        auto * custom_source = std::get_if<CustomSource>(&source->source);
         if (!obj_source && !custom_source)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ReadPipeline: gather requires ObjectStorageSource or CustomSource");
@@ -341,33 +341,89 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     }
     else
     {
-        /// -- Stage 1 only: Source (no gather) --
-        /// Local disk path: create the buffer directly, no gather wrapping.
+        /// -- Stages 1+2 without gather --
+        /// Single-object path (e.g. StorageObjectStorageSource, local disk).
+        /// No gather wrapping — preserves readBigAt support for the parquet prefetcher.
 
         if (source->objects.size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ReadPipeline without gather requires exactly 1 stored object, got {}",
                 source->objects.size());
 
-        impl = std::visit(overloaded{
-            [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+        const auto & object = source->objects[0];
+
+        if (disk_cache && disk_cache->cache)
+        {
+            /// -- Stages 1+2: Source + DiskCache (single-object, no gather) --
+            auto fs_cache_settings = disk_cache->cache_settings.value_or(settings.getFilesystemCacheSettings());
+            auto cache_key = disk_cache->custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
+            auto origin = disk_cache->custom_origin.value_or(disk_cache->cache->getCommonOriginWithSegmentKeyType(object.local_path));
+
+            CachedOnDiskReadBufferFromFile::ImplementationBufferCreator impl_creator;
+
+            if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
             {
-                return s.storage->readObject(source->objects[0], settings, s.read_hint, /* use_external_buffer */ false, /* restrict_seek */ false);
-            },
-            [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-            {
-                return createReadBufferFromFileBase(
-                    s.path, settings, s.read_hint);
-            },
-            [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-            {
-                return s.backup->readFile(s.path);
-            },
-            [&](const CustomSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-            {
-                return s.creator(source->objects[0], settings, /* use_external_buffer */ false, /* restrict_seek */ false);
+                impl_creator = [storage = obj_src->storage, read_hint = obj_src->read_hint,
+                                captured_object = object, captured_settings = settings]()
+                    -> std::unique_ptr<ReadBufferFromFileBase>
+                {
+                    return storage->readObject(captured_object, captured_settings, read_hint,
+                        /* use_external_buffer */ true, /* restrict_seek */ false);
+                };
             }
-        }, source->source);
+            else if (const auto * cust_src = std::get_if<CustomSource>(&source->source))
+            {
+                impl_creator = [creator = cust_src->creator, captured_object = object, captured_settings = settings]()
+                    -> std::unique_ptr<ReadBufferFromFileBase>
+                {
+                    return creator(captured_object, captured_settings, /* use_external_buffer */ true, /* restrict_seek */ false);
+                };
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ReadPipeline: disk cache without gather requires ObjectStorageSource or CustomSource");
+            }
+
+            impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
+                object.remote_path,
+                cache_key,
+                disk_cache->cache,
+                origin,
+                std::move(impl_creator),
+                fs_cache_settings,
+                settings.remote_fs_buffer_size,
+                settings.local_fs_buffer_size,
+                std::string(CurrentThread::getQueryId()),
+                object.bytes_size,
+                /* allow_seeks_after_first_read */ true,
+                /* use_external_buffer */ true,
+                /* read_until_position */ std::nullopt,
+                disk_cache->cache_log);
+        }
+        else
+        {
+            /// -- Stage 1 only: Source (no cache, no gather) --
+            impl = std::visit(overloaded{
+                [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+                {
+                    return s.storage->readObject(object, settings, s.read_hint, /* use_external_buffer */ false, /* restrict_seek */ false);
+                },
+                [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+                {
+                    return createReadBufferFromFileBase(
+                        s.path, settings, s.read_hint);
+                },
+                [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+                {
+                    return s.backup->readFile(s.path);
+                },
+                [&](const CustomSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+                {
+                    return s.creator(object, settings, /* use_external_buffer */ false, /* restrict_seek */ false);
+                }
+            }, source->source);
+        }
     }
 
     /// -- Stage 4: Memory cache --

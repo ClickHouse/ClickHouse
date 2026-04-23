@@ -962,8 +962,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             }
         }
 
-        /// Gather is needed so the disk cache wraps the source per-object.
-        pipeline.needGather();
+        /// No needGather() — StorageObjectStorageSource reads single objects directly
+        /// (one logical file = one S3/Azure blob). Gather is only needed for DiskObjectStorage
+        /// where metadata maps a logical path to multiple blobs.
 
         /// Page cache
         if (use_page_cache)
