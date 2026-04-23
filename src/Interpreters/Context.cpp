@@ -20,6 +20,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
+#include <Common/ThrottlerArray.h>
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
@@ -4680,6 +4681,10 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
         throttler = shared->remote_read_throttler;
     }
 
+    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
+    if (auto process_list_element = getProcessListElementSafe())
+        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
+
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
     {
         std::lock_guard lock(mutex);
@@ -4697,6 +4702,10 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
         std::lock_guard lock(shared->mutex);
         throttler = shared->remote_write_throttler;
     }
+
+    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
+    if (auto process_list_element = getProcessListElementSafe())
+        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
     {
