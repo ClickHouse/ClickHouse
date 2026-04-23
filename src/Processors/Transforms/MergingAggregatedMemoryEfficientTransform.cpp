@@ -113,7 +113,7 @@ bool GroupingAggregatedTransform::tryPushOverflowData()
     return true;
 }
 
-IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers &)
+IProcessor::Status GroupingAggregatedTransform::prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts &)
 {
     /// Check can output.
     auto & output = outputs.front();
@@ -135,15 +135,19 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
         index_to_input.resize(num_inputs);
 
         for (size_t i = 0; i < num_inputs; ++i, ++in)
+        {
             index_to_input[i] = in;
+            input_port_to_index[&*in] = i;
+        }
     }
 
     auto need_input = [this](size_t input_num) { return last_bucket_number[input_num] <= current_bucket; };
 
     if (!wait_input_ports_numbers.empty())
     {
-        for (const auto & updated_input_port_number : updated_input_ports)
+        for (const auto * updated_input_port : updated_input_ports)
         {
+            const auto updated_input_port_number = input_port_to_index.at(updated_input_port);
             if (!wait_input_ports_numbers.contains(updated_input_port_number))
                 continue;
 
