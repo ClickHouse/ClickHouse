@@ -27,6 +27,7 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/Streaming/CursorPromoter.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -1201,6 +1202,9 @@ public:
 
     /// Returns a snapshot of mutations that probably will be applied on the fly to parts during reading.
     virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
+
+    /// Per-partition promoters for streaming reads.
+    virtual CursorPromotersMap buildPromoters() const { return {}; }
 
     /// Computes snapshot-related part statistics in a single pass:
     /// min metadata version, per-partition min data version, and whether any part has a lightweight delete mask.

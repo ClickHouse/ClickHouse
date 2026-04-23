@@ -209,6 +209,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::streamingRead(
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     bool enable_parallel_reading) const
 {
+    chassert(query_info.isStream());
     auto cursor = buildMergeTreeCursor(query_info.table_expression_modifiers->getStreamSettings()->cursor_tree);
 
     /// Ensure the filter expression can reference `_partition_id`, `_block_number`, `_block_offset`.

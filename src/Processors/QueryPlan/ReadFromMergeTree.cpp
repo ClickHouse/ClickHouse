@@ -1,5 +1,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
+#include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
+#include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
@@ -3081,6 +3084,32 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
     return spreadMarkRangesAmongStreams(std::move(parts_with_ranges), index_build_context, num_streams, column_names_to_read);
 }
 
+Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
+{
+    const size_t num_streams = std::max<size_t>(1, requested_num_streams);
+    SharedHeader header = getOutputHeader();
+
+    auto parts_index = buildRightPartsIndex(std::move(result.parts_with_ranges));
+    auto promoters = data.buildPromoters();
+
+    Pipes pipes;
+    pipes.reserve(num_streams);
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto subscription = std::make_shared<RangesInDataPartStreamSubscription>(num_streams, i);
+        enrichSubscription(subscription, data, parts_index, promoters);
+        subscription->disable();
+
+        auto coordinator = std::make_shared<MergeTreeCommitOrderSequentialSource>(
+            header, data, storage_snapshot, all_column_names, std::move(subscription), context);
+
+        pipes.emplace_back(std::move(coordinator));
+    }
+
+    return Pipe::unitePipes(std::move(pipes));
+}
+
 Pipe ReadFromMergeTree::groupStreamsByPartition(
     AnalysisResult & result,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -3444,7 +3473,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             get_coordination_mode(), result.parts_with_ranges.getDescriptions(), /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
     }
 
-    if (result.parts_with_ranges.empty())
+    if (result.parts_with_ranges.empty() && !query_info.isStream())
     {
         pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
         return;
@@ -3549,10 +3578,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             std::move(part_remaining_marks));
     }
 
-    Pipe pipe = output_each_partition_through_separate_port
-        ? groupStreamsByPartition(result, index_build_context, result_projection)
-        : spreadMarkRanges(
-              std::move(result.parts_with_ranges), index_build_context, requested_num_streams, result, result_projection);
+    Pipe pipe;
+    if (query_info.isStream())
+        pipe = groupPartitionsByStreams(result);
+    else if (output_each_partition_through_separate_port)
+        pipe = groupStreamsByPartition(result, index_build_context, result_projection);
+    else
+        pipe = spreadMarkRanges(std::move(result.parts_with_ranges), index_build_context, requested_num_streams, result, result_projection);
 
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(query_info.storage_limits);

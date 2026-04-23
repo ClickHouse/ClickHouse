@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
@@ -382,6 +383,19 @@ void StorageMergeTree::read(
 
     if (plan)
         query_plan = std::move(*plan);
+}
+
+CursorPromotersMap StorageMergeTree::buildPromoters() const
+{
+    const auto data_parts = getDataPartsVectorForInternalUsage();
+    std::map<String, PartBlockNumberRanges> partition_ranges;
+
+    for (const auto & part : data_parts)
+        partition_ranges[part->info.getPartitionId()].addPart(part->info.min_block, part->info.max_block);
+
+    /// Regular MergeTree allocates block number for new part and renames part on disk (commits it)
+    /// atomically. So there can not be in-fly committing block numbers.
+    return constructPromoters(/*committing_block_numbers=*/{}, std::move(partition_ranges));
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
