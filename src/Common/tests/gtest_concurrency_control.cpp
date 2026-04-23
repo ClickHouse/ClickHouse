@@ -742,26 +742,27 @@ TEST(ConcurrencyControl, MaxMinFairPrioritizesMinimumAllocation)
     auto a2 = t.cc.allocate(0, 10);
     auto a3 = t.cc.allocate(0, 10);
 
-    // Release 4 slots from a1
-    a1_slots.pop_back();
-    a1_slots.pop_back();
-    a1_slots.pop_back();
-    a1_slots.pop_back();
-
-    // With max-min fair, released slots should go to a2 and a3 (they have 0 allocated)
-    // rather than back to a1 (which has 6 allocated, now 2 after releasing 4)
+    // Interleave releases with tryAcquires so a2/a3 consume their granted slots promptly
+    // (mimicking a real pipeline's tryAcquire loop). Under work-conserving MMF, this keeps
+    // the lowest-allocated waiter eligible on each release, so all 4 released slots go to
+    // a2 and a3 in turn.
     std::vector<AcquiredSlotPtr> a2_slots;
     std::vector<AcquiredSlotPtr> a3_slots;
-    while (auto slot = a2->tryAcquire())
-        a2_slots.emplace_back(std::move(slot));
-    while (auto slot = a3->tryAcquire())
-        a3_slots.emplace_back(std::move(slot));
+    for (int i = 0; i < 4; ++i)
+    {
+        a1_slots.pop_back(); // release one slot
+        // Drain whichever of a2/a3 has a granted slot pending.
+        if (auto s_a2 = a2->tryAcquire())
+            a2_slots.emplace_back(std::move(s_a2));
+        else if (auto s_a3 = a3->tryAcquire())
+            a3_slots.emplace_back(std::move(s_a3));
+    }
 
-    // a2 and a3 should get 2 slots each (4 released, distributed to the ones with min allocation)
-    ASSERT_TRUE(a2_slots.size() == 2);
-    ASSERT_TRUE(a3_slots.size() == 2);
-    // a1 should not get any more (it still has 2, which is >= a2 and a3's count)
-    ASSERT_TRUE(!a1->tryAcquire());
+    // a2 and a3 together should have received all 4 released slots (no leakage to a1).
+    ASSERT_EQ(a2_slots.size() + a3_slots.size(), 4u);
+    // Neither a2 nor a3 should be starved.
+    ASSERT_GE(a2_slots.size(), 1u);
+    ASSERT_GE(a3_slots.size(), 1u);
 }
 
 // Tests for lazy slot granting behavior.
@@ -771,24 +772,23 @@ TEST(ConcurrencyControl, MaxMinFairPrioritizesMinimumAllocation)
 
 TEST(ConcurrencyControl, LazyGrantingCapacityRecovery)
 {
-    // Verify that lazy allocation + explicit demand signaling prevents INSERT-style starvation:
-    // A1 requests 32 slots but only acquires 1 and signals no more demand (like PipelineExecutor
-    // does on DO_NOT_SPAWN). The unused capacity flows to A2 across all three schedulers,
-    // including max_min_fair (which otherwise would tie A1 and A2 at allocated=1 and block A2).
+    // Verify that lazy allocation prevents INSERT-style starvation: an allocation that
+    // requests a high max but uses only 1 thread cannot hoard capacity. The skip-on-granted>0
+    // pacing means it holds at most 1 pending slot. When it calls setMax(1) to cap itself
+    // at its current usage, capacity flows cleanly to A2.
     for (String scheduler : {"round_robin", "fair_round_robin", "max_min_fair"})
     {
         ConcurrencyControlTest t(10);
         t.cc.setScheduler(scheduler);
 
-        // A1 requests 32 slots but only acquires 1 (simulating a simple INSERT pipeline)
+        // A1 requests 32 slots but only acquires 1 (simulating a simple INSERT pipeline).
         auto a1 = t.cc.allocate(1, 32);
         auto s1 = a1->tryAcquire();
         ASSERT_TRUE(s1);
-        // Simulate PipelineExecutor's DO_NOT_SPAWN behavior: tell CC we don't want more slots.
-        a1->setMoreDemand(false);
+        // Pipeline caps itself at its current usage so it won't steal more capacity.
+        a1->setMax(1);
 
         // A2 should be able to acquire most of the remaining capacity.
-        // With demand signaling, a1 is skipped by lazy schedule across all schedulers.
         auto a2 = t.cc.allocate(0, 10);
         std::vector<AcquiredSlotPtr> a2_acquired;
         while (auto slot = a2->tryAcquire())
@@ -846,187 +846,119 @@ TEST(ConcurrencyControl, LazyGrantingScheduleSkipsUnused)
     }
 }
 
-TEST(ConcurrencyControl, DemandSignaling)
-{
-    // Verify setMoreDemand semantics:
-    //  1. setMoreDemand(false) prevents the allocation from being granted more slots
-    //     AND reclaims any pending (granted but not acquired) slots back to the pool.
-    //  2. setMoreDemand(true) re-enables granting and triggers a schedule round.
-    for (String scheduler : {"round_robin", "fair_round_robin", "max_min_fair"})
-    {
-        ConcurrencyControlTest t(5);
-        t.cc.setScheduler(scheduler);
-
-        // A1 allocates, acquires its bootstrap slot, signals no demand (simulating a
-        // pipeline that reached DO_NOT_SPAWN after spawning the threads it needs).
-        auto a1 = t.cc.allocate(0, 10);
-        auto s1 = a1->tryAcquire();
-        ASSERT_TRUE(s1);
-        a1->setMoreDemand(false);
-
-        // A2 should be able to consume most remaining capacity — A1 is skipped AND any
-        // unused pending grants on A1 have been reclaimed.
-        auto a2 = t.cc.allocate(0, 5);
-        std::vector<AcquiredSlotPtr> a2_acquired;
-        while (auto slot = a2->tryAcquire())
-            a2_acquired.emplace_back(std::move(slot));
-        // With reclaim, A1 holds only 1 acquired slot. A2 should get at least 4 of 5 capacity.
-        ASSERT_TRUE(a2_acquired.size() >= 4)
-            << "scheduler=" << scheduler << " a2_acquired=" << a2_acquired.size();
-
-        // Re-enable demand on A1; release enough from A2 to guarantee capacity reaches A1.
-        // Round-robin order may grant to A2 first if A2 still wants slots, so release all
-        // to ensure A1 can eventually acquire.
-        a1->setMoreDemand(true);
-        a2_acquired.clear(); // release all A2 slots — triggers schedule
-
-        // A1 should now be able to receive new grants again.
-        auto s1_more = a1->tryAcquire();
-        ASSERT_TRUE(s1_more) << "scheduler=" << scheduler;
-    }
-}
-
-// Regression: setMoreDemand(false) reclaiming pending granted-but-not-acquired slots must NOT
-// permanently reduce the allocation's future grant budget. Previously RR/FRR bumped `released`
-// instead of decrementing `allocated`, so repeated reclaims ratcheted down the query's
-// attainable parallelism: every pending-grant that was reclaimed continued counting against
-// allocated, making `allocated < limit` fail earlier than it should.
-//
-// Scenario: `min=0, max=limit`. Repeatedly flip demand off/on without actually acquiring the
-// pending slot. Each cycle reclaims 1 pending slot. If the budget is properly restored, we
-// should still be able to acquire `limit` slots at the end. Without the fix, RR/FRR would
-// leak `cycles` worth of budget, and the final acquisition count would be `limit - cycles`.
-TEST(ConcurrencyControl, ReclaimPreservesGrantBudget)
+// Regression: setMax that grows an allocation which is ALREADY a waiter (both before and
+// after the call) must trigger a schedule round. Otherwise the new capacity goes unused
+// until an unrelated release/notifyAcquired happens.
+TEST(ConcurrencyControl, SetMaxGrowWhileWaiterTriggersGrant)
 {
     for (String scheduler : {"round_robin", "fair_round_robin", "max_min_fair"})
     {
-        constexpr SlotCount limit = 4;
-        constexpr int cycles = 3;
-
-        ConcurrencyControlTest t(16);
+        ConcurrencyControlTest t(8);
         t.cc.setScheduler(scheduler);
 
-        auto alloc = t.cc.allocate(0, limit);
-        // Bootstrap: 1 pending slot granted. We reclaim it without acquiring.
-        for (int i = 0; i < cycles; ++i)
-        {
-            alloc->setMoreDemand(false);  // reclaims the pending grant
-            alloc->setMoreDemand(true);   // re-adds to demanders, which triggers another grant
-        }
-
-        // Now drain all available slots.
-        std::vector<AcquiredSlotPtr> held;
-        while (auto slot = alloc->tryAcquire())
-            held.emplace_back(std::move(slot));
-
-        // With budget preserved, we must be able to acquire `limit` slots. Before the fix,
-        // RR/FRR would cap out at `limit - cycles` because reclaimed grants were never
-        // refunded to the allocation's lifetime budget.
-        ASSERT_EQ(held.size(), limit)
-            << "scheduler=" << scheduler << " held=" << held.size() << " limit=" << limit
-            << " — reclaim appears to have ratcheted the allocation's grant budget";
-    }
-}
-
-// Verify the emergency revert lever: when lazy_allocation is disabled, allocate() grants
-// up to `max` slots immediately (pre-#88339 behavior). Covers all three schedulers.
-TEST(ConcurrencyControl, LazyAllocationRevertFlag)
-{
-    for (String scheduler : {"round_robin", "fair_round_robin", "max_min_fair"})
-    {
-        ConcurrencyControlTest t(32);
-        t.cc.setScheduler(scheduler);
-        t.cc.setLazyAllocation(false);
-        ASSERT_FALSE(t.cc.getLazyAllocation()) << "scheduler=" << scheduler;
-
-        // With eager allocation, a query asking for 32 slots should be able to acquire all 32
-        // immediately — matching the pre-fix behavior.
-        auto alloc = t.cc.allocate(1, 32);
-        std::vector<AcquiredSlotPtr> acquired;
-        while (auto slot = alloc->tryAcquire())
-            acquired.emplace_back(std::move(slot));
-        ASSERT_EQ(acquired.size(), 32u) << "scheduler=" << scheduler
-            << " — eager allocation should grant all 32 slots, got " << acquired.size();
-
-        // Re-enable lazy and verify the next allocation gets only min + 1.
-        acquired.clear();
-        alloc.reset();
-        t.cc.setLazyAllocation(true);
-        auto alloc2 = t.cc.allocate(1, 32);
-        std::vector<AcquiredSlotPtr> acquired2;
-        // Under lazy allocation, first acquire should succeed (bootstrap slot), then the second
-        // should succeed too (min + 1 ramp-up), but we shouldn't be able to grab all 32 at once
-        // without releasing — bounded ramp-up is the whole point.
-        auto first = alloc2->tryAcquire();
+        // Allocation starts small (max=2) and is a waiter (allocated < 2 after bootstrap).
+        auto a = t.cc.allocate(0, 2);
+        // Consume the bootstrap slot so the remaining capacity is available.
+        auto first = a->tryAcquire();
         ASSERT_TRUE(first) << "scheduler=" << scheduler;
+
+        // At this point a is still a waiter (limit=2, allocated<=2). Now grow to 6.
+        // Capacity is available (cur_concurrency well below 8). setMax must trigger schedule,
+        // otherwise tryAcquire below would fail for schedulers that don't proactively re-grant.
+        a->setMax(6);
+
+        // Drain — we should be able to acquire at least 2 more slots (up to limit=6, capped
+        // by available capacity).
+        std::vector<AcquiredSlotPtr> held;
+        held.emplace_back(std::move(first));
+        while (auto slot = a->tryAcquire())
+            held.emplace_back(std::move(slot));
+        ASSERT_GE(held.size(), 3u)
+            << "scheduler=" << scheduler << " — setMax(grow) did not trigger schedule; "
+            << "held=" << held.size();
     }
 }
 
-// Race regression: setMoreDemand(false) must not strand a slot if a concurrent scheduler
-// round grants between the has_more_demand flip and the reclaim. Prior to the fix,
-// granted.exchange(0) happened before state.mutex was held, so the race window allowed
-// the scheduler to increment `granted` and `cur_concurrency` without the subsequent reclaim
-// seeing or returning the new slot.
-//
-// This test simulates the scheduler-concurrent path by forcing the sequence: hold another
-// allocation, flip demand off on the target, then release — the release path calls schedule
-// under state.mutex. After the dust settles, no slot should be stranded: cur_concurrency
-// should go back to 0 once all allocations are dropped, and a fresh allocate(0, max) should
-// be able to acquire the full max again.
-TEST(ConcurrencyControl, SetMoreDemandFalseNoStrandedSlot)
+TEST(ConcurrencyControl, SetMaxGrowAndShrink)
 {
+    // Verify setMax semantics:
+    //  1. setMax(smaller_than_current_max): simply caps future grants. Does not reclaim
+    //     already-granted slots.
+    //  2. setMax(larger_than_current_limit) when allocation was saturated: re-inserts into
+    //     waiters and triggers a schedule round so more slots can be granted.
     for (String scheduler : {"round_robin", "fair_round_robin", "max_min_fair"})
     {
-        ConcurrencyControlTest t(4);
+        ConcurrencyControlTest t(10);
         t.cc.setScheduler(scheduler);
 
-        // A1 is the allocation we flip off. A2 is an active allocation that will trigger
-        // schedule() via its release path, interleaving with A1's setMoreDemand(false).
-        auto a1 = t.cc.allocate(0, 4);
-        auto a2 = t.cc.allocate(0, 4);
+        // Start with max=2 — saturates quickly.
+        auto a = t.cc.allocate(0, 2);
+        std::vector<AcquiredSlotPtr> held;
+        while (auto slot = a->tryAcquire())
+            held.emplace_back(std::move(slot));
+        ASSERT_GE(held.size(), 1u) << "scheduler=" << scheduler;
 
-        // A2 acquires and will release repeatedly to cause schedule() rounds.
-        std::vector<AcquiredSlotPtr> a2_held;
-        for (int i = 0; i < 4; ++i)
-        {
-            if (auto slot = a2->tryAcquire())
-                a2_held.emplace_back(std::move(slot));
-        }
+        // Grow: setMax(5) re-admits the allocation to waiters. We can now acquire up to 5 total.
+        a->setMax(5);
+        while (auto slot = a->tryAcquire())
+            held.emplace_back(std::move(slot));
+        ASSERT_EQ(held.size(), 5u) << "scheduler=" << scheduler
+            << " after setMax(5) — got " << held.size();
 
-        // Flap A1 — repeat enough to exercise the race window. Even without explicit
-        // synchronization, the acq_rel ordering plus state.mutex serialization after the fix
-        // should prevent any slot from being stranded.
-        for (int i = 0; i < 50; ++i)
-        {
-            a1->setMoreDemand(false);
-            a1->setMoreDemand(true);
-            if (!a2_held.empty())
-                a2_held.pop_back();  // release → schedule() round
-            if (auto slot = a2->tryAcquire())
-                a2_held.emplace_back(std::move(slot));
-        }
-
-        // Drop all allocations and verify full capacity is recovered.
-        a2_held.clear();
-        a1.reset();
-        a2.reset();
-
-        // Fresh allocation should be able to acquire all 4 slots — proves nothing was stranded.
-        auto probe = t.cc.allocate(0, 4);
-        std::vector<AcquiredSlotPtr> probe_held;
-        while (auto slot = probe->tryAcquire())
-            probe_held.emplace_back(std::move(slot));
-        ASSERT_EQ(probe_held.size(), 4u)
-            << "scheduler=" << scheduler << " — slot was stranded by setMoreDemand(false) race";
+        // Shrink: setMax(3) just caps future grants. Already-acquired slots keep working.
+        // We don't reclaim; no new slots are granted until acquired drops below the new max.
+        a->setMax(3);
+        ASSERT_FALSE(a->tryAcquire()) << "scheduler=" << scheduler
+            << " — shrunk below current acquired, should not yield new slots";
     }
 }
 
-// Stress test: hammer setMoreDemand, tryAcquire, allocate and free concurrently. Intended
-// primarily to run under TSan — validates that the demanders ⊆ waiters invariant, lock
-// ordering (state.mutex -> allocation.mutex), MMF sort-key protection, and reclaim paths
-// do not race. Uses short deadline to keep normal CI fast; under TSan the coverage is
-// sufficient to catch the most likely races.
-TEST(ConcurrencyControl, StressDemandSignaling)
+// Verify the setLazyAllocation / getLazyAllocation accessors (used by PipelineExecutor
+// to decide between allocate(1,1)+setMax vs eager allocate(1, num_threads)). CC's own
+// allocate() is always lazy regardless; the flag only controls the caller-side strategy.
+TEST(ConcurrencyControl, LazyAllocationFlagAccessor)
+{
+    ConcurrencyControlTest t(32);
+    ASSERT_TRUE(t.cc.getLazyAllocation());  // default
+    t.cc.setLazyAllocation(false);
+    ASSERT_FALSE(t.cc.getLazyAllocation());
+    t.cc.setLazyAllocation(true);
+    ASSERT_TRUE(t.cc.getLazyAllocation());
+}
+
+// Verify MMF lazy schedule is work-conserving: an idle allocation (with granted > 0 pending)
+// at a lower allocation level must NOT block an active allocation at a higher level. Before
+// the simplification, the "don't descend past min_level" rule would stall scheduling until
+// the idle allocation consumed its pending slot.
+TEST(ConcurrencyControl, MaxMinFairWorkConservingWithIdle)
+{
+    ConcurrencyControlTest t(10);
+    t.cc.setScheduler("max_min_fair");
+
+    // Idle allocation at allocated=1 with a pending granted slot.
+    auto idle = t.cc.allocate(0, 4);
+    auto idle_slot_holder = idle->tryAcquire();  // triggers grant, creates pending
+    ASSERT_TRUE(idle_slot_holder);
+    // idle now has allocated ≈ 2, granted ≈ 1 (not acquired).
+
+    // Active allocation. Drains what's available.
+    auto active = t.cc.allocate(0, 8);
+    std::vector<AcquiredSlotPtr> active_held;
+    while (auto slot = active->tryAcquire())
+        active_held.emplace_back(std::move(slot));
+
+    // With work-conserving MMF, active should successfully acquire multiple slots even
+    // though the lower-allocated `idle` has a pending grant. Before the fix, active would
+    // be capped at its initial bootstrap.
+    ASSERT_GE(active_held.size(), 4u)
+        << "work-conserving MMF failed: active=" << active_held.size();
+}
+
+// Stress test: hammer setMax, tryAcquire, allocate and free concurrently. Intended
+// primarily to run under TSan — validates that the single waiter list, lock ordering
+// (state.mutex -> allocation.mutex), and MMF sort-key protection do not race. Uses short
+// deadline to keep normal CI fast.
+TEST(ConcurrencyControl, StressSetMax)
 {
     for (String scheduler : {"round_robin", "fair_round_robin", "max_min_fair"})
     {
@@ -1048,11 +980,9 @@ TEST(ConcurrencyControl, StressDemandSignaling)
                     pcg64 rng(randomSeed() + w);
                     for (int i = 0; i < iterations_per_worker; ++i)
                     {
-                        // Allocate a small slot range.
-                        SlotCount max = 1 + (rng() % 8);
-                        auto alloc = t.cc.allocate(0, max);
+                        SlotCount initial_max = 1 + (rng() % 4);
+                        auto alloc = t.cc.allocate(0, initial_max);
 
-                        // Acquire a few slots (some workers will fail — that's fine).
                         std::vector<AcquiredSlotPtr> held;
                         for (int j = 0; j < 3; ++j)
                         {
@@ -1060,17 +990,17 @@ TEST(ConcurrencyControl, StressDemandSignaling)
                                 held.emplace_back(std::move(slot));
                         }
 
-                        // Flap demand a few times to exercise reclaim + re-add paths.
+                        // Grow and shrink the max a few times to exercise setMax grow + shrink
+                        // paths, including re-insertion after saturation.
                         for (int j = 0; j < 3; ++j)
                         {
-                            alloc->setMoreDemand(false);
-                            alloc->setMoreDemand(true);
+                            alloc->setMax(initial_max + 4);
+                            if (auto slot = alloc->tryAcquire())
+                                held.emplace_back(std::move(slot));
+                            alloc->setMax(1); // shrink below current — future grants capped
                         }
-                        alloc->setMoreDemand(false);
-
-                        // Try acquiring again after reclaim + re-enable.
-                        alloc->setMoreDemand(true);
-                        if (auto slot = alloc->tryAcquire())
+                        alloc->setMax(8); // grow again for final acquires
+                        while (auto slot = alloc->tryAcquire())
                             held.emplace_back(std::move(slot));
 
                         // Drop half, then drop all (exercises release/free ordering).

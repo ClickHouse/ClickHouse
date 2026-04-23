@@ -362,7 +362,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
 #endif
 
             /// Try to execute neighbour processor.
-            ExecutorTasks::SpawnStatus spawn_status = ExecutorTasks::DO_NOT_SPAWN;
+            size_t spawn_count = 0;
             {
                 Queue queue;
                 Queue async_queue;
@@ -374,7 +374,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
 
                 /// Push other tasks to global queue.
                 if (status == ExecutingGraph::UpdateNodeStatus::Done)
-                    spawn_status = tasks.pushTasks(queue, async_queue, context);
+                    spawn_count = tasks.pushTasks(queue, async_queue, context);
             }
 
 #ifndef NDEBUG
@@ -382,26 +382,32 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
 #endif
 
 
-            /// Upscaling.
-            ///
-            /// Demand-signaling contract with ConcurrencyControl:
-            ///  - SHOULD_SPAWN + spawn_mutex acquired: we are about to actually try spawning,
-            ///    so enable demand so CC may grant us slots.
-            ///  - DO_NOT_SPAWN reached inside spawnThreads: we turn demand off (see below).
-            ///  - SHOULD_SPAWN but spawn_mutex busy: another thread is already spawning and will
-            ///    handle demand signaling, so we intentionally do NOT flip demand here. Flipping
-            ///    it on lost-try_lock paths would cause demand to flap on/off across concurrent
-            ///    upscale attempts and trigger spurious scheduler rounds.
-            if (pool && spawn_status == ExecutorTasks::SHOULD_SPAWN)
+            /// Upscaling: `pushTasks` tells us how many additional threads would usefully
+            /// parallelize the tasks it just enqueued. Publish our spawn_count into the shared
+            /// `pending_demand` counter; the thread that actually holds `spawn_mutex` drains it
+            /// so no demand is lost when multiple threads push concurrently.
+            if (pool && spawn_count > 0)
+                pending_demand.fetch_add(spawn_count, std::memory_order_relaxed);
+
+            if (pool && pending_demand.load(std::memory_order_relaxed) > 0)
             {
-                // Only allow one thread to spawn, if someone is already spawning threads, just skip.
+                // Only allow one thread to spawn, if someone is already spawning threads, just
+                // skip — our spawn_count is already in pending_demand, the owner will drain it.
                 if (spawn_mutex.try_lock())
                 {
                     try
                     {
                         std::lock_guard lock(spawn_mutex, std::adopt_lock);
-                        /// Pipeline wants to upscale — tell ConcurrencyControl we want more slots.
-                        cpu_slots->setMoreDemand(true);
+                        size_t accumulated = pending_demand.exchange(0, std::memory_order_relaxed);
+                        if (accumulated > 0)
+                        {
+                            size_t target = std::min<size_t>(max_pipeline_threads, desired_threads + accumulated);
+                            if (target > desired_threads)
+                            {
+                                desired_threads = target;
+                                cpu_slots->setMax(target);
+                            }
+                        }
                         spawnThreads({});
                     }
                     catch (...)
@@ -450,7 +456,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
 }
 
 /// Properly allocate CPU slots or lease for the thread pool
-SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurrency_control)
+SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation)
 {
     // The first thread is called master thread.
     // It is NOT the thread that handles async tasks (unless query has max_threads=1).
@@ -522,7 +528,12 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
         else
         {
             /// Allocate CPU slots from concurrency control with guaranteed master thread slot.
-            return ConcurrencyControl::instance().allocate(master_threads, num_threads);
+            /// Default path (lazy_allocation=true): start at max=master_threads and grow on
+            /// demand via setMax from the SHOULD_SPAWN handler. Zero-waste per idle pipeline.
+            /// Rollback (lazy_allocation=false): pre-branch eager allocation — request the
+            /// full ceiling upfront and never call setMax.
+            SlotCount initial_max = lazy_allocation ? master_threads : num_threads;
+            return ConcurrencyControl::instance().allocate(master_threads, initial_max);
         }
     }
 
@@ -536,7 +547,20 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     is_execution_initialized = true;
     tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
-    cpu_slots = allocateCPU(num_threads, concurrency_control);
+    /// Capture the ceiling so the SHOULD_SPAWN handler can cap `setMax` at this value.
+    max_pipeline_threads = num_threads;
+
+    /// Read the flag ONCE. A config reload mid-initialization would otherwise split a
+    /// single query between lazy and eager strategies (e.g. allocate lazy with max=1 but
+    /// then initialize desired_threads=num_threads, stranding subsequent setMax as a no-op).
+    const bool lazy_allocation = ConcurrencyControl::instance().getLazyAllocation();
+
+    cpu_slots = allocateCPU(num_threads, concurrency_control, lazy_allocation);
+
+    /// If rollback flag is off, we used eager allocate(1, num_threads) and will not call
+    /// setMax in the SHOULD_SPAWN handler (nothing to grow). Initialize desired_threads
+    /// to the full ceiling so the growth check in the handler becomes a no-op.
+    desired_threads = lazy_allocation ? 1 : num_threads;
 
     Queue queue;
     Queue async_queue;
@@ -546,7 +570,24 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
     tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get());
-    tasks.fill(queue, async_queue);
+    const size_t initial_parallel = tasks.fill(queue, async_queue);
+
+    /// Initial queued parallelism never routes through `pushTasks`, so size setMax here to
+    /// cover it. For multi-source pipelines (e.g. UNION ALL of N subqueries) this prevents
+    /// the pipeline from being stuck single-threaded if the master's first task happens not
+    /// to push more work. Only matters on the lazy path; the eager path already has the full
+    /// ceiling. `initial_parallel` is the total target — the master thread is one of its
+    /// consumers, no +1 needed.
+    if (lazy_allocation && initial_parallel > 1)
+    {
+        std::lock_guard lock(spawn_mutex);
+        const size_t target = std::min<size_t>(max_pipeline_threads, initial_parallel);
+        if (target > desired_threads)
+        {
+            desired_threads = target;
+            cpu_slots->setMax(target);
+        }
+    }
 
     if (num_threads > 1)
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
@@ -586,14 +627,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         slot.reset(); // To make tidy build happy (bugprone-use-after-move)
 
         if (spawn_status == ExecutorTasks::DO_NOT_SPAWN)
-        {
-            /// Pipeline has reached its current target parallelism — tell ConcurrencyControl
-            /// that we don't want more slots granted right now. This lets CC redirect freed
-            /// capacity to actively-consuming queries instead of piling pending grants onto us.
-            /// When the pipeline wants to upscale again (SHOULD_SPAWN), demand is re-enabled.
-            cpu_slots->setMoreDemand(false);
             return;
-        }
     }
 }
 

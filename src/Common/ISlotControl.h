@@ -90,24 +90,22 @@ public:
     /// Take one granted slot or wait until it is available.
     [[nodiscard]] virtual AcquiredSlotPtr acquire() = 0;
 
-    /// Signal whether the consumer currently wants more slots granted.
-    /// Default state (after allocate) is true — the allocation wants slots.
-    /// The consumer (e.g. PipelineExecutor) calls setMoreDemand(false) when it has reached
-    /// its target parallelism and does not want additional slots granted, and setMoreDemand(true)
-    /// when it wants to upscale. The scheduler uses this signal to avoid granting slots to
-    /// allocations that would not acquire them, freeing capacity for other consumers.
+    /// Adjust the maximum number of slots the allocation wants.
+    ///
+    /// The allocation's `max` (set initially by allocate(min, max)) becomes mutable: the
+    /// consumer can raise or lower it to express "I want up to N slots" at runtime.
     ///
     /// Contract for implementations:
-    ///  - setMoreDemand(false): MUST reclaim any pending granted-but-not-acquired slots and
-    ///    MUST stop scheduling further grants to this allocation until called with true.
-    ///    Reclaimed slots become available for other allocations.
-    ///  - setMoreDemand(true): MAY trigger a scheduler round so pending capacity can flow
-    ///    to this allocation.
-    ///  - Idempotent: repeated calls with the same value are no-ops.
+    ///  - Growing `max`: if the allocation was previously saturated (had received its full
+    ///    max and was no longer a waiter), it MUST be re-added to the scheduler's waiter
+    ///    list so it may receive further grants.
+    ///  - Shrinking `max`: does NOT reclaim already-granted slots; the scheduler simply
+    ///    stops issuing new grants beyond `new_max`. Already-acquired slots remain valid.
+    ///  - Idempotent: setMax(current) is a no-op.
     ///  - Must NOT be called while holding the implementation's internal scheduler lock —
-    ///    the false->true transition may take that lock.
-    /// Default implementation is a no-op (for allocations that don't need demand signaling).
-    virtual void setMoreDemand(bool /*value*/) {}
+    ///    implementations may take that lock internally.
+    /// Default implementation is a no-op (for allocations that don't need dynamic sizing).
+    virtual void setMax(SlotCount /*new_max*/) {}
 
     /// For tests. Returns true iff resource request is currently enqueued into the scheduler.
     virtual bool isRequesting() const { return false; }

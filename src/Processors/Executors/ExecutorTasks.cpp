@@ -150,7 +150,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
     context.wait(finished);
 }
 
-ExecutorTasks::SpawnStatus ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
+size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
 {
     /// Take local task from queue if has one.
     if (!queue.empty() && !has_fast_tasks.load(std::memory_order_relaxed)
@@ -170,6 +170,10 @@ ExecutorTasks::SpawnStatus ExecutorTasks::pushTasks(Queue & queue, Queue & async
     {
         std::unique_lock lock(mutex);
 
+        /// Measure the parallelism of the push: how many threads could run the new tasks
+        /// concurrently. Used by the caller to size ConcurrencyControl's setMax.
+        const size_t pushed = queue.size() + async_queue.size();
+
 #if defined(OS_LINUX)
         while (!async_queue.empty() && !finished)
         {
@@ -185,10 +189,23 @@ ExecutorTasks::SpawnStatus ExecutorTasks::pushTasks(Queue & queue, Queue & async
             queue.pop();
         }
 
+        /// Capture state under the lock — tryWakeUp may unlock it internally to wake a
+        /// thread, after which `total_slots` could change.
+        const size_t idle_before = threads_queue.size();
+        const size_t total_slots_now = total_slots;
+        const size_t num_threads_now = num_threads;  // const after init but read for clarity
+
         /// Wake up at least one thread that will wake up other threads if required
-        return tryWakeUpAnyOtherThreadWithTasks(context, lock);
+        tryWakeUpAnyOtherThreadWithTasks(context, lock);
+
+        /// spawn_count = pushed tasks that idle threads can't cover, clamped to the pipeline's
+        /// remaining headroom (num_threads - total_slots). Callers feed this into setMax.
+        const size_t coverable = std::min(pushed, idle_before);
+        const size_t uncovered = pushed - coverable;
+        const size_t headroom = (num_threads_now > total_slots_now) ? (num_threads_now - total_slots_now) : 0;
+        return std::min(uncovered, headroom);
     }
-    return DO_NOT_SPAWN; // No new tasks -- no need for new threads
+    return 0; // No new tasks -- no need for new threads
 }
 
 void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
@@ -216,10 +233,11 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAll
     }
 }
 
-void ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
+size_t ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
 {
     std::lock_guard lock(mutex);
 
+    const size_t pushed = queue.size() + async_queue.size();
     size_t next_thread = 0;
 #if defined(OS_LINUX)
     while (!async_queue.empty())
@@ -249,6 +267,7 @@ void ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
         if (next_thread >= use_threads)
             next_thread = 0;
     }
+    return pushed;
 }
 
 ExecutorTasks::SpawnStatus ExecutorTasks::upscale(size_t slot_id)

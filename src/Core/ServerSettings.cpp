@@ -847,9 +847,11 @@ namespace
     )", 0) \
     DECLARE(UInt64, concurrent_threads_soft_limit_ratio_to_cores, 0, "Same as [`concurrent_threads_soft_limit_num`](#concurrent_threads_soft_limit_num), but with ratio to cores.", 0) \
     DECLARE(Bool, concurrent_threads_lazy_allocation, true, R"(
-When true (default), ConcurrencyControl uses lazy slot allocation: a query is granted its minimum slots plus at most one extra slot at allocation time, with the rest granted on-demand as threads actually acquire them. This avoids situations where a query reserves many CPU slots it never uses (starving other queries).
+Rollback lever for the lazy query-thread allocation strategy.
 
-When false, the server falls back to the pre-#88339 eager allocation behavior — grant everything that fits in available capacity immediately. This is intended as an emergency rollback lever only: use it if a specific workload regresses on the lazy strategy.
+When true (default), a query pipeline starts with `allocate(1, 1)` and raises the ceiling via `setMax` as it actually pushes parallelizable work. This prevents queries from reserving CPU slots they never use.
+
+When false, the server bypasses the lazy path: pipelines use `allocate(1, num_threads)` and the scheduler grants up to `num_threads` slots eagerly (pre-#88339 behavior). Intended as an emergency rollback lever only — use it if a specific workload regresses on the lazy strategy.
 
 Takes effect for new allocations only; existing queries are unaffected.
     )", 0) \

@@ -96,10 +96,15 @@ public:
     // Local task optimization: the first regular task could be placed directly into thread to be executed next.
     // For async tasks proessor->schedule() is called.
     // If non-local tasks were added, wake up one thread to process them.
-    SpawnStatus pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
+    // Returns the number of additional threads the caller should try to spawn (0 if idle
+    // threads can cover the push, or no new tasks were added).
+    size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
     void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
-    void fill(Queue & queue, Queue & async_queue);
+
+    /// Push initial tasks. Returns the count of tasks pushed (regular + async) — used by
+    /// PipelineExecutor to size setMax for the initial parallelism.
+    size_t fill(Queue & queue, Queue & async_queue);
 
     /// Release CPU slots
     void freeCPU();

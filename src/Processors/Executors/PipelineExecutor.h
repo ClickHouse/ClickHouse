@@ -91,6 +91,21 @@ private:
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
 
+    /// Pipeline's max thread count (captured from execute(num_threads)).
+    size_t max_pipeline_threads = 1;
+
+    /// Current setMax target. Written by initializeExecution before any worker thread exists,
+    /// then read and updated only under `spawn_mutex` from the SHOULD_SPAWN handler. Non-atomic
+    /// because all mutations are serialized by spawn_mutex and initial write happens-before
+    /// any spawned worker via the ThreadPool barrier in initializeExecution.
+    size_t desired_threads = 1;
+
+    /// Accumulates spawn_count from pushTasks calls that couldn't acquire `spawn_mutex`
+    /// (another thread was already handling the spawn). The thread that owns the mutex
+    /// drains this counter before deciding the new setMax target, so no demand is ever
+    /// silently dropped.
+    std::atomic<size_t> pending_demand{0};
+
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
     /// system.processors_profile_log
@@ -125,7 +140,7 @@ private:
     void cancel(ExecutionStatus reason);
 
     // Methods for CPU scheduling
-    SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control);
+    SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
     void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// If execution_status == from, change it to desired.
