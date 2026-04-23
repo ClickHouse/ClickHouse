@@ -523,8 +523,14 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             auto & nullable_column = assert_cast<ColumnNullable &>(column);
             auto & nested_column = nullable_column.getNestedColumn();
             const auto & nested_type = assert_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
+            /// Read into the nested column first. If `readField` throws, we must not leave
+            /// the `null_map` out of sync with the nested column — otherwise subsequent
+            /// rollback (e.g. `SerializationArray::readArraySafe` calling
+            /// `ColumnNullable::popBack`) would trip an assertion because
+            /// `ColumnNullable::size()` reflects `null_map.size()`.
+            auto result = readField(nested_column, nested_type, bson_type);
             nullable_column.getNullMapColumn().insertValue(0);
-            return readField(nested_column, nested_type, bson_type);
+            return result;
         }
         case TypeIndex::LowCardinality:
         {

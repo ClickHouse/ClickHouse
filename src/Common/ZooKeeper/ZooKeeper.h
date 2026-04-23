@@ -23,6 +23,7 @@ namespace Poco::Net
     class SocketAddress;
 }
 
+
 namespace ProfileEvents
 {
     extern const Event CannotRemoveEphemeralNode;
@@ -189,10 +190,18 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
+    explicit ZooKeeper(
+        ZooKeeperArgs args_,
+        std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+        std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
 
     /// Allows to keep info about availability zones when starting a new session
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+    ZooKeeper(
+        const ZooKeeperArgs & args_,
+        std::shared_ptr<DB::ZooKeeperLog> zk_log_,
+        std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_,
+        Strings availability_zones_,
+        std::unique_ptr<Coordination::IKeeper> existing_impl);
 
     explicit ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl);
 
@@ -441,6 +450,8 @@ public:
     Coordination::Error trySync(const std::string & path, std::string & returned_path);
 
     Int64 getClientID() const;
+
+    Coordination::IKeeper::WatchesSnapshot getWatchesSnapshot() const;
 
     /// Remove the node with the subtree.
     /// If Keeper supports RemoveRecursive operation then it will be performed atomically.
