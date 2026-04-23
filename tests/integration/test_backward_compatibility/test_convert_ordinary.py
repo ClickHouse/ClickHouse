@@ -82,6 +82,7 @@ def check_convert_system_db_to_atomic():
         1 == errors_count
         and "1\n" == node.count_in_log("Can't receive Netlink response")
     )
+    assert errors_count == allowed_errors_count
     assert "0\n" == node.count_in_log("<Warning> Database")
     errors_count = node.count_in_log("always include the lines below")
     assert "0\n" == errors_count or (
