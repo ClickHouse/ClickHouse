@@ -233,7 +233,7 @@ std::optional<String> optimizeUseNormalProjections(
     {
         for (const auto & col : required_columns)
         {
-            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection->virtuals->has(col))
+            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection->metadata->virtuals.has(col))
                 return false;
         }
 

@@ -127,6 +127,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace ErrorCodes
@@ -604,7 +605,7 @@ private:
             source_id,
             source_metadata->getColumns(),
             std::move(data_block),
-            *source_storage->getVirtualsPtr()));
+            source_metadata->virtuals));
 
         QueryPipelineBuilder pipeline;
 
@@ -661,12 +662,17 @@ private:
                 ActionsDAG::MatchColumnsMode::Name,
                 local_context);
 
+            bool inner_share_nested_offsets = true;
+            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(inner_storage.get()))
+                inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
             auto adding_missing_defaults_dag = addMissingDefaults(
                 Block(to_convert),
                 result_metadata->getSampleBlock().getNamesAndTypesList(),
                 result_metadata->getColumns(),
                 local_context,
-                insert_null_as_default);
+                insert_null_as_default,
+                inner_share_nested_offsets);
 
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
                 Block(to_convert),
@@ -1365,12 +1371,17 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     auto output_header = output_headers.at(view_id);
     auto insert_context = insert_contexts.at(view_id);
 
+    bool inner_share_nested_offsets = true;
+    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(storages.at(inner_table_id).get()))
+        inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
     auto adding_missing_defaults_dag = addMissingDefaults(
         *input_headers.at(view_id),
         output_header->getNamesAndTypesList(),
         inner_metadata->getColumns(),
         insert_context,
-        insert_null_as_default);
+        insert_null_as_default,
+        inner_share_nested_offsets);
 
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
         *input_headers.at(view_id),
@@ -1408,7 +1419,13 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
     /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
     /// but currently we don't have methods for serialization of nested structures "as a whole".
-    result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
+    {
+        bool skip_nested_validation = false;
+        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(inner_storage.get()))
+            skip_nested_validation = !(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+        if (!skip_nested_validation)
+            result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
+    }
 
     if (!inner_storage->supportsSparseSerialization())
         result.addSink(std::make_shared<RemovingSparseTransform>(header));

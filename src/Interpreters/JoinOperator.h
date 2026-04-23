@@ -105,6 +105,8 @@ struct JoinSettings
     bool enable_software_prefetch_in_join;
     bool use_hash_table_stats_for_join_reordering;
 
+    bool enable_join_fixed_hash_table_conversion;
+
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);
 
