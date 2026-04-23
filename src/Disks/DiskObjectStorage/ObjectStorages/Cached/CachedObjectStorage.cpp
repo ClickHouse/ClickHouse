@@ -61,40 +61,9 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     bool use_external_buffer,
     bool restrict_seek) const
 {
-    if (read_settings.enable_filesystem_cache)
-    {
-        if (cache->isInitialized())
-        {
-            auto cache_key = FileCacheKey::fromPath(object.remote_path);
-            auto global_context = Context::getGlobalContextInstance();
-
-            auto read_buffer_creator = [this, object, read_settings, read_hint]()
-            {
-                return object_storage->readObject(object, patchSettings(read_settings), read_hint);
-            };
-
-            return std::make_unique<CachedOnDiskReadBufferFromFile>(
-                object.remote_path,
-                cache_key,
-                cache,
-                cache->getCommonOriginWithSegmentKeyType(object.local_path),
-                read_buffer_creator,
-                read_settings.getFilesystemCacheSettings(),
-                read_settings.remote_fs_buffer_size,
-                read_settings.local_fs_buffer_size,
-                std::string(CurrentThread::getQueryId()),
-                object.bytes_size,
-                /* allow_seeks */!restrict_seek,
-                /* use_external_buffer */use_external_buffer,
-                /* read_until_position */std::nullopt,
-                global_context->getFilesystemCacheLog());
-        }
-        else
-        {
-            cache->throwInitExceptionIfNeeded();
-        }
-    }
-
+    /// Filesystem cache is handled as a pipeline stage by DiskObjectStorage::prepareRead
+    /// and StorageObjectStorageSource. This method delegates directly to the underlying storage.
+    /// Callers that need caching should use ReadPipeline with needDiskCache().
     return object_storage->readObject(object, patchSettings(read_settings), read_hint, use_external_buffer, restrict_seek);
 }
 
