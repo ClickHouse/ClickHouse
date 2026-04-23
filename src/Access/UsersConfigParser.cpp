@@ -155,8 +155,19 @@ namespace
 
         bool has_no_password = config.has(auth_method_path + ".no_password");
 
+<<<<<<< HEAD
         const auto password_plaintext_config = auth_method_path + ".password";
         bool has_password_plaintext = config.has(password_plaintext_config);
+=======
+        bool has_no_password = config.has(user_config + ".no_password");
+        bool has_password_plaintext = config.has(user_config + ".password");
+        bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
+        bool has_scram_password_sha256_hex = config.has(user_config + ".password_scram_sha256_hex");
+        bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
+        bool has_ldap = config.has(user_config + ".ldap");
+        bool has_kerberos = config.has(user_config + ".kerberos");
+        bool has_jwt = config.has(user_config + ".jwt");
+>>>>>>> ad5b91c853d (Merge pull request #1658 from Altinity/feature/antalya-26.3/pr-1430-1596)
 
         const auto password_sha256_hex_config = auth_method_path + ".password_sha256_hex";
         bool has_password_sha256_hex = config.has(password_sha256_hex_config);
@@ -182,6 +193,7 @@ namespace
         const auto http_auth_config = auth_method_path + ".http_authentication";
         bool has_http_auth = config.has(http_auth_config);
 
+<<<<<<< HEAD
         size_t num_authentication_types = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
             + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
 
@@ -194,6 +206,21 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one authentication type (one of 'password', "
                 "'password_sha256_hex', 'password_scram_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', "
                 "'ssl_certificates', 'ssh_keys', 'http_authentication') must be specified for user {} in path {}.", user_name, auth_method_path);
+=======
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex + has_jwt;
+
+        if (num_password_fields > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
+                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
+                            "'http_authentication', 'jwt' are used to specify authentication info for user {}. "
+                            "Must be only one of them.", user_name);
+
+        if (num_password_fields < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
+                            "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
+                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' or 'jwt' must be specified for user {}.", user_name);
+>>>>>>> ad5b91c853d (Merge pull request #1658 from Altinity/feature/antalya-26.3/pr-1430-1596)
 
         AuthenticationData auth_data;
 
@@ -319,6 +346,7 @@ namespace
         }
         else if (has_http_auth)
         {
+<<<<<<< HEAD
             bool has_server_elt = config.has(http_auth_config + ".server");
             bool has_scheme_elt = config.has(http_auth_config + ".scheme");
 
@@ -350,6 +378,25 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Missing mandatory 'server' and 'scheme' in 'http_authentication' for user {}.", user_name);
             }
+=======
+            user->authentication_methods.emplace_back(AuthenticationType::HTTP);
+            user->authentication_methods.back().setHTTPAuthenticationServerName(config.getString(http_auth_config + ".server"));
+            auto scheme = config.getString(http_auth_config + ".scheme");
+            user->authentication_methods.back().setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
+        }
+        else if (has_jwt)
+        {
+            user->authentication_methods.emplace_back(AuthenticationType::JWT);
+            const auto jwt_config = user_config + ".jwt";
+            if (config.has(jwt_config + ".processor"))
+                user->authentication_methods.back().setTokenProcessorName(config.getString(jwt_config + ".processor"));
+            if (config.has(jwt_config + ".claims"))
+                user->authentication_methods.back().setJWTClaims(config.getString(jwt_config + ".claims"));
+        }
+        else
+        {
+            user->authentication_methods.emplace_back();
+>>>>>>> ad5b91c853d (Merge pull request #1658 from Altinity/feature/antalya-26.3/pr-1430-1596)
         }
 
         return auth_data;

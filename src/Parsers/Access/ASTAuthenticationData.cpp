@@ -116,8 +116,16 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             }
             case AuthenticationType::JWT:
             {
+<<<<<<< HEAD
                 prefix = jwt_use_authenticator ? "AUTHENTICATOR" : "CLAIMS";
                 parameter = true;
+=======
+                if (!children.empty())
+                {
+                    prefix = "CLAIMS";
+                    parameter = true;
+                }
+>>>>>>> ad5b91c853d (Merge pull request #1658 from Altinity/feature/antalya-26.3/pr-1430-1596)
                 break;
             }
             case AuthenticationType::LDAP:
