@@ -170,3 +170,42 @@ def test_drop():
     check()
     instance.restart_clickhouse()  # Check persistency
     check()
+
+
+def test_recovery_when_sql_file_is_missing():
+    # Server should not fail to start when an entity is referenced from `users.list`
+    # but its corresponding `<uuid>.sql` file is missing on disk. The list rebuild
+    # recovery path in `readLists` should kick in and the server should start cleanly.
+    instance.query("DROP USER IF EXISTS u_recover")
+    instance.query("CREATE USER u_recover IDENTIFIED WITH no_password")
+
+    user_id = instance.query(
+        "SELECT id FROM system.users WHERE name = 'u_recover'"
+    ).strip()
+    assert user_id
+
+    instance.stop_clickhouse()
+    try:
+        instance.exec_in_container(
+            ["rm", "/var/lib/clickhouse/access/{}.sql".format(user_id)]
+        )
+    finally:
+        instance.start_clickhouse()
+
+    # The server has started; the broken entity must be gone from the list.
+    assert (
+        instance.query(
+            "SELECT count() FROM system.users WHERE name = 'u_recover'"
+        ).strip()
+        == "0"
+    )
+
+    # Subsequent inserts continue to work after the recovery.
+    instance.query("CREATE USER u_recover IDENTIFIED WITH no_password")
+    assert (
+        instance.query(
+            "SELECT count() FROM system.users WHERE name = 'u_recover'"
+        ).strip()
+        == "1"
+    )
+    instance.query("DROP USER u_recover")
