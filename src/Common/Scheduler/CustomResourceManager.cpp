@@ -94,15 +94,34 @@ CustomResourceManager::State::Resource::Resource(
 
 CustomResourceManager::State::Resource::~Resource()
 {
-    // NOTE: we should rely on `attached_to` and cannot use `parent`,
-    // NOTE: because `parent` can be `nullptr` in case attachment is still in event queue
+    // Scheduler nodes must be destroyed on the scheduler thread
+    // (ISchedulerNode::~ISchedulerNode asserts isInSchedulerOrStopped).
+    // Move nodes into a lambda that runs on the scheduler thread.
     if (attached_to != nullptr)
     {
-        ISchedulerNode * root = nodes.find("/")->second.ptr.get();
-        attached_to->event_queue.enqueue([my_scheduler = attached_to, root]
+        auto promise_ptr = std::make_shared<std::promise<void>>();
+        auto future = promise_ptr->get_future();
+        attached_to->event_queue.enqueue([my_scheduler = attached_to, root = nodes.find("/")->second.ptr.get(), moved_nodes = std::move(nodes), done = std::move(promise_ptr)]
         {
             my_scheduler->removeChild(root);
+            done->set_value();
+            // `moved_nodes` are destroyed here, on the scheduler thread
         });
+        future.get();
+    }
+    else if (!nodes.empty())
+    {
+        // Resource was created but never attached (e.g. replaced by an equal old resource).
+        // Nodes still need to be destroyed on the scheduler thread.
+        auto & event_queue = nodes.begin()->second.ptr->event_queue;
+        auto promise_ptr = std::make_shared<std::promise<void>>();
+        auto future = promise_ptr->get_future();
+        event_queue.enqueue([moved_nodes = std::move(nodes), done = std::move(promise_ptr)]
+        {
+            done->set_value();
+            // `moved_nodes` are destroyed here, on the scheduler thread
+        });
+        future.get();
     }
 }
 
