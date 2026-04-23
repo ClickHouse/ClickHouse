@@ -17,6 +17,10 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
+#if ENABLE_DISTRIBUTED_CACHE
+#include <DistributedCache/Utils.h>
+#endif
+
 /// Helper for std::visit with multiple lambdas.
 template <class... Ts>
 struct overloaded : Ts...
@@ -118,9 +122,9 @@ void ReadPipeline::needMemoryCache(
         .custom_file_version = std::move(custom_file_version)};
 }
 
-void ReadPipeline::needDistributedCache()
+void ReadPipeline::needDistributedCache(bool include_credentials_in_cache_key)
 {
-    distributed_cache = true;
+    distributed_cache = DistributedCacheStage{.include_credentials_in_cache_key = include_credentials_in_cache_key};
 }
 
 void ReadPipeline::needAsyncPrefetch(
@@ -168,8 +172,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         /// Object storage path: wrap per-object buffers with optional disk cache,
         /// then join all objects via ReadBufferFromRemoteFSGather.
 
-        auto * obj_source = std::get_if<ObjectStorageSource>(&source->source);
-        auto * custom_source = std::get_if<CustomSource>(&source->source);
+        const auto * obj_source = std::get_if<ObjectStorageSource>(&source->source);
+        const auto * custom_source = std::get_if<CustomSource>(&source->source);
         if (!obj_source && !custom_source)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ReadPipeline: gather requires ObjectStorageSource or CustomSource");
@@ -301,9 +305,39 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             buffer_size);
 
         /// -- Stage 3.5: Distributed cache --
-        /// TODO: when ENABLE_DISTRIBUTED_CACHE, wrap impl with ReadBufferFromDistributedCache here.
-        /// Also adjust use_page_cache condition (use_page_cache_with_distributed_cache)
-        /// and min_bytes_for_seek in AsyncPrefetch (distributed_cache_settings.min_bytes_for_seek).
+        /// When enabled, reads go through distributed cache servers with fallback to
+        /// direct object storage reads. The page cache condition is already handled
+        /// by the caller (DiskObjectStorage::prepareRead checks use_page_cache_with_distributed_cache).
+#if ENABLE_DISTRIBUTED_CACHE
+        if (distributed_cache)
+        {
+            const auto * dc_obj_source = std::get_if<ObjectStorageSource>(&source->source);
+            if (!dc_obj_source)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ReadPipeline: distributed cache requires ObjectStorageSource");
+
+            auto dc_storage = dc_obj_source->storage;
+            auto dc_objects = source->objects;
+            auto dc_settings = settings;
+
+            auto fallback_creator = [dc_storage, dc_objects, dc_settings]()
+                -> std::unique_ptr<ReadBufferFromFileBase>
+            {
+                return dc_storage->readObject(
+                    dc_objects.at(0), dc_settings, {},
+                    /* use_external_buffer */ true, /* restrict_seek */ false);
+            };
+
+            impl = DistributedCache::readWithDistributedCache(
+                source->objects.at(0).remote_path,
+                source->objects,
+                settings,
+                *dc_storage,
+                use_external_buffer,
+                std::move(fallback_creator),
+                distributed_cache->include_credentials_in_cache_key);
+        }
+#endif
     }
     else
     {
@@ -367,12 +401,18 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         if (total_size > 0)
             async_buffer_size = std::min(async_buffer_size, total_size);
 
+        /// When distributed cache is active, use its min_bytes_for_seek
+        /// (typically larger, since seeks within the cache are cheaper).
+        size_t min_bytes_for_seek = distributed_cache
+            ? settings.distributed_cache_settings.min_bytes_for_seek
+            : settings.remote_read_min_bytes_for_seek;
+
         impl = std::make_unique<AsynchronousBoundedReadBuffer>(
             std::move(impl),
             *async_prefetch->reader,
             settings,
             async_buffer_size,
-            settings.remote_read_min_bytes_for_seek,
+            min_bytes_for_seek,
             async_prefetch->async_read_counters,
             async_prefetch->prefetches_log);
     }
@@ -433,8 +473,8 @@ String ReadPipeline::describe() const
         append("DiskCache");
     if (gather)
         append("Gather");
-    /// DistributedCache stage is not yet implemented in build().
-    /// Only show it in describe() when the implementation is wired up.
+    if (distributed_cache)
+        append("DistributedCache");
     if (memory_cache)
         append("MemoryCache");
     if (async_prefetch)

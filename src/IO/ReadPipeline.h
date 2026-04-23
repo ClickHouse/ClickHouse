@@ -143,7 +143,10 @@ public:
     /// Implementation is in the DistributedCache module (ENABLE_DISTRIBUTED_CACHE).
     /// When enabled, reads go through the distributed cache with fallback to Gather.
     /// Also affects: use_page_cache condition and min_bytes_for_seek in AsyncPrefetch.
-    void needDistributedCache();
+    /// @param include_credentials_in_cache_key  When true, object storage credentials are
+    ///        included in the cache key hash. Set to true for table engine reads (s3(...), etc.)
+    ///        where different users may access the same path with different credentials.
+    void needDistributedCache(bool include_credentials_in_cache_key = false);
 
     /// -- Async prefetch stage --
     void needAsyncPrefetch(
@@ -224,11 +227,16 @@ private:
         bool allow_different_codecs = false;
     };
 
+    struct DistributedCacheStage
+    {
+        bool include_credentials_in_cache_key = false;
+    };
+
     std::optional<SourceStage> source;
     bool gather = false;
     std::optional<DiskCacheStage> disk_cache;
     std::optional<MemoryCacheStage> memory_cache;
-    bool distributed_cache = false;
+    std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::vector<DecryptionStage> decryption_stages;
     std::optional<DecompressionStage> decompression;
