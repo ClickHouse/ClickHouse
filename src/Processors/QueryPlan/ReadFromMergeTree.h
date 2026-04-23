@@ -520,6 +520,8 @@ private:
     const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
     ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
+    void logPredicateStatistics(const AnalysisResult & result) const;
+
     int getSortDirection() const;
     void updateSortDescription();
 
