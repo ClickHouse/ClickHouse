@@ -172,8 +172,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         /// Object storage path: wrap per-object buffers with optional disk cache,
         /// then join all objects via ReadBufferFromRemoteFSGather.
 
-        auto * obj_source = std::get_if<ObjectStorageSource>(&source->source);
-        auto * custom_source = std::get_if<CustomSource>(&source->source);
+        const auto * obj_source = std::get_if<ObjectStorageSource>(&source->source);
+        const auto * custom_source = std::get_if<CustomSource>(&source->source);
         if (!obj_source && !custom_source)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ReadPipeline: gather requires ObjectStorageSource or CustomSource");
