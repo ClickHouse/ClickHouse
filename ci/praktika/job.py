@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, List, Optional
 
 from . import Artifact
@@ -31,6 +31,7 @@ class Job:
         provides: Optional[List[str]] = None
         requires: Optional[List[str]] = None
         timeout: Optional[int] = None
+        command: Optional[str] = None
 
     @dataclass
     class Config:
@@ -99,9 +100,12 @@ class Job:
                 assert (
                     not obj.provides
                 ), "Job.Config.provides must be empty for parametrized jobs"
+                if param_set.command:
+                    obj.command = param_set.command
                 if param_set.parameter:
                     obj.parameter = param_set.parameter
-                    obj.command = obj.command.format(PARAMETER=param_set.parameter)
+                    if not param_set.command:
+                        obj.command = obj.command.format(PARAMETER=param_set.parameter)
                 if param_set.runs_on:
                     obj.runs_on = param_set.runs_on
                 if param_set.timeout:
@@ -274,7 +278,7 @@ class Job:
                     # Check if included
                     for include in self.digest_config.include_paths:
                         include_norm = os.path.normpath(include)
-                        if fnmatch.fnmatch(file, include_norm) or file.startswith(
+                        if PurePosixPath("/" + file).match("/" + include_norm) or file.startswith(
                             include_norm + os.sep
                         ):
                             return True
