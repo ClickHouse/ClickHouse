@@ -150,8 +150,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         current_thread->untracked_memory_blocker_level = blocker_level;
 
         current_thread->untracked_memory -= size;
-        /// Use `max_untracked_memory` (not `untracked_memory_limit`) to create hysteresis and avoid track/untrack cycles
-        if (current_thread->untracked_memory < -current_thread->max_untracked_memory)
+        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
         {
             Int64 untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
