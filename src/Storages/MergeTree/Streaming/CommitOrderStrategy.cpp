@@ -1,7 +1,11 @@
 #include <Storages/MergeTree/Streaming/CommitOrderStrategy.h>
 
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/MemoryTrackerUtils.h>
+#include <Common/logger_useful.h>
 #include <Core/SortDescription.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -76,7 +80,7 @@ SortDescription commitOrderSortDescription()
 
 CommitOrderReadStrategy chooseCommitOrderReadStrategy(
     const RangesInDataPart & ranges,
-    const StorageInMemoryMetadata & metadata)
+    const StorageMetadataPtr & metadata)
 {
     const auto & part = ranges.data_part;
 
@@ -84,10 +88,10 @@ CommitOrderReadStrategy chooseCommitOrderReadStrategy(
     if (part->isProjectionPart())
     {
         const std::string & projection_name = part->name;
-        if (!metadata.projections.has(projection_name))
+        if (!metadata->projections.has(projection_name))
             throw Exception(ErrorCodes::ILLEGAL_STREAM, "Trying to read projection part '{}' which projection does not exist in metadata", projection_name);
 
-        const ProjectionDescription & projection_description = metadata.projections.get(projection_name);
+        const ProjectionDescription & projection_description = metadata->projections.get(projection_name);
         if (!projection_description.with_block_number || !projection_description.with_block_offset)
             throw Exception(ErrorCodes::ILLEGAL_STREAM, "Trying to read in commit order projection part '{}' which is not a commit order projection", projection_name);
 
@@ -96,17 +100,18 @@ CommitOrderReadStrategy chooseCommitOrderReadStrategy(
     }
 
     /// 2 If partial read was requested try read it directly.
-    const bool is_partial_read = !(ranges.ranges.size() == 1 && ranges.ranges.front().begin == 0 && ranges.ranges.front().end == part->getMarksCount());
+    const size_t granule_count = part->index_granularity->getMarksCountWithoutFinal();
+    const bool is_partial_read = !(ranges.ranges.size() == 1 && ranges.ranges.front().begin == 0 && ranges.ranges.front().end == granule_count);
     if (is_partial_read)
     {
-        if (!sortingKeyStartsWithBlockNumberAndOffset(metadata.sorting_key.column_names))
+        if (!sortingKeyStartsWithBlockNumberAndOffset(metadata->sorting_key.column_names))
             throw Exception(ErrorCodes::ILLEGAL_STREAM, "Partial-range read of a part whose sort key is not (_block_number, _block_offset) cannot produce commit-order rows");
 
         return {CommitOrderReadStrategy::Native, ranges};
     }
 
     /// 3 Try to find commit-order projection to read from.
-    for (const auto & projection : metadata.projections)
+    for (const auto & projection : metadata->projections)
     {
         if (!projection.with_block_number || !projection.with_block_offset)
             continue;
@@ -123,7 +128,7 @@ CommitOrderReadStrategy chooseCommitOrderReadStrategy(
         return {CommitOrderReadStrategy::Native, ranges};
 
     /// 5 If part was sorted in commit-order try read it directly.
-    if (sortingKeyStartsWithBlockNumberAndOffset(metadata.sorting_key.column_names))
+    if (sortingKeyStartsWithBlockNumberAndOffset(metadata->sorting_key.column_names))
         return {CommitOrderReadStrategy::Native, ranges};
 
     /// 6 Fallback to commit-order sorting.

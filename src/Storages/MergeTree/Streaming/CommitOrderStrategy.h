@@ -36,7 +36,7 @@ struct CommitOrderReadStrategy
 /// Throws `ILLEGAL_STREAM` when the part cannot be served in commit order.
 CommitOrderReadStrategy chooseCommitOrderReadStrategy(
     const RangesInDataPart & ranges,
-    const StorageInMemoryMetadata & metadata);
+    const StorageMetadataPtr & metadata);
 
 /// `columns_to_read` must include `_block_number` / `_block_offset` for Sort.
 Pipe createCommitOrderReadStream(

@@ -59,6 +59,7 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/JSONBuilder.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -3099,10 +3100,8 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
     {
         auto subscription = std::make_shared<RangesInDataPartStreamSubscription>(num_streams, i);
         enrichSubscription(subscription, data, parts_index, promoters);
-        subscription->disable();
 
-        auto coordinator = std::make_shared<MergeTreeCommitOrderSequentialSource>(
-            header, data, storage_snapshot, all_column_names, std::move(subscription), context);
+        auto coordinator = std::make_shared<MergeTreeCommitOrderSequentialSource>(header, data, storage_snapshot, subscription, all_column_names, context);
 
         pipes.emplace_back(std::move(coordinator));
     }

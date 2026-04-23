@@ -1,12 +1,8 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
-#include <Core/Names.h>
-#include <Processors/IProcessor.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
-#include <Storages/StorageSnapshot.h>
-
-#include <list>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -26,30 +22,30 @@ public:
         SharedHeader header_,
         const MergeTreeData & storage_,
         StorageSnapshotPtr storage_snapshot_,
-        Names columns_to_read_,
         RangesInDataPartStreamSubscriptionPtr subscription_,
+        Names columns_to_read_,
         ContextPtr context_);
 
     String getName() const override { return "MergeTreeCommitOrderSequentialSource"; }
 
     Status prepare() override;
+    void work() override;
+    int schedule() override;
     PipelineUpdate updatePipeline() override;
 
     void onCancel() noexcept override;
 
 private:
-    bool fillPendingFromSubscription();
-
-    SharedHeader header;
+    const SharedHeader header;
     const MergeTreeData & storage;
-    StorageSnapshotPtr storage_snapshot;
-    Names columns_to_read;
-    RangesInDataPartStreamSubscriptionPtr subscription;
-    ContextPtr context;
+    const StorageSnapshotPtr storage_snapshot;
+    const RangesInDataPartStreamSubscriptionPtr subscription;
+    const Names columns_to_read;
+    const ContextPtr context;
+    const LoggerPtr log;
 
     std::list<RangesInDataPart> pending;
     Processors current_sub_pipeline;
-    bool need_update_pipeline = true;
 };
 
 }

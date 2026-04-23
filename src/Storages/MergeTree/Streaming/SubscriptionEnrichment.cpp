@@ -138,7 +138,7 @@ RangesByPartitionAndBlockNumber buildRightPartsIndex(RangesInDataParts parts_ran
 {
     RangesByPartitionAndBlockNumber index;
     for (auto && ranges : parts_ranges)
-        index[ranges.data_part->info.getPartitionId()][ranges.data_part->info.max_block] = std::move(ranges);
+        index[ranges.data_part->info.getPartitionId()].emplace(ranges.data_part->info.max_block, std::move(ranges));
     return index;
 }
 
