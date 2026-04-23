@@ -361,7 +361,7 @@ def create_delta_table(
             f"""
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
-            ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
+            ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '{table_name}', format={format})
             """
         )
     elif storage_type == "local":
@@ -390,9 +390,16 @@ def default_upload_directory(
             local_path, remote_path, **kwargs
         )
     elif storage_type == "azure":
-        return started_cluster.default_azure_uploader.upload_directory(
-            local_path, remote_path, **kwargs
+        # Azure blob storage preserves leading slashes in blob names, unlike S3/MinIO which strips
+        # them. Use relative-path mode with a stripped remote prefix so that blob names match what
+        # delta-kernel-rs expects (no leading slash in the az:// table location path component).
+        effective_remote = remote_path.lstrip("/") if remote_path else local_path.lstrip("/")
+        azure_uploader = AzureUploader(
+            started_cluster.blob_service_client,
+            started_cluster.azure_container_name,
+            use_relpath=True,
         )
+        return azure_uploader.upload_directory(local_path, effective_remote, **kwargs)
     elif storage_type == "local":
         return started_cluster.local_uploader.upload_directory(
             local_path, remote_path, **kwargs
@@ -443,7 +450,7 @@ def create_initial_data_file(
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
 )
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -487,9 +494,47 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     )
 
 
+def test_single_log_file_azure_connection_string(started_cluster):
+    """Test DeltaLakeAzure with connection string authentication and delta kernel enabled."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_single_log_file_azure_cs")
+
+    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
+    parquet_data_path = create_initial_data_file(
+        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
+    )
+
+    delta_path = f"/{TABLE_NAME}"
+    write_delta_from_file(spark, parquet_data_path, delta_path)
+
+    files = default_upload_directory(
+        started_cluster,
+        "azure",
+        delta_path,
+        "",
+    )
+
+    assert len(files) == 2  # 1 metadata file + 1 data file
+
+    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLakeAzure('{connection_string}', '{started_cluster.azure_container_name}', '{TABLE_NAME}', Parquet)
+        """
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        inserted_data
+    )
+
+
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
 )
 def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -534,7 +579,7 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
 )
 def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)

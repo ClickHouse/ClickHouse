@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -65,9 +66,92 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-/// for "^prefix..." string it returns "prefix"
+/// Returns true if '\' followed by this character means "match this character
+/// literally". For example, '\.' matches a literal dot, '\(' matches a
+/// literal '(', '\-' matches a literal '-'.
+/// Returns false for escape sequences where the matched character is different
+/// from what follows '\': '\n' matches a newline (not 'n'), '\d' matches any
+/// digit (not 'd'), '\x41' matches 'A' (not 'x').
+static bool isLiteralEscape(char c)
+{
+    switch (c)
+    {
+        case '|':
+        case '(':
+        case ')':
+        case '^':
+        case '$':
+        case '.':
+        case '[':
+        case ']':
+        case '?':
+        case '*':
+        case '+':
+        case '\\':
+        case '{':
+        case '}':
+        case '-':
+            return true;
+        default:
+            return false;
+    }
+
+    UNREACHABLE();
+}
+
+/// Extracts a conservative fixed literal prefix from a ^-anchored regular expression.
+///
+/// In regex, '^' means "must start at the beginning of the string".
+/// This function walks the pattern after '^' and collects characters that
+/// are guaranteed to appear, in order, at the start of every matching string.
+/// It stops as soon as it hits any metacharacter or special construct where it
+/// cannot guarantee a fixed character. The parser is conservative and may miss
+/// some cases where a guaranteed fixed prefix could be derived but would be
+/// complicated to do so. The result is a prefix that is common to all possible
+/// matching strings.
+///
+/// "^abc"
+///   Every matching string starts with exactly "abc".
+///   Prefix: "abc".
+///
+/// "^abc.*"
+///   '.' means "any single character" and '*' means "zero or more times".
+///   So after "abc" anything can follow. We can only guarantee "abc".
+///   Prefix: "abc".
+///
+/// "^abc\\|def"
+///   A backslash before a special character removes its special meaning.
+///   '|' normally means "or" (see below), but '\\|' means a literal '|'
+///   character. So this matches strings starting with the text "abc|def".
+///   Prefix: "abc|def".
+///
+/// "^abc\\d"
+///   '\\d' means "any digit" (0-9). It is not a single fixed character,
+///   so we stop. We can only guarantee "abc".
+///   Prefix: "abc".
+///
+/// "^abc|def"
+///   '|' means "or" — match the left side or the right side.
+///   This means: (string starts with "abc") OR (string contains "def" anywhere).
+///   The right side has no '^', so it can match in the middle of a string.
+///   We cannot guarantee any prefix at all.
+///   Prefix: "".
+///
+/// "^abc[12]"
+///   '[12]' is a character class — it matches either '1' or '2'.
+///   Since the next character is not fixed, we stop at "abc".
+///   Prefix: "abc".
+///
+/// '(' is treated as a stop character (')' cannot appear unescaped in a
+/// valid regex without a preceding '('). Patterns like
+/// "^(abc)def" could theoretically yield prefix "abcdef", but analyzing
+/// group semantics (optional groups, alternation inside groups, etc.)
+/// is complex and error-prone. The alternation helper
+/// `extractCommonPrefixFromAlternationBranches` handles the important case of
+/// "^(branch1|branch2|...)" separately.
 static String extractFixedPrefixFromRegularExpression(const String & regexp)
 {
+    /// We can only analyze regexes that start with '^' — those are the only ones that guarantee a fixed prefix.
     if (regexp.size() <= 1 || regexp[0] != '^')
         return {};
 
@@ -90,30 +174,13 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                 if (pos == end)
                     break;
 
-                switch (*pos)
+                if (isLiteralEscape(*pos))
                 {
-                    case '|':
-                    case '(':
-                    case ')':
-                    case '^':
-                    case '$':
-                    case '.':
-                    case '[':
-                    case ']':
-                    case '?':
-                    case '*':
-                    case '+':
-                    case '\\':
-                    case '{':
-                    case '}':
-                    case '-':
-                        fixed_prefix += *pos;
-                        ++pos;
-                    break;
-                    default:
-                        /// all other escape sequences are not supported
-                            pos = end;
+                    fixed_prefix += *pos;
+                    ++pos;
                 }
+                else
+                    pos = end;
 
                 break;
             }
@@ -148,6 +215,153 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
     }
 
     return fixed_prefix;
+}
+
+/// Returns true if the expression contains any unescaped '|'.
+static bool expressionHasUnescapedAlternation(const String & expression)
+{
+    for (size_t i = 0; i < expression.size(); ++i)
+    {
+        /// \\| is not an alternation, but a literal '|', so skip the next character after a backslash.
+        if (expression[i] == '\\' && i + 1 < expression.size())
+        {
+            ++i;
+            continue;
+        }
+        if (expression[i] == '|')
+            return true;
+    }
+    return false;
+}
+
+/// Handles the simple alternation pattern "^(branch1|branch2|...)$?" where
+/// each branch is a plain literal string (no metacharacters, no nesting).
+///
+/// This is called when the expression contains an unescaped '|', meaning
+/// `extractFixedPrefixFromRegularExpression` cannot be used (it would stop
+/// at '|' or '('). Returns empty for any pattern more complex than simple
+/// literal branches inside a single group.
+///
+/// "^(abc-xx|abc-yy)"
+///   The '|' gives two alternatives: the string starts with "abc-xx" or "abc-yy".
+///   Both start with "abc-", so every matching string begins with "abc-".
+///   Prefix: "abc-".
+///
+/// "^(abc-xx-1|abc-xx-2|abc-yy-1)"
+///   Three alternatives. All three start with "abc-", but they diverge
+///   after that ('x' vs 'y'). So "abc-" is the longest common start.
+///   Prefix: "abc-".
+///
+/// "^(abc|def)"
+///   Two alternatives: "abc" and "def". They share nothing at the start —
+///   'a' vs 'd' already differ. We cannot guarantee any prefix.
+///   Prefix: "".
+///
+/// "^(abc|def)$"
+///   '$' means "must end at the end of the string". It constrains what
+///   comes after the match, but does not change what the string starts
+///   with. So the prefix analysis is the same as without '$'.
+///   Prefix: "".
+///
+/// Not supported (returns empty — could be improved in the future):
+///
+/// "^(abc.*|abd.*)"
+///   Branches contain '.*' (wildcard). We only handle plain literal branches.
+///   The common prefix "ab" could theoretically be extracted, but is not.
+///   Prefix: "".
+///
+/// "^(abc|abd)+"
+///   The '+' after the group means it must appear at least once.
+///   We only handle patterns where the group is followed by '$' or end
+///   of expression. Prefix: "".
+///
+/// "^(abc(1|2)|abc(3|4))"
+///   Branches contain nested groups. We only handle flat literal branches.
+///   The common prefix "abc" could theoretically be extracted, but is not.
+///   Prefix: "".
+static String extractCommonPrefixFromAlternationBranches(const String & expression)
+{
+    /// We only handle "^(literal1|literal2|...)$?".
+    /// Reject anything that doesn't start with "^(".
+    if (expression.size() < 4 || expression[0] != '^' || expression[1] != '(')
+        return {};
+
+    const char * pos = expression.data() + 2; /// Start right after "^("
+    const char * end = expression.data() + expression.size();
+
+    /// Split branches by '|'. Each branch must be a plain literal —
+    /// no metacharacters, no nested groups, no character classes.
+    /// If we see anything other than a literal char, escaped char, or '|',
+    /// we give up.
+    std::vector<String> branches;
+    String current_branch;
+
+    while (pos < end)
+    {
+        if (*pos == '\\' && pos + 1 < end)
+        {
+            char next = *(pos + 1);
+            if (isLiteralEscape(next))
+            {
+                current_branch += next;
+                pos += 2;
+            }
+            else
+                return {};
+        }
+        else if (*pos == '|')
+        {
+            /// Branch separator — save the current branch and start a new one.
+            branches.push_back(std::move(current_branch));
+            current_branch.clear();
+            ++pos;
+        }
+        else if (*pos == ')')
+        {
+            /// End of the group. Save the last branch.
+            branches.push_back(std::move(current_branch));
+            ++pos;
+
+            /// Allow only '$' or end of expression after ')'.
+            if (pos < end && *pos == '$')
+                ++pos;
+            if (pos != end)
+                return {};
+
+            break;
+        }
+        else if (
+            *pos == '(' || *pos == '[' || *pos == '.' || *pos == '*' || *pos == '+' || *pos == '?' || *pos == '{' || *pos == '^'
+            || *pos == '$')
+        {
+            /// Any metacharacter inside a branch — too complex, give up.
+            return {};
+        }
+        else
+        {
+            /// Plain literal character.
+            current_branch += *pos;
+            ++pos;
+        }
+    }
+
+    if (branches.size() < 2)
+        return {};
+
+    /// Compute the longest prefix common to all branches.
+    String common_prefix = branches[0];
+    for (size_t i = 1; i < branches.size(); ++i)
+    {
+        size_t common_len = 0;
+        size_t max_len = std::min(common_prefix.size(), branches[i].size());
+        while (common_len < max_len && common_prefix[common_len] == branches[i][common_len])
+            ++common_len;
+        common_prefix.resize(common_len);
+        if (common_prefix.empty())
+            return {};
+    }
+
+    return common_prefix;
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -398,12 +612,17 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 const String & expression = value.safeGet<String>();
 
-                /// This optimization can't process alternation - this would require
-                /// a comprehensive parsing of regular expression.
-                if (expression.contains('|'))
+                /// ClickHouse `match` patterns must not contain NUL bytes.
+                /// Do not attempt to optimize such patterns.
+                if (expression.find('\0') != String::npos)
                     return false;
 
-                String prefix = extractFixedPrefixFromRegularExpression(expression);
+                String prefix;
+                if (!expressionHasUnescapedAlternation(expression))
+                    prefix = extractFixedPrefixFromRegularExpression(expression);
+                else
+                    prefix = extractCommonPrefixFromAlternationBranches(expression);
+
                 if (prefix.empty())
                     return false;
 
@@ -1026,8 +1245,20 @@ bool applyFunctionChainToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_data_type)
 {
-    /// Remove LowCardinality from input column, and convert it to regular one
-    auto result_column = in_column->convertToFullIfNeeded();
+    /// Strip outer-level wrappers (Const/Replicated/Sparse/LowCardinality) to prepare
+    /// the column for the monotonic function chain. This must be symmetric with
+    /// `removeLowCardinality` on the type — both strip only outer-level LowCardinality,
+    /// preserving `LowCardinality` nested inside container types (`Array`, `Tuple`, `Map`, `Variant`).
+    /// Calling `convertToFullIfNeeded` here would recurse into subcolumns and strip inner
+    /// `LowCardinality`, creating a column/type mismatch when the type still has inner LC
+    /// (e.g. `Variant(LowCardinality(Date), String)` wrapped in `ColumnConst` bypasses
+    /// `ColumnVariant`'s override of `convertToFullIfNeeded`) — leading to `typeid_cast`
+    /// failures in `FunctionCast` wrappers such as `prepareUnpackDictionaries`.
+    auto result_column = in_column
+        ->convertToFullColumnIfConst()
+        ->convertToFullColumnIfReplicated()
+        ->convertToFullColumnIfSparse()
+        ->convertToFullColumnIfLowCardinality();
     auto result_type = removeLowCardinality(in_data_type);
 
     /// In case function sequence is empty, return full non-LowCardinality column
@@ -1134,7 +1365,20 @@ bool applyFunctionChainToColumn(
                 return false;
         }
 
-        result_column = func->execute({{result_column, argument_type, ""}}, func_result_type, result_column->size(), /* dry_run = */ false);
+        /// The function may have been built with LowCardinality argument types (from the key expression),
+        /// but we stripped LowCardinality from the column at the top of this function.
+        /// Functions like FunctionCast handle LowCardinality internally (useDefaultImplementationForLowCardinalityColumns = false)
+        /// and their wrappers expect the column type to match the declared argument type.
+        /// We must pass the original (non-stripped) argument type and re-wrap the column in LowCardinality if needed.
+        auto original_argument_type = getArgumentTypeOfMonotonicFunction(*func);
+        ColumnPtr exec_column = result_column;
+        if (original_argument_type->lowCardinality() && !result_column->lowCardinality())
+        {
+            auto lc_col = original_argument_type->createColumn();
+            assert_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*result_column, 0, result_column->size());
+            exec_column = std::move(lc_col);
+        }
+        result_column = func->execute({{exec_column, original_argument_type, ""}}, func_result_type, exec_column->size(), /* dry_run = */ false);
         result_column = result_column->convertToFullColumnIfLowCardinality();
         result_type = removeLowCardinality(func_result_type);
 
