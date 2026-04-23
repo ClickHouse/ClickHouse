@@ -204,6 +204,14 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
 }
 
+bool MergeTreeIndexConditionMinMax::alwaysTrueOnHyperrectangle(const std::vector<Range> & hyperrectangle) const
+{
+    if (hyperrectangle.size() != index_data_types.size())
+        return false;
+    const auto mask = condition.checkInHyperrectangle(hyperrectangle, index_data_types, {}, {});
+    return mask.can_be_true && !mask.can_be_false;
+}
+
 std::string MergeTreeIndexConditionMinMax::getDescription() const
 {
     return condition.getDescription().condition;

@@ -877,6 +877,41 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         return use_skip_indexes_on_data_read_;
     };
 
+    /// For each useful skip index, if every column of the index is also a column of the
+    /// part-level minmax (i.e. required by the partition key), record the positions of
+    /// those columns in the part's minmax hyperrectangle. Empty means the index is not
+    /// a candidate for the "always true from part-level minmax" short-circuit below.
+    std::vector<std::vector<size_t>> index_to_partition_minmax_positions(skip_indexes.useful_indices.size());
+    if (metadata_snapshot->hasPartitionKey())
+    {
+        std::unordered_map<String, size_t> partition_minmax_col_pos;
+        const auto partition_minmax_names = MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
+        partition_minmax_col_pos.reserve(partition_minmax_names.size());
+        for (size_t i = 0; i < partition_minmax_names.size(); ++i)
+            partition_minmax_col_pos.emplace(partition_minmax_names[i], i);
+
+        for (size_t i = 0; i < skip_indexes.useful_indices.size(); ++i)
+        {
+            const auto & cols = skip_indexes.useful_indices[i].index->index.column_names;
+            if (cols.empty())
+                continue;
+            std::vector<size_t> positions;
+            positions.reserve(cols.size());
+            for (const auto & col : cols)
+            {
+                auto it = partition_minmax_col_pos.find(col);
+                if (it == partition_minmax_col_pos.end())
+                {
+                    positions.clear();
+                    break;
+                }
+                positions.push_back(it->second);
+            }
+            if (!positions.empty())
+                index_to_partition_minmax_positions[i] = std::move(positions);
+        }
+    }
+
     /// Let's find what range to read from each part.
     {
         auto mark_cache = context->getIndexMarkCache();
@@ -995,6 +1030,32 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     {
                         LOG_TRACE(log, "{}", index_result.error().text);
                         continue;
+                    }
+
+                    /// If the part-level minmax already proves the index condition is true for
+                    /// the whole part, every granule must pass — skip the granule loop entirely.
+                    const auto & partition_minmax_positions = index_to_partition_minmax_positions[index_idx];
+                    if (!partition_minmax_positions.empty()
+                        && ranges.data_part->minmax_idx
+                        && ranges.data_part->minmax_idx->initialized)
+                    {
+                        const auto & part_hyperrectangle = ranges.data_part->minmax_idx->hyperrectangle;
+                        std::vector<Range> sub_hyperrectangle;
+                        sub_hyperrectangle.reserve(partition_minmax_positions.size());
+                        for (size_t pos : partition_minmax_positions)
+                            sub_hyperrectangle.push_back(part_hyperrectangle[pos]);
+
+                        if (index_and_condition.condition->alwaysTrueOnHyperrectangle(sub_hyperrectangle))
+                        {
+                            LOG_TRACE(
+                                log,
+                                "Skipping granule-level evaluation of skip index {} on part {}: "
+                                "condition is already provably true from the part-level minmax",
+                                backQuote(index_and_condition.index->index.name),
+                                ranges.data_part->name);
+                            stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+                            continue;
+                        }
                     }
 
                     if (!is_index_supported_on_data_read(index_and_condition.index))
