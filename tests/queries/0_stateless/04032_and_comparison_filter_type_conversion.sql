@@ -18,7 +18,7 @@ ENGINE = Memory;
 INSERT INTO 04032_t VALUES (1, 10, 1.5, 'a', 'x', '2024-01-01 00:00:00'), (3, 30, 3.0, 'c', 'y', '2024-06-15 12:00:00'), (5, 50, 5.5, 'e', 'z', '2025-01-01 00:00:00');
 
 -- =====================================================================
--- Section 16: Mixed types — string constants vs Int32 column
+-- Section 1: Mixed types — string constants vs Int32 column
 -- =====================================================================
 
 -- String '3' parseable as Int32, same value as 3 → redundant
@@ -43,7 +43,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i > '1' AND
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i > '1' AND i < '5' SETTINGS optimize_redundant_comparisons = 1;
 
 -- =====================================================================
--- Section 17: Mixed types — integer constants vs Float64 column
+-- Section 2: Mixed types — integer constants vs Float64 column
 -- =====================================================================
 
 -- Int 3 converts losslessly to Float64(3.0), same as 3.0 → redundant
@@ -75,7 +75,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f = 3 AND f
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f = 3 AND f < 3.5 SETTINGS optimize_redundant_comparisons = 1;
 
 -- =====================================================================
--- Section 18: Mixed types — string constants vs Float64 column
+-- Section 3: Mixed types — string constants vs Float64 column
 -- =====================================================================
 
 -- String '1.5' parses to Float64(1.5), same value → redundant
@@ -107,7 +107,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f > '1' AND
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f > '1' AND f < '5' SETTINGS optimize_redundant_comparisons = 1;
 
 -- =====================================================================
--- Section 19: DateTime column with string constants
+-- Section 4: DateTime column with string constants
 -- =====================================================================
 
 -- Same DateTime string → redundant
@@ -146,7 +146,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE dt = '2024-
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE dt = '2024-06-15 12:00:00' AND dt < '2025-01-01 00:00:00' SETTINGS optimize_redundant_comparisons = 1;
 
 -- =====================================================================
--- Section 20: DateTime column with integer constants (epoch seconds)
+-- Section 5: DateTime column with integer constants (epoch seconds)
 -- =====================================================================
 
 -- Integer epoch seconds: 2024-06-15 12:00:00 UTC = 1718452800
@@ -171,7 +171,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE dt > 170406
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE dt > 1704067200 AND dt < 1735689600 SETTINGS optimize_redundant_comparisons = 1;
 
 -- =====================================================================
--- Section 21: Mixed constant types in same AND expression
+-- Section 6: Mixed constant types in same AND expression
 -- =====================================================================
 
 -- Int32 column: int constant AND float constant AND string constant → float rewrite: i > 1.5 → i >= 2, pruned by equals
@@ -196,7 +196,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE dt = '2024-
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE dt = '2024-06-15 12:00:00' AND dt > 1704067200 SETTINGS optimize_redundant_comparisons = 1;
 
 -- =====================================================================
--- Section 22: Integer boundary folding (UInt8: min=0, max=255)
+-- Section 7: Integer boundary folding (UInt8: min=0, max=255)
 -- =====================================================================
 
 -- constant above max: u = 256 → CONFLICT, folds entire AND to FALSE
@@ -307,7 +307,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE u >= 255 AN
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE u >= 255 AND u != 0 SETTINGS optimize_redundant_comparisons = 1;
 
 -- =====================================================================
--- Section 23: Float literal rewrite for integer columns
+-- Section 8: Float literal rewrite for integer columns
 -- The rewrite converts float to int internally for comparison analysis,
 -- but the AST node is not rewritten. Observable effects: CONFLICT → FALSE,
 -- REDUNDANT → condition removed, and correct cross-type comparison.
@@ -405,7 +405,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i = 3 AND i
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i = 3 AND i > 3.5 SETTINGS optimize_redundant_comparisons = 1;
 
 -- =====================================================================
--- Section: all conditions redundant → replace AND with true
+-- Section 9: all conditions redundant → replace AND with true
 -- =====================================================================
 
 -- u >= 0 AND u < 300 → both always true for UInt8 (range 0..255), result should be constant true
@@ -423,7 +423,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE u >= 0 AND 
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE u >= 0 AND u <= 255 AND u != 256 SETTINGS optimize_redundant_comparisons = 1;
 
 -- =====================================================================
--- Section: notEquals + inclusive range strengthening
+-- Section 10: notEquals + inclusive range strengthening
 -- =====================================================================
 
 -- constant on left side: 3 >= i AND i != 3 → i < 3
