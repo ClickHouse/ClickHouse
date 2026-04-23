@@ -2,8 +2,11 @@
 Test that ClickHouse handles Iceberg format version upgrades by external tools.
 
 When an external tool (e.g. Spark) upgrades the Iceberg format version
-(e.g. from v1 to v2), the cached format_version in PersistentTableComponents
-should be updated rather than triggering a logical error.
+(e.g. from v1 to v2), reading the table should succeed rather than
+triggering a logical error. Each manifest list / manifest file carries its
+own format version in its Avro metadata, so v1 files left behind after an
+upgrade remain readable alongside newer v2 metadata.
+
 Regression test for https://github.com/ClickHouse/ClickHouse/issues/86776
 """
 
