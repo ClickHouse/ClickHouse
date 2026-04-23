@@ -3,6 +3,7 @@
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
+#include <Interpreters/HistogramMetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
@@ -32,6 +33,7 @@
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/DeadLetterQueue.h>
+#include <Interpreters/PredicateStatisticsLog.h>
 #include <Common/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>

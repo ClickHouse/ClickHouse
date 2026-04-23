@@ -109,10 +109,13 @@ common_ft_job_config = Job.Config(
 common_unit_test_job_config = Job.Config(
     name=JobNames.UNITTEST,
     runs_on=[],  # from parametrize()
-    command=f"python3 ./ci/jobs/unit_tests_job.py",
+    command=f"python3 ./ci/jobs/unit_tests_job.py --gtest_filter=-FunctionsStress.*",
     run_in_docker="clickhouse/test-base+--privileged",
     digest_config=Job.CacheDigestConfig(
-        include_paths=["./ci/jobs/unit_tests_job.py"],
+        include_paths=[
+            "./ci/jobs/unit_tests_job.py",
+            "./src/Functions/tests/gtest_functions_stress.cpp",
+        ],
     ),
 )
 
@@ -201,7 +204,7 @@ class JobConfigs:
         allow_merge_on_failure=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
-            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run*",
+            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run*; sudo find /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd -type f -mtime +2 -delete",
         ],
     ).parametrize(
         Job.ParamSet(
@@ -732,6 +735,9 @@ class JobConfigs:
             "python3 ./ci/jobs/integration_test_job.py --options BugfixValidation"
         )
     )
+    _fuzzer_command = (
+        "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
+    )
     unittest_jobs = common_unit_test_job_config.parametrize(
         Job.ParamSet(
             parameter="asan_ubsan",
@@ -747,6 +753,24 @@ class JobConfigs:
             parameter="msan",
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_AMD_MSAN],
+        ),
+        Job.ParamSet(
+            parameter="asan_ubsan, function_prop_fuzzer",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
+            command=_fuzzer_command,
+        ),
+        Job.ParamSet(
+            parameter="tsan, function_prop_fuzzer",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_TSAN],
+            command=_fuzzer_command,
+        ),
+        Job.ParamSet(
+            parameter="msan, function_prop_fuzzer",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_MSAN],
+            command=_fuzzer_command,
         ),
     )
     stress_test_jobs = common_stress_job_config.parametrize(
