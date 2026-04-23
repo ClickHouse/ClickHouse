@@ -124,7 +124,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 
             gather_creator =
                 [pipeline_creator = source->creator,
-                 read_settings = settings,
+                 captured_settings = settings,
                  fs_cache_settings,
                  cache = disk_cache->cache,
                  cache_log = disk_cache->cache_log](
@@ -134,10 +134,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 auto cache_key = FileCacheKey::fromPath(object.remote_path);
                 auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
 
-                auto impl_creator = [pipeline_creator, read_settings, restricted_seek, object]() mutable
+                auto impl_creator = [pipeline_creator, captured_settings, restricted_seek, object]() mutable
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    return pipeline_creator(object, read_settings, /* use_external_buffer */ true, restricted_seek);
+                    return pipeline_creator(object, captured_settings, /* use_external_buffer */ true, restricted_seek);
                 };
 
                 return std::make_unique<CachedOnDiskReadBufferFromFile>(
@@ -147,8 +147,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                     origin,
                     std::move(impl_creator),
                     fs_cache_settings,
-                    read_settings.remote_fs_buffer_size,
-                    read_settings.local_fs_buffer_size,
+                    captured_settings.remote_fs_buffer_size,
+                    captured_settings.local_fs_buffer_size,
                     std::string(CurrentThread::getQueryId()),
                     object.bytes_size,
                     /* allow_seeks_after_first_read */ !restricted_seek,
@@ -160,11 +160,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         else
         {
             gather_creator =
-                [pipeline_creator = source->creator, read_settings = settings](
+                [pipeline_creator = source->creator, captured_settings = settings](
                     bool restricted_seek, const StoredObject & object) mutable
                     -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                return pipeline_creator(object, read_settings, /* use_external_buffer */ true, restricted_seek);
+                return pipeline_creator(object, captured_settings, /* use_external_buffer */ true, restricted_seek);
             };
         }
 
