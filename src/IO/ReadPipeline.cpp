@@ -409,10 +409,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         else
         {
             /// -- Stage 1 only: Source (no cache, no gather) --
+            /// use_external_buffer must be true when async prefetch or memory cache wraps this buffer.
+            bool use_ext_buf = memory_cache.has_value() || async_prefetch.has_value();
+
             impl = std::visit(overloaded{
                 [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    return s.storage->readObject(object, settings, s.read_hint, /* use_external_buffer */ false, /* restrict_seek */ false);
+                    return s.storage->readObject(object, settings, s.read_hint, use_ext_buf, /* restrict_seek */ false);
                 },
                 [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
                 {
@@ -425,7 +428,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 },
                 [&](const CustomSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    return s.creator(object, settings, /* use_external_buffer */ false, /* restrict_seek */ false);
+                    return s.creator(object, settings, use_ext_buf, /* restrict_seek */ false);
                 }
             }, source->source);
         }
