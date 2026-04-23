@@ -429,6 +429,52 @@ FROM fact
 WHERE dictGetUInt64('dict_prices', 'price', (k1, k2)) IN (100, 75)
 ORDER BY k1, k2, payload;
 
+-- Test dictGetOrNull: IN/notIn should NOT be rewritten (NULL semantics differ)
+-- dictGetOrNull returns NULL for missing keys, but the inverse lookup rewrite
+-- would return FALSE for missing keys, changing query semantics.
+-- Re-add missing key for dictGetOrNull tests
+INSERT INTO t VALUES (99, 'missing_key');
+
+SELECT 'dictGetOrNull IN - plan (should NOT be rewritten)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetOrNull('colors', 'name', color_id) IN ('red', 'blue')
+ORDER BY color_id, payload;
+
+SELECT 'dictGetOrNull IN - result (missing key 99 returns NULL, filtered out)';
+SELECT color_id, payload
+FROM t
+WHERE dictGetOrNull('colors', 'name', color_id) IN ('red', 'blue')
+ORDER BY color_id, payload;
+
+SELECT 'dictGetOrNull NOT IN - plan (should NOT be rewritten)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetOrNull('colors', 'name', color_id) NOT IN ('red', 'blue')
+ORDER BY color_id, payload;
+
+SELECT 'dictGetOrNull NOT IN - result (missing key 99 returns NULL, filtered out)';
+SELECT color_id, payload
+FROM t
+WHERE dictGetOrNull('colors', 'name', color_id) NOT IN ('red', 'blue')
+ORDER BY color_id, payload;
+
+-- Verify dictGetOrNull returns NULL for missing keys (baseline sanity check)
+SELECT 'dictGetOrNull missing key sanity check';
+SELECT color_id, dictGetOrNull('colors', 'name', color_id) AS name_val
+FROM t
+WHERE color_id IN (1, 99)
+ORDER BY color_id;
+
+-- Verify dictGet returns default for missing keys (contrast with dictGetOrNull)
+SELECT 'dictGet missing key returns default';
+SELECT color_id, dictGetString('colors', 'name', color_id) AS name_val
+FROM t
+WHERE color_id IN (1, 99)
+ORDER BY color_id;
+
 DROP DICTIONARY colors;
 DROP DICTIONARY dict_prices;
 DROP TABLE t;

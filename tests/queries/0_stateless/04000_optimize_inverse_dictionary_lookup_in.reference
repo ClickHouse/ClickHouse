@@ -371,3 +371,34 @@ ORDER BY
 IN with composite key, numeric attribute
 1	a	x
 2	a	z
+dictGetOrNull IN - plan (should NOT be rewritten)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE dictGetOrNull(\'colors\', \'name\', __table1.color_id) IN (\'red\', \'blue\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+dictGetOrNull IN - result (missing key 99 returns NULL, filtered out)
+1	a
+2	b
+3	c
+dictGetOrNull NOT IN - plan (should NOT be rewritten)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE dictGetOrNull(\'colors\', \'name\', __table1.color_id) NOT IN (\'red\', \'blue\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+dictGetOrNull NOT IN - result (missing key 99 returns NULL, filtered out)
+4	d
+5	R
+dictGetOrNull missing key sanity check
+1	red
+99	\N
+dictGet missing key returns default
+1	red
+99	

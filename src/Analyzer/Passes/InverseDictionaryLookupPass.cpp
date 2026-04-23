@@ -78,11 +78,28 @@ bool isSupportedDictGetFunction(const String & name)
     return supported_functions.contains(name);
 }
 
+enum class FunctionT
+{
+    invalid_t,
+    in_t,
+    comparison_t,
+};
+
+template <FunctionT T>
 std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node)
 {
     const auto * function_node = node->as<FunctionNode>();
 
-    if (!function_node || !isSupportedDictGetFunction(function_node->getFunctionName()))
+    if (!function_node)
+        return std::nullopt;
+
+    const auto & function_name = function_node->getFunctionName();
+
+    if constexpr (T == FunctionT::in_t)
+        if (function_name == "dictGetOrNull")
+            return std::nullopt;
+
+    if (!isSupportedDictGetFunction(function_name))
         return std::nullopt;
 
     const auto & arguments = function_node->getArguments().getNodes();
@@ -168,14 +185,6 @@ void resolveNode(const Node & node, const ContextPtr & context)
 
 class InverseDictionaryLookupVisitor : public InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>
 {
-private:
-    enum class FunctionT
-    {
-        invalid_t,
-        in_t,
-        comparison_t,
-    };
-
 public:
     using Base = InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>;
     using Base::Base;
@@ -300,7 +309,7 @@ private:
         switch (function_t)
         {
             case FunctionT::in_t: {
-                auto info = tryParseDictFunctionCall(arguments[0]);
+                auto info = tryParseDictFunctionCall<FunctionT::in_t>(arguments[0]);
                 if (!info)
                     return std::nullopt;
                 if (!arguments[1]->as<ConstantNode>())
@@ -311,13 +320,16 @@ private:
                 break;
             }
             case FunctionT::comparison_t: {
-                if (auto info_lhs = tryParseDictFunctionCall(arguments[0]); info_lhs && arguments[1]->as<ConstantNode>())
+                if (auto info_lhs = tryParseDictFunctionCall<FunctionT::comparison_t>(arguments[0]);
+                    info_lhs && arguments[1]->as<ConstantNode>())
                 {
                     side = DictSide::LHS;
                     dictget_info = std::move(*info_lhs);
                     constant_arg = arguments[1];
                 }
-                else if (auto info_rhs = tryParseDictFunctionCall(arguments[1]); info_rhs && arguments[0]->as<ConstantNode>())
+                else if (
+                    auto info_rhs = tryParseDictFunctionCall<FunctionT::comparison_t>(arguments[1]);
+                    info_rhs && arguments[0]->as<ConstantNode>())
                 {
                     side = DictSide::RHS;
                     dictget_info = std::move(*info_rhs);
