@@ -93,7 +93,28 @@ FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_
 DROP TABLE IF EXISTS test_nullable_datetime_nonnull;
 
 -- =====================================================
--- Case 5: Nullable(Date) partition key with a real non-NULL value.
+-- Case 5: Nullable(DateTime64) partition key with a real non-NULL value.
+-- Directly covers `removeNullable` for DateTime64.
+-- =====================================================
+DROP TABLE IF EXISTS test_nullable_datetime64_nonnull;
+
+CREATE TABLE test_nullable_datetime64_nonnull (id UInt64, event_time Nullable(DateTime64(3)))
+ENGINE = MergeTree()
+PARTITION BY event_time
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_nullable_datetime64_nonnull (id, event_time) VALUES (1, toDateTime64('2024-06-15 12:00:00.000', 3, 'UTC'));
+
+SELECT
+    toUInt32(min_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS min_matches,
+    toUInt32(max_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_datetime64_nonnull' AND active;
+
+DROP TABLE IF EXISTS test_nullable_datetime64_nonnull;
+
+-- =====================================================
+-- Case 6: Nullable(Date) partition key with a real non-NULL value.
 -- =====================================================
 DROP TABLE IF EXISTS test_nullable_date_nonnull;
 
