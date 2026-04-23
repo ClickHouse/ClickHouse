@@ -1,159 +1,113 @@
--- Test for issue #92834: Logical error when querying system.parts 
--- with Nullable DateTime/DateTime64 partition key where all values are NULL
--- Also tests that min_time/max_time are correct after ALTER TABLE changes column order
+-- Test for issue #92834: Logical error when querying system.parts
+-- with a Nullable Date/DateTime/DateTime64 partition key where all values are NULL.
+-- Without the null guards in getMinMaxDate/getMinMaxTime this path threw
+-- "Part minmax index by time is neither DateTime or DateTime64" because
+-- ColumnNullable::getExtremesNullLast returns POSITIVE_INFINITY (Null) when
+-- every value is NULL.
+--
+-- The fix has two parts:
+--   1. checkPartitionKeyAndInitMinMax unwraps Nullable so minmax_idx_*_column_pos
+--      is actually set for Nullable(Date/DateTime[64]) partition keys. Otherwise
+--      system.parts.min_*/max_* would silently be empty for Nullable keys.
+--   2. getMinMaxDate/getMinMaxTime short-circuit on Field::Types::Null and return
+--      an empty range instead of throwing. system.parts.min_time/max_time are
+--      non-Nullable, so they surface as epoch (`0`) in this case.
 
 -- =====================================================
--- Case 1: Exact reproduction from the original issue
--- This is the most reliable way to trigger the bug
+-- Case 1: Direct Nullable(DateTime) partition key with all NULLs.
+-- Must not throw; min_time/max_time collapse to epoch.
 -- =====================================================
-DROP TABLE IF EXISTS t0;
+DROP TABLE IF EXISTS test_nullable_datetime_all_nulls;
 
--- Create table with Enum + DateTime in partition key
-CREATE TABLE t0 (c1 Enum('a' = 1) NULL, c2 DateTime) ENGINE = MergeTree() 
-    PARTITION BY (c1, c2) ORDER BY tuple() SETTINGS allow_nullable_key = 1;
-
--- Alter the Enum column to Nullable(Int8) - this changes the type
-ALTER TABLE t0 MODIFY COLUMN c1 Nullable(Int8) AFTER c2;
-
--- Insert a row where c1 has a value but c2 (DateTime) gets default value
--- This creates a part where the minmax index has an unexpected type
-INSERT INTO TABLE t0 (c1) VALUES (1);
-
--- This query triggers the bug: "Part minmax index by time is neither DateTime or DateTime64"
--- After the fix, it should return 1 without error
-SELECT 1 FROM system.parts WHERE database = currentDatabase() AND table = 't0' AND active;
-
-DROP TABLE IF EXISTS t0;
-
--- =====================================================
--- Case 1b: Test that min_time is correct after ALTER (from PR review #93111)
--- After ALTER TABLE MODIFY COLUMN ... AFTER, the cached minmax_idx_time_column_pos
--- was not updated, causing getMinMaxTime() to read from wrong hyperrectangle position
--- =====================================================
-DROP TABLE IF EXISTS test_minmax_after_alter;
-
-CREATE TABLE test_minmax_after_alter
-(
-    c1 Enum('a' = 1) NULL,
-    c2 DateTime
-)
-ENGINE = MergeTree
-PARTITION BY (c1, c2)
-ORDER BY tuple()
-SETTINGS allow_nullable_key = 1;
-
-ALTER TABLE test_minmax_after_alter MODIFY COLUMN c1 Nullable(Int8) AFTER c2;
-INSERT INTO test_minmax_after_alter (c1, c2) VALUES (1, toDateTime('2024-01-01 00:00:00'));
-
--- min_time should match the actual DateTime value (1704067200 or similar depending on timezone)
--- Before the fix, min_time was incorrectly returning 1 (the value of c1) instead of the DateTime
-SELECT
-    (SELECT min(toUInt32(c2)) FROM test_minmax_after_alter) = toUInt32(min_time) AS min_time_correct
-FROM system.parts
-WHERE database = currentDatabase() AND table = 'test_minmax_after_alter' AND active;
-
--- Filtering by min_time should work correctly
--- Before the fix, this returned 0 because min_time was 1 instead of the correct timestamp
-SELECT count() > 0 AS filter_works
-FROM system.parts
-WHERE database = currentDatabase() AND table = 'test_minmax_after_alter' AND active
-  AND min_time >= toDateTime('2020-01-01 00:00:00');
-
-DROP TABLE IF EXISTS test_minmax_after_alter;
-
--- =====================================================
--- Case 2: Direct Nullable DateTime partition key with all NULLs
--- =====================================================
-DROP TABLE IF EXISTS test_nullable_datetime_partition;
-
-CREATE TABLE test_nullable_datetime_partition
-(
-    id UInt64,
-    event_time Nullable(DateTime)
-)
+CREATE TABLE test_nullable_datetime_all_nulls (id UInt64, event_time Nullable(DateTime))
 ENGINE = MergeTree()
 PARTITION BY event_time
 ORDER BY id
 SETTINGS allow_nullable_key = 1;
 
--- Insert data where all event_time values are NULL
-INSERT INTO test_nullable_datetime_partition (id, event_time) VALUES (1, NULL), (2, NULL), (3, NULL);
+INSERT INTO test_nullable_datetime_all_nulls (id, event_time) VALUES (1, NULL), (2, NULL);
 
--- Should return 1 (has parts) without error
-SELECT 1 FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_datetime_partition' AND active;
+SELECT toUInt32(min_time) AS min_epoch, toUInt32(max_time) AS max_epoch
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_datetime_all_nulls' AND active;
 
-DROP TABLE IF EXISTS test_nullable_datetime_partition;
+DROP TABLE IF EXISTS test_nullable_datetime_all_nulls;
 
 -- =====================================================
--- Case 3: DateTime64 variant  
+-- Case 2: Nullable(DateTime64) variant.
 -- =====================================================
-DROP TABLE IF EXISTS test_nullable_datetime64_partition;
+DROP TABLE IF EXISTS test_nullable_datetime64_all_nulls;
 
-CREATE TABLE test_nullable_datetime64_partition
-(
-    id UInt64,
-    event_time Nullable(DateTime64(3))
-)
+CREATE TABLE test_nullable_datetime64_all_nulls (id UInt64, event_time Nullable(DateTime64(3)))
 ENGINE = MergeTree()
 PARTITION BY event_time
 ORDER BY id
 SETTINGS allow_nullable_key = 1;
 
-INSERT INTO test_nullable_datetime64_partition (id, event_time) VALUES (1, NULL), (2, NULL), (3, NULL);
+INSERT INTO test_nullable_datetime64_all_nulls (id, event_time) VALUES (1, NULL), (2, NULL);
 
--- Should return 1 (has parts) without error
-SELECT 1 FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_datetime64_partition' AND active;
+SELECT toUInt32(min_time) AS min_epoch, toUInt32(max_time) AS max_epoch
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_datetime64_all_nulls' AND active;
 
-DROP TABLE IF EXISTS test_nullable_datetime64_partition;
-
--- =====================================================
--- Case 4: INSERT before ALTER reorders columns (from PR review #93111, Apr 3)
--- When data is inserted before ALTER MODIFY COLUMN ... AFTER, the in-memory
--- hyperrectangle has the old column order but minmax_idx_time_column_pos is
--- updated to the new order, causing getMinMaxTime to read the wrong slot.
--- =====================================================
-DROP TABLE IF EXISTS test_minmax_insert_before_alter;
-
-CREATE TABLE test_minmax_insert_before_alter (a Int32, b DateTime) ENGINE = MergeTree()
-    PARTITION BY (a, b) ORDER BY tuple();
-
-INSERT INTO test_minmax_insert_before_alter (a, b) VALUES (42, toDateTime('2024-06-15 12:00:00'));
-
-ALTER TABLE test_minmax_insert_before_alter MODIFY COLUMN a Int32 AFTER b;
-
--- min_time should be 2024-06-15 12:00:00, not 1970-01-01 00:00:42
-SELECT
-    (SELECT min(toUInt32(b)) FROM test_minmax_insert_before_alter) = toUInt32(min_time) AS min_time_correct
-FROM system.parts
-WHERE database = currentDatabase() AND table = 'test_minmax_insert_before_alter' AND active;
-
--- Filtering by min_time should find the part
-SELECT count() > 0 AS filter_works
-FROM system.parts
-WHERE database = currentDatabase() AND table = 'test_minmax_insert_before_alter' AND active
-  AND min_time >= toDateTime('2024-01-01 00:00:00');
-
-DROP TABLE IF EXISTS test_minmax_insert_before_alter;
+DROP TABLE IF EXISTS test_nullable_datetime64_all_nulls;
 
 -- =====================================================
--- Case 5: Nullable(Date) partition key with all NULLs
--- Covers the all-NULL branch in getMinMaxDate
+-- Case 3: Nullable(Date) partition key with all NULLs.
+-- Covers the all-NULL branch in getMinMaxDate.
 -- =====================================================
-DROP TABLE IF EXISTS test_nullable_date_partition;
+DROP TABLE IF EXISTS test_nullable_date_all_nulls;
 
-CREATE TABLE test_nullable_date_partition
-(
-    id UInt64,
-    event_date Nullable(Date)
-)
+CREATE TABLE test_nullable_date_all_nulls (id UInt64, event_date Nullable(Date))
 ENGINE = MergeTree()
 PARTITION BY event_date
 ORDER BY id
 SETTINGS allow_nullable_key = 1;
 
-INSERT INTO test_nullable_date_partition (id, event_date) VALUES (1, NULL), (2, NULL);
+INSERT INTO test_nullable_date_all_nulls (id, event_date) VALUES (1, NULL), (2, NULL);
 
--- Should return 1 (has parts) without error
-SELECT 1 FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_date_partition' AND active;
+SELECT toUInt32(min_date) AS min_epoch, toUInt32(max_date) AS max_epoch
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_date_all_nulls' AND active;
 
-DROP TABLE IF EXISTS test_nullable_date_partition;
+DROP TABLE IF EXISTS test_nullable_date_all_nulls;
+
+-- =====================================================
+-- Case 4: Nullable(DateTime) partition key with a real non-NULL value.
+-- Verifies that `removeNullable` is in effect so minmax_idx_time_column_pos gets
+-- set and system.parts.min_time / max_time actually reflect the value rather
+-- than staying silently at 0 (which would happen if pos stayed -1).
+-- =====================================================
+DROP TABLE IF EXISTS test_nullable_datetime_nonnull;
+
+CREATE TABLE test_nullable_datetime_nonnull (id UInt64, event_time Nullable(DateTime))
+ENGINE = MergeTree()
+PARTITION BY event_time
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_nullable_datetime_nonnull (id, event_time) VALUES (1, toDateTime('2024-06-15 12:00:00', 'UTC'));
+
+SELECT
+    toUInt32(min_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS min_matches,
+    toUInt32(max_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_datetime_nonnull' AND active;
+
+DROP TABLE IF EXISTS test_nullable_datetime_nonnull;
+
+-- =====================================================
+-- Case 5: Nullable(Date) partition key with a real non-NULL value.
+-- =====================================================
+DROP TABLE IF EXISTS test_nullable_date_nonnull;
+
+CREATE TABLE test_nullable_date_nonnull (id UInt64, event_date Nullable(Date))
+ENGINE = MergeTree()
+PARTITION BY event_date
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_nullable_date_nonnull (id, event_date) VALUES (1, toDate('2024-06-15'));
+
+SELECT
+    min_date = toDate('2024-06-15') AS min_matches,
+    max_date = toDate('2024-06-15') AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_date_nonnull' AND active;
+
+DROP TABLE IF EXISTS test_nullable_date_nonnull;

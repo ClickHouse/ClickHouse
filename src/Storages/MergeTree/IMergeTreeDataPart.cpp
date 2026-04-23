@@ -580,10 +580,9 @@ std::string_view IMergeTreeDataPart::stateString(MergeTreeDataPartState state)
 
 std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 {
-    const auto date_column_pos = storage.minmax_idx_date_column_pos.load(std::memory_order_acquire);
-    if (date_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
+    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
     {
-        const auto & hyperrectangle = minmax_idx->hyperrectangle[date_column_pos];
+        const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
 
         /// The case when all values are NULL in a Nullable Date column.
         /// In this case, getExtremes() returns POSITIVE_INFINITY which has type Null.
@@ -597,10 +596,9 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 
 std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 {
-    const auto time_column_pos = storage.minmax_idx_time_column_pos.load(std::memory_order_acquire);
-    if (time_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
+    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
     {
-        const auto & hyperrectangle = minmax_idx->hyperrectangle[time_column_pos];
+        const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_time_column_pos];
 
         /// The case when all values are NULL in a Nullable DateTime/DateTime64 column.
         /// In this case, getExtremes() returns POSITIVE_INFINITY which has type Null.
@@ -612,12 +610,6 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
         {
             assert(hyperrectangle.right.getType() == Field::Types::UInt64);
             return {hyperrectangle.left.safeGet<UInt64>(), hyperrectangle.right.safeGet<UInt64>()};
-        }
-        /// The case of DateTime that was stored as Int64 (can happen after ALTER TABLE changes column types)
-        if (hyperrectangle.left.getType() == Field::Types::Int64)
-        {
-            assert(hyperrectangle.right.getType() == Field::Types::Int64);
-            return {static_cast<time_t>(hyperrectangle.left.safeGet<Int64>()), static_cast<time_t>(hyperrectangle.right.safeGet<Int64>())};
         }
         /// The case of DateTime64
         if (hyperrectangle.left.getType() == Field::Types::Decimal64)

@@ -700,7 +700,7 @@ MergeTreeData::MergeTreeData(
         {
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
             setProperties(metadata_, metadata_, !sanity_checks);
-            if (minmax_idx_date_column_pos.load(std::memory_order_acquire) == -1)
+            if (minmax_idx_date_column_pos == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
         }
         catch (Exception & e)
@@ -1191,31 +1191,6 @@ void MergeTreeData::setProperties(
     setInMemoryMetadata(new_metadata);
     setVirtuals(createVirtuals(new_metadata));
 
-    /// Recalculate minmax_idx_date_column_pos and minmax_idx_time_column_pos
-    /// because ALTER TABLE can change the column order in the partition key expression.
-    /// The minmax index files are stored per-column (order-independent), but the hyperrectangle
-    /// is populated at load time based on the current metadata's column order.
-    if (new_metadata.hasPartitionKey())
-    {
-        checkPartitionKeyAndInitMinMax(new_metadata.partition_key);
-
-        /// Reload minmax hyperrectangles for all in-memory parts so they
-        /// reflect the new column order used by minmax_idx_time_column_pos
-        /// and minmax_idx_date_column_pos.  Without this, parts inserted
-        /// before an ALTER that reorders columns would have stale
-        /// hyperrectangle slot assignments, causing getMinMaxTime /
-        /// getMinMaxDate to read the wrong value.
-        for (const auto & part : getDataPartsForInternalUsage())
-        {
-            if (!part->info.isPatch() && part->minmax_idx && part->minmax_idx->initialized)
-            {
-                auto new_minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-                new_minmax_idx->load(*part);
-                const_cast<IMergeTreeDataPart &>(*part).minmax_idx = std::move(new_minmax_idx);
-            }
-        }
-    }
-
     std::lock_guard lock(patch_parts_metadata_mutex);
     patch_parts_metadata_cache.clear();
 }
@@ -1287,12 +1262,6 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     /// Add all columns used in the partition key to the min-max index.
     DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
 
-    /// Compute positions into local variables first, then publish once at the end.
-    /// This avoids a race where concurrent INSERT threads could observe a transient -1
-    /// and use it as an index into the hyperrectangle array.
-    Int64 new_date_column_pos = -1;
-    Int64 new_time_column_pos = -1;
-
     /// Try to find the date column in columns used by the partition key (a common case).
     /// If there are no - DateTime or DateTime64 would also suffice.
 
@@ -1301,19 +1270,20 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
 
     for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
     {
-        const auto & type = minmax_idx_columns_types[i];
-        const auto non_nullable_type = removeNullable(type);
+        /// Unwrap Nullable so that a `Nullable(Date)` / `Nullable(DateTime[64])` column
+        /// is recognised as the date/time column for the minmax index.
+        const auto non_nullable_type = removeNullable(minmax_idx_columns_types[i]);
         if (isDate(non_nullable_type))
         {
             if (!has_date_column)
             {
-                new_date_column_pos = static_cast<Int64>(i);
+                minmax_idx_date_column_pos = i;
                 has_date_column = true;
             }
             else
             {
                 /// There is more than one Date column in partition key and we don't know which one to choose.
-                new_date_column_pos = -1;
+                minmax_idx_date_column_pos = -1;
             }
         }
     }
@@ -1321,29 +1291,24 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     {
         for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
         {
-            const auto & type = minmax_idx_columns_types[i];
-            const auto non_nullable_type = removeNullable(type);
+            const auto non_nullable_type = removeNullable(minmax_idx_columns_types[i]);
             if (isDateTime(non_nullable_type)
                 || isDateTime64(non_nullable_type)
             )
             {
                 if (!has_datetime_column)
                 {
-                    new_time_column_pos = static_cast<Int64>(i);
+                    minmax_idx_time_column_pos = i;
                     has_datetime_column = true;
                 }
                 else
                 {
                     /// There is more than one DateTime column in partition key and we don't know which one to choose.
-                    new_time_column_pos = -1;
+                    minmax_idx_time_column_pos = -1;
                 }
             }
         }
     }
-
-    /// Publish final positions atomically — concurrent readers never see transient values.
-    minmax_idx_date_column_pos.store(new_date_column_pos, std::memory_order_release);
-    minmax_idx_time_column_pos.store(new_time_column_pos, std::memory_order_release);
 }
 
 
