@@ -2,6 +2,22 @@
 -- When a single part is split into multiple streams for parallel reading,
 -- PrefetchingConcat should be used instead of MergingSorted.
 
+-- The presence of PrefetchingConcat in the pipeline depends on several
+-- `MergeTree` and query-plan settings that are randomized in flaky-check
+-- runs. Pin them explicitly so the check is deterministic: in particular,
+-- `read_in_order_two_level_merge_threshold = 0` would force a preliminary
+-- merge for a single part and disable the optimization, and
+-- `PrefetchingConcat` is only enabled when there is a `PREWHERE` filter,
+-- so `optimize_move_to_prewhere` must be on.
+SET read_in_order_two_level_merge_threshold = 100;
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+SET optimize_aggregation_in_order = 0;
+SET optimize_move_to_prewhere = 1;
+SET parallel_replicas_local_plan = 1;
+SET enable_parallel_replicas = 0;
+SET max_threads = 4;
+SET optimize_read_in_order = 1;
+
 DROP TABLE IF EXISTS t_prefetching_concat;
 
 CREATE TABLE t_prefetching_concat (path String, value UInt64)
@@ -18,7 +34,6 @@ SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat
     WHERE path LIKE '%file.log'
     ORDER BY path
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 -- Verify correctness: output must be sorted.
@@ -30,7 +45,6 @@ SELECT count(), countIf(path < prev_path) AS violations FROM (
         SELECT path FROM t_prefetching_concat
         WHERE path LIKE '%file.log'
         ORDER BY path
-        SETTINGS max_threads = 4, optimize_read_in_order = 1
     )
 );
 
@@ -40,7 +54,6 @@ SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat
     ORDER BY path
     LIMIT 10
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 DROP TABLE t_prefetching_concat;
@@ -61,7 +74,6 @@ SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_multi
     WHERE value LIKE '%5%'
     ORDER BY key
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 DROP TABLE t_prefetching_concat_multi;
