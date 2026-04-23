@@ -785,18 +785,9 @@ void DiskObjectStorage::prepareRead(
     /// Note: read_settings (with IO scheduling applied) are stored in the pipeline
     /// at the end of this method, after all adjustments are finalized.
 
-    /// Unwrap CachedObjectStorage: extract the file cache into a pipeline stage
-    /// and use the underlying (non-cached) storage as the source.
-    auto * cached_storage = dynamic_cast<CachedObjectStorage *>(storage.get());
-    if (cached_storage && read_settings.enable_filesystem_cache && cached_storage->getFileCache()->isInitialized())
-    {
-        pipeline.needDiskCache(cached_storage->getFileCache(), global_context->getFilesystemCacheLog());
-        pipeline.setSource(cached_storage->getUnderlying(), storage_objects, read_hint);
-    }
-    else
-    {
-        pipeline.setSource(storage, storage_objects, read_hint);
-    }
+    /// Delegate to the object storage to set source and add cache stage if needed.
+    /// CachedObjectStorage::prepareRead adds needDiskCache automatically.
+    storage->prepareRead(storage, storage_objects, read_settings, read_hint, pipeline);
 
     /// Distributed cache.
 #if ENABLE_DISTRIBUTED_CACHE

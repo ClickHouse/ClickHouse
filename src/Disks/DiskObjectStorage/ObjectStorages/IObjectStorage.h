@@ -93,6 +93,8 @@ class Client;
 namespace DB
 {
 
+class ReadPipeline;
+
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
@@ -218,6 +220,17 @@ public:
         std::optional<size_t> read_hint = {},
         bool use_external_buffer = false,
         bool restrict_seek = false) const = 0;
+
+    /// Populate a ReadPipeline with the source and any stages this storage needs.
+    /// `self` is the shared_ptr to this storage (needed because setSource takes ObjectStoragePtr).
+    /// Default: sets the source to `self`. CachedObjectStorage overrides
+    /// to delegate to the inner storage and add the disk cache stage.
+    virtual void prepareRead(
+        ObjectStoragePtr self,
+        const StoredObjects & objects,
+        const ReadSettings & read_settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const;
 
     /// Read small object into memory and return it as string
     /// Also contain consistent object metadata if available in this object storage.

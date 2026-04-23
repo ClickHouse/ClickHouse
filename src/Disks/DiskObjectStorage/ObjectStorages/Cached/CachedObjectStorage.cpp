@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
 
 #include <IO/BoundedReadBuffer.h>
+#include <IO/ReadPipeline.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Interpreters/Context.h>
@@ -65,6 +66,24 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     /// and StorageObjectStorageSource. This method delegates directly to the underlying storage.
     /// Callers that need caching should use ReadPipeline with needDiskCache().
     return object_storage->readObject(object, patchSettings(read_settings), read_hint, use_external_buffer, restrict_seek);
+}
+
+void CachedObjectStorage::prepareRead(
+    ObjectStoragePtr /* self */,
+    const StoredObjects & objects,
+    const ReadSettings & read_settings,
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
+{
+    /// Delegate to the underlying storage to set the source.
+    object_storage->prepareRead(object_storage, objects, read_settings, read_hint, pipeline);
+
+    /// Add the disk cache stage if filesystem cache is enabled.
+    if (read_settings.enable_filesystem_cache && cache->isInitialized())
+    {
+        auto global_context = Context::getGlobalContextInstance();
+        pipeline.needDiskCache(cache, global_context->getFilesystemCacheLog());
+    }
 }
 
 std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// NOLINT

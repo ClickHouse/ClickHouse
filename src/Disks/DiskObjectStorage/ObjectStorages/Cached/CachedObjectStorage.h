@@ -38,6 +38,13 @@ public:
         bool use_external_buffer = false,
         bool restrict_seek = false) const override;
 
+    void prepareRead(
+        ObjectStoragePtr self,
+        const StoredObjects & objects,
+        const ReadSettings & read_settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override;
+
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
