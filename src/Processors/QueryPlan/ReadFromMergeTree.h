@@ -75,6 +75,9 @@ struct TopKFilterInfo
     TopKThresholdTrackerPtr threshold_tracker;
 };
 
+struct LazyMaterializingRows;
+using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -83,11 +86,13 @@ public:
     enum class IndexType : uint8_t
     {
         None,
-        MinMax,
+        PartitionMinMax,
         Partition,
         PrimaryKey,
         Skip,
         PrimaryKeyExpand,
+        Statistics,
+        NonIntersectingSplit,
     };
 
     struct DistributedIndexStat
@@ -391,7 +396,12 @@ public:
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
+    void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
+
     void deferFiltersAfterFinalIfNeeded();
+
+    const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
+    const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
 
 private:
     MergeTreeSettingsPtr data_settings;
@@ -510,6 +520,8 @@ private:
     const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
     ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
+    void logPredicateStatistics(const AnalysisResult & result) const;
+
     int getSortDirection() const;
     void updateSortDescription();
 
@@ -526,6 +538,8 @@ private:
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
     bool allow_query_condition_cache = true;
+
+    LazyMaterializingRowsPtr lazy_materializing_rows;
 
     ExpressionActionsPtr virtual_row_conversion;
 

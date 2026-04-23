@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -20,6 +21,32 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+/// accurateCastOrNull wraps the result in Nullable to represent conversion failures.
+/// Types that cannot be inside Nullable (Array, Map, etc.) are not supported.
+/// The nested elements need to be Nullable-capable so that we can propagate NULLs which tell
+/// us whether the conversion is accurate or not.
+/// This check walks Tuple elements recursively to also reject cases like
+/// Tuple(Array(UInt8)) where the unsupported type is nested inside a Tuple.
+static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & element : tuple_type->getElements())
+            validateNestedTypesForAccurateCastOrNull(element);
+    }
+    else if (type->isNullable())
+    {
+        validateNestedTypesForAccurateCastOrNull(removeNullable(type));
+    }
+    else if (!type->canBeInsideNullable() && !canContainNull(*type))
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Type {} is not supported for accurateCastOrNull because it cannot be inside Nullable",
+            type->getName());
+    }
 }
 
 FunctionBasePtr createFunctionBaseCast(
@@ -87,8 +114,11 @@ public:
         std::optional<CastDiagnostic> diagnostic,
         ContextPtr context)
     {
-        if (cast_type == CastType::accurateOrNull && !isVariant(to))
+        if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
+        {
+            validateNestedTypesForAccurateCastOrNull(to);
             to = makeNullable(to);
+        }
 
         ColumnsWithTypeAndName arguments;
         arguments.emplace_back(std::move(from));
@@ -129,15 +159,20 @@ protected:
         if (cast_type == CastType::accurateOrNull)
         {
             /// Variant handles NULLs by itself during conversions.
-            if (!isVariant(type))
+            if (!canContainNull(*type))
+            {
+                /// Reject types inside Tuple that cannot handle accurateOrNull's
+                /// ColumnNullable failure mechanism (e.g., Array, Map).
+                validateNestedTypesForAccurateCastOrNull(type);
                 return makeNullable(type);
+            }
         }
 
         if (internal)
             return type;
 
         if (keep_nullable
-            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable())
+            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable() || isDynamic(*arguments.front().type))
             && type->canBeInsideNullable())
             return makeNullable(type);
 

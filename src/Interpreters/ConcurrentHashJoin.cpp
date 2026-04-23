@@ -33,6 +33,7 @@
 #include <numeric>
 #include <deque>
 #include <iterator>
+#include <thread>
 
 using namespace DB;
 
@@ -262,6 +263,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
     while (blocks_left > 0)
     {
+        bool made_progress = false;
+
         /// insert blocks into corresponding HashJoin instances
         for (size_t i = 0; i < dispatched_blocks.size(); ++i)
         {
@@ -274,6 +277,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
                 if (!lock.owns_lock())
                     continue;
+
+                made_progress = true;
 
                 if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
                 {
@@ -291,6 +296,11 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                     return false;
             }
         }
+
+        /// If no slot was available in this pass, yield to avoid burning CPU while waiting
+        /// for other threads to finish inserting into their respective hash join slots
+        if (!made_progress)
+            std::this_thread::yield();
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())
@@ -349,6 +359,11 @@ public:
     {
         if (!current_result)
         {
+            /// Skip empty dispatched blocks to avoid running the full join machinery for nothing,
+            /// keep the last block so joinScatteredBlock produces the correct output header
+            while (next_block + 1 < dispatched_blocks.size() && dispatched_blocks[next_block].rows() == 0)
+                ++next_block;
+
             if (next_block >= dispatched_blocks.size())
                 return {Block(), nullptr, true};
 

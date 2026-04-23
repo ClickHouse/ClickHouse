@@ -39,7 +39,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
@@ -165,6 +165,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 page_cache_max_size;
     extern const ServerSettingsDouble page_cache_free_memory_ratio;
     extern const ServerSettingsUInt64 page_cache_shards;
+    extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
+    extern const ServerSettingsDouble memory_worker_purge_total_memory_threshold_ratio;
+    extern const ServerSettingsBool memory_worker_correct_memory_tracker;
+    extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
+    extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsString allowed_disks_for_table_engines;
 }
 
@@ -398,7 +404,7 @@ void LocalServer::tryInitPath()
             LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
             parent_folder = std::filesystem::current_path();
 
-            std::filesystem::is_directory(parent_folder); // that will throw an exception if it's not a directory
+            (void)std::filesystem::is_directory(parent_folder); // checks the path is accessible (may throw on I/O error)
             LOG_DEBUG(log, "Will create working directory inside current directory: {}", parent_folder.string());
         }
 
@@ -448,6 +454,9 @@ void LocalServer::cleanup()
     try
     {
         connection.reset();
+
+        /// Stop the memory worker before shutting down context, as it references the page cache.
+        memory_worker.reset();
 
         /// Suggestions are loaded async in a separate thread and it can use global context.
         /// We should reset it before resetting global_context.
@@ -903,6 +912,23 @@ void LocalServer::processConfig()
             server_settings[ServerSetting::page_cache_free_memory_ratio],
             server_settings[ServerSetting::page_cache_shards]);
         total_memory_tracker.setPageCache(global_context->getPageCache().get());
+    }
+
+    /// MemoryWorker periodically updates RSS in the memory tracker, resizes the userspace page
+    /// cache based on available memory, and purges jemalloc dirty pages under memory pressure.
+    /// It is required for the page cache to function correctly: without it the cache stays stuck
+    /// at `page_cache_min_size` and never grows, causing severe thrashing.
+    {
+        MemoryWorkerConfig memory_worker_config{
+            .rss_update_period_ms = server_settings[ServerSetting::memory_worker_period_ms],
+            .purge_dirty_pages_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
+            .purge_total_memory_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_total_memory_threshold_ratio],
+            .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
+            .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
+            .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+        };
+        memory_worker.emplace(memory_worker_config, global_context->getPageCache());
+        memory_worker->start();
     }
 
     const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];

@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
 namespace DB::ErrorCodes
@@ -61,6 +62,35 @@ private:
     std::string access_key_id;
     std::string secret_access_key;
     std::string session_token;
+};
+
+class GCSCredentials final : public IStorageCredentials
+{
+public:
+    explicit GCSCredentials(const std::string & oauth_token_)
+        : oauth_token(oauth_token_)
+    {}
+
+    void addCredentialsToEngineArgs(DB::ASTs & engine_args) const override
+    {
+        if (engine_args.size() != 1)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Storage credentials specified in AST already");
+
+        /// Disable AWS HMAC signing; GCS Bearer token auth is used instead.
+        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>("NOSIGN"));
+
+        /// Inject the Authorization header: headers('Authorization'='Bearer <token>')
+        engine_args.push_back(
+            DB::makeASTFunction("headers",
+                DB::makeASTFunction("equals",
+                    DB::make_intrusive<DB::ASTLiteral>("Authorization"),
+                    DB::make_intrusive<DB::ASTLiteral>("Bearer " + oauth_token))));
+    }
+
+    const std::string & getToken() const { return oauth_token; }
+
+private:
+    std::string oauth_token;
 };
 
 class AzureCredentials final : public IStorageCredentials

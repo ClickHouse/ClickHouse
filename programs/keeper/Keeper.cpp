@@ -35,6 +35,7 @@
 
 #include <Interpreters/Context.h>
 
+#include <Coordination/KeeperContext.h>
 #include <Coordination/FourLetterCommand.h>
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
@@ -269,6 +270,16 @@ struct KeeperHTTPContext : public IHTTPContext
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
     }
 
+    uint64_t getMaxRequestHeaderSize() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_max_request_header_size", 0);
+    }
+
+    Poco::Timespan getHeadersReadTimeout() const override
+    {
+        return {context->getConfigRef().getInt64("keeper_server.http_headers_read_timeout", 0), 0};
+    }
+
     Poco::Timespan getReceiveTimeout() const override
     {
         return {context->getConfigRef().getInt64("keeper_server.http_receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0};
@@ -352,32 +363,7 @@ try
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
 
-    auto update_memory_soft_limit_in_config = [&](Poco::Util::AbstractConfiguration & config)
-    {
-        UInt64 memory_soft_limit = 0;
-        if (config.has("keeper_server.max_memory_usage_soft_limit"))
-        {
-            memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
-        }
-
-        /// if memory soft limit is not set, we will use default value
-        if (memory_soft_limit == 0)
-        {
-            Float64 ratio = 0.9;
-            if (config.has("keeper_server.max_memory_usage_soft_limit_ratio"))
-                ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio");
-
-            size_t physical_server_memory = getMemoryAmount();
-            if (ratio > 0 && physical_server_memory > 0)
-            {
-                memory_soft_limit = static_cast<UInt64>(static_cast<double>(physical_server_memory) * ratio);
-                config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
-            }
-        }
-        LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
-    };
-
-    update_memory_soft_limit_in_config(config());
+    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
 
     std::string path = getKeeperPath(config());
     std::filesystem::create_directories(path);
@@ -471,6 +457,11 @@ try
         listen_hosts.emplace_back("127.0.0.1");
         listen_try = true;
     }
+
+#if USE_SSL
+    CertificateReloader::instance().tryLoad(config());
+    CertificateReloader::instance().tryLoadClient(config());
+#endif
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
     global_context->initializeKeeperDispatcher(/* start_async = */ false);
@@ -642,7 +633,7 @@ try
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             updateLevels(config(), logger());
-            update_memory_soft_limit_in_config(config());
+            KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
 
             if (config().has("keeper_server"))
                 global_context->updateKeeperConfiguration(config());

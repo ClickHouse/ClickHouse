@@ -1,6 +1,6 @@
 #include <Client.h>
-#include <Common/CurrentThread.h>
 #include <base/scope_guard.h>
+#include <Common/CurrentThread.h>
 
 #include <Core/Settings.h>
 
@@ -46,6 +46,7 @@ namespace ErrorCodes
 extern const int CANNOT_PARSE_TEXT;
 extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int TOO_DEEP_RECURSION;
 extern const int BUZZHOUSE;
 using ErrorCode = int;
@@ -112,7 +113,11 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
     const auto * exception = server_exception ? server_exception.get() : client_exception.get();
     // Sometimes you may get TOO_DEEP_RECURSION from the server,
     // and TOO_DEEP_RECURSION should not fail the fuzzer check.
-    if (have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
+    // Similarly, MEMORY_LIMIT_EXCEEDED means the server correctly
+    // rejected an expensive query, not that it died.
+    if (have_error
+        && (exception->code() == ErrorCodes::TOO_DEEP_RECURSION
+            || exception->code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED))
     {
         have_error = false;
         server_exception.reset();
@@ -334,6 +339,15 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
 #endif
 
             fmt::print(stdout, "Dump of fuzzed AST:\n{}\n", query_to_execute);
+            if (const auto * insert_ast = ast_to_process->as<ASTInsertQuery>(); insert_ast && insert_ast->hasInlinedData())
+            {
+                /// Print insert data
+                String bytes;
+                auto read_buf = getReadBufferFromASTInsertQuery(ast_to_process);
+                WriteBufferFromString write_buf(bytes);
+                copyData(*read_buf, write_buf);
+                fmt::print(stdout, "{}\n", bytes);
+            }
             const auto res = processASTFuzzerStep(query_to_execute, ast_to_process);
             if (!res)
                 return res;
@@ -439,7 +453,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
                     WriteBufferFromString write_buf(bytes);
                     copyData(*read_buf, write_buf);
                 }
-                std::cout << std::endl << bytes;
+                std::cout << bytes;
             }
         }
         std::cout << std::endl << std::endl;
@@ -525,6 +539,43 @@ static const String & restart_cmd = "--Reconnecting client";
 static const String & external_cmd = "--External command ";
 static const String & health_check_cmd = "--Health check";
 
+/// Encode a string as uppercase hex so it contains no whitespace or dots,
+/// making it safe to embed in the one-line external-command replay marker.
+static String markerHexEncode(const String & s)
+{
+    static const char hex_digits[] = "0123456789ABCDEF";
+    String result;
+    result.reserve(s.size() * 2);
+    for (const unsigned char c : s)
+    {
+        result += hex_digits[c >> 4];
+        result += hex_digits[c & 0xF];
+    }
+    return result;
+}
+
+/// Decode a hex string written by markerHexEncode.
+static String markerHexDecode(const String & s)
+{
+    if (s.size() % 2 != 0)
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "markerHexDecode: odd-length input '{}'", s);
+    auto nibble = [&](const char c) -> uint8_t
+    {
+        if (c >= '0' && c <= '9')
+            return static_cast<uint8_t>(c - '0');
+        if (c >= 'A' && c <= 'F')
+            return static_cast<uint8_t>(c - 'A' + 10);
+        if (c >= 'a' && c <= 'f')
+            return static_cast<uint8_t>(c - 'a' + 10);
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "markerHexDecode: invalid hex character '{}' in '{}'", c, s);
+    };
+    String result;
+    result.reserve(s.size() / 2);
+    for (size_t i = 0; i < s.size(); i += 2)
+        result += static_cast<char>((nibble(s[i]) << 4) | nibble(s[i + 1]));
+    return result;
+}
+
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
@@ -537,7 +588,7 @@ bool Client::buzzHouse()
     static const String & rerun_table = "--External table ";
     static const RE2 rerun_table_re(R"((?i)^--External\s+table\s+(.*)$)");
     static const RE2 extern_re(
-        R"((?i)^--External\s+command\s+(?:(async)\s+)?with\s+seed\s+(\d+)\s+to\s([^\s.]+)\stable\s+([^\s.]+)\.([^\s.]+)\s*$)");
+        R"((?i)^--External\s+command\s+(?:(async)\s+)?with\s+seed\s+(\d+)\s+to\s+([^\s]+)\s+table\s+([0-9A-Fa-f]+)\s+([0-9A-Fa-f]+)\s*$)");
 
     /// Set time to run, but what if a query runs for too long?
     using clock = std::chrono::steady_clock;
@@ -583,8 +634,14 @@ bool Client::buzzHouse()
                 const auto * const last = first + seed_str.size();
                 const auto x = std::from_chars(first, last, seed, 10);
 
-                UNUSED(x);
-                runExternalCommand(external_integrations, seed, !async_flag.empty(), engine, database, table);
+                if (x.ec != std::errc{} || x.ptr != last)
+                    throw DB::Exception(
+                        DB::ErrorCodes::BUZZHOUSE,
+                        "Malformed external-command marker: cannot parse seed '{}' ({})",
+                        seed_str,
+                        x.ec == std::errc::result_out_of_range ? "out of range" : "invalid characters");
+                runExternalCommand(
+                    external_integrations, seed, !async_flag.empty(), engine, markerHexDecode(database), markerHexDecode(table));
             }
             else if (startsWith(full_query, health_check_cmd))
             {
@@ -624,7 +681,14 @@ bool Client::buzzHouse()
         const auto u = processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
         UNUSED(u);
 
-        if (fuzz_config->allow_query_oracles)
+        fuzz_config->outf << "--Session seed: " << rg.getSeed() << std::endl;
+        /// Load server configurations for the fuzzer
+        fuzz_config->loadServerConfigurations();
+        loadFuzzerServerSettings(*fuzz_config);
+        loadFuzzerTableSettings(*fuzz_config);
+        loadSystemTables(*fuzz_config);
+
+        if (fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles)
         {
             /// Create a dedicated oracle user and role for the row policy oracle.
             /// Row policies are created with `TO <oracleRole>` so they apply only to members
@@ -632,26 +696,19 @@ bool Client::buzzHouse()
             /// The oracle uses "EXECUTE AS <oracleUser>" (allowed by the default
             /// access_control_improvements.allow_impersonate_user = true) to run sq1 with
             /// the row policy active.
-            const auto rpu = processTextAsSingleQuery(
-                "CREATE USER IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleUser + " IDENTIFIED WITH no_password");
-            UNUSED(rpu);
-            const auto rpr = processTextAsSingleQuery(
-                "CREATE ROLE IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleRole);
-            UNUSED(rpr);
-            const auto rpg = processTextAsSingleQuery(
-                "GRANT SELECT ON *.* TO " + BuzzHouse::FuzzConfig::oracleRole);
-            UNUSED(rpg);
-            const auto rpgr = processTextAsSingleQuery(
-                "GRANT " + BuzzHouse::FuzzConfig::oracleRole + " TO " + BuzzHouse::FuzzConfig::oracleUser);
-            UNUSED(rpgr);
-        }
+            static const DB::Strings queries = {
+                "CREATE USER IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleUser + " IDENTIFIED WITH no_password;",
+                "CREATE ROLE IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleRole + ";",
+                "GRANT SELECT ON *.* TO " + BuzzHouse::FuzzConfig::oracleRole + ";",
+                "GRANT " + BuzzHouse::FuzzConfig::oracleRole + " TO " + BuzzHouse::FuzzConfig::oracleUser + ";",
+            };
 
-        fuzz_config->outf << "--Session seed: " << rg.getSeed() << std::endl;
-        /// Load server configurations for the fuzzer
-        fuzz_config->loadServerConfigurations();
-        loadFuzzerServerSettings(*fuzz_config);
-        loadFuzzerTableSettings(*fuzz_config);
-        loadSystemTables(*fuzz_config);
+            for (const String & q : queries)
+            {
+                fuzz_config->outf << q << std::endl;
+                server_up &= processBuzzHouseQuery(q);
+            }
+        }
 
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(rg, *fuzz_config, *external_integrations, has_cloud_features);
@@ -904,9 +961,10 @@ bool Client::buzzHouse()
                          server_up &= processBuzzHouseQuery(full_query);
                          qo.processSecondOracleQueryResult(error_code, *external_integrations, "Count distinct oracle");
                      }},
-                    {0 /// Disable row policy oracle for now, because of https://github.com/ClickHouse/ClickHouse/issues/99572
+                    {30
                          * static_cast<uint32_t>(
-                             fuzz_config->allow_query_oracles && gen.collectionHas<BuzzHouse::SQLPolicy>(gen.row_policies_for_oracle)),
+                             fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles
+                             && gen.collectionHas<BuzzHouse::SQLPolicy>(gen.row_policies_for_oracle)),
                      [&]()
                      {
                          /// Row policy oracle: an existing catalog row policy USING pred must be equivalent to WHERE pred.
@@ -918,19 +976,39 @@ bool Client::buzzHouse()
                          sq2.Clear();
                          qo.generateRowPolicyOracleQueries(rg, gen, sq1, sq2);
 
-                         /// Q1: EXECUTE AS oracle user (embedded) then SELECT — row policy applies instead of WHERE
+                         /// Step 1: EXECUTE AS oracle user — switches session; row policy applies for subsequent queries.
+                         /// Must be sent as a standalone statement; native TCP processes only one statement per request.
                          full_query.resize(0);
-                         BuzzHouse::SQLQueryToString(full_query, sq1);
+                         full_query += "EXECUTE AS '";
+                         full_query += BuzzHouse::FuzzConfig::oracleUser;
+                         full_query += "'";
                          fuzz_config->outf << full_query << std::endl;
                          server_up &= processBuzzHouseQuery(full_query);
-                         qo.processFirstOracleQueryResult(error_code, *external_integrations);
 
-                         /// Q2: run as admin with explicit WHERE pred
-                         full_query.resize(0);
-                         BuzzHouse::SQLQueryToString(full_query, sq2);
-                         fuzz_config->outf << full_query << std::endl;
-                         server_up &= processBuzzHouseQuery(full_query);
-                         qo.processSecondOracleQueryResult(error_code, *external_integrations, "Row policy oracle");
+                         /// Only proceed if EXECUTE AS succeeded. If it failed, processBuzzHouseQuery
+                         /// already reconnected (resetting the session to admin), so no cleanup needed.
+                         /// Skipping avoids comparing two admin-user queries which would be a false oracle.
+                         if (!error_code)
+                         {
+                             /// Step 2: SELECT count() FROM db.t [FINAL] INTO OUTFILE — runs as oracle user (no WHERE; policy filters rows).
+                             full_query.resize(0);
+                             BuzzHouse::SQLQueryToString(full_query, sq1);
+                             fuzz_config->outf << full_query << std::endl;
+                             server_up &= processBuzzHouseQuery(full_query);
+                             qo.processFirstOracleQueryResult(error_code, *external_integrations);
+
+                             /// Step 3: Reconnect to reset session back to admin user before running the comparison query.
+                             fuzz_config->outf << restart_cmd << std::endl;
+                             server_up &= fuzzLoopReconnect();
+
+                             /// Step 4: SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE — admin user + explicit WHERE predicate.
+                             full_query.resize(0);
+                             BuzzHouse::SQLQueryToString(full_query, sq2);
+                             fuzz_config->outf << full_query << std::endl;
+                             server_up &= processBuzzHouseQuery(full_query);
+                             qo.processSecondOracleQueryResult(error_code, *external_integrations, "Row policy oracle");
+
+                         } /// if (!error_code) — EXECUTE AS succeeded
                      }},
                     {1 * static_cast<uint32_t>(fuzz_config->allow_client_restarts),
                      [&]()
@@ -947,12 +1025,12 @@ bool Client::buzzHouse()
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
                          const auto & engine = tbl.isAnyIcebergEngine() ? "iceberg" : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : "kafka");
                          const auto & ndname = tbl.isKafkaEngine() ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
-                         const auto & ntname = tbl.getTableName(false);
+                         const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
                          chassert(tbl.isAnyIcebergEngine() || tbl.isAnyDeltaLakeEngine() || tbl.isKafkaEngine());
                          fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << engine
-                                           << " table " << ndname << "." << ntname << std::endl;
+                                           << " table " << markerHexEncode(ndname) << " " << markerHexEncode(ntname) << std::endl;
                          runExternalCommand(external_integrations, nseed, async, engine, ndname, ntname);
                      }},
                     {3 * static_cast<uint32_t>(fuzz_config->allow_health_check),

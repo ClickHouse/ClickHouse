@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -101,6 +102,7 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
     auto expression = std::make_shared<ExpressionActions>(actions_dag.clone());
+
     if (!settings.compact)
         expression->describeActions(settings.out, prefix);
 }

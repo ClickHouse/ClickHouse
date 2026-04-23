@@ -1,4 +1,5 @@
 #include <memory>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -27,13 +28,15 @@ using StepStack = std::vector<IQueryPlanStep *>;
 
 static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 {
-    if (reading->isQueryWithFinal())
+    /// Allow FINAL only for ReplacingMergeTree.
+    if (reading->isQueryWithFinal()
+        && reading->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
         return false;
 
     if (reading->isQueryWithSampling())
         return false;
 
-    if (reading->isVectorColumnReplaced())
+    if (reading->getMutationsSnapshot()->hasPatchParts())
         return false;
 
     return true;
@@ -68,15 +71,25 @@ std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(c
     return {std::move(positions), std::move(non_mapped)};
 }
 
+/// Step is always Filter or Expression
+struct PlanStepWithRequiredDAGPositions
+{
+    IQueryPlanStep * step;
+    /// Positions correspond to the outputs of the internal DAG.
+    /// For the FilterStep, it is before the removal of filter columns.
+    std::vector<bool> required_positions;
+};
+
 /// Returns a boolean mask which indicate if the header column is required.
 /// The required_output_positions is the same mask for the output header.
-/// There may be less DAG outputs than required_output_positions.size().
+/// The number of DAG outputs may differ from required_output_positions.size().
 std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
 {
     std::unordered_set<const ActionsDAG::Node *> required_nodes;
     std::stack<const ActionsDAG::Node *> stack;
 
-    for (size_t i = 0; i < dag.getOutputs().size(); ++i)
+    size_t num_matched_outputs = std::min(dag.getOutputs().size(), required_output_positions.size());
+    for (size_t i = 0; i < num_matched_outputs; ++i)
     {
         if (required_output_positions[i])
             stack.push(dag.getOutputs()[i]);
@@ -138,9 +151,11 @@ void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_posit
 
 struct SplitExpressionStepResult
 {
-    std::vector<bool> required_input_positions;
     ActionsDAG main_expression_step;
     ActionsDAG lazy_expression_step;
+
+    /// Those are available input positions for the next step (main branch).
+    std::vector<bool> available_input_positions;
 };
 
 /// Split if ActionsDAG can produce unused pair of input/output which only changes the order.
@@ -168,69 +183,179 @@ void removeDanglingNodes(ActionsDAG & dag)
     dag.removeUnusedActions();
 }
 
-SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, std::vector<bool> required_output_positions)
+/// This function transitively adds ActionsDAG::Node into the set, if all the arguments are already in set (or constants).
+/// It's useful because the main branch of lazy materialization can return more columns than actually required.
+/// As an example, for the query `select a from table prewhere b > 0 order by c limit 1`, only column `c` is required for ORDER BY,
+/// but the column `a` is returned as well (it's needed for PREWHERE).
+void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std::unordered_set<const ActionsDAG::Node *> & nodes)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child = 0;
+    };
+    std::stack<Frame> stack;
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (visited.contains(&node))
+            continue;
+
+        visited.insert(&node);
+        stack.push({&node});
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+
+            if (frame.next_child < frame.node->children.size())
+            {
+                const auto * child = frame.node->children[frame.next_child++];
+                if (visited.contains(child))
+                    continue;
+                visited.insert(child);
+                stack.push({child});
+                continue;
+            }
+
+            bool all_children_are_allowed = true;
+            for (const auto * child : frame.node->children)
+            {
+                if (nodes.contains(child))
+                    continue;
+
+                while (child->type == ActionsDAG::ActionType::ALIAS)
+                    child = child->children.front();
+
+                if (child->column)
+                    continue;
+
+                all_children_are_allowed = false;
+                break;
+            }
+            if (all_children_are_allowed && frame.node->type != ActionsDAG::ActionType::INPUT && !frame.node->column)
+                nodes.insert(frame.node);
+
+            stack.pop();
+        }
+    }
+}
+
+/// required_outputs are outputs of ActionsDAG, however required_inputs are inputs corresponding to the step input header.
+SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
 {
     const auto & expression = expression_step.getExpression();
+    const auto & inputs = expression.getInputs();
     const auto & outputs = expression.getOutputs();
 
+    const auto & header = *expression_step.getInputHeaders().front();
+    chassert(header.columns() == required_inputs.size());
+    chassert(outputs.size() == required_outputs.size());
+
+    const auto [header_positions, non_mapped] = mapInputsToHeaderPositions(inputs, header);
+
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        if (required_inputs[header_positions[i]])
+            split_nodes.insert(inputs[i]);
+    }
+
     for (size_t i = 0; i < outputs.size(); ++i)
     {
-        if (required_output_positions[i])
+        if (required_outputs[i])
             split_nodes.insert(outputs[i]);
     }
+    addRequiredInputDependenciesIntoNodesSet(expression, split_nodes);
+
+    // std::cerr << "split nodes: " << split_nodes.size() << std::endl;
+    // for (const auto * node : split_nodes)
+    //     std::cerr << "  " << node->result_name << std::endl;
+
     auto split_result = expression.split(split_nodes, true, true);
 
-    auto required_input_positions = getRequiredHeaderPositions(expression, *expression_step.getInputHeaders().front(), std::move(required_output_positions));
-    return { std::move(required_input_positions), std::move(split_result.first), std::move(split_result.second) };
+    std::vector<bool> new_required_inputs(expression_step.getOutputHeader()->columns(), false);
+    for (size_t ps = 0; ps < outputs.size(); ++ps)
+        if (split_nodes.contains(outputs[ps]))
+            new_required_inputs[ps] = true;
+
+    /// Used columns which are not DAG outputs should be forwarded to the input header.
+    size_t num_outputs = expression.getOutputs().size();
+    for (size_t i = 0; i < non_mapped.size(); ++i)
+        if (required_inputs[non_mapped[i]])
+            new_required_inputs[num_outputs + i] = true;
+
+    return { std::move(split_result.first), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
 struct SplitFilterResult
 {
-    std::vector<bool> required_input_positions;
     FilterDAGInfo main_filter_step;
     ActionsDAG lazy_expression_step;
+
+    /// Those are available input positions for the next step (main branch).
+    std::vector<bool> available_input_positions;
 };
 
-SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bool> required_output_positions)
+SplitFilterResult splitFilterStep(const FilterStep & filter_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
-
+    const auto & inputs = expression.getInputs();
     const auto & outputs = expression.getOutputs();
-    std::unordered_set<const ActionsDAG::Node *> split_nodes;
 
-    updateRequiredColumnsForFilterDAG(required_output_positions, filter_step);
+    const auto & header = *filter_step.getInputHeaders().front();
+    if (header.columns() != required_inputs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Header columns count does not match required inputs count");
+    if (outputs.size() != required_outputs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Outputs size does not match required outputs size");
+
+    const auto [header_positions, non_mapped] = mapInputsToHeaderPositions(inputs, header);
+
+    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    for (size_t i = 0; i < inputs.size(); ++i)
+        if (required_inputs[header_positions[i]])
+            split_nodes.insert(inputs[i]);
 
     for (size_t i = 0; i < outputs.size(); ++i)
     {
-        if (required_output_positions[i])
+        if (required_outputs[i])
             split_nodes.insert(outputs[i]);
     }
+    addRequiredInputDependenciesIntoNodesSet(expression, split_nodes);
 
     auto split_result = expression.split(split_nodes, true, true);
 
-    auto required_input_positions = getRequiredHeaderPositions(expression, *filter_step.getInputHeaders().front(), std::move(required_output_positions));
+    std::vector<bool> new_required_inputs(filter_step.getOutputHeader()->columns() + (filter_step.removesFilterColumn() ? 1 : 0), false);
+    for (size_t ps = 0; ps < outputs.size(); ++ps)
+        if (split_nodes.contains(outputs[ps]))
+            new_required_inputs[ps] = true;
+
+    /// Used columns which are not DAG outputs should be forwarded to the input header.
+    size_t num_outputs = expression.getOutputs().size();
+    for (size_t i = 0; i < non_mapped.size(); ++i)
+        if (required_inputs[non_mapped[i]])
+            new_required_inputs[num_outputs + i] = true;
+
+    if (filter_step.removesFilterColumn())
+    {
+        const auto & node = expression.findInOutputs(name);
+        for (size_t i = 0; i < outputs.size(); ++i)
+        {
+            if (outputs[i] == &node)
+            {
+                new_required_inputs.erase(new_required_inputs.begin() + i);
+                break;
+            }
+        }
+    }
 
     FilterDAGInfo filter_dag_info;
     filter_dag_info.actions = std::move(split_result.first);
     filter_dag_info.column_name = name;
     filter_dag_info.do_remove_column = filter_step.removesFilterColumn();
 
-    return { std::move(required_input_positions), std::move(filter_dag_info), std::move(split_result.second) };
-}
-
-std::unique_ptr<LazilyReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
-{
-    const auto & cols = reading_step.getOutputHeader()->getColumnsWithTypeAndName();
-    chassert(cols.size() == required_output_positions.size());
-
-    NameSet required_names;
-    for (size_t i = 0; i < cols.size(); ++i)
-        if (required_output_positions[i])
-            required_names.insert(cols[i].name);
-
-    return reading_step.keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
+    return { std::move(filter_dag_info), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
 ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
@@ -284,12 +409,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (!limit_step)
         return false;
 
-    /// Save the expected output header before restructuring.
-    /// After lazy materialization, the result plan must produce the same header.
-    /// This may not hold when PREWHERE adds extra columns to ReadFromMergeTree
-    /// that are not consumed by the split expression DAGs (they pass through and pollute the output).
-    auto expected_output_header = root.step->getOutputHeader();
-
     /// it's not clear how many values will be read for LIMIT WITH TIES, so disable it
     if (limit_step->withTies())
         return false;
@@ -318,6 +437,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         return false;
 
     const auto & sorting_header = *sorting_step->getOutputHeader();
+    /// At this moment, required_columns are corresponding to output header columns of every step.
     std::vector<bool> required_columns(sorting_header.columns(), false);
 
     for (const auto & descr : sorting_step->getSortDescription())
@@ -325,22 +445,40 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     bool has_filter = false;
 
+    std::vector<PlanStepWithRequiredDAGPositions> steps_to_split;
+
     auto * node = sorting_node->children.front();
     while (!node->children.empty())
     {
         IQueryPlanStep * step = node->step.get();
 
+        PlanStepWithRequiredDAGPositions step_to_split;
+        step_to_split.step = step;
+
+        // std::cerr << "::: req columns (" << required_columns.size() << ") [";
+        // for (auto && required_column : required_columns)
+        //     std::cerr << required_column << " ";
+        // std::cerr << "]\n";
+
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(step))
-            required_columns = getRequiredHeaderPositions(expr_step->getExpression(), *expr_step->getInputHeaders().front() , std::move(required_columns));
+        {
+            const auto & expr = expr_step->getExpression();
+            /// The number of DAG outputs can be less than the number of columns in the header.
+            step_to_split.required_positions.insert(step_to_split.required_positions.end(), required_columns.begin(), required_columns.begin() + expr.getOutputs().size());
+            required_columns = getRequiredHeaderPositions(expr, *expr_step->getInputHeaders().front() , std::move(required_columns));
+        }
         else if (const auto * filter_step = typeid_cast<FilterStep *>(step))
         {
             updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
-            required_columns = getRequiredHeaderPositions(filter_step->getExpression(), *filter_step->getInputHeaders().front(), std::move(required_columns));
+            const auto & expr = filter_step->getExpression();
+            step_to_split.required_positions.insert(step_to_split.required_positions.end(), required_columns.begin(), required_columns.begin() + expr.getOutputs().size());
+            required_columns = getRequiredHeaderPositions(expr, *filter_step->getInputHeaders().front(), std::move(required_columns));
             has_filter = true;
         }
         else
             return false;
 
+        steps_to_split.push_back(std::move(step_to_split));
         node = node->children.front();
     }
 
@@ -356,47 +494,78 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (reading_in_order && !has_filter)
         return false;
 
-    auto lazy_reading = removeUnusedColumnsFromReadingStep(*read_from_merge_tree, required_columns);
-    if (!lazy_reading)
-        return false;
+    std::unique_ptr<LazilyReadFromMergeTree> lazy_reading;
+    {
+        auto initial_header = read_from_merge_tree->getOutputHeader();
+        const auto & cols = initial_header->getColumnsWithTypeAndName();
+        chassert(cols.size() == required_columns.size());
+
+        NameSet required_names;
+        for (size_t i = 0; i < cols.size(); ++i)
+            if (required_columns[i])
+                required_names.insert(cols[i].name);
+
+        /// For FINAL, the merge transform needs sorting key, version, and is_deleted columns.
+        /// These must stay in the main read, not be deferred to lazy materialization.
+        if (read_from_merge_tree->isQueryWithFinal())
+        {
+            const auto & merging_params = read_from_merge_tree->getMergeTreeData().merging_params;
+            const auto & metadata = read_from_merge_tree->getStorageMetadata();
+            for (const auto & column : metadata->getColumnsRequiredForSortingKey())
+                required_names.insert(column);
+            if (!merging_params.version_column.empty())
+                required_names.insert(merging_params.version_column);
+            if (!merging_params.is_deleted_column.empty())
+                required_names.insert(merging_params.is_deleted_column);
+        }
+
+        lazy_reading = read_from_merge_tree->keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
+        if (!lazy_reading)
+            return false;
+
+        const auto & header = *read_from_merge_tree->getOutputHeader();
+        /// At this moment, required_columns are corresponding to available columns in the input header of every step.
+        /// This is needed because read_from_merge_tree can return more columns than required.
+        required_columns.assign(cols.size(), true);
+        for (size_t i = 0; i < cols.size(); ++i)
+            required_columns[i] = header.has(cols[i].name);
+
+        // std::cerr << ".. Main header " << read_from_merge_tree->getOutputHeader()->dumpNames() << std::endl;
+        // std::cerr << ".. Lazy header " << lazy_reading->getOutputHeader()->dumpNames() << std::endl;
+    }
 
     std::list<std::variant<ActionsDAG, FilterDAGInfo>> main_steps;
     std::list<ActionsDAG> lazy_steps;
 
-    required_columns.assign(sorting_header.columns(), false);
-
-    for (const auto & descr : sorting_step->getSortDescription())
-        required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
-
-    node = sorting_node->children.front();
-    while (!node->children.empty())
+    for (const auto & step_to_split : steps_to_split | std::views::reverse)
     {
-        IQueryPlanStep * step = node->step.get();
+        // std::cerr << " req columns (" << required_columns.size() << ") [";
+        // for (auto && required_column : required_columns)
+        //     std::cerr << required_column << " ";
+        // std::cerr << "]\n";
 
-        if (const auto * expr_step = typeid_cast<ExpressionStep *>(step))
+        if (const auto * expr_step = typeid_cast<ExpressionStep *>(step_to_split.step))
         {
             // std::cerr << "split_s: " << expr_step->getExpression().dumpDAG() << std::endl;
-            auto split_result = splitExpressionStep(*expr_step, std::move(required_columns));
+            auto split_result = splitExpressionStep(*expr_step, step_to_split.required_positions, required_columns);
             // std::cerr << "split_result l: " << split_result.main_expression_step.dumpDAG() << std::endl;
             // std::cerr << "split_result r: " << split_result.lazy_expression_step.dumpDAG() << std::endl;
-            main_steps.push_front(std::move(split_result.main_expression_step));
-            lazy_steps.push_front(std::move(split_result.lazy_expression_step));
-            required_columns = std::move(split_result.required_input_positions);
+            main_steps.push_back(std::move(split_result.main_expression_step));
+            lazy_steps.push_back(std::move(split_result.lazy_expression_step));
+            required_columns = std::move(split_result.available_input_positions);
         }
-        else if (const auto * filter_step = typeid_cast<FilterStep *>(step))
+        else if (const auto * filter_step = typeid_cast<FilterStep *>(step_to_split.step))
         {
             // std::cerr << "fsplit_s: " << filter_step->getExpression().dumpDAG() << std::endl;
-            auto split_result = splitFilterStep(*filter_step, std::move(required_columns));
+            auto split_result = splitFilterStep(*filter_step, step_to_split.required_positions, required_columns);
             // std::cerr << "fsplit_result l: " << split_result.main_filter_step.actions.dumpDAG() << std::endl;
             // std::cerr << "fsplit_result r: " << split_result.lazy_expression_step.dumpDAG() << std::endl;
-            main_steps.push_front(std::move(split_result.main_filter_step));
-            lazy_steps.push_front(std::move(split_result.lazy_expression_step));
-            required_columns = std::move(split_result.required_input_positions);
+            main_steps.push_back(std::move(split_result.main_filter_step));
+            lazy_steps.push_back(std::move(split_result.lazy_expression_step));
+            required_columns = std::move(split_result.available_input_positions);
         }
         else
             return false;
-
-        node = node->children.front();
     }
 
     QueryPlan main_plan;
@@ -476,23 +645,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         if (!lazy_steps.empty())
             removeDanglingNodes(dag);
         result_plan.addStep(std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag)));
-    }
-
-    /// When PREWHERE adds extra columns to ReadFromMergeTree that are not consumed
-    /// by the split expression DAGs, they pass through and pollute the output header.
-    /// This causes block structure mismatch in UnionStep with parallel replicas.
-    /// Add a projection step to strip extra columns if needed.
-    auto result_header = result_plan.getCurrentHeader();
-    if (result_header->columns() != expected_output_header->columns())
-    {
-        Names expected_columns;
-        expected_columns.reserve(expected_output_header->columns());
-        for (const auto & col : *expected_output_header)
-            expected_columns.push_back(col.name);
-
-        ActionsDAG projection_dag(result_header->getColumnsWithTypeAndName());
-        projection_dag.getOutputs() = projection_dag.findInOutputs(expected_columns);
-        result_plan.addStep(std::make_unique<ExpressionStep>(result_header, std::move(projection_dag)));
     }
 
     query_plan.replaceNodeWithPlan(&root, std::move(result_plan));

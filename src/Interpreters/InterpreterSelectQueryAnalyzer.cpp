@@ -184,6 +184,8 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     // We should build sets and create `CreatingSetsStep` only in the original plan. The automatic parallel replicas optimization happens before building sets,
     // so even if we decide to use the plan with parallel replicas, we will substitute it in place of the original plan and then build sets.
     optimization_settings.build_sets = false;
+    // CTEs materialization should be done in the original plan, but not in the plan with parallel replicas.
+    optimization_settings.materialize_ctes = false;
     // If the parallel replicas plan will be chosen, the index analysis result will be reused from the single-replica plan.
     optimization_settings.query_plan_optimize_primary_key = false;
     // Depends on PK optimizations that we don't perform here
@@ -382,12 +384,6 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
 {
     planner.addStorageLimits(storage_limits);
-}
-
-void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const
-{
-    for (const auto & used_row_policy : planner.getUsedRowPolicies())
-        elem.used_row_policies.emplace(used_row_policy);
 }
 
 void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
