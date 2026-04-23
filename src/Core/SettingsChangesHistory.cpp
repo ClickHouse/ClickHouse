@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+            {"enable_software_prefetch_in_join", false, true, "Enable use of software prefetch in hash join probe phase."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -78,7 +79,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_inline_views", false, false, "New setting"},
             {"distributed_cache_write_request_max_tries", 10, 10, "New setting"},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
-            {"enable_software_prefetch_in_join", false, true, "Enable use of software prefetch in hash join probe phase."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
