@@ -2,6 +2,8 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Interpreters/FileCache/FileCacheKey.h>
+#include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/ReadSettings.h>
 
 #include <functional>
@@ -115,9 +117,27 @@ public:
     void needDiskCache(FileCachePtr cache, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
     void needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
+    /// Overload with a custom cache key and origin, bypassing the default `FileCacheKey::fromPath` derivation.
+    /// Used by `StorageObjectStorageSource` where the cache key is `SipHash(path + etag)`.
+    void needDiskCache(
+        FileCachePtr cache,
+        FileCacheKey cache_key,
+        FileCacheOriginInfo origin,
+        FilesystemCacheSettings cache_settings,
+        std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
+
     /// -- Memory cache stage --
     void needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix);
     void needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings);
+
+    /// Overload with a fully custom page cache key (path + file_version), bypassing the default
+    /// `cache_path_prefix + object.remote_path` derivation.
+    /// Used by `StorageObjectStorageSource` where the key is `"s3:" + path` with `"etag:" + etag`.
+    void needMemoryCache(
+        std::shared_ptr<PageCache> cache,
+        String custom_cache_path,
+        String custom_file_version,
+        PageCacheSettings page_cache_settings);
 
     /// -- Distributed cache stage (sits between Gather and MemoryCache) --
     /// Implementation is in the DistributedCache module (ENABLE_DISTRIBUTED_CACHE).
@@ -172,6 +192,8 @@ private:
         FileCachePtr cache;
         std::shared_ptr<FilesystemCacheLog> cache_log;
         std::optional<FilesystemCacheSettings> cache_settings;
+        std::optional<FileCacheKey> custom_cache_key;       /// Override per-object cache key
+        std::optional<FileCacheOriginInfo> custom_origin;   /// Override origin
     };
 
     struct MemoryCacheStage
@@ -179,6 +201,8 @@ private:
         std::shared_ptr<PageCache> cache;
         String cache_path_prefix;
         std::optional<PageCacheSettings> page_cache_settings;
+        std::optional<String> custom_cache_path;        /// Override the full cache key path
+        std::optional<String> custom_file_version;      /// Override the file_version in the cache key
     };
 
     struct AsyncPrefetchStage

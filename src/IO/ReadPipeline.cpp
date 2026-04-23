@@ -71,22 +71,51 @@ void ReadPipeline::needGather()
 
 void ReadPipeline::needDiskCache(FileCachePtr cache, std::shared_ptr<FilesystemCacheLog> cache_log)
 {
-    disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::nullopt};
+    disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::nullopt, .custom_cache_key = std::nullopt, .custom_origin = std::nullopt};
 }
 
 void ReadPipeline::needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log)
 {
-    disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::move(cache_settings)};
+    disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::move(cache_settings), .custom_cache_key = std::nullopt, .custom_origin = std::nullopt};
+}
+
+void ReadPipeline::needDiskCache(
+    FileCachePtr cache,
+    FileCacheKey cache_key,
+    FileCacheOriginInfo origin,
+    FilesystemCacheSettings cache_settings,
+    std::shared_ptr<FilesystemCacheLog> cache_log)
+{
+    disk_cache = DiskCacheStage{
+        .cache = std::move(cache),
+        .cache_log = std::move(cache_log),
+        .cache_settings = std::move(cache_settings),
+        .custom_cache_key = std::move(cache_key),
+        .custom_origin = std::move(origin)};
 }
 
 void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix)
 {
-    memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix), .page_cache_settings = std::nullopt};
+    memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix), .page_cache_settings = std::nullopt, .custom_cache_path = {}, .custom_file_version = {}};
 }
 
 void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings)
 {
-    memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix), .page_cache_settings = std::move(page_cache_settings)};
+    memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix), .page_cache_settings = std::move(page_cache_settings), .custom_cache_path = {}, .custom_file_version = {}};
+}
+
+void ReadPipeline::needMemoryCache(
+    std::shared_ptr<PageCache> cache,
+    String custom_cache_path,
+    String custom_file_version,
+    PageCacheSettings page_cache_settings)
+{
+    memory_cache = MemoryCacheStage{
+        .cache = std::move(cache),
+        .cache_path_prefix = {},
+        .page_cache_settings = std::move(page_cache_settings),
+        .custom_cache_path = std::move(custom_cache_path),
+        .custom_file_version = std::move(custom_file_version)};
 }
 
 void ReadPipeline::needDistributedCache()
@@ -159,12 +188,14 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                      captured_settings = settings,
                      fs_cache_settings,
                      cache = disk_cache->cache,
-                     cache_log = disk_cache->cache_log](
+                     cache_log = disk_cache->cache_log,
+                     custom_key = disk_cache->custom_cache_key,
+                     custom_origin = disk_cache->custom_origin](
                         bool restricted_seek, const StoredObject & object) mutable
                         -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    auto cache_key = FileCacheKey::fromPath(object.remote_path);
-                    auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
+                    auto cache_key = custom_key.value_or(FileCacheKey::fromPath(object.remote_path));
+                    auto origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
                     auto impl_creator = [storage, read_hint, captured_settings, restricted_seek, object]() mutable
                         -> std::unique_ptr<ReadBufferFromFileBase>
@@ -196,12 +227,14 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                      captured_settings = settings,
                      fs_cache_settings,
                      cache = disk_cache->cache,
-                     cache_log = disk_cache->cache_log](
+                     cache_log = disk_cache->cache_log,
+                     custom_key = disk_cache->custom_cache_key,
+                     custom_origin = disk_cache->custom_origin](
                         bool restricted_seek, const StoredObject & object) mutable
                         -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    auto cache_key = FileCacheKey::fromPath(object.remote_path);
-                    auto origin = cache->getCommonOriginWithSegmentKeyType(object.local_path);
+                    auto cache_key = custom_key.value_or(FileCacheKey::fromPath(object.remote_path));
+                    auto origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
                     auto impl_creator = [pipeline_creator, captured_settings, restricted_seek, object]() mutable
                         -> std::unique_ptr<ReadBufferFromFileBase>
@@ -307,8 +340,18 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 
     if (memory_cache && memory_cache->cache)
     {
-        const auto & first_object = source->objects.at(0);
-        PageCacheKey cache_key{.path = memory_cache->cache_path_prefix + first_object.remote_path};
+        PageCacheKey cache_key;
+        if (memory_cache->custom_cache_path)
+        {
+            cache_key.path = *memory_cache->custom_cache_path;
+            if (memory_cache->custom_file_version)
+                cache_key.file_version = *memory_cache->custom_file_version;
+        }
+        else
+        {
+            const auto & first_object = source->objects.at(0);
+            cache_key.path = memory_cache->cache_path_prefix + first_object.remote_path;
+        }
 
         auto page_cache_settings = memory_cache->page_cache_settings.value_or(settings.getPageCacheSettings());
         impl = std::make_unique<CachedInMemoryReadBufferFromFile>(

@@ -14,6 +14,7 @@
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadPipeline.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
@@ -917,104 +918,90 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             context_->getDistributedCacheLog(),
             /* include_credentials_in_cache_key */true);
     }
-    else if (use_filesystem_cache)
-#else
-    if (use_filesystem_cache)
 #endif
-    {
-        chassert(object_info.metadata.has_value());
-        if (object_info.metadata->etag.empty())
-        {
-            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
-        }
-        else
-        {
-            SipHash hash;
-            hash.update(object_info.getPath());
-            hash.update(object_info.metadata->etag);
 
-            const auto cache_key = FileCacheKey::fromKey(hash.get128());
-            auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
-
-            auto read_buffer_creator = [
-                path = object_info.getPath(),
-                modified_read_settings,
-                object_size,
-                object_storage]()
-            {
-                return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings, {}, /* use_external_buffer */ true, /* restrict_seek */ true);
-            };
-
-            impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
-                object_info.getPath(),
-                cache_key,
-                cache,
-                FileCache::getCommonOrigin(),
-                read_buffer_creator,
-                modified_read_settings.getFilesystemCacheSettings(),
-                modified_read_settings.remote_fs_buffer_size,
-                modified_read_settings.local_fs_buffer_size,
-                std::string(CurrentThread::getQueryId()),
-                object_size,
-                /* allow_seeks */true,
-                /* use_external_buffer */use_async_buffer,
-                /* read_until_position */std::nullopt,
-                context_->getFilesystemCacheLog());
-
-            LOG_TRACE(
-                log,
-                "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
-                filesystem_cache_name,
-                object_info.getPath(),
-                object_info.metadata->etag,
-                toString(hash.get128()));
-        }
-    }
-
+    /// When NOT using distributed cache, build the read buffer chain via ReadPipeline.
     if (!impl)
     {
-        impl = object_storage->readObject(
-            StoredObject(object_info.getPath(), "", object_size),
-            modified_read_settings, {}, /* use_external_buffer */ use_async_buffer, /* restrict_seek */ false);
+        ReadPipeline pipeline;
+
+        StoredObject stored_object(object_info.getPath(), "", object_size);
+        pipeline.setSource(object_storage, StoredObjects{stored_object});
+
+        /// Filesystem cache
+        if (use_filesystem_cache)
+        {
+            chassert(object_info.metadata.has_value());
+            if (object_info.metadata->etag.empty())
+            {
+                LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
+            }
+            else
+            {
+                SipHash hash;
+                hash.update(object_info.getPath());
+                hash.update(object_info.metadata->etag);
+
+                auto cache_key = FileCacheKey::fromKey(hash.get128());
+                auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
+
+                pipeline.needDiskCache(
+                    cache,
+                    cache_key,
+                    FileCache::getCommonOrigin(),
+                    modified_read_settings.getFilesystemCacheSettings(),
+                    context_->getFilesystemCacheLog());
+
+                LOG_TRACE(
+                    log,
+                    "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
+                    filesystem_cache_name,
+                    object_info.getPath(),
+                    object_info.metadata->etag,
+                    toString(hash.get128()));
+            }
+        }
+
+        /// Gather is needed so the disk cache wraps the source per-object.
+        pipeline.needGather();
+
+        /// Page cache
+        if (use_page_cache)
+        {
+            pipeline.needMemoryCache(
+                effective_read_settings.page_cache,
+                "s3:" + object_info.getPath(),
+                "etag:" + object_info.metadata->etag,
+                modified_read_settings.getPageCacheSettings());
+        }
+
+        /// Async prefetch
+        if (use_async_buffer)
+        {
+            auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+            pipeline.needAsyncPrefetch(
+                reader,
+                context_->getAsyncReadCounters(),
+                context_->getFilesystemReadPrefetchesLog());
+        }
+
+        /// Prefer bigger buffer size when filesystem cache is active
+        if (modified_read_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
+            modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
+                modified_read_settings.remote_fs_buffer_size,
+                modified_read_settings.prefetch_buffer_size);
+
+        pipeline.setReadSettings(modified_read_settings);
+
+        LOG_TRACE(
+            log, "Downloading object {} of size {} {} initial prefetch (pipeline: {})",
+            object_info.getPath(), object_size, use_prefetch ? "with" : "without",
+            pipeline.describe());
+
+        impl = pipeline.build();
     }
 
-    if (use_page_cache)
-    {
-        PageCacheKey key = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
-        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(key, effective_read_settings.page_cache, std::move(impl), modified_read_settings.getPageCacheSettings());
-    }
-
-    if (!use_async_buffer)
-    {
-        LOG_TRACE(log, "Downloading object {} of size {} without initial prefetch", object_info.getPath(), object_size);
-        return impl;
-    }
-
-    bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size
-        && impl->isCached();
-
-    size_t buffer_size = prefer_bigger_buffer_size
-        ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, effective_read_settings.prefetch_buffer_size)
-        : effective_read_settings.remote_fs_buffer_size;
-
-    if (object_size)
-        buffer_size = std::min<size_t>(object_size, buffer_size);
-
-    LOG_TRACE(
-        log, "Downloading object {} of size {} {} initial prefetch (buffer size: {})",
-        object_info.getPath(), object_size, use_prefetch ? "with" : "without", buffer_size);
-
-    auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-    impl = std::make_unique<AsynchronousBoundedReadBuffer>(
-        std::move(impl),
-        reader,
-        modified_read_settings,
-        buffer_size,
-        modified_read_settings.remote_read_min_bytes_for_seek,
-        context_->getAsyncReadCounters(),
-        context_->getFilesystemReadPrefetchesLog());
-
-    if (use_prefetch && !impl->supportsReadAt())
+    if (use_prefetch && impl && !impl->supportsReadAt())
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
