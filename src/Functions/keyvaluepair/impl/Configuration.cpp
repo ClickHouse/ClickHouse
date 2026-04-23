@@ -99,22 +99,6 @@ void ConfigurationFactory::validate(char key_value_delimiter, char quoting_chara
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, quoting_character conflicts with pair delimiters");
     }
-
-    /// The state handler uses `find_first_symbols_or_null` with a runtime needle set built from
-    /// the configured delimiters and (unless the strategy is ACCEPT) the quoting character.
-    /// That helper's SIMD implementation (`mm_is_in_execute` in `base/find_symbols.h`) iterates
-    /// a fixed-size 16-slot needle array whose unused entries are zero-initialised, so it
-    /// unconditionally stops on NUL bytes in the haystack regardless of the declared needles.
-    /// If the quoting character is NUL and the strategy is ACCEPT, `NeedleFactory` deliberately
-    /// omits NUL from the needle set to skip the quoting branch, but the SIMD still reports a
-    /// match on NUL bytes in the input. The state handler then reaches the "unreachable" ACCEPT
-    /// branch and throws `LOGICAL_ERROR: 'Failed to handle unexpected quoting character'`.
-    /// Reject NUL as a quoting character here to catch the problem at configuration time with
-    /// a `BAD_ARGUMENTS` instead of at runtime with a logical error.
-    if (quoting_character == '\0')
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, quoting_character cannot be the NUL byte");
-    }
 }
 
 }

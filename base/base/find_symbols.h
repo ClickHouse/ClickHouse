@@ -126,13 +126,18 @@ inline std::array<__m128i, 16u> mm_is_in_prepare(const char * symbols, size_t nu
     return result;
 }
 
-inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, 16u> & needles)
+/// NOTE: `num_chars` must be passed explicitly. Unused entries in `needles` are
+/// zero-initialised (see `mm_is_in_prepare`), so iterating the whole array would
+/// unconditionally match NUL bytes in `bytes` that the caller did not ask for.
+/// Zero is just an ordinary byte like the other 255; the compare must respect
+/// the actual needle count.
+inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, 16u> & needles, size_t num_chars)
 {
     __m128i accumulator = _mm_setzero_si128();
 
-    for (const auto & needle : needles)
+    for (size_t i = 0; i < num_chars; ++i)
     {
-        __m128i eq = _mm_cmpeq_epi8(bytes, needle);
+        __m128i eq = _mm_cmpeq_epi8(bytes, needles[i]);
         accumulator = _mm_or_si128(accumulator, eq);
     }
 
@@ -195,7 +200,7 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
     {
         __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
 
-        __m128i eq = mm_is_in_execute(bytes, needles);
+        __m128i eq = mm_is_in_execute(bytes, needles, num_chars);
 
         uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
         if (bit_mask)
@@ -248,7 +253,7 @@ inline const char * find_last_symbols_sse2(const char * const begin, const char 
     {
         __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos - 16));
 
-        __m128i eq = mm_is_in_execute(bytes, needles);
+        __m128i eq = mm_is_in_execute(bytes, needles, num_chars);
 
         uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
         if (bit_mask)
