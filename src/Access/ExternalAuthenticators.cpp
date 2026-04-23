@@ -1,7 +1,10 @@
+#include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
 #include <Access/SettingsAuthResponseParser.h>
 #include <Access/resolveSetting.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
@@ -12,6 +15,8 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <map>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -267,7 +272,6 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
 
     return http_auth_params;
 }
-
 }
 
 void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix)
@@ -285,6 +289,9 @@ void ExternalAuthenticators::resetImpl()
     ldap_client_params_blueprint.clear();
     ldap_caches.clear();
     kerberos_params.reset();
+    token_processors.clear();
+    access_token_to_username_cache.clear();
+    username_to_access_token_cache.clear();
 }
 
 void ExternalAuthenticators::reset()
@@ -293,10 +300,41 @@ void ExternalAuthenticators::reset()
     resetImpl();
 }
 
-void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log)
+void parseTokenProcessors(std::unordered_map<String, std::unique_ptr<ITokenProcessor>> & token_processors,
+                        const Poco::Util::AbstractConfiguration & config,
+                        const String & token_processors_config,
+                        LoggerPtr log)
+{
+    Poco::Util::AbstractConfiguration::Keys token_processors_keys;
+    config.keys(token_processors_config, token_processors_keys);
+
+    token_processors.clear();
+
+    for (const auto & processor : token_processors_keys)
+    {
+        String prefix = fmt::format("{}.{}", token_processors_config, processor);
+        try
+        {
+            token_processors[processor] = ITokenProcessor::parseTokenProcessor(config, prefix, processor);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Could not parse token processor" + backQuote(processor));
+        }
+    }
+}
+
+bool ExternalAuthenticators::isTokenAuthEnabled() const
+{
+    std::lock_guard lock(mutex);
+    return token_auth_enabled;
+}
+
+void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log, bool token_auth_enabled_)
 {
     std::lock_guard lock(mutex);
     resetImpl();
+    token_auth_enabled = token_auth_enabled_;
 
     Poco::Util::AbstractConfiguration::Keys all_keys;
     config.keys("", all_keys);
@@ -304,8 +342,12 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     std::size_t ldap_servers_key_count = 0;
     std::size_t kerberos_keys_count = 0;
     std::size_t http_auth_server_keys_count = 0;
+    std::size_t jwt_validators_count = 0;
+    std::size_t token_processors_count = 0;
 
     const String http_auth_servers_config = "http_authentication_servers";
+    const String jwt_validators_config = "jwt_validators";
+    const String token_processors_config = "token_processors";
 
     for (auto key : all_keys)
     {
@@ -318,6 +360,8 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         ldap_servers_key_count += (key == "ldap_servers");
         kerberos_keys_count += (key == "kerberos");
         http_auth_server_keys_count += (key == http_auth_servers_config);
+        jwt_validators_count += (key == jwt_validators_config);
+        token_processors_count += (key == token_processors_config);
     }
 
     if (ldap_servers_key_count > 1)
@@ -328,6 +372,12 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
     if (http_auth_server_keys_count > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple http_authentication_servers sections are not allowed");
+
+    if (jwt_validators_count > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple {} sections are not allowed", jwt_validators_config);
+
+    if (token_processors_count > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple {} sections are not allowed", token_processors_config);
 
     Poco::Util::AbstractConfiguration::Keys http_auth_server_names;
     config.keys(http_auth_servers_config, http_auth_server_names);
@@ -383,6 +433,11 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     {
         tryLogCurrentException(log, "Could not parse Kerberos section");
     }
+
+    if (token_auth_enabled)
+        parseTokenProcessors(token_processors, config, token_processors_config, log);
+    else
+        LOG_INFO(log, "Token authentication is disabled, skipping token processors configuration");
 }
 
 static UInt128 computeParamsHash(const LDAPClient::Params & params, const LDAPClient::RoleSearchParamsList * role_search_params)
@@ -551,7 +606,7 @@ GSSAcceptorContext::Params ExternalAuthenticators::getKerberosParams() const
     return kerberos_params.value();
 }
 
-HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const String& server) const
+HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const String & server) const
 {
     std::lock_guard lock{mutex};
 
@@ -559,6 +614,121 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
     if (it == http_auth_servers.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP server '{}' is not configured", server);
     return it->second;
+}
+
+bool ExternalAuthenticators::checkCredentialsAgainstProcessor(const ITokenProcessor & processor,
+                                                              TokenCredentials & credentials) const
+{
+    if (processor.resolveAndValidate(credentials))
+    {
+        TokenCacheEntry cache_entry;
+        cache_entry.user_name = credentials.getUserName();
+        cache_entry.external_roles = credentials.getGroups();
+
+        auto default_expiration_ts = std::chrono::system_clock::now()
+                                     + std::chrono::seconds(processor.getTokenCacheLifetime());
+
+        if (credentials.getExpiresAt().has_value())
+        {
+            if (credentials.getExpiresAt().value() < default_expiration_ts)
+                cache_entry.expires_at = credentials.getExpiresAt().value();
+            else
+            {
+                LOG_TRACE(getLogger("AccessTokenAuthentication"), "Token for user {} expires after default cache lifetime; using default TTL by {}", credentials.getUserName(), processor.getProcessorName());
+                cache_entry.expires_at = default_expiration_ts;
+            }
+        }
+        else
+        {
+            cache_entry.expires_at = default_expiration_ts;
+        }
+
+        LOG_DEBUG(getLogger("AccessTokenAuthentication"), "Authenticated user {} with access token by {}", credentials.getUserName(), processor.getProcessorName());
+
+        // CHeck if a cache entry for the same user but with another token exists -- old cache entry is considered outdated and removed
+        auto old_token_iter = username_to_access_token_cache.find(cache_entry.user_name);
+        if (old_token_iter != username_to_access_token_cache.end())
+        {
+            access_token_to_username_cache.erase(old_token_iter->second);
+            username_to_access_token_cache.erase(old_token_iter);
+        }
+
+        access_token_to_username_cache[credentials.getToken()] = cache_entry;
+        username_to_access_token_cache[cache_entry.user_name] = credentials.getToken();
+        LOG_TRACE(getLogger("AccessTokenAuthentication"), "Cache entry for user {} added", cache_entry.user_name);
+
+        return true;
+    }
+    LOG_TRACE(getLogger("AccessTokenAuthentication"), "Failed authentication with access token by {}", processor.getProcessorName());
+
+    return false;
+}
+
+bool ExternalAuthenticators::checkTokenCredentials(const TokenCredentials & credentials, const String & processor_name, const String & jwt_claims) const
+{
+    std::lock_guard lock{mutex};
+
+    if (!token_auth_enabled)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Token authentication is disabled");
+
+    if (token_processors.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Token authentication is not configured");
+
+    /// Per-user claims restriction applies only to JWT processors; opaque/access token processors ignore it.
+    auto check_claims_if_required = [&](const ITokenProcessor & processor) -> bool
+    {
+        if (jwt_claims.empty())
+            return true;
+        if (!processor.supportsJwtClaimsRestriction())
+            return true;
+        return processor.checkClaims(credentials, jwt_claims);
+    };
+
+    /// lookup token in local cache if not expired.
+    auto cached_entry_iter = access_token_to_username_cache.find(credentials.getToken());
+    if (cached_entry_iter != access_token_to_username_cache.end())
+    {
+        if (cached_entry_iter->second.expires_at <= std::chrono::system_clock::now()) // Token found in cache, but already outdated -- need to remove it.
+        {
+            const auto expired_user_name = cached_entry_iter->second.user_name;
+            LOG_TRACE(getLogger("AccessTokenAuthentication"), "Cache entry for user {} expired, removing", expired_user_name);
+            access_token_to_username_cache.erase(cached_entry_iter);
+            username_to_access_token_cache.erase(expired_user_name);
+        }
+        else
+        {
+            const auto & user_data = cached_entry_iter->second;
+            const_cast<TokenCredentials &>(credentials).setUserName(user_data.user_name);
+            const_cast<TokenCredentials &>(credentials).setGroups(user_data.external_roles);
+            LOG_TRACE(getLogger("AccessTokenAuthentication"), "Cache entry for user {} found, using it to authenticate", cached_entry_iter->second.user_name);
+            if (!jwt_claims.empty())
+            {
+                if (processor_name.empty())
+                    return false;
+                const auto it = token_processors.find(processor_name);
+                if (it == token_processors.end() || !check_claims_if_required(*it->second))
+                    return false;
+            }
+            return true;
+        }
+    }
+
+    if (processor_name.empty())
+    {
+        for (const auto & it : token_processors)
+        {
+            if (checkCredentialsAgainstProcessor(*it.second, const_cast<TokenCredentials &>(credentials)))
+                return check_claims_if_required(*it.second);
+        }
+    }
+    else
+    {
+        const auto it = token_processors.find(processor_name);
+        if (it != token_processors.end() && checkCredentialsAgainstProcessor(*it->second, const_cast<TokenCredentials &>(credentials)))
+            return check_claims_if_required(*it->second);
+    }
+
+    return false;
 }
 
 bool ExternalAuthenticators::checkHTTPBasicCredentials(
