@@ -1143,6 +1143,7 @@ class FailureReason(enum.Enum):
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
     NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
+    LINUX_ONLY = "supported only on Linux"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1665,6 +1666,69 @@ def load_settings_from_file(path: str, *, kind: str) -> Dict[str, object]:
     return parse_settings_cli_blob(content)
 
 
+RANDOM_SETTINGS_DIAGNOSTICS_DEFAULT_DIR = "/tmp/clickhouse-random-settings-diagnostics"
+RANDOM_SETTINGS_DIAGNOSTICS_FILE = "random_settings_failures.jsonl"
+RANDOM_SETTINGS_DIAGNOSTICS_RESULTS_FILE = "random_settings_diagnostics_results.jsonl"
+
+
+def get_random_settings_diagnostics_path(args):
+    return os.path.join(
+        args.random_settings_diagnostics_dir, RANDOM_SETTINGS_DIAGNOSTICS_FILE
+    )
+
+
+def get_random_settings_diagnostics_results_path(args):
+    return os.path.join(
+        args.random_settings_diagnostics_dir, RANDOM_SETTINGS_DIAGNOSTICS_RESULTS_FILE
+    )
+
+
+def save_random_settings_artifact(args, test_name, settings, mt_settings):
+    """Append a failed test's random settings to the diagnostics JSONL file."""
+    entry = {
+        "test_name": test_name,
+        "settings": {k: str(v) for k, v in settings.items()},
+        "merge_tree_settings": {k: str(v) for k, v in mt_settings.items()},
+    }
+    path = get_random_settings_diagnostics_path(args)
+    line = json.dumps(entry, ensure_ascii=False)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def load_random_settings_artifacts(args):
+    """Read all entries from the diagnostics JSONL file, keeping only the first per test."""
+    path = get_random_settings_diagnostics_path(args)
+    if not os.path.isfile(path):
+        return []
+    seen = set()
+    entries = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                entry = json.loads(line)
+                if entry["test_name"] not in seen:
+                    seen.add(entry["test_name"])
+                    entries.append(entry)
+    return entries
+
+
+def load_diagnostics_results(diagnostics_dir):
+    """Read diagnosis results JSONL. Returns dict: test_name -> diagnosis text."""
+    path = os.path.join(diagnostics_dir, RANDOM_SETTINGS_DIAGNOSTICS_RESULTS_FILE)
+    if not os.path.isfile(path):
+        return {}
+    results = {}
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                entry = json.loads(line)
+                results[entry["test_name"]] = entry.get("diagnosis", "")
+    return results
+
+
 # unlike functools.cache() ignore args
 # (since args can be non-hashable)
 def cache_ignore_args(func):
@@ -2005,11 +2069,22 @@ class TestCase:
         failed_settings = dict(self.effective_settings)
         failed_mt_settings = dict(self.effective_merge_tree_settings)
 
-        if not failed_settings and not failed_mt_settings:
-            return ""
-
         step_budget = args.diagnose_random_settings_step_time_budget
-        diagnosis_lines = ["\n\n--- Randomized settings diagnosis ---"]
+
+        # No randomized settings — rerun up to 3 times to check reproducibility.
+        if not failed_settings and not failed_mt_settings:
+            max_reruns = 3
+            fail_count = 0
+            for i in range(max_reruns):
+                result = self._run_with_settings(args, suite, client_options, {}, {})
+                if result.status == TestStatus.FAIL:
+                    fail_count += 1
+            return (
+                f"--- Failure reproducibility check ---\n"
+                f"Failed {fail_count} out of {max_reruns} reruns.\n"
+            )
+
+        diagnosis_lines = ["--- Randomized settings diagnosis ---"]
 
         # Step 1: Re-run with the same settings within the time budget
         diagnosis_lines.append(
@@ -2033,6 +2108,11 @@ class TestCase:
                 diagnosis_lines.append(
                     "Result: No failures, but no clean passes either. Inconclusive."
                 )
+            return "\n".join(diagnosis_lines) + "\n"
+        if ok1 > 0:
+            diagnosis_lines.append(
+                f"Result: Failure is flaky ({fail1}/{total1} reruns failed)."
+            )
             return "\n".join(diagnosis_lines) + "\n"
 
         diagnosis_lines.append("Result: Failure is reproducible.")
@@ -2405,6 +2485,9 @@ class TestCase:
 
         if "no-darwin" in tags and platform.system() == "Darwin":
             return FailureReason.NOT_SUPPORTED_ON_DARWIN
+
+        if "linux" in tags and platform.system() != "Linux":
+            return FailureReason.LINUX_ONLY
 
         # Do not run *Log and Memory engine-specific tests
         if (
@@ -3920,6 +4003,133 @@ class GlobalTimeout(Exception):
     pass
 
 
+def run_diagnose_from_artifacts(args, server_died):
+    """Read saved randomized settings artifacts and run diagnosis for each entry."""
+    entries = load_random_settings_artifacts(args)
+    if not entries:
+        path = get_random_settings_diagnostics_path(args)
+        print(f"No randomized settings artifacts found in {path}")
+        return 0
+
+    # Filter by test selector if provided
+    if args.test:
+        entries = [
+            e
+            for e in entries
+            if any(re.search(pattern, e["test_name"]) for pattern in args.test)
+        ]
+        if not entries:
+            print(
+                f"No artifacts match the test selector: {args.test}"
+            )
+            return 0
+
+    print(f"Found {len(entries)} test(s) to diagnose.")
+
+    base_dir = os.path.abspath(args.queries)
+    results_path = get_random_settings_diagnostics_results_path(args)
+    # Non-zero exit code is reserved for unexpected script termination
+    # (e.g. uncaught exception in the diagnosis machinery). Environmental
+    # conditions like server_died are not script failures — they are
+    # already surfaced by the main test stage, so the diagnostics stage
+    # should exit cleanly when interrupted by them.
+    exit_code = 0
+
+    with open(results_path, "w", encoding="utf-8") as results_file:
+        for entry in entries:
+            test_name = entry["test_name"]
+            settings = entry.get("settings", {})
+            mt_settings = entry.get("merge_tree_settings", {})
+
+            # Server died — stop diagnosing further tests but exit cleanly:
+            # the main test stage has already reported the server failure.
+            if server_died.is_set():
+                break
+
+            # Find the test case file across suites
+            case = None
+            suite_dir_name = None
+            for suite_candidate in sorted(os.listdir(base_dir)):
+                suite_path = os.path.join(base_dir, suite_candidate)
+                if not os.path.isdir(suite_path):
+                    continue
+                for fname in os.listdir(suite_path):
+                    name_without_ext = os.path.splitext(fname)[0]
+                    if name_without_ext == test_name and is_test_from_dir(suite_path, fname):
+                        case = fname
+                        suite_dir_name = suite_candidate
+                        break
+                if case:
+                    break
+
+            if not case:
+                print(f"WARNING: test file for '{test_name}' not found, skipping.")
+                continue
+
+            test_suite = TestSuite.read_test_suite(args, suite_dir_name)
+            if test_suite is None:
+                print(f"WARNING: could not load suite for '{test_name}', skipping.")
+                continue
+
+            test_case = TestCase(test_suite, case, args, False)
+
+            # Override settings with the saved artifact values (disable randomization)
+            test_case.effective_settings = settings
+            test_case.effective_merge_tree_settings = mt_settings
+
+            client_options = get_additional_client_options(args)
+
+            print(f"\n{'='*70}")
+            print(f"Diagnosing: {test_name}")
+            if settings:
+                print(f"  Settings: {TestCase.cli_format_settings(settings)}")
+            if mt_settings:
+                print(f"  MergeTree settings: {TestCase.cli_format_settings(mt_settings)}")
+            print(f"{'='*70}")
+
+            try:
+                diagnosis = test_case.diagnose_random_settings(args, test_suite, client_options)
+            except Exception as e:
+                print(f"ERROR: Diagnosis failed for {test_name}: {e}")
+                traceback.print_exc()
+                exit_code = 1
+                continue
+            if diagnosis:
+                print(diagnosis)
+            else:
+                diagnosis = ""
+
+            # Classify the diagnosis for CI labeling. Leave label empty for
+            # inconclusive/unrecognized outcomes so they don't get mislabeled.
+            label = ""
+            if "Inconclusive" in diagnosis:
+                label = ""
+            elif "Culprit settings:" in diagnosis or "Culprit MergeTree settings:" in diagnosis:
+                label = "setting"
+            elif "Failure is flaky" in diagnosis or "not reproducible" in diagnosis.lower():
+                label = "flaky"
+            elif (
+                "not a randomization issue" in diagnosis
+                or "Could not isolate" in diagnosis
+            ):
+                label = "reproducible"
+            else:
+                # Match "Failed N out of M reruns." for the no-random-settings path
+                m = re.search(r"Failed (\d+) out of (\d+) reruns", diagnosis)
+                if m:
+                    fail_n, total_n = int(m.group(1)), int(m.group(2))
+                    if fail_n < total_n:
+                        label = "flaky"
+                    else:
+                        label = "reproducible"
+
+            result_entry = {"test_name": test_name, "diagnosis": diagnosis, "label": label}
+            results_file.write(json.dumps(result_entry, ensure_ascii=False) + "\n")
+            results_file.flush()
+
+    return exit_code
+
+
 def run_tests_array(
     all_tests_with_params: Tuple[
         List[str],
@@ -4068,19 +4278,19 @@ def run_tests_array(
                     break
                 restarted_tests.append(test_result)
 
-            # Diagnose which randomized settings caused the failure
+            # Save failed test info so that diagnostics can be run later
+            # via --diagnose-random-settings.
             if (
                 test_result
                 and test_result.status == TestStatus.FAIL
-                and args.diagnose_random_settings
-                and (test_case.effective_settings or test_case.effective_merge_tree_settings)
                 and test_result.reason != FailureReason.SERVER_DIED
             ):
-                diagnosis = test_case.diagnose_random_settings(
-                    args, test_suite, client_options
+                save_random_settings_artifact(
+                    args,
+                    test_case.name,
+                    test_case.effective_settings,
+                    test_case.effective_merge_tree_settings,
                 )
-                if diagnosis:
-                    test_result.description += diagnosis
 
             # First print the description, then invoke the check result logic
             description += test_result.description
@@ -5161,28 +5371,42 @@ ORDER BY (test_name, callee_offset)
         # https://github.com/ClickHouse/clickhouse-private/issues/23651
         cloud_skip_errors_list += ["Cannot attach table with UUID"]
 
-    for suite in sorted(os.listdir(base_dir), key=suite_key_func):
-        if server_died.is_set():
-            break
+    if args.diagnose_random_settings:
+        diag_exit_code = run_diagnose_from_artifacts(args, server_died)
+        # Exit immediately: post-run checks below (hung check, coverage export,
+        # log stats, etc.) assume a completed test run and would surface spurious
+        # failures in diagnose mode. Any real diagnostics error is already in
+        # diag_exit_code.
+        sys.exit(diag_exit_code)
+    else:
+        diagnostics_dir = args.random_settings_diagnostics_dir
+        os.makedirs(diagnostics_dir, exist_ok=True)
+        diagnostics_path = get_random_settings_diagnostics_path(args)
+        with open(diagnostics_path, "w", encoding="utf-8"):
+            pass
 
-        test_suite = TestSuite.read_test_suite(args, suite)
-        if test_suite is None:
-            continue
+        for suite in sorted(os.listdir(base_dir), key=suite_key_func):
+            if server_died.is_set():
+                break
 
-        test_suite.skip_list = skip_list
-        test_suite.cloud_skip_list = cloud_skip_list
-        test_suite.private_skip_list = private_skip_list
-        test_suite.cloud_skip_errors_list = cloud_skip_errors_list
-        test_suite.blacklist_check = blacklist_check
-        total_tests_run += do_run_tests(
-            args.jobs,
-            test_suite,
-            args,
-            exit_code,
-            restarted_tests,
-            server_died,
-            runner_process_killed,
-        )
+            test_suite = TestSuite.read_test_suite(args, suite)
+            if test_suite is None:
+                continue
+
+            test_suite.skip_list = skip_list
+            test_suite.cloud_skip_list = cloud_skip_list
+            test_suite.private_skip_list = private_skip_list
+            test_suite.cloud_skip_errors_list = cloud_skip_errors_list
+            test_suite.blacklist_check = blacklist_check
+            total_tests_run += do_run_tests(
+                args.jobs,
+                test_suite,
+                args,
+                exit_code,
+                restarted_tests,
+                server_died,
+                runner_process_killed,
+            )
 
     if server_died.is_set():
         exit_code.value = 1
@@ -5348,7 +5572,7 @@ ORDER BY (test_name, callee_offset)
                 FORMAT Vertical
 
                 See also at
-                - MemoryTrackerDebugBlockerInThread
+                - MemoryTrackerUntrackedAllocationsBlockerInThread
                 - AllocatorWithMemoryTracking
                 """)
         except Exception as e:
@@ -5636,10 +5860,17 @@ def parse_args():
         help="Disable MergeTree settings randomization",
     )
     parser.add_argument(
+        "--random-settings-diagnostics-dir",
+        type=str,
+        default=RANDOM_SETTINGS_DIAGNOSTICS_DEFAULT_DIR,
+        help="Directory for saving/reading randomized settings diagnostics artifacts "
+        f"(default: {RANDOM_SETTINGS_DIAGNOSTICS_DEFAULT_DIR})",
+    )
+    parser.add_argument(
         "--diagnose-random-settings",
         action="store_true",
         default=False,
-        help="When a test fails with randomized settings, diagnose which specific settings caused the failure",
+        help="Read saved randomized settings artifacts and diagnose which specific settings caused each failure",
     )
     parser.add_argument(
         "--diagnose-random-settings-step-time-budget",
