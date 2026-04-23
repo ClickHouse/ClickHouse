@@ -9,50 +9,47 @@
 namespace DB
 {
 
-/// Stores multiple fixed and contiguous columns in row-major format.
+/// Stores multiple columns in row-major format.
 /// Each row is a tuple of values from several source columns.
-/// Each source column must have isFixedAndContiguous true.
+/// Both plain fixed-width columns and `Nullable(T)` wrappers over such columns are supported.
 ///
 /// Row Layout:
-///   [fixed_field_0 | fixed_field_1 | ... | fixed_field_n ]
+///   [field_0 | field_1 | ... | field_n ]
 ///
-/// The order of field matches the order of source columns.
+/// A nullable field is laid out as [null_byte | value_bytes]
+/// where `null_byte` is 1 if the value is NULL and 0 otherwise.
+///
+/// The order of fields matches the order of source columns.
 class RowDataStore;
 using RowDataStorePtr = std::shared_ptr<RowDataStore>;
 
 class RowDataStore
 {
-private:
-    using Chars = PaddedPODArray<char>;
-
+public:
     struct FieldLayout
     {
         /// Used for mapping back to source columns.
         ColumnPtr sample_column;
-        size_t size;
         size_t offset;
+        size_t size;
+        bool is_nullable;
     };
 
     using RowLayout = std::vector<FieldLayout>;
 
-    /// Contiguous buffer of rows.
-    Chars chars;
-    RowLayout layout;
-    size_t row_length;
-
-    explicit RowDataStore(const RowLayout & layout_);
-    explicit RowDataStore(RowLayout && layout_);
-
-public:
     static std::shared_ptr<RowDataStore> create(const Columns & columns);
 
+    /// Read `length` consecutive rows from `columns` starting at `start` and pack them into the row-major buffer.
+    /// For nullable fields the null flag is written at the field's first byte followed by the value.
     void gatherRows(const Columns & columns, size_t start, size_t length);
     void gatherRow(const Columns & columns, size_t row_num);
 
+    /// Scatter `length` consecutive rows starting at `start` from the row-major buffer back into destination `columns`.
+    /// Nullable fields split their stored `[null_byte | value]` into `NullMap` + nested column.
     void scatterRows(std::vector<IColumn *> & columns, size_t start, size_t length) const;
     void scatterRow(std::vector<IColumn *> & columns, size_t row_num) const;
 
-    std::pair<size_t, size_t> getFieldOffsetAndSize(size_t input_col_index) const;
+    FieldLayout getFieldLayout(size_t input_col_index) const;
 
     const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
     size_t size() const { return chars.size() / row_length; }
@@ -64,6 +61,16 @@ public:
     MutableColumns buildColumns() const;
 
 private:
+    using Chars = PaddedPODArray<char>;
+
+    /// Contiguous buffer of rows.
+    Chars chars;
+    RowLayout layout;
+    size_t row_length;
+
+    explicit RowDataStore(const RowLayout & layout_);
+    explicit RowDataStore(RowLayout && layout_);
+
     static RowLayout initLayout(const Columns & columns);
 };
 

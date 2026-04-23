@@ -51,6 +51,7 @@ struct LazyOutput
         size_t dst_idx;
         size_t field_offset;
         size_t field_size;
+        bool is_nullable;
     };
 
     struct ColumnOutput
@@ -218,8 +219,8 @@ public:
                 auto idx = access_indexes[right_indexes[i]];
                 if (idx.type == AccessType::RowStore)
                 {
-                    auto [offset, size] = sample_row_store->getFieldOffsetAndSize(idx.index);
-                    lazy_output.row_store_outputs.push_back({i, offset, size});
+                    auto [_, offset, size, is_nullable] = sample_row_store->getFieldLayout(idx.index);
+                    lazy_output.row_store_outputs.push_back({i, offset, size, is_nullable});
                 }
                 else
                     lazy_output.column_outputs.push_back({i, idx.index});

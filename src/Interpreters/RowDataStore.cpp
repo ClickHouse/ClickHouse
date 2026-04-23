@@ -1,6 +1,8 @@
+#include <Columns/ColumnNullable.h>
 #include <Interpreters/RowDataStore.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
+#include <base/types.h>
 #include <Common/Exception.h>
 
 #include <cstring>
@@ -24,11 +26,20 @@ RowDataStore::RowLayout RowDataStore::initLayout(const Columns & columns)
     for (const auto & column : columns)
     {
         ColumnPtr sample_col = column->cloneEmpty();
-        if (!sample_col->isFixedAndContiguous())
+
+        bool is_nullable = false;
+        const IColumn * check_col = sample_col.get();
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(check_col))
+        {
+            check_col = nullable->getNestedColumnPtr().get();
+            is_nullable = true;
+        }
+
+        if (!check_col->isFixedAndContiguous())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "RowDataStore can only store fixed and contiguous columns, but got {}.", sample_col->getFamilyName());
 
         size_t field_size = sample_col->sizeOfValueIfFixed();
-        layout.push_back(FieldLayout{sample_col, field_size, offset});
+        layout.push_back(FieldLayout{sample_col, offset, field_size, is_nullable});
         offset += field_size;
     }
     return layout;
@@ -74,9 +85,26 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
     for (size_t i = 0; i < layout.size(); ++i)
     {
         auto field_layout = layout[i];
-        const char * src = columns[i]->getDataAt(start).data();
-        for (size_t row = 0; row < length; ++row)
-            memcpy(dst + row * row_length + field_layout.offset, src + row * field_layout.size, field_layout.size);
+        if (field_layout.is_nullable)
+        {
+            const auto * nullable_column = assert_cast<const ColumnNullable *>(columns[i].get());
+            const char * null_src = nullable_column->getNullMapColumn().getDataAt(start).data();
+            const char * data_src = nullable_column->getNestedColumn().getDataAt(start).data();
+            const size_t value_size = field_layout.size - 1;
+
+            for (size_t row = 0; row < length; ++row)
+            {
+                char * row_dst = dst + row * row_length + field_layout.offset;
+                row_dst[0] = null_src[row];
+                memcpy(row_dst + 1, data_src + row * value_size, value_size);
+            }
+        }
+        else
+        {
+            const char * src = columns[i]->getDataAt(start).data();
+            for (size_t row = 0; row < length; ++row)
+                memcpy(dst + row * row_length + field_layout.offset, src + row * field_layout.size, field_layout.size);
+        }
     }
 }
 
@@ -94,12 +122,32 @@ void RowDataStore::scatterRows(std::vector<IColumn *> & columns, size_t start, s
             columns.size(),
             layout.size());
 
-    const char * row_data = getRowAt(start);
-    for (size_t row = 0; row < length; ++row)
+    const char * base = getRowAt(start);
+    for (size_t i = 0; i < layout.size(); ++i)
     {
-        for (size_t i = 0; i < layout.size(); ++i)
-            columns[i]->insertData(row_data + layout[i].offset, layout[i].size);
-        row_data += row_length;
+        auto field_layout = layout[i];
+        if (field_layout.is_nullable)
+        {
+            auto * nullable_column = assert_cast<ColumnNullable *>(columns[i]);
+            auto & null_map = nullable_column->getNullMapData();
+            IColumn & nested_column = nullable_column->getNestedColumn();
+            const size_t value_size = field_layout.size - 1;
+
+            null_map.reserve(null_map.size() + length);
+            nested_column.reserve(nested_column.size() + length);
+            for (size_t row = 0; row < length; ++row)
+            {
+                const char * row_data = base + row * row_length + field_layout.offset;
+                null_map.push_back(*reinterpret_cast<const UInt8 *>(row_data));
+                nested_column.insertData(row_data + 1, value_size);
+            }
+        }
+        else
+        {
+            columns[i]->reserve(columns[i]->size() + length);
+            for (size_t row = 0; row < length; ++row)
+                columns[i]->insertData(base + row * row_length + field_layout.offset, field_layout.size);
+        }
     }
 }
 
@@ -108,9 +156,9 @@ void RowDataStore::scatterRow(std::vector<IColumn *> & columns, size_t row_num) 
     scatterRows(columns, row_num, 1);
 }
 
-std::pair<size_t, size_t> RowDataStore::getFieldOffsetAndSize(size_t input_col_index) const
+RowDataStore::FieldLayout RowDataStore::getFieldLayout(size_t input_col_index) const
 {
-    return {layout[input_col_index].offset, layout[input_col_index].size};
+    return layout[input_col_index];
 }
 
 MutableColumns RowDataStore::buildEmptyColumns() const
@@ -141,8 +189,10 @@ bool isRowStorageUseful(const ColumnPtr & column)
     if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(col))
         col = column_replicated->getNestedColumn().get();
 
+    const IColumn * check_col = col;
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(col))
+        check_col = column_nullable->getNestedColumnPtr().get();
 
-    return col->isFixedAndContiguous() && col->sizeOfValueIfFixed() < MAX_ROW_STORE_FIELD_SIZE;
+    return check_col->isFixedAndContiguous() && col->sizeOfValueIfFixed() <= MAX_ROW_STORE_FIELD_SIZE;
 }
-
 }
