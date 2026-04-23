@@ -7,6 +7,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Core/Settings.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/StorageID.h>
 
 #include <set>
@@ -22,6 +23,30 @@ namespace Setting
 
 namespace
 {
+
+bool isDeterministicTree(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return true;
+
+    if (const auto * func = node->as<FunctionNode>())
+    {
+        if (!func->isOrdinaryFunction())
+            return false;
+
+        const auto & function_base = func->getFunction();
+        if (!function_base || !function_base->isDeterministicInScopeOfQuery())
+            return false;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (!isDeterministicTree(child))
+            return false;
+    }
+
+    return true;
+}
 
 /// Right-side `WHERE` filter as the flat list of its top-level conjuncts. `isSubsetOf` is
 /// intentionally coarse — purely structural per-conjunct equality. Future refinement could
@@ -380,6 +405,13 @@ void collectCandidates(
 
     if (!pairs || pairs->empty())
         return;
+
+    for (const auto & conj : filter.conjuncts)
+        if (!isDeterministicTree(conj))
+            return;
+    for (const auto & p : *pairs)
+        if (!isDeterministicTree(p.left_expr))
+            return;
 
     Names right_phys_cols;
     QueryTreeNodes left_key_exprs;

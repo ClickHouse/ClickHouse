@@ -1567,3 +1567,53 @@ SEMI LEFT JOIN
 ) AS __table4 ON __table1.uid = __table4.uid
 ORDER BY __table1.uid ASC
 SETTINGS optimize_remove_redundant_semi_join = 1
+=== T47: SEMI non-deterministic rand() WHERE ===
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (rand() % 2) = 0
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE (rand() % 2) = 0
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN
+(
+    SELECT __table3.uid AS uid
+    FROM default.users AS __table3
+    WHERE (rand() % 2) = 0
+) AS __table2 ON __table1.uid = __table2.uid
+SEMI LEFT JOIN
+(
+    SELECT __table5.uid AS uid
+    FROM default.users AS __table5
+    WHERE (rand() % 2) = 0
+) AS __table4 ON __table1.uid = __table4.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1
+=== T48: SEMI non-deterministic rand() in left key ===
+-- query opt=0 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid + rand()) = __table2.uid
+SEMI LEFT JOIN default.users AS __table3 ON (__table1.uid + rand()) = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 0
+-- query opt=1 --
+SELECT __table1.uid AS `u1.uid`
+FROM default.users AS __table1
+SEMI LEFT JOIN default.users AS __table2 ON (__table1.uid + rand()) = __table2.uid
+SEMI LEFT JOIN default.users AS __table3 ON (__table1.uid + rand()) = __table3.uid
+ORDER BY __table1.uid ASC
+SETTINGS optimize_remove_redundant_semi_join = 1

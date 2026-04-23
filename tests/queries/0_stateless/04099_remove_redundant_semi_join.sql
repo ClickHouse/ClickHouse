@@ -1237,6 +1237,46 @@ SELECT u1.uid FROM users u1
   ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
 
 -- ============================================================================
+-- T47: Non-deterministic WHERE (rand()) — must NOT be optimized.
+--      Two structurally identical `rand() % 2 = 0` filters are evaluated
+--      independently, so the two right-side datasets differ.
+--      Only EXPLAIN is checked (result rows are non-deterministic).
+-- ============================================================================
+SELECT '=== T47: SEMI non-deterministic rand() WHERE ===';
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN (SELECT * FROM users WHERE rand() % 2 = 0) r1 ON u1.uid = r1.uid
+  LEFT SEMI JOIN (SELECT * FROM users WHERE rand() % 2 = 0) r2 ON u1.uid = r2.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN (SELECT * FROM users WHERE rand() % 2 = 0) r1 ON u1.uid = r1.uid
+  LEFT SEMI JOIN (SELECT * FROM users WHERE rand() % 2 = 0) r2 ON u1.uid = r2.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+
+-- ============================================================================
+-- T48: Non-deterministic left key (rand()) — must NOT be optimized.
+--      Even though ON clauses are structurally identical, each rand()
+--      is evaluated independently.
+--      Only EXPLAIN is checked (result rows are non-deterministic).
+-- ============================================================================
+SELECT '=== T48: SEMI non-deterministic rand() in left key ===';
+SELECT '-- query opt=0 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users r1 ON u1.uid + rand() = r1.uid
+  LEFT SEMI JOIN users r2 ON u1.uid + rand() = r2.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 0;
+SELECT '-- query opt=1 --';
+EXPLAIN SYNTAX run_query_tree_passes = 1
+SELECT u1.uid FROM users u1
+  LEFT SEMI JOIN users r1 ON u1.uid + rand() = r1.uid
+  LEFT SEMI JOIN users r2 ON u1.uid + rand() = r2.uid
+  ORDER BY u1.uid SETTINGS optimize_remove_redundant_semi_join = 1;
+
+-- ============================================================================
 -- Cleanup
 -- ============================================================================
 DROP TABLE users;
