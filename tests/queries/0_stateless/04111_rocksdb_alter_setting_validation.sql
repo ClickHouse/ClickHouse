@@ -24,6 +24,15 @@ SELECT 'after-invalid-bool:', create_table_query FROM system.tables WHERE databa
 ALTER TABLE t_rocksdb_alter_validation MODIFY SETTING optimize_for_bulk_insert = 'abc'; -- { serverError CANNOT_PARSE_BOOL }
 SELECT 'after-invalid-bool2:', create_table_query FROM system.tables WHERE database = currentDatabase() AND name = 't_rocksdb_alter_validation';
 
+-- Invalid UInt64 value (non-numeric string): must throw and must NOT modify on-disk metadata
+ALTER TABLE t_rocksdb_alter_validation MODIFY SETTING bulk_insert_block_size = 'not-a-number'; -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+SELECT 'after-invalid-uint-string:', create_table_query FROM system.tables WHERE database = currentDatabase() AND name = 't_rocksdb_alter_validation';
+
+-- Invalid UInt64 value (out of range of unsigned: negative): must throw and must NOT modify on-disk metadata.
+-- This reproduces the failure mode from #88443 (`Field value ... is out of range of ... type`).
+ALTER TABLE t_rocksdb_alter_validation MODIFY SETTING bulk_insert_block_size = -5; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT 'after-invalid-uint-negative:', create_table_query FROM system.tables WHERE database = currentDatabase() AND name = 't_rocksdb_alter_validation';
+
 -- Valid ALTER still works
 ALTER TABLE t_rocksdb_alter_validation MODIFY SETTING optimize_for_bulk_insert = 0;
 SELECT 'after-valid-bool:', create_table_query FROM system.tables WHERE database = currentDatabase() AND name = 't_rocksdb_alter_validation';
