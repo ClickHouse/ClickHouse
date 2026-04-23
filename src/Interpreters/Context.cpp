@@ -4517,7 +4517,7 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
     }
 
     /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
-    if (auto process_list_element = getProcessListElement())
+    if (auto process_list_element = getProcessListElementSafe())
         addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
@@ -4539,7 +4539,7 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
     }
 
     /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
-    if (auto process_list_element = getProcessListElement())
+    if (auto process_list_element = getProcessListElementSafe())
         addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
