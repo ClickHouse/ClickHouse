@@ -69,7 +69,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
-    extern const SettingsBool allow_streaming_queries;
+    extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
@@ -750,9 +750,9 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
             if (table_expression_modifiers->hasStream())
             {
-                if (scope.context && !scope.context->getSettingsRef()[Setting::allow_streaming_queries])
+                if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Streaming queries are an experimental feature. Set `allow_streaming_queries = 1` to enable.");
+                        "Streaming queries are an experimental feature. Set `enable_streaming_queries = 1` to enable.");
 
                 if (storage->isSystemStorage())
                     throw Exception(ErrorCodes::ILLEGAL_STREAM,

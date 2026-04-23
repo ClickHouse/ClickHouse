@@ -61,6 +61,8 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
+    bool supportsStreaming() const override { return true; }
+
     bool supportsTransactions() const override { return support_transaction; }
 
     void read(

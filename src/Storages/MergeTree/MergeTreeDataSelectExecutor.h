@@ -42,6 +42,16 @@ public:
         PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 
+    QueryPlanPtr streamingRead(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        UInt64 max_block_size,
+        size_t num_streams,
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
+        bool enable_parallel_reading = false) const;
+
     /// The same as read, but with specified set of parts.
     QueryPlanStepPtr readFromParts(
         RangesInDataPartsPtr parts,
