@@ -497,11 +497,16 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
     CompileTask task{impl->engine, bytes, std::nullopt, {}};
 
     pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, 8 * 1024 * 1024);
+    if (int rc = pthread_attr_init(&attr); rc != 0)
+        throw Exception(ErrorCodes::WASM_ERROR, "pthread_attr_init failed: {}", rc);
 
-    pthread_t thread;
-    pthread_create(&thread, &attr, [](void * arg) -> void *
+    if (int rc = pthread_attr_setstacksize(&attr, 8 * 1024 * 1024); rc != 0)
+    {
+        pthread_attr_destroy(&attr);
+        throw Exception(ErrorCodes::WASM_ERROR, "pthread_attr_setstacksize failed: {}", rc);
+    }
+
+    auto compile_fn = [](void * arg) -> void *
     {
         auto & t = *static_cast<CompileTask *>(arg);
         auto res = wasmtime::Module::compile(t.engine, t.bytes);
@@ -510,7 +515,14 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
         else
             t.error = res.err().message();
         return nullptr;
-    }, &task);
+    };
+
+    pthread_t thread;
+    if (int rc = pthread_create(&thread, &attr, compile_fn, &task); rc != 0)
+    {
+        pthread_attr_destroy(&attr);
+        throw Exception(ErrorCodes::WASM_ERROR, "pthread_create failed: {}", rc);
+    }
 
     pthread_attr_destroy(&attr);
     pthread_join(thread, nullptr);
