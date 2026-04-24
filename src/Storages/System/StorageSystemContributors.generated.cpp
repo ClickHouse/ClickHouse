@@ -1146,6 +1146,7 @@ const char * auto_contributors[] {
     "Rafael Acevedo",
     "Rafael David Tinoco",
     "Rafael Roquetto",
+    "Rahul",
     "Rajakavitha Kodhandapani",
     "Rajkumar",
     "Rajkumar Varada",
