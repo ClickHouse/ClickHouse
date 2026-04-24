@@ -16,20 +16,23 @@ static uint32_t heap_pos = 0;
 static Span spans[MAX_SPANS];
 static uint32_t span_pos = 0;
 
-extern void clickhouse_log(const char * message, uint32_t length);
+extern void clickhouse_log(uint32_t level, const char * message, uint32_t length);
+
+#define LOG_DEBUG 7
 
 Span * clickhouse_create_buffer(uint32_t size) {
+    uint32_t aligned_size = (size + 15u) & ~15u;
     if (span_pos >= MAX_SPANS) return NULL;
-    if (heap_pos + size > HEAP_SIZE) return NULL;
+    if (heap_pos + aligned_size > HEAP_SIZE) return NULL;
     Span * span = &spans[span_pos++];
     span->data = &heap[heap_pos];
     span->size = size;
-    heap_pos += (size + 15) & ~15u;
+    heap_pos += aligned_size;
     return span;
 }
 
 void clickhouse_destroy_buffer(Span * data) {
-    clickhouse_log("XXXX Buffer destroyed", 20);
+    clickhouse_log(LOG_DEBUG, "XXXX Buffer destroyed", 20);
     (void)data;
 }
 

@@ -3,6 +3,7 @@
 -- output that pass through expression DAGs and pollute the header of the local replica plan,
 -- while remote replicas produce a different header.
 
+SET automatic_parallel_replicas_mode = 0;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;
 SET enable_parallel_replicas = 1;

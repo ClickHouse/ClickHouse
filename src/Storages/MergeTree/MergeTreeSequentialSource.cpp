@@ -189,7 +189,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     auto counters = std::make_shared<ReadStepPerformanceCounters>();
 
-    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true);
+    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true, readers.main->canReadIncompleteGranules());
     readers_chain = MergeTreeReadersChain{{std::move(range_reader)}, readers.patches};
 
     updateRowsToRead(0);
@@ -339,7 +339,7 @@ Pipe createMergeTreeSequentialSource(
 
     if (info->alter_conversions->hasPatches())
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals().withSubcolumns();
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader).withSubcolumns();
         auto all_read_columns = info->task_columns.getAllColumnNames();
         auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
         info->patch_parts = info->alter_conversions->getPatchesForColumns(all_read_columns_list, need_to_filter_deleted_rows);

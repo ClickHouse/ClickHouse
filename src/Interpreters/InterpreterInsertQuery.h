@@ -57,6 +57,8 @@ public:
 
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
+    static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
+
 private:
     static Block getSampleBlock(
         const Names & names,
@@ -82,13 +84,11 @@ private:
 
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
     std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
-    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
+    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context);
 
     // if applicable, build pipeline for replicated MergeTree from cluster storage
     std::optional<QueryPipeline>
     distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
-
-    void setInsertContextValues(StoragePtr table);
 };
 
 }

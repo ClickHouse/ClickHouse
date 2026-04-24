@@ -46,6 +46,7 @@ struct Optimization
         bool use_top_k_dynamic_filtering;
         size_t max_limit_for_top_k_optimization;
         bool use_skip_indexes_on_data_read;
+        bool read_in_order;
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
@@ -178,6 +179,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
+void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
@@ -212,10 +214,16 @@ std::optional<String> optimizeUseAggregateProjections(
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
     bool is_parallel_replicas_initiator_with_projection_support,
     size_t max_step_description_length);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+
+/// Resolve all DelayedMaterializingCTEsStep nodes in the plan tree.
+/// Must be called after the second optimization pass so that is_planned flags
+/// set by buildOrderedSetInplace are already visible.
+void resolveMaterializingCTEs(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & root_plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Enable memory bound merging of aggregation states for remote queries
 /// in case it was enabled for local plan

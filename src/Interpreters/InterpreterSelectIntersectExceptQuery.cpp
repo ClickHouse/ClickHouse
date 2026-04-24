@@ -51,7 +51,7 @@ static Block getCommonHeader(const SharedHeaders & headers)
                             common_header.dumpNames(), headers[query_num]->dumpNames());
     }
 
-    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
+    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
     for (size_t column_num = 0; column_num < num_columns; ++column_num)
     {
         for (size_t i = 0; i < num_selects; ++i)
@@ -195,25 +195,6 @@ void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()
 {
     for (auto & interpreter : nested_interpreters)
         interpreter->ignoreWithTotals();
-}
-
-void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
-{
-    for (const auto & interpreter : nested_interpreters)
-    {
-        if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))
-        {
-            auto filter = select_interpreter->getRowPolicyFilter();
-            if (filter)
-            {
-                for (const auto & row_policy : filter->policies)
-                {
-                    auto name = row_policy->getFullName().toString();
-                    elem.used_row_policies.emplace(std::move(name));
-                }
-            }
-        }
-    }
 }
 
 void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory)

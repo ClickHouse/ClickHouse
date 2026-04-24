@@ -199,8 +199,25 @@ libs=$(echo "${ROOT_PATH}/base/poco"; (${FIND_CMD} "${LIBS_PATH}" -mindepth 1 -m
 # Use xargs for parallel processing (fall back to 4 jobs if nproc not available)
 JOBS=$(nproc 2>/dev/null || echo 4)
 
-# Process in parallel (output order is non-deterministic)
-echo "$libs" | tr ' ' '\n' | xargs -P ${JOBS} -I {} bash -c 'process_library "$@"' _ {}
+# Process in parallel and preserve deterministic output.
+c_cpp_output=$(printf '%s\n' "$libs" | xargs -P "${JOBS}" -I {} bash -c 'process_library "$@"' _ {})
+c_cpp_status=$?
+if [ "${c_cpp_status}" -ne 0 ]
+then
+    exit "${c_cpp_status}"
+fi
+if [ -n "${c_cpp_output}" ]
+then
+    printf '%s\n' "${c_cpp_output}" | LC_ALL=C sort
+fi
 
-${FIND_CMD} "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | \
-    xargs -P ${JOBS} -I {} bash -c 'process_rust_crate "$@"' _ {}
+rust_output=$(${FIND_CMD} "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs -P "${JOBS}" -I {} bash -c 'process_rust_crate "$@"' _ {})
+rust_status=$?
+if [ "${rust_status}" -ne 0 ]
+then
+    exit "${rust_status}"
+fi
+if [ -n "${rust_output}" ]
+then
+    printf '%s\n' "${rust_output}" | LC_ALL=C sort
+fi

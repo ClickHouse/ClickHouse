@@ -1,6 +1,5 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
-#include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
@@ -63,32 +62,16 @@ String ASTSystemQuery::getTable() const
 
 void ASTSystemQuery::setDatabase(const String & name)
 {
-    if (database)
-    {
-        std::erase(children, database);
-        database.reset();
-    }
-
+    reset(database);
     if (!name.empty())
-    {
-        database = make_intrusive<ASTIdentifier>(name);
-        children.push_back(database);
-    }
+        set(database, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTSystemQuery::setTable(const String & name)
 {
-    if (table)
-    {
-        std::erase(children, table);
-        table.reset();
-    }
-
+    reset(table);
     if (!name.empty())
-    {
-        table = make_intrusive<ASTIdentifier>(name);
-        children.push_back(table);
-    }
+        set(table, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -212,6 +195,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            ostr << ' ';
+            print_database_table();
+            ostr << " PATH " << quoteString(queue_path);
+            break;
+        }
         case Type::RESTART_REPLICA:
         case Type::RESTORE_REPLICA:
         case Type::SYNC_REPLICA:
@@ -261,6 +251,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
+        case Type::WAIT_BLOBS_CLEANUP:
         case Type::CLEAR_DISK_METADATA_CACHE:
         {
             if (table)
@@ -379,7 +370,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::UNLOCK_SNAPSHOT:
         {
-            ostr << quoteString(backup_name);
+            ostr << " " << quoteString(backup_name);
             if (backup_source)
             {
                 print_keyword(" FROM ");
@@ -431,6 +422,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     }
                 }
             }
+            break;
+        }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ostr << ' ';
+            ostr << quoteString(coverage_test_name);
             break;
         }
         case Type::ENABLE_FAILPOINT:

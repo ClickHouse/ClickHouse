@@ -2,6 +2,7 @@
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -106,6 +107,15 @@ TTLDeleteFilterTransform::TTLDeleteFilterTransform(
 void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column, size_t num_rows)
 {
     timestamps.resize_exact(num_rows);
+
+    /// Sparse columns must be converted to dense before type dispatch, since
+    /// typeid_cast does not see through the ColumnSparse wrapper.
+    ColumnPtr dense;
+    if (typeid_cast<const ColumnSparse *>(ttl_column))
+    {
+        dense = ttl_column->convertToFullColumnIfSparse();
+        ttl_column = dense.get();
+    }
 
     if (const auto * col_date = typeid_cast<const ColumnUInt16 *>(ttl_column))
     {

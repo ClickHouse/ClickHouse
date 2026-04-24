@@ -211,6 +211,8 @@
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
     M(IcebergCatalogThreadsScheduled, "Number of queued or active jobs in the IcebergCatalog thread pool.") \
+    M(IcebergSchedulePoolTask, "Number of tasks in the background schedule pool for Iceberg tables.") \
+    M(IcebergSchedulePoolSize, "Limit on number of tasks in the background schedule pool for Iceberg tables.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
@@ -273,6 +275,9 @@
     M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
+    M(KeeperReadThreads, "Number of threads in the threadpool for keeper server reads.") \
+    M(KeeperReadThreadsActive, "Number of active threads in the threadpool for keeper server reads.") \
+    M(KeeperReadThreadsScheduled, "Number of queued or active jobs in the threadpool for keeper server reads. Meaningless metric, the actual read tasks on this thread pool are scheduled through a different mechanism.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
     M(BrokenDistributedBytesToInsert, "Number of bytes for asynchronous insertion into Distributed tables that has been marked as broken. Number of bytes for every shard is summed.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
@@ -363,6 +368,9 @@
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
     M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
+    M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \
+    M(SerializationCacheBytesInMemory, "Total size of the serialization cache in bytes including only the values") \
+    M(SerializationCacheCount, "Total number of entries in the serialization cache") \
     M(MergeJoinBlocksCacheBytes, "Total bytes used for cached blocks in MergeJoin") \
     M(MergeJoinBlocksCacheCount, "Total cached blocks in MergeJoin") \
     M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \

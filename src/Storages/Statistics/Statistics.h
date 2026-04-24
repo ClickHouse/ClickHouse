@@ -13,6 +13,15 @@ namespace DB
 constexpr std::string_view STATS_FILE_PREFIX = "statistics_";
 constexpr std::string_view STATS_FILE_SUFFIX = ".stats";
 
+/// Version of the per-column statistics file format stored inside statistics.packed (or legacy statistics_<col>.stats).
+/// When adding a new version, bump the latest value and add a comment describing what changed.
+enum class StatisticsFileVersion : UInt16
+{
+    V0 = 0,
+    V1 = 1, /// modified the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
+    V2 = 2, /// minmax statistics now serialize Field type and use Field instead of Float64
+};
+
 class Field;
 class Block;
 
@@ -40,16 +49,17 @@ public:
     virtual void merge(const StatisticsPtr & other_stats) = 0;
 
     virtual void serialize(WriteBuffer & buf) = 0;
-    virtual void deserialize(ReadBuffer & buf) = 0;
+    virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual UInt64 estimateCardinality() const;
 
     /// Per-value estimations.
-    /// Throws if the statistics object is not able to do a meaningful estimation.
+    /// Returns std::nullopt when the statistics object cannot produce a meaningful estimate
+    /// (e.g. the value cannot be converted to the column type).
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
-    virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
+    virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
 
@@ -65,8 +75,8 @@ struct Estimate
     std::set<StatisticsType> types;
     UInt64 rows_count = 0;
     std::optional<UInt64> estimated_cardinality;
-    std::optional<Float64> estimated_min;
-    std::optional<Float64> estimated_max;
+    std::optional<Field> estimated_min;
+    std::optional<Field> estimated_max;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
@@ -88,10 +98,10 @@ public:
     UInt64 estimateCardinality() const;
     UInt64 estimateDefaults() const;
 
-    Float64 estimateLess(const Field & val) const;
-    Float64 estimateGreater(const Field & val) const;
-    Float64 estimateEqual(const Field & val) const;
-    Float64 estimateRange(const Range & range) const;
+    std::optional<Float64> estimateLess(const Field & val) const;
+    std::optional<Float64> estimateGreater(const Field & val) const;
+    std::optional<Float64> estimateEqual(const Field & val) const;
+    std::optional<Float64> estimateRange(const Range & range) const;
 
     Estimate getEstimate() const;
     String getNameForLogs() const;
