@@ -167,9 +167,42 @@ public:
         }
         else
         {
-            /// Overlapping ranges — keep the state with the later last_ts for determinism.
-            if (b.last_ts > a.last_ts)
-                a = b;
+            /// Overlapping ranges: keep the later endpoint as authoritative and propagate
+            /// all known changes from both halves.  If the boundary values differ a change
+            /// must have occurred; later.last_ts is a safe (possibly conservative) upper bound.
+            const bool b_is_later      = b.last_ts >= a.last_ts;
+            const Data & later         = b_is_later ? b : a;
+            const Data & earlier       = b_is_later ? a : b;
+
+            TimestampType new_last_change_ts{};
+            bool new_has_changes = false;
+
+            if (later.has_changes)
+            {
+                new_last_change_ts = later.last_change_ts;
+                new_has_changes    = true;
+            }
+            if (earlier.has_changes && (!new_has_changes || earlier.last_change_ts > new_last_change_ts))
+            {
+                new_last_change_ts = earlier.last_change_ts;
+                new_has_changes    = true;
+            }
+            if (earlier.last_value != later.last_value
+                && (!new_has_changes || later.last_ts > new_last_change_ts))
+            {
+                new_last_change_ts = later.last_ts;
+                new_has_changes    = true;
+            }
+
+            ValueType     new_first_value = (b.first_ts < a.first_ts) ? b.first_value : a.first_value;
+            TimestampType new_first_ts    = (b.first_ts < a.first_ts) ? b.first_ts    : a.first_ts;
+
+            a.first_value    = new_first_value;
+            a.first_ts       = new_first_ts;
+            a.last_value     = later.last_value;
+            a.last_ts        = later.last_ts;
+            a.last_change_ts = new_last_change_ts;
+            a.has_changes    = new_has_changes;
         }
     }
 
@@ -357,15 +390,47 @@ public:
         }
         else
         {
-            if (b.last_ts > a.last_ts)
+            /// Overlapping ranges: keep the later endpoint as authoritative and propagate
+            /// all known changes from both halves.  If the boundary values differ a change
+            /// must have occurred; later.last_ts is a safe (possibly conservative) upper bound.
+            const bool b_is_later  = b.last_ts >= a.last_ts;
+            const Data & later     = b_is_later ? b : a;
+            const Data & earlier   = b_is_later ? a : b;
+
+            TimestampType new_last_change_ts{};
+            bool new_has_changes = false;
+
+            if (later.has_changes)
             {
-                Data::copyBitmap(a.first_value, *b.first_value);
-                Data::copyBitmap(a.last_value, *b.last_value);
-                a.first_ts       = b.first_ts;
-                a.last_ts        = b.last_ts;
-                a.last_change_ts = b.last_change_ts;
-                a.has_changes    = b.has_changes;
+                new_last_change_ts = later.last_change_ts;
+                new_has_changes    = true;
             }
+            if (earlier.has_changes && (!new_has_changes || earlier.last_change_ts > new_last_change_ts))
+            {
+                new_last_change_ts = earlier.last_change_ts;
+                new_has_changes    = true;
+            }
+            if (!Data::bitmapsEqual(*earlier.last_value, *later.last_value)
+                && (!new_has_changes || later.last_ts > new_last_change_ts))
+            {
+                new_last_change_ts = later.last_ts;
+                new_has_changes    = true;
+            }
+
+            const bool update_first         = b.first_ts < a.first_ts;
+            const Bitmap & src_first        = update_first ? *b.first_value : *a.first_value;
+            const TimestampType new_first_ts = update_first ? b.first_ts    : a.first_ts;
+            const Bitmap & src_last         = *later.last_value;
+            const TimestampType new_last_ts  = later.last_ts;
+
+            if (&src_first != a.first_value.get())
+                Data::copyBitmap(a.first_value, src_first);
+            if (&src_last != a.last_value.get())
+                Data::copyBitmap(a.last_value, src_last);
+            a.first_ts       = new_first_ts;
+            a.last_ts        = new_last_ts;
+            a.last_change_ts = new_last_change_ts;
+            a.has_changes    = new_has_changes;
         }
     }
 
@@ -623,4 +688,4 @@ FROM (SELECT number AS ts, [0, 0, 1, 1, 1][number] AS value FROM numbers(1, 5))
         {createAggregateFunctionLastChangeAt, documentation, properties});
 }
 
-} // namespace DB
+}

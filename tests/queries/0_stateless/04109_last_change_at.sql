@@ -62,5 +62,15 @@ SELECT lastChangeAtMerge(state) FROM (
     )
 );
 
+-- Overlap merge order regression: (0@2),(1@3),(0@4) merged as [4]->[2]->[3] must give 4, not 2.
+-- [4] merged with [2] produces an overlapping range [2,4] when [3] is merged next.
+SELECT lastChangeAtMerge(state) FROM (
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 4 AS ts, 0 AS value)
+    UNION ALL
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 2 AS ts, 0 AS value)
+    UNION ALL
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 3 AS ts, 1 AS value)
+);
+
 -- Error: String value type is unsupported
 SELECT lastChangeAt('x', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
