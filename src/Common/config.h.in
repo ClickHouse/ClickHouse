@@ -33,7 +33,7 @@
 #cmakedefine01 USE_BECH32
 #cmakedefine01 USE_IDNA
 #cmakedefine01 USE_NLP
-#cmakedefine01 WITH_LIBSTEMMER
+#cmakedefine01 USE_LIBSTEMMER
 #cmakedefine01 USE_VECTORSCAN
 #cmakedefine01 USE_LIBURING
 #cmakedefine01 USE_AVRO
