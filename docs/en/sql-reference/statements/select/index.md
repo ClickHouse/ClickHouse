@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # SELECT Query
 
-`SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
+`SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md), it can be forwarded to a different table.
 
 ## Syntax {#syntax}
 
@@ -35,7 +35,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-All clauses are optional, except for the required list of expressions immediately after `SELECT` which is covered in more detail [below](#select-clause).
+All clauses are optional, except for the required list of expressions immediately after `SELECT`, which is covered in more detail in [SELECT clause](#select-clause).
 
 Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed:
 
@@ -62,9 +62,10 @@ Specifics of each optional clause are covered in separate sections, which are li
 
 ## SELECT Clause {#select-clause}
 
-[Expressions](/sql-reference/syntax#expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](/sql-reference/statements/select/group-by) aggregation.
+[Expressions](/sql-reference/syntax#expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses listed above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](/sql-reference/statements/select/group-by) aggregation.
 
-If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
+If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`. For more information on 
+appropriate use of asterisks, see [Asterisk](#asterisk).
 
 ### Dynamic column selection {#dynamic-column-selection}
 
@@ -108,7 +109,11 @@ SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
 └────┴────┴────┴────────────────┘
 ```
 
-Each column returned by the `COLUMNS` expression is passed to the function as a separate argument. Also you can pass other arguments to the function if it supports them. Be careful when using functions. If a function does not support the number of arguments you have passed to it, ClickHouse throws an exception.
+Each column returned by the `COLUMNS` expression is passed to the function as a separate argument. Also you can pass other arguments to the function if it supports them. 
+
+::⚠️
+Be careful when using functions. If a function does not support the number of arguments you have passed to it, ClickHouse throws an exception.
+:::
 
 For example:
 
@@ -135,7 +140,7 @@ You can put an asterisk in any part of a query instead of an expression. When th
 - When there is strong filtration on a small number of columns using `PREWHERE`.
 - In subqueries (since columns that aren't needed for the external query are excluded from subqueries).
 
-In all other cases, we do not recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
+In all other cases, we do not recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. 
 
 ### Extreme Values {#extreme-values}
 
@@ -171,7 +176,7 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 - `max_bytes_before_external_group_by`
 - `max_bytes_ratio_before_external_group_by`
 
-For more information, see the section "Settings". It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
+For more information, see [SETTINGS in SELECT query](#settings-in-select-query). It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 
 ## SELECT modifiers {#select-modifiers}
 
@@ -217,7 +222,7 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
 
-Other ways to make settings see [here](/operations/settings/overview).
+For other ways to make settings, see [Settings overview](/operations/settings/overview).
 
 For boolean settings set to true, you can use a shorthand syntax by omitting the value assignment. When only the setting name is specified, it is automatically set to `1` (true).
 
