@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Sources/NullSource.h>
@@ -956,7 +957,8 @@ std::optional<String> optimizeUseAggregateProjections(
         const auto & expected_header = node.step->getOutputHeader();
         if (blocksHaveEqualStructure(*projection_header, *expected_header))
         {
-            node.step->updateInputHeader(projection_header);
+            if (!has_parent_parts)
+                node.step->updateInputHeader(projection_header);
         }
         else
         {
@@ -974,7 +976,26 @@ std::optional<String> optimizeUseAggregateProjections(
     }
 
     if (has_parent_parts)
-        node.children.push_back(source_node);
+    {
+        if (aggregating)
+        {
+            node.children.push_back(source_node);
+        }
+        else
+        {
+            /// Some parts have no projection data. DistinctStep must see rows from both readings
+            /// to return the correct set of distinct values; union them into its single input.
+            auto * main_node = node.children.front();
+            SharedHeaders input_headers = {
+                main_node->step->getOutputHeader(),
+                source_node->step->getOutputHeader(),
+            };
+            auto & union_node = nodes.emplace_back();
+            union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
+            union_node.children = {main_node, source_node};
+            node.children.front() = &union_node;
+        }
+    }
     else
         node.children.front() = source_node;
 

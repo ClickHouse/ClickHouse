@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.5",
+        {
+            {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+        });
         addSettingsChanges(settings_changes_history, "26.4",
         {
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
@@ -1150,6 +1154,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
             {"share_nested_offsets", true, true, "When set to false, Array columns with dotted names that share a common prefix are treated as independent columns instead of sharing offset files as part of legacy Nested semantics"},
