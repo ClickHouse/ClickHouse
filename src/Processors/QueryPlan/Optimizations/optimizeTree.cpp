@@ -451,7 +451,7 @@ void optimizeTreeSecondPass(
 
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step
-    if (optimization_settings.optimize_lazy_materialization)
+    if (optimization_settings.optimize_lazy_materialization || optimization_settings.optimize_lazy_final)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});
@@ -459,10 +459,26 @@ void optimizeTreeSecondPass(
         {
             auto & frame = stack.back();
 
-            if (frame.next_child == 0)
+            if (frame.next_child == 0 && optimization_settings.optimize_lazy_materialization)
             {
                 if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                 {
+                    /// Merge Expression/Filter steps (on enter) and apply lazy FINAL
+                    /// (on leave) in the transformed subtree.
+                    Optimization::ExtraSettings extra{};
+                    Stack sub_stack;
+                    traverseQueryPlan(sub_stack, *frame.node,
+                        [&](QueryPlan::Node & node)
+                        {
+                            tryMergeExpressions(&node, nodes, extra);
+                            tryMergeFilters(&node, nodes, extra);
+                        },
+                        [&](QueryPlan::Node &)
+                        {
+                            if (optimization_settings.optimize_lazy_final)
+                                optimizeLazyFinal(sub_stack, query_plan, nodes, optimization_settings);
+                        });
+
                     stack.pop_back();
                     continue;
                 }
@@ -476,6 +492,9 @@ void optimizeTreeSecondPass(
                 stack.push_back(next_frame);
                 continue;
             }
+
+            if (optimization_settings.optimize_lazy_final)
+                optimizeLazyFinal(stack, query_plan, nodes, optimization_settings);
 
             stack.pop_back();
         }

@@ -267,6 +267,14 @@ namespace ErrorCodes
     DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
     Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
     )", 0) \
+    DECLARE(Bool, share_nested_offsets, true, R"(
+    When enabled (default), Array columns with dotted names that share a common prefix (e.g. n.a and n.b)
+    are treated as part of a Nested structure: they share a single offsets file on disk (e.g. n.size0),
+    and their array sizes are validated to be equal during INSERT.
+    When disabled, each Array column gets its own independent offset file, dotted names carry no special
+    semantics, and a scalar column may coexist with dotted Array columns sharing the same prefix
+    (e.g. n UInt32 alongside n.a Array(String)). This setting is immutable after table creation.
+    )", 0) \
     DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.
@@ -1529,8 +1537,10 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \
-    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 300, R"(
-    How often replicas will try to update replica set in background.
+    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 1800, R"(
+    How often replicas will try to update replica set in background. Next run is jittered
+    uniformly in [0, value] seconds. Exception: value = 0 does not follow that contract;
+    the implementation applies a minimum of 200 ms, so the next run is jittered in [0, 200] ms.
     )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
@@ -1857,7 +1867,7 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
-    DECLARE(String, auto_statistics_types, "", R"(
+    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \
@@ -1880,8 +1890,9 @@ namespace ErrorCodes
     DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
     Enables coordinated merges strategy
     )", 0) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
-    Number of merge entries that coordinator should prepare and distribute across workers
+    DECLARE(UInt64Auto, shared_merge_tree_merge_coordinator_merges_prepare_count, Field("auto"), R"(
+    Number of merge entries that coordinator should prepare and distribute across workers.
+    When set to 'auto', equals the max number of merge tasks allowed on a single replica multiplied by the number of active replicas.
     )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
     How often merge coordinator should sync with zookeeper to take fresh metadata
@@ -2790,6 +2801,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_string_columns"
         || name == "add_minmax_index_for_temporal_columns"
         || name == "table_disk"
+        || name == "share_nested_offsets"
     ;
 }
 
