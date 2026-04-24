@@ -1056,7 +1056,10 @@ bool IcebergStorageSink::initializeMetadata()
                 cleanup(true);
                 return false;
             }
-            LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
+            else
+            {
+                LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
+            }
 
             if (catalog)
             {

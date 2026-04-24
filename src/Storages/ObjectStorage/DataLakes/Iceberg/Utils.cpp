@@ -54,7 +54,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Common/FailPoint.h>
 
 
 using namespace DB;
@@ -69,7 +68,6 @@ extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int PATH_ACCESS_DENIED;
 extern const int LOGICAL_ERROR;
-extern const int S3_ERROR;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -305,15 +303,8 @@ bool writeMetadataFileAndVersionHint(
     }
     catch (const DB::Exception & /*e*/)
     {
-        /// PreconditionFailed means a concurrent writer already committed this metadata version.
-        /// Return false so the caller retries with the next version number.
-        /// All other errors (timeouts, permission denied, etc.) must propagate to the caller.
-        ///if (e.code() == DB::ErrorCodes::S3_ERROR && e.message().find("PreconditionFailed") != String::npos)
-        ///{
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            return false;
-        ///}
-        ///throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
     }
 
     if (try_write_version_hint)
