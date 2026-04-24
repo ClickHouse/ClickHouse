@@ -1637,7 +1637,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
-    /// For index columns, which have minmax_idx values, adjust tigher bounds than [-inf, +inf]
+    /// For index columns, which have minmax_idx values, adjust tighter bounds than [-inf, +inf]
     std::vector<FieldRef> pk_min_bound(used_key_size, NEGATIVE_INFINITY);
     std::vector<FieldRef> pk_max_bound(used_key_size, POSITIVE_INFINITY);
     if (part->minmax_idx && part->minmax_idx->initialized)
