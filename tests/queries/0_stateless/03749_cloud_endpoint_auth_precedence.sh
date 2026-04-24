@@ -101,4 +101,33 @@ else
     echo "FAILED: $failed commands failed"
 fi
 
+# Test 9: --login=device with no credentials file should fail with a clear file-not-found error
+# (not a crash or confusing message)
+echo "Test 9: --login=device with missing credentials file gives clear error"
+MISSING_CREDS="/tmp/nonexistent_oauth_creds_$$.json"
+output=$($CLICKHOUSE_CLIENT_BINARY --login=device --oauth-credentials "$MISSING_CREDS" --query "SELECT 1" 2>&1)
+if echo "$output" | grep -qi "not found\|No such file\|cannot open\|BAD_ARGUMENTS"; then
+    echo "OK"
+else
+    echo "FAILED: expected file-not-found error, got: $output"
+fi
+
+# Test 10: --login=invalid should give BAD_ARGUMENTS with descriptive message
+echo "Test 10: --login=invalid should give BAD_ARGUMENTS"
+output=$($CLICKHOUSE_CLIENT_BINARY --login=invalid --host="${CLICKHOUSE_HOST}" --port="${CLICKHOUSE_PORT_TCP}" --query "SELECT 1" 2>&1)
+if echo "$output" | grep -qi "must be.*browser.*device\|BAD_ARGUMENTS"; then
+    echo "OK"
+else
+    echo "FAILED: expected BAD_ARGUMENTS for invalid mode, got: $output"
+fi
+
+# Test 11: --jwt and --login together should give BAD_ARGUMENTS
+echo "Test 11: --jwt and --login together should give BAD_ARGUMENTS"
+output=$($CLICKHOUSE_CLIENT_BINARY --jwt "sometoken" --login=browser --host="${CLICKHOUSE_HOST}" --port="${CLICKHOUSE_PORT_TCP}" --query "SELECT 1" 2>&1)
+if echo "$output" | grep -qi "cannot both be specified\|BAD_ARGUMENTS"; then
+    echo "OK"
+else
+    echo "FAILED: expected BAD_ARGUMENTS for --jwt + --login, got: $output"
+fi
+
 echo "All tests completed"
