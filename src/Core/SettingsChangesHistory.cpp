@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+            {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -72,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_columns_cache", false, false, "New setting to enable columns cache for MergeTree tables"},
             {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
             {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
+            {"optimize_rewrite_array_exists_to_has", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."},
             {"parallel_replicas_allow_view_over_mergetree", false, false, "New setting"},
             {"read_in_order_use_virtual_row_per_block", false, false, "Emit virtual row after each block during read-in-order to allow more frequent source reprioritization in MergingSortedTransform."},
             {"distributed_plan_prefer_replicas_over_workers", false, false, "New setting to serialize distributed plan for replicas"},
