@@ -19,6 +19,46 @@ namespace DB::ErrorCodes
 namespace DB::PrometheusQueryToSQL
 {
 
+namespace
+{
+    /// Checks if the types of the specified arguments are valid for the `histogram_quantile` function.
+    void checkArgumentTypes(
+        const PQT::Function * function_node,
+        const std::vector<SQLQueryPiece> & arguments,
+        const ConverterContext & context)
+    {
+        const auto & function_name = function_node->function_name;
+
+        if (arguments.size() != 2)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects 2 arguments, but was called with {} arguments",
+                            function_name, arguments.size());
+        }
+
+        const auto & phi_arg = arguments[0];
+
+        if (phi_arg.type != ResultType::SCALAR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects first argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::SCALAR,
+                            getPromQLText(phi_arg, context), phi_arg.type);
+        }
+
+        const auto & vector_arg = arguments[1];
+
+        if (vector_arg.type != ResultType::INSTANT_VECTOR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects second argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::INSTANT_VECTOR,
+                            getPromQLText(vector_arg, context), vector_arg.type);
+        }
+    }
+}
+
+
 bool isHistogramQuantile(std::string_view function_name)
 {
     return function_name == "histogram_quantile";
@@ -29,12 +69,7 @@ SQLQueryPiece applyHistogramQuantile(
     std::vector<SQLQueryPiece> && arguments,
     ConverterContext & context)
 {
-    if (arguments.size() != 2)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Function 'histogram_quantile' expects 2 arguments, but got {}",
-            arguments.size());
-    }
+    checkArgumentTypes(function_node, arguments, context);
 
     auto & phi_arg = arguments[0];
     auto & expression = arguments[1];

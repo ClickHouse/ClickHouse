@@ -244,10 +244,9 @@ def send_test_data():
         ]
     )
 
-    # Histogram data for histogram_quantile testing.
-    # http_request_duration_seconds_bucket represents cumulative request counts at different latency thresholds.
-    # At timestamp 300: le=0.1->10, le=0.5->30, le=1.0->50, le=+Inf->60
-    # This represents: 10 requests <= 0.1s, 30 requests <= 0.5s, 50 requests <= 1.0s, 60 total requests.
+    # Classic Prometheus histogram buckets for `histogram_quantile` testing.
+    # At t=300 the cumulative counts are: le=0.1 -> 10, le=0.5 -> 30, le=1.0 -> 50, le=+Inf -> 60.
+    # That describes 10 observations <= 0.1s, 20 in (0.1, 0.5], 20 in (0.5, 1.0], and 10 in (1.0, +Inf).
     send_data(
         [
             (
@@ -265,6 +264,40 @@ def send_test_data():
             (
                 {"__name__": "http_request_duration_seconds_bucket", "job": "api", "le": "+Inf"},
                 {300: 60},
+            ),
+        ]
+    )
+
+    # A second histogram metric with two `job` groupings, used to verify that
+    # `histogram_quantile` correctly groups by all labels except `le` and `__name__`.
+    # For each job, total = 10, so phi=0.5 targets rank 5.
+    # job=reader cumulative [2, 8, 10]: rank 5 is in (1, 4], interpolates to 1 + 3*(5-2)/(8-2) = 2.5.
+    # job=writer cumulative [4, 8, 10]: rank 5 is in (1, 4], interpolates to 1 + 3*(5-4)/(8-4) = 1.75.
+    send_data(
+        [
+            (
+                {"__name__": "cache_lookup_duration_seconds_bucket", "job": "reader", "le": "1"},
+                {300: 2},
+            ),
+            (
+                {"__name__": "cache_lookup_duration_seconds_bucket", "job": "reader", "le": "4"},
+                {300: 8},
+            ),
+            (
+                {"__name__": "cache_lookup_duration_seconds_bucket", "job": "reader", "le": "+Inf"},
+                {300: 10},
+            ),
+            (
+                {"__name__": "cache_lookup_duration_seconds_bucket", "job": "writer", "le": "1"},
+                {300: 4},
+            ),
+            (
+                {"__name__": "cache_lookup_duration_seconds_bucket", "job": "writer", "le": "4"},
+                {300: 8},
+            ),
+            (
+                {"__name__": "cache_lookup_duration_seconds_bucket", "job": "writer", "le": "+Inf"},
+                {300: 10},
             ),
         ]
     )
@@ -352,6 +385,27 @@ def do_range_query_test(
     assert (
         http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
         == clickhouse_http_api_result_is_same_as_prometheus
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
+# Evaluates a query in ClickHouse only (no comparison with Prometheus) and checks the result.
+# Used to verify deterministic behavior of our implementation in cases where Prometheus is expected
+# to provide a different result.
+def do_clickhouse_only_query_test(
+    query,
+    timestamp,
+    result,
+    chresult,
+    eps=0,
+):
+    actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
+    assert tsv_close_to(
+        actual_chresult, chresult, eps=eps
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
+
+    actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
+    assert http_api_response_close_to(
+        actual_result_from_http_api, result, eps=eps
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
@@ -2386,101 +2440,373 @@ def test_comparison_operators():
 
 
 def test_aggregation_operators():
-    # Test data for aggregation:
-    # At timestamp 131, the visible `foo` series (using 5m lookback) are:
-    #   foo{shape="square", size="s"}    = 4   (from t=110)
-    #   foo{shape="triangle", size="m"}  = 80  (from t=120)
-    #   foo{shape="circle", size="l"}    = 16  (from t=110)
-    # Total = 100, Count = 3, Avg = 33.333..., Min = 4, Max = 80
-
-    # sum(foo): aggregates all foo series into one, drops all labels.
     do_query_test(
-        "sum(foo)",
-        131,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [131, "100"]}]}',
-        [["[]", "1970-01-01 00:02:11.000", "100"]],
+        "sum(bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "73"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", 73]],
     )
 
-    # count(foo): counts the number of foo series with a value.
     do_query_test(
-        "count(foo)",
-        131,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [131, "3"]}]}',
-        [["[]", "1970-01-01 00:02:11.000", "3"]],
+        "sum(last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "30"], [120, "56"], [130, "140"], [140, "700"], [150, "1030"]]}]}',
+        [["[]", "[('1970-01-01 00:01:50.000',30),('1970-01-01 00:02:00.000',56),('1970-01-01 00:02:10.000',140),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',1030)]"]],
     )
 
-    # min(foo): minimum value across all foo series.
-    do_query_test(
-        "min(foo)",
-        131,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [131, "4"]}]}',
-        [["[]", "1970-01-01 00:02:11.000", "4"]],
-    )
+    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
+    # do_query_test(
+    #     "sum(bar) without (shape)",
+    #     120,
+    #     '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [120, "25"]}, {"metric": {"size": "s"}, "value": [120, "40"]}, {"metric": {"size": "xl"}, "value": [120, "8"]}]}',
+    #     [
+    #         ["[('size','l')]", "1970-01-01 00:02:00.000", 25],
+    #         ["[('size','s')]", "1970-01-01 00:02:00.000", 40],
+    #         ["[('size','xl')]", "1970-01-01 00:02:00.000", 8],
+    #     ],
+    # )
 
-    # max(foo): maximum value across all foo series.
     do_query_test(
-        "max(foo)",
-        131,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [131, "80"]}]}',
-        [["[]", "1970-01-01 00:02:11.000", "80"]],
-    )
-
-
-def test_aggregation_by_clause():
-    # sum by(size) (foo) at timestamp 131:
-    #   size="s": foo{shape="square", size="s"}    = 4
-    #   size="m": foo{shape="triangle", size="m"}  = 80
-    #   size="l": foo{shape="circle", size="l"}    = 16
-    do_query_test(
-        "sum by(size) (foo)",
-        131,
-        '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [131, "16"]}, {"metric": {"size": "m"}, "value": [131, "80"]}, {"metric": {"size": "s"}, "value": [131, "4"]}]}',
+        "(sum(last_over_time(bar[10])) without (shape))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "19"], [120, "16"], [130, "140"], [150, "1000"]]}, {"metric": {"size": "s"}, "values": [[110, "3"], [120, "40"], [140, "700"]]}, {"metric": {"size": "xl"}, "values": [[110, "8"], [150, "30"]]}]}',
         [
-            ["[('size','l')]", "1970-01-01 00:02:11.000", "16"],
-            ["[('size','m')]", "1970-01-01 00:02:11.000", "80"],
-            ["[('size','s')]", "1970-01-01 00:02:11.000", "4"],
+            ["[('size','l')]", "[('1970-01-01 00:01:50.000',19),('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:10.000',140),('1970-01-01 00:02:30.000',1000)]"],
+            ["[('size','s')]", "[('1970-01-01 00:01:50.000',3),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]"],
+            ["[('size','xl')]", "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:30.000',30)]"],
         ],
     )
 
-
-def test_aggregation_without_clause():
-    # sum without(shape) (foo) at timestamp 131 groups by size (removing shape and __name__):
-    #   size="s": 4, size="m": 80, size="l": 16
     do_query_test(
-        "sum without(shape) (foo)",
-        131,
-        '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [131, "16"]}, {"metric": {"size": "m"}, "value": [131, "80"]}, {"metric": {"size": "s"}, "value": [131, "4"]}]}',
+        "(count(last_over_time(bar[10])) by (size))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "2"], [120, "1"], [130, "2"], [150, "1"]]}, {"metric": {"size": "s"}, "values": [[110, "1"], [120, "1"], [140, "1"]]}, {"metric": {"size": "xl"}, "values": [[110, "1"], [150, "1"]]}]}',
         [
-            ["[('size','l')]", "1970-01-01 00:02:11.000", "16"],
-            ["[('size','m')]", "1970-01-01 00:02:11.000", "80"],
-            ["[('size','s')]", "1970-01-01 00:02:11.000", "4"],
+            ["[('size','l')]", "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:02:30.000',1)]"],
+            ["[('size','s')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:20.000',1)]"],
+            ["[('size','xl')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]"],
         ],
     )
 
-
-def test_aggregation_nested():
-    # max(sum by(size) (foo)) at timestamp 131:
-    # Inner: size="s"->4, size="m"->80, size="l"->16
-    # Outer: max of {4, 80, 16} = 80
     do_query_test(
-        "max(sum by(size) (foo))",
-        131,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [131, "80"]}]}',
-        [["[]", "1970-01-01 00:02:11.000", "80"]],
+        "(avg(last_over_time(bar[10])) by (size))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "9.5"], [120, "16"], [130, "70"], [150, "1000"]]}, {"metric": {"size": "s"}, "values": [[110, "3"], [120, "40"], [140, "700"]]}, {"metric": {"size": "xl"}, "values": [[110, "8"], [150, "30"]]}]}',
+        [
+            ["[('size','l')]", "[('1970-01-01 00:01:50.000',9.5),('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:10.000',70),('1970-01-01 00:02:30.000',1000)]"],
+            ["[('size','s')]", "[('1970-01-01 00:01:50.000',3),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]"],
+            ["[('size','xl')]", "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:30.000',30)]"],
+        ],
     )
+
+    do_query_test(
+        "min(last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "3"], [120, "16"], [130, "50"], [140, "700"], [150, "30"]]}]}',
+        [["[]", "[('1970-01-01 00:01:50.000',3),('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:10.000',50),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',30)]"]],
+    )
+
+    do_query_test(
+        "max(last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "10"], [120, "40"], [130, "90"], [140, "700"], [150, "1000"]]}]}',
+        [["[]", "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:10.000',90),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',1000)]"]],
+    )
+
+    do_query_test(
+        "stddev(last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "2.692582403567252"], [120, "12"], [130, "20"], [140, "0"], [150, "485"]]}]}',
+        [["[]", "[('1970-01-01 00:01:50.000',2.692582403567252),('1970-01-01 00:02:00.000',12),('1970-01-01 00:02:10.000',20),('1970-01-01 00:02:20.000',0),('1970-01-01 00:02:30.000',485)]"]],
+        eps=1e-9,
+    )
+
+    do_query_test(
+        "stdvar(last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "7.25"], [120, "144"], [130, "400"], [140, "0"], [150, "235225"]]}]}',
+        [["[]", "[('1970-01-01 00:01:50.000',7.25),('1970-01-01 00:02:00.000',144),('1970-01-01 00:02:10.000',400),('1970-01-01 00:02:20.000',0),('1970-01-01 00:02:30.000',235225)]"]],
+        eps=1e-9,
+    )
+
+    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
+    # group replaces all values with 1.
+    # {shape="circle", size="l"} and {shape="rectangle", size="l"} are merged to one group.
+    # do_query_test(
+    #     "group(bar) without (shape)",
+    #     120,
+    #     '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [120, "1"]}, {"metric": {"size": "s"}, "value": [120, "1"]}, {"metric": {"size": "xl"}, "value": [120, "1"]}]}',
+    #     [
+    #         ["[('size','l')]", "1970-01-01 00:02:00.000", 1],
+    #         ["[('size','s')]", "1970-01-01 00:02:00.000", 1],
+    #         ["[('size','xl')]", "1970-01-01 00:02:00.000", 1],
+    #     ],
+    # )
+
+    do_query_test(
+        "(group(last_over_time(bar[10])) without (shape))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "1"], [120, "1"], [130, "1"], [150, "1"]]}, {"metric": {"size": "s"}, "values": [[110, "1"], [120, "1"], [140, "1"]]}, {"metric": {"size": "xl"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            ["[('size','l')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',1),('1970-01-01 00:02:30.000',1)]"],
+            ["[('size','s')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:20.000',1)]"],
+            ["[('size','xl')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]"],
+        ],
+    )
+
+    do_query_test(
+        "quantile(0.5, last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "8.5"], [120, "28"], [130, "70"], [140, "700"], [150, "515"]]}]}',
+        [["[]", "[('1970-01-01 00:01:50.000',8.5),('1970-01-01 00:02:00.000',28),('1970-01-01 00:02:10.000',70),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',515)]"]],
+    )
+
+    # FIXME: quantile with phi depending on timestamp is not implemented yet.
+    # phi = scalar(time()) / 200 varies per subquery step: 0.55, 0.60, 0.65, 0.70, 0.75.
+    # do_query_test(
+    #     "quantile(time() / 200, last_over_time(bar[10]))[50:10]",
+    #     150,
+    #     '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "8.65"], [120, "30.4"], [130, "76"], [140, "700"], [150, "757.5"]]}]}',
+    #     [["[]", "[('1970-01-01 00:01:50.000',8.65),('1970-01-01 00:02:00.000',30.4),('1970-01-01 00:02:10.000',76),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',757.5)]"]],
+    # )
+
+    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
+    # topk keeps all tags.
+    # do_query_test(
+    #     "topk(2, bar)",
+    #     140,
+    #     '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "value": [140, "90"]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "value": [140, "700"]}]}',
+    #     [
+    #         ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "1970-01-01 00:02:20.000", 90],
+    #         ["[('__name__','bar'),('shape','square'),('size','s')]", "1970-01-01 00:02:20.000", 700],
+    #     ],
+    # )
+
+    do_query_test(
+        "topk(2, last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[110, "10"], [120, "16"], [130, "50"], [150, "1000"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[110, "9"], [130, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[120, "40"], [140, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[150, "30"]]}]}',
+        [
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:10.000',50),('1970-01-01 00:02:30.000',1000)]"],
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:10.000',90)]"],
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]"],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "[('1970-01-01 00:02:30.000',30)]"],
+        ],
+    )
+
+    do_query_test(
+        "(topk(1, last_over_time(bar[10])) by (size))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[110, "10"], [120, "16"], [150, "1000"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[130, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[110, "3"], [120, "40"], [140, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[110, "8"], [150, "30"]]}]}',
+        [
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:30.000',1000)]"],
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "[('1970-01-01 00:02:10.000',90)]"],
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',3),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]"],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:30.000',30)]"],
+        ],
+    )
+
+    # We test topk(1) only at timestamps 140, 150 to avoid ties.
+    do_query_test(
+        '(topk(1, {__name__=~"foo|bar"}) by (size))[20:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[150, "1000"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[140, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[140, "700"], [150, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[140, "8"], [150, "30"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[140, "80"], [150, "80"]]}]}',
+        [
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:30.000',1000)]"],
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "[('1970-01-01 00:02:20.000',90)]"],
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',700)]"],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "[('1970-01-01 00:02:20.000',8),('1970-01-01 00:02:30.000',30)]"],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:02:20.000',80),('1970-01-01 00:02:30.000',80)]"],
+        ],
+    )
+
+    do_query_test(
+        '(topk(1, {__name__=~"foo|bar"}) by (__name__))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[110, "10"], [150, "1000"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[130, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[120, "40"], [140, "700"]]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[120, "80"], [130, "80"], [140, "80"], [150, "80"]]}]}',
+        [
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:30.000',1000)]"],
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "[('1970-01-01 00:02:10.000',90)]"],
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]"],
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',16)]"],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:02:00.000',80),('1970-01-01 00:02:10.000',80),('1970-01-01 00:02:20.000',80),('1970-01-01 00:02:30.000',80)]"],
+        ],
+    )
+
+    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
+    # do_query_test(
+    #     "bottomk(2, bar)",
+    #     140,
+    #     '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "value": [140, "50"]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "value": [140, "8"]}]}',
+    #     [
+    #         ["[('__name__','bar'),('shape','circle'),('size','l')]", "1970-01-01 00:02:20.000", 50],
+    #         ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "1970-01-01 00:02:20.000", 8],
+    #     ],
+    # )
+
+    do_query_test(
+        "bottomk(2, last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[120, "16"], [130, "50"], [150, "1000"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[130, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[110, "3"], [120, "40"], [140, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[110, "8"], [150, "30"]]}]}',
+        [
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:10.000',50),('1970-01-01 00:02:30.000',1000)]"],
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "[('1970-01-01 00:02:10.000',90)]"],
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',3),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]"],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:30.000',30)]"],
+        ],
+    )
+
+    do_query_test(
+        "(bottomk(1, last_over_time(bar[10])) by (size))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[120, "16"], [130, "50"], [150, "1000"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[110, "9"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[110, "3"], [120, "40"], [140, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[110, "8"], [150, "30"]]}]}',
+        [
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:10.000',50),('1970-01-01 00:02:30.000',1000)]"],
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "[('1970-01-01 00:01:50.000',9)]"],
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',3),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]"],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:30.000',30)]"],
+        ],
+    )
+
+    # We test bottomk(1) only at timestamps 140, 150 to avoid ties.
+    do_query_test(
+        '(bottomk(1, {__name__=~"foo|bar"}) by (size))[20:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[140, "8"], [150, "30"]]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[140, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[140, "40"], [150, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[140, "80"], [150, "80"]]}]}',
+        [
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "[('1970-01-01 00:02:20.000',8),('1970-01-01 00:02:30.000',30)]"],
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:20.000',16),('1970-01-01 00:02:30.000',16)]"],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:20.000',40),('1970-01-01 00:02:30.000',40)]"],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:02:20.000',80),('1970-01-01 00:02:30.000',80)]"],
+        ],
+    )
+
+    do_query_test(
+        '(bottomk(1, {__name__=~"foo|bar"}) by (__name__))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[110, "3"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[120, "8"], [130, "8"], [140, "8"], [150, "30"]]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[130, "16"], [140, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [120, "4"]]}]}',
+        [
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',3)]"],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "[('1970-01-01 00:02:00.000',8),('1970-01-01 00:02:10.000',8),('1970-01-01 00:02:20.000',8),('1970-01-01 00:02:30.000',30)]"],
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:20.000',16),('1970-01-01 00:02:30.000',16)]"],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',4)]"],
+        ],
+    )
+
+    # limitk(0): returns no series.
+    do_query_test(
+        "limitk(0, last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+    # Our implementation of limitk() picks k time series deterministically after sorting them by CityHash64(tags).
+    # Prometheus uses its own fingerprint (xxhash.Sum64), so limitk() in Prometheus picks different time series.
+    # That's why these tests check only ClickHouse results, and don't compare with Prometheus.
+    do_clickhouse_only_query_test(
+        "limitk(1, last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[120, "80"]]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:30.000',16)]"],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:10.000',40)]"],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:02:00.000',80)]"],
+        ],
+    )
+
+    do_clickhouse_only_query_test(
+        "limitk(2, last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]"],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:10.000',40)]"],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]"],
+        ],
+    )
+
+    # count(limitk(2)): returns min(k, n) where k=2 and n is the number of series at each timestamp.
+    do_query_test(
+        "(count(limitk(2, last_over_time(foo[10]))))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "2"], [120, "1"], [130, "2"], [150, "1"]]}]}',
+        [["[]", "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:02:30.000',1)]"]],
+    )
+
+    # limitk(3): returns all 3 series.
+    do_query_test(
+        "limitk(3, last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]"],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:10.000',40)]"],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]"],
+        ],
+    )
+
+    # limitk(4): also returns all 3 series.
+    do_query_test(
+        "limitk(4, last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]"],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:10.000',40)]"],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]"],
+        ],
+    )
+
+    # topk(-1) and limitk(-2): k<0 is clamped to 0, returns no series.
+    do_query_test(
+        "topk(-1, last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+    do_query_test(
+        "limitk(-2, last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+    # topk(+Inf): k=+Inf causes an error because it cannot be converted to an integer.
+    do_query_test_expect_error(
+        "topk(+Inf, last_over_time(foo[10]))[50:10]",
+        150,
+        "Scalar value +Inf overflows int64",
+        "Argument k of aggregation operator is too large",
+    )
+
+    # FIXME: topk/bottomk/limitk with k depending on timestamp are not implemented yet.
+    # topk with k depending on the timestamp: k = time() / 10 - 10 varies per subquery step (1, 2, 3, 4, 5).
+    # do_query_test(
+    #     'topk(time() / 10 - 10, last_over_time({__name__=~"foo|bar"}[10]))[50:10]',
+    #     150,
+    #     '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[130, "50"], [150, "1000"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[130, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[120, "40"], [140, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[150, "30"]]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[120, "80"]]}]}',
+    #     [
+    #         ["[('__name__','bar'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:10.000',50),('1970-01-01 00:02:30.000',1000)]"],
+    #         ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "[('1970-01-01 00:02:10.000',90)]"],
+    #         ["[('__name__','bar'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]"],
+    #         ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "[('1970-01-01 00:02:30.000',30)]"],
+    #         ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:30.000',16)]"],
+    #         ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:10.000',40)]"],
+    #         ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:02:00.000',80)]"],
+    #     ],
+    # )
 
 
 def test_histogram_quantile():
-    # Test histogram_quantile with classic histogram buckets.
-    # At timestamp 300:
-    #   le=0.1 -> 10 requests
-    #   le=0.5 -> 30 requests (20 in bucket [0.1, 0.5])
-    #   le=1.0 -> 50 requests (20 in bucket [0.5, 1.0])
-    #   le=+Inf -> 60 requests (10 in bucket [1.0, +Inf])
-    #
-    # histogram_quantile(0.5, http_request_duration_seconds_bucket)
-    # 50th percentile: 30th request out of 60 total = 0.5 * 60 = 30
-    # Falls exactly at the upper bound of the [0.1, 0.5] bucket -> 0.5
+    # The classic histogram `http_request_duration_seconds_bucket` has cumulative counts at t=300:
+    #   le=0.1  -> 10   (10 observations in (-Inf, 0.1])
+    #   le=0.5  -> 30   (20 more observations in (0.1, 0.5])
+    #   le=1.0  -> 50   (20 more observations in (0.5, 1.0])
+    #   le=+Inf -> 60   (10 more observations in (1.0, +Inf))
+
+    # phi=0.5 -> target rank = 0.5 * 60 = 30, which lands exactly on the le=0.5 bucket edge.
     do_query_test(
         "histogram_quantile(0.5, http_request_duration_seconds_bucket)",
         300,
@@ -2488,14 +2814,79 @@ def test_histogram_quantile():
         [["[('job','api')]", "1970-01-01 00:05:00.000", "0.5"]],
     )
 
-    # histogram_quantile(0.9, http_request_duration_seconds_bucket)
-    # 90th percentile: 54th request out of 60 total = 0.9 * 60 = 54
-    # Falls in bucket [1.0, +Inf]: Prometheus returns the lower bound of the +Inf bucket.
-    # According to Prometheus behavior, when a quantile falls in the +Inf bucket,
-    # it returns the upper bound of the last finite bucket (1.0 in this case).
+    # phi=0.25 -> target rank = 15, falls inside bucket (0.1, 0.5]. Linear interpolation:
+    #   0.1 + (0.5 - 0.1) * (15 - 10) / (30 - 10) = 0.1 + 0.4 * 0.25 = 0.2.
+    do_query_test(
+        "histogram_quantile(0.25, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0.2"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.2"]],
+        eps=1e-12,
+    )
+
+    # phi=0.9 -> target rank = 54, falls inside the +Inf bucket. Prometheus returns the
+    # upper bound of the last finite bucket (1.0) rather than extrapolating to infinity.
     do_query_test(
         "histogram_quantile(0.9, http_request_duration_seconds_bucket)",
         300,
         '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "1"]}]}',
         [["[('job','api')]", "1970-01-01 00:05:00.000", "1"]],
+    )
+
+    # phi=0.1 -> target rank = 6, falls inside the first bucket (0, 0.1] whose upper
+    # bound is positive. Prometheus interpolates from 0 as if the first bucket's lower
+    # bound were 0: 0.1 * (6 / 10) = 0.06.
+    do_query_test(
+        "histogram_quantile(0.1, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0.06"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.06"]],
+        eps=1e-12,
+    )
+
+    # Multiple series (two `job` values) -> the aggregate must produce one quantile per
+    # group. Also verifies that `le` and `__name__` are removed from the output labels
+    # while other labels (`job`) are preserved.
+    do_query_test(
+        "histogram_quantile(0.5, cache_lookup_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "reader"}, "value": [300, "2.5"]}, {"metric": {"job": "writer"}, "value": [300, "1.75"]}]}',
+        [
+            ["[('job','reader')]", "1970-01-01 00:05:00.000", "2.5"],
+            ["[('job','writer')]", "1970-01-01 00:05:00.000", "1.75"],
+        ],
+        eps=1e-12,
+    )
+
+    # Range-query form: evaluate histogram_quantile over a step range that covers t=300.
+    # Since all histogram samples are at t=300, phi=0.5 returns 0.5 for every step where the
+    # 5m lookback window still contains the samples.
+    do_range_query_test(
+        "histogram_quantile(0.5, http_request_duration_seconds_bucket)",
+        300,
+        320,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "api"}, "values": [[300, "0.5"], [310, "0.5"], [320, "0.5"]]}]}',
+        [
+            [
+                "[('job','api')]",
+                "[('1970-01-01 00:05:00.000',0.5),('1970-01-01 00:05:10.000',0.5),('1970-01-01 00:05:20.000',0.5)]",
+            ]
+        ],
+    )
+
+    # Type validation: second argument must be an instant vector.
+    do_query_test_expect_error(
+        "histogram_quantile(0.9, 1)",
+        300,
+        "expected type instant vector",
+        "expects second argument of type",
+    )
+
+    # Type validation: first argument must be a scalar.
+    do_query_test_expect_error(
+        "histogram_quantile(http_request_duration_seconds_bucket, http_request_duration_seconds_bucket)",
+        300,
+        "expected type scalar",
+        "expects first argument of type",
     )

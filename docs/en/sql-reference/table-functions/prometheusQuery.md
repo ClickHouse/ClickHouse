@@ -39,11 +39,11 @@ The function can returns different columns depending on the result type of the q
 
 ## Supported PromQL Features {#supported-promql-features}
 
-### Selectors
+### Selectors {#selectors}
 
 Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offset modifiers, `@` timestamp modifiers, and subqueries.
 
-### Functions
+### Functions {#functions}
 
 | Category | Functions |
 |----------|-----------|
@@ -57,17 +57,18 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported.
 
-### Operators
+### Operators {#operators}
 
 All arithmetic (`+`, `-`, `*`, `/`, `%`, `^`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`), and logical (`and`, `or`, `unless`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
 
 Unary operators `+` and `-`.
 
-### Aggregation Operators
+### Aggregation Operators {#aggregation-operators}
 
 `sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
 
 Not yet supported: `count_values`.
+
 ## Example {#example}
 
 ```sql
