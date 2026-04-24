@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"input_format_custom_max_number_of_fields_per_row", 1'000'000, 1'000'000, "New setting to bound the number of fields read per row in CustomSeparated input format when the number of columns is unknown (header detection or variable columns), protecting against unbounded memory consumption on malformed input."},
+            {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
