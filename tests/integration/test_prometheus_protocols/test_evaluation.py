@@ -302,6 +302,82 @@ def send_test_data():
         ]
     )
 
+    # Histograms for `histogram_quantile` edge-case coverage.
+    #
+    # `only_inf_bucket`: a single `le="+Inf"` bucket. Prometheus requires >=2 buckets
+    # and returns NaN otherwise.
+    # `no_inf_bucket`: finite buckets without the required `le="+Inf"` terminator.
+    # Prometheus returns NaN.
+    # `zero_count_bucket`: well-formed buckets but every count is zero. No observations
+    # -> NaN.
+    # `negative_le_bucket`: buckets with negative `le` upper bounds, plus zero and +Inf.
+    # Validates interpolation across negative/positive boundaries.
+    # `rate_bucket`: a histogram with two sample points per bucket so
+    # `rate(rate_bucket[60s])` produces meaningful per-second bucket rates.
+    send_data(
+        [
+            (
+                {"__name__": "only_inf_bucket", "le": "+Inf"},
+                {300: 10},
+            ),
+            (
+                {"__name__": "no_inf_bucket", "le": "0.1"},
+                {300: 5},
+            ),
+            (
+                {"__name__": "no_inf_bucket", "le": "0.5"},
+                {300: 8},
+            ),
+            (
+                {"__name__": "no_inf_bucket", "le": "1.0"},
+                {300: 10},
+            ),
+            (
+                {"__name__": "zero_count_bucket", "le": "0.1"},
+                {300: 0},
+            ),
+            (
+                {"__name__": "zero_count_bucket", "le": "0.5"},
+                {300: 0},
+            ),
+            (
+                {"__name__": "zero_count_bucket", "le": "+Inf"},
+                {300: 0},
+            ),
+            (
+                {"__name__": "negative_le_bucket", "le": "-1.0"},
+                {300: 5},
+            ),
+            (
+                {"__name__": "negative_le_bucket", "le": "0"},
+                {300: 10},
+            ),
+            (
+                {"__name__": "negative_le_bucket", "le": "+Inf"},
+                {300: 15},
+            ),
+            # Two sample points 60s apart so `rate(...[60s])` has a defined slope.
+            # Cumulative counts increase linearly; after rate(), each bucket's per-second
+            # rate preserves the cumulative shape needed by histogram_quantile.
+            (
+                {"__name__": "rate_bucket", "le": "0.1"},
+                {300: 10, 360: 20},
+            ),
+            (
+                {"__name__": "rate_bucket", "le": "0.5"},
+                {300: 30, 360: 60},
+            ),
+            (
+                {"__name__": "rate_bucket", "le": "1.0"},
+                {300: 50, 360: 100},
+            ),
+            (
+                {"__name__": "rate_bucket", "le": "+Inf"},
+                {300: 60, 360: 120},
+            ),
+        ]
+    )
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -2847,7 +2923,33 @@ def test_histogram_quantile():
     # Multiple series (two `job` values) -> the aggregate must produce one quantile per
     # group. Also verifies that `le` and `__name__` are removed from the output labels
     # while other labels (`job`) are preserved.
-    do_query_test(
+    #
+    # We exercise this two ways:
+    #   1. As a range query (below). Prometheus's instant-vector output is explicitly
+    #      undefined in order per the HTTP API docs
+    #      (https://prometheus.io/docs/prometheus/latest/querying/api/), so a multi-group
+    #      instant test would be flaky against Prometheus; range queries are sorted
+    #      alphabetically on both sides, mirroring the `topk`/`bottomk` precedent.
+    #   2. As an instant query through `do_clickhouse_only_query_test` to lock in our
+    #      deterministic alphabetical ordering without asserting against Prometheus.
+    do_range_query_test(
+        "histogram_quantile(0.5, cache_lookup_duration_seconds_bucket)",
+        300,
+        300,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "reader"}, "values": [[300, "2.5"]]}, {"metric": {"job": "writer"}, "values": [[300, "1.75"]]}]}',
+        [
+            ["[('job','reader')]", "[('1970-01-01 00:05:00.000',2.5)]"],
+            ["[('job','writer')]", "[('1970-01-01 00:05:00.000',1.75)]"],
+        ],
+        eps=1e-12,
+    )
+
+    # Instant-query variant: ClickHouse returns groups in deterministic alphabetical order.
+    # Prometheus instant vectors have no defined order (see note above), so we check only
+    # the ClickHouse side here - mirroring the `limitk` precedent where implementations
+    # diverge in output ordering.
+    do_clickhouse_only_query_test(
         "histogram_quantile(0.5, cache_lookup_duration_seconds_bucket)",
         300,
         '{"resultType": "vector", "result": [{"metric": {"job": "reader"}, "value": [300, "2.5"]}, {"metric": {"job": "writer"}, "value": [300, "1.75"]}]}',
@@ -2873,6 +2975,66 @@ def test_histogram_quantile():
                 "[('1970-01-01 00:05:00.000',0.5),('1970-01-01 00:05:10.000',0.5),('1970-01-01 00:05:20.000',0.5)]",
             ]
         ],
+    )
+
+    # Degenerate histograms: Prometheus returns NaN when the input is not a well-formed
+    # histogram (fewer than 2 buckets, or no `+Inf` bucket, or zero observations).
+
+    # Only a `+Inf` bucket (size < 2) -> NaN.
+    do_query_test(
+        "histogram_quantile(0.5, only_inf_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "NaN"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "nan"]],
+    )
+
+    # Missing `+Inf` bucket (max finite bucket is 1.0) -> NaN.
+    do_query_test(
+        "histogram_quantile(0.5, no_inf_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "NaN"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "nan"]],
+    )
+
+    # Every bucket count is zero -> no observations -> NaN.
+    do_query_test(
+        "histogram_quantile(0.5, zero_count_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "NaN"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "nan"]],
+    )
+
+    # Negative `le` upper bounds: buckets [(-1, 5), (0, 10), (+Inf, 15)] with total 15.
+    # phi=0.5 targets rank 7.5, which falls in bucket (-1, 0] with lower_value=5,
+    # upper_value=10. Linear interpolation: -1 + (0 - (-1)) * (7.5 - 5) / (10 - 5) = -0.5.
+    do_query_test(
+        "histogram_quantile(0.5, negative_le_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "-0.5"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "-0.5"]],
+        eps=1e-12,
+    )
+
+    # Empty result: querying a histogram that doesn't exist returns an empty vector
+    # without invoking the aggregate. Exercises the `StoreMethod::EMPTY` short-circuit
+    # in `applyHistogramQuantile`.
+    do_query_test(
+        "histogram_quantile(0.5, nonexistent_metric_bucket)",
+        300,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Idiomatic Prometheus usage: `histogram_quantile(phi, rate(bucket[window]))`.
+    # `rate_bucket` has samples at t=300 and t=360 with linearly increasing counts,
+    # so per-bucket rates over [300, 360] preserve the cumulative shape. phi=0.5
+    # lands exactly on the le=0.5 bucket edge, independent of the exact rate magnitude.
+    do_query_test(
+        "histogram_quantile(0.5, rate(rate_bucket[60s]))",
+        360,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [360, "0.5"]}]}',
+        [["[]", "1970-01-01 00:06:00.000", "0.5"]],
+        eps=1e-12,
     )
 
     # Out-of-range phi: PromQL short-circuits before looking at the histogram.
