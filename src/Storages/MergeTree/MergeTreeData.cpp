@@ -8619,6 +8619,9 @@ struct PartsPruningResult
         if (part->isEmpty())
             return true;
 
+        if (!part->minmax_idx->initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a non-empty part with uninitialized minmax_idx. It's a bug");
+
         if (max_block_numbers_to_read)
         {
             auto it = max_block_numbers_to_read->find(part->info.getPartitionId());
