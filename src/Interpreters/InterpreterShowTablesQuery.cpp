@@ -232,19 +232,15 @@ BlockIO InterpreterShowTablesQuery::execute()
     }
     auto rewritten_query = getRewrittenQuery();
     String database = getContext()->resolveDatabase(query.getFrom());
-    if (query.databases || DatabaseCatalog::instance().isDatalakeCatalog(database))
-    {
-        auto query_context = Context::createCopy(getContext());
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId("");
-        /// HACK To always show them in explicit "SHOW TABLES" queries
-        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
-        return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
-    }
-
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+    {
+        /// HACK: force the setting so that system.tables includes tables from the requested data lake catalog.
+        /// system.databases already shows all catalogs unconditionally, so no override is needed for SHOW DATABASES.
+        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
+    }
     return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 }
 
