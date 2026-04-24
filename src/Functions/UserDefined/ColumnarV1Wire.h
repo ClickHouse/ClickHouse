@@ -411,6 +411,7 @@ inline void writeColData(
 
             ColDescriptor inner_desc{};
             sub_cursor = buildColDescriptor(&sub, false, false, sub_rows, sub_cursor, inner_desc);
+            inner_desc.null_offset = sub_rows;  // sub_rows stored for WASM navigation
 
             std::memcpy(record_ptr,     &global_d,   1u);
             std::memset(record_ptr + 1, 0,           3u);

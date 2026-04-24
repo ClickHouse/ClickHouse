@@ -496,6 +496,7 @@ TEST(ColumnarV1Wire, VariantUInt64String)
     ColDescriptor inner0{};
     std::memcpy(&inner0, rec0 + 4u, COLUMNAR_DESC_BYTES);
     EXPECT_EQ(inner0.type, COL_FIXED64);
+    EXPECT_EQ(inner0.null_offset, 2u);  // sub_rows stored for WASM navigation
     EXPECT_EQ(inner0.data_size, 2u * sizeof(uint64_t));
 
     const uint64_t * u64_data = reinterpret_cast<const uint64_t *>(buf.data() + inner0.data_offset);
@@ -508,6 +509,7 @@ TEST(ColumnarV1Wire, VariantUInt64String)
     ColDescriptor inner1{};
     std::memcpy(&inner1, rec1 + 4u, COLUMNAR_DESC_BYTES);
     EXPECT_EQ(inner1.type, COL_BYTES);
+    EXPECT_EQ(inner1.null_offset, 1u);  // sub_rows stored for WASM navigation
 
     const uint32_t * str_offs = reinterpret_cast<const uint32_t *>(buf.data() + inner1.offsets_offset);
     EXPECT_EQ(str_offs[0], 0u);
