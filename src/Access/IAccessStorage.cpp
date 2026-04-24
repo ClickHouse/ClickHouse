@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/callOnce.h>
+#include "Access/Common/AuthenticationType.h"
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -34,6 +35,7 @@ namespace ErrorCodes
     extern const int ACCESS_STORAGE_READONLY;
     extern const int ACCESS_STORAGE_DOESNT_ALLOW_BACKUP;
     extern const int REQUIRED_SECOND_FACTOR;
+    extern const int AUTHENTICATION_FAILED;
     extern const int WRONG_PASSWORD;
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
@@ -546,6 +548,9 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     bool allow_no_password,
     bool allow_plaintext_password) const
 {
+    if (typeid_cast<const TokenCredentials *>(&credentials) && !typeid_cast<const TokenCredentials *>(&credentials)->isReady())
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Could not resolve username from token");
+
     if (auto id = find<User>(credentials.getUserName()))
     {
         if (auto user = tryRead<User>(*id))
