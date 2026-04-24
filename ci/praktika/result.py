@@ -728,7 +728,12 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def from_gtest_run(
-        cls, unit_tests_path, name="", with_log=False, command_launcher=""
+        cls,
+        unit_tests_path,
+        name="",
+        with_log=False,
+        command_launcher="",
+        gtest_filter="",
     ):
         """
         Runs gtest and generates praktika Result from results
@@ -737,10 +742,16 @@ class Result(MetaClasses.Serializable):
         If it's a job itself job.name will be taken as name by default
         :param with_log: whether to log gtest output into separate file
         :param command_prefix: prefix to add to gtest command
+        :param gtest_filter: gtest filter expression (passed as --gtest_filter)
         :return: Result
         """
 
+        if not name:
+            name = Info().job_name
+
         command = f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
+        if gtest_filter:
+            command += f" --gtest_filter='{gtest_filter}'"
         if command_launcher:
             command = f"{command_launcher} {command}"
 
@@ -751,14 +762,31 @@ class Result(MetaClasses.Serializable):
                 f"chmod +x {unit_tests_path}",
                 command,
             ],
+            with_log=True,
         )
-        is_error = not result.is_ok()
+        binary_failed = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
         result.set_status(status).set_results(results).set_info(info)
-        if is_error and result.is_ok():
-            # test cases can be OK but gtest binary run failed, for instance due to sanitizer error
+        if binary_failed and result.is_ok():
+            # gtest cases all passed but binary run exited non-zero — e.g. sanitizer
+            # assertion triggered after the test body returned. This is a test failure,
+            # not an infrastructure error.
             result.set_info("gtest binary run has non-zero exit code - see logs")
-            result.set_status(Result.Status.ERROR)
+            result.set_status(Result.Status.FAIL)
+        if result.is_error():
+            # gtest.json is missing — the binary was killed before it could write results
+            # (e.g. by a sanitizer or OOM). Note: gdb returns 0 even when the inferior
+            # exits with a non-zero code, so we can't rely on binary_failed here.
+            # Extract the sanitizer SUMMARY line from the log file if available.
+            sanitizer_info = ""
+            if result.files:
+                log_content = Shell.get_output(f"cat {result.files[0]}", verbose=False)
+                for line in log_content.splitlines():
+                    if line.startswith("SUMMARY:"):
+                        sanitizer_info = line
+                        break
+            result.info = sanitizer_info or info
+            result.set_status(Result.Status.FAIL)
         return result
 
     @classmethod
@@ -1593,14 +1621,12 @@ class ResultTranslator:
             List[Result]: A list of Result objects representing individual test cases
         """
         name = "pytest"
-        sw = Utils.Stopwatch()
         if not os.path.isfile(pytest_report_file):
             print(f"ERROR: Pytest report file {pytest_report_file} not found")
             return Result.create_from(
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Pytest report file {pytest_report_file} not found",
-                stopwatch=sw,
             )
 
         # Track test cases by their node_id, and also track failures by phase
@@ -1980,7 +2006,7 @@ class ResultTranslator:
                     elif "teardown" in failures:
                         test_results[node_id].status = failures["teardown"]
 
-            R = Result.create_from(name=name, results=list(test_results.values()), stopwatch=sw)
+            R = Result.create_from(name=name, results=list(test_results.values()))
 
             if session_exitstatus == 0:
                 # pytest exit code 0 means all tests passed or xfailed (from pytest's perspective).
@@ -2021,5 +2047,4 @@ class ResultTranslator:
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Failed to parse pytest jsonl: {e}, {traceback.print_exc()}",
-                stopwatch=sw,
             )
