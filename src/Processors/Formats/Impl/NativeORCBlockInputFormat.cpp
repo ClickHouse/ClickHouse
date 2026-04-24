@@ -717,6 +717,8 @@ static void buildORCSearchArgumentImpl(
         case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
         /// There is no optimization with pointInPolygon for ORC.
         case KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON:
+        /// There is no optimization with S2 spatial functions for ORC.
+        case KeyCondition::RPNElement::FUNCTION_S2_COVERING:
         case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
         {
             builder.literal(orc::TruthValue::YES_NO_NULL);
