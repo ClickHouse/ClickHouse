@@ -10,3 +10,12 @@ crate-type = ["staticlib"]
 # Wasmtime provides C/C++ header files located, so we put it to contrib, and we use it from there.
 [dependencies]
 wasmtime-c-api = { path = "../../../contrib/wasmtime/crates/c-api" , package = "wasmtime-c-api-impl" , default-features = false , features = ["addr2line", "coredump", "cranelift", "gc", "gc-null", "debug-builtins", "demangle", "wat"] }
+
+# Enable isle-split-match on cranelift-codegen via Cargo feature unification.
+# Without this, the ISLE-generated `constructor_simplify` function is a single
+# monolithic body whose stack frame (~64 KB) multiplied by REWRITE_LIMIT=5
+# recursion levels overflows small thread stacks (e.g. the 512 KB TCPHandler
+# stack on aarch64-apple-darwin). The feature wraps large match arms in
+# closures, reducing the per-level frame. Cranelift already does this
+# unconditionally in debug builds; this enables it for release builds too.
+cranelift-codegen = { path = "../../../contrib/wasmtime/cranelift/codegen", default-features = false, features = ["isle-split-match"] }
