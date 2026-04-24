@@ -175,31 +175,6 @@ bool isInMemoryLayout(const String & type_name)
     return supported_layouts.contains(type_name);
 }
 
-bool isNullInConstantList(const Field & default_value, const ConstantNode * constant_node)
-{
-    const Field & constant_field = constant_node->getValue();
-
-    if (constant_field.isNull())
-        return true;
-
-    if (constant_field.getType() == Field::Types::Tuple)
-    {
-        const auto & tuple = constant_field.safeGet<Tuple>();
-        for (const auto & element : tuple)
-            if (element.isNull())
-                return true;
-    }
-    else if (constant_field.getType() == Field::Types::Array)
-    {
-        const auto & arr = constant_field.safeGet<Array>();
-        for (const auto & element : arr)
-            if (element.isNull())
-                return true;
-    }
-
-    return false;
-}
-
 template <typename Node>
 void resolveNode(const Node & node, const ContextPtr & context)
 {
