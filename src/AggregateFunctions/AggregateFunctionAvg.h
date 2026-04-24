@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
+#include <Common/logger_useful.h>
 
 #include "config.h"
 
@@ -326,6 +327,8 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
+        LOG_DEBUG(getLogger("AVG_ADD"), "add called, row={}", row_num);
+        
         increment(place, Numerator(static_cast<const ColVecType &>(*columns[0]).getData()[row_num]));
         ++this->data(place).denominator;
     }

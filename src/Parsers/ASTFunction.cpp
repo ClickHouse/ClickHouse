@@ -862,6 +862,29 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     }
 
+    // Combinator formatting
+    if (totals_combinator)
+    {
+        ostr << " TOTALS";
+    }
+
+    if (by_combinator && by_combinator_columns)
+    {
+        ostr << " BY ";
+        by_combinator_columns->format(
+            ostr, settings, state,
+            nested_dont_need_parens);
+    }
+    
+    if (order_by_combinator
+        && order_by_combinator_columns)
+    {
+        ostr << " ORDER BY ";
+        order_by_combinator_columns->format(
+            ostr, settings, state,
+            nested_dont_need_parens);
+    }
+
     if (need_parens)
         ostr << ')';
 

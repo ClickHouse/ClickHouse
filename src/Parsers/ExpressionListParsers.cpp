@@ -1132,6 +1132,10 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        LOG_DEBUG(getLogger("FUNC_LAYER"),
+        "func={}, state={}", 
+        function_name, state);
+
         ///   | 0 |      1      |     2    |
         ///  f(ALL ...)(ALL ...) FILTER ...
         ///
@@ -1141,6 +1145,12 @@ public:
 
         if (state == 0)
         {
+
+            LOG_DEBUG(getLogger("FL"),
+                "state 0, func={}, token={}",
+                function_name,
+                String(pos->begin, pos->end));
+
             state = 1;
 
             auto pos_after_bracket = pos;
@@ -1178,11 +1188,112 @@ public:
 
         if (state == 1)
         {
+
+            LOG_DEBUG(getLogger("FL"),
+                "state 1, func={}, token={}",
+                function_name,
+                String(pos->begin, pos->end));
+
+
             if (ParserToken(TokenType::Comma).ignore(pos, expected))
             {
                 action = Action::OPERAND;
-                return mergeElement();
+
+                if (!mergeElement())
+                    return false;
+
+
+                // If there was BY keyword, the expression belongs to by_columns
+                if (has_by)
+                {
+                    by_columns->children.push_back(
+                        std::move(elements.back()));
+                    elements.pop_back();
+                }
+                return true;
             }
+
+
+            LOG_DEBUG(getLogger("PARSER_DBG"),
+                "func={}, state=1, token={}",
+                function_name,
+                String(pos->begin, pos->end));
+
+
+            LOG_DEBUG(getLogger("TOTALS_DBG"),
+                "before totals check, token={}, "
+                "type={}",
+                String(pos->begin, pos->end),
+                static_cast<int>(pos->type));
+            // TOTALS combinator
+            ParserKeyword totals_kw(Keyword::TOTALS);
+            bool totals_matched = totals_kw.ignore(
+                pos, expected);
+            LOG_DEBUG(getLogger("TOTALS_DBG"),
+                "totals ignore returned: {}",
+                totals_matched);
+            if (totals_matched)
+            {
+                has_totals = true;
+                // if (!isCurrentElementEmpty()
+                //     || !elements.empty())
+                //     if (!mergeElement())
+                //         return false;
+
+                LOG_DEBUG(getLogger("TOTALS_DBG"),
+                    "after mergeElement, "
+                    "next token={}",
+                    String(pos->begin, pos->end));
+            }
+
+            // BY combinator
+            ParserKeyword by_kw(Keyword::BY);
+            if (!has_totals
+                && by_kw.ignore(pos, expected))
+            {
+                has_by = true;
+                by_columns = make_intrusive<ASTExpressionList>();
+                if (!isCurrentElementEmpty()
+                    || !elements.empty())
+                    if (!mergeElement())
+                        return false;
+                action = Action::OPERAND;
+                return true;
+            }
+
+            // ORDER BY combinator
+            ParserKeyword order_by_kw(
+                Keyword::ORDER_BY);
+            
+            bool order_by_matched = order_by_kw.ignore(pos, expected);
+            LOG_DEBUG(getLogger("OB_DBG"),
+                "order_by matched={}, token={}",
+                order_by_matched,
+                String(pos->begin, pos->end));
+
+            if (!has_totals && !has_by
+                && order_by_matched)
+            {
+                has_order_by = true;
+                if (!isCurrentElementEmpty()
+                    || !elements.empty())
+                    if (!mergeElement())
+                        return false;
+
+                ParserOrderByExpressionList
+                    order_parser;
+                if (!order_parser.parse(
+                        pos, order_by_columns,
+                        expected))
+                    return false;
+            }
+
+
+            // Only one of the TOTALS, BY ans ORDER BY combinators can be at the one time
+            if ((has_totals && has_by)
+                || (has_totals && has_order_by)
+                || (has_by && has_order_by))
+                return false;
 
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             {
@@ -1191,6 +1302,13 @@ public:
                 if (!isCurrentElementEmpty() || !elements.empty())
                     if (!mergeElement())
                         return false;
+
+                if (has_by)
+                {
+                    by_columns->children.push_back(
+                        std::move(elements.back()));
+                    elements.pop_back();
+                }
 
                 contents_end = pos->begin;
 
@@ -1315,6 +1433,27 @@ public:
                     return false;
             }
 
+            if (has_totals)
+            {
+                function_node->totals_combinator = true;
+            }
+            if (has_by)
+            {
+                function_node->by_combinator = true;
+                function_node->by_combinator_columns
+                    = std::move(by_columns);
+                function_node->children.push_back(
+                    function_node->by_combinator_columns);
+            }
+            if (has_order_by)
+            {
+                function_node->order_by_combinator = true;
+                function_node->order_by_combinator_columns
+                    = std::move(order_by_columns);
+                function_node->children.push_back(
+                    function_node->order_by_combinator_columns);
+            }
+
             elements = {std::move(function_node)};
             finished = true;
         }
@@ -1329,8 +1468,14 @@ private:
     const char * contents_begin{};
     const char * contents_end{};
 
+    bool has_totals = false;
+    bool has_by = false;
+    bool has_order_by = false;
+
     String function_name;
     ASTPtr parameters;
+    ASTPtr by_columns;
+    ASTPtr order_by_columns;
 
     bool allow_function_parameters;
     bool is_compound_name;

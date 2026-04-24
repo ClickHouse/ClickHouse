@@ -817,6 +817,10 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
               * In order that then everything is properly destroyed, we "roll back" some of the created states.
               * The code is not very convenient.
               */
+
+            LOG_DEBUG(getLogger("AGGREGATOR"),
+                "creating new aggregate state, "
+                "function index={}", j);
             aggregate_functions[j]->create(aggregate_data + offsets_of_aggregate_states[j]);
         }
         catch (...)
@@ -1596,6 +1600,11 @@ bool Aggregator::executeOnBlock(Columns columns,
     AggregateColumns & aggregate_columns,
     bool & no_more_keys) const
 {
+
+    LOG_DEBUG(getLogger("AGGREGATOR"),
+    "executeOnBlock, rows={}",
+    row_end - row_begin);
+
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
@@ -2037,6 +2046,9 @@ template <typename Method, typename Table>
 Chunks
 Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block) const
 {
+    LOG_DEBUG(getLogger("AGGREGATOR"),
+        "convertToBlockImpl: finalizing, "
+        "rows={}", rows);
     if (data.empty())
     {
         auto && out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, aggregates_pools, final, rows);
@@ -2206,10 +2218,14 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
     {
         /// Insert final values of aggregate functions into columns.
         for (; insert_i < params.aggregates_size; ++insert_i)
-            aggregate_functions[insert_i]->insertResultInto(
-                mapped + offsets_of_aggregate_states[insert_i],
-                *final_aggregate_columns[insert_i],
-                arena);
+        {
+            LOG_DEBUG(getLogger("AGGREGATOR"), "insertResultInto, func={}", insert_i);
+            aggregate_functions[insert_i]
+                ->insertResultInto(
+                    mapped + offsets_of_aggregate_states[insert_i],
+                    *final_aggregate_columns[insert_i],
+                    arena);
+        }
     }
     catch (...)
     {
@@ -2281,6 +2297,69 @@ Chunk Aggregator::insertResultsIntoColumns(
             callJITFunction(insert_aggregates_into_columns_function, 0, places.size(), columns_data.data(), places.data());
         }
 #endif
+        // TOTALS combinator: merge all states
+        // into one and fill column with
+        // global value
+        for (size_t i = 0;
+            i < params.aggregates_size; ++i)
+        {
+            if (!params.aggregates[i]
+                    .totals_combinator)
+                continue;
+
+
+            LOG_DEBUG(getLogger("TOTALS_IMPL"),
+                "processing TOTALS for func {}",
+                i);
+
+            auto & final_col
+                = out_cols.final_aggregate_columns[i];
+            size_t offset
+                = offsets_of_aggregate_states[i];
+
+            // Create global state
+            Arena totals_arena;
+            auto global_place
+                = totals_arena.alignedAlloc(
+                    aggregate_functions[i]
+                        ->sizeOfData(),
+                    aggregate_functions[i]
+                        ->alignOfData());
+            aggregate_functions[i]
+                ->create(global_place);
+
+            // Merge all states into global
+            for (size_t j = 0;
+                j < places.size(); ++j)
+            {
+                aggregate_functions[i]->merge(
+                    global_place,
+                    places[j] + offset,
+                    &totals_arena);
+            }
+
+            // Finalize global state
+            // into a temporary column
+            auto tmp_col = final_col->cloneEmpty();
+            aggregate_functions[i]
+                ->insertResultInto(
+                    global_place,
+                    *tmp_col,
+                    &totals_arena);
+
+            // Fill all rows with this value
+            final_col = final_col->cloneEmpty();
+            for (size_t j = 0;
+                j < places.size(); ++j)
+            {
+                final_col->insertFrom(*tmp_col, 0);
+            }
+
+            // Destroy global state
+            aggregate_functions[i]
+                ->destroy(global_place);
+        }
+        
 
         for (; aggregate_functions_destroy_index < params.aggregates_size;)
         {
@@ -2291,6 +2370,15 @@ Chunk Aggregator::insertResultsIntoColumns(
                 continue;
             }
 #endif
+
+            // Skip TOTALS — already processed
+            if (params.aggregates[
+                    aggregate_functions_destroy_index]
+                    .totals_combinator)
+            {
+                ++aggregate_functions_destroy_index;
+                continue;
+            }
 
             auto & final_aggregate_column = out_cols.final_aggregate_columns[aggregate_functions_destroy_index];
             size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];

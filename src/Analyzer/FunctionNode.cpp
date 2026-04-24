@@ -293,6 +293,22 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
             function_ast->window_definition = window_node->toAST(new_options);
     }
 
+    if (is_totals_combinator)
+    {
+        function_ast->totals_combinator = true;
+    }
+    if (hasByCombinator())
+    {
+        function_ast->by_combinator = true;
+        auto by_list
+            = getByColumnsNode()
+                ->toAST(new_options);
+        function_ast->by_combinator_columns
+            = by_list;
+        function_ast->children.push_back(
+            function_ast->by_combinator_columns);
+    }
+
     return function_ast;
 }
 

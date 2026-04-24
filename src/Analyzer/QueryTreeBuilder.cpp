@@ -776,6 +776,27 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                         function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
                 }
 
+                if (function->totals_combinator)
+                {
+                    function_node->setTotalsCombinator();
+                }
+                
+                if (function->by_combinator
+                    && function->by_combinator_columns)
+                {
+                    auto by_list
+                        = std::make_shared<ListNode>();
+                    const auto & by_cols
+                        = function->by_combinator_columns
+                            ->as<ASTExpressionList>()
+                            ->children;
+                    for (const auto & col : by_cols)
+                        by_list->getNodes().push_back(
+                            buildExpression(col, context));
+                    function_node->getByColumnsNode()
+                        = std::move(by_list);
+                }
+
                 result = std::move(function_node);
             }
         }

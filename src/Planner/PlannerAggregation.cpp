@@ -43,6 +43,26 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggreg
             aggregate_description.argument_names.emplace_back(std::move(argument_node_name));
         }
 
+        if (aggregate_function_node_typed.hasTotalsCombinator())
+        {
+            aggregate_description.totals_combinator = true;
+        }
+        if (aggregate_function_node_typed.hasByCombinator())
+        {
+            const auto & by_nodes = aggregate_function_node_typed
+                .getByColumnsNode()->as<ListNode &>().getNodes();
+            aggregate_description.by_columns = Names();
+            aggregate_description.by_columns->reserve(by_nodes.size());
+            for (const auto & by_node : by_nodes)
+            {
+                String by_name = calculateActionNodeName(
+                    by_node, planner_context, node_to_name);
+                aggregate_description.by_columns->emplace_back(
+                    std::move(by_name));
+            }
+        }
+
+
         aggregate_description.column_name = std::move(node_name);
         aggregate_descriptions.push_back(std::move(aggregate_description));
     }
