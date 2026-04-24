@@ -4,9 +4,14 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
+#include <city.h>
+#include <Core/Settings.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PredicateStatisticsLog.h>
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -57,6 +62,11 @@ extern const Event ParallelReplicasReadRequestMicroseconds;
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 predicate_statistics_sample_rate;
+}
 
 namespace ErrorCodes
 {
@@ -249,6 +259,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
         auto chunk = Chunk(ordered_columns, res.row_count);
         const auto & data_part = current_task.getInfo().data_part;
+
         if (add_part_level)
             chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
 
@@ -381,6 +392,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             if (!task)
                 break;
+
+            if (storage_id.empty())
+            {
+                storage_id = task->getInfo().data_part->storage.getStorageID();
+                prewhere_step_offset = task->getInfo().mutation_steps.size();
+            }
         }
         catch (const Exception & e)
         {
@@ -436,16 +453,105 @@ static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
     const auto & all_counters = counters.getCounters();
     for (size_t i = 0; i < all_counters.size(); ++i)
     {
-        out << fmt::format("step {} rows_read: {}", i, all_counters[i]->rows_read.load());
+        out << fmt::format("step {} rows_read: {} rows_passed: {}", i,
+            all_counters[i]->rows_read.load(), all_counters[i]->rows_passed_filter.load());
         if (i + 1 < all_counters.size())
             out << ", ";
     }
     return out.str();
 }
 
+void MergeTreeSelectProcessor::logPredicateStatistics() const
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (!query_context)
+        return;
+
+    UInt64 sample_rate = query_context->getSettingsRef()[Setting::predicate_statistics_sample_rate];
+    if (sample_rate == 0)
+        return;
+
+    if (sample_rate > 1)
+    {
+        auto qid = CurrentThread::getQueryId();
+        if (CityHash_v1_0_2::CityHash64(qid.data(), qid.size()) % sample_rate != 0)
+            return;
+    }
+
+    auto predicate_stats_log = query_context->getPredicateStatisticsLog();
+    if (!predicate_stats_log)
+        return;
+
+    if (storage_id.database_name.empty())
+        return;
+
+    const auto & counters = read_steps_performance_counters.getCounters();
+    std::vector<size_t> filter_step_indices;
+    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
+    {
+        const auto & step = *prewhere_actions.steps[i];
+        if (step.type == PrewhereExprStep::Filter && !step.filter_column_name.empty() && step.actions)
+            filter_step_indices.push_back(i);
+    }
+
+    if (filter_step_indices.empty())
+        return;
+
+    size_t first = prewhere_step_offset + filter_step_indices.front();
+    size_t last = prewhere_step_offset + filter_step_indices.back();
+
+    if (last >= counters.size() || !counters[first] || !counters[last])
+        return;
+
+    UInt64 whole_input = counters[first]->rows_read;
+    UInt64 whole_passed = counters[last]->rows_passed_filter;
+
+    if (whole_input == 0)
+        return;
+
+    Float64 whole_selectivity = static_cast<Float64>(whole_passed) / static_cast<Float64>(whole_input);
+
+    time_t now = time(nullptr);
+    UInt16 today = static_cast<UInt16>(DateLUT::instance().toDayNum(now));
+    String query_id(CurrentThread::getQueryId());
+
+    for (size_t step_i : filter_step_indices)
+    {
+        const auto & step = prewhere_actions.steps[step_i];
+        size_t counter_i = prewhere_step_offset + step_i;
+
+        if (counter_i >= counters.size() || !counters[counter_i] || !step->actions)
+            continue;
+
+        UInt64 input_rows = counters[counter_i]->rows_read.load();
+        UInt64 passed_rows = counters[counter_i]->rows_passed_filter.load();
+
+        if (input_rows == 0)
+            continue;
+
+        Float64 step_selectivity = static_cast<Float64>(passed_rows) / static_cast<Float64>(input_rows);
+
+        PredicateStatisticsLogElement elem;
+        elem.event_date = today;
+        elem.event_time = now;
+        elem.database = storage_id.database_name;
+        elem.table = storage_id.table_name;
+        elem.query_id = query_id;
+        elem.predicate_expression = step->actions->getActionsDAG().dumpDAG();
+        elem.input_rows = input_rows;
+        elem.passed_rows = passed_rows;
+        elem.filter_selectivity = step_selectivity;
+        elem.total_input_rows = whole_input;
+        elem.total_passed_rows = whole_passed;
+        elem.total_selectivity = whole_selectivity;
+        predicate_stats_log->add(std::move(elem));
+    }
+}
+
 void MergeTreeSelectProcessor::onFinish() const
 {
     LOG_TEST(log, "Read steps statistics: {}", dumpStatistics(read_steps_performance_counters));
+    logPredicateStatistics();
 }
 
 }
