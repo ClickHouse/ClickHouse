@@ -793,12 +793,12 @@ void ConcurrencyControlMaxMinFairScheduler::schedule(std::unique_lock<std::mutex
         while (state.cur_concurrency < state.max_concurrency && !waiters.empty())
         {
             bool granted_one = false;
-            for (auto it = waiters.begin(); it != waiters.end(); ++it)
+            for (auto & waiter : waiters)
             {
-                if (it->granted.load(std::memory_order_relaxed) == 0)
+                if (waiter.granted.load(std::memory_order_relaxed) == 0)
                 {
                     state.cur_concurrency++;
-                    Allocation & allocation = *it;
+                    Allocation & allocation = waiter;
                     // Pre-emptively remove; `grant()` mutates `allocated` (the sort key) so
                     // leaving it linked would corrupt the set's ordering. Re-insert after.
                     removeWaiterLocked(&allocation);
