@@ -4388,12 +4388,28 @@ Ranges KeyCondition::extractBounds() const
     return std::move(bounds.ranges);
 }
 
+bool KeyCondition::hasFunctionNot() const
+{
+    return std::ranges::any_of(rpn, [](const RPNElement & e) { return e.function == RPNElement::FUNCTION_NOT; });
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
-    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
+    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn,
+    bool optimistic_unknowns) const
 {
+    /// `optimistic_unknowns` treats `FUNCTION_UNKNOWN` as the AND-identity `(true, false)`
+    /// instead of the neutral `(true, true)`. Under that rewrite `UNKNOWN` no longer pollutes
+    /// `can_be_false = true` through an enclosing `AND`, which lets callers prove that no
+    /// point in the hyperrectangle falsifies the RPN *assuming the unknown parts are always
+    /// true*. That stronger statement is sound for subsumption-style pruning: under the real
+    /// `UNKNOWN = (true, true)` evaluator, `UNKNOWN` contributes `can_be_true = true`
+    /// unconditionally, and "always true" preserves that domination through `AND` / `OR`.
+    /// The rewrite breaks under `FUNCTION_NOT` (which swaps `can_be_true` / `can_be_false`),
+    /// so callers must pre-check `hasFunctionNot` before opting in.
+    chassert(!optimistic_unknowns || !hasFunctionNot());
     std::vector<BoolMask> rpn_stack;
 
     auto curve_type = [&](size_t key_column_pos)
@@ -4415,7 +4431,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
-            rpn_stack.emplace_back(true, true);
+            /// See `optimistic_unknowns` at the top of this function.
+            rpn_stack.emplace_back(true, !optimistic_unknowns);
         }
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
                  || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)

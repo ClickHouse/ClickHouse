@@ -40,3 +40,32 @@ SELECT count() FROM t_skip_granule_minmax WHERE c > 100 SETTINGS use_skip_indexe
 SELECT count() FROM t_skip_granule_minmax WHERE c > 100 SETTINGS use_skip_indexes_on_data_read = 0;
 
 DROP TABLE t_skip_granule_minmax;
+
+-- Mixed-column AND: `(indexed_column_range) AND (predicate_on_other_column)`. The indexed
+-- column's per-index RPN is `RANGE AND UNKNOWN`; without the optimistic-UNKNOWN walker,
+-- `UNKNOWN`'s `can_be_false = true` would pin the AND's `can_be_false = true` and the shortcut
+-- would not fire even when the indexed-column range alone proves the part fully covered.
+-- Verifies that the shortcut still fires and results still match the no-skip-indexes reference.
+DROP TABLE IF EXISTS t_skip_granule_minmax_mixed;
+
+CREATE TABLE t_skip_granule_minmax_mixed
+(
+    c Int32,
+    v Int32,
+    INDEX i c TYPE minmax
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+PARTITION BY indexHint(c)
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_skip_granule_minmax_mixed
+SELECT 123 + number, number % 7 FROM numbers(1000);
+
+-- Indexed range fully covers the part; the extra predicate on `v` still gets evaluated.
+SELECT count() FROM t_skip_granule_minmax_mixed WHERE c > 100 AND v > 3;
+
+-- Reference with skip indexes disabled.
+SELECT count() FROM t_skip_granule_minmax_mixed WHERE c > 100 AND v > 3 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_skip_granule_minmax_mixed;
