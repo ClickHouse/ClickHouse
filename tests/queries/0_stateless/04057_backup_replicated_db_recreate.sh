@@ -7,7 +7,8 @@
 #
 # Before the fix, `getConsistentMetadataSnapshotImpl` had
 # `chassert(max_log_ptr == new_max_log_ptr)` that fired when the log pointer
-# went backwards after database recreation.
+# went backwards after database recreation. After the fix, such backups fail
+# cleanly with `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -65,15 +66,9 @@ do_backups &
 
 wait
 
-# Check how many backups were attempted (informational; under sanitizers all may
-# fail due to the concurrent DROP, but the real assertion is server liveness).
-BACKUP_COUNT=$($CLICKHOUSE_CLIENT --query "
-    SELECT count() FROM system.backups
-    WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
-")
-echo "Backups attempted: $BACKUP_COUNT" >&2
-
 # Clean up backup state.
+# Under sanitizers, all backups may fail due to the concurrent DROP; the real
+# assertion of this test is server liveness (no logical error exception).
 $CLICKHOUSE_CLIENT --query "
     SELECT id FROM system.backups
     WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
