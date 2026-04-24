@@ -1,17 +1,23 @@
--- Test for issue #92834: Logical error when querying system.parts
--- with a Nullable Date/DateTime/DateTime64 partition key where all values are NULL.
--- Without the null guards in getMinMaxDate/getMinMaxTime this path threw
--- "Part minmax index by time is neither DateTime or DateTime64" because
--- ColumnNullable::getExtremesNullLast returns POSITIVE_INFINITY (Null) when
--- every value is NULL.
+-- Test for `system.parts.min_time` / `max_time` / `min_date` / `max_date`
+-- reporting with `Nullable(Date/DateTime/DateTime64)` partition keys. (Found
+-- while investigating issue #92834; see that issue for a separate, unrelated
+-- stale-position bug after `ALTER MODIFY COLUMN ... AFTER` reorders a
+-- partition-key column, which this PR does NOT address.)
 --
--- The fix has two parts:
---   1. checkPartitionKeyAndInitMinMax unwraps Nullable so minmax_idx_*_column_pos
---      is actually set for Nullable(Date/DateTime[64]) partition keys. Otherwise
---      system.parts.min_*/max_* would silently be empty for Nullable keys.
---   2. getMinMaxDate/getMinMaxTime short-circuit on Field::Types::Null and return
---      an empty range instead of throwing. system.parts.min_time/max_time are
---      non-Nullable, so they surface as epoch (`0`) in this case.
+-- Before this fix, `checkPartitionKeyAndInitMinMax` did not unwrap `Nullable`,
+-- so `isDate` / `isDateTime` / `isDateTime64` returned false on a `Nullable(...)`
+-- partition key and `minmax_idx_{date,time}_column_pos` was left at `-1`. As a
+-- result `system.parts.min_*/max_*` silently returned `0` regardless of the
+-- actual data in the part — the non-`NULL` mixed case was silently wrong.
+--
+-- Unwrapping `Nullable` fixes that, but the same change means that for a part
+-- whose partition-key column is all-`NULL`, `hyperrectangle[pos].left` is now
+-- `Field::Types::Null` (`POSITIVE_INFINITY`, NullLast). The existing type
+-- checks in `getMinMaxDate`/`getMinMaxTime` would then throw
+-- `"Part minmax index by time is neither DateTime or DateTime64"`, so
+-- `getMinMaxDate`/`getMinMaxTime` also short-circuit on `Field::Types::Null`
+-- and return an empty range. `system.parts.min_time`/`max_time` are
+-- non-Nullable, so they surface as epoch (`0`) in the all-`NULL` case.
 
 -- =====================================================
 -- Case 1: Direct Nullable(DateTime) partition key with all NULLs.
