@@ -455,6 +455,13 @@ void MetadataStorageInMemoryTransaction::moveDirectory(const std::string & path_
         if (!prefix_to.empty() && prefix_to.back() != '/')
             prefix_to += '/';
 
+        /// Reject moves where destination is the source itself or inside the source subtree
+        /// (e.g. `a -> a/b`), matching `DiskLocal::moveDirectory` which would fail via `rename`.
+        if (prefix_from == prefix_to || prefix_to.starts_with(prefix_from))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                "Cannot move directory {} to {}: destination is inside the source subtree",
+                path_from, path_to);
+
         /// Move files
         std::vector<std::pair<std::string, MetadataStorageInMemory::FileEntry>> to_move;
         for (auto it = metadata_storage.files.begin(); it != metadata_storage.files.end();)
