@@ -11,6 +11,7 @@
 #include <span>
 #include <variant>
 #include <pthread.h>
+#include <base/scope_guard.h>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <base/MemorySanitizer.h>
@@ -487,6 +488,8 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
     // (64KB+ of code) that recurses up to REWRITE_LIMIT=5 times during compilation.
     // Each level pushes a large stack frame; the default 512KB thread stack overflows
     // on aarch64-apple-darwin. Compile on a dedicated thread with an 8 MiB stack.
+    // REWRITE_LIMIT=5 is a Cranelift compile-time constant, so recursion depth is
+    // bounded regardless of user input; 8 MiB is well above the observed maximum.
     struct CompileTask
     {
         wasmtime::Engine & engine;
@@ -499,32 +502,33 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
     pthread_attr_t attr;
     if (int rc = pthread_attr_init(&attr); rc != 0)
         throw Exception(ErrorCodes::WASM_ERROR, "pthread_attr_init failed: {}", rc);
+    SCOPE_EXIT(pthread_attr_destroy(&attr));
 
     if (int rc = pthread_attr_setstacksize(&attr, 8 * 1024 * 1024); rc != 0)
-    {
-        pthread_attr_destroy(&attr);
         throw Exception(ErrorCodes::WASM_ERROR, "pthread_attr_setstacksize failed: {}", rc);
-    }
 
     auto compile_fn = [](void * arg) -> void *
     {
         auto & t = *static_cast<CompileTask *>(arg);
-        auto res = wasmtime::Module::compile(t.engine, t.bytes);
-        if (res)
-            t.result = res.ok();
-        else
-            t.error = res.err().message();
+        try
+        {
+            auto res = wasmtime::Module::compile(t.engine, t.bytes);
+            if (res)
+                t.result = res.ok();
+            else
+                t.error = res.err().message();
+        }
+        catch (...)
+        {
+            t.error = getCurrentExceptionMessage(false);
+        }
         return nullptr;
     };
 
     pthread_t thread;
     if (int rc = pthread_create(&thread, &attr, compile_fn, &task); rc != 0)
-    {
-        pthread_attr_destroy(&attr);
         throw Exception(ErrorCodes::WASM_ERROR, "pthread_create failed: {}", rc);
-    }
 
-    pthread_attr_destroy(&attr);
     pthread_join(thread, nullptr);
 
     if (!task.result)
