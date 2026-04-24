@@ -363,8 +363,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit,
     Columns columns = block.getColumns();
     transformColumnsWithSharedIndex(
         columns,
-        [&](const ColumnPtr & index) { return is_identity_permutation ? index->cut(0, output_rows) : index->permute(permutation, limit); },
-        [&](ColumnPtr & col) { col = is_identity_permutation ? col->cut(0, output_rows) : col->permute(permutation, limit); });
+        [&](const ColumnPtr & col) { return is_identity_permutation ? col->cut(0, output_rows) : col->permute(permutation, limit); });
     block.setColumns(columns);
 }
 

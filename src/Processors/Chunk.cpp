@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -231,29 +232,15 @@ void compactReplicatedColumns(Chunk & chunk)
         col = convertToFullColumnIfReplicationNotUseful(col);
 
     /// Step 2: Compact remaining ColumnReplicated columns.
-    ColumnPtr shared_src_index;
-    Columns nested_columns;
-    std::vector<size_t> positions;
-
-    auto compact = [&]
+    /// First map shared indexes to the corresponding nested columns and their positions in the original columns.
+    struct IndexWithNestedColumns
     {
-        if (positions.empty())
-            return;
-
-        ColumnIndex column_index(shared_src_index);
-        auto result = column_index.buildCompactIndexedColumns(nested_columns);
-
-        if (result.compact_indexes.get() != shared_src_index.get())
-        {
-            for (size_t j = 0; j < positions.size(); ++j)
-                columns[positions[j]] = ColumnReplicated::create(
-                    result.compact_indexed_columns[j], result.compact_indexes);
-        }
-
-        nested_columns.clear();
-        positions.clear();
+        ColumnPtr shared_index;
+        Columns nested_columns;
+        std::vector<size_t> positions;
     };
 
+    std::unordered_map<const IColumn *, IndexWithNestedColumns> index_to_nested_cols_map;
     for (size_t i = 0; i < columns.size(); ++i)
     {
         if (!columns[i]->isReplicated())
@@ -261,17 +248,30 @@ void compactReplicatedColumns(Chunk & chunk)
 
         const auto & rep = typeid_cast<const ColumnReplicated &>(*columns[i]);
         const auto & src_index = rep.getIndexesColumn();
-
-        if (src_index.get() != shared_src_index.get())
+        const auto * src_index_ptr = src_index.get();
+        if (auto it = index_to_nested_cols_map.find(src_index_ptr); it != index_to_nested_cols_map.end())
         {
-            compact();
-            shared_src_index = src_index;
+            it->second.nested_columns.push_back(rep.getNestedColumn());
+            it->second.positions.push_back(i);
         }
-
-        nested_columns.push_back(rep.getNestedColumn());
-        positions.push_back(i);
+        else
+            index_to_nested_cols_map[src_index_ptr] = {src_index, {rep.getNestedColumn()}, {i}};
     }
-    compact();
+
+    /// Second compact the indexes with their nested columns and assign them back to the original columns.
+    for (const auto & [_, index_to_nested_cols] : index_to_nested_cols_map)
+    {
+        const auto & [shared_index, nested_columns, positions] = index_to_nested_cols;
+        
+        ColumnIndex column_index(shared_index);
+        auto result = column_index.buildCompactIndexedColumns(nested_columns);
+        if (result.compact_indexes.get() != shared_index.get())
+        {
+            for (size_t j = 0; j < positions.size(); ++j)
+                columns[positions[j]] = ColumnReplicated::create(
+                    result.compact_indexed_columns[j], result.compact_indexes);
+        }
+    }
 
     chunk.setColumns(std::move(columns), num_rows);
 }

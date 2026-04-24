@@ -738,6 +738,18 @@ void transformColumnsWithSharedIndex(
             transform(pos);
 }
 
+void transformColumnsWithSharedIndex(
+    Columns & columns,
+    std::function<ColumnPtr(const ColumnPtr &)> transform,
+    std::span<size_t> positions)
+{
+    transformColumnsWithSharedIndex(
+        columns,
+        transform,
+        [&](ColumnPtr & col) { col = transform(col); },
+        positions);
+}
+
 ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check)
 {
     if (!column->isReplicated())

@@ -1,5 +1,6 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -48,7 +49,8 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes
         }
 
         auto * child_expr_step = typeid_cast<ExpressionStep *>(child->step.get());
-        if (!child_expr_step || child->children.size() != 1)
+        auto * child_filter_step = typeid_cast<FilterStep *>(child->step.get());
+        if ((!child_expr_step && !child_filter_step) || child->children.size() != 1)
             break;
         child = child->children.front();
     }

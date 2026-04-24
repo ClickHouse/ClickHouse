@@ -325,8 +325,7 @@ struct ScatteredBlock : private boost::noncopyable
             auto columns = block.getColumns();
             transformColumnsWithSharedIndex(
                 columns,
-                [&](const ColumnPtr & index) { return index->cut(range.first, range.second - range.first); },
-                [&](ColumnPtr & col) { col = col->cut(range.first, range.second - range.first); });
+                [&](const ColumnPtr & col) { return col->cut(range.first, range.second - range.first); });
             block.setColumns(columns);
             selector = Selector(block.rows());
             return;
@@ -336,8 +335,7 @@ struct ScatteredBlock : private boost::noncopyable
         auto columns = block.getColumns();
         transformColumnsWithSharedIndex(
             columns,
-            [&](const ColumnPtr & index) { return index->index(selector.getIndexes(), /*limit*/ 0); },
-            [&](ColumnPtr & col) { col = col->index(selector.getIndexes(), /*limit*/ 0); });
+            [&](const ColumnPtr & col) { return col->index(selector.getIndexes(), /*limit*/ 0); });
         block.setColumns(columns);
         selector = Selector(block.rows());
     }
