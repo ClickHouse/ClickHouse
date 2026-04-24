@@ -359,29 +359,35 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             auto cache_key = disk_cache->custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
             auto origin = disk_cache->custom_origin.value_or(disk_cache->cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
-            /// use_external_buffer must be true only when a downstream stage (memory cache,
-            /// async prefetch) manages the working buffer. Otherwise the cached buffer
-            /// manages its own buffer and the source must do the same.
+            /// use_external_buffer for CachedOnDiskReadBufferFromFile itself: true when a downstream
+            /// stage (memory cache, async prefetch) manages the working buffer.
             bool use_ext_buf = memory_cache.has_value() || async_prefetch.has_value();
+
+            /// The impl buffer (source reader inside the cache) must always use external buffer mode.
+            /// CachedOnDiskReadBufferFromFile couples with its impl via set() — passing the working
+            /// buffer for each read and for predownload. Without external buffer mode, the impl
+            /// (e.g. ReadBufferFromS3) replaces the set() buffer with its own HTTP stream buffer
+            /// in nextImpl(), breaking the predownload size contract.
+            static constexpr bool impl_use_external_buffer = true;
 
             CachedOnDiskReadBufferFromFile::ImplementationBufferCreator impl_creator;
 
             if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
             {
                 impl_creator = [storage = obj_src->storage, read_hint = obj_src->read_hint,
-                                captured_object = object, captured_settings = settings, use_ext_buf]()
+                                captured_object = object, captured_settings = settings]()
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
                     return storage->readObject(captured_object, captured_settings, read_hint,
-                        use_ext_buf, /* restrict_seek */ false);
+                        impl_use_external_buffer, /* restrict_seek */ false);
                 };
             }
             else if (const auto * cust_src = std::get_if<CustomSource>(&source->source))
             {
-                impl_creator = [creator = cust_src->creator, captured_object = object, captured_settings = settings, use_ext_buf]()
+                impl_creator = [creator = cust_src->creator, captured_object = object, captured_settings = settings]()
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    return creator(captured_object, captured_settings, use_ext_buf, /* restrict_seek */ false);
+                    return creator(captured_object, captured_settings, impl_use_external_buffer, /* restrict_seek */ false);
                 };
             }
             else
