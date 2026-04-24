@@ -1210,6 +1210,23 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             || !catalog.getLoadingDependents(table_id).empty())
             continue;
 
+        /// Tables with columns of dynamic structure (`Dynamic`, `JSON`, `Variant` and types containing them)
+        /// can fail with logical errors during merges that race with DETACH/ATTACH, because part-level
+        /// serialization metadata may differ between the original and re-attached table state.
+        {
+            bool has_dynamic_structure = false;
+            for (const auto & column : table->getInMemoryMetadataPtr(context, false)->getColumns().getAllPhysical())
+            {
+                if (column.type->hasDynamicSubcolumns())
+                {
+                    has_dynamic_structure = true;
+                    break;
+                }
+            }
+            if (has_dynamic_structure)
+                continue;
+        }
+
         /// DETACH TABLE requires DROP TABLE privilege, and ATTACH TABLE requires CREATE TABLE.
         /// Skip if the user doesn't have these privileges.
         auto access = context->getAccess();
