@@ -11,7 +11,6 @@ import subprocess
 import sys
 import shutil
 import tempfile
-import textwrap
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -336,8 +335,7 @@ class Shell:
             return 0  # Return success for dry-run
 
         if verbose:
-            wrapped = textwrap.fill(f"Run command: [{command}]", width=80)
-            print(wrapped)
+            print(f"Run command: [{command}]")
 
         log_file = log_file or "/dev/null"
         proc = None
