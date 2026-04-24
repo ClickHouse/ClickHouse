@@ -6,7 +6,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <string_view>
 #include <variant>
-
+#include <list>
 
 namespace DB
 {
@@ -17,7 +17,7 @@ using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;

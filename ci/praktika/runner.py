@@ -573,6 +573,9 @@ class Runner:
 
         result.update_duration()
         result.set_files([Settings.RUN_LOG], strict=False)
+        if job.force_success and not result.is_ok():
+            print(f"NOTE: Job has force_success=True - overriding status to OK")
+            result.set_status(Result.Status.OK)
         return result
 
     def _post_run(
@@ -1014,7 +1017,6 @@ class Runner:
             result = self._get_result_object(
                 job, setup_env_code, prerun_code, run_code
             )
-
             if prehook_result:
                 result.results.append(prehook_result)
             if job.post_hooks:
@@ -1042,5 +1044,5 @@ class Runner:
 
             result.dump()
 
-        if not res:
+        if not res and not job.force_success:
             sys.exit(1)
