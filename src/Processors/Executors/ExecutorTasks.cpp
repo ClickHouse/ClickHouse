@@ -177,7 +177,7 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
 #if defined(OS_LINUX)
         while (!async_queue.empty() && !finished)
         {
-            auto [fd, events] = async_queue.front()->processor->scheduleForEvent();
+            auto [fd, events] = async_queue.front()->processor()->scheduleForEvent();
             async_task_queue.addTask(context.thread_number, async_queue.front(), fd, events);
             async_queue.pop();
         }
@@ -242,7 +242,7 @@ size_t ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
 #if defined(OS_LINUX)
     while (!async_queue.empty())
     {
-        auto [fd, events] = async_queue.front()->processor->scheduleForEvent();
+        auto [fd, events] = async_queue.front()->processor()->scheduleForEvent();
         async_task_queue.addTask(next_thread, async_queue.front(), fd, events);
         async_queue.pop();
 
@@ -341,7 +341,7 @@ void ExecutorTasks::processAsyncTasks()
         while (auto task = async_task_queue.wait(lock))
         {
             auto * node = static_cast<ExecutingGraph::Node *>(task.data);
-            node->processor->onAsyncJobReady();
+            node->processor()->onAsyncJobReady();
 
             if (fast_task_queue.empty())
                 has_fast_tasks = true;

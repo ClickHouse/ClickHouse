@@ -1,30 +1,31 @@
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Core/Settings.h>
 
 #include <stack>
 
@@ -127,6 +128,8 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
         return findReadingStep(*node.children.front(), data);
 
+    if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
+        return findReadingStep(*node.children.front(), data);
 
     if (data.read_in_order_through_join)
     {

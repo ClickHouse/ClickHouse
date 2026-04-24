@@ -66,12 +66,12 @@ workflow = Workflow.Config(
         ],
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
         JobConfigs.smoke_tests_macos,
-        # TODO: stabilize new jobs and remove set_allow_merge_on_failure
+        # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
-        *[j.set_allow_merge_on_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
-        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
-        JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_merge_on_failure(),
-        JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_merge_on_failure(),
+        *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
+        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_failure(),
+        JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
+        JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         JobConfigs.bugfix_validation_ft_pr_job,
@@ -192,6 +192,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/check_report_messages.py",
     ],
     job_aliases={
         "integration": JobConfigs.integration_test_jobs_non_required[

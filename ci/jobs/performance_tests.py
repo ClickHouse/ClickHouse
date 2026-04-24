@@ -5,6 +5,7 @@ import re
 import subprocess
 import time
 import traceback
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 
@@ -219,6 +220,33 @@ def get_perf_arch():
     if Utils.is_amd():
         return "amd"
     Utils.raise_with_error("Unknown processor architecture")
+
+
+def build_perf_query_history_link(test_name, check_name):
+    """Build a ClickHouse Play link showing performance history for a query on master."""
+    table = Settings.CI_DB_TABLE_NAME or "checks"
+    tn = (test_name or "").replace("'", "''")
+    cn = (check_name or "").replace("'", "''")
+    query = f"""\
+SELECT
+    check_start_time,
+    commit_sha AS commit,
+    test_name AS test,
+    test_duration_ms AS ms,
+    report_url
+FROM {table}
+WHERE pull_request_number = 0
+    AND check_name LIKE '{cn}'
+    AND check_start_time >= now() - INTERVAL 14 DAY
+    AND test_name = '{tn}'
+ORDER BY test, check_start_time
+"""
+    base = Settings.CI_DB_READ_URL or ""
+    user = Settings.CI_DB_READ_USER or ""
+    if user:
+        sep = "&" if "?" in base else "?"
+        base = f"{base}/play{sep}user={urllib.parse.quote(user, safe='')}&run=1"
+    return f"{base}#{Utils.to_base64(query)}"
 
 
 def get_insert_metadata(info, compare_against_release):
@@ -653,7 +681,7 @@ def main():
                 "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
-                "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
+                "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
             cmds = []
@@ -665,7 +693,7 @@ def main():
             results.append(
                 Result(
                     name="Download datasets",
-                    status=Result.Status.SUCCESS if res else Result.Status.ERROR,
+                    status=Result.Status.OK if res else Result.Status.ERROR,
                 )
             )
             if res:
@@ -977,24 +1005,60 @@ def main():
             if message_match:
                 message = message_match.group(1).strip()
             # TODO: Remove me, always green mode for the first time, unless errors
-            status = Result.Status.SUCCESS
+            status = Result.Status.OK
             if "errors" in message.lower() or too_many_slow(message.lower()):
-                status = Result.Status.FAILED
+                status = Result.Status.FAIL
             # TODO: Remove until here
         except Exception:
             traceback.print_exc()
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
             message = "Failed to parse the report."
 
         if not status:
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
             message = "No status in report."
         elif not message:
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
             message = "No message in report."
+        # Copy slower/unstable queries into Check Results so that Praktika
+        # attaches per-query CIDB history links in the report.
+        check_sub_results = []
+        # Find the "Tests" sub-result that holds per-query results
+        tests_result = None
+        for r in results:
+            if r.name == "Tests" and r.results:
+                tests_result = r
+                break
+        if tests_result:
+            # Always use master_head runs for the history query — they are
+            # the stable baseline.  The CIDB check_name looks like
+            # "Performance Comparison (arm_release, master_head, 1/6)".
+            arch = get_perf_arch()
+            check_name_pattern = f"%Performance%{arch}%master_head%"
+            for tr in tests_result.results:
+                if tr.status in ("slower", "unstable"):
+                    sub = Result(
+                        name=tr.name,
+                        status=Result.Status.FAIL,
+                        info=tr.status,
+                        duration=tr.duration,
+                    )
+                    sub.set_label(
+                        "query history",
+                        link=build_perf_query_history_link(
+                            tr.name, check_name_pattern
+                        ),
+                        hint="Performance history for this query on master",
+                    )
+                    check_sub_results.append(sub)
+
         results.append(
             Result(
-                name="Check Results", status=status, info=message, duration=sw.duration
+                name="Check Results",
+                status=status,
+                info=message,
+                duration=sw.duration,
+                results=check_sub_results,
             )
         )
 

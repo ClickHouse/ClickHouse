@@ -1745,7 +1745,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     const bool is_ordered = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
 
     auto file_metadata = files_metadata->getFileMetadata(path);
-    const auto & effective_processed_watch_path = file_metadata->getProcessedWatchPath();
+    const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
 
     LOG_DEBUG(log, "Waiting for path '{}' to be processed by {}", path, getStorageID().getNameForLogs());
@@ -1814,14 +1814,14 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 ///              when the node is first created.
                 std::string dummy_data;
                 Coordination::Stat dummy_stat{};
-                const bool node_exists = zk->tryGetWatch(effective_processed_watch_path, dummy_data, &dummy_stat, event);
+                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, event);
                 if (!node_exists)
-                    zk->existsWatch(effective_processed_watch_path, nullptr, event);
+                    zk->existsWatch(processed_node_path, nullptr, event);
             }
             else
             {
                 /// Unordered: each file gets its own processed node; watch for its creation.
-                zk->existsWatch(effective_processed_watch_path, nullptr, event);
+                zk->existsWatch(processed_node_path, nullptr, event);
             }
 
             /// Per-file failed node: watch for creation regardless of mode.
