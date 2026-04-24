@@ -153,7 +153,6 @@ def parse_args():
         nargs="+",
         action="extend")
     parser.add_argument("--param", help="Optional custom job start stage", default=None)
-    parser.add_argument("--set-status-success", help="Forcefully set a green status", action="store_true")
     return parser.parse_args()
 
 def main():
@@ -373,9 +372,8 @@ def main():
 
     CH.terminate(force=True)
 
-    status = Result.Status.OK if args.set_status_success else ""
     Result.create_from(
-        results=results, status=status, stopwatch=stop_watch, files=attach_files, info=job_info
+        results=results, stopwatch=stop_watch, files=attach_files, info=job_info
     ).complete_job()
 
 
