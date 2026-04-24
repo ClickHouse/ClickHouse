@@ -10,7 +10,6 @@
 
 #include <Common/ArenaAllocator.h>
 #include <Common/Exception.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/RadixSort.h>
 #include <Common/assert_cast.h>
 
@@ -24,6 +23,7 @@
 #include <Columns/ColumnVector.h>
 
 #include <Columns/IColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -459,7 +459,7 @@ SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) AS str FROM number
 
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = false };
 
-    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, properties, documentation });
+    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, documentation, properties });
 }
 
 }

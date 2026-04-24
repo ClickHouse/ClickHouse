@@ -24,6 +24,7 @@ RUN apt-get update \
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get install --yes \
+        binutils-dev \
         build-essential \
         python3-boto3 \
         yasm \
@@ -35,6 +36,19 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && ln -sf /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+# Optional PGO+BOLT optimized toolchain override
+ARG TOOLCHAIN_COMMIT=19da6af712ebc2678cc34b8f2f4251e8056766ba
+RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
+    arch=${TARGETARCH:-amd64} && \
+    case $arch in \
+        amd64) tarch=amd64 ;; \
+        arm64) tarch=aarch64 ;; \
+    esac && \
+    curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TOOLCHAIN_COMMIT}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
+      | zstd -d | tar -xf - -C /usr/local/ && \
+    echo "Installed PGO+BOLT toolchain from commit ${TOOLCHAIN_COMMIT}" \
+    ; fi
 
 # Download and install mold for s390x build
 ARG MOLD_VERSION=2.40.4
@@ -75,7 +89,7 @@ RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/M
   && ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64 \
   && rm /MacOSX11.0.sdk.tar.xz
 
-ARG CLANG_TIDY_SHA1=e33c063ca6e52b48bcefbc45d46d8c150ffa81ca
+ARG CLANG_TIDY_SHA1=3880541496c7ce0d2e2830d2f525375078fe0b1f
 RUN curl -Lo /usr/bin/clang-tidy-cache.py \
         "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/src/ctcache/clang_tidy_cache.py" \
     && chmod +x /usr/bin/clang-tidy-cache.py

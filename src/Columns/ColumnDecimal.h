@@ -1,26 +1,14 @@
 #pragma once
 
-#include <Common/FieldVisitorToString.h>
-#include <DataTypes/FieldToDataType.h>
-#include <base/sort.h>
 #include <base/TypeName.h>
 #include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
-#include <Columns/IColumnImpl.h>
-#include <IO/Operators.h>
-
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /// A ColumnVector for Decimals
 template <is_decimal T>
@@ -95,7 +83,7 @@ public:
     void popBack(size_t n) override
     {
         if (n > size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, this->getName(), size());
+            throwCannotPopBack(n, this->getName(), size());
 
         data.resize_assume_reserved(data.size() - n);
     }
@@ -115,6 +103,7 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -133,12 +122,7 @@ public:
 
     Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override
-    {
-        if (options.notFull(name_buf))
-            name_buf << FieldVisitorToString()(data[n], scale);
-        return FieldToDataType()(data[n], scale);
-    }
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override;
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;
@@ -155,7 +139,7 @@ public:
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool structureEquals(const IColumn & rhs) const override
     {

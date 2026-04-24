@@ -35,7 +35,7 @@ SELECT
     countIf(query LIKE '%INSERT INTO $CLICKHOUSE_DATABASE.\`.tmp.inner_id.%' AND type = 'QueryFinish') > 0,
     countIf(query = '(create target table)' AND type = 'ExceptionBeforeStart') > 0
 FROM system.query_log
-WHERE is_internal = 1 AND current_database IN [currentDatabase(), 'default']
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND is_internal = 1 AND current_database IN [currentDatabase(), 'default']
 "
 
 $CLICKHOUSE_CLIENT --query "DROP VIEW rmv_test"

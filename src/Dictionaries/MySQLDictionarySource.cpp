@@ -156,6 +156,31 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .bg_reconnect = config.getBool(settings_config_prefix + ".background_reconnect", false),
             });
 
+            if (created_from_ddl)
+            {
+                if (config.has(settings_config_prefix + ".replica"))
+                {
+                    Poco::Util::AbstractConfiguration::Keys replica_keys;
+                    config.keys(settings_config_prefix, replica_keys);
+                    for (const auto & replica_key : replica_keys)
+                    {
+                        if (replica_key.starts_with("replica"))
+                        {
+                            const auto replica_prefix = settings_config_prefix + "." + replica_key;
+                            global_context->getRemoteHostFilter().checkHostAndPort(
+                                config.getString(replica_prefix + ".host"),
+                                toString(config.getInt(replica_prefix + ".port", 3306)));
+                        }
+                    }
+                }
+                else
+                {
+                    global_context->getRemoteHostFilter().checkHostAndPort(
+                        config.getString(settings_config_prefix + ".host"),
+                        toString(config.getInt(settings_config_prefix + ".port", 3306)));
+                }
+            }
+
             pool = std::make_shared<mysqlxx::PoolWithFailover>(
                 mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
         }
@@ -252,7 +277,7 @@ BlockIO MySQLDictionarySource::loadUpdatedAll()
     return io;
 }
 
-BlockIO MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO MySQLDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
@@ -261,7 +286,7 @@ BlockIO MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return io;
 }
 
-BlockIO MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO MySQLDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);

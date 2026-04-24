@@ -60,8 +60,9 @@ SELECT 'arrayElement with multiple variant types';
 SELECT arrayElement(v, 1) FROM vf_array_multi_variant;
 SELECT toTypeName(arrayElement(v, 1)) FROM vf_array_multi_variant LIMIT 1;
 
-CREATE TABLE vf_equals (v Variant(UInt64, String)) ENGINE = Memory;
-INSERT INTO vf_equals VALUES (42), ('42'), (NULL);
+-- equals with compatible types only (strict behavior)
+CREATE TABLE vf_equals (v Variant(UInt64, UInt32)) ENGINE = Memory;
+INSERT INTO vf_equals VALUES (42::UInt64), (10::UInt32), (NULL);
 SELECT 'equals with variant on left side';
 SELECT toString(v), (v = CAST(42 AS UInt64)) AS is_42 FROM vf_equals;
 SELECT 'equals with variant on right side';

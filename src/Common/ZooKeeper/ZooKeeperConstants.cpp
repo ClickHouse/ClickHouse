@@ -39,6 +39,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::RemoveWatch),
     static_cast<int32_t>(OpNum::SetWatch),
     static_cast<int32_t>(OpNum::SetWatch2),
+    static_cast<int32_t>(OpNum::ListRecursive),
 };
 
 OpNum getOpNum(int32_t raw_op_num)
@@ -46,6 +47,46 @@ OpNum getOpNum(int32_t raw_op_num)
     if (!VALID_OPERATIONS.contains(raw_op_num))
         throw Exception(Error::ZUNIMPLEMENTED, "Operation {} is unknown", raw_op_num);
     return static_cast<OpNum>(raw_op_num);
+}
+
+std::string_view opNumToString(OpNum op_num)
+{
+    switch (op_num)
+    {
+        case OpNum::Close: return "Close";
+        case OpNum::Error: return "Error";
+        case OpNum::Create: return "Create";
+        case OpNum::Create2: return "Create2";
+        case OpNum::Remove: return "Remove";
+        case OpNum::Exists: return "Exists";
+        case OpNum::Get: return "Get";
+        case OpNum::Set: return "Set";
+        case OpNum::GetACL: return "GetACL";
+        case OpNum::SetACL: return "SetACL";
+        case OpNum::SimpleList: return "SimpleList";
+        case OpNum::Sync: return "Sync";
+        case OpNum::Heartbeat: return "Heartbeat";
+        case OpNum::List: return "List";
+        case OpNum::Check: return "Check";
+        case OpNum::Multi: return "Multi";
+        case OpNum::Reconfig: return "Reconfig";
+        case OpNum::MultiRead: return "MultiRead";
+        case OpNum::Auth: return "Auth";
+        case OpNum::FilteredList: return "FilteredList";
+        case OpNum::CheckNotExists: return "CheckNotExists";
+        case OpNum::CreateIfNotExists: return "CreateIfNotExists";
+        case OpNum::RemoveRecursive: return "RemoveRecursive";
+        case OpNum::SessionID: return "SessionID";
+        case OpNum::CheckStat: return "CheckStat";
+        case OpNum::AddWatch: return "AddWatch";
+        case OpNum::CheckWatch: return "CheckWatch";
+        case OpNum::RemoveWatch: return "RemoveWatch";
+        case OpNum::SetWatch: return "SetWatch";
+        case OpNum::SetWatch2: return "SetWatch2";
+        case OpNum::TryRemove: return "TryRemove";
+        case OpNum::ListRecursive: return "ListRecursive";
+        case OpNum::FilteredListWithStatsAndData: return "FilteredListWithStatsAndData";
+    }
 }
 
 const char * toOperationTypeMetricLabel(OpNum op_num)
@@ -63,6 +104,7 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
         case OpNum::CheckNotExists:
         case OpNum::CheckWatch:
         case OpNum::CheckStat:
+        case OpNum::ListRecursive:
             return "readonly";
 
         case OpNum::Multi:
@@ -94,7 +136,6 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
         case OpNum::SessionID:
             return "session";
     }
-    UNREACHABLE();
 }
 
 }

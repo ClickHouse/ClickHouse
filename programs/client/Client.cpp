@@ -13,6 +13,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 #include <Common/config_version.h>
@@ -135,9 +136,8 @@ void Client::showWarnings()
             output_stream << std::endl;
         }
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
-        /// Ignore exception
     }
 }
 
@@ -393,7 +393,8 @@ try
 
             bool should_ask_password = !asked_password && is_interactive &&
                 (code == ErrorCodes::AUTHENTICATION_FAILED || code == ErrorCodes::REQUIRED_PASSWORD) &&
-                !config().has("password") && !config().getBool("ask-password", false);
+                !config().has("password") && !config().getBool("ask-password", false) &&
+                !config().has("ssh-key-file");
 
             if (should_ask_password)
             {
@@ -443,7 +444,7 @@ try
 
         if (exception)
         {
-            return exception->code() != 0 ? exception->code() : -1;
+            return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
         }
 
         if (have_error)
@@ -794,6 +795,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
 
     options_description.external_description.emplace(createOptionsDescription("External tables options", terminal_width));
     options_description.external_description->add_options()
+        ("external", "marks the beginning of a clause. You may have multiple sections like this, for the number of tables being transmitted")
         ("file", po::value<std::string>(), "data file or - for stdin")
         ("name", po::value<std::string>()->default_value("_data"), "name of the table")
         ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
@@ -993,7 +995,7 @@ void Client::processOptions(
 
     initClientContext(Context::createCopy(global_context));
     /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
-    query_scope = CurrentThread::QueryScope::create(client_context);
+    query_scope = QueryScope::create(client_context);
 
 
     /// Allow to pass-through unknown settings to the server.

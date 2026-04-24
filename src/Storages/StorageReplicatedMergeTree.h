@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/SyncReplicaMode.h>
@@ -193,8 +192,6 @@ public:
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
     bool haveCommittingOps(const CommittingBlocks & committing_blocks, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops) const;
     void waitForCommittingOpsToFinish(zkutil::ZooKeeperPtr zookeeper, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops, size_t backoff_ms, size_t sync_timeout_ms);
-
-    bool hasLightweightDeletedMask() const override;
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
@@ -510,6 +507,7 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
+    AsyncBlockIDsCache<StorageReplicatedMergeTree> deduplication_hashes_cache;
     AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
@@ -682,6 +680,10 @@ private:
     MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry, PartsTemporaryRename & rename_parts) const;
 
     void executeDropRange(const LogEntry & entry);
+
+    /// Wait for parts in PreActive state within the drop range to finish committing.
+    /// This prevents a race between a concurrent INSERT and DROP_RANGE processing.
+    void waitForPreActivePartsInRange(const MergeTreePartInfo & drop_range) const;
 
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.

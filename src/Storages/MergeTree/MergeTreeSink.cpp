@@ -158,7 +158,7 @@ void MergeTreeSink::consume(Chunk & chunk)
             storage.log,
             "Wrote block with {} rows and deduplication blocks: {}, deduplication info: {}",
             current_block.block->rows(),
-            fmt::join(current_deduplication_info->getBlockIds(current_block.partition_id, deduplicate), ", "),
+            fmt::join(getDeduplicationBlockIds(current_deduplication_info->getDeduplicationHashes(current_block.partition_id, deduplicate)), ", "),
             current_deduplication_info->debug());
 
 
@@ -234,8 +234,8 @@ void MergeTreeSink::finishDelayedChunk()
             partition.temp_part->finalize();
 
             auto & part = partition.temp_part->part;
-            auto block_ids = partition.deduplication_info->getBlockIds(part->info.getPartitionId(), deduplicate);
-            auto conflicts = commitPart(part, block_ids);
+            auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
+            auto conflicts = commitPart(part, deduplication_hashes);
 
             if (conflicts.empty())
             {
@@ -248,7 +248,7 @@ void MergeTreeSink::finishDelayedChunk()
                 PartLog::addNewPart(
                     storage.getContext(),
                     PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot),
-                    block_ids);
+                    getDeduplicationBlockIds(deduplication_hashes));
                 StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
                 /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
@@ -299,7 +299,7 @@ void MergeTreeSink::finishDelayedChunk()
                 PartLog::addNewPart(
                     storage.getContext(),
                     PartLog::PartLogEntry(partition.temp_part->part, partition.elapsed_ns, counters_snapshot),
-                    block_ids,
+                    getDeduplicationBlockIds(deduplication_hashes),
                     ExecutionStatus(ErrorCodes::INSERT_WAS_DEDUPLICATED, "The part was deduplicated"));
 
                 break;
@@ -322,7 +322,7 @@ MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & b
     return storage.writer.writeTempPart(block, metadata_snapshot, context);
 }
 
-std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<String> & block_ids)
+std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)
 {
     /// It's important to create it outside of lock scope because
     /// otherwise it can lock parts in destructor and deadlock is possible.
@@ -331,10 +331,11 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         auto lock = storage.lockParts();
         auto block_holder = storage.fillNewPartName(part, lock);
 
-        if (!block_ids.empty())
+        if (!deduplication_hashes.empty())
         {
             auto * deduplication_log = storage.getDeduplicationLog();
             chassert(deduplication_log);
+            auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
             auto result = deduplication_log->addPart(block_ids, part->info);
 
             std::vector<std::string> conflict_block_ids;

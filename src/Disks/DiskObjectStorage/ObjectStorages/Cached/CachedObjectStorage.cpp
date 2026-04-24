@@ -4,9 +4,9 @@
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
@@ -67,7 +67,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
             auto global_context = Context::getGlobalContextInstance();
             auto modified_read_settings = read_settings.withNestedBuffer();
 
-            auto read_buffer_creator = [=, this]()
+            auto read_buffer_creator = [this, object, read_settings, read_hint]()
             {
                 return object_storage->readObject(object, patchSettings(read_settings), read_hint);
             };
@@ -121,7 +121,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             cache,
             implementation_buffer->getFileName(),
             key,
-            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
+            CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             modified_write_settings,
             cache->getCommonOriginWithSegmentKeyType(object.local_path),
             Context::getGlobalContextInstance()->getFilesystemCacheLog(),
@@ -144,15 +144,12 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeCacheIfExists(object.remote_path);
-    object_storage->removeObjectIfExists(object);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
         removeCacheIfExists(object.remote_path);
-
-    object_storage->removeObjectsIfExist(objects);
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT

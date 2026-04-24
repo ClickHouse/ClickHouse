@@ -11,6 +11,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void FractionalOffsetTransform::finalizeOffset()
+{
+    /// Fractions depend on the final total number of rows, so we can only compute the integral
+    /// offset once all input is read.
+    if (offset_is_final)
+        return;
+
+    const UInt64 total_offset = static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * fractional_offset));
+    offset = (total_offset > evicted_rows_cnt) ? (total_offset - evicted_rows_cnt) : 0;
+
+    offset_is_final = true;
+}
+
 FractionalOffsetTransform::FractionalOffsetTransform(const Block & header_, Float64 fractional_offset_, size_t num_streams)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , fractional_offset(fractional_offset_)
@@ -36,8 +49,16 @@ FractionalOffsetTransform::FractionalOffsetTransform(const Block & header_, Floa
 }
 
 
-IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
+FractionalOffsetTransform::Status FractionalOffsetTransform::prepare()
 {
+    if (allOutputsFinished())
+    {
+        /// Nobody needs data: stop sources.
+        for (auto & port : ports_data)
+            port.input_port->close();
+        return Status::Finished;
+    }
+
     /// Check can we still pull data from input?
     if (num_finished_input_ports != ports_data.size())
     {
@@ -65,18 +86,19 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
             }
         };
 
-        for (auto pos : updated_input_ports)
-            process(pos);
-
-        for (auto pos : updated_output_ports)
+        for (size_t pos = 0; pos < ports_data.size(); ++pos)
             process(pos);
 
         if (num_finished_input_ports != ports_data.size())
             /// Some input ports still available => we can read more data
             return Status::NeedData;
 
-        /// Calculate remaining integral offset
-        offset = static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * fractional_offset)) - evicted_rows_cnt;
+        /// All input is read: compute the final integral offset.
+        finalizeOffset();
+    }
+    else if (!offset_is_final)
+    {
+        finalizeOffset();
     }
 
     /// If we reached here then all input ports are finished.
@@ -95,12 +117,38 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
     return Status::Finished;
 }
 
-FractionalOffsetTransform::Status FractionalOffsetTransform::prepare()
+bool FractionalOffsetTransform::allOutputsFinished() const
 {
-    if (ports_data.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port FractionalOffsetTransform");
+    for (const auto & data : ports_data)
+        if (!data.output_port->isFinished())
+            return false;
+    return true;
+}
 
-    return prepare({0}, {0});
+OutputPort * FractionalOffsetTransform::getAvailableOutputPort()
+{
+    /// Output ports are interchangeable. Pick the next available port in round-robin order.
+    const size_t num_outputs = ports_data.size();
+
+    if (num_outputs == 0)
+        return nullptr;
+
+    for (size_t i = 0; i < num_outputs; ++i)
+    {
+        const size_t idx = (next_output_port + i) % num_outputs;
+
+        auto & output = *ports_data[idx].output_port;
+        if (output.isFinished())
+            continue;
+
+        if (!output.canPush())
+            continue;
+
+        next_output_port = (idx + 1) % num_outputs;
+        return &output;
+    }
+
+    return nullptr;
 }
 
 FractionalOffsetTransform::Status FractionalOffsetTransform::pullData(PortsData & data)
@@ -124,13 +172,14 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::pullData(PortsData 
 
     /// Cache block.
     rows_cnt += rows;
-    chunks_cache.push_back({data.output_port, std::move(data.current_chunk)});
+    chunks_cache.push_back(std::move(data.current_chunk));
 
     /// Detect blocks that will 100% get removed by the offset and remove them as early as possible.
     /// example: if we have 10 blocks with the same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
-    while (!chunks_cache.empty() && static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * fractional_offset)) - evicted_rows_cnt >= chunks_cache.front().chunk.getNumRows())
+    while (!chunks_cache.empty()
+           && static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * fractional_offset)) - evicted_rows_cnt >= chunks_cache.front().getNumRows())
     {
-        evicted_rows_cnt += chunks_cache.front().chunk.getNumRows();
+        evicted_rows_cnt += chunks_cache.front().getNumRows();
         chunks_cache.pop_front();
     }
 
@@ -143,31 +192,40 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::pullData(PortsData 
 
 FractionalOffsetTransform::Status FractionalOffsetTransform::pushData()
 {
-    /// If a specific output port is finished, drop all its chunks.
-    while (!chunks_cache.empty() && chunks_cache.front().output_port->isFinished())
-        chunks_cache.pop_front();
-
-    if (chunks_cache.empty())
-        return Status::Finished;
-
-    auto & output = *chunks_cache.front().output_port;
-
-    if (!output.canPush())
-        return Status::PortFull;
-
-    UInt64 rows = chunks_cache.front().chunk.getNumRows();
-    /// The early removal of blocks at pullData() should have detected all chunks that will be dropped
-    /// entirely, but we may still need to offset inside the first block and drop a portion of it.
-    if (rows <= std::numeric_limits<UInt64>::max() - offset && offset)
+    /// Drain the cache while we have an output that can accept data. Return PortFull only if
+    /// all outputs are currently blocked; output finishing is handled by prepare().
+    while (!chunks_cache.empty())
     {
-        splitChunk(chunks_cache.front().chunk);
-        offset = 0; // Done.
+        auto * output = getAvailableOutputPort();
+        if (!output)
+            return Status::PortFull;
+
+        auto & chunk = chunks_cache.front();
+        UInt64 rows = chunk.getNumRows();
+
+        /// The early removal of blocks at pullData() should have detected all chunks that will be dropped
+        /// entirely, but we may still need to offset inside the first block and drop a portion of it.
+        if (offset)
+        {
+            /// We can still have an integral offset to apply that spans multiple chunks.
+            if (offset >= rows)
+            {
+                offset -= rows;
+                chunks_cache.pop_front();
+                continue;
+            }
+
+            /// Offset is inside this chunk: cut the prefix and clear the remaining integral offset.
+            /// This function may be heavy to execute. But it happens no more than once.
+            splitChunk(chunk);
+            offset = 0; // Done.
+        }
+
+        output->push(std::move(chunk));
+        chunks_cache.pop_front();
     }
 
-    output.push(std::move(chunks_cache.front().chunk));
-    chunks_cache.pop_front();
-
-    return Status::PortFull;
+    return Status::Finished;
 }
 
 

@@ -239,6 +239,62 @@ public:
         field = nullptr;
     }
 
+    void reset(ASTPtr & field)
+    {
+        if (!field)
+            return;
+
+        auto child = children.begin();
+        while (child != children.end())
+        {
+            if (child->get() == field.get())
+                break;
+
+            child++;
+        }
+
+        if (child == children.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+
+        children.erase(child);
+        field.reset();
+    }
+
+    void set(ASTPtr & field, ASTPtr child)
+    {
+        if (!child)
+            return;
+
+        children.push_back(child);
+        field = std::move(child);
+    }
+
+    void replace(ASTPtr & field, ASTPtr child)
+    {
+        if (!child)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
+
+        for (ASTPtr & current_child : children)
+        {
+            if (current_child.get() == field.get())
+            {
+                current_child = child;
+                field = std::move(child);
+                return;
+            }
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+    }
+
+    void setOrReplace(ASTPtr & field, ASTPtr child)
+    {
+        if (field)
+            replace(field, std::move(child));
+        else
+            set(field, std::move(child));
+    }
+
     /// After changing one of `children` elements, update the corresponding member pointer if needed.
     void updatePointerToChild(const IAST * old_ptr, const ASTPtr & new_ptr)
     {
@@ -309,6 +365,8 @@ public:
         std::string create_engine_name;
         const IAST * current_select = nullptr;
         const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
+        bool parent_has_trailing_settings = false; /// A parent ASTQueryWithOutput will append SETTINGS after this node's output.
+        bool has_trailing_output_options = false; /// A parent ASTQueryWithOutput has trailing output options (SETTINGS, FORMAT, INTO OUTFILE).
     };
 
     void format(WriteBuffer & ostr, const FormatSettings & settings) const
@@ -395,6 +453,7 @@ public:
         AsyncInsertFlush,
         ParallelWithQuery,
         Copy,
+        Snapshot,
     };
 
     /// Return QueryKind of this AST query.

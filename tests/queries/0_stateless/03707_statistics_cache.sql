@@ -1,14 +1,8 @@
 -- Tags: no-fasttest
 
-SET allow_experimental_statistics = 1;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET enable_analyzer = 1;
 SET use_statistics = 1;
-SET log_queries = 1;
-SET log_query_settings = 1;
-SET mutations_sync = 2;
-SET max_execution_time = 60;
-
--- test rely on local execution, - force parallel replicas to genearate local plan
-SET parallel_replicas_local_plan=1;
 
 DROP TABLE IF EXISTS sc_core SYNC;
 
@@ -56,7 +50,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'nouse-agg'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'nouse-agg'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
@@ -89,7 +83,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'cm-lc-load'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'cm-lc-load'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
@@ -129,6 +123,6 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'join-load'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'join-load'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;

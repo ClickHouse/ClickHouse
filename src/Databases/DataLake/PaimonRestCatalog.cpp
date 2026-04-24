@@ -19,6 +19,7 @@
 #include <Databases/DataLake/PaimonRestCatalog.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -271,13 +272,13 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
 
     auto create_buffer = [&, this]()
     {
-        std::unordered_map<String, String> query_paramters_map;
+        std::unordered_map<String, String> query_parameters_map;
         for (const auto & entry : params)
         {
-            query_paramters_map.emplace(entry.first, entry.second);
+            query_parameters_map.emplace(entry.first, entry.second);
         }
         DB::HTTPHeaderEntries request_headers(headers);
-        createAuthHeaders(request_headers, endpoint, query_paramters_map, method);
+        createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
 
 
         DB::WriteBufferFromOwnString headers_string;

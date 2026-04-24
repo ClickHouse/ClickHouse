@@ -15,6 +15,7 @@
 #include <Columns/FilterDescription.h>
 
 #include <Core/callOnTypeIndex.h>
+#include <Core/BlockMissingValues.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>

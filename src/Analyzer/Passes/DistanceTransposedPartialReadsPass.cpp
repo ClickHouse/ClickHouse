@@ -70,11 +70,17 @@ public:
         const auto & storage_snapshot = table_node->getStorageSnapshot();
         auto column_name_type = qbit_node->getColumn();
 
-        if (!storage->supportsOptimizationToSubcolumns() || storage->isVirtualColumn(column_name_type.name, storage_snapshot->metadata))
+        if (!storage->supportsOptimizationToSubcolumns() || storage_snapshot->metadata->isVirtualColumn(column_name_type.name))
             return;
 
         auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions::All, column_name_type.name);
         if (!column_in_table || !column_in_table->type->equals(*column_name_type.type))
+            return;
+
+        /// If the function result type is Nullable(Nothing), skip the optimization.
+        /// This happens when some arguments are NULL constants (e.g. from fuzzer),
+        /// and rewriting the function with cast arguments would change the result type.
+        if (function_node->getResultType()->onlyNull())
             return;
 
         /// Apply the optimization

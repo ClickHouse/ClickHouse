@@ -1,13 +1,12 @@
 #pragma once
 
 #include <memory>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <base/sort.h>
 #include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/PODArray.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 // Include this header last, because it is an auto-generated dump of questionable
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).

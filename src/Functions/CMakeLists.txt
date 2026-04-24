@@ -2,6 +2,7 @@ add_subdirectory(divide)
 
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
+add_headers_and_sources(clickhouse_functions AI)
 
 # These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
 # This allows less dependency and linker work (specially important when building many example executables)
@@ -19,7 +20,6 @@ set(DBMS_FUNCTIONS
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
-    hasAnyAllTokens.cpp # FunctionSearchImpl (Used by MergeTreeIndexConditionText.cpp)
     FunctionsConversion_impl00.cpp
     FunctionsConversion_impl01.cpp
     FunctionsConversion_impl02.cpp

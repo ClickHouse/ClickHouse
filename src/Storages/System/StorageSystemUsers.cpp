@@ -4,6 +4,7 @@
 #include <Access/User.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -56,6 +57,9 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
         {"auth_params", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "Authentication parameters in the JSON format depending on the auth_type."
         },
+        {"valid_until", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()),
+            "The expiration date and time for user credentials."
+        },
         {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "IP addresses of hosts that are allowed to connect to the ClickHouse server."
         },
@@ -102,6 +106,8 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto & column_auth_type_offsets =  assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_auth_params = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_auth_params_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_valid_until = assert_cast<ColumnUInt32 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
+    auto & column_valid_until_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_ip = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_host_ip_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_names = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
@@ -183,10 +189,12 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
 
             column_auth_params.insertData(authentication_params_str.data(), authentication_params_str.size());
             column_auth_type.insertValue(static_cast<Int8>(auth_data.getType()));
+            column_valid_until.insertValue(static_cast<UInt32>(auth_data.getValidUntil()));
         }
 
         column_auth_params_offsets.push_back(column_auth_params.size());
         column_auth_type_offsets.push_back(column_auth_type.size());
+        column_valid_until_offsets.push_back(column_valid_until.size());
 
         if (allowed_hosts.containsAnyHost())
         {

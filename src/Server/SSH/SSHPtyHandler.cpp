@@ -101,7 +101,7 @@ public:
     }
 
     bool hasClientFinished() { return client_runner.has_value() && client_runner->hasFinished(); }
-    int getClientExitCode() { return client_runner.has_value() && client_runner->getExitCode(); }
+    int getClientExitCode() { return client_runner.has_value() ? client_runner->getExitCode() : 0; }
 
 
     DescriptorSet client_input_output;
@@ -532,6 +532,34 @@ void SSHPtyHandler::run()
 
     event.removeFd(sdata.channel_callback->client_input_output.out);
     event.removeFd(sdata.channel_callback->client_input_output.err);
+
+    /// Drain any remaining data from stdout/stderr pipes before closing the channel.
+    /// The client may have finished writing to the pipes before the event loop had a chance
+    /// to forward all the data through the SSH channel. For example, if the command fails
+    /// quickly (e.g. \i produces SUPPORT_IS_DISABLED), the error message in the pipe buffer
+    /// would be lost without this drain.
+    auto drain = [&](int fd, bool is_stderr)
+    {
+        if (fd == -1)
+            return;
+
+        struct pollfd pfd = {};
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        while (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN))
+        {
+            char buf[1024];
+            int bytes_read = static_cast<int>(read(fd, buf, sizeof(buf)));
+            if (bytes_read <= 0)
+                break;
+            if (is_stderr)
+                ssh_channel_write_stderr(sdata.channel_callback->channel.getCChannelPtr(), buf, bytes_read);
+            else
+                ssh_channel_write(sdata.channel_callback->channel.getCChannelPtr(), buf, bytes_read);
+        }
+    };
+    drain(sdata.channel_callback->client_input_output.out, false);
+    drain(sdata.channel_callback->client_input_output.err, true);
 
 
     sdata.channel_callback->channel.sendEof();

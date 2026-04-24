@@ -47,6 +47,7 @@ from helpers.s3_tools import (
     upload_directory,
     LocalDownloader,
 )
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
@@ -59,7 +60,7 @@ S3_DATA = [
 ]
 
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -75,6 +76,13 @@ def get_spark():
         .config("spark.executor.memory", "8g")
         .master("local")
     )
+
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
 
     return builder.master("local").getOrCreate()
 
@@ -104,6 +112,11 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
+        if int(cluster.instances["instance1"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
+            pytest.skip(
+                "DeltaLake engine is not available"
+            )
+
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )
@@ -118,7 +131,9 @@ def started_cluster():
         # extend this if testing on other nodes becomes necessary
         cluster.local_uploader = LocalUploader(cluster.instances["instance1"])
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
 
         for file in S3_DATA:
             print(f"Copying object {file}")
@@ -199,6 +214,28 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='1', 'delta.minWriterVersion'='2', d
         in instance.query_and_get_error(
             f"CREATE TABLE a ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{table_name}/', 'minio', '{minio_secret_key}')",
             settings={"delta_lake_snapshot_start_version": 0},
+        )
+    )
+    # Regression for https://github.com/ClickHouse/ClickHouse/issues/100449:
+    # setting only end_version (without start_version) must also be detected as a
+    # CDF request and rejected for stored tables.
+    assert (
+        "Delta lake CDF is allowed only for deltaLake table function"
+        in instance.query_and_get_error(
+            f"CREATE TABLE a ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{table_name}/', 'minio', '{minio_secret_key}')",
+            settings={"delta_lake_snapshot_end_version": 3},
+        )
+    )
+    # Regression for https://github.com/ClickHouse/ClickHouse/issues/100449:
+    # using end_version on a table function without start_version must throw BAD_ARGUMENTS.
+    # Use plain non-CDF columns here: _change_type and _commit_version only exist in the
+    # schema when start_version is set (CDF mode), so selecting them without start_version
+    # causes UNKNOWN_IDENTIFIER before reaching the BAD_ARGUMENTS guard.
+    assert (
+        "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version"
+        in instance.query_and_get_error(
+            f"SELECT first_name, age FROM {table_function} ORDER BY all",
+            settings={"delta_lake_snapshot_end_version": 3},
         )
     )
     # Data with CDF enabled starts from snapshot version 2.

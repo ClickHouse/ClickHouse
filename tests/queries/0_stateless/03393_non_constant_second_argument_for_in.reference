@@ -72,7 +72,7 @@ SELECT
     NULL IN (1, NULL)  
 FROM numbers(1)  
 SETTINGS transform_null_in = 1;
-0	1	1	1
+0	1	0	1
 SELECT  
     NULL IN (1, number),  
     NULL IN (1, number, NULL),  

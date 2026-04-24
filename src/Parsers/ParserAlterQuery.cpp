@@ -126,6 +126,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_remove_sample_by(Keyword::REMOVE_SAMPLE_BY);
     ParserKeyword s_apply_deleted_mask(Keyword::APPLY_DELETED_MASK);
     ParserKeyword s_apply_patches(Keyword::APPLY_PATCHES);
+    ParserKeyword s_execute(Keyword::EXECUTE);
     ParserKeyword s_all(Keyword::ALL);
 
     ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
@@ -142,7 +143,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
     ParserPartition parser_partition;
-    ParserExpression parser_exp_elem;
+    ParserExpressionWithOptionalAlias parser_exp_elem(false);
     ParserList parser_assignment_list(
         std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma),
         /* allow_empty = */ false);
@@ -1027,6 +1028,33 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
+            }
+            else if (s_execute.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::EXECUTE_COMMAND;
+
+                ParserIdentifier command_name_parser;
+                ASTPtr command_name_ast;
+                if (!command_name_parser.parse(pos, command_name_ast, expected))
+                    return false;
+                command->execute_command_name = getIdentifierName(command_name_ast);
+
+                if (!parser_opening_round_bracket.ignore(pos, expected))
+                    return false;
+
+                ASTPtr execute_args_list;
+                ParserList args_parser(
+                    std::make_unique<ParserExpressionWithOptionalAlias>(false),
+                    std::make_unique<ParserToken>(TokenType::Comma),
+                    /* allow_empty = */ true);
+                if (!args_parser.parse(pos, execute_args_list, expected))
+                    return false;
+
+                if (!parser_closing_round_bracket.ignore(pos, expected))
+                    return false;
+
+                if (execute_args_list)
+                    command->execute_args = command->children.emplace_back(std::move(execute_args_list)).get();
             }
             else
                 return false;

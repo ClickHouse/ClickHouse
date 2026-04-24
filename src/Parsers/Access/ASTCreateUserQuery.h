@@ -61,6 +61,7 @@ public:
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
 
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
     boost::intrusive_ptr<ASTRolesOrUsersSet> default_roles;
     boost::intrusive_ptr<ASTSettingsProfileElements> settings;
     boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;

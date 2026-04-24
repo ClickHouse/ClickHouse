@@ -32,11 +32,12 @@ from helpers.s3_tools import (
     upload_directory,
 )
 from helpers.test_tools import TSV
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
         pyspark.sql.SparkSession.builder.appName("test_storage_hudi")
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
@@ -46,6 +47,14 @@ def get_spark():
         .config("spark.driver.memory", "20g")
         .master("local")
     )
+
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
+
     return builder.getOrCreate()
 
 
@@ -66,7 +75,9 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
 
         yield cluster
 

@@ -344,6 +344,9 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
 {
     std::lock_guard lock(state_mutex);
 
+    if (stopped)
+        return;
+
     deduplication_window = deduplication_window_;
     rotate_interval = deduplication_window * 2;
 

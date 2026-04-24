@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/inotify.h>
 #include <poll.h>
+#include <Common/ErrnoException.h>
 
 namespace DB
 {

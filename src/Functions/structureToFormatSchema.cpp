@@ -128,6 +128,7 @@ REGISTER_FUNCTION(StructureToCapnProtoSchema)
             .description=R"(
 Function that converts ClickHouse table structure to CapnProto format schema
 )",
+            .syntax = "structureToCapnProtoSchema(table_structure, message)",
             .examples{
                 {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName') format TSVRaw", "struct MessageName\n"
 "{\n"
@@ -135,6 +136,7 @@ Function that converts ClickHouse table structure to CapnProto format schema
 "    x @1 : UInt32;\n"
 "}"},
             },
+            .introduced_in = {23, 8},
             .category = FunctionDocumentation::Category::Other
         });
 }
