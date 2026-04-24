@@ -2910,16 +2910,9 @@ def test_histogram_quantile():
 
     # Multiple series (two `job` values) -> the aggregate must produce one quantile per
     # group. Also verifies that `le` and `__name__` are removed from the output labels
-    # while other labels (`job`) are preserved.
-    #
-    # We exercise this two ways:
-    #   1. As a range query (below). Prometheus's instant-vector output is explicitly
-    #      undefined in order per the HTTP API docs
-    #      (https://prometheus.io/docs/prometheus/latest/querying/api/), so a multi-group
-    #      instant test would be flaky against Prometheus; range queries are sorted
-    #      alphabetically on both sides, mirroring the `topk`/`bottomk` precedent.
-    #   2. As an instant query through `do_clickhouse_only_query_test` to lock in our
-    #      deterministic alphabetical ordering without asserting against Prometheus.
+    # while other labels (`job`) are preserved. Expressed as a range query so both sides
+    # sort deterministically by labels (Prometheus's instant-vector output is unordered
+    # per the HTTP API docs), mirroring the `topk`/`bottomk` precedent.
     do_range_query_test(
         "histogram_quantile(0.5, cache_lookup_duration_seconds_bucket)",
         300,
@@ -2929,21 +2922,6 @@ def test_histogram_quantile():
         [
             ["[('job','reader')]", "[('1970-01-01 00:05:00.000',2.5)]"],
             ["[('job','writer')]", "[('1970-01-01 00:05:00.000',1.75)]"],
-        ],
-        eps=1e-12,
-    )
-
-    # Instant-query variant: ClickHouse returns groups in deterministic alphabetical order.
-    # Prometheus instant vectors have no defined order (see note above), so we check only
-    # the ClickHouse side here - mirroring the `limitk` precedent where implementations
-    # diverge in output ordering.
-    do_clickhouse_only_query_test(
-        "histogram_quantile(0.5, cache_lookup_duration_seconds_bucket)",
-        300,
-        '{"resultType": "vector", "result": [{"metric": {"job": "reader"}, "value": [300, "2.5"]}, {"metric": {"job": "writer"}, "value": [300, "1.75"]}]}',
-        [
-            ["[('job','reader')]", "1970-01-01 00:05:00.000", "2.5"],
-            ["[('job','writer')]", "1970-01-01 00:05:00.000", "1.75"],
         ],
         eps=1e-12,
     )
