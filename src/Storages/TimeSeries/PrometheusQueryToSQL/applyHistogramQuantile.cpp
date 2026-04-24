@@ -8,6 +8,9 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 
+#include <cmath>
+#include <limits>
+
 
 namespace DB::ErrorCodes
 {
@@ -107,28 +110,64 @@ SQLQueryPiece applyHistogramQuantile(
         new_group_expr->setAlias(ColumnNames::NewGroup);
         builder.select_list.push_back(std::move(new_group_expr));
 
-        /// quantilePrometheusHistogramForEach(phi)(le_array, values)
-        ///
-        /// le_array is constructed for each row as an array of the same length as values,
-        /// filled with the extracted 'le' tag value (or NaN if missing).
-        auto le_array_expr = makeASTFunction(
-            "arrayResize",
-            makeASTFunction("CAST",
-                make_intrusive<ASTLiteral>(Array{}),
-                make_intrusive<ASTLiteral>("Array(Float64)")),
-            makeASTFunction("length", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-            makeASTFunction("toFloat64",
-                makeASTFunction("ifNull",
-                    makeASTFunction("timeSeriesExtractTag",
-                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                        make_intrusive<ASTLiteral>("le")),
-                    make_intrusive<ASTLiteral>("NaN"))));
+        /// PromQL `histogram_quantile` has constant out-of-range semantics:
+        ///   phi < 0  -> -Inf for every time step
+        ///   phi > 1  -> +Inf for every time step
+        ///   phi NaN  -> NaN for every time step
+        /// These short-circuits happen before looking at the histogram, so instead of
+        /// calling quantilePrometheusHistogramForEach we emit a constant-valued array
+        /// aligned to the time grid (preserving NULL at positions where no input existed).
+        ASTPtr quantile_expr;
+        if (std::isnan(phi) || phi < 0.0 || phi > 1.0)
+        {
+            Float64 out_of_range_value;
+            if (std::isnan(phi))
+                out_of_range_value = std::numeric_limits<Float64>::quiet_NaN();
+            else if (phi < 0.0)
+                out_of_range_value = -std::numeric_limits<Float64>::infinity();
+            else
+                out_of_range_value = std::numeric_limits<Float64>::infinity();
 
-        auto quantile_expr = addParametersToAggregateFunction(
-            makeASTFunction("quantilePrometheusHistogramForEach",
-                std::move(le_array_expr),
-                make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-            make_intrusive<ASTLiteral>(phi));
+            /// arrayMap(x -> if(isNotNull(x), <constant>, NULL), anyForEach(values))
+            /// anyForEach produces one array per group aligned to the time grid, with NULL at
+            /// positions where no input series had data. arrayMap then replaces every non-NULL
+            /// position with the constant and keeps NULLs as-is.
+            quantile_expr = makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                    makeASTFunction("if",
+                        makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x")),
+                        make_intrusive<ASTLiteral>(out_of_range_value),
+                        make_intrusive<ASTLiteral>(Field{} /* NULL */))),
+                makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        }
+        else
+        {
+            /// quantilePrometheusHistogramForEach(phi)(le_array, values)
+            ///
+            /// le_array is constructed for each row as an array of the same length as values,
+            /// filled with the extracted 'le' tag value (or NaN if missing).
+            auto le_array_expr = makeASTFunction(
+                "arrayResize",
+                makeASTFunction("CAST",
+                    make_intrusive<ASTLiteral>(Array{}),
+                    make_intrusive<ASTLiteral>("Array(Float64)")),
+                makeASTFunction("length", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                makeASTFunction("toFloat64",
+                    makeASTFunction("ifNull",
+                        makeASTFunction("timeSeriesExtractTag",
+                            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                            make_intrusive<ASTLiteral>("le")),
+                        make_intrusive<ASTLiteral>("NaN"))));
+
+            quantile_expr = addParametersToAggregateFunction(
+                makeASTFunction("quantilePrometheusHistogramForEach",
+                    std::move(le_array_expr),
+                    make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                make_intrusive<ASTLiteral>(phi));
+        }
 
         quantile_expr->setAlias(ColumnNames::Values);
         builder.select_list.push_back(std::move(quantile_expr));

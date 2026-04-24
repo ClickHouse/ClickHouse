@@ -2875,6 +2875,31 @@ def test_histogram_quantile():
         ],
     )
 
+    # Out-of-range phi: PromQL short-circuits before looking at the histogram.
+    # phi < 0 -> -Inf at every time step.
+    do_query_test(
+        "histogram_quantile(-0.5, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "-Inf"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "-inf"]],
+    )
+
+    # phi > 1 -> +Inf at every time step.
+    do_query_test(
+        "histogram_quantile(1.5, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "+Inf"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "inf"]],
+    )
+
+    # phi NaN -> NaN at every time step.
+    do_query_test(
+        "histogram_quantile(NaN, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "NaN"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "nan"]],
+    )
+
     # Type validation: second argument must be an instant vector.
     do_query_test_expect_error(
         "histogram_quantile(0.9, 1)",
