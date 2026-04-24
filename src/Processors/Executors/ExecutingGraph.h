@@ -8,6 +8,7 @@
 #include <mutex>
 #include <queue>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <boost/container/devector.hpp>
 
@@ -62,11 +63,17 @@ public:
         Async  /// prepare returned Async. Owning.
     };
 
+    /// Forward decl so Node can hold an iterator into the owning Nodes list.
+    using Nodes = std::list<struct Node>;
+
     /// Graph node. Represents single Processor.
     struct Node
     {
         /// Iterator into the graph's processors list.
         Processors::iterator processor_iter{};
+
+        /// Iterator into the graph's nodes list pointing at this node.
+        Nodes::iterator self_iter{};
 
         /// Stable, monotonically-assigned id. Never reused. Used only for diagnostics (logs, system.processors_profile_log).
         uint64_t processors_id = 0;
@@ -116,8 +123,7 @@ public:
     using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
     using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
-    /// All graph nodes.
-    using Nodes = std::list<Node>;
+    /// All graph nodes. Nodes type is forward-declared above so Node can hold a self-iterator.
     Nodes nodes;
 
     /// Each processor is directly tied to pipeline graph node.
@@ -150,10 +156,8 @@ private:
     /// Append a processor to the graph's processors list, create its Node, assign a stable id,
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
     Node & addNode(ProcessorPtr processor);
-
-    /// Register a Node for a processor already present in `processors` at `processor_iter`.
-    /// Used during construction (initial processors) and by addNode (just pushed).
     Node & addNode(Processors::iterator processor_iter);
+    Node * removeNode(ProcessorPtr processor);
 
     /// Add single edge to edges list. Check processor is known.
     Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
@@ -165,13 +169,12 @@ private:
         std::vector<Edge *> direct;  // direct edges added (outputs side of this node)
         bool empty() const { return back.empty() && direct.empty(); }
     };
-
-    /// Append new edges for node. It is called for new node or when new port were added after ExpandPipeline.
     NewEdges addEdges(Node & node);
+    bool removeAffectedEdges(Node & node, const std::unordered_set<Node *> & removed_nodes);
 
-    /// Update graph after processor `node` returned ExpandPipeline status.
+    /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
-    UpdateNodeStatus expandPipeline(boost::container::devector<Node *> & stack, Node & node);
+    UpdateNodeStatus updatePipeline(boost::container::devector<Node *> & stack, Node & node, Processors & delayed_destruction);
 
     /// Shared with QueryPipeline.
     std::shared_ptr<Processors> processors;

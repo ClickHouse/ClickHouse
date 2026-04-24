@@ -5,6 +5,14 @@ aggregate_function_input_format	state
 aggregate_functions_null_for_empty	0
 aggregation_in_order_max_block_bytes	50000000
 aggregation_memory_efficient_merge_threads	0
+ai_function_max_api_calls_per_query	0
+ai_function_max_input_tokens_per_query	1000000
+ai_function_max_output_tokens_per_query	500000
+ai_function_max_retries	0
+ai_function_request_timeout_sec	60
+ai_function_retry_initial_delay_ms	1000
+ai_function_throw_on_error	1
+ai_function_throw_on_quota_exceeded	1
 allow_aggregate_partitions_independently	0
 allow_archive_path_syntax	1
 allow_asynchronous_read_from_io_pool_for_merge_tree	0
@@ -24,6 +32,7 @@ allow_distributed_ddl	1
 allow_drop_detached	0
 allow_dynamic_type_in_join_keys	0
 allow_execute_multiif_columnar	1
+allow_experimental_ai_functions	0
 allow_experimental_alias_table_engine	0
 allow_experimental_alter_materialized_view_structure	1
 allow_experimental_analyzer	1
@@ -97,6 +106,7 @@ allow_fuzz_query_functions	0
 allow_general_join_planning	1
 allow_get_client_http_header	0
 allow_hyperscan	1
+allow_iceberg_remove_orphan_files	0
 allow_insert_into_iceberg	0
 allow_introspection_functions	0
 allow_materialized_view_with_bad_select	0
@@ -137,6 +147,7 @@ alter_update_mode	heavy
 analyze_index_with_space_filling_curves	1
 analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested	1
 analyzer_compatibility_join_using_top_level_identifier	0
+analyzer_inline_views	0
 annoy_index_search_k_nodes	-1
 any_join_distinct_right_table_keys	0
 apply_deleted_mask	1
@@ -152,6 +163,7 @@ ast_fuzzer_any_query	0
 ast_fuzzer_runs	0
 asterisk_include_alias_columns	0
 asterisk_include_materialized_columns	0
+asterisk_include_virtual_columns	0
 async_insert	1
 async_insert_busy_timeout_decrease_rate	0.2
 async_insert_busy_timeout_increase_rate	0.2
@@ -359,6 +371,7 @@ distributed_cache_throw_on_error	0
 distributed_cache_use_clients_cache_for_read	1
 distributed_cache_use_clients_cache_for_write	0
 distributed_cache_wait_connection_from_pool_milliseconds	100
+distributed_cache_write_request_max_tries	10
 distributed_connections_pool_size	1024
 distributed_ddl_entry_format_version	5
 distributed_ddl_output_mode	throw
@@ -371,6 +384,7 @@ distributed_foreground_insert	0
 distributed_group_by_no_merge	0
 distributed_index_analysis	0
 distributed_index_analysis_for_non_shared_merge_tree	0
+distributed_index_analysis_only_on_coordinator	0
 distributed_insert_skip_read_only_replicas	0
 distributed_plan_default_reader_bucket_count	8
 distributed_plan_default_shuffle_join_bucket_count	8
@@ -379,6 +393,7 @@ distributed_plan_force_exchange_kind
 distributed_plan_force_shuffle_aggregation	0
 distributed_plan_max_rows_to_broadcast	20000
 distributed_plan_optimize_exchanges	1
+distributed_plan_prefer_replicas_over_workers	0
 distributed_product_mode	deny
 distributed_push_down_limit	1
 distributed_replica_error_cap	1000
@@ -386,6 +401,7 @@ distributed_replica_error_half_life	60
 distributed_replica_max_ignored_errors	0
 do_not_merge_across_partitions_select_final	0
 drain_timeout	3
+dynamic_throw_on_type_mismatch	1
 empty_result_for_aggregation_by_constant_keys_on_empty_set	1
 empty_result_for_aggregation_by_empty_set	0
 enable_adaptive_memory_spill_scheduler	0
@@ -407,11 +423,14 @@ enable_global_with_statement	1
 enable_hdfs_pread	1
 enable_http_compression	1
 enable_job_stack_trace	0
+enable_join_fixed_hash_table_conversion	1
 enable_join_runtime_filters	1
+enable_join_transitive_predicates	0
 enable_json_type	1
 enable_lazy_columns_replication	1
 enable_lightweight_delete	1
 enable_lightweight_update	1
+enable_materialized_cte	0
 enable_memory_bound_merging_of_aggregation_results	1
 enable_multiple_prewhere_read_steps	1
 enable_named_columns_in_function_tuple	0
@@ -478,6 +497,7 @@ filesystem_prefetch_step_bytes	0
 filesystem_prefetch_step_marks	0
 filesystem_prefetches_limit	200
 final	0
+finalize_projection_parts_synchronously	0
 flatten_nested	1
 force_aggregate_partitions_independently	0
 force_aggregation_in_order	0
@@ -557,16 +577,19 @@ hdfs_skip_empty_files	0
 hdfs_throw_on_zero_files_match	0
 hdfs_truncate_on_insert	0
 hedged_connection_timeout_ms	50
+highlight_max_matches_per_row	10000
 hnsw_candidate_list_size_for_search	256
 hsts_max_age	0
 http_connection_timeout	1
 http_headers_progress_interval_ms	100
+http_headers_read_timeout	30
 http_make_head_request	1
 http_max_chunk_size	107374182400
-http_max_field_name_size	131072
+http_max_field_name_size	4096
 http_max_field_value_size	131072
-http_max_fields	1000000
+http_max_fields	1000
 http_max_multipart_form_data_size	1073741824
+http_max_request_header_size	10485760
 http_max_request_param_data_size	10485760
 http_max_tries	10
 http_max_uri_size	1048576
@@ -592,6 +615,7 @@ iceberg_insert_max_rows_in_data_file	1000000
 iceberg_metadata_compression_method	
 iceberg_metadata_log_level	none
 iceberg_metadata_staleness_ms	0
+iceberg_orphan_files_older_than_seconds	259200
 iceberg_snapshot_id	0
 iceberg_timestamp_ms	0
 idle_connection_timeout	3600
@@ -622,6 +646,7 @@ input_format_binary_max_type_complexity	1000
 input_format_binary_read_json_as_string	0
 input_format_bson_skip_fields_with_unsupported_types_in_schema_inference	0
 input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference	0
+input_format_column_name_matching_mode	match_case
 input_format_connection_handling	0
 input_format_csv_allow_cr_end_of_line	0
 input_format_csv_allow_variable_number_of_columns	0
@@ -816,11 +841,11 @@ low_cardinality_use_single_dictionary_for_part	0
 low_priority_query_wait_time_ms	1000
 make_distributed_plan	0
 materialize_skip_indexes_on_insert	1
-materialize_statistics_on_insert	1
+materialize_statistics_on_insert	0
 materialize_ttl_after_modify	1
 materialized_views_ignore_errors	0
 materialized_views_squash_parallel_inserts	1
-max_alter_threads	\'auto(32)\'
+max_alter_threads	\'auto(12)\'
 max_analyze_depth	5000
 max_ast_depth	1000
 max_ast_elements	50000
@@ -830,6 +855,7 @@ max_block_size	65409
 max_bytes_before_external_group_by	0
 max_bytes_before_external_sort	0
 max_bytes_before_remerge_sort	1000000000
+max_bytes_for_lazy_final	256000000
 max_bytes_in_distinct	0
 max_bytes_in_join	0
 max_bytes_in_set	0
@@ -856,7 +882,7 @@ max_execution_time	0
 max_execution_time_leaf	0
 max_expanded_ast_elements	500000
 max_fetch_partition_retries_count	5
-max_final_threads	\'auto(32)\'
+max_final_threads	\'auto(12)\'
 max_http_get_redirects	0
 max_hyperscan_regexp_length	0
 max_hyperscan_regexp_total_length	0
@@ -884,7 +910,7 @@ max_os_cpu_wait_time_ratio_to_throw	0
 max_parallel_replicas	1000
 max_parser_backtracks	1000000
 max_parser_depth	1000
-max_parsing_threads	\'auto(32)\'
+max_parsing_threads	\'auto(12)\'
 max_partition_size_to_drop	50000000000
 max_partitions_per_insert_block	100
 max_partitions_to_read	-1
@@ -892,6 +918,8 @@ max_parts_to_move	1000
 max_pipeline_depth	0
 max_projection_rows_to_use_projection_index	1000000
 max_query_size	262144
+max_rand_distribution_parameter	1000000
+max_rand_distribution_trials	1000000000
 max_read_buffer_size	1048576
 max_read_buffer_size_local_fs	131072
 max_read_buffer_size_remote_fs	0
@@ -906,6 +934,7 @@ max_replicated_sends_network_bandwidth_for_server	0
 max_result_bytes	0
 max_result_rows	0
 max_reverse_dictionary_lookup_cache_size_bytes	104857600
+max_rows_for_lazy_final	10000000
 max_rows_in_distinct	0
 max_rows_in_join	0
 max_rows_in_set	0
@@ -930,10 +959,11 @@ max_temporary_columns	0
 max_temporary_data_on_disk_size_for_query	0
 max_temporary_data_on_disk_size_for_user	0
 max_temporary_non_const_columns	0
-max_threads	\'auto(32)\'
+max_threads	\'auto(12)\'
 max_threads_for_annoy_index_creation	4
 max_threads_for_indexes	0
 max_untracked_memory	4194304
+max_wkb_geometry_elements	1000000
 memory_overcommit_ratio_denominator	1073741824
 memory_overcommit_ratio_denominator_for_user	1073741824
 memory_profiler_sample_max_allocation_size	0
@@ -978,6 +1008,7 @@ min_execution_speed_bytes	0
 min_external_sort_block_bytes	104857600
 min_external_table_block_size_bytes	268402944
 min_external_table_block_size_rows	1048449
+min_filtered_ratio_for_lazy_final	0.5
 min_free_disk_bytes_to_perform_insert	0
 min_free_disk_ratio_to_perform_insert	0
 min_free_disk_space_for_temporary_data	0
@@ -1055,7 +1086,7 @@ optimize_read_in_window_order	0
 optimize_redundant_functions_in_order_by	1
 optimize_respect_aliases	1
 optimize_rewrite_aggregate_function_with_if	1
-optimize_rewrite_array_exists_to_has	0
+optimize_rewrite_array_exists_to_has	1
 optimize_rewrite_like_perfect_affix	1
 optimize_rewrite_regexp_functions	1
 optimize_rewrite_sum_if_to_count_if	1
@@ -1072,6 +1103,7 @@ optimize_time_filter_with_preimage	1
 optimize_trivial_approximate_count_query	0
 optimize_trivial_count_query	1
 optimize_trivial_insert_select	0
+optimize_truncate_order_by_after_group_by_keys	1
 optimize_uniq_to_count	1
 optimize_use_implicit_projections	1
 optimize_use_projection_filtering	1
@@ -1085,6 +1117,7 @@ output_format_arrow_date_as_uint16	0
 output_format_arrow_fixed_string_as_fixed_byte_array	1
 output_format_arrow_low_cardinality_as_dictionary	0
 output_format_arrow_string_as_string	1
+output_format_arrow_unsupported_types_as_binary	1
 output_format_arrow_use_64_bit_indexes_for_dictionary	0
 output_format_arrow_use_signed_indexes_for_dictionary	1
 output_format_avro_codec	
@@ -1139,6 +1172,7 @@ output_format_parquet_parallel_encoding	1
 output_format_parquet_row_group_size	1000000
 output_format_parquet_row_group_size_bytes	536870912
 output_format_parquet_string_as_string	1
+output_format_parquet_unsupported_types_as_binary	0
 output_format_parquet_use_custom_encoder	1
 output_format_parquet_version	2.latest
 output_format_parquet_write_bloom_filter	1
@@ -1187,6 +1221,7 @@ parallel_non_joined_rows_processing	1
 parallel_replica_offset	0
 parallel_replicas_allow_in_with_subquery	1
 parallel_replicas_allow_materialized_views	1
+parallel_replicas_allow_view_over_mergetree	0
 parallel_replicas_connect_timeout_ms	300
 parallel_replicas_count	0
 parallel_replicas_custom_key	
@@ -1280,6 +1315,8 @@ query_plan_merge_filter_into_join_condition	1
 query_plan_merge_filters	1
 query_plan_optimize_join_order_algorithm	greedy
 query_plan_optimize_join_order_limit	10
+query_plan_optimize_join_order_randomize	0
+query_plan_optimize_lazy_final	0
 query_plan_optimize_lazy_materialization	1
 query_plan_optimize_prewhere	1
 query_plan_optimize_primary_key	1
@@ -1311,6 +1348,7 @@ read_from_page_cache_if_exists_otherwise_bypass_cache	0
 read_in_order_two_level_merge_threshold	100
 read_in_order_use_buffering	1
 read_in_order_use_virtual_row	0
+read_in_order_use_virtual_row_per_block	0
 read_overflow_mode	throw
 read_overflow_mode_leaf	throw
 read_priority	0
@@ -1377,6 +1415,7 @@ s3_throw_on_zero_files_match	0
 s3_truncate_on_insert	0
 s3_upload_part_size_multiply_factor	2
 s3_upload_part_size_multiply_parts_count_threshold	500
+s3_uri_style	auto
 s3_use_adaptive_timeouts	1
 s3_validate_request_settings	1
 s3queue_allow_experimental_sharded_mode	0
@@ -1441,6 +1480,8 @@ temporary_files_buffer_size	1048576
 temporary_files_codec	LZ4
 temporary_live_view_timeout	1
 text_index_hint_max_selectivity	0.2
+text_index_like_max_postings_to_read	50
+text_index_like_min_pattern_length	4
 text_index_use_bloom_filter	1
 throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert	0
 throw_if_no_data_to_insert	1
@@ -1503,9 +1544,12 @@ use_skip_indexes_if_final_exact_mode	1
 use_skip_indexes_on_data_read	1
 use_statistics	1
 use_statistics_cache	1
+use_statistics_for_part_pruning	1
+use_strict_insert_block_limits	0
 use_structure_from_insertion_table_in_table_functions	2
 use_text_index_dictionary_cache	0
 use_text_index_header_cache	0
+use_text_index_like_evaluation_by_dictionary_scan	1
 use_text_index_postings_cache	0
 use_text_index_tokens_cache	0
 use_top_k_dynamic_filtering	0
@@ -1517,6 +1561,7 @@ validate_enum_literals_in_operators	0
 validate_experimental_and_suspicious_types_inside_nested_types	1
 validate_mutation_query	1
 validate_polygons	1
+variant_throw_on_type_mismatch	1
 vector_search_filter_strategy	auto
 vector_search_index_fetch_multiplier	1
 vector_search_postfilter_multiplier	1
