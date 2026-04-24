@@ -482,6 +482,17 @@ class Runner:
 
             exit_code = process.wait()
 
+            # When running Docker containers as root (non-rootless mode), any files
+            # created by the job will be owned by root.  Fix ownership here, before
+            # reading the result file or writing the host-side result, so that the
+            # host user can open them without a PermissionError.
+            if job.run_in_docker and not no_docker and from_root:
+                print(f"--- Fixing file ownership after running docker as root")
+                uid = os.getuid()
+                gid = os.getgid()
+                chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+                Shell.run(chown_cmd)
+
             result = Result.from_fs(job.name)
             if exit_code != 0:
                 if not result.is_completed():
@@ -506,19 +517,6 @@ class Runner:
 
         print("INFO: disk status after running a job:")
         Shell.run("df -h")
-
-        # When running Docker containers as root (non-rootless mode), any files created
-        # by the job will be owned by root. This causes issues when:
-        # 1. Files need to be read/compressed/uploaded by subsequent steps
-        # 2. Root-owned files remain in the repository working directory
-        # The ownership fix below ensures all root-owned files are changed to the current user
-        if job.run_in_docker and not no_docker and from_root:
-            print(f"--- Fixing file ownership after running docker as root")
-            # Get host user's UID and GID (not from inside the container)
-            uid = os.getuid()
-            gid = os.getgid()
-            chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-            Shell.run(chown_cmd)
 
         return exit_code
 
@@ -573,6 +571,9 @@ class Runner:
 
         result.update_duration()
         result.set_files([Settings.RUN_LOG], strict=False)
+        if job.force_success and not result.is_ok():
+            print(f"NOTE: Job has force_success=True - overriding status to OK")
+            result.set_status(Result.Status.OK)
         return result
 
     def _post_run(
@@ -1014,7 +1015,6 @@ class Runner:
             result = self._get_result_object(
                 job, setup_env_code, prerun_code, run_code
             )
-
             if prehook_result:
                 result.results.append(prehook_result)
             if job.post_hooks:
@@ -1042,5 +1042,5 @@ class Runner:
 
             result.dump()
 
-        if not res:
+        if not res and not job.force_success:
             sys.exit(1)
