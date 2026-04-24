@@ -132,7 +132,7 @@ public:
               * The frequency is arbitrary, but not too large, not too small,
               * and a power of two to simplify the division.
               */
-#if defined(USE_MUSL) || defined(SANITIZER) || !defined(NDEBUG)
+#if defined(USE_MUSL) || defined(SANITIZER) || !defined(NDEBUG) || defined(OS_DARWIN)
             static constexpr uint32_t check_frequency = 128;
 #else
             static constexpr uint32_t check_frequency = 8192;

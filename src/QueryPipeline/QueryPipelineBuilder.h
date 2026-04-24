@@ -119,6 +119,15 @@ public:
         ProcessorPtr transform,
         Processors * collected_processors);
 
+    /// Select one of two data pipelines based on a signal pipeline.
+    /// All three pipelines are resized to single streams.
+    /// Creates InputSelectorTransform internally.
+    static QueryPipelineBuilderPtr selectPipeline(
+        QueryPipelineBuilderPtr signal,
+        QueryPipelineBuilderPtr true_pipeline,
+        QueryPipelineBuilderPtr false_pipeline,
+        Processors * collected_processors);
+
     /// Join two pipelines together using JoinPtr.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     /// Process right stream to fill JoinPtr and then process left pipeline using it

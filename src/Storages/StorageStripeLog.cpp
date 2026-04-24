@@ -187,15 +187,10 @@ private:
             result_columns.emplace_back(res.getByName(col.name).column);
     }
 
-    void fillVirtualColumns(Columns & result_columns, UInt64 num_rows) const
+    void fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
     {
-        for (const auto & col : virtual_columns)
-        {
-            if (col.name == "_table")
-                result_columns.emplace_back(col.type->createColumnConst(num_rows, storage->getStorageID().getTableName())->convertToFullColumnIfConst());
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual column: '{}'", col.name);
-        }
+        if (!virtual_columns.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
     }
 };
 
@@ -314,7 +309,7 @@ StorageStripeLog::StorageStripeLog(
     const String & comment,
     LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithMutableContext(context_)
     , disk(std::move(disk_))
     , table_path(relative_path_)
@@ -328,8 +323,8 @@ StorageStripeLog::StorageStripeLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
@@ -393,7 +388,8 @@ static std::chrono::seconds getLockTimeout(ContextPtr local_context)
 VirtualColumnsDescription StorageStripeLog::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     return desc;
 }
 
@@ -423,7 +419,7 @@ Pipe StorageStripeLog::read(
     auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
     auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
     auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
-    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(), virtual_column_names);
+    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     size_t size = indices_for_selected_columns->blocks.size();
     num_streams = std::min(num_streams, size);
@@ -656,7 +652,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     /// columns.txt
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical().toString()));
 
     /// count.txt
     size_t num_rows = 0;

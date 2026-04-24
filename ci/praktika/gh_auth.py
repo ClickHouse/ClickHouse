@@ -81,17 +81,20 @@ class GHAuth:
             Secret.Config(
                 name=Settings.SECRET_GH_APP_ID,
                 type=Secret.Type.AWS_SSM_SECRET,
+                region=Settings.SECRET_GH_APP_REGION,
             )
             .join_with(
                 Secret.Config(
                     name=Settings.SECRET_GH_APP_PEM_KEY,
                     type=Secret.Type.AWS_SSM_SECRET,
+                    region=Settings.SECRET_GH_APP_REGION,
                 )
             )
             .join_with(
                 Secret.Config(
                     name=Settings.SECRET_GH_APP_INSTALLATION_ID,
                     type=Secret.Type.AWS_SSM_SECRET,
+                    region=Settings.SECRET_GH_APP_REGION,
                 )
             )
             .get_value()
