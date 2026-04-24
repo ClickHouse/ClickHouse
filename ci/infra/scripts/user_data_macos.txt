@@ -3,6 +3,7 @@
 # Based on prepare-ci-ami.sh but adapted for macOS
 
 set -xeuo pipefail
+trap reboot EXIT
 
 echo "Running macOS runner prepare script"
 
@@ -44,6 +45,9 @@ if [ -f /tmp/clickhouse-ci-macos-runner.success ]; then
 else
   echo "No success marker found - proceeding with installation"
 
+  # Disable greedy system service
+  launchctl disable system/com.apple.bluetoothd
+
   # Install Homebrew if not already installed
   if ! sudo -u "$USER" -i command -v brew &> /dev/null; then
     echo "Installing Homebrew..."
@@ -70,16 +74,22 @@ else
     zstd \
     python@3 \
     wget \
-    unzip
+    unzip \
+    gnu-sed \
+    grep \
+    bash \
+    coreutils
 
-  # Install Python packages
-  echo "Installing Python packages..."
-  # Note: Skip pip upgrade as it's managed by Homebrew
-  if [ "$EUID" -eq 0 ]; then
-    sudo -u "$USER" -i bash -c 'pip3 install --break-system-packages boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt 2>/dev/null || pip3 install --user boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt'
-  else
-    pip3 install --break-system-packages boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt 2>/dev/null || pip3 install --user boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt
-  fi
+  # Install Python packages into a virtual environment using Homebrew Python
+  echo "Installing Python packages into venv..."
+  sudo -u "$USER" -i bash -c '$(brew --prefix python@3)/bin/python3 -m venv ~/venv && ~/venv/bin/pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt'
+
+  # Add venv/bin and GNU tools to PATH for both bash and zsh login shells
+  GNU_COREUTILS_BIN=$(sudo -u "$USER" -i brew --prefix coreutils)/libexec/gnubin
+  GNU_SED_BIN=$(sudo -u "$USER" -i brew --prefix gnu-sed)/libexec/gnubin
+  GNU_GREP_BIN=$(sudo -u "$USER" -i brew --prefix grep)/libexec/gnubin
+  sudo -u "$USER" -i bash -c "echo 'export PATH=\"\$HOME/venv/bin:${GNU_COREUTILS_BIN}:${GNU_SED_BIN}:${GNU_GREP_BIN}:\$PATH\"' >> ~/.bash_profile"
+  sudo -u "$USER" -i bash -c "echo 'export PATH=\"\$HOME/venv/bin:${GNU_COREUTILS_BIN}:${GNU_SED_BIN}:${GNU_GREP_BIN}:\$PATH\"' >> ~/.zprofile"
 
   # Download and install CloudWatch agent
   echo "Installing Amazon CloudWatch agent..."
@@ -137,4 +147,5 @@ fi
 # Download and execute cloud-init script
 INIT_ENVIRONMENT=${INIT_ENVIRONMENT:-macos}
 aws s3 cp "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
-exec python3 /tmp/runner-init.py --environment "$INIT_ENVIRONMENT"
+rm -rf /Users/ec2-user/actions-runner/_work
+sudo -u ec2-user -i bash -c "/Users/ec2-user/venv/bin/python /tmp/runner-init.py --environment \"$INIT_ENVIRONMENT\""
