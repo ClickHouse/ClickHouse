@@ -1960,9 +1960,13 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
         }
         else if (max_log_ptr > new_max_log_ptr)
         {
-            /// Log pointer moved backwards, the database was probably recreated.
-            LOG_DEBUG(log, "Log pointer moved backwards from {} to {}, the database was probably recreated, will retry", max_log_ptr, new_max_log_ptr);
-            max_log_ptr = new_max_log_ptr;
+            /// Log pointer moved backwards, which means the database was dropped and
+            /// recreated as another instance. We should not back up the new database
+            /// instead of the one the caller asked for.
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Log pointer moved backwards from {} to {}, the database was probably dropped and recreated",
+                max_log_ptr, new_max_log_ptr);
         }
         else
         {
