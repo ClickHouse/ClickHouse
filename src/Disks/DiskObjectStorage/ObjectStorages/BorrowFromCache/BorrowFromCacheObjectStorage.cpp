@@ -189,7 +189,11 @@ std::optional<ObjectMetadata> BorrowFromCacheObjectStorage::tryGetObjectMetadata
     std::error_code error;
     auto time = fs::last_write_time(cache_path, error);
     if (error)
-        return std::nullopt;
+    {
+        if (error == std::errc::no_such_file_or_directory)
+            return std::nullopt;
+        throw fs::filesystem_error("Cannot get last write time", cache_path, error);
+    }
 
     ObjectMetadata metadata;
     metadata.size_bytes = fs::file_size(cache_path);
