@@ -902,7 +902,7 @@ def _finish_workflow(workflow, job_name):
                 )
                 update_final_report = True
         job = workflow.get_job(result.name)
-        if not job or not job.allow_merge_on_failure:
+        if not job or not job.allow_failure:
             print(
                 f"NOTE: Result for [{result.name}] has not ok status [{result.status}]"
             )
