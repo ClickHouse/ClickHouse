@@ -15,12 +15,14 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -42,6 +44,7 @@ constexpr uint32_t COL_NULL_FIXED32 = 5;
 constexpr uint32_t COL_FIXED64      = 6;
 constexpr uint32_t COL_NULL_FIXED64 = 7;
 constexpr uint32_t COL_COMPLEX      = 8;  // Array(T) / Tuple(T...) — recursive format
+constexpr uint32_t COL_VARIANT      = 9;  // Variant(...) — discriminated union
 constexpr uint32_t COL_IS_CONST     = 0x80u;
 // COL_IS_REPEAT: column is cyclic with period R.  Row i maps to stored_row[i % R].
 // offsets_offset field carries R (not a byte offset).
@@ -70,16 +73,102 @@ inline uint32_t detectPeriod(const IColumn * col, uint32_t num_rows)
     constexpr uint32_t PERIOD_SCAN_LIMIT = 8192;
     constexpr uint32_t MAX_PERIOD        = 4096;
     uint32_t scan = std::min(num_rows, PERIOD_SCAN_LIMIT);
-    for (uint32_t R = 1; R <= std::min(scan / 2, MAX_PERIOD); ++R)
+    for (uint32_t r = 1; r <= std::min(scan / 2, MAX_PERIOD); ++r)
     {
         bool ok = true;
-        for (uint32_t i = R; i < scan; ++i)
+        for (uint32_t i = r; i < scan; ++i)
         {
-            if (col->compareAt(i, i % R, *col, 1) != 0) { ok = false; break; }
+            if (col->compareAt(i, i % r, *col, 1) != 0) { ok = false; break; }
         }
-        if (ok) return R;
+        if (ok) return r;
     }
     return 0;
+}
+
+// ── COL_COMPLEX recursive helpers ────────────────────────────────────────────
+//
+// COL_COMPLEX data block layout (recursive, mirrors the output decoder):
+//   Array(T):   uint32 offsets[n+1]  +  complexDataBlock(inner, total_elems)
+//   Tuple(T..): complexDataBlock(field_0, n) + complexDataBlock(field_1, n) + ...
+//   String:     uint32 offsets[n+1]  +  null-terminated chars
+//   Fixed:      raw bytes[n * elem_bytes]
+
+// Forward declaration — complexDataSize and writeComplexData are mutually recursive
+// only via lambdas; we declare the inline wrappers here.
+inline uint32_t complexDataSize(const IColumn & col, uint32_t n);
+inline void     writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst);
+
+inline uint32_t complexDataSize(const IColumn & col, uint32_t n)
+{
+    if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
+    {
+        uint32_t total = static_cast<uint32_t>(arr->getData().size());
+        return (n + 1u) * 4u + complexDataSize(arr->getData(), total);
+    }
+    if (const auto * tup = typeid_cast<const ColumnTuple *>(&col))
+    {
+        uint32_t sz = 0;
+        for (const auto & field : tup->getColumns())
+            sz += complexDataSize(*field, n);
+        return sz;
+    }
+    if (typeid_cast<const ColumnString *>(&col))
+    {
+        const auto & str = assert_cast<const ColumnString &>(col);
+        uint32_t chars = static_cast<uint32_t>(str.getChars().size()) + n;
+        return (n + 1u) * 4u + chars;
+    }
+    // Fixed-width fallback (ColumnVector<T>, ColumnUInt8, etc.)
+    return n * static_cast<uint32_t>(col.sizeOfValueIfFixed());
+}
+
+inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
+{
+    if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
+    {
+        const auto & ch_offs = arr->getOffsets();
+        uint32_t * wire_offs = reinterpret_cast<uint32_t *>(dst);
+        wire_offs[0] = 0u;
+        for (uint32_t i = 0; i < n; ++i)
+            wire_offs[i + 1u] = static_cast<uint32_t>(ch_offs[i]);
+        uint32_t total = static_cast<uint32_t>(arr->getData().size());
+        writeComplexData(arr->getData(), total, dst + (n + 1u) * 4u);
+        return;
+    }
+    if (const auto * tup = typeid_cast<const ColumnTuple *>(&col))
+    {
+        uint32_t pos = 0;
+        for (const auto & field : tup->getColumns())
+        {
+            uint32_t field_sz = complexDataSize(*field, n);
+            writeComplexData(*field, n, dst + pos);
+            pos += field_sz;
+        }
+        return;
+    }
+    if (const auto * str = typeid_cast<const ColumnString *>(&col))
+    {
+        const auto & ch_offs = str->getOffsets();
+        const auto & chars   = str->getChars();
+        uint32_t * wire_offs = reinterpret_cast<uint32_t *>(dst);
+        uint8_t  * chars_dst = dst + (n + 1u) * 4u;
+        wire_offs[0] = 0u;
+        uint32_t wire_pos = 0u;
+        uint32_t ch_pos   = 0u;
+        for (uint32_t i = 0; i < n; ++i)
+        {
+            uint32_t end = static_cast<uint32_t>(ch_offs[i]);
+            uint32_t len = end - ch_pos;
+            std::memcpy(chars_dst + wire_pos, chars.data() + ch_pos, len);
+            wire_pos += len;
+            chars_dst[wire_pos++] = '\0';
+            wire_offs[i + 1u] = wire_pos;
+            ch_pos = end;
+        }
+        return;
+    }
+    // Fixed-width fallback
+    std::memcpy(dst, col.getRawData().data(), n * col.sizeOfValueIfFixed());
 }
 
 // Compute byte layout for a single column and fill in desc.
@@ -95,6 +184,55 @@ inline uint32_t buildColDescriptor(
     // Budget for COL_IS_REPEAT: only encode if the R unique rows fit under this limit.
     constexpr uint64_t REPEAT_DATA_LIMIT = 64u * 1024u * 1024u;  // 64 MB
 
+    // ── Variant column → COL_VARIANT ─────────────────────────────────────────
+    // Wire layout:
+    //   null_offset    → discriminators[num_rows]    uint8 (global discr; 0xFF=NULL)
+    //   offsets_offset → row_offsets[num_rows]       uint32 (pos within sub-column)
+    //   data_offset    → variant header:
+    //     uint32 K                                   (number of present sub-variants)
+    //     K × { uint8 global_discriminator           (4-byte aligned record)
+    //           uint8[3] pad
+    //           ColDescriptor inner_desc }           (20 bytes, abs buffer offsets)
+    //     (sub-column data at positions given by inner_desc)
+    if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
+    {
+        desc.type = COL_VARIANT | (is_const ? COL_IS_CONST : 0u);
+
+        desc.null_offset = write_cursor;
+        write_cursor += num_rows;
+
+        write_cursor = (write_cursor + 3u) & ~3u;
+        desc.offsets_offset = write_cursor;
+        write_cursor += num_rows * sizeof(uint32_t);
+
+        write_cursor = (write_cursor + 3u) & ~3u;
+        desc.data_offset = write_cursor;
+
+        // Count non-empty sub-variants.
+        uint32_t k = 0;
+        uint32_t num_variants = static_cast<uint32_t>(var_col->getNumVariants());
+        for (uint32_t local = 0; local < num_variants; ++local)
+            if (!var_col->getVariantByLocalDiscriminator(local).empty())
+                ++k;
+
+        // Reserve header: uint32 K + K × 24 bytes (discr+pad+ColDescriptor)
+        write_cursor += 4u + k * (4u + COLUMNAR_DESC_BYTES);
+
+        // Now allocate space for each non-empty sub-column.
+        for (uint32_t local = 0; local < num_variants; ++local)
+        {
+            const IColumn & sub = var_col->getVariantByLocalDiscriminator(local);
+            if (sub.empty())
+                continue;
+            ColDescriptor inner_desc{};
+            uint32_t sub_rows = static_cast<uint32_t>(sub.size());
+            write_cursor = buildColDescriptor(&sub, false, false, sub_rows, write_cursor, inner_desc);
+        }
+
+        desc.data_size = write_cursor - desc.data_offset;
+        return write_cursor;
+    }
+
     // ── Array column → COL_COMPLEX ────────────────────────────────────────────
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col))
     {
@@ -106,22 +244,23 @@ inline uint32_t buildColDescriptor(
         write_cursor += (num_rows + 1u) * sizeof(uint32_t);
 
         const IColumn & nested = arr_col->getData();
-        uint32_t M = static_cast<uint32_t>(nested.size());
+        uint32_t total_elems = static_cast<uint32_t>(nested.size());
 
         desc.data_offset = write_cursor;
+        desc.data_size   = complexDataSize(nested, total_elems);
+        write_cursor    += desc.data_size;
+        return write_cursor;
+    }
 
-        if (const auto * nested_str = typeid_cast<const ColumnString *>(&nested))
-        {
-            uint32_t inner_chars = static_cast<uint32_t>(nested_str->getChars().size()) + M;
-            desc.data_size = (M + 1u) * sizeof(uint32_t) + inner_chars;
-        }
-        else
-        {
-            uint32_t elem_size = static_cast<uint32_t>(nested.sizeOfValueIfFixed());
-            desc.data_size = M * elem_size;
-        }
-
-        write_cursor += desc.data_size;
+    // ── Tuple column → COL_COMPLEX (no outer offsets, fields concatenated) ───
+    if (const auto * tup_col = typeid_cast<const ColumnTuple *>(col))
+    {
+        desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
+        desc.null_offset    = 0;
+        desc.offsets_offset = 0;
+        desc.data_offset    = write_cursor;
+        desc.data_size      = complexDataSize(*tup_col, num_rows);
+        write_cursor       += desc.data_size;
         return write_cursor;
     }
 
@@ -139,19 +278,19 @@ inline uint32_t buildColDescriptor(
         // offsets_offset stores R (the period); string offsets + chars live in the data block.
         if (!is_const && num_rows > 1)
         {
-            uint32_t R = detectPeriod(str_col, num_rows);
-            if (R > 0 && R < num_rows)
+            uint32_t r = detectPeriod(str_col, num_rows);
+            if (r > 0 && r < num_rows)
             {
                 // Compute bytes needed for the R unique strings.
                 // CH ColumnString stores all chars concatenated; the R-th string ends at
                 // str_col->getOffsets()[R-1].  Add R null terminators for wire format.
-                uint64_t unique_chars = static_cast<uint64_t>(str_col->getOffsets()[R - 1]) + R;
-                uint64_t unique_data  = (R + 1u) * sizeof(uint32_t) + unique_chars;
+                uint64_t unique_chars = static_cast<uint64_t>(str_col->getOffsets()[r - 1]) + r;
+                uint64_t unique_data  = (r + 1u) * sizeof(uint32_t) + unique_chars;
                 if (unique_data < REPEAT_DATA_LIMIT)
                 {
                     desc.type           = base_type | COL_IS_REPEAT;
                     desc.null_offset    = 0;  // nullable repeat not yet supported
-                    desc.offsets_offset = R;  // period, NOT a byte offset
+                    desc.offsets_offset = r;  // period, NOT a byte offset
                     write_cursor        = (write_cursor + 3u) & ~3u;
                     desc.data_offset    = write_cursor;
                     desc.data_size      = static_cast<uint32_t>(unique_data);
@@ -196,18 +335,18 @@ inline uint32_t buildColDescriptor(
     // COL_IS_REPEAT detection for non-const fixed-width columns.
     if (!is_const && num_rows > 1)
     {
-        uint32_t R = detectPeriod(col, num_rows);
-        if (R > 0 && R < num_rows)
+        uint32_t r = detectPeriod(col, num_rows);
+        if (r > 0 && r < num_rows)
         {
-            uint64_t unique_data = static_cast<uint64_t>(R) * wire_elem_size;
+            uint64_t unique_data = static_cast<uint64_t>(r) * wire_elem_size;
             if (unique_data < REPEAT_DATA_LIMIT)
             {
                 desc.type           = base_type | COL_IS_REPEAT;
                 desc.null_offset    = 0;
-                desc.offsets_offset = R;  // period
+                desc.offsets_offset = r;  // period
                 desc.data_offset    = write_cursor;
-                desc.data_size      = R * wire_elem_size;
-                write_cursor       += R * wire_elem_size;
+                desc.data_size      = r * wire_elem_size;
+                write_cursor       += r * wire_elem_size;
                 return write_cursor;
             }
         }
@@ -230,44 +369,79 @@ inline void writeColData(
     const ColDescriptor & desc,
     std::span<uint8_t> buf)
 {
+    // ── Variant column → COL_VARIANT ─────────────────────────────────────────
+    if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
+    {
+        // Write global discriminators (NULL_DISCRIMINATOR=0xFF for null rows).
+        uint8_t * disc_dst = buf.data() + desc.null_offset;
+        for (uint32_t i = 0; i < num_rows; ++i)
+            disc_dst[i] = var_col->globalDiscriminatorAt(i);
+
+        // Write per-row offsets within each variant's sub-column.
+        uint32_t * offs_dst = reinterpret_cast<uint32_t *>(buf.data() + desc.offsets_offset);
+        const auto & row_offs = var_col->getOffsets();
+        for (uint32_t i = 0; i < num_rows; ++i)
+            offs_dst[i] = static_cast<uint32_t>(row_offs[i]);
+
+        // Build variant header: K + K×{global_discriminator(4B) + ColDescriptor(20B)}.
+        uint8_t * block = buf.data() + desc.data_offset;
+
+        uint32_t num_variants = static_cast<uint32_t>(var_col->getNumVariants());
+
+        // Count non-empty sub-variants (must match buildColDescriptor).
+        uint32_t k = 0;
+        for (uint32_t local = 0; local < num_variants; ++local)
+            if (!var_col->getVariantByLocalDiscriminator(local).empty())
+                ++k;
+
+        std::memcpy(block, &k, 4u);
+        uint8_t * record_ptr = block + 4u;
+
+        // Track where sub-column data starts (after header).
+        uint32_t sub_cursor = desc.data_offset + 4u + k * (4u + COLUMNAR_DESC_BYTES);
+
+        for (uint32_t local = 0; local < num_variants; ++local)
+        {
+            const IColumn & sub = var_col->getVariantByLocalDiscriminator(local);
+            if (sub.empty())
+                continue;
+
+            uint8_t global_d = var_col->globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local));
+            uint32_t sub_rows = static_cast<uint32_t>(sub.size());
+
+            ColDescriptor inner_desc{};
+            sub_cursor = buildColDescriptor(&sub, false, false, sub_rows, sub_cursor, inner_desc);
+
+            std::memcpy(record_ptr,     &global_d,   1u);
+            std::memset(record_ptr + 1, 0,           3u);
+            std::memcpy(record_ptr + 4, &inner_desc, COLUMNAR_DESC_BYTES);
+            record_ptr += 4u + COLUMNAR_DESC_BYTES;
+
+            writeColData(&sub, false, sub_rows, inner_desc, buf);
+        }
+        return;
+    }
+
     // ── Array column → COL_COMPLEX ────────────────────────────────────────────
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col))
     {
         const auto & ch_offsets = arr_col->getOffsets();
         const IColumn & nested  = arr_col->getData();
-        uint32_t M = static_cast<uint32_t>(nested.size());
+        uint32_t total_elems = static_cast<uint32_t>(nested.size());
 
         uint32_t * wire_outer = reinterpret_cast<uint32_t *>(buf.data() + desc.offsets_offset);
         wire_outer[0] = 0u;
         for (uint32_t i = 0; i < num_rows; ++i)
             wire_outer[i + 1u] = static_cast<uint32_t>(ch_offsets[i]);
 
-        if (const auto * nested_str = typeid_cast<const ColumnString *>(&nested))
-        {
-            const auto & ch_str_offs = nested_str->getOffsets();
-            const auto & chars       = nested_str->getChars();
+        writeComplexData(nested, total_elems, buf.data() + desc.data_offset);
+        return;
+    }
 
-            uint32_t * inner_wire = reinterpret_cast<uint32_t *>(buf.data() + desc.data_offset);
-            uint8_t  * chars_dst  = buf.data() + desc.data_offset + (M + 1u) * sizeof(uint32_t);
-
-            inner_wire[0] = 0u;
-            uint32_t wire_pos = 0u;
-            uint32_t ch_pos   = 0u;
-            for (uint32_t j = 0; j < M; ++j)
-            {
-                uint32_t str_end = static_cast<uint32_t>(ch_str_offs[j]);
-                uint32_t str_len = str_end - ch_pos;
-                std::memcpy(chars_dst + wire_pos, chars.data() + ch_pos, str_len);
-                wire_pos += str_len;
-                chars_dst[wire_pos++] = '\0';
-                inner_wire[j + 1u] = wire_pos;
-                ch_pos = str_end;
-            }
-        }
-        else
-        {
-            std::memcpy(buf.data() + desc.data_offset, nested.getRawData().data(), desc.data_size);
-        }
+    // ── Tuple column → COL_COMPLEX ────────────────────────────────────────────
+    if (const auto * tup_col = typeid_cast<const ColumnTuple *>(col))
+    {
+        writeComplexData(*tup_col, num_rows, buf.data() + desc.data_offset);
         return;
     }
 

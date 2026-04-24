@@ -26,8 +26,9 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -344,4 +345,175 @@ TEST(ColumnarV1Wire, RepeatStringNoRepeat)
     // Must NOT have COL_IS_REPEAT set.
     EXPECT_EQ(desc.type & COL_IS_REPEAT, 0u);
     EXPECT_EQ(desc.type, COL_BYTES);
+}
+
+// ── ColumnTuple encoder → COL_COMPLEX ────────────────────────────────────────
+//
+// 3 rows of Tuple(Float64, Float64): [(1.0,2.0), (3.0,4.0), (5.0,6.0)]
+// Wire: COL_COMPLEX, no offsets (offsets_offset=0), data = field0[3] + field1[3]
+
+TEST(ColumnarV1Wire, TupleFloat64EncoderLayout)
+{
+    auto f0 = ColumnFloat64::create();
+    f0->getData() = {1.0, 3.0, 5.0};
+    auto f1 = ColumnFloat64::create();
+    f1->getData() = {2.0, 4.0, 6.0};
+
+    Columns cols;
+    cols.push_back(std::move(f0));
+    cols.push_back(std::move(f1));
+    auto tup = ColumnTuple::create(std::move(cols));
+
+    auto buf = encodeCHColumn(tup.get(), 3);
+    ColDescriptor desc = readDesc(buf);
+
+    EXPECT_EQ(desc.type, COL_COMPLEX);
+    EXPECT_EQ(desc.offsets_offset, 0u);  // no outer offsets for a top-level Tuple
+    EXPECT_EQ(desc.data_size, 3u * 2u * sizeof(double));
+
+    // Field 0 first, then field 1 (sequential in writeComplexData)
+    const double * fd0 = reinterpret_cast<const double *>(buf.data() + desc.data_offset);
+    EXPECT_DOUBLE_EQ(fd0[0], 1.0);
+    EXPECT_DOUBLE_EQ(fd0[1], 3.0);
+    EXPECT_DOUBLE_EQ(fd0[2], 5.0);
+
+    const double * fd1 = fd0 + 3;
+    EXPECT_DOUBLE_EQ(fd1[0], 2.0);
+    EXPECT_DOUBLE_EQ(fd1[1], 4.0);
+    EXPECT_DOUBLE_EQ(fd1[2], 6.0);
+}
+
+// ── Array(Tuple(Float64,Float64)) encoder → COL_COMPLEX ──────────────────────
+//
+// 2 rows: row0=[(1.0,2.0),(3.0,4.0)], row1=[(5.0,6.0)]
+// Wire: outer_offsets{0,2,3} + field0[3] + field1[3]
+
+TEST(ColumnarV1Wire, ArrayOfTupleFloat64EncoderLayout)
+{
+    auto f0 = ColumnFloat64::create();
+    f0->getData() = {1.0, 3.0, 5.0};
+    auto f1 = ColumnFloat64::create();
+    f1->getData() = {2.0, 4.0, 6.0};
+
+    Columns inner_cols;
+    inner_cols.push_back(std::move(f0));
+    inner_cols.push_back(std::move(f1));
+    auto tup = ColumnTuple::create(std::move(inner_cols));
+
+    auto arr_offsets = ColumnUInt64::create();
+    arr_offsets->getData().push_back(2);  // row 0 ends at element 2
+    arr_offsets->getData().push_back(3);  // row 1 ends at element 3
+
+    auto arr = ColumnArray::create(std::move(tup), std::move(arr_offsets));
+
+    auto buf = encodeCHColumn(arr.get(), 2);
+    ColDescriptor desc = readDesc(buf);
+
+    EXPECT_EQ(desc.type, COL_COMPLEX);
+
+    // Outer offsets {0, 2, 3}
+    const uint32_t * outer = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
+    EXPECT_EQ(outer[0], 0u);
+    EXPECT_EQ(outer[1], 2u);
+    EXPECT_EQ(outer[2], 3u);
+
+    // Nested data: field0 then field1 (3 doubles each)
+    const double * fd0 = reinterpret_cast<const double *>(buf.data() + desc.data_offset);
+    EXPECT_DOUBLE_EQ(fd0[0], 1.0);
+    EXPECT_DOUBLE_EQ(fd0[1], 3.0);
+    EXPECT_DOUBLE_EQ(fd0[2], 5.0);
+
+    const double * fd1 = fd0 + 3;
+    EXPECT_DOUBLE_EQ(fd1[0], 2.0);
+    EXPECT_DOUBLE_EQ(fd1[1], 4.0);
+    EXPECT_DOUBLE_EQ(fd1[2], 6.0);
+}
+
+// ── COL_VARIANT: Variant(UInt64, String) ─────────────────────────────────────
+//
+// 4 rows: [UInt64(10), String("hi"), UInt64(20), NULL]
+// Variants in global order: variant[0]=UInt64, variant[1]=String (identity mapping).
+// discriminators = {0, 1, 0, 255},  row offsets = {0, 0, 1, 0}
+// Sub-columns: UInt64=[10,20] (2 rows), String=["hi"] (1 row)
+//
+// Wire must have:
+//   null_offset    → {0,1,0,255}  discriminators
+//   offsets_offset → {0,0,1,0}   row positions
+//   data_offset    → K=2, records with inner ColDescriptors
+//   sub-column data readable via inner descriptors
+
+TEST(ColumnarV1Wire, VariantUInt64String)
+{
+    auto u64_sub = ColumnUInt64::create();
+    u64_sub->getData() = {10, 20};
+
+    auto str_sub = ColumnString::create();
+    str_sub->insertData("hi", 2);
+
+    // discriminators column (UInt8)
+    auto disc_col = ColumnVector<UInt8>::create();
+    disc_col->getData() = {0, 1, 0, ColumnVariant::NULL_DISCRIMINATOR};
+
+    // offsets column (UInt64 — IColumn::Offset)
+    auto offs_col = ColumnVector<UInt64>::create();
+    offs_col->getData() = {0, 0, 1, 0};
+
+    MutableColumns variants;
+    variants.push_back(std::move(u64_sub));
+    variants.push_back(std::move(str_sub));
+
+    auto var_col = ColumnVariant::create(std::move(disc_col), std::move(offs_col), std::move(variants));
+
+    uint32_t num_rows = 4;
+    auto buf = encodeCHColumn(var_col.get(), num_rows);
+    ColDescriptor desc = readDesc(buf);
+
+    EXPECT_EQ(desc.type, COL_VARIANT);
+
+    // Discriminators at null_offset
+    const uint8_t * discs = buf.data() + desc.null_offset;
+    EXPECT_EQ(discs[0], 0u);
+    EXPECT_EQ(discs[1], 1u);
+    EXPECT_EQ(discs[2], 0u);
+    EXPECT_EQ(discs[3], static_cast<uint8_t>(ColumnVariant::NULL_DISCRIMINATOR));
+
+    // Row offsets at offsets_offset
+    const uint32_t * row_offs = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
+    EXPECT_EQ(row_offs[0], 0u);
+    EXPECT_EQ(row_offs[1], 0u);
+    EXPECT_EQ(row_offs[2], 1u);
+    EXPECT_EQ(row_offs[3], 0u);
+
+    // Variant header
+    const uint8_t * block = buf.data() + desc.data_offset;
+    uint32_t k;
+    std::memcpy(&k, block, 4);
+    EXPECT_EQ(k, 2u);
+
+    // Record 0: global_d=0, inner_desc for UInt64 sub-column (2 rows)
+    const uint8_t * rec0 = block + 4u;
+    EXPECT_EQ(rec0[0], 0u);  // global_discriminator
+    ColDescriptor inner0{};
+    std::memcpy(&inner0, rec0 + 4u, COLUMNAR_DESC_BYTES);
+    EXPECT_EQ(inner0.type, COL_FIXED64);
+    EXPECT_EQ(inner0.data_size, 2u * sizeof(uint64_t));
+
+    const uint64_t * u64_data = reinterpret_cast<const uint64_t *>(buf.data() + inner0.data_offset);
+    EXPECT_EQ(u64_data[0], 10u);
+    EXPECT_EQ(u64_data[1], 20u);
+
+    // Record 1: global_d=1, inner_desc for String sub-column (1 row)
+    const uint8_t * rec1 = rec0 + 4u + COLUMNAR_DESC_BYTES;
+    EXPECT_EQ(rec1[0], 1u);  // global_discriminator
+    ColDescriptor inner1{};
+    std::memcpy(&inner1, rec1 + 4u, COLUMNAR_DESC_BYTES);
+    EXPECT_EQ(inner1.type, COL_BYTES);
+
+    const uint32_t * str_offs = reinterpret_cast<const uint32_t *>(buf.data() + inner1.offsets_offset);
+    EXPECT_EQ(str_offs[0], 0u);
+    EXPECT_EQ(str_offs[1], 3u);  // "hi\0"
+
+    const char * str_chars = reinterpret_cast<const char *>(buf.data() + inner1.data_offset);
+    EXPECT_EQ(std::string_view(str_chars, 2), "hi");
+    EXPECT_EQ(str_chars[2], '\0');
 }
