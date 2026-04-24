@@ -195,7 +195,7 @@
 
     <!-- Test NotIn without default_value, uint64 -->
     <query>
-        SELECT key
+        SELECT count()
         FROM inverse_lookup_fact_table
         WHERE dictGetUInt64('inverse_lookup_dictionary', 'attr_uint', key) NOT IN (1, 2, 3, 4, 5)
         FORMAT Null;
