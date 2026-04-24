@@ -7893,9 +7893,6 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", EXPERIMENTAL, evaluation_time) \
-    DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
-Allow to create table with the Alias engine.
-)", EXPERIMENTAL) \
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
 )", EXPERIMENTAL) \
@@ -7983,6 +7980,7 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
     MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_alias_table_engine, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \

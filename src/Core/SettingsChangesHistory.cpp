@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+            {"allow_experimental_alias_table_engine", false, true, "Alias table engine is production-ready"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
