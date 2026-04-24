@@ -301,7 +301,7 @@ bool writeMetadataFileAndVersionHint(
             "",
             metadata_file_info.compression_method);
     }
-    catch (const DB::Exception & /*e*/)
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
