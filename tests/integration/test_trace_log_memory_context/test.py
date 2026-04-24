@@ -1,4 +1,5 @@
 import uuid
+import time
 import logging
 import pytest
 
@@ -46,13 +47,37 @@ def test_memory_context_in_trace_log(started_cluster):
                      memory_context, memory_blocked_context, trace_type, query_id, res)
         return res
 
-    # Generate some logs to generate entries with memory_blocked_context=Global and trace_type=JemallocSample
-    for i in range(10):
-        node.query("SELECT logTrace('foo')")
-    query_id = uuid.uuid4().hex
-    node.query("SELECT * FROM numbers(100000) ORDER BY number", query_id=query_id)
+    # Each iteration issues allocations and polls `system.trace_log` for the
+    # expected trace-types/contexts. The retries are required because several
+    # of the events we wait for are genuinely probabilistic:
+    #   * `JemallocSample` is emitted by `jemalloc`'s own profile sampler
+    #     (~1 MiB of allocated memory per sample with `lg_prof_sample=20`),
+    #     and a single small query is not guaranteed to allocate enough.
+    #   * `Memory`/`MemoryPeak` with `memory_context = 'Global'` require the
+    #     `total_memory_tracker` to cross its `total_memory_profiler_step`
+    #     watermark (4 MiB by default), which depends on cumulative
+    #     server-wide allocations including background activity, not just
+    #     this query's allocations.
+    # Retrying bounds the test runtime while keeping it reliable.
+    for _ in range(0, 15):
+        # Generate some logs to generate entries with memory_blocked_context=Global and trace_type=JemallocSample
+        for i in range(10):
+            node.query("SELECT logTrace('foo')")
+        query_id = uuid.uuid4().hex
+        node.query("SELECT * FROM numbers(100000) ORDER BY number", query_id=query_id)
 
-    node.query("SYSTEM FLUSH LOGS system.trace_log")
+        node.query("SYSTEM FLUSH LOGS system.trace_log")
+        if (
+            get_trace_events("Unknown", "Max", "MemorySample", query_id) > 0 and
+            get_trace_events("Unknown", "Max", "JemallocSample", query_id) > 0 and
+            get_trace_events("Unknown", "Max", "JemallocSample") > 0 and
+            get_trace_events("Unknown", "Global", "JemallocSample") > 0 and
+            get_trace_events("Global", "Max", "Memory") > 0 and
+            get_trace_events("Global", "Max", "MemoryPeak") > 0 and
+            True
+        ):
+            break
+        time.sleep(1)
 
     # For JemallocSample we have Global (for i.e. logging) and Max (for regular allocations) blocked memory tracker
     for memory_blocked_context in ["Global", "Max"]:
