@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Poco/JSON/JSON.h>
@@ -26,7 +27,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
+    extern const int FAULT_INJECTED;
     extern const int FILE_DOESNT_EXIST;
+}
+
+namespace FailPoints
+{
+    extern const char disk_access_storage_write_entity_fails[];
 }
 
 
@@ -626,6 +633,10 @@ AccessEntityPtr DiskAccessStorage::readAccessEntityFromDisk(const UUID & id) con
 
 void DiskAccessStorage::writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const
 {
+    fiu_do_on(FailPoints::disk_access_storage_write_entity_fails,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in writeAccessEntityToDisk");
+    });
     writeEntityFile(getEntityFilePath(directory_path, id), entity);
 }
 

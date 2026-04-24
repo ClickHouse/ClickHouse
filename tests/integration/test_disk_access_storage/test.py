@@ -172,6 +172,33 @@ def test_drop():
     check()
 
 
+def test_replace_rolls_back_on_write_failure():
+    # If `writeAccessEntityToDisk` throws in the `replace_if_exists` path,
+    # `insertNoLock` must restore the previously replaced entity and leave
+    # the disk in a consistent state. Verify this end-to-end via a failpoint.
+    instance.query("DROP USER IF EXISTS u_replace")
+    instance.query("CREATE USER u_replace IDENTIFIED WITH plaintext_password BY 'old_pw'")
+    original = instance.query("SHOW CREATE USER u_replace")
+
+    instance.query("SYSTEM ENABLE FAILPOINT disk_access_storage_write_entity_fails")
+    try:
+        error = instance.query_and_get_error(
+            "CREATE OR REPLACE USER u_replace IDENTIFIED WITH plaintext_password BY 'new_pw'"
+        )
+        assert "FAULT_INJECTED" in error or "Injected fault" in error
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT disk_access_storage_write_entity_fails")
+
+    # The previous entity must still be there after the failed replace.
+    assert instance.query("SHOW CREATE USER u_replace") == original
+
+    # After persistency the replacement should still not be visible.
+    instance.restart_clickhouse()
+    assert instance.query("SHOW CREATE USER u_replace") == original
+
+    instance.query("DROP USER u_replace")
+
+
 def test_recovery_when_sql_file_is_missing():
     # Server should not fail to start when an entity is referenced from `users.list`
     # but its corresponding `<uuid>.sql` file is missing on disk. The list rebuild
