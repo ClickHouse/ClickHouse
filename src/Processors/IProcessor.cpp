@@ -69,9 +69,9 @@ std::pair<int, uint32_t> IProcessor::scheduleForEvent()
 }
 #endif
 
-Processors IProcessor::expandPipeline()
+IProcessor::PipelineUpdate IProcessor::updatePipeline()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'updatePipeline' is not implemented for {} processor", getName());
 }
 
 void IProcessor::cancel(IProcessor::CancelReason reason) noexcept
@@ -226,8 +226,8 @@ std::string IProcessor::statusToName(std::optional<Status> status)
             return "Ready";
         case Status::Async:
             return "Async";
-        case Status::ExpandPipeline:
-            return "ExpandPipeline";
+        case Status::UpdatePipeline:
+            return "UpdatePipeline";
     }
 }
 
