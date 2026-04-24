@@ -2082,7 +2082,7 @@ public:
             {
                 Roaring neg;
                 neg.rb_or(*getDataArrayAt(sign_bit));
-                UInt64 scaled = (1ULL << sign_bit); // 置符号位
+                UInt64 scaled = (1ULL << sign_bit); // Set sign bit
                 scaled |= greedyAccumulateBits(neg, sign_bit - 1, /*prefer_one=*/true);
                 return materializeValueSigned(scaled);
             }
