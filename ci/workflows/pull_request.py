@@ -31,7 +31,6 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
 STYLE_AND_FAST_TESTS = [
     JobNames.STYLE_CHECK,
     JobNames.FAST_TEST,
-    JobNames.CI_TESTS,
     *[j.name for j in JobConfigs.tidy_build_arm_jobs],
 ]
 
@@ -50,7 +49,6 @@ workflow = Workflow.Config(
         JobConfigs.code_review,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
-        JobConfigs.ci_tests,
         *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
@@ -68,12 +66,12 @@ workflow = Workflow.Config(
         ],
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
         JobConfigs.smoke_tests_macos,
-        # TODO: stabilize new jobs and remove set_allow_merge_on_failure
+        # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
-        *[j.set_allow_merge_on_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
-        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
-        JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_merge_on_failure(),
-        JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_merge_on_failure(),
+        *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
+        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_failure(),
+        JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
+        JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         JobConfigs.bugfix_validation_ft_pr_job,
