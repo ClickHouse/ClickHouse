@@ -475,6 +475,74 @@ FROM t
 WHERE color_id IN (1, 99)
 ORDER BY color_id;
 
+-- Test Nullable attribute: dictGet returns NULL for missing keys when the
+-- attribute type is Nullable(...).  The IN/notIn rewrite must NOT fire because
+-- it assumes two-valued logic (default value), which is wrong for NULL.
+DROP TABLE IF EXISTS ref_colors_nullable;
+CREATE TABLE ref_colors_nullable
+(
+    id UInt64,
+    name Nullable(String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO ref_colors_nullable VALUES
+    (1, 'red'),
+    (2, 'blue'),
+    (3, 'red'),
+    (4, 'green'),
+    (5, 'Rose');
+
+DROP DICTIONARY IF EXISTS colors_nullable;
+CREATE DICTIONARY colors_nullable
+(
+  id   UInt64,
+  name Nullable(String)
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'ref_colors_nullable'))
+LAYOUT(HASHED())
+LIFETIME(0);
+
+DELETE FROM t WHERE color_id = 99;
+INSERT INTO t VALUES (99, 'missing_key');
+
+SELECT 'Nullable attribute: dictGet returns NULL for missing key';
+SELECT color_id, dictGet('colors_nullable', 'name', color_id) AS name_val
+FROM t
+WHERE color_id IN (1, 99)
+ORDER BY color_id;
+
+SELECT 'Nullable attribute IN - plan (should NOT be rewritten)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGet('colors_nullable', 'name', color_id) IN ('red', 'blue')
+ORDER BY color_id, payload;
+
+SELECT 'Nullable attribute IN - result (missing key 99 → NULL, filtered out)';
+SELECT color_id, payload
+FROM t
+WHERE dictGet('colors_nullable', 'name', color_id) IN ('red', 'blue')
+ORDER BY color_id, payload;
+
+SELECT 'Nullable attribute NOT IN - plan (should NOT be rewritten)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGet('colors_nullable', 'name', color_id) NOT IN ('red', 'blue')
+ORDER BY color_id, payload;
+
+SELECT 'Nullable attribute NOT IN - result (missing key 99 → NULL, filtered out)';
+SELECT color_id, payload
+FROM t
+WHERE dictGet('colors_nullable', 'name', color_id) NOT IN ('red', 'blue')
+ORDER BY color_id, payload;
+
+DROP DICTIONARY colors_nullable;
+DROP TABLE ref_colors_nullable;
+
 DROP DICTIONARY colors;
 DROP DICTIONARY dict_prices;
 DROP TABLE t;

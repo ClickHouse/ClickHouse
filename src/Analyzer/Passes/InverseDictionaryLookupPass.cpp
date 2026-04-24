@@ -96,7 +96,7 @@ std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodeP
     const auto & function_name = function_node->getFunctionName();
 
     if constexpr (T == FunctionT::in_t)
-        if (function_name == "dictGetOrNull")
+        if (function_node->getResultType()->isNullable())
             return std::nullopt;
 
     if (!isSupportedDictGetFunction(function_name))

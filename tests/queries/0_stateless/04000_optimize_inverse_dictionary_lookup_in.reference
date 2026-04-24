@@ -402,3 +402,31 @@ dictGetOrNull missing key sanity check
 dictGet missing key returns default
 1	red
 99	
+Nullable attribute: dictGet returns NULL for missing key
+1	red
+99	\N
+Nullable attribute IN - plan (should NOT be rewritten)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE dictGet(\'colors_nullable\', \'name\', __table1.color_id) IN (\'red\', \'blue\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Nullable attribute IN - result (missing key 99 → NULL, filtered out)
+1	a
+2	b
+3	c
+Nullable attribute NOT IN - plan (should NOT be rewritten)
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE dictGet(\'colors_nullable\', \'name\', __table1.color_id) NOT IN (\'red\', \'blue\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Nullable attribute NOT IN - result (missing key 99 → NULL, filtered out)
+4	d
+5	R
