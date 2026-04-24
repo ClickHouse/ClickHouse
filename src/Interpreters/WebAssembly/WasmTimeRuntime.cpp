@@ -484,12 +484,22 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
 {
     std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(wasm_code.data())), wasm_code.size());
 
-    // Cranelift's egraph optimizer generates a huge constructor_simplify function
-    // (64KB+ of code) that recurses up to REWRITE_LIMIT=5 times during compilation.
-    // Each level pushes a large stack frame; the default 512KB thread stack overflows
-    // on aarch64-apple-darwin. Compile on a dedicated thread with an 8 MiB stack.
+    // Cranelift's ISLE-generated `constructor_simplify` is a monolithic function
+    // whose stack frame (~64 KB in release builds) multiplied by REWRITE_LIMIT=5
+    // recursion levels overflows the default 512 KB TCPHandler thread stack on
+    // aarch64-apple-darwin, causing SIGILL via the OS stack guard page.
+    //
+    // Root cause: in release builds the ISLE compiler emits one large function body
+    // without splitting match arms into closures. Cranelift's `isle-split-match`
+    // Cargo feature enables that splitting (it is unconditionally on in debug builds
+    // for exactly this reason). We enable it via `rust/workspace/wasmtime/Cargo.toml`,
+    // which should eliminate the overflow once verified on aarch64-apple-darwin.
+    //
+    // This thread workaround is kept as a defensive layer until the `isle-split-match`
+    // fix is confirmed to keep the release-build frame within 512 KB at depth 5.
+    // If confirmed, this thread spawn can be removed and compilation can run inline.
     // REWRITE_LIMIT=5 is a Cranelift compile-time constant, so recursion depth is
-    // bounded regardless of user input; 8 MiB is well above the observed maximum.
+    // bounded regardless of user input; 8 MiB is well above any realistic maximum.
     struct CompileTask
     {
         wasmtime::Engine & engine;
