@@ -85,6 +85,43 @@ enum class FunctionT
     comparison_t,
 };
 
+struct ConstantListCheckResult
+{
+    bool has_default_value{};
+    bool has_null{};
+};
+
+ConstantListCheckResult checkConstantList(const Field & default_value, const ConstantNode * constant_node)
+{
+    ConstantListCheckResult result;
+    const Field & constant_field = constant_node->getValue();
+
+    auto check_element = [&](const Field & element)
+    {
+        if (element.isNull())
+            result.has_null = true;
+        else if (element == default_value)
+            result.has_default_value = true;
+    };
+
+    if (constant_field.getType() == Field::Types::Tuple)
+    {
+        for (const auto & element : constant_field.safeGet<Tuple>())
+            check_element(element);
+    }
+    else if (constant_field.getType() == Field::Types::Array)
+    {
+        for (const auto & element : constant_field.safeGet<Array>())
+            check_element(element);
+    }
+    else
+    {
+        check_element(constant_field);
+    }
+
+    return result;
+}
+
 template <FunctionT T>
 std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node)
 {
@@ -138,35 +175,26 @@ bool isInMemoryLayout(const String & type_name)
     return supported_layouts.contains(type_name);
 }
 
-bool isDefaultValueInConstantList(const Field & default_value, const ConstantNode * constant_node)
+bool isNullInConstantList(const Field & default_value, const ConstantNode * constant_node)
 {
     const Field & constant_field = constant_node->getValue();
+
+    if (constant_field.isNull())
+        return true;
 
     if (constant_field.getType() == Field::Types::Tuple)
     {
         const auto & tuple = constant_field.safeGet<Tuple>();
         for (const auto & element : tuple)
-        {
-            if (element == default_value)
+            if (element.isNull())
                 return true;
-        }
     }
     else if (constant_field.getType() == Field::Types::Array)
     {
         const auto & arr = constant_field.safeGet<Array>();
         for (const auto & element : arr)
-        {
-            if (element == default_value)
+            if (element.isNull())
                 return true;
-        }
-    }
-    else
-    {
-        /// Single value case: IN ('value') where ('value') is a single String/Number, not a Tuple
-        /// Note: ('x') is just a parenthesized expression of type String, not a Tuple.
-        /// Only ('a', 'b') with 2+ elements becomes a Tuple.
-        if (constant_field == default_value)
-            return true;
     }
 
     return false;
@@ -224,7 +252,7 @@ public:
         }
 
         auto ctx = prepareTransformContext(node_function, function_t);
-        if (!ctx)
+        if (!ctx || ctx->null_in_list)
             return;
 
         QueryTreeNodePtr final_in_expr;
@@ -292,6 +320,7 @@ private:
         QueryTreeNodePtr dict_table_function;
         QueryTreeNodePtr attr_col_node_casted;
         bool default_value_in_list{};
+        bool null_in_list{};
     };
 
     /// Validates the function arguments and extracts dictionary/attribute information.
@@ -398,13 +427,12 @@ private:
         Field default_value = dict_attr.null_value;
 
         /// For IN/notIn operations, check if the default value is in the constant list.
-        /// This affects whether we need to handle missing keys separately.
-        bool default_value_in_list = false;
+        ConstantListCheckResult check_result{};
         if (function_t == FunctionT::in_t)
         {
             const auto * constant_node = constant_arg->as<ConstantNode>();
             if (constant_node)
-                default_value_in_list = isDefaultValueInConstantList(default_value, constant_node);
+                check_result = checkConstantList(default_value, constant_node);
         }
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
@@ -427,7 +455,8 @@ private:
             .key_cols = std::move(key_cols),
             .dict_table_function = std::move(dict_table_function),
             .attr_col_node_casted = std::move(attr_col_node_casted),
-            .default_value_in_list = default_value_in_list,
+            .default_value_in_list = check_result.has_default_value,
+            .null_in_list = check_result.has_null,
         };
     }
 
