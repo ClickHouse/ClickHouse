@@ -10,6 +10,7 @@
 #include <IO/S3/Requests.h>
 
 #include <Common/Stopwatch.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -28,6 +29,12 @@ namespace ProfileEvents
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
+}
+
+namespace HistogramMetrics
+{
+    extern Metric & S3ReadRequestDuration;
+    extern Metric & S3ReadRequestBytes;
 }
 
 namespace DB
@@ -242,6 +249,17 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
     {
         bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
         size_t bytes_copied = 0;
+        Stopwatch request_watch{CLOCK_MONOTONIC};
+        bool metrics_observed = false;
+
+        auto observe_request_metrics = [&]()
+        {
+            if (metrics_observed)
+                return;
+            metrics_observed = true;
+            HistogramMetrics::S3ReadRequestDuration.observe(static_cast<double>(request_watch.elapsedMicroseconds()));
+            HistogramMetrics::S3ReadRequestBytes.observe(static_cast<double>(bytes_copied));
+        };
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
 
@@ -258,19 +276,26 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
 
             if (cancelled)
+            {
+                observe_request_metrics();
                 return initial_n - n + bytes_copied;
+            }
 
             /// Read remaining bytes after the end of the payload
             istr.ignore(INT64_MAX);
         }
         catch (...)
         {
+            observe_request_metrics();
+
             if (!processException(range_begin, attempt) || last_attempt)
                 throw;
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
         }
+
+        observe_request_metrics();
 
         range_begin += bytes_copied;
         to += bytes_copied;
@@ -471,10 +496,12 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
 
     const auto right_offset = read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt;
+
+    Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
-    return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size);
+    return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
 }
 
 Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const
