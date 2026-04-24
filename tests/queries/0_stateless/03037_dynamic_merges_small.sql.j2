@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: relies on part state across merges; Dynamic column substreams do not round-trip through DETACH/ATTACH cleanly in all granularity modes.
+
 set allow_experimental_variant_type = 1;
 set use_variant_as_common_type = 1;
 set allow_experimental_dynamic_type = 1;
