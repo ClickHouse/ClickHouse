@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Common/Exception.h>
@@ -311,9 +312,16 @@ void SelectStreamFactory::createForShard(
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
+    /// Convert grouping function specializations (e.g. groupingForGroupingSets -> grouping)
+    /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
+    /// Use a clone to keep the original query_tree with specialized functions intact,
+    /// since it is reused later for getSampleBlock / plan building.
+    auto query_tree_for_ast = query_tree->clone();
+    removeGroupingFunctionSpecializations(query_tree_for_ast);
+
     createForShardImpl(
         shard_info,
-        queryNodeToDistributedSelectQuery(query_tree),
+        queryNodeToDistributedSelectQuery(query_tree_for_ast),
         query_tree,
         main_table,
         table_func_ptr,
