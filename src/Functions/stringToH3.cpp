@@ -22,6 +22,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+/// `stringToH3` is documented to return 0 for invalid input.
+/// Swallow any parse error from the underlying H3 library to preserve that contract
+/// (the v4 H3 C API reports errors through a return code; v3 returned 0 silently).
+
 namespace
 {
 
@@ -90,13 +94,8 @@ private:
             // convert to std::string and get the c_str to have the delimiting \0 at the end.
             auto h3index_str = std::string(reinterpret_cast<const char *>(h3index.data), h3index.size);
             H3Index h3_index = 0;
-            H3Error err = stringToH3(h3index_str.data(), &h3_index);
+            (void)stringToH3(h3index_str.data(), &h3_index);
             res_data[row_num] = h3_index;
-
-            if (err || res_data[row_num] == 0)
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid H3 index: {} in function {}", h3index_str, name);
-            }
 
             h3index_source.next();
             ++row_num;
