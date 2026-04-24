@@ -121,7 +121,6 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     auto iterator = Iceberg::ManifestFileIterator::create(
         cacheable_info.deserializer,
         cache_key.manifest_file_path,
-        persistent_table_components.format_version,
         persistent_table_components.path_resolver,
         *persistent_table_components.schema_processor,
         cache_key.added_sequence_number,

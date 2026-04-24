@@ -220,7 +220,6 @@ ManifestFileIterator::~ManifestFileIterator() = default;
 std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
     const IcebergPathFromMetadata & path_to_manifest_file_,
-    Int32 /*format_version_*/,
     const IcebergPathResolver & path_resolver_,
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
