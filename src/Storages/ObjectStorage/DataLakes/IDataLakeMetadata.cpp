@@ -1,6 +1,8 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
+#include <Core/TypeId.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Field.h>
@@ -100,31 +102,64 @@ ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
 DataFileMetaInfo::DataFileMetaInfo(
     const Iceberg::IcebergSchemaProcessor & schema_processor,
     Int32 schema_id,
-    const std::unordered_map<Int32, Iceberg::ColumnInfo> & columns_info_)
+    const std::unordered_map<Int32, Iceberg::ColumnInfo> & columns_info_,
+    const std::unordered_map<Int32, std::pair<Field, Field>> & value_bounds_)
 {
-
+#if USE_AVRO
     std::vector<Int32> column_ids;
     for (const auto & column : columns_info_)
         column_ids.push_back(column.first);
 
     auto name_and_types = schema_processor.tryGetFieldsCharacteristics(schema_id, column_ids);
     std::unordered_map<Int32, std::string> name_by_index;
+    std::unordered_map<Int32, DataTypePtr> type_by_index;
     for (const auto & name_and_type : name_and_types)
     {
         const auto name = name_and_type.getNameInStorage();
         auto index = schema_processor.tryGetColumnIDByName(schema_id, name);
         if (index.has_value())
+        {
             name_by_index[index.value()] = name;
+            type_by_index[index.value()] = name_and_type.type;
+        }
     }
 
     for (const auto & column : columns_info_)
     {
         auto i_name = name_by_index.find(column.first);
-        if (i_name != name_by_index.end())
+        if (i_name == name_by_index.end())
+            continue;
+
+        std::optional<DB::Range> hyperrectangle;
+
+        auto i_bounds = value_bounds_.find(column.first);
+        auto i_type = type_by_index.find(column.first);
+        if (i_bounds != value_bounds_.end() && i_type != type_by_index.end())
         {
-            columns_info[i_name->second] = {column.second.rows_count, column.second.nulls_count, column.second.hyperrectangle};
+            const auto & type = i_type->second;
+            if (const auto type_id = type->getTypeId();
+                type_id != TypeIndex::Tuple && type_id != TypeIndex::Map && type_id != TypeIndex::Array)
+            {
+                String left_str;
+                String right_str;
+                if (i_bounds->second.first.tryGet(left_str) && i_bounds->second.second.tryGet(right_str))
+                {
+                    auto left = Iceberg::deserializeFieldFromBinaryRepr(left_str, type, true);
+                    auto right = Iceberg::deserializeFieldFromBinaryRepr(right_str, type, false);
+                    if (left && right)
+                        hyperrectangle = DB::Range(*left, true, *right, true);
+                }
+            }
         }
+
+        columns_info[i_name->second] = {column.second.rows_count, column.second.nulls_count, hyperrectangle};
     }
+#else
+    (void)schema_processor;
+    (void)schema_id;
+    (void)columns_info_;
+    (void)value_bounds_;
+#endif
 }
 
 DataFileMetaInfo::DataFileMetaInfo(Poco::JSON::Object::Ptr file_info)

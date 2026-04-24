@@ -63,7 +63,8 @@ public:
     explicit DataFileMetaInfo(
         const Iceberg::IcebergSchemaProcessor & schema_processor,
         Int32 schema_id,
-        const std::unordered_map<Int32, Iceberg::ColumnInfo> & columns_info_);
+        const std::unordered_map<Int32, Iceberg::ColumnInfo> & columns_info_,
+        const std::unordered_map<Int32, std::pair<Field, Field>> & value_bounds_);
 
     void serialize(WriteBuffer & out) const;
     static DataFileMetaInfo deserialize(ReadBuffer & in);

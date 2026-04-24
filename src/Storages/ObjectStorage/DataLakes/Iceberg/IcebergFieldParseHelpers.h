@@ -4,11 +4,14 @@
 
 #if USE_AVRO
 
+#include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include <Core/Field.h>
 #include <Core/Types.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB::Iceberg
 {
@@ -24,6 +27,10 @@ Int64 fieldToPeriodMs(const Field & value, std::string_view context, std::string
 
 /// Convert a Field containing an Array to vector<Int64>, validating each element.
 std::vector<Int64> fieldToInt64Array(const Field & value, std::string_view context, std::string_view arg_name);
+
+/// Deserialize a single lower/upper bound value from Iceberg's binary representation.
+/// See https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
+std::optional<Field> deserializeFieldFromBinaryRepr(const std::string & str, DataTypePtr expected_type, bool lower_bound);
 
 }
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "config.h"
-#include <Core/Range.h>
 #include <Core/Types.h>
 
 #include <optional>
@@ -14,7 +13,6 @@ struct ColumnInfo
     std::optional<Int64> rows_count;
     std::optional<Int64> bytes_size;
     std::optional<Int64> nulls_count;
-    std::optional<DB::Range> hyperrectangle;
 };
 
 }
