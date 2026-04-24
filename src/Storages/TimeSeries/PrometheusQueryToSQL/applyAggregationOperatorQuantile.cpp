@@ -69,7 +69,10 @@ namespace
             case StoreMethod::SINGLE_SCALAR:
             {
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(phi_arg.select_query), SQLSubqueryType::SCALAR});
-                return make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+                auto subquery_id = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+                /// Wrap with assumeNotNull() because scalar subqueries make their result nullable,
+                /// but StoreMethod::SINGLE_SCALAR always means one row.
+                return makeASTFunction("assumeNotNull", std::move(subquery_id));
             }
             case StoreMethod::SCALAR_GRID:
             {
