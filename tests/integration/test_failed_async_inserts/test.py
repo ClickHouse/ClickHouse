@@ -7,7 +7,9 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", main_configs=["configs/config.xml"],
+    "node",
+    main_configs=["configs/config.xml"],
+    user_configs=["configs/users.yaml"],
     with_zookeeper=True,
     # Server is very short on memory and may fail while initializing remote database disk
     with_remote_database_disk=False,

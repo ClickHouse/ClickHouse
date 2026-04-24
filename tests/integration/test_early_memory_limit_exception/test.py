@@ -4,7 +4,9 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
-    "instance", main_configs=["configs/users_to_ignore_early_memory_limit_check.xml"]
+    "instance",
+    main_configs=["configs/users_to_ignore_early_memory_limit_check.xml"],
+    user_configs=["configs/users_overrides.yaml"],
 )
 
 

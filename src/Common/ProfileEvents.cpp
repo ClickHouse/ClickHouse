@@ -745,6 +745,10 @@ The server successfully detected this situation and will download merged part fr
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
+    M(MemoryTrackerAllocations, "Total number of allocations that were flushed to server/query levels (only these allocations can fail the query with MEMORY_LIMIT_EXCEEDED)", ValueType::Number) \
+    M(MemoryTrackerDeallocations, "Total number of deallocations that were flushed to server (MemoryTracking metric)/query levels", ValueType::Number) \
+    M(MemoryTrackerAllocationsBytes, "Total number of allocated bytes that were flushed to server/query levels (only these allocations can fail the query with MEMORY_LIMIT_EXCEEDED)", ValueType::Number) \
+    M(MemoryTrackerDeallocationsBytes, "Total number of deallocated bytes that were flushed to server (MemoryTracking metric)/query levels", ValueType::Number) \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.", ValueType::Number) \
     M(AzureUpload, "Number of Azure blob storage API Upload calls", ValueType::Number) \

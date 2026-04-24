@@ -73,6 +73,7 @@ def test_ddl_worker_clamps_settings_constraints():
         f"CREATE TABLE {table_name} ON CLUSTER test_cluster (x Int64) ENGINE = MergeTree ORDER BY x",
         settings={
             "max_memory_usage": "1",
+            "min_untracked_memory": "4Mi",
             "distributed_ddl_entry_format_version": "2",
             "distributed_ddl_task_timeout": "60",
         },

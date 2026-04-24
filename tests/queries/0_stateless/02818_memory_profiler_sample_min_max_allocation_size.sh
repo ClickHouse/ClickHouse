@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} "${trace_settings[@]}" --query_id="$query_id_flush" --max_u
 # Non-flush path: small allocations stay below max_untracked_memory and sample via the cached ThreadStatus::sample_* values,
 # which must be refreshed after ProcessList::insert applies query-level memory_profiler_sample_* settings.
 query_id_cached="${CLICKHOUSE_DATABASE}_min_max_allocation_size_cached"
-${CLICKHOUSE_CLIENT} "${trace_settings[@]}" --query_id="$query_id_cached" --max_untracked_memory=4Mi
+${CLICKHOUSE_CLIENT} "${trace_settings[@]}" --query_id="$query_id_cached" --max_untracked_memory=4Mi --min_untracked_memory=4Mi
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS trace_log"
 

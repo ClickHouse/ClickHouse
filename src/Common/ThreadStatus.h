@@ -221,6 +221,11 @@ public:
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// To keep total untracked memory limited to `1/16 * RSS` we dynamically change `untracked_memory_limit` after every tracking event:
+    /// untracked_memory_limit = clamp(cur_memory_bytes / 16, min_untracked_memory, max_untracked_memory)
+    /// Note that these values are updated when the thread is attached to a group
+    Int64 min_untracked_memory = 4 * 1024 * 1024; /// Default is kept 4MB for tests and client; the setting default is 4KB
+    Int64 max_untracked_memory = 4 * 1024 * 1024;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -338,6 +343,8 @@ public:
     void flushUntrackedMemory();
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
+
+    void updateUntrackedMemoryLimit(Int64 current);
 
     size_t getNextPlanStepIndex() const;
     size_t getNextPipelineProcessorIndex() const;
