@@ -1,4 +1,5 @@
 #include <memory>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -27,10 +28,15 @@ using StepStack = std::vector<IQueryPlanStep *>;
 
 static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 {
-    if (reading->isQueryWithFinal())
+    /// Allow FINAL only for ReplacingMergeTree.
+    if (reading->isQueryWithFinal()
+        && reading->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
         return false;
 
     if (reading->isQueryWithSampling())
+        return false;
+
+    if (reading->getMutationsSnapshot()->hasPatchParts())
         return false;
 
     return true;
@@ -498,6 +504,20 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         for (size_t i = 0; i < cols.size(); ++i)
             if (required_columns[i])
                 required_names.insert(cols[i].name);
+
+        /// For FINAL, the merge transform needs sorting key, version, and is_deleted columns.
+        /// These must stay in the main read, not be deferred to lazy materialization.
+        if (read_from_merge_tree->isQueryWithFinal())
+        {
+            const auto & merging_params = read_from_merge_tree->getMergeTreeData().merging_params;
+            const auto & metadata = read_from_merge_tree->getStorageMetadata();
+            for (const auto & column : metadata->getColumnsRequiredForSortingKey())
+                required_names.insert(column);
+            if (!merging_params.version_column.empty())
+                required_names.insert(merging_params.version_column);
+            if (!merging_params.is_deleted_column.empty())
+                required_names.insert(merging_params.is_deleted_column);
+        }
 
         lazy_reading = read_from_merge_tree->keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
         if (!lazy_reading)

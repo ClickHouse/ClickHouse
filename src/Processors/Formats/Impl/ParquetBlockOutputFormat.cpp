@@ -339,7 +339,8 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
             CHColumnToArrowColumn::Settings
             {
                 .output_string_as_string = format_settings.parquet.output_string_as_string,
-                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array
+                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array,
+                .output_unsupported_types_as_binary = format_settings.parquet.output_unsupported_types_as_binary,
             });
     }
 
@@ -378,7 +379,7 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
 
         auto result = parquet::arrow::FileWriter::Open(
             *arrow_table->schema(),
-            arrow::default_memory_pool(),
+            ArrowMemoryPool::instance(),
             sink,
             builder.build(),
             writer_props_builder.build());

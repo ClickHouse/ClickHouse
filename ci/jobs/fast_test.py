@@ -1,5 +1,6 @@
 import argparse
 import os
+import platform
 import time
 import sys
 from pathlib import Path
@@ -132,6 +133,11 @@ class JobStages(metaclass=MetaClasses.WithIter):
     TEST = "test"
 
 
+def _load_darwin_skip_tests():
+    skip_file = Path(__file__).resolve().parent.parent / "defs" / "darwin.skip"
+    return tuple(line for line in skip_file.read_text().splitlines() if line.strip())
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Fast Test Job")
     parser.add_argument(
@@ -140,12 +146,19 @@ def parse_args():
         default=[],
         nargs="+",
         action="extend")
+    parser.add_argument(
+        "--skip",
+        help="Optional. Space-separated test names to skip",
+        default=[],
+        nargs="+",
+        action="extend")
     parser.add_argument("--param", help="Optional custom job start stage", default=None)
-    parser.add_argument("--set-status-success", help="Forcefully set a green status", action="store_true")
     return parser.parse_args()
 
 def main():
     args = parse_args()
+    if platform.system() == "Darwin":
+        args.skip = list(_load_darwin_skip_tests()) + args.skip
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
@@ -324,7 +337,10 @@ def main():
         # so we can use more parallelism than the default cpu_count/2.
         nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
 
-        fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc_fast}"
+        fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --timeout 60 --jobs {nproc_fast}"
+        if args.skip:
+            skip_args = " ".join(args.skip)
+            fast_test_command += f" --skip {skip_args}"
         if args.test:
             test_pattern = "|".join(args.test)
             fast_test_command += f" -- '{test_pattern}'"
@@ -336,7 +352,7 @@ def main():
             test_results.results.append(
                 Result.create_from(
                     name="clickhouse-test",
-                    status=Result.StatusExtended.FAIL,
+                    status=Result.Status.FAIL,
                     info="clickhouse-test error",
                 )
             )
@@ -356,9 +372,8 @@ def main():
 
     CH.terminate(force=True)
 
-    status = Result.Status.SUCCESS if args.set_status_success else ""
     Result.create_from(
-        results=results, status=status, stopwatch=stop_watch, files=attach_files, info=job_info
+        results=results, stopwatch=stop_watch, files=attach_files, info=job_info
     ).complete_job()
 
 
