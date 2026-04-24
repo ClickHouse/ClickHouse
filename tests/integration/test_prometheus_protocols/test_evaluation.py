@@ -302,18 +302,9 @@ def send_test_data():
         ]
     )
 
-    # Histograms for `histogram_quantile` edge-case coverage.
-    #
-    # `only_inf_bucket`: a single `le="+Inf"` bucket. Prometheus requires >=2 buckets
-    # and returns NaN otherwise.
-    # `no_inf_bucket`: finite buckets without the required `le="+Inf"` terminator.
-    # Prometheus returns NaN.
-    # `zero_count_bucket`: well-formed buckets but every count is zero. No observations
-    # -> NaN.
-    # `negative_le_bucket`: buckets with negative `le` upper bounds, plus zero and +Inf.
-    # Validates interpolation across negative/positive boundaries.
-    # `rate_bucket`: a histogram with two sample points per bucket so
-    # `rate(rate_bucket[60s])` produces meaningful per-second bucket rates.
+    # Histograms for `histogram_quantile` edge-case coverage. `rate_bucket` carries two
+    # sample points per bucket so `rate(rate_bucket[60s])` is defined; the rest have a
+    # single sample at t=300.
     send_data(
         [
             (
@@ -356,9 +347,6 @@ def send_test_data():
                 {"__name__": "negative_le_bucket", "le": "+Inf"},
                 {300: 15},
             ),
-            # Two sample points 60s apart so `rate(...[60s])` has a defined slope.
-            # Cumulative counts increase linearly; after rate(), each bucket's per-second
-            # rate preserves the cumulative shape needed by histogram_quantile.
             (
                 {"__name__": "rate_bucket", "le": "0.1"},
                 {300: 10, 360: 20},
@@ -2977,10 +2965,8 @@ def test_histogram_quantile():
         ],
     )
 
-    # Degenerate histograms: Prometheus returns NaN when the input is not a well-formed
-    # histogram (fewer than 2 buckets, or no `+Inf` bucket, or zero observations).
-
-    # Only a `+Inf` bucket (size < 2) -> NaN.
+    # Degenerate inputs: Prometheus returns NaN for histograms with <2 buckets,
+    # no `+Inf` bucket, or zero observations.
     do_query_test(
         "histogram_quantile(0.5, only_inf_bucket)",
         300,
@@ -2988,7 +2974,6 @@ def test_histogram_quantile():
         [["[]", "1970-01-01 00:05:00.000", "nan"]],
     )
 
-    # Missing `+Inf` bucket (max finite bucket is 1.0) -> NaN.
     do_query_test(
         "histogram_quantile(0.5, no_inf_bucket)",
         300,
@@ -2996,7 +2981,6 @@ def test_histogram_quantile():
         [["[]", "1970-01-01 00:05:00.000", "nan"]],
     )
 
-    # Every bucket count is zero -> no observations -> NaN.
     do_query_test(
         "histogram_quantile(0.5, zero_count_bucket)",
         300,
@@ -3004,9 +2988,7 @@ def test_histogram_quantile():
         [["[]", "1970-01-01 00:05:00.000", "nan"]],
     )
 
-    # Negative `le` upper bounds: buckets [(-1, 5), (0, 10), (+Inf, 15)] with total 15.
-    # phi=0.5 targets rank 7.5, which falls in bucket (-1, 0] with lower_value=5,
-    # upper_value=10. Linear interpolation: -1 + (0 - (-1)) * (7.5 - 5) / (10 - 5) = -0.5.
+    # Negative `le` upper bounds: interpolation still works across the zero boundary.
     do_query_test(
         "histogram_quantile(0.5, negative_le_bucket)",
         300,
@@ -3015,9 +2997,8 @@ def test_histogram_quantile():
         eps=1e-12,
     )
 
-    # Empty result: querying a histogram that doesn't exist returns an empty vector
-    # without invoking the aggregate. Exercises the `StoreMethod::EMPTY` short-circuit
-    # in `applyHistogramQuantile`.
+    # Empty input short-circuits in `applyHistogramQuantile` via `StoreMethod::EMPTY`
+    # without invoking the aggregate.
     do_query_test(
         "histogram_quantile(0.5, nonexistent_metric_bucket)",
         300,
@@ -3025,10 +3006,7 @@ def test_histogram_quantile():
         [],
     )
 
-    # Idiomatic Prometheus usage: `histogram_quantile(phi, rate(bucket[window]))`.
-    # `rate_bucket` has samples at t=300 and t=360 with linearly increasing counts,
-    # so per-bucket rates over [300, 360] preserve the cumulative shape. phi=0.5
-    # lands exactly on the le=0.5 bucket edge, independent of the exact rate magnitude.
+    # Idiomatic `histogram_quantile(phi, rate(bucket[window]))` pattern.
     do_query_test(
         "histogram_quantile(0.5, rate(rate_bucket[60s]))",
         360,
