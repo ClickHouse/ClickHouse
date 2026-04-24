@@ -5,6 +5,7 @@
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -148,10 +149,32 @@ void LocalConnection::sendQuery(
     query_context->setCurrentQueryId(query_id);
     query_context->setClientInterface(ClientInfo::Interface::LOCAL);
 
-    if (send_progress)
+    /// Always track progress so that output formats (e.g. JSON) can report accurate statistics.
+    /// The send_progress flag only controls the client-side progress bar, not progress tracking.
+    query_context->setProgressCallback([this](const Progress & value) { this->updateProgress(value); });
+    query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
+
+    if (is_cancelled_callback)
     {
-        query_context->setProgressCallback([this] (const Progress & value) { this->updateProgress(value); });
-        query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
+        query_context->setInteractiveCancelCallback(
+            [this, check_cancelled = is_cancelled_callback, progress_callback = process_progress_callback]() -> bool
+        {
+            /// Send accumulated progress to the client so the progress bar updates during analysis.
+            if (progress_callback)
+            {
+                auto progress = state->progress.fetchAndResetPiecewiseAtomically();
+                if (progress.read_rows || progress.read_bytes)
+                    progress_callback(progress);
+            }
+
+            if (!check_cancelled())
+                return false;
+
+            state->is_cancelled = true;
+            if (auto elem = query_context->getProcessListElement())
+                elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+            return true;
+        });
     }
 
     /// Switch the database to the desired one (set by the USE query)
@@ -192,7 +215,7 @@ void LocalConnection::sendQuery(
         if (context != query_context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
-        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
+        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
         Block sample = metadata_snapshot->getSampleBlock();
 
         next_packet_type = Protocol::Server::Data;
@@ -557,6 +580,13 @@ bool LocalConnection::poll(size_t)
         }
     }
 
+    if (state->is_finished && !state->sent_progress)
+    {
+        state->sent_progress = true;
+        next_packet_type = Protocol::Server::Progress;
+        return true;
+    }
+
     if (state->is_finished)
     {
         if (needSendLogs())
@@ -577,7 +607,7 @@ bool LocalConnection::poll(size_t)
 
 bool LocalConnection::needSendProgressOrMetrics()
 {
-    if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay]))
+    if (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay])
     {
         state->after_send_progress.restart();
         next_packet_type = Protocol::Server::Progress;
