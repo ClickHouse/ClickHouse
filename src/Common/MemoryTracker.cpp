@@ -749,21 +749,6 @@ void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
         ;
 }
 
-double MemoryTracker::getSampleProbability(UInt64 size)
-{
-    if (sample_probability >= 0)
-    {
-        if (!isSizeOkForSampling(size))
-            return 0;
-        return sample_probability;
-    }
-
-    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-        return loaded_next->getSampleProbability(size);
-
-    return 0;
-}
-
 bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
 {
     /// We can avoid comparison min_allocation_size_bytes with zero, because we cannot have 0 bytes allocation/deallocation

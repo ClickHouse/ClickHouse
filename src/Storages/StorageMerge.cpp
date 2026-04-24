@@ -58,6 +58,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
@@ -77,6 +79,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace ErrorCodes
@@ -1553,12 +1560,17 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     /// Add missing columns for the resulting Merge table.
     {
+        bool inner_share_nested_offsets = true;
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&snapshot->storage))
+            inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
         auto adding_missing_defaults_dag = addMissingDefaults(
             *child.plan.getCurrentHeader(),
             header.getNamesAndTypesList(),
             snapshot->getAllColumnsDescription(),
             local_context,
-            false);
+            false,
+            inner_share_nested_offsets);
 
         auto adding_missing_defaults_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
         child.plan.addStep(std::move(adding_missing_defaults_step));

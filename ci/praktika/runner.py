@@ -443,7 +443,7 @@ class Runner:
                 settings = rewritten_settings
 
             local_env_flag = f"--env-file {self.LOCAL_ENV_FILE}" if Path(self.LOCAL_ENV_FILE).exists() else ""
-            cmd = f"docker run {tty} --init --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' {local_env_flag} --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' {local_env_flag} --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -571,6 +571,9 @@ class Runner:
 
         result.update_duration()
         result.set_files([Settings.RUN_LOG], strict=False)
+        if job.force_success and not result.is_ok():
+            print(f"NOTE: Job has force_success=True - overriding status to OK")
+            result.set_status(Result.Status.OK)
         return result
 
     def _post_run(
@@ -1012,7 +1015,6 @@ class Runner:
             result = self._get_result_object(
                 job, setup_env_code, prerun_code, run_code
             )
-
             if prehook_result:
                 result.results.append(prehook_result)
             if job.post_hooks:
@@ -1040,5 +1042,5 @@ class Runner:
 
             result.dump()
 
-        if not res:
+        if not res and not job.force_success:
             sys.exit(1)

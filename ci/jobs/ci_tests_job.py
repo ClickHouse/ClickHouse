@@ -18,14 +18,30 @@ def parse_args():
         nargs="+",
         action="extend",
     )
+    parser.add_argument(
+        "--skip",
+        help="Optional. Test name patterns to exclude, passed to pytest -k as 'not' (space-separated)",
+        default=[],
+        nargs="+",
+        action="extend",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
     pytest_command = "ci/tests/"
+    k_expr = ""
     if args.test:
-        pytest_command += " -k " + shlex.quote(" or ".join(args.test))
+        k_expr = " or ".join(args.test)
+        if args.skip:
+            k_expr = f"({k_expr})"
+    if args.skip:
+        k_expr += (" and " if k_expr else "") + " and ".join(
+            f"not {p}" for p in args.skip
+        )
+    if k_expr:
+        pytest_command += " -k " + shlex.quote(k_expr)
 
     start_docker_in_docker()
     with ClickHouseService() as service:

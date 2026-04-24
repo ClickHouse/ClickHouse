@@ -330,6 +330,11 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_index_granularity_bytes_in_memory = 0;
         size_t total_index_granularity_bytes_in_memory_allocated = 0;
 
+        size_t total_projection_primary_key_bytes_memory = 0;
+        size_t total_projection_primary_key_bytes_memory_allocated = 0;
+        size_t total_projection_index_granularity_bytes_in_memory = 0;
+        size_t total_projection_index_granularity_bytes_in_memory_allocated = 0;
+
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
@@ -377,6 +382,14 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         total_primary_key_bytes_memory_allocated += part->getIndexSizeInAllocatedBytes();
                         total_index_granularity_bytes_in_memory += part->getIndexGranularityBytes();
                         total_index_granularity_bytes_in_memory_allocated += part->getIndexGranularityAllocatedBytes();
+
+                        for (const auto & [_, proj_part] : part->getProjectionParts())
+                        {
+                            total_projection_primary_key_bytes_memory += proj_part->getIndexSizeInBytes();
+                            total_projection_primary_key_bytes_memory_allocated += proj_part->getIndexSizeInAllocatedBytes();
+                            total_projection_index_granularity_bytes_in_memory += proj_part->getIndexGranularityBytes();
+                            total_projection_index_granularity_bytes_in_memory_allocated += proj_part->getIndexGranularityAllocatedBytes();
+                        }
                     }
                 }
 
@@ -442,6 +455,11 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
         new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granulas (only takes active parts into account)." };
         new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
+
+        new_values["TotalProjectionPrimaryKeyBytesInMemory"] = { total_projection_primary_key_bytes_memory, "The total amount of memory (in bytes) used by projection primary key values (only takes active parts into account)." };
+        new_values["TotalProjectionPrimaryKeyBytesInMemoryAllocated"] = { total_projection_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for projection primary key values (only takes active parts into account)." };
+        new_values["TotalProjectionIndexGranularityBytesInMemory"] = { total_projection_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by projection index granularity (only takes active parts into account)." };
+        new_values["TotalProjectionIndexGranularityBytesInMemoryAllocated"] = { total_projection_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for projection index granularity (only takes active parts into account)." };
     }
 
     {

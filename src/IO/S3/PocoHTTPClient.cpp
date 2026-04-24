@@ -509,8 +509,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
     {
         if (!latency_recorded)
         {
-            observeLatency(request, S3LatencyType::Connect, connect_time);
-            observeLatency(request, first_byte_latency_type, first_byte_time);
+            observeLatency(request, S3LatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
+            observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
         }
         addMetric(request, S3MetricType::Errors);
     };
@@ -608,8 +608,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
             auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.
-            observeLatency(request, S3LatencyType::Connect, connect_time);
-            observeLatency(request, first_byte_latency_type, first_byte_time);
+            observeLatency(request, S3LatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
+            observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
             latency_recorded = true;
 
             if (request.GetContentBody())

@@ -310,7 +310,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.transform([&](OutputPortRawPtrs ports)
             {
                 Processors copiers;
-                copiers.reserve(ports.size());
 
                 for (auto * port : ports)
                 {

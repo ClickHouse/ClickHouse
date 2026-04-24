@@ -30,7 +30,7 @@ public:
 
     String getName() const override { return "LazyUnorderedReadFromMergeTreeSource"; }
     Status prepare() override;
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
 
 private:
     size_t max_block_size;
