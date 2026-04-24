@@ -23,6 +23,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
@@ -45,6 +46,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char prepared_sets_build_ordered_set_inplace_fail[];
 }
 
 SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
@@ -365,10 +371,13 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     }
     executor.execute();
 
+    bool force_inplace_failure = false;
+    fiu_do_on(FailPoints::prepared_sets_build_ordered_set_inplace_fail, { force_inplace_failure = true; });
+
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
     /// timeout_overflow_mode set to `break`, no exception is thrown, and the executor just stops executing
     /// the pipeline without setting `set_and_key->set->is_created` to true.
-    if (!set_and_key->set->isCreated())
+    if (force_inplace_failure || !set_and_key->set->isCreated())
     {
         /// `build()` above consumed the `source` plan. If the in-place build failed,
         /// the set remains not-created, and `source` is null. This means the later call

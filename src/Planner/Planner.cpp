@@ -1561,7 +1561,8 @@ void addBuildSubqueriesForSetsStepIfNeeded(
                 Planner rebuilder(
                     query_tree_copy,
                     subquery_options,
-                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, collectFiltersForAnalysis(query_tree_copy, subquery_options, nullptr)));
+                    std::make_shared<GlobalPlannerContext>(
+                        nullptr, nullptr, nullptr, collectFiltersForAnalysis(query_tree_copy, subquery_options, nullptr)));
                 rebuilder.buildQueryPlanIfNeeded();
                 return std::make_unique<QueryPlan>(std::move(rebuilder).extractQueryPlan());
             });
