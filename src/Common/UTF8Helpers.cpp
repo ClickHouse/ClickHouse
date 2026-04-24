@@ -250,6 +250,13 @@ size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_lengt
 
 std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_length)
 {
+    /// `Poco::UTF8Encoding::queryConvert` reads the first byte without checking length first,
+    /// so calling it with `in_length == 0` triggers a use-of-uninitialized-value report (MSan).
+    /// Many callers naturally pass `end - pos` which may be zero at string boundaries
+    /// (`hasSubsequenceUTF8`, `Volnitsky.h`, `StringSearcher.h`, ...).
+    if (in_length == 0)
+        return {};
+
     static const Poco::UTF8Encoding utf8;
     int res = utf8.queryConvert(
         reinterpret_cast<const uint8_t *>(in_bytes),

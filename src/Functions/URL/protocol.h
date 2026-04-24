@@ -11,6 +11,9 @@ namespace DB
 inline std::string_view getURLScheme(const char * data, size_t size)
 {
     // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+    if (size == 0)
+        return {};
+
     const char * pos = data;
     const char * end = data + size;
 
