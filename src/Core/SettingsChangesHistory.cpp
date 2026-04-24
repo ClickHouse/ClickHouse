@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"optimize_use_skip_index_aggregation", false, true, "New setting to enable skip index aggregation optimization for min/max/uniq queries"},
+            {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
