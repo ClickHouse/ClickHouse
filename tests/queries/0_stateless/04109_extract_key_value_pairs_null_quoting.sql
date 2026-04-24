@@ -34,6 +34,19 @@ SELECT extractKeyValuePairs('a:1,b:2', ':', ',', '\0', 'accept');
 -- Here the input has no NUL, so parsing is unaffected.
 SELECT extractKeyValuePairs('a:1,b:2', ':', ',', '\0', 'invalid');
 
+-- `invalid` with a NUL byte while reading a key: the current partial pair is
+-- invalidated and parsing resumes after the NUL. Input is >= 16 bytes so the
+-- SSE2 fast path in `find_first_symbols_or_null` is exercised (needle set for
+-- `invalid` is `{':', '\0', ','}`, i.e. three characters, which takes the SSE2
+-- branch). The prefix `xxxxxx` before the NUL is discarded; `yyyyyy:1` and
+-- `k:v` are read normally.
+SELECT extractKeyValuePairs('xxxxxx\0yyyyyy:1,k:v', ':', ',', '\0', 'invalid');
+
+-- `invalid` with a NUL byte while reading a value: the pair is invalidated and
+-- parsing resumes at the next pair delimiter. Again >= 16 bytes to exercise the
+-- SSE2 fast path. `xxxxx:v` is discarded; `k:v` is read normally.
+SELECT extractKeyValuePairs('xxxxx:v\0aaaaaaaaaaa,k:v', ':', ',', '\0', 'invalid');
+
 -- `promote`: an unexpected NUL promotes to quoted-value reading. With no NUL in
 -- the input, this is indistinguishable from the default pass-through.
 SELECT extractKeyValuePairs('a:1,b:2', ':', ',', '\0', 'promote');
