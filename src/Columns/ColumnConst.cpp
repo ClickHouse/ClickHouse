@@ -1,3 +1,5 @@
+#include <utility>
+
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnConst.h>
@@ -29,7 +31,9 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
     : data(data_), s(s_)
 {
     /// Squash Const of Const.
-    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(data.get()))
+    /// Use const access: the data column is shared with the caller (use_count > 1),
+    /// so the non-const `WrappedPtr::get` would trip the `use_count == 1` assertion.
+    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(std::as_const(data).get()))
         data = const_data->getDataColumnPtr();
 
     if (data->size() != 1)
