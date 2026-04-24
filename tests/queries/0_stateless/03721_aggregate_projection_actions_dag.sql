@@ -15,6 +15,7 @@ SET query_plan_enable_multithreading_after_window_functions = 0; -- inserts extr
 SET query_plan_reuse_storage_ordering_for_window_functions = 1; -- when False, planner inserts extra Expression node due to inability to reuse storage ordering
 SET query_plan_optimize_join_order_limit = 10; -- CI may inject 0, causing chooseJoinOrder to be skipped, leaving intermediate unnamed Expression steps un-eliminated
 SET query_plan_remove_unused_columns = 1; -- CI may inject False; "Discarding unused columns" step before GROUP BY is omitted, changing the Expression step label in EXPLAIN output
+SET optimize_trivial_group_by_count_query = 0;
 EXPLAIN PLAN
 WITH
     view_1 AS

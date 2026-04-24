@@ -3912,6 +3912,9 @@ When enabled together with `read_in_order_use_virtual_row`, emit a virtual row a
 This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
 Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
 )", 0) \
+    DECLARE(Bool, optimize_trivial_group_by_count_query, true, R"(
+Optimize GROUP BY monotonic_function(primary_key_column) with a single count() aggregate to use the primary key index and granularity metadata instead of reading data columns. Supports WHERE/PREWHERE on primary key range conditions. Does not apply with SAMPLE or FINAL.
+)", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 

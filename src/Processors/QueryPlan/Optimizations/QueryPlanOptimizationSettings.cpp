@@ -25,6 +25,7 @@ namespace Setting
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool optimize_aggregation_in_order;
+    extern const SettingsBool optimize_trivial_group_by_count_query;
     extern const SettingsBool optimize_distinct_in_order;
     extern const SettingsBool optimize_read_in_order;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
@@ -177,6 +178,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distinct_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_distinct_in_order];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
+    trivial_group_by_count = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_trivial_group_by_count_query];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];

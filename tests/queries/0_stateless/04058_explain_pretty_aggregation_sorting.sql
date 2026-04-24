@@ -10,6 +10,7 @@ SET optimize_read_in_order = 1;
 SET optimize_distinct_in_order = 1;
 SET optimize_sorting_by_input_stream_properties = 1;
 SET allow_reorder_prewhere_conditions = 0;
+SET optimize_trivial_group_by_count_query = 0;
 
 DROP TABLE IF EXISTS t1;
 

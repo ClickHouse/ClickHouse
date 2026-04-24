@@ -1,0 +1,14 @@
+<test>
+    <create_query>CREATE TABLE count_gran_perf (k UInt64, v String) ENGINE = MergeTree() ORDER BY k</create_query>
+    <fill_query>INSERT INTO count_gran_perf SELECT number, toString(number) FROM numbers(50000000)</fill_query>
+
+    <!-- Large buckets: most granules within one bucket, metadata-only path dominates -->
+    <query>SELECT intDiv(k, 1000000) AS bucket, count() FROM count_gran_perf GROUP BY bucket ORDER BY bucket FORMAT Null SETTINGS optimize_trivial_group_by_count_query = 1</query>
+    <query>SELECT intDiv(k, 1000000) AS bucket, count() FROM count_gran_perf GROUP BY bucket ORDER BY bucket FORMAT Null SETTINGS optimize_trivial_group_by_count_query = 0</query>
+
+    <!-- Small buckets: more cross-boundary granules, mixed path -->
+    <query>SELECT intDiv(k, 100000) AS bucket, count() FROM count_gran_perf GROUP BY bucket ORDER BY bucket FORMAT Null SETTINGS optimize_trivial_group_by_count_query = 1</query>
+    <query>SELECT intDiv(k, 100000) AS bucket, count() FROM count_gran_perf GROUP BY bucket ORDER BY bucket FORMAT Null SETTINGS optimize_trivial_group_by_count_query = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS count_gran_perf</drop_query>
+</test>
