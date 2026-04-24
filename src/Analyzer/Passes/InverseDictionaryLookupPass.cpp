@@ -245,8 +245,8 @@ public:
                 }
                 else
                 {
-                    /// Normal case: key IN (SELECT id WHERE attr IN values) for IN
-                    /// or key NOT IN (SELECT id WHERE attr IN values) for NOT IN
+                    /// IN & default_value not in list:     key IN (SELECT id WHERE attr IN values)
+                    /// NOT IN & default_value in list:     key IN (SELECT id WHERE attr NOT IN values)
                     auto where_condition = buildWhereCondition(*ctx, node_function, function_name, function_t);
                     auto subquery = buildSubquery(*ctx, where_condition);
                     final_in_expr = buildInExpression(*ctx, subquery);
