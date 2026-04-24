@@ -21,7 +21,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/BorrowFromCache/BorrowFromCacheObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
 
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 
 #include <Interpreters/Context.h>
 

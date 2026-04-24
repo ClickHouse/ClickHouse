@@ -2,8 +2,8 @@
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/Stopwatch.h>
