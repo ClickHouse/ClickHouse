@@ -38,6 +38,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/operators.hpp>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -91,6 +92,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+    extern const int SOCKET_TIMEOUT;
+}
+
+namespace FailPoints
+{
+    extern const char iceberg_socket_fail[];
 }
 
 void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -1333,6 +1340,13 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
 
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
+    fiu_do_on(FailPoints::iceberg_socket_fail,
+    {
+        throw Exception(
+            ErrorCodes::SOCKET_TIMEOUT,
+            "Timeout exceeded while reading from socket");
+    });
+
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
 
     ObjectInfoPtr object_info;

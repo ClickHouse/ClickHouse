@@ -54,6 +54,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/FailPoint.h>
 
 
 using namespace DB;
@@ -302,17 +303,17 @@ bool writeMetadataFileAndVersionHint(
             "",
             metadata_file_info.compression_method);
     }
-    catch (const DB::Exception & e)
+    catch (const DB::Exception & /*e*/)
     {
         /// PreconditionFailed means a concurrent writer already committed this metadata version.
         /// Return false so the caller retries with the next version number.
         /// All other errors (timeouts, permission denied, etc.) must propagate to the caller.
-        if (e.code() == DB::ErrorCodes::S3_ERROR && e.message().find("PreconditionFailed") != String::npos)
-        {
+        ///if (e.code() == DB::ErrorCodes::S3_ERROR && e.message().find("PreconditionFailed") != String::npos)
+        ///{
             tryLogCurrentException(__PRETTY_FUNCTION__);
             return false;
-        }
-        throw;
+        ///}
+        ///throw;
     }
 
     if (try_write_version_hint)
@@ -359,15 +360,9 @@ bool writeMetadataFileAndVersionHint(
                         /* write-if-match */ etag);
                     break;
                 }
-                catch (const DB::Exception & e)
+                catch (...)
                 {
-                    /// PreconditionFailed means another writer updated the version hint
-                    /// concurrently. Retry the read-modify-write loop with the new value.
-                    /// All other errors (timeouts, permission denied, etc.) must propagate.
-                    if (e.code() == DB::ErrorCodes::S3_ERROR && e.message().find("PreconditionFailed") != String::npos)
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                    else
-                        throw;
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
             }
             else

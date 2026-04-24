@@ -1043,35 +1043,20 @@ bool IcebergStorageSink::initializeMetadata()
 
             LOG_DEBUG(log, "Writing new metadata file {}", metadata_info.path);
             auto hint_path = filename_generator.generateVersionHint();
-            bool metadata_written = false;
-            try
-            {
-                metadata_written = writeMetadataFileAndVersionHint(
+            if (!writeMetadataFileAndVersionHint(
                     persistent_table_components.path_resolver,
                     metadata_info,
                     json_representation,
                     hint_path,
                     object_storage,
                     context,
-                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
-            }
-            catch (...)
-            {
-                /// writeMetadataFileAndVersionHint only throws for non-conflict errors (e.g.
-                /// timeouts). Clean up the manifest files written above before propagating.
-                cleanup(true);
-                throw;
-            }
-            if (!metadata_written)
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
                 LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
                 cleanup(true);
                 return false;
             }
-            else
-            {
-                LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
-            }
+            LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
 
             if (catalog)
             {
