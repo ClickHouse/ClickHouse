@@ -93,6 +93,23 @@
         </shard>
     </cluster_with_username_and_password>
 
+    <cluster_with_dots_and_user>
+        <shard>
+            <replica>
+                <host>c2.s0_0_0</host>
+                <port>9000</port>
+                <user>biz</user>
+                <password>bar</password>
+            </replica>
+            <replica>
+                <host>c2.s0_0_1</host>
+                <port>9000</port>
+                <user>biz</user>
+                <password>bar</password>
+            </replica>
+        </shard>
+    </cluster_with_dots_and_user>
+
     <cluster_with_secret>
         <secret>baz</secret>
         <shard>

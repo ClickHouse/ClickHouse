@@ -62,7 +62,11 @@ public:
     virtual String getClusterName(ContextPtr /* context */) const { return getOriginalClusterName(); }
 
 protected:
-    virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
+    virtual void updateQueryToSendIfNeeded(
+        ASTPtr & /*query*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        const ContextPtr & /*context*/,
+        bool /*make_cluster_function*/) {}
     void updateQueryWithJoinToSendIfNeeded(ASTPtr & query_to_send, QueryTreeNodePtr query_tree, const ContextPtr & context);
 
     virtual void updateConfigurationIfNeeded(ContextPtr /* context */) {}

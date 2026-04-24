@@ -60,6 +60,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
     extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
@@ -309,10 +310,40 @@ void IStorageCluster::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto cluster_name_from_settings = getClusterName(context);
-
-    if (!isClusterSupported() || cluster_name_from_settings.empty())
+    if (!isClusterSupported())
     {
+        readFallBackToPure(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+        return;
+    }
+
+    auto cluster_name_from_settings = getClusterName(context);
+    const auto & settings = context->getSettingsRef();
+    ASTPtr query_to_send = query_info.query;
+
+    if (cluster_name_from_settings.empty())
+    {
+        if (settings[Setting::object_storage_remote_initiator])
+        {
+            /// rewrite query to execute `remote('remote_host', s3(...))`
+            /// remote_host can execute query itself or make on-cluster query depends on own `object_storage_cluster` setting
+            updateConfigurationIfNeeded(context);
+            updateQueryWithJoinToSendIfNeeded(query_to_send, query_info.query_tree, context);
+            updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, /*make_cluster_function*/ false);
+
+            auto remote_initiator_cluster_name = settings[Setting::object_storage_remote_initiator_cluster].value;
+            if (remote_initiator_cluster_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'object_storage_remote_initiator' can be used only with 'object_storage_remote_initiator_cluster' or 'object_storage_cluster'");
+
+            auto remote_initiator_cluster = getClusterImpl(context, remote_initiator_cluster_name);
+            auto storage_and_context = convertToRemote(remote_initiator_cluster, context, remote_initiator_cluster_name, query_to_send);
+            auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(storage_and_context.storage);
+            auto modified_query_info = query_info;
+            modified_query_info.cluster = src_distributed->getCluster();
+            auto new_storage_snapshot = storage_and_context.storage->getStorageSnapshot(storage_snapshot->metadata, storage_and_context.context);
+            storage_and_context.storage->read(query_plan, column_names, new_storage_snapshot, modified_query_info, storage_and_context.context, processed_stage, max_block_size, num_streams);
+            return;
+        }
+
         readFallBackToPure(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
         return;
     }
@@ -321,12 +352,9 @@ void IStorageCluster::read(
 
     storage_snapshot->check(column_names);
 
-    const auto & settings = context->getSettingsRef();
-
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
     SharedHeader sample_block;
-    ASTPtr query_to_send = query_info.query;
 
     updateQueryWithJoinToSendIfNeeded(query_to_send, query_info.query_tree, context);
 
@@ -341,7 +369,7 @@ void IStorageCluster::read(
         query_to_send = interpreter.getQueryInfo().query->clone();
     }
 
-    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, /*make_cluster_function*/ true);
 
     /// In case the current node is not supposed to initiate the clustered query
     /// Sends this query to a remote initiator using the `remote` table function
@@ -407,14 +435,14 @@ IStorageCluster::RemoteCallVariables IStorageCluster::convertToRemote(
 
     auto host_addresses = cluster->getShardsAddresses();
     if (host_addresses.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty cluster {}", cluster_name_from_settings);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty cluster {}", cluster_name_from_settings);
 
     pcg64 rng(randomSeed());
     size_t shard_num = rng() % host_addresses.size();
     auto shard_addresses = host_addresses[shard_num];
     /// After getClusterImpl each shard must have exactly 1 replica
     if (shard_addresses.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of shard {} in cluster {} is not equal 1", shard_num, cluster_name_from_settings);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Size of shard {} in cluster {} is not equal 1", shard_num, cluster_name_from_settings);
     std::string host_name;
     Poco::URI::decode(shard_addresses[0].toString(), host_name);
 
@@ -425,8 +453,8 @@ IStorageCluster::RemoteCallVariables IStorageCluster::convertToRemote(
 
     /// Clean object_storage_remote_initiator setting to avoid infinite remote call
     auto new_context = Context::createCopy(context);
-    new_context->setSetting("object_storage_remote_initiator", false);
-    new_context->setSetting("object_storage_remote_initiator_cluster", String(""));
+    std::vector<std::string> settings_to_remove = {"object_storage_remote_initiator", "object_storage_remote_initiator_cluster"};
+    new_context->resetSettingsToDefaultValue(settings_to_remove);
 
     auto * select_query = query_to_send->as<ASTSelectQuery>();
     if (!select_query)
@@ -436,15 +464,18 @@ IStorageCluster::RemoteCallVariables IStorageCluster::convertToRemote(
     if (query_settings)
     {
         auto & settings_ast = query_settings->as<ASTSetQuery &>();
-        if (settings_ast.changes.removeSetting("object_storage_remote_initiator") && settings_ast.changes.empty())
-        {
+        bool settings_changed = false;
+        for (const auto & setting_to_remove : settings_to_remove)
+            settings_changed |= settings_ast.changes.removeSetting(setting_to_remove);
+        if (settings_changed && settings_ast.changes.empty())
             select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-        }
     }
 
     ASTTableExpression * table_expression = extractTableExpressionASTPtrFromSelectQuery(query_to_send);
     if (!table_expression)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find table expression");
+    if (!table_expression->table_function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find table function in table expression");
 
     boost::intrusive_ptr<ASTFunction> remote_query;
 

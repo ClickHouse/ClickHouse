@@ -9,5 +9,14 @@
             <password>bar</password>
             <profile>default</profile>
         </foo>
+        <biz>
+            <password>bar</password>
+            <profile>osc</profile>
+        </biz>
     </users>
+    <profiles>
+        <osc>
+            <object_storage_cluster>hidden_cluster_with_username_and_password</object_storage_cluster>
+        </osc>
+    </profiles>
 </clickhouse>

@@ -44,6 +44,7 @@ private:
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override;
 
     bool is_cluster_function = false;
+    bool is_remote = false;
 };
 
 }
