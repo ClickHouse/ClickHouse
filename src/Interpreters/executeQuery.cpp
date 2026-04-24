@@ -1618,33 +1618,34 @@ static BlockIO executeQueryImpl(
 
         logQuery(query_for_logging, context, internal, stage);
 
-        bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
-        bool has_transaction = context->getCurrentTransaction() || settings[Setting::implicit_transaction];
-        if (!internal && is_initial_query && !has_transaction && out_ast)
-        {
-            bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
-            auto reattach_probability = std::clamp(
-                static_cast<double>(settings[Setting::reattach_tables_before_query_execution_probability]),
-                0.0, 1.0);
-
-            if (!need_reattach_tables && reattach_probability > 0.0)
-            {
-                std::bernoulli_distribution distribution(reattach_probability);
-                need_reattach_tables |= distribution(thread_local_rng);
-            }
-
-            if (need_reattach_tables)
-            {
-                LOG_DEBUG(getLogger("executeQuery"), "Will DETACH and ATTACH back tables used in query");
-                reattachTablesUsedInQuery(out_ast, context);
-            }
-        }
-
         if (out_ast)
         {
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
+            bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+            bool has_transaction = context->getCurrentTransaction() || settings[Setting::implicit_transaction];
+            if (!internal && is_initial_query && !has_transaction)
+            {
+                bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
+                auto reattach_probability = std::clamp(
+                    static_cast<double>(settings[Setting::reattach_tables_before_query_execution_probability]),
+                    0.0, 1.0);
+
+                if (!need_reattach_tables && reattach_probability > 0.0)
+                {
+                    std::bernoulli_distribution distribution(reattach_probability);
+                    need_reattach_tables |= distribution(thread_local_rng);
+                }
+
+                if (need_reattach_tables)
+                {
+                    LOG_DEBUG(getLogger("executeQuery"), "Will DETACH and ATTACH back tables used in query");
+                    reattachTablesUsedInQuery(out_ast, context);
+                }
+            }
+
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             if (settings[Setting::enforce_strict_identifier_format])
