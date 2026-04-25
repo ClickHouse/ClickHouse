@@ -2372,15 +2372,32 @@ bool FileCache::doDynamicResizeImpl(
 {
     /// In order to not block cache for the duration of cache resize,
     /// we do:
-    /// a. Take a cache lock.
-    ///     1. Collect eviction candidates,
-    ///     2. If eviction candidates size is non-zero,
+    /// a. Hold the cache state lock continuously, then take the cache priority
+    ///    write lock, while doing the in-memory work:
+    ///     1. Collect eviction info (size to evict),
+    ///     2. Collect eviction candidates,
+    ///     3. If eviction candidates size is non-zero,
     ///        remove their queue entries.
     ///        This will release space we consider to be hold for them,
     ///        so that we can safely modify size limits.
-    ///     3. Modify size limits of cache.
-    /// b. Release a cache lock.
+    ///     4. Modify size limits of cache.
+    /// b. Release both locks.
     ///     1. Do actual eviction from filesystem.
+    ///
+    /// The cache state lock must be held continuously across steps 1-4.
+    /// Otherwise, between sampling `state.size` in step 1 and validating
+    /// `state.size <= max_size_` inside `modifySizeLimits` in step 4,
+    /// concurrent operations could call `incrementSize` (which only requires
+    /// the state lock, not the priority lock) and grow `state.size` above
+    /// the new desired limit. This would trigger a `LOGICAL_ERROR` in
+    /// `LRUFileCachePriority::modifySizeLimits`.
+    ///
+    /// Specifically, `FileCache::doTryReserve` and
+    /// `SLRUFileCachePriority::tryIncreasePriority` both call
+    /// `incrementSize` under the state lock alone, after releasing the
+    /// priority write lock they used for queue mutation. Holding only
+    /// the priority write lock during steps 3-4 is therefore
+    /// insufficient; the state lock is required.
 
     auto eviction_info = main_priority->collectEvictionInfoForResize(
         desired_limits.max_size,
@@ -2410,7 +2427,11 @@ bool FileCache::doDynamicResizeImpl(
         return true;
     }
 
-    state_lock.unlock();
+    /// State lock remains held: this prevents concurrent `incrementSize`
+    /// calls from growing `state.size` while we collect eviction candidates
+    /// and prepare to apply the new limits. `collectCandidatesForEviction`
+    /// uses only the priority read lock internally and does not acquire
+    /// the state lock, so holding the state lock here cannot deadlock.
 
     FileCacheReserveStat stat;
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
@@ -2433,9 +2454,11 @@ bool FileCache::doDynamicResizeImpl(
     }
 
     /// Remove only queue entries of eviction candidates.
-    /// Hold the write lock until after modifying size limits,
-    /// to prevent concurrent `tryIncreasePriority` from promoting entries
-    /// into the protected queue between removal and limit modification.
+    /// We acquire the priority write lock here in addition to the state
+    /// lock that is already held. The priority write lock prevents
+    /// concurrent additions and queue-structural changes; the state lock
+    /// (held since entry to this function) prevents `incrementSize` from
+    /// running between `removeQueueEntries` and `modifySizeLimits`.
     auto write_lock = cache_guard.writeLock();
     eviction_candidates.removeQueueEntries(write_lock);
 
@@ -2444,8 +2467,6 @@ bool FileCache::doDynamicResizeImpl(
     /// only after eviction from filesystem. This is needed to avoid
     /// a race on removal of file from filesystsem and
     /// addition of the same file as part of a newly cached file segment.
-
-    state_lock.lock();
 
     /// Modify cache size limits.
     /// From this point cache eviction will follow them.

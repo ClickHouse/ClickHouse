@@ -1541,6 +1541,178 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
     ASSERT_LE(cache->getFileSegmentsNum(), 6);
 }
 
+TEST_F(FileCacheTest, SLRUDynamicResizeRaceWithIncreasePriority)
+{
+    /// Regression test for STID 4012-44fe:
+    ///
+    ///   Logical error: 'Cannot modify size limits to A in size and B in
+    ///   elements: not enough space freed. Current size: C/D, elements:
+    ///   E/F (G) (..., protected)'.
+    ///
+    /// The bug is a race in `FileCache::doDynamicResizeImpl` where the
+    /// cache state lock used to be released between sampling
+    /// `state.size` (in `collectEvictionInfoForResize`) and validating it
+    /// in `modifySizeLimits`. During that gap, concurrent
+    /// `tryIncreasePriority` promotions from the probationary queue to
+    /// the protected queue would call `incrementSize` under the state
+    /// lock alone (no priority write lock needed), growing the protected
+    /// queue's `state.size` above the new desired limit.
+    ///
+    /// This test stresses the race by running concurrent
+    /// `applySettingsIfPossible` calls (resize) and `increasePriority`
+    /// calls (probationary→protected promotions). With the fix in
+    /// place, the state lock is held continuously across the critical
+    /// section and the promotion's `incrementSize` cannot interleave.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    /// Use a moderately sized cache and many small file segments
+    /// to give the race a wide window.
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path3;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::max_size] = 1000;
+    settings[FileCacheSetting::max_elements] = 400;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::allow_dynamic_cache_resize] = true;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_resize_race", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// We need entries in both queues:
+    ///   - `protected_keys` are read twice, so they live in protected.
+    ///     Protected starts close to its sub-queue limit (500 bytes /
+    ///     200 elements), so a shrink will need to evict from there.
+    ///   - `probationary_keys` are read once, so they live in
+    ///     probationary. Re-reads of these during the race trigger
+    ///     probationary→protected promotions, which call
+    ///     `incrementSize` on the protected queue.
+    constexpr size_t num_protected = 80;
+    constexpr size_t num_probationary = 80;
+    std::vector<DB::FileCacheKey> protected_keys;
+    std::vector<DB::FileCacheKey> probationary_keys;
+    protected_keys.reserve(num_protected);
+    probationary_keys.reserve(num_probationary);
+
+    auto download_segment = [&](const DB::FileCacheKey & key)
+    {
+        auto holder = cache->getOrSet(key, /* offset */ 0, /* size */ 5, /* file_size */ 5, {}, 0, user);
+        for (auto & segment : *holder)
+        {
+            ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+            std::string failure_reason;
+            ASSERT_TRUE(segment->reserve(5, 1000, failure_reason));
+            download(cache_base_path3, *segment);
+            FileSegment::complete(FileSegmentPtr(segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
+        }
+    };
+
+    auto bump_priority = [&](const DB::FileCacheKey & key)
+    {
+        auto holder = cache->getOrSet(key, /* offset */ 0, /* size */ 5, /* file_size */ 5, {}, 0, user);
+        for (auto & segment : *holder)
+            segment->increasePriority();
+    };
+
+    for (size_t i = 0; i < num_protected; ++i)
+    {
+        auto key = DB::FileCacheKey::fromPath("race_protected_" + std::to_string(i));
+        protected_keys.push_back(key);
+        download_segment(key);
+        /// Second access promotes to protected.
+        bump_priority(key);
+    }
+    for (size_t i = 0; i < num_probationary; ++i)
+    {
+        auto key = DB::FileCacheKey::fromPath("race_probationary_" + std::to_string(i));
+        probationary_keys.push_back(key);
+        download_segment(key);
+    }
+
+    /// Run resizer and several promoter threads in parallel. The resizer
+    /// alternately shrinks and grows the cache; each shrink forces
+    /// eviction from the protected queue. The promoters re-read
+    /// probationary entries to trigger probationary→protected
+    /// promotions, which without the fix can grow the protected queue's
+    /// `state.size` between resize's eviction-info sampling and
+    /// `modifySizeLimits`.
+
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> exceptions_in_promoter{0};
+    std::atomic<size_t> exceptions_in_resizer{0};
+    std::atomic<size_t> resize_iterations{0};
+
+    auto promoter_fn = [&]()
+    {
+        DB::ThreadStatus inner_thread_status;
+        while (!stop.load(std::memory_order_relaxed))
+        {
+            for (const auto & key : probationary_keys)
+            {
+                if (stop.load(std::memory_order_relaxed))
+                    break;
+                try
+                {
+                    bump_priority(key);
+                }
+                catch (...)
+                {
+                    exceptions_in_promoter.fetch_add(1);
+                }
+            }
+        }
+    };
+
+    auto resizer_fn = [&]()
+    {
+        DB::ThreadStatus inner_thread_status;
+        DB::FileCacheSettings shrunk = settings;
+        shrunk[FileCacheSetting::max_size] = 500;
+        DB::FileCacheSettings grown = settings;
+        grown[FileCacheSetting::max_size] = 1000;
+
+        DB::FileCacheSettings actual = settings;
+        constexpr size_t resize_iters = 600;
+        for (size_t i = 0; i < resize_iters && !stop.load(std::memory_order_relaxed); ++i)
+        {
+            try
+            {
+                cache->applySettingsIfPossible((i & 1) ? grown : shrunk, actual);
+                resize_iterations.fetch_add(1);
+            }
+            catch (...)
+            {
+                exceptions_in_resizer.fetch_add(1);
+            }
+        }
+        stop.store(true, std::memory_order_relaxed);
+    };
+
+    std::thread resizer_thread(resizer_fn);
+    std::vector<std::thread> promoter_threads;
+    promoter_threads.reserve(4);
+    for (size_t i = 0; i < 4; ++i)
+        promoter_threads.emplace_back(promoter_fn);
+
+    resizer_thread.join();
+    for (auto & t : promoter_threads)
+        t.join();
+
+    std::cerr << "Performed " << resize_iterations.load()
+              << " successful resize iterations" << std::endl;
+
+    ASSERT_EQ(exceptions_in_resizer.load(), 0)
+        << "Resize threw an exception (regression of STID 4012-44fe)";
+    ASSERT_EQ(exceptions_in_promoter.load(), 0)
+        << "Priority increase threw an exception during concurrent resize";
+}
+
 TEST_F(FileCacheTest, FileCacheGetOrSet)
 {
     ServerUUID::setRandomForUnitTests();
