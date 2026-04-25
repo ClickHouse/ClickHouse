@@ -3232,6 +3232,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
+    cloned_step->prefer_multiple_streams = prefer_multiple_streams;
     return cloned_step;
 }
 
