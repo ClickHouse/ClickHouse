@@ -1086,7 +1086,7 @@ optimize_read_in_window_order	0
 optimize_redundant_functions_in_order_by	1
 optimize_respect_aliases	1
 optimize_rewrite_aggregate_function_with_if	1
-optimize_rewrite_array_exists_to_has	0
+optimize_rewrite_array_exists_to_has	1
 optimize_rewrite_like_perfect_affix	1
 optimize_rewrite_regexp_functions	1
 optimize_rewrite_sum_if_to_count_if	1
