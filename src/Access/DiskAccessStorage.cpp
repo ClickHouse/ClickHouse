@@ -520,13 +520,32 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             /// Restore the old entity that was replaced (if any).
             if (old_entity && name_collision_id.has_value())
                 memory_storage.insert(*name_collision_id, old_entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
-            /// Clean up the .sql file if it was already written.
-            /// Use the non-throwing overload so we don't mask the original exception if cleanup fails.
-            std::error_code ec;
+
             auto new_file_path = getEntityFilePath(directory_path, id);
-            std::filesystem::remove(new_file_path, ec);
-            if (ec)
-                LOG_WARNING(getLogger(), "Failed to clean up {} after a failed insert: {}", new_file_path, ec.message());
+            if (old_entity && name_collision_id.has_value() && *name_collision_id == id)
+            {
+                /// Same UUID is reused (e.g. a backup restore with `kReplace`): the file at this path
+                /// is the previous entity's file, possibly already overwritten by a successful
+                /// `writeEntityFile` before `scheduleWriteLists` threw. Restore the old contents
+                /// instead of deleting the file.
+                try
+                {
+                    writeEntityFile(new_file_path, *old_entity);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(getLogger(), "Failed to restore " + new_file_path + " after a failed replace");
+                }
+            }
+            else
+            {
+                /// Different UUID: the new file (if any) is orphaned, the old file at a different
+                /// path is untouched. Best-effort delete; don't mask the original exception on failure.
+                std::error_code ec;
+                std::filesystem::remove(new_file_path, ec);
+                if (ec)
+                    LOG_WARNING(getLogger(), "Failed to clean up {} after a failed insert: {}", new_file_path, ec.message());
+            }
             throw;
         }
 
