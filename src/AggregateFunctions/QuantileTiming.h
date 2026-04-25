@@ -551,7 +551,7 @@ private:
     }
 
 public:
-    QuantileTiming()
+    QuantileTiming() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - union members are mutually exclusive; only `tiny.count` needs initialization
     {
         tiny.count = 0;
     }

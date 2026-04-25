@@ -2098,7 +2098,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
         for (auto source_map_it = source_map.begin(); source_map_it != source_map.end(); ++source_map_it)
         {
             typename RangeMap::LookupResult res;
-            bool inserted;
+            bool inserted = false;
             range_map->emplace(source_map_it->getKey() - min_key, res, inserted);
             if (inserted)
                 res->getMapped() = source_map_it->getMapped();
