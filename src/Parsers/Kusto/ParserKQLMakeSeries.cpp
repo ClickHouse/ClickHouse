@@ -143,7 +143,7 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
         || ParserKQLDateTypeTimespan().parseConstKQLTimespan(from_to_step.step_str))
     {
         from_to_step.is_timespan = true;
-        from_to_step.step = std::stod(getExprFromToken(from_to_step.step_str, pos.max_depth, pos.max_backtracks));
+        from_to_step.step = std::stod(getExprFromToken(from_to_step.step_str, pos));
     }
     else
         from_to_step.step = std::stod(from_to_step.step_str);
@@ -151,7 +151,7 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
     return true;
 }
 
-bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks)
+bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, const Pos & parent_pos)
 {
     const uint64_t era_diff
         = 62135596800; // this magic number is the differicen is second form 0001-01-01 (Azure start time ) and 1970-01-01 (CH start time)
@@ -169,15 +169,15 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     auto step = from_to_step.step;
 
     if (!kql_make_series.from_to_step.from_str.empty())
-        start_str = getExprFromToken(kql_make_series.from_to_step.from_str, max_depth, max_backtracks);
+        start_str = getExprFromToken(kql_make_series.from_to_step.from_str, parent_pos);
 
     if (!kql_make_series.from_to_step.to_str.empty())
-        end_str = getExprFromToken(from_to_step.to_str, max_depth, max_backtracks);
+        end_str = getExprFromToken(from_to_step.to_str, parent_pos);
 
     auto date_type_cast = [&](String & src)
     {
         Tokens tokens(src.data(), src.data() + src.size(), 0, true);
-        IParser::Pos pos(tokens, max_depth, max_backtracks);
+        IParser::Pos pos(tokens, parent_pos);
         String res;
         while (isValidKQLPos(pos))
         {
@@ -206,7 +206,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     {
         std::vector<String> group_expression_tokens;
         Tokens tokens(group_expression.data(), group_expression.data() + group_expression.size(), 0, true);
-        IParser::Pos pos(tokens, max_depth, max_backtracks);
+        IParser::Pos pos(tokens, parent_pos);
         while (isValidKQLPos(pos))
         {
             if (String(pos->begin, pos->end) == "AS")
@@ -302,7 +302,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 
     ASTPtr sub_query_node;
 
-    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_sub_query, sub_query_node, max_depth, max_backtracks))
+    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_sub_query, sub_query_node, parent_pos))
         return false;
     select_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(sub_query_node));
 
@@ -357,7 +357,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     else
         main_query = fmt::format("{},{}", group_expression_alias, final_axis_agg_alias_list);
 
-    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_query, sub_query_node, max_depth, max_backtracks))
+    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_query, sub_query_node, parent_pos))
         return false;
     select_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(sub_query_node));
 
@@ -417,10 +417,10 @@ bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             subquery_columns += ", " + column_str;
     }
 
-    makeSeries(kql_make_series, node, pos.max_depth, pos.max_backtracks);
+    makeSeries(kql_make_series, node, pos);
 
     Tokens token_main_query(kql_make_series.main_query.data(), kql_make_series.main_query.data() + kql_make_series.main_query.size(), 0, true);
-    IParser::Pos pos_main_query(token_main_query, pos.max_depth, pos.max_backtracks);
+    IParser::Pos pos_main_query(token_main_query, pos);
 
     if (!ParserNotEmptyExpressionList(true).parse(pos_main_query, select_expression_list, expected))
         return false;
