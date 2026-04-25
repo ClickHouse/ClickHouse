@@ -185,6 +185,15 @@ class JobConfigs:
         allow_failure=True,
         enable_gh_auth=True,
     )
+    ci_tests = Job.Config(
+        name=JobNames.CI_TESTS,
+        runs_on=RunnerLabels.ARM_LARGE,
+        command="python3 ./ci/jobs/ci_tests_job.py --skip test_cleanup_kills_orphaned_test_process",
+        timeout=1200,
+        run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
+        digest_config=Job.CacheDigestConfig(include_paths=["./ci"]),
+        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
+    )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.AMD_LARGE,
@@ -200,7 +209,7 @@ class JobConfigs:
         runs_on=None,  # from parametrize()
         command="python3 ./ci/jobs/fast_test.py",
         digest_config=fast_test_digest_config,
-        result_name_for_cidb="Darwin tests",
+        result_name_for_cidb="Tests",
         force_success=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
