@@ -26,6 +26,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -1217,7 +1218,14 @@ bool AlterCommand::isDropOrRename() const
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!isRequireMutationStage(metadata, context))
+    {
+        /// Even though this command doesn't require a mutation, we still need to apply it
+        /// to the metadata so that subsequent commands see the updated state. For example,
+        /// ADD COLUMN followed by RENAME COLUMN needs the new column to be visible.
+        if (!ignore)
+            apply(metadata, context);
         return {};
+    }
 
     MutationCommand result;
 
@@ -1899,6 +1907,17 @@ static MutationCommand createMaterializeTTLCommand()
 
 MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
 {
+    /// Save a copy of the original metadata before applying commands.
+    /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
+    /// making it impossible to detect TTL changes afterwards.
+    const StorageInMemoryMetadata original_metadata = metadata;
+
+    /// Remove implicit statistics before applying commands to the metadata copy.
+    /// This is needed because `getMutationCommands` may be called before `removeImplicitStatistics`
+    /// in the ALTER flow (e.g. in StorageMergeTree::alter), and applying ADD_STATISTICS
+    /// to metadata that already contains auto-added statistics would throw a duplicate error.
+    removeImplicitStatistics(metadata.columns);
+
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
@@ -1916,7 +1935,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     {
         for (const auto & alter_cmd : *this)
         {
-            if (alter_cmd.isTTLAlter(metadata))
+            if (alter_cmd.isTTLAlter(original_metadata))
             {
                 result.push_back(createMaterializeTTLCommand());
                 break;
