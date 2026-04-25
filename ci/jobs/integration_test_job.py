@@ -702,16 +702,23 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         )
 
     if is_bugfix_validation:
-        build_urls = find_master_builds()
-        assert build_urls, "Could not find master builds in S3"
-        for bt, url in build_urls.items():
-            bt_path = f"{temp_path}/clickhouse_{bt}"
-            if not info.is_local_run or not Path(bt_path).is_file():
-                print(f"NOTE: Downloading {bt} build to [{bt_path}]")
-                Shell.run(
-                    f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
-                )
-                Shell.run(f"chmod +x {bt_path}", verbose=True)
+        bt_paths = {bt: f"{temp_path}/clickhouse_{bt}" for bt in BUGFIX_BUILD_TYPES}
+        # In local runs, reuse existing binaries if all are already present.
+        # Probing master commits in S3 is only available in CI mode.
+        if info.is_local_run and all(Path(p).is_file() for p in bt_paths.values()):
+            build_urls = None
+        else:
+            build_urls = find_master_builds()
+            assert build_urls, "Could not find master builds in S3"
+        if build_urls:
+            for bt, url in build_urls.items():
+                bt_path = bt_paths[bt]
+                if not info.is_local_run or not Path(bt_path).is_file():
+                    print(f"NOTE: Downloading {bt} build to [{bt_path}]")
+                    Shell.run(
+                        f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
+                    )
+                    Shell.run(f"chmod +x {bt_path}", verbose=True)
         clickhouse_path = f"{temp_path}/clickhouse_{BUGFIX_BUILD_TYPES[0]}"
 
     if is_bugfix_validation or is_flaky_check:
