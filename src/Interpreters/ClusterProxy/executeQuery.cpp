@@ -1,3 +1,4 @@
+#include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -31,7 +32,13 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event Shards;
+}
 
 namespace DB
 {
@@ -368,6 +375,7 @@ void executeQuery(
     new_context->increaseDistributedDepth();
 
     const size_t shards = cluster->getShardCount();
+    ProfileEvents::increment(ProfileEvents::Shards, shards);
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
@@ -806,7 +814,9 @@ void executeQueryWithParallelReplicas(
 
     auto [header, new_planner_context]
         = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
-    auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
+    auto modified_query_tree_for_ast = modified_query_tree->clone();
+    removeGroupingFunctionSpecializations(modified_query_tree_for_ast);
+    auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast);
 
     executeQueryWithParallelReplicas(
         query_plan,
