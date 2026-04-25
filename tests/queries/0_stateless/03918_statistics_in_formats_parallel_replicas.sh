@@ -12,10 +12,10 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO ${TABLE_NAME} SELECT * FROM system.numbe
 
 SETTINGS="enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_for_non_replicated_merge_tree=1"
 
-# Run each check multiple times to reliably detect the race condition on master
-# (where rows_read can be 0 due to the race between format finalization and progress
-# collection). With the fix, all iterations should pass deterministically.
-NUM_ITERATIONS=10
+# With the fix, the bug is deterministic: a single iteration is sufficient.
+# The flaky-check job re-runs the test multiple times with random settings,
+# providing additional repetition to detect any regression.
+NUM_ITERATIONS=1
 
 function check_rows_read_client_json()
 {
