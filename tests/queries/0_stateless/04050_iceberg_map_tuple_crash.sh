@@ -19,15 +19,20 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO t_map_tuple SELECT c0 FROM generateRandom('c0 Map(Tuple(Int32), Tuple(Int32))', 42, 1, 1) LIMIT 1;
 "
 
+# Read using the icebergLocal table function so that the SETTINGS clause is honored.
+# A persistent CREATE TABLE captures format settings from the global context at
+# creation time and ignores per-query SETTINGS, so we must use the table function
+# to pin the reader path under flaky-check setting randomization.
+
 # Exercise the Arrow reader path (v3=0) where the original std::out_of_range was thrown.
 # After the fix, this path still fails with a separate pre-existing TYPE_MISMATCH
 # (the Arrow reader has its own limitation with Map(Tuple, Tuple) in Iceberg), but it no
 # longer triggers `unordered_map::at: key not found`. Count the occurrences of that text:
 # on master this prints 1 (bug present), on this PR it prints 0 (bug fixed).
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_map_tuple SETTINGS input_format_parquet_use_native_reader_v3 = 0" 2>&1 | grep -c 'unordered_map::at'
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM icebergLocal('${ICEBERG_TABLE_PATH}') SETTINGS input_format_parquet_use_native_reader_v3 = 0" 2>&1 | grep -c 'unordered_map::at'
 
 # The native reader v3 path reads the table correctly.
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_map_tuple SETTINGS input_format_parquet_use_native_reader_v3 = 1"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM icebergLocal('${ICEBERG_TABLE_PATH}') SETTINGS input_format_parquet_use_native_reader_v3 = 1"
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_map_tuple"
