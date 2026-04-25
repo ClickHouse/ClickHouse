@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3885
+personal_ws-1.1 en 3888
 AArch
 ABIs
 ACLs
@@ -153,6 +153,7 @@ CCTOOLS
 CDATA
 CDFs
 CDMA
+CDNs
 CESU
 CHouse
 CIDR
@@ -1547,6 +1548,7 @@ Warang
 WasmEdge
 WasmTime
 WebAssembly
+WebSocket
 Welch
 Welch's
 Werror
@@ -2168,6 +2170,7 @@ distro
 divideDecimal
 divideOrNull
 dmesg
+dockable
 doesnt
 domainRFC
 domainWithoutWWW
