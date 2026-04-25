@@ -1,5 +1,5 @@
 SELECT materialize(\'Привет, World\') AS s
-WHERE (s LIKE \'hell%\') OR (s ILIKE \'%привет%\') OR (s ILIKE \'world%\')
+WHERE ((materialize(\'Привет, World\') AS s) LIKE \'hell%\') OR ((materialize(\'Привет, World\') AS s) ILIKE \'%привет%\') OR ((materialize(\'Привет, World\') AS s) ILIKE \'world%\')
 SETTINGS optimize_or_like_chain = 0
 QUERY id: 0
   PROJECTION COLUMNS
@@ -42,7 +42,7 @@ QUERY id: 0
                 CONSTANT id: 25, constant_value: \'world%\', constant_value_type: String
   SETTINGS optimize_or_like_chain=0 enable_analyzer=1
 SELECT materialize(\'Привет, World\') AS s
-WHERE match(s, \'(^hell)|((?i)привет)|((?i)^world)\') OR false
+WHERE match(materialize(\'Привет, World\') AS s, \'(^hell)|((?i)привет)|((?i)^world)\') OR false
 SETTINGS optimize_or_like_chain = 1
 QUERY id: 0
   PROJECTION COLUMNS
@@ -105,27 +105,27 @@ QUERY id: 0
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE match(s1, \'(^hell)|((?i)^world)\') OR multiSearchAnyCaseInsensitiveUTF8(s2, [\'привет\'])
+WHERE match(materialize(\'Привет, World\') AS s1, \'(^hell)|((?i)^world)\') OR multiSearchAnyCaseInsensitiveUTF8(materialize(\'Привет, World\') AS s2, [\'привет\'])
 SETTINGS optimize_or_like_chain = 1
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE (s1 LIKE \'hell%\') OR (s2 ILIKE \'%привет%\') OR (s1 ILIKE \'world%\')
+WHERE ((materialize(\'Привет, World\') AS s1) LIKE \'hell%\') OR ((materialize(\'Привет, World\') AS s2) ILIKE \'%привет%\') OR ((materialize(\'Привет, World\') AS s1) ILIKE \'world%\')
 SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 0
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE (s1 LIKE \'hell%\') OR (s2 ILIKE \'%привет%\') OR (s1 ILIKE \'world%\')
+WHERE ((materialize(\'Привет, World\') AS s1) LIKE \'hell%\') OR ((materialize(\'Привет, World\') AS s2) ILIKE \'%привет%\') OR ((materialize(\'Привет, World\') AS s1) ILIKE \'world%\')
 SETTINGS optimize_or_like_chain = 1, max_hyperscan_regexp_length = 10
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE (s1 LIKE \'hell%\') OR (s2 ILIKE \'%привет%\') OR (s1 ILIKE \'world%\')
+WHERE ((materialize(\'Привет, World\') AS s1) LIKE \'hell%\') OR ((materialize(\'Привет, World\') AS s2) ILIKE \'%привет%\') OR ((materialize(\'Привет, World\') AS s1) ILIKE \'world%\')
 SETTINGS optimize_or_like_chain = 1, max_hyperscan_regexp_total_length = 10
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE match(s1, \'(^hell)|((?i)^world)\') OR multiSearchAnyCaseInsensitiveUTF8(s2, [\'привет\']) OR (s1 = \'Привет\')
+WHERE match(materialize(\'Привет, World\') AS s1, \'(^hell)|((?i)^world)\') OR multiSearchAnyCaseInsensitiveUTF8(materialize(\'Привет, World\') AS s2, [\'привет\']) OR ((materialize(\'Привет, World\') AS s1) = \'Привет\')
 SETTINGS optimize_or_like_chain = 1
 Привет, optimized World
 Привет, optimized World
@@ -138,11 +138,11 @@ SETTINGS optimize_or_like_chain = 1
 Привет, World
 SELECT
     (materialize(\'Привет, World\') AS s) LIKE \'hell%\' AS test,
-    s
-WHERE match(s, \'(^hell)|((?i)привет)|((?i)^world)\') OR false
+    materialize(\'Привет, World\') AS s
+WHERE match(materialize(\'Привет, World\') AS s, \'(^hell)|((?i)привет)|((?i)^world)\') OR false
 SETTINGS optimize_or_like_chain = 1
 SELECT materialize(\'Hello World\') AS s
-WHERE match(s, \'(^hello)|(wor.*)\') OR false
+WHERE match(materialize(\'Hello World\') AS s, \'(^hello)|(wor.*)\') OR false
 SETTINGS optimize_or_like_chain = 1
 QUERY id: 0
   PROJECTION COLUMNS
@@ -195,11 +195,11 @@ QUERY id: 0
                             CONSTANT id: 32, constant_value: \'wor.*\', constant_value_type: String
   SETTINGS optimize_or_like_chain=1 enable_analyzer=1
 SELECT materialize(\'test string\') AS s
-WHERE match(s, \'(^test)|(ing$)\') OR false
+WHERE match(materialize(\'test string\') AS s, \'(^test)|(ing$)\') OR false
 SETTINGS optimize_or_like_chain = 1
 test string
 SELECT materialize(\'Hello World\') AS s
-WHERE multiSearchAny(s, [\'Hello\', \'World\']) OR false
+WHERE multiSearchAny(materialize(\'Hello World\') AS s, [\'Hello\', \'World\']) OR false
 SETTINGS optimize_or_like_chain = 1
 QUERY id: 0
   PROJECTION COLUMNS
@@ -254,7 +254,7 @@ QUERY id: 0
 Hello World
 Hello World
 SELECT materialize(\'Hello World\') AS s
-WHERE multiSearchAnyCaseInsensitiveUTF8(s, [\'hello\', \'world\']) OR false
+WHERE multiSearchAnyCaseInsensitiveUTF8(materialize(\'Hello World\') AS s, [\'hello\', \'world\']) OR false
 SETTINGS optimize_or_like_chain = 1
 QUERY id: 0
   PROJECTION COLUMNS

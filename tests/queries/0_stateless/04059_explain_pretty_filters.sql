@@ -9,6 +9,7 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET query_plan_join_shard_by_pk_ranges = 0;
 SET allow_reorder_prewhere_conditions = 0;
+SET optimize_or_like_chain = 0;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
