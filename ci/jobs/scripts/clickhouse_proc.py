@@ -1,4 +1,3 @@
-from datetime import datetime
 import glob
 import json as json_module
 import os
@@ -778,10 +777,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
             def _reader():
                 for line in process.stdout:
-                    # we generally want timestamps for any test, not just a fast test
-                    ts_line = f"{datetime.now():%Y-%m-%d %H:%M:%S} {line}"
-                    print(ts_line, end="")
-                    f.write(ts_line)
+                    print(line, end="")
+                    f.write(line)
 
             reader_thread = threading.Thread(target=_reader)
             reader_thread.start()
