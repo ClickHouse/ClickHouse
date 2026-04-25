@@ -323,6 +323,27 @@ public:
                         buffer << ", ";
                 }
 
+                if (function_node.hasTotalsCombinator())
+                {
+                    if (function_arguments_nodes_size > 0)
+                        buffer << ' ';
+                    buffer << "TOTALS";
+                }
+                else if (function_node.hasByCombinator())
+                {
+                    if (function_arguments_nodes_size > 0)
+                        buffer << ' ';
+                    buffer << "BY ";
+
+                    const auto & by_nodes = function_node.getByColumnsNode()->as<ListNode &>().getNodes();
+                    for (size_t i = 0; i < by_nodes.size(); ++i)
+                    {
+                        if (i > 0)
+                            buffer << ", ";
+                        buffer << calculateActionNodeName(by_nodes[i]);
+                    }
+                }
+
                 buffer << ')';
 
                 if (function_node.isWindowFunction())

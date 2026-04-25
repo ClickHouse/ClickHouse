@@ -1132,10 +1132,6 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        LOG_DEBUG(getLogger("FUNC_LAYER"),
-        "func={}, state={}", 
-        function_name, state);
-
         ///   | 0 |      1      |     2    |
         ///  f(ALL ...)(ALL ...) FILTER ...
         ///
@@ -1145,12 +1141,6 @@ public:
 
         if (state == 0)
         {
-
-            LOG_DEBUG(getLogger("FL"),
-                "state 0, func={}, token={}",
-                function_name,
-                String(pos->begin, pos->end));
-
             state = 1;
 
             auto pos_after_bracket = pos;
@@ -1188,13 +1178,6 @@ public:
 
         if (state == 1)
         {
-
-            LOG_DEBUG(getLogger("FL"),
-                "state 1, func={}, token={}",
-                function_name,
-                String(pos->begin, pos->end));
-
-
             if (ParserToken(TokenType::Comma).ignore(pos, expected))
             {
                 action = Action::OPERAND;
@@ -1213,25 +1196,11 @@ public:
                 return true;
             }
 
-
-            LOG_DEBUG(getLogger("PARSER_DBG"),
-                "func={}, state=1, token={}",
-                function_name,
-                String(pos->begin, pos->end));
-
-
-            LOG_DEBUG(getLogger("TOTALS_DBG"),
-                "before totals check, token={}, "
-                "type={}",
-                String(pos->begin, pos->end),
-                static_cast<int>(pos->type));
             // TOTALS combinator
             ParserKeyword totals_kw(Keyword::TOTALS);
             bool totals_matched = totals_kw.ignore(
                 pos, expected);
-            LOG_DEBUG(getLogger("TOTALS_DBG"),
-                "totals ignore returned: {}",
-                totals_matched);
+
             if (totals_matched)
             {
                 has_totals = true;
@@ -1239,11 +1208,6 @@ public:
                 //     || !elements.empty())
                 //     if (!mergeElement())
                 //         return false;
-
-                LOG_DEBUG(getLogger("TOTALS_DBG"),
-                    "after mergeElement, "
-                    "next token={}",
-                    String(pos->begin, pos->end));
             }
 
             // BY combinator
@@ -1266,10 +1230,6 @@ public:
                 Keyword::ORDER_BY);
             
             bool order_by_matched = order_by_kw.ignore(pos, expected);
-            LOG_DEBUG(getLogger("OB_DBG"),
-                "order_by matched={}, token={}",
-                order_by_matched,
-                String(pos->begin, pos->end));
 
             if (!has_totals && !has_by
                 && order_by_matched)

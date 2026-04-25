@@ -26,6 +26,7 @@
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Interpreters/AggregationMethod.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/PostAggregationState.h>
 
 namespace DB
 {
@@ -328,6 +329,11 @@ private:
     using NestedColumnsHolder = VectorWithMemoryTracking<VectorWithMemoryTracking<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
+
+    /// Post-aggregation states for TOTALS/BY combinators.
+    /// Built once in constructor, filled once during finalization, read during convert-to-block.
+    mutable PostAggregationManager post_aggregation;
+
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
 
     // add info to track alignment requirement

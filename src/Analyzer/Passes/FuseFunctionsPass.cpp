@@ -101,6 +101,10 @@ public:
         if (!function_node || !function_node->isAggregateFunction() || !names_to_collect.contains(function_node->getFunctionName()))
             return;
 
+        /// Do not fuse functions with TOTALS/BY combinators — fusing loses the combinator flag.
+        if (function_node->hasTotalsCombinator() || function_node->hasByCombinator())
+            return;
+
         if (function_node->getResultType()->isNullable())
             /// Do not apply to functions with Nullable result type, because `sumCount` handles it different from `sum` and `avg`.
             return;

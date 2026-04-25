@@ -1104,6 +1104,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
+    /// Resolve BY-combinator columns (avg(x BY a, b)) — these were left as
+    /// IDENTIFIER nodes by the parser; resolve them like ordinary arguments,
+    /// so they reference real columns by the time we calculate action node names.
+    if (function_node_ptr->hasByCombinator())
+    {
+        resolveExpressionNodeList(
+            function_node_ptr->getByColumnsNode(),
+            scope,
+            false /*allow_lambda_expression*/,
+            false /*allow_table_expression*/);
+    }
+
     auto & function_node = *function_node_ptr;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
