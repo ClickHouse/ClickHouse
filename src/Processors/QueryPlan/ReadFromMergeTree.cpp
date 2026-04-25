@@ -1473,8 +1473,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         if (use_prefetching_concat)
         {
-            LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams from {} parts",
-                pipes.size(), parts_with_ranges.size());
+            /// `parts_with_ranges` is consumed by the splitting loop above, so its size
+            /// here is unreliable. The gate already requires a single underlying part,
+            /// so report stream count only.
+            LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams (single part)", pipes.size());
             auto pipe = Pipe::unitePipes(std::move(pipes));
             pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
             return pipe;
