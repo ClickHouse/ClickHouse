@@ -165,6 +165,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_POLL;
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
@@ -1843,18 +1844,20 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
     }
 }
 
-/// Non-blocking, non-throwing probe: does stdin appear to have data right now?
-/// Uses poll(timeout=0) to avoid blocking on empty pipes (the root cause of the hang).
+/// Non-blocking probe: does stdin appear to have data right now?
+/// Uses `poll(timeout=0)` to avoid blocking on empty pipes (the root cause of the hang).
 ///
-/// This is intentionally best-effort: poll(timeout=0) is a point-in-time snapshot,
+/// This is intentionally best-effort: `poll(timeout=0)` is a point-in-time snapshot,
 /// so data arriving slightly later will be missed. This is acceptable because this
-/// function is only called when INSERT already has a primary data source (inline data
-/// or INFILE), so missing late-arriving stdin data only affects the unusual case of
+/// function is only called when `INSERT` already has a primary data source (inline data
+/// or `INFILE`), so missing late-arriving stdin data only affects the unusual case of
 /// providing both inline data and piped stdin simultaneously.
 ///
-/// Returns false on any error (poll failure, closed/invalid fd) rather than throwing,
-/// because this is an optional probe — a broken stdin should not prevent an INSERT
-/// that already has its data from executing.
+/// Error handling mirrors `isStdinNotEmptyAndValid`: an unreadable stdin (closed fd,
+/// `POLLERR`/`POLLNVAL`) is reported as "no data" rather than failing the INSERT.
+/// Genuine `poll` failures (`ret < 0` after retrying `EINTR`) indicate system-level
+/// problems (`EFAULT`/`EINVAL`/`ENOMEM`) and are surfaced as exceptions instead of
+/// being silently swallowed.
 bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
 {
     if (std_in.hasPendingData())
@@ -1873,12 +1876,15 @@ bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
     while (ret < 0 && errno == EINTR);
 
     if (ret < 0)
+        throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll stdin");
+
+    if (ret == 0)
         return false;
 
-    if (ret > 0 && (pfd.revents & (POLLERR | POLLNVAL)))
+    if (pfd.revents & (POLLERR | POLLNVAL))
         return false;
 
-    return ret > 0 && (pfd.revents & POLLIN);
+    return (pfd.revents & POLLIN) != 0;
 }
 }
 
