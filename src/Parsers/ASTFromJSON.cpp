@@ -214,6 +214,11 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
 ASTPtr IAST::createFromJSON(const String & json)
 {
     Poco::JSON::Parser parser;
+    /// Bound the JSON parser nesting depth to avoid stack overflow on hostile deeply-nested input,
+    /// before any AST-level depth check runs. The thread-local limit is set by the overload that takes
+    /// `max_depth`; when it is zero (unlimited path), leave the parser unrestricted as before.
+    if (json_deser_max_depth > 0)
+        parser.setDepth(json_deser_max_depth);
     Poco::Dynamic::Var result;
     try
     {
