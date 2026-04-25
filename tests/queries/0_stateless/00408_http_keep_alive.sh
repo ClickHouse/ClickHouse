@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-random-detach
 
 # no-parallel because of the `FLUSH ASYNC INSERT QUEUE` command
+# no-random-detach: parallel async inserts can race with random DETACH/ATTACH and lose the `Keep-Alive` response header
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
