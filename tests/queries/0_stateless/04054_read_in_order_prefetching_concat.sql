@@ -8,11 +8,15 @@
 -- `read_in_order_two_level_merge_threshold = 0` would force a preliminary
 -- merge for a single part and disable the optimization, and
 -- `PrefetchingConcat` is only enabled when there is a `PREWHERE` filter,
--- so `optimize_move_to_prewhere` must be on.
+-- so both `optimize_move_to_prewhere` and `query_plan_optimize_prewhere`
+-- must be on. The latter drives the analyzer-based path that actually
+-- attaches `prewhere_info` to the `MergeTree` step; without it the filter
+-- stays as a separate `FilterStep` and the prefetch gate sees no prewhere.
 SET read_in_order_two_level_merge_threshold = 100;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET optimize_aggregation_in_order = 0;
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 SET parallel_replicas_local_plan = 1;
 SET enable_parallel_replicas = 0;
 SET max_threads = 4;
