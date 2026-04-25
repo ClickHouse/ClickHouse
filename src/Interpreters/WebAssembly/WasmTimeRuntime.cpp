@@ -539,7 +539,8 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view modu
     if (int rc = pthread_create(&thread, &attr, compile_fn, &task); rc != 0)
         throw Exception(ErrorCodes::WASM_ERROR, "pthread_create failed: {}", rc);
 
-    pthread_join(thread, nullptr);
+    if (int rc = pthread_join(thread, nullptr); rc != 0)
+        throw Exception(ErrorCodes::WASM_ERROR, "pthread_join failed: {}", rc);
 
     if (!task.result)
         throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code: {}", task.error);

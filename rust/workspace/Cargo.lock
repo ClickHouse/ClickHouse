@@ -33,6 +33,7 @@ dependencies = [
 name = "_ch_rust_wasmtime"
 version = "0.1.0"
 dependencies = [
+ "cranelift-codegen",
  "wasmtime-c-api-impl",
 ]
 
