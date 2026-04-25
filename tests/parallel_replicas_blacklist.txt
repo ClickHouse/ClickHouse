@@ -21,6 +21,7 @@
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
 00597_push_down_predicate_long
 02559_multiple_read_steps_in_prewhere
+03517_wrong_primary_key_analysis
 
     https://github.com/ClickHouse/ClickHouse/issues/74335
     Bad get: has Decimal32, requested Decimal128
