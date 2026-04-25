@@ -13,7 +13,8 @@ CREATE TABLE test_distinct_proj_partial_projection
     a UInt32,
     b UInt32
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_distinct_proj_partial_projection VALUES (1, 10), (1, 10), (2, 20), (3, 30), (3, 30);
 

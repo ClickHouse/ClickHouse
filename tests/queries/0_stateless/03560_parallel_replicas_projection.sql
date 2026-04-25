@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS normal
     `value` UInt32,
 )
 ENGINE = MergeTree
-ORDER BY tuple() settings index_granularity=1;
+ORDER BY tuple() settings index_granularity=1, add_minmax_index_for_numeric_columns = 0;
 
 SYSTEM STOP MERGES normal;
 
@@ -45,7 +45,7 @@ CREATE TABLE agg
     `value` UInt32,
 )
 ENGINE = MergeTree
-ORDER BY tuple() settings index_granularity=1;
+ORDER BY tuple() settings index_granularity=1, add_minmax_index_for_numeric_columns = 0;
 
 SYSTEM STOP MERGES agg;
 
@@ -66,7 +66,7 @@ SELECT sum(value) AS v FROM agg where key > 90 AND key < 110;
 DROP TABLE agg;
 
 DROP TABLE IF EXISTS x;
-CREATE TABLE x (i int) engine MergeTree ORDER BY i SETTINGS index_granularity = 3;
+CREATE TABLE x (i int) engine MergeTree ORDER BY i SETTINGS index_granularity = 3, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO x SELECT * FROM numbers(10);
 

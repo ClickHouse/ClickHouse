@@ -13,7 +13,7 @@ CREATE TABLE check_system_tables
     ORDER BY name1
     PARTITION BY name2
     SAMPLE BY name1
-    SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'basic', auto_statistics_types = '';
+    SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'basic', auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
 
 SELECT name, partition_key, sorting_key, primary_key, sampling_key, storage_policy, total_rows
 FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase()
@@ -38,7 +38,7 @@ CREATE TABLE check_system_tables
   ) ENGINE = VersionedCollapsingMergeTree(sign, version)
     PARTITION BY date
     ORDER BY date
-    SETTINGS compress_marks=false, compress_primary_key=false, auto_statistics_types = '';
+    SETTINGS compress_marks=false, compress_primary_key=false, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
 
 SELECT name, partition_key, sorting_key, primary_key, sampling_key
 FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase()
@@ -151,10 +151,10 @@ CREATE TABLE check_system_tables
     ORDER BY name1
     PARTITION BY name2
     SAMPLE BY name1
-    SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1;
+    SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, add_minmax_index_for_numeric_columns = 0;
 
 SELECT 'Check total_uncompressed_bytes/total_bytes/total_rows for Materialized views';
-CREATE MATERIALIZED VIEW check_system_tables_mv ENGINE = MergeTree() ORDER BY name2 AS SELECT name1, name2, name3 FROM check_system_tables;
+CREATE MATERIALIZED VIEW check_system_tables_mv ENGINE = MergeTree() ORDER BY name2 SETTINGS add_minmax_index_for_numeric_columns = 0 AS SELECT name1, name2, name3 FROM check_system_tables;
 SELECT total_bytes_uncompressed, total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables_mv' AND database = currentDatabase();
 INSERT INTO check_system_tables VALUES (1, 1, 1);
 SELECT total_bytes_uncompressed > 0, total_bytes > 0, total_rows FROM system.tables WHERE name = 'check_system_tables_mv' AND database = currentDatabase();

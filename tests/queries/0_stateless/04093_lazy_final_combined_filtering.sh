@@ -37,7 +37,7 @@ $CLICKHOUSE_CLIENT $settings -q "
     )
     ENGINE = ReplacingMergeTree(version)
     ORDER BY key
-    SETTINGS index_granularity = 128;
+    SETTINGS index_granularity = 128, add_minmax_index_for_numeric_columns = 0;
 
     SYSTEM STOP MERGES t_lazy_final_combined;
 

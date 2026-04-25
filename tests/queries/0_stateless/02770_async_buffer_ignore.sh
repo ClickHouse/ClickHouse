@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS test_s3;
 
 CREATE TABLE test_s3 (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0;
+SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_s3 SELECT number, number FROM numbers(1000000);
 "
