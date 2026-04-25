@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
+    extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
@@ -711,7 +712,8 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
     LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
 
-    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline])
+    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
+        && settings[Setting::parallel_replicas_prefer_local_replica])
     {
         auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
         return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context, std::move(local_pipeline), coordinator);
@@ -975,7 +977,7 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     StoragePtr table = getTable(query);
-    setInsertContextValues(table);
+    setInsertContextValues(context, query, table);
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
@@ -1079,14 +1081,12 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     extendQueryLogElemImpl(elem, context_);
 }
 
-void InterpreterInsertQuery::setInsertContextValues(StoragePtr table)
+void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table)
 {
-    auto const & insert_query = query_ptr->as<ASTInsertQuery &>();
-
     std::optional<Names> insert_columns;
     if (insert_query.columns)
     {
-        const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(getContext(), false), insert_query.columns);
+        const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(context_, false), insert_query.columns);
         Names names;
         names.reserve(columns_ast->children.size());
         for (const auto & identifier : columns_ast->children)
@@ -1098,7 +1098,7 @@ void InterpreterInsertQuery::setInsertContextValues(StoragePtr table)
         insert_columns = std::move(names);
     }
 
-    getContext()->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(table->getInMemoryMetadataPtr(getContext(), false)->columns));
+    context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(table->getInMemoryMetadataPtr(context_, false)->columns));
 }
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory)
