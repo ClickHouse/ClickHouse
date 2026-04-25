@@ -209,7 +209,7 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
         /// Notify idle threads so they can re-evaluate conditions and finish if excess.
         /// We don't set idle_wakeup_flag here to avoid tearing down all idle threads;
         /// only excess threads will exit based on the updated max_free_threads limit.
-        notifyAllIdleThreadsNoLock();
+        new_job_or_shutdown.notify_all();
     }
 }
 
@@ -248,7 +248,7 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
         /// Notify idle threads so they can re-evaluate conditions and finish if excess.
         /// We don't set idle_wakeup_flag here to avoid tearing down all idle threads;
         /// only excess threads will exit based on the updated max_free_threads limit.
-        notifyAllIdleThreadsNoLock();
+        new_job_or_shutdown.notify_all();
     }
 }
 
@@ -426,16 +426,20 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// Select the most recently idle thread (LIFO order) for priority wake-up.
         /// LIFO scheduling concentrates work on fewer threads, improving cache locality
         /// and reducing memory overhead from allocator per-thread caches.
-        /// Each idle thread waits on its own CV, so we wake exactly the selected thread.
         if (!idle_thread_stack.empty())
         {
             auto * thread_to_wake = idle_thread_stack.back();
             idle_thread_stack.pop_back();
             thread_to_wake->idle_wakeup_flag = true;
             thread_to_wake->idle_stack_index = -1;
-            thread_to_wake->idle_cv.notify_one();
         }
     }
+
+    /// Wake up a free thread to run the new job. Threads share a single CV, so this
+    /// is robust against lost wake-ups: even if a thread is between jobs (not yet
+    /// pushed onto the idle stack), the predicate `!jobs.empty()` will guarantee
+    /// it picks up the queued job once it acquires the lock.
+    new_job_or_shutdown.notify_one();
 
     ProfileEvents::increment(std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
@@ -530,7 +534,7 @@ void ThreadPoolImpl<Thread>::wait()
     /// then it will prevent us from deadlock.
     /// We don't set idle_wakeup_flag to avoid tearing down idle threads;
     /// threads will re-check for pending jobs and go back to sleep if none.
-    notifyAllIdleThreadsNoLock();
+    new_job_or_shutdown.notify_all();
     job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
     if (first_exception)
@@ -609,20 +613,9 @@ void ThreadPoolImpl<Thread>::wakeUpAllIdleThreadsNoLock()
     {
         thread->idle_wakeup_flag = true;
         thread->idle_stack_index = -1;
-        thread->idle_cv.notify_one();
     }
     idle_thread_stack.clear();
-}
-
-template <typename Thread>
-void ThreadPoolImpl<Thread>::notifyAllIdleThreadsNoLock()
-{
-    /// Notify all idle threads so they re-evaluate their wait conditions.
-    /// Unlike wakeUpAllIdleThreadsNoLock, this does NOT set idle_wakeup_flag,
-    /// so threads will only exit if there is actual work or an excess-threads condition.
-    /// This prevents unintended thread teardown from wait() or resize operations.
-    for (auto * thread : idle_thread_stack)
-        thread->idle_cv.notify_one();
+    new_job_or_shutdown.notify_all();
 }
 
 template <typename Thread>
@@ -773,10 +766,13 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             }
 
             /// LIFO idle thread scheduling: push this thread onto the idle stack
-            /// and wait on a per-thread condition variable. The scheduler selects the
-            /// most recently idle thread first via idle_wakeup_flag, concentrating
+            /// and wait on the shared `new_job_or_shutdown` CV. The scheduler selects
+            /// the most recently idle thread first via `idle_wakeup_flag`, concentrating
             /// work on fewer OS threads. This improves CPU cache locality and reduces
             /// memory fragmentation from allocator per-thread caches (e.g. jemalloc tcache).
+            /// The shared CV ensures wake-ups are not lost: even if a thread is between
+            /// jobs (not yet on the idle stack), the predicate `!jobs.empty()` will
+            /// guarantee it picks up the queued job once it acquires the lock.
             while (parent_pool.jobs.empty()
                 && !parent_pool.shutdown
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
@@ -788,7 +784,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 }
                 idle_wakeup_flag = false;
 
-                idle_cv.wait(lock, [this]
+                parent_pool.new_job_or_shutdown.wait(lock, [this]
                 {
                     return idle_wakeup_flag
                         || !parent_pool.jobs.empty()
