@@ -159,6 +159,12 @@ if (OS_LINUX)
         # Fold identical code and data sections to reduce binary size.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=all")
     endif ()
+
+    # In Release builds, strip residual debug sections that may come from contrib
+    # libraries or Rust crates compiled with debug info by their own build systems.
+    if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" AND NOT SPLIT_DEBUG_SYMBOLS)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--strip-debug")
+    endif ()
 endif ()
 
 if (OS_DARWIN)
@@ -176,7 +182,7 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
-if (NOT WITH_COVERAGE
+if (NOT (SANITIZE_COVERAGE OR WITH_COVERAGE)
     AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
         OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
         OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL"))
@@ -186,7 +192,9 @@ else()
 endif()
 # Provides faster linking and lower binary size.
 # Tradeoff is the inability to debug some source files with e.g. gdb
-# (empty stack frames and no local variables)."
+# (empty stack frames and no local variables).
+# In Release builds (which have no debug info by default), this option has
+# no effect -- it only reduces debug info for RelWithDebInfo and MinSizeRel.
 option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
