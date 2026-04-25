@@ -1158,7 +1158,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-
+            {"leader_election", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"},
+            {"leader_election_heartbeat_interval", 10, 10, "New setting to control leader lease renewal interval"},
+            {"leader_election_session_timeout", 30, 30, "New setting to control leader lease expiry threshold"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
@@ -1167,9 +1169,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_commit_order_projection", false, false, "New setting"},
             {"replicated_fetches_min_part_level", 0, 0, "New setting"},
             {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
-            {"leader_election", false, false, "New setting"},
-            {"leader_election_heartbeat_interval", 10, 10, "New setting"},
-            {"leader_election_session_timeout", 30, 30, "New setting"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 1800, "Increase default replica set background update interval to 30 minutes"},
             {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"compress_per_column_in_compact_parts", true, true, "New setting"},
