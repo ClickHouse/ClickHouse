@@ -493,9 +493,16 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// Set a send timeout to avoid hanging indefinitely on slow/non-reading clients
     socket.setSendTimeout(Poco::Timespan(30, 0)); /// 30 seconds
 
-    /// Make PTY master non-blocking for polling
+    /// Make PTY master non-blocking for polling. If we cannot put it into
+    /// non-blocking mode, the read loop below would deadlock on the first
+    /// `read`, so abort the session early instead.
     int flags = fcntl(pty_master_fd, F_GETFL, 0);
-    fcntl(pty_master_fd, F_SETFL, flags | O_NONBLOCK);
+    if (flags == -1 || fcntl(pty_master_fd, F_SETFL, flags | O_NONBLOCK) == -1)
+    {
+        LOG_DEBUG(log, "Failed to set PTY master non-blocking: errno={}", errno);
+        try { sendWebSocketClose(socket, 1011, "Internal error"); } catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort close
+        return;
+    }
 
     /// Main I/O loop: bridge WebSocket <-> PTY
     bool running = true;
@@ -667,11 +674,17 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                                     continue;
                                 if (errno == EAGAIN || errno == EWOULDBLOCK)
                                 {
-                                    /// Wait for the PTY to become writable before retrying
+                                    /// Wait for the PTY to become writable before retrying.
+                                    /// On poll() error, abort instead of busy-spinning.
                                     struct pollfd pfd = {};
                                     pfd.fd = server_descriptors.in;
                                     pfd.events = POLLOUT;
-                                    poll(&pfd, 1, 100); /// Wait up to 100ms
+                                    int poll_rc = poll(&pfd, 1, 100); /// Wait up to 100ms
+                                    if (poll_rc < 0 && errno != EINTR)
+                                    {
+                                        running = false;
+                                        break;
+                                    }
                                     continue;
                                 }
                                 running = false;

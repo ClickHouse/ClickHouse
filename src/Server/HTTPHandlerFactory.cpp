@@ -388,6 +388,7 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
 
     auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
     webterminal_handler->attachNonStrictPath("/webterminal");
+    webterminal_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/webterminal");
     factory.addHandler(webterminal_handler);
 
