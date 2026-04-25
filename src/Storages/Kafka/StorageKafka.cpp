@@ -347,22 +347,35 @@ void StorageKafka::cleanConsumers()
 
     {
         std::unique_lock lock(mutex);
-        /// Wait until all consumers will be released
-        cv.wait(lock, [&, this]()
+        /// Wait until all consumers will be released, with a timeout to avoid hanging forever
+        /// if a consumer is somehow stuck in-use.
+        if (!cv.wait_for(lock, std::chrono::seconds(KAFKA_CONSUMER_CLOSE_TIMEOUT_S), [&, this]()
         {
             auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr)
             {
                 return ptr->isInUse();
             });
             return it == consumers.end();
-        });
+        }))
+        {
+            LOG_WARNING(log, "Timed out waiting for {} consumer(s) to be released, proceeding with shutdown",
+                std::count_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr->isInUse(); }));
+        }
 
+        size_t skipped = 0;
         for (const auto & consumer : consumers)
         {
             if (!consumer->hasConsumer())
                 continue;
+            if (consumer->isInUse())
+            {
+                ++skipped;
+                continue;
+            }
             consumers_to_close.push_back(consumer->moveConsumer());
         }
+        if (skipped)
+            LOG_WARNING(log, "Skipped closing {} consumer(s) that are still in use", skipped);
     }
 
     /// First close cppkafka::Consumer (it can use KafkaConsumer object via stat callback)
