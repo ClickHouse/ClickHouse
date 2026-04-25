@@ -12,10 +12,19 @@ set -eo pipefail
 $CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS map_protobuf_00825;
 
+-- Pin Map serialization to 'basic' so the test output (key order in SELECT *
+-- and the binary representation in the Protobuf hexdump) is deterministic.
+-- CI randomizes map_serialization_version and
+-- map_serialization_version_for_zero_level_parts between 'basic' and
+-- 'with_buckets'; the latter stores Map entries in hash-bucket order on disk,
+-- which both reorders the keys returned by SELECT and changes the bytes in the
+-- Protobuf output. The test verifies the Protobuf round-trip for Map, which
+-- is orthogonal to the storage layout.
 CREATE TABLE map_protobuf_00825
 (
   a Map(String, UInt32)
-) ENGINE = MergeTree ORDER BY tuple();
+) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
 INSERT INTO map_protobuf_00825 VALUES ({'x':5, 'y':7}), ({'z':11}), ({'temp':0}), ({'':0});
 
