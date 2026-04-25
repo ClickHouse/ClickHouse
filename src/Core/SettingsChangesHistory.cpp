@@ -43,11 +43,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
+            {"min_rows_per_stream_for_gradual_resize", 0, 0, "New setting to control gradual resize processor activation by row count for GROUP BY"},
+            {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting to control gradual resize processor activation by byte count"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
-            {"min_rows_per_stream_for_gradual_resize", 0, 0, "New setting to control gradual resize processor activation by row count for GROUP BY"},
-            {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting to control gradual resize processor activation by byte count"},
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
             {"iceberg_orphan_files_older_than_seconds", 259200, 259200, "New setting for default orphan file age threshold"},
             {"output_format_arrow_unsupported_types_as_binary", false, true, "New setting to convert unsupported CH types to arrow binary instead of UNKNOWN_TYPE exception."},
