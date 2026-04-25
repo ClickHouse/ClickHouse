@@ -504,6 +504,15 @@ void StorageMergeTree::alter(
     });
     if (!only_setting_changes)
         assertNotReadonly();
+    else if (leader_election_ptr)
+    {
+        /// Under `leader_election`, settings live in each replica's local metadata, so
+        /// allowing setting-only ALTERs on followers would let the two replicas drift —
+        /// after failover the new leader could run with different settings than the old one.
+        /// `table_readonly` toggling is moot here because leadership already enforces read-only
+        /// mode on followers, so we require leader status for all setting changes too.
+        leader_election_ptr->assertIsLeader();
+    }
 
     if (local_context->getCurrentTransaction() && local_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER METADATA is not supported inside transactions");
