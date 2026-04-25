@@ -580,6 +580,13 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
             auto child_join_kind = child_join_step->getJoinOperator().kind;
             bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
             allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
+            /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
+            /// with `join_use_nulls` making right-side columns Nullable). Flattening
+            /// such joins allows the optimizer to reorder them, which can separate
+            /// a relation from the join that causes its type change, leading to
+            /// type changes being applied at the wrong step and the exception
+            /// "Cannot fold actions for projection".
+            allow_child_join_kind = allow_child_join_kind && child_join_step->typeChangingSides().empty();
             if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
             {
                 QueryGraphBuilder child_graph(graph.context);
