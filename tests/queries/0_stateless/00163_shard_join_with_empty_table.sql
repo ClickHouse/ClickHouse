@@ -3,6 +3,10 @@
 SET any_join_distinct_right_table_keys = 1;
 SET joined_subquery_requires_alias = 0;
 SET join_algorithm = 'hash';
+-- Pin max_block_size: with randomized values (e.g. 78753), LIMIT on a distributed
+-- stream from system.numbers can select rows starting at the block-size offset
+-- instead of 0, producing wrong output depending on block delivery order.
+SET max_block_size = 65536;
 
 SELECT * FROM (
     SELECT number, n, j1, j2

@@ -176,8 +176,8 @@ StorageKafka2::StorageKafka2(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(StorageKafkaUtils::createVirtuals(getHandleKafkaErrorMode()));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(StorageKafkaUtils::createVirtuals(getHandleKafkaErrorMode()));
 
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -762,9 +762,9 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
     const ContextPtr & modified_context)
 {
     LOG_TEST(log, "Polling consumer");
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
     Block non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized());
-    auto virtual_header = getVirtualsHeader();
+    auto virtual_header = storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
@@ -911,18 +911,19 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
+                virtual_columns[8]->insert(getStorageID().getTableName());
 
                 if (getHandleKafkaErrorMode() == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
-                        virtual_columns[8]->insert(msg_info.currentPayload());
-                        virtual_columns[9]->insert(*exception_message);
+                        virtual_columns[9]->insert(msg_info.currentPayload());
+                        virtual_columns[10]->insert(*exception_message);
                     }
                     else
                     {
-                        virtual_columns[8]->insertDefault();
                         virtual_columns[9]->insertDefault();
+                        virtual_columns[10]->insertDefault();
                     }
                 }
             }
@@ -1168,22 +1169,34 @@ void StorageKafka2::cleanConsumers()
     std::vector<CppKafkaConsumerPtr> cpp_consumers_to_close;
     {
         UniqueLock lock(consumers_mutex);
-        /// Wait until all consumers will be released
+        /// Wait until all consumers will be released, with a timeout to avoid hanging forever.
         /// Clang Thread Safety Analysis doesn't understand std::condition_variable::wait and std::unique_lock
-        cv.wait(
+        if (!cv.wait_for(
             lock.getUnderlyingLock(),
+            std::chrono::seconds(KAFKA_CONSUMER_CLOSE_TIMEOUT_S),
             [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS
             {
                 auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr->isInUse(); });
                 return it == consumers.end();
-            });
+            }))
+        {
+            LOG_WARNING(log, "Timed out waiting for consumer(s) to be released, proceeding with shutdown");
+        }
 
+        size_t skipped = 0;
         for (const auto & consumer : consumers)
         {
             if (!consumer->hasConsumer())
                 continue;
+            if (consumer->isInUse())
+            {
+                ++skipped;
+                continue;
+            }
             cpp_consumers_to_close.push_back(consumer->moveConsumer());
         }
+        if (skipped)
+            LOG_WARNING(log, "Skipped closing {} consumer(s) that are still in use", skipped);
     }
 
     cpp_consumers_to_close.clear();

@@ -2,7 +2,6 @@
 #include <atomic>
 #include <chrono>
 #include <deque>
-#include <span>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Columns/IColumn.h>
@@ -75,14 +74,10 @@ Runner::Runner(
 {
 
     DB::ConfigProcessor config_processor(config_path, true, false);
-    DB::ConfigurationPtr config = nullptr;
 
     if (!config_path.empty())
     {
-        config = config_processor.loadConfig().configuration;
-
-        if (config->has("generator"))
-            generator.emplace(*config);
+        config_ptr = config_processor.loadConfig().configuration;
     }
     else
     {
@@ -92,7 +87,7 @@ Runner::Runner(
         if (!std::filesystem::exists(input_request_log))
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "File on path {} does not exist", input_request_log);
     }
-
+    auto config = config_ptr;
 
     if (!hosts_strings_.empty())
     {
@@ -116,13 +111,6 @@ Runner::Runner(
     else
         concurrency = config->getUInt64("concurrency", DEFAULT_CONCURRENCY);
     std::cerr << "Concurrency: " << concurrency << std::endl;
-
-    if (config)
-        queue_depth = config->getUInt64("queue_depth", 1);
-    if (queue_depth == 0)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "queue_depth must be >= 1, got 0");
-    if (queue_depth > 1)
-        std::cerr << "Queue depth: " << queue_depth << std::endl;
 
     if (config)
         pipeline_depth = config->getUInt64("pipeline_depth", 1);
@@ -251,7 +239,7 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
     }
 }
 
-void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers)
+void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers, ThreadState & thread_state)
 {
     struct RequestResult
     {
@@ -264,6 +252,20 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         std::future<RequestResult> future;
         Coordination::ZooKeeperRequestPtr request;
     };
+
+    auto generator = std::make_shared<Generator>();
+    const auto * tagged_paths = benchmark_context.getTaggedPaths().empty() ? nullptr : &benchmark_context.getTaggedPaths();
+    generator->startup(*config_ptr, *zookeepers[0], thread_state.thread_idx, tagged_paths);
+    generator->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
+        [stats = info](const Coordination::WatchResponse &)
+        {
+            stats->watches_fired.fetch_add(1, std::memory_order_relaxed);
+        }));
+
+    /// Wait for all threads to finish initializing their generators before
+    /// any thread starts executing requests. This prevents early threads from
+    /// mutating the tree while late threads are still resolving `children_of` paths.
+    generator_init_barrier->arrive_and_wait();
 
     /// Randomly choosing connection index
     pcg64 rng(randomSeed());
@@ -329,34 +331,34 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
             if (warmup_complete)
             {
-                std::lock_guard lock(mutex);
                 auto bytes = slot.request->bytesSize() + result.response_bytes;
 
                 if (slot.request->isReadRequest())
-                    info->addRead(result.elapsed_microseconds, 1, bytes);
+                    thread_state.thread_info.addRead(result.elapsed_microseconds, 1, bytes);
                 else
-                    info->addWrite(result.elapsed_microseconds, 1, bytes);
-
-                info->addOp(slot.request->getOpNum(), result.elapsed_microseconds, 1, bytes);
+                    thread_state.thread_info.addWrite(result.elapsed_microseconds, 1, bytes);
             }
         }
         catch (...) // Ok: handle_request_exception logs and counts the error
         {
             handle_request_exception(slot.request);
         }
-
-        ++requests_executed;
     };
 
     while (true)
     {
-        if (shutdown
-            || (max_iterations && requests_executed >= max_iterations))
+        if (shutdown)
         {
             /// Drain remaining in-flight requests
             for (auto & slot : in_flight)
                 collect_request(slot);
             return;
+        }
+        size_t iteration_idx = requests_started.fetch_add(1);
+        if (max_iterations && warmup_complete && iteration_idx >= max_iterations)
+        {
+            shutdown = true;
+            continue;
         }
 
         /// Wait for the oldest request if the pipeline is full
@@ -366,30 +368,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
             in_flight.pop_front();
         }
 
-        ZooKeeperRequestWithCallbacks request_with_callbacks;
-        bool extracted = false;
-
-        while (!extracted)
-        {
-            extracted = queue->tryPop(request_with_callbacks, 100);
-
-            /// Producer may be done while some requests are still in flight.
-            /// Collect one result to guarantee forward progress.
-            if (!extracted && !in_flight.empty())
-            {
-                collect_request(in_flight.front());
-                in_flight.pop_front();
-            }
-
-            if (shutdown
-                || (max_iterations && requests_executed >= max_iterations))
-            {
-                /// Drain remaining in-flight requests
-                for (auto & slot : in_flight)
-                    collect_request(slot);
-                return;
-            }
-        }
+        ZooKeeperRequestWithCallbacks request_with_callbacks = generator->generate();
 
         const auto connection_index = distribution(rng);
         auto & zk = zookeepers[connection_index];
@@ -406,7 +385,8 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
             [promise,
              success_callbacks,
              failure_callbacks,
-             watch](const Coordination::Response & response)
+             watch,
+             generator](const Coordination::Response & response)
         {
             auto elapsed = watch->elapsedMicroseconds();
             if (response.error == Coordination::Error::ZOK)
@@ -427,11 +407,10 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
         if (enable_tracing)
         {
-            DB::OpenTelemetry::TracingContext tracing_context;
-            tracing_context.trace_id = DB::UUIDHelpers::generateV4();
-            tracing_context.span_id = 0;
-            tracing_context.trace_flags = DB::OpenTelemetry::TRACE_FLAG_SAMPLED | DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS;
-            request->tracing_context = tracing_context;
+            request->tracing_context = std::make_shared<DB::OpenTelemetry::TracingContext>();
+            request->tracing_context->trace_id = DB::UUIDHelpers::generateV4();
+            request->tracing_context->span_id = 0;
+            request->tracing_context->trace_flags = DB::OpenTelemetry::TRACE_FLAG_SAMPLED | DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS;
         }
 
         InFlightRequest slot;
@@ -439,7 +418,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
         try
         {
-            zk->executeGenericRequest(slot.request, callback);
+            zk->executeGenericRequest(slot.request, callback, slot.request->watch_callback);
             slot.future = std::move(future);
             in_flight.push_back(std::move(slot));
         }
@@ -448,54 +427,14 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
             for (const auto & cb : *failure_callbacks)
                 cb();
             handle_request_exception(slot.request);
-            ++requests_executed;
         }
     }
-}
-
-bool Runner::tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && request, DB::InterruptListener & interrupt_listener)
-{
-    bool inserted = false;
-
-    while (!inserted)
-    {
-        inserted = queue->tryPush(request, 100);
-
-        if (shutdown)
-        {
-            /// An exception occurred in a worker
-            return false;
-        }
-
-        if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
-        {
-            std::cerr << "Stopping launch of queries. Requested time limit is exhausted.\n";
-            return false;
-        }
-
-        if (interrupt_listener.check())
-        {
-            std::cerr << "Stopping launch of queries. SIGINT received." << std::endl;
-            return false;
-        }
-
-        if (delay > 0 && delay_watch.elapsedSeconds() > delay)
-        {
-            printNumberOfRequestsExecuted(requests_executed);
-
-            std::lock_guard lock(mutex);
-            info->report();
-            delay_watch.restart();
-        }
-    }
-
-    return true;
 }
 
 
 void Runner::runBenchmark()
 {
-    if (generator)
+    if (config_ptr && config_ptr->has("generator"))
         runBenchmarkWithGenerator();
     else
         runBenchmarkFromLog();
@@ -1024,7 +963,7 @@ struct SetupNodeCollector
 
         auto multi_create_request = std::make_shared<Coordination::ZooKeeperMultiRequest>(create_ops, default_acls);
         initial_storage->preprocessRequest(multi_create_request, 1, 0, next_zxid, /* check_acl = */ false);
-        auto responses = initial_storage->processRequest(multi_create_request, 1, next_zxid, /* check_acl = */ false);
+        auto responses = initial_storage->processRequest(multi_create_request, 1, next_zxid);
         if (responses.size() > 1 || responses[0].response->error != Coordination::Error::ZOK)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid response after trying to create a node {}", responses[0].response->error);
     }
@@ -1040,7 +979,7 @@ struct SetupNodeCollector
 
         std::cerr << "Generating snapshot with starting data" << std::endl;
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(initial_storage->getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot<Coordination::KeeperMemoryStorage> snapshot(initial_storage.get(), snapshot_meta);
+        DB::KeeperStorageSnapshot<Coordination::KeeperMemoryStorage> snapshot(initial_storage.get(), snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
         snapshot_manager->serializeSnapshotToDisk(snapshot);
 
         new_nodes = false;
@@ -1197,7 +1136,7 @@ void Runner::runBenchmarkFromLog()
             dumpStats("Write", stats.write_requests);
             dumpStats("Read", stats.read_requests);
             std::lock_guard lock(mutex);
-            info->report();
+            info->report(*info);
             DB::WriteBufferFromOwnString out;
             info->writeJSON(out, 0);
             writeOutputString(out.str(), 0);
@@ -1269,24 +1208,28 @@ void Runner::runBenchmarkFromLog()
 void Runner::runBenchmarkWithGenerator()
 {
     pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency);
-    queue.emplace(concurrency * queue_depth);
     createConnections();
 
     std::cerr << "Preparing to run\n";
     benchmark_context.startup(*connections[0]);
-    generator->startup(*connections[0]);
     std::cerr << "Prepared\n";
 
     warmup_complete = warmup_seconds <= 0;
 
     int64_t start_timestamp_ms = 0;
+    threads = std::vector<ThreadState>(concurrency);
+
+    /// All threads must finish generator initialization (which resolves
+    /// `children_of` paths) before any thread starts executing requests.
+    generator_init_barrier = std::make_unique<std::barrier<>>(concurrency);
 
     try
     {
         for (size_t i = 0; i < concurrency; ++i)
         {
+            threads[i].thread_idx = i;
             auto thread_connections = connections;
-            pool->scheduleOrThrowOnError([this, my_connections = std::move(thread_connections)]() mutable { thread(my_connections); });
+            pool->scheduleOrThrowOnError([this, i, my_connections = std::move(thread_connections)]() mutable { thread(my_connections, threads.at(i)); });
         }
     }
     catch (...)
@@ -1304,13 +1247,44 @@ void Runner::runBenchmarkWithGenerator()
     Stopwatch warmup_watch;
     delay_watch.restart();
 
-    /// Push queries into queue
-    for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
+    /// Accumulates stats across all periods for the final report.
+    auto cumulative_info = std::make_shared<Stats>();
+    cumulative_info->elapsed.restart();
+
+    while (!shutdown)
     {
+        if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
+        {
+            std::cerr << "Stopping launch of queries. Requested time limit is exhausted.\n";
+            shutdown = true;
+            break;
+        }
+
+        if (interrupt_listener.check())
+        {
+            std::cerr << "Stopping launch of queries. SIGINT received." << std::endl;
+            shutdown = true;
+            break;
+        }
+
+        if (delay > 0 && delay_watch.elapsedSeconds() > delay)
+        {
+            printNumberOfRequestsExecuted(requests_started);
+
+            std::lock_guard lock(mutex);
+            auto period_info = mergeThreadInfos();
+            cumulative_info->merge(*period_info);
+            period_info->report(*cumulative_info);
+            delay_watch.restart();
+        }
+
         if (!warmup_complete && warmup_watch.elapsedSeconds() >= warmup_seconds)
         {
             std::lock_guard lock(mutex);
-            info->clear();
+            mergeThreadInfos(); /// discard warmup stats
+            cumulative_info->clear();
+            cumulative_info->elapsed.restart();
+            requests_started = 0;
             warmup_complete = true;
             std::cerr << "Warmup complete, starting measurement" << std::endl;
             total_watch.restart();
@@ -1318,23 +1292,21 @@ void Runner::runBenchmarkWithGenerator()
             start_timestamp_ms = Poco::Timestamp().epochMicroseconds() / 1000;
         }
 
-        if (!tryPushRequestInteractively(generator->generate(), interrupt_listener))
-        {
-            shutdown = true;
-            break;
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     pool->wait();
     total_watch.stop();
 
-    printNumberOfRequestsExecuted(requests_executed);
+    printNumberOfRequestsExecuted(requests_started);
 
     std::lock_guard lock(mutex);
-    info->report();
+    auto remaining_info = mergeThreadInfos();
+    cumulative_info->merge(*remaining_info);
+    cumulative_info->report(*cumulative_info);
 
     DB::WriteBufferFromOwnString out;
-    info->writeJSON(out, start_timestamp_ms);
+    cumulative_info->writeJSON(out, start_timestamp_ms);
     auto output_string = std::move(out.str());
     writeOutputString(output_string, start_timestamp_ms);
 }
@@ -1429,10 +1401,19 @@ std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections
     return connections;
 }
 
+std::shared_ptr<Stats> Runner::mergeThreadInfos()
+{
+    auto merged = std::make_shared<Stats>();
+    merged->elapsed = info->elapsed;
+    info->extractInto(*merged);
+    info->elapsed.restart();
+    for (auto & t : threads)
+        t.thread_info.extractInto(*merged);
+    return merged;
+}
+
 Runner::~Runner()
 {
-    if (queue)
-        queue->clearAndFinish();
     shutdown = true;
 
     if (pool)
@@ -1452,7 +1433,7 @@ Runner::~Runner()
 namespace
 {
 
-void flushBatch(Coordination::ZooKeeper & zookeeper, Coordination::Requests & batch)
+void flushMulti(Coordination::ZooKeeper & zookeeper, Coordination::Requests & batch)
 {
     if (batch.empty())
         return;
@@ -1465,56 +1446,35 @@ void flushBatch(Coordination::ZooKeeper & zookeeper, Coordination::Requests & ba
     });
     auto response = future.get();
     if (response.error != Coordination::Error::ZOK)
-        throw zkutil::KeeperException(response.error, "Failed to remove batch of {} nodes, first path in batch: {}", batch.size(), batch.front()->getPath());
-
-    /// Defensive: also verify individual sub-request results for better error messages.
-    for (size_t i = 0; i < response.responses.size(); ++i)
-    {
-        if (response.responses[i]->error != Coordination::Error::ZOK)
-            throw zkutil::KeeperException(response.responses[i]->error, "Failed to remove node: {}", batch[i]->getPath());
-    }
+        throw zkutil::KeeperException(response.error, "Multi request failed");
 
     batch.clear();
 }
 
-void removeRecursiveImpl(Coordination::ZooKeeper & zookeeper, const std::string & path,
-                         Coordination::Requests & batch)
+void addToBatchAndMaybeFlush(Coordination::ZooKeeper & zookeeper, Coordination::Requests & batch, Coordination::RequestPtr request)
 {
-    namespace fs = std::filesystem;
-
-    auto promise = std::make_shared<std::promise<Coordination::Error>>();
-    auto future = promise->get_future();
-
-    Strings children;
-    auto list_callback = [promise, &children](const Coordination::ListResponse & response)
+    batch.push_back(std::move(request));
+    if (batch.size() >= 10000)
     {
-        children = response.names;
-        promise->set_value(response.error);
-    };
-    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {}, false, false);
-    auto error = future.get();
-    if (error == Coordination::Error::ZNONODE)
-        return; /// Node doesn't exist, nothing to remove
-    if (error != Coordination::Error::ZOK)
-        throw zkutil::KeeperException(error, "Failed to list children of {}", path);
-
-    /// Recurse into children first (post-order)
-    for (const auto & child : children)
-        removeRecursiveImpl(zookeeper, fs::path(path) / child, batch);
-
-    /// Append this node to the batch
-    batch.emplace_back(zkutil::makeRemoveRequest(path, -1));
-
-    /// Flush when batch is full
-    if (batch.size() >= 1000)
-        flushBatch(zookeeper, batch);
+        flushMulti(zookeeper, batch);
+        batch.clear();
+    }
 }
 
 void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path)
 {
-    Coordination::Requests batch;
-    removeRecursiveImpl(zookeeper, path, batch);
-    flushBatch(zookeeper, batch);
+    auto promise = std::make_shared<std::promise<Coordination::Error>>();
+    auto future = promise->get_future();
+    zookeeper.removeRecursive(path, /*remove_nodes_limit=*/ 100000000,
+        [promise](const Coordination::RemoveRecursiveResponse & response)
+        {
+            promise->set_value(response.error);
+        });
+    auto error = future.get();
+    if (error == Coordination::Error::ZNONODE)
+        return;
+    if (error != Coordination::Error::ZOK)
+        throw zkutil::KeeperException(error, "Failed to recursively remove {}", path);
 }
 
 }
@@ -1563,6 +1523,9 @@ std::shared_ptr<BenchmarkContext::Node> BenchmarkContext::parseNode(const std::s
     if (config.has(key + ".data"))
         node->data = StringGetter::fromConfig(key + ".data", config);
 
+    if (config.has(key + ".tag"))
+        node->tag = config.getString(key + ".tag");
+
     Poco::Util::AbstractConfiguration::Keys node_keys;
     config.keys(key, node_keys);
 
@@ -1597,7 +1560,9 @@ void BenchmarkContext::Node::dumpTree(int level) const
 
     std::string repeat_count_string = repeat_count != 0 ? fmt::format(", repeated {} times", repeat_count) : "";
 
-    std::cerr << fmt::format("{}name: {}, data: {}{}", std::string(level, '\t'), name.description(), data_string, repeat_count_string) << std::endl;
+    std::string tag_string = tag.has_value() ? fmt::format(", tag: \"{}\"", *tag) : "";
+
+    std::cerr << fmt::format("{}name: {}, data: {}{}{}", std::string(level, '\t'), name.description(), data_string, repeat_count_string, tag_string) << std::endl;
 
     for (auto it = children.begin(); it != children.end();)
     {
@@ -1612,6 +1577,7 @@ std::shared_ptr<BenchmarkContext::Node> BenchmarkContext::Node::clone() const
     auto new_node = std::make_shared<Node>();
     new_node->name = name;
     new_node->data = data;
+    new_node->tag = tag;
     new_node->repeat_count = repeat_count;
 
     // don't do deep copy of children because we will do clone only for root nodes
@@ -1620,23 +1586,26 @@ std::shared_ptr<BenchmarkContext::Node> BenchmarkContext::Node::clone() const
     return new_node;
 }
 
-void BenchmarkContext::Node::createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const
+void BenchmarkContext::Node::createNodes(
+    Coordination::ZooKeeper & zookeeper,
+    Coordination::Requests & batch,
+    const std::string & parent_path,
+    const Coordination::ACLs & acls,
+    TaggedPaths & tagged_paths_out) const
 {
     auto path = std::filesystem::path(parent_path) / name.getString();
-    auto promise = std::make_shared<std::promise<void>>();
-    auto future = promise->get_future();
-    auto create_callback = [promise] (const Coordination::CreateResponse & response)
-    {
-        if (response.error != Coordination::Error::ZOK)
-            promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-        else
-            promise->set_value();
-    };
-    zookeeper.create(path, data ? data->getString() : "", false, false, acls, create_callback);
-    future.get();
+
+    auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    request->path = path;
+    request->data = data ? data->getString() : "";
+    request->acls = acls;
+    addToBatchAndMaybeFlush(zookeeper, batch, std::move(request));
+
+    if (tag.has_value())
+        tagged_paths_out[*tag].push_back(path);
 
     for (const auto & child : children)
-        child->createNode(zookeeper, path, acls);
+        child->createNodes(zookeeper, batch, path, acls, tagged_paths_out);
 }
 
 void BenchmarkContext::startup(Coordination::ZooKeeper & zookeeper)
@@ -1654,8 +1623,18 @@ void BenchmarkContext::startup(Coordination::ZooKeeper & zookeeper)
         std::cerr << "Cleaning up " << root_path << std::endl;
         removeRecursive(zookeeper, root_path);
 
-        node->createNode(zookeeper, "/", default_acls);
+        Coordination::Requests batch;
+        node->createNodes(zookeeper, batch, "/", default_acls, tagged_paths);
+        flushMulti(zookeeper, batch);
     }
+
+    if (!tagged_paths.empty())
+    {
+        std::cerr << "Tagged paths:" << std::endl;
+        for (const auto & [tag_name, paths] : tagged_paths)
+            std::cerr << fmt::format("  \"{}\": {} paths", tag_name, paths.size()) << std::endl;
+    }
+
     std::cerr << "---- Created test data ----\n" << std::endl;
 }
 

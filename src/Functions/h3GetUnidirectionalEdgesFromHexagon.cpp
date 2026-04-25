@@ -86,7 +86,7 @@ public:
             // allocate array of size 6
             // originToDirectedEdges places 6 edges into
             // array that's passed to it
-            std::array<H3Index, 6> res;
+            std::array<H3Index, 6> res{};
 
             const UInt64 cell = data_hindex[row];
             if (!validator.validateCell(cell))

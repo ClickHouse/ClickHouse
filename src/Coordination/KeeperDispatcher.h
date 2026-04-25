@@ -75,7 +75,7 @@ private:
 
     KeeperConnectionStats keeper_stats;
 
-    KeeperConfigurationAndSettingsPtr configuration_and_settings;
+    KeeperConfigurationPtr server_config;
 
     LoggerPtr log;
 
@@ -108,7 +108,9 @@ private:
 
     /// Add error responses for requests to responses queue.
     /// Clears requests.
-    void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error);
+    /// If may_have_dependent_reads is true, also looks at read_request_queue and adds error
+    /// responses for any reads that were piggy-backed to these requests.
+    void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error, bool may_have_dependent_reads = true);
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
@@ -123,12 +125,23 @@ private:
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
 public:
+    using SessionAndXID = std::pair</*session ID*/ int64_t, Coordination::XID>;
+
+    struct SessionAndXIDHash
+    {
+        uint64_t operator()(std::pair<int64_t, Coordination::XID>) const;
+    };
+
     std::mutex read_request_queue_mutex;
 
-    /// queue of read requests that can be processed after a request with specific session ID and XID is committed
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
+    /// Local read requests that are piggy-backed to other raft requests.
+    /// Map: raft request -> read requests.
+    /// The read must be executed immediately after the corresponding raft request is committed.
+    /// Note that the read may belong to a different session than the raft request.
+    /// (So e.g. we can't remove session ID from this map when the session is closed.)
+    std::unordered_map<SessionAndXID, KeeperRequestsForSessions, SessionAndXIDHash> read_request_queue;
 
-    /// Just allocate some objects, real initialization is done by `intialize method`
+    /// Just allocate some objects, real initialization is done by `initialize method`
     KeeperDispatcher();
 
     /// Call shutdown
@@ -170,9 +183,6 @@ public:
 
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
-
-    /// Put local read request to ClickHouse Keeper
-    bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
@@ -241,9 +251,9 @@ public:
         return *server->getKeeperStateMachine();
     }
 
-    const KeeperConfigurationAndSettingsPtr & getKeeperConfigurationAndSettings() const
+    const KeeperConfigurationPtr & getKeeperConfiguration() const
     {
-        return configuration_and_settings;
+        return server_config;
     }
 
     const KeeperContextPtr & getKeeperContext() const

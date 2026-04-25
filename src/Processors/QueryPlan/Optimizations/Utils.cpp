@@ -68,15 +68,9 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
 }
 
-FilterResult filterResultForNotMatchedRows(
-    const ActionsDAG & filter_dag,
-    const String & filter_column_name,
-    const Block & input_stream_header,
-    bool allow_unknown_function_arguments
-)
+bool dagContainsNonReadySet(const ActionsDAG & dag)
 {
-    /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
-    for (const auto & node : filter_dag.getNodes())
+    for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
         {
@@ -88,10 +82,23 @@ FilterResult filterResultForNotMatchedRows(
             {
                 auto future_set = column_set->getData();
                 if (!future_set || !future_set->get())
-                    return FilterResult::UNKNOWN;
+                    return true;
             }
         }
     }
+    return false;
+}
+
+FilterResult filterResultForNotMatchedRows(
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name,
+    const Block & input_stream_header,
+    bool allow_unknown_function_arguments
+)
+{
+    /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
+    if (dagContainsNonReadySet(filter_dag))
+        return FilterResult::UNKNOWN;
 
     ActionsDAG::IntermediateExecutionResult filter_input;
 
@@ -113,12 +120,16 @@ FilterResult filterResultForNotMatchedRows(
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }
 
+    const auto * filter_node = filter_dag.tryFindInOutputs(filter_column_name);
+    if (!filter_node)
+        return FilterResult::UNKNOWN;
+
     ColumnsWithTypeAndName filter_output;
     try
     {
         filter_output = ActionsDAG::evaluatePartialResult(
             filter_input,
-            { filter_dag.tryFindInOutputs(filter_column_name) },
+            { filter_node },
             /*input_rows_count=*/1,
             { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments }
         );

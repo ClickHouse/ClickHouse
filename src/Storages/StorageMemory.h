@@ -7,8 +7,7 @@
 #include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedCTE.h>
-#include <Core/NamesAndTypes.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 #include <Common/MultiVersion.h>
 
@@ -23,7 +22,7 @@ struct MemorySettings;
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public IStorage
+class StorageMemory final : public StorageWithCommonVirtualColumns
 {
 friend class MemorySink;
 
@@ -53,7 +52,7 @@ public:
 
     const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -65,7 +64,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
@@ -131,6 +130,8 @@ public:
     const MaterializedCTEPtr & getMaterializedCTE() const { return materialized_cte; }
 
 private:
+    static VirtualColumnsDescription createVirtuals();
+
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 

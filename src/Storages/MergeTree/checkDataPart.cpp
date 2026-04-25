@@ -8,8 +8,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
@@ -52,6 +52,7 @@ namespace ErrorCodes
     extern const int BROKEN_PROJECTION;
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
 }
 
 
@@ -110,7 +111,8 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::SOCKET_TIMEOUT
             || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
             || e.code() == ErrorCodes::ABORTED
-            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM;
+            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM
+            || e.code() == ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK;
     }
     catch (const std::filesystem::filesystem_error & e)
     {
