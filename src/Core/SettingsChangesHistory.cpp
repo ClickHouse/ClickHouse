@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
+            {"allow_experimental_json_ast_dialect", false, false, "New setting to enable clickhouse_json dialect for JSON AST input instead of SQL."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -67,7 +68,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_filtered_ratio_for_lazy_final", 0.5, 0.5, "New setting for minimum ratio of marks filtered for lazy FINAL optimization to proceed"},
             {"query_plan_optimize_join_order_randomize", 0, 0, "New setting to randomize join order statistics for testing."},
             {"enable_materialized_cte", false, false, "New setting"},
-            {"allow_experimental_json_ast_dialect", false, false, "New setting to enable clickhouse_json dialect for JSON AST input instead of SQL."},
             {"s3_uri_style", "auto", "auto", "New setting."},
             {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},

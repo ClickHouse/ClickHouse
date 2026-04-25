@@ -37,7 +37,7 @@ void ASTSQLSecurity::readJSON(const Poco::JSON::Object & json)
         auto security_type_opt = magic_enum::enum_cast<SQLSecurityType>(static_cast<std::underlying_type_t<SQLSecurityType>>(security_type_value));
         if (!security_type_opt || static_cast<Int64>(*security_type_opt) != security_type_value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown security_type: {}", security_type_value);
-        type = *security_type_opt;
+        type = security_type_opt;
     }
     is_definer_current_user = r.getBool("is_definer_current_user");
     auto definer_child = r.readChild("definer");
