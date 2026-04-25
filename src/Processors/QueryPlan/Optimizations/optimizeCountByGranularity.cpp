@@ -64,9 +64,10 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
     if (reading->isQueryWithFinal() || reading->isQueryWithSampling())
         return;
 
-    /// Partition-independent aggregation uses per-partition output ports with skip_merging.
-    /// Our optimization doesn't support this output mode yet.
     if (reading->willOutputEachPartitionThroughSeparatePort())
+        return;
+
+    if (reading->isParallelReadingFromReplicas())
         return;
 
     auto metadata = reading->getStorageMetadata();
