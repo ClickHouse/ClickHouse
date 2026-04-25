@@ -369,7 +369,7 @@ public:
         this->data(place).add(static_cast<Data::Mean>(val), 1, max_bins);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs), max_bins);
     }
