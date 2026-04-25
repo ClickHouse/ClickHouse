@@ -311,3 +311,5 @@ no_skip_pk_prefix
 0
 no_wrong_key_order
 0
+no_pk_expression
+0

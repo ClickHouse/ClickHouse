@@ -285,3 +285,14 @@ SELECT 'no_wrong_key_order';
 SELECT count() > 0 FROM (EXPLAIN description=0 SELECT intDiv(b, 50) AS bb, intDiv(a, 10) AS ba, count() FROM t_multi_key GROUP BY bb, ba) WHERE explain LIKE '%ReadFromCountByGranularity%';
 
 DROP TABLE t_multi_key;
+
+-- =====================================================
+-- 23. ORDER BY expression (not identifier): must NOT fire
+-- =====================================================
+DROP TABLE IF EXISTS t_pk_expr;
+CREATE TABLE t_pk_expr (ts DateTime, v UInt64) ENGINE = MergeTree() ORDER BY toStartOfHour(ts);
+INSERT INTO t_pk_expr SELECT toDateTime('2024-01-01') + number, number FROM numbers(100);
+SET optimize_trivial_group_by_count_query = 1;
+SELECT 'no_pk_expression';
+SELECT count() > 0 FROM (EXPLAIN description=0 SELECT toStartOfHour(ts) AS hour, count() FROM t_pk_expr GROUP BY hour) WHERE explain LIKE '%ReadFromCountByGranularity%';
+DROP TABLE t_pk_expr;
