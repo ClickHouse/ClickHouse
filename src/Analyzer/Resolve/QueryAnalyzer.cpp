@@ -3477,6 +3477,37 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
         // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
         auto & group_by_list = query_node_typed.getGroupBy().getNodes();
+
+        /// If GROUP BY ... WITH CLUSTER targets a `tuple(x, y)` element, record the
+        /// dimensionality (1 for scalar, 2 for 2-element numeric tuple) and adjust
+        /// the cluster key index to compensate for any preceding tuple expansions.
+        if (query_node_typed.hasGroupByWithCluster())
+        {
+            int orig_cluster_idx = query_node_typed.getGroupByClusterKeyIndex();
+            size_t cluster_dims = 1;
+            int new_cluster_idx = 0;
+            for (int i = 0; i < orig_cluster_idx && i < static_cast<int>(group_by_list.size()); ++i)
+            {
+                const auto & elem = group_by_list[i];
+                if (auto * fn = elem->as<FunctionNode>(); fn != nullptr && fn->getFunctionName() == "tuple")
+                    new_cluster_idx += static_cast<int>(fn->getArguments().getNodes().size());
+                else
+                    new_cluster_idx += 1;
+            }
+            if (orig_cluster_idx >= 0 && orig_cluster_idx < static_cast<int>(group_by_list.size()))
+            {
+                const auto & cluster_elem = group_by_list[orig_cluster_idx];
+                if (auto * fn = cluster_elem->as<FunctionNode>(); fn != nullptr && fn->getFunctionName() == "tuple")
+                {
+                    const auto & args = fn->getArguments().getNodes();
+                    if (args.size() == 2)
+                        cluster_dims = 2;
+                }
+            }
+            query_node_typed.setGroupByClusterKeyIndex(new_cluster_idx);
+            query_node_typed.setGroupByClusterDimensions(cluster_dims);
+        }
+
         expandTuplesInList(group_by_list);
 
         for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())

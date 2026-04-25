@@ -445,6 +445,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->group_by_cluster_key_index = group_by_cluster_key_index;
     result_query_node->group_by_cluster_distance = group_by_cluster_distance;
+    result_query_node->group_by_cluster_dimensions = group_by_cluster_dimensions;
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->cte_name = cte_name;

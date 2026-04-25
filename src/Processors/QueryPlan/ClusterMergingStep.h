@@ -18,8 +18,9 @@ public:
     ClusterMergingStep(
         SharedHeader input_header_,
         AggregatingTransformParamsPtr params_,
-        String cluster_key_name_,
-        Float64 cluster_distance_);
+        Names cluster_key_names_,
+        Float64 cluster_distance_,
+        size_t dimensions_);
 
     String getName() const override { return "ClusterMerging"; }
 
@@ -32,8 +33,9 @@ private:
     void updateOutputHeader() override;
 
     AggregatingTransformParamsPtr params;
-    String cluster_key_name;
+    Names cluster_key_names;
     Float64 cluster_distance;
+    size_t dimensions;
 };
 
 }

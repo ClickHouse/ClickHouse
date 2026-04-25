@@ -7,6 +7,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/Context.h>
 
@@ -304,11 +305,15 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     if (query_node.hasGroupByWithCluster())
     {
         int cluster_idx = query_node.getGroupByClusterKeyIndex();
-        if (cluster_idx >= 0 && cluster_idx < static_cast<int>(aggregation_analysis_result.aggregation_keys.size()))
+        size_t cluster_dims = query_node.getGroupByClusterDimensions();
+        const auto & agg_keys = aggregation_analysis_result.aggregation_keys;
+        if (cluster_idx >= 0 && cluster_idx + static_cast<int>(cluster_dims) <= static_cast<int>(agg_keys.size()))
         {
             ClusterKeyInfo info;
-            info.key_name = aggregation_analysis_result.aggregation_keys[cluster_idx];
             info.distance = query_node.getGroupByClusterDistance();
+            info.dimensions = cluster_dims;
+            for (size_t i = 0; i < cluster_dims; ++i)
+                info.key_names.push_back(agg_keys[cluster_idx + i]);
             aggregation_analysis_result.cluster_key_info = std::move(info);
         }
     }

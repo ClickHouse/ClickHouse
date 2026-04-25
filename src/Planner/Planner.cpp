@@ -870,8 +870,9 @@ void addClusterMergingStepIfNeeded(QueryPlan & query_plan,
     auto cluster_merging_step = std::make_unique<ClusterMergingStep>(
         query_plan.getCurrentHeader(),
         std::move(transform_params),
-        cluster_info.key_name,
-        cluster_info.distance);
+        cluster_info.key_names,
+        cluster_info.distance,
+        cluster_info.dimensions);
     query_plan.addStep(std::move(cluster_merging_step));
 }
 

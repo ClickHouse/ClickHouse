@@ -1,0 +1,38 @@
+--- Basic 2D: two well-separated clusters ---
+(0,0)	3
+(100,100)	2
+--- Same-cell merge (cell side d/sqrt(2) ~= 0.707 for d=1) ---
+(0.3,0.3)	3
+--- Cross-cell merge: horizontal, vertical, diagonal ---
+(0,0)	2
+(10,11)	2
+(20,20)	2
+--- Chain through 3 cells ---
+(0,0)	3
+--- No merge: points just over distance d ---
+(0,0)	1
+(3,0)	1
+--- d = 0: behaves like plain GROUP BY (x, y) ---
+(1,1)	2
+(2,2)	1
+--- Negative coordinates ---
+(-5,-5)	2
+(5,5)	1
+--- Integer cluster key ---
+(2,2)	2
+(100,100)	1
+--- With non-cluster key ---
+a	(0,0)	2
+b	(0,0)	1
+b	(100,100)	1
+--- Single row ---
+(42,42)	1
+--- Multiple aggregate functions ---
+(0,0)	3	6	1	3
+(100,100)	1	10	10	10
+--- Large d collapses everything ---
+1
+--- EXPLAIN PIPELINE shows ClusterMergingTransform ---
+1
+--- EXPLAIN PLAN shows Cluster dimensions: 2 ---
+1

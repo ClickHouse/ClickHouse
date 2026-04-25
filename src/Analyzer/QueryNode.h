@@ -286,6 +286,14 @@ public:
         group_by_cluster_distance = distance;
     }
 
+    /// Number of dimensions (1 or 2) of the cluster key.
+    /// 1 — scalar numeric. 2 — `Tuple(numeric, numeric)`, Euclidean clustering.
+    size_t getGroupByClusterDimensions() const { return group_by_cluster_dimensions; }
+    void setGroupByClusterDimensions(size_t dims) { group_by_cluster_dimensions = dims; }
+
+    /// Adjust the cluster key index after `tuple` expansion in GROUP BY.
+    void setGroupByClusterKeyIndex(int key_index) { group_by_cluster_key_index = key_index; }
+
     /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
     bool isOrderByAll() const
     {
@@ -733,6 +741,7 @@ private:
     bool is_group_by_all = false;
     int group_by_cluster_key_index = -1;
     Float64 group_by_cluster_distance = 0;
+    size_t group_by_cluster_dimensions = 1;
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
 

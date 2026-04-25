@@ -17,8 +17,9 @@ public:
     ClusterMergingTransform(
         SharedHeader header_,
         AggregatingTransformParamsPtr params_,
-        String cluster_key_name_,
-        Float64 cluster_distance_);
+        Names cluster_key_names_,
+        Float64 cluster_distance_,
+        size_t dimensions_);
 
     String getName() const override { return "ClusterMergingTransform"; }
 
@@ -28,9 +29,16 @@ protected:
 
 private:
     AggregatingTransformParamsPtr params;
-    String cluster_key_name;
+    Names cluster_key_names;
     Float64 cluster_distance;
+    size_t dimensions;
     ColumnsMask aggregates_mask;
+
+    /// 1D path: sort-based + bucket-optimized merging by scalar numeric key.
+    Chunk generate1D();
+    /// 2D path: uniform grid with cell side d/sqrt(2), adjacency graph over
+    /// cells + union-find to discover connected components.
+    Chunk generate2D();
 
     Chunks consumed_chunks;
     bool generated = false;
