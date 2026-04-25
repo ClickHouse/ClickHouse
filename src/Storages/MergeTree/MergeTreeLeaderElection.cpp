@@ -63,6 +63,12 @@ void MergeTreeLeaderElection::stop()
     if (task)
         task->deactivate();
 
+    /// Hold the same lock that `run` uses while updating leadership state.
+    /// `task->deactivate` waits for the current scheduled execution to finish, but
+    /// the task may have been already running concurrently when `stop` was called,
+    /// so we serialize the final transition here to avoid a stale `on_leadership_change(true)`
+    /// being invoked after `stop` returns.
+    std::lock_guard lock(leadership_change_mutex);
     bool was_leader = is_leader.exchange(false, std::memory_order_acq_rel);
     if (was_leader && on_leadership_change)
         on_leadership_change(false);
@@ -146,10 +152,14 @@ void MergeTreeLeaderElection::run()
             }
         }
 
-        /// Check the stopped flag before updating leadership state.
-        /// This prevents a race where stop() has already deactivated the task and
-        /// relinquished leadership, but run() was already in-flight and could
-        /// re-acquire leadership and invoke the callback after shutdown began.
+        /// Serialize the leadership transition with `stop`. Without this lock, a heartbeat
+        /// task in flight when `stop` is called could re-acquire leadership and invoke
+        /// `on_leadership_change(true)` after `stop` has already relinquished it,
+        /// leaving background tasks running during shutdown.
+        std::lock_guard lock(leadership_change_mutex);
+
+        /// Re-check `stopped` while holding the lock — another thread may have called
+        /// `stop` between the slow lease I/O above and acquiring this mutex.
         if (stopped.load(std::memory_order_acquire))
             return;
 
@@ -171,6 +181,7 @@ void MergeTreeLeaderElection::run()
     catch (...)
     {
         /// On any error, conservatively assume we are not the leader.
+        std::lock_guard lock(leadership_change_mutex);
         bool was_leader = is_leader.exchange(false, std::memory_order_acq_rel);
         if (was_leader)
         {

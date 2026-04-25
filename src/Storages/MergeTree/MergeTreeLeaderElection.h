@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <mutex>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -87,6 +88,11 @@ private:
 
     std::atomic<bool> is_leader{false};
     std::atomic<bool> stopped{false};
+
+    /// Serializes leadership transitions in `run` and `stop` so that a heartbeat task
+    /// in flight when `stop` is called cannot re-enable leadership or fire the
+    /// `on_leadership_change(true)` callback after shutdown has begun.
+    std::mutex leadership_change_mutex;
 
     /// Monotonic time of the last successful lease renewal.
     /// Used to detect stalled heartbeat threads.
