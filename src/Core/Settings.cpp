@@ -2221,8 +2221,8 @@ Sets the level of data compression in the response to an HTTP request if [enable
 
 Possible values: Numbers from 1 to 9.
 )", 0) \
-    DECLARE(SnappyMode, snappy_mode, SnappyMode::Framed, R"(
-Controls the wire format used for snappy compression in HTTP Content-Encoding and file I/O.
+    DECLARE(SnappyMode, snappy_mode, SnappyMode::Basic, R"(
+Controls the wire format used for snappy compression for generic file I/O paths such as `file()` and `url()`. HTTP `Content-Encoding: snappy` always uses the framing format and ignores this setting.
 
 Possible values:
 

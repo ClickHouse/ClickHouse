@@ -70,7 +70,6 @@ namespace Setting
     extern const SettingsInt64 http_zlib_compression_level;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool send_progress_in_http_headers;
-    extern const SettingsSnappyMode snappy_mode;
     extern const SettingsInt64 zstd_window_log_max;
 }
 
@@ -350,7 +349,9 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
-    auto snappy_mode = settings[Setting::snappy_mode];
+    /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format,
+    /// independent of the user-tunable `snappy_mode` (which controls generic `file()`/`url()` reads).
+    auto snappy_mode = SnappyMode::Framed;
 
     used_output.out_holder =
         std::make_shared<WriteBufferFromHTTPServerResponse>(
