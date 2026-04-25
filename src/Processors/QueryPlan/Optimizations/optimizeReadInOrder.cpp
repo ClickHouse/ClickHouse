@@ -1070,6 +1070,10 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
+    /// Capture whether the SQL query has a LIMIT before `buildSortingDAG` zeroes it out
+    /// for queries with filter/join/array-join (the limit can't be pushed past a filter,
+    /// but the read step still benefits from knowing a LIMIT exists at the query level).
+    const bool query_has_limit = limit != 0;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1124,7 +1128,8 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit);
+                order_info.input_order->limit,
+                query_has_limit);
 
             if (!can_read)
                 return nullptr;
@@ -1630,13 +1635,15 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
             query_info.syntax_analyzer_result);
 
     /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
-    UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
+    const UInt64 sort_limit = InterpreterSelectQuery::getLimitForSorting(*select_query, context);
+    UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : sort_limit;
 
     auto order_info = order_optimizer->getInputOrder(read_from_merge_tree->getStorageMetadata(), context, limit);
 
     if (order_info)
     {
-        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        bool can_read = read_from_merge_tree->requestReadingInOrder(
+            order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, sort_limit != 0);
         if (!can_read)
             return 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);

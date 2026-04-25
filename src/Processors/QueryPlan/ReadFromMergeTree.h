@@ -319,7 +319,10 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    /// `query_has_limit` indicates that the SQL query has a LIMIT (regardless of whether it can be
+    /// pushed down past filters into `limit`); used to decide whether to disable read-in-order on
+    /// poor primary key selectivity.
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, bool query_has_limit = false);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
