@@ -115,6 +115,10 @@ void SnappyWriteBuffer::nextImpl()
 void SnappyWriteBuffer::finalFlushBefore()
 {
     next();
+    /// Even for empty payloads, emit the stream identifier so the output is a
+    /// valid (zero-data) snappy framed stream rather than an empty byte stream.
+    if (!header_written)
+        writeStreamIdentifier();
 }
 
 }
