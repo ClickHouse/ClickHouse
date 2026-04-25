@@ -163,7 +163,7 @@ public:
 
     String getName() const override { return "GradualResize"; }
 
-    Status prepare(const PortNumbers &, const PortNumbers &) override;
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
     size_t num_finished_inputs = 0;
@@ -213,6 +213,8 @@ private:
 
     std::vector<InputPortWithStatus> input_ports;
     std::vector<OutputPortWithStatus> output_ports;
+    std::unordered_map<const InputPort *, UInt64> input_port_index;
+    std::unordered_map<const OutputPort *, UInt64> output_port_index;
 
     void maybeActivateMoreOutputs();
 };

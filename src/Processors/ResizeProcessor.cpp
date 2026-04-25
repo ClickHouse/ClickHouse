@@ -485,22 +485,29 @@ void GradualResizeProcessor::maybeActivateMoreOutputs()
 /// This implementation uses ResizeProcessor-like many-to-many routing.
 /// All inputs are kept active at all times so upstream parallelism is never throttled.
 /// Data is collected from any input and routed only to active (gradually activated) outputs.
-IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status GradualResizeProcessor::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
 {
     if (!initialized)
     {
         initialized = true;
 
         for (auto & input : inputs)
+        {
+            input_port_index[&input] = input_ports.size();
             input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
+        }
 
         for (auto & output : outputs)
+        {
+            output_port_index[&output] = output_ports.size();
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
+        }
     }
 
     /// 1. Process updated outputs.
-    for (const auto & output_number : updated_outputs)
+    for (const auto * output_port : updated_outputs)
     {
+        const auto output_number = output_port_index.at(output_port);
         auto & output = output_ports[output_number];
         if (output.port->isFinished())
         {
@@ -557,8 +564,9 @@ IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_i
     }
 
     /// 2. Process updated inputs — collect data from any input that has it.
-    for (const auto & input_number : updated_inputs)
+    for (const auto * input_port : updated_inputs)
     {
+        const auto input_number = input_port_index.at(input_port);
         auto & input = input_ports[input_number];
         if (input.port->isFinished())
         {
