@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include <Columns/IColumnUnique.h>
 #include <Columns/ReverseIndex.h>
 
@@ -258,7 +260,11 @@ ColumnUnique<ColumnType>::ColumnUnique(const ColumnUnique & other)
     , size_of_value_if_fixed(other.size_of_value_if_fixed)
     , reverse_index(numSpecialValues(is_nullable), 0)
 {
-    reverse_index.setColumn(getRawColumnPtr());
+    /// `column_holder` is shared with `other`, so the non-const `getRawColumnPtr`
+    /// would go through `assumeMutableRef` and trip `chassert(use_count() == 1)`.
+    /// Use the const overload and `const_cast` — `ReverseIndex::setColumn` needs
+    /// a non-const pointer to update the dictionary later via the COW protocol.
+    reverse_index.setColumn(const_cast<ColumnType *>(std::as_const(*this).getRawColumnPtr()));
     createNullMask();
 }
 
