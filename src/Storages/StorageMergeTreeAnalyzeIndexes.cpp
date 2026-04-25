@@ -181,7 +181,7 @@ protected:
                         Planner rebuilt_subquery_planner(
                             rebuilt_query_tree,
                             planner_subquery_options,
-                            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+                            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
                         rebuilt_subquery_planner.buildQueryPlanIfNeeded();
 
                         auto rebuilt_subquery_plan = std::move(rebuilt_subquery_planner).extractQueryPlan();
