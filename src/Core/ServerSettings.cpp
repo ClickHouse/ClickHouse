@@ -1869,6 +1869,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "text_log",
         "metric_log",
         "transposed_metric_log",
+        "histogram_metric_log",
         "error_log",
         "filesystem_cache_log",
         "filesystem_read_prefetches_log",
@@ -1999,6 +2000,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "logfile",
         "errorlogfile",
         "config",
+        "log",
+        "errorlog",
 
         /// Poco ServerApplication options (--daemon, --umask, --pidfile).
         /// These are defined by Poco::Util::ServerApplication::defineOptions
