@@ -1562,6 +1562,17 @@ class ClickHouseCluster:
         env_variables["SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT"] = str(
             self.schema_registry_auth_port
         )
+        if is_arm():
+            env_variables["KAFKA_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_SCHEMA_REGISTRY_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_ZOOKEEPER_IMAGE_TAG"] = "3.8"
+            # The `zookeeper:3.4.9` image put `clientPort=2181` into zoo.cfg itself,
+            # but starting from 3.5 the only way to set it is the `;<port>` suffix in
+            # ZOO_SERVERS. Without it the client port is not bound and Kafka cannot
+            # connect.
+            env_variables["KAFKA_ZOOKEEPER_SERVERS"] = (
+                "server.1=kafka_zookeeper:2888:3888;2181"
+            )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
         )
@@ -6218,4 +6229,4 @@ class ClickHouseKiller(object):
 
 @cache
 def is_arm():
-    return any(arch in platform.processor().lower() for arch in ("arm, aarch"))
+    return platform.machine().lower() in ("arm64", "aarch64")
