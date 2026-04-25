@@ -1826,25 +1826,42 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
         if (!found)
             found = std::find(parts_to_fetch.begin(), parts_to_fetch.end(), part_name) != parts_to_fetch.end();
 
-        /// Check if there's a local active part that covers this ZK part.
-        /// This legitimately happens after a merge or mutation: the covering part
-        /// is active locally, the covered part was cleaned from disk by
-        /// clearOldPartsAndRemoveFromZK, but the covered part's ZK entry hasn't
+        /// Check if the ZooKeeper covering part itself exists on disk locally.
+        /// If it does, the covered part's data is preserved in the covering part:
+        /// a merge or mutation produced `covering_part`, then `part_name` was cleaned
+        /// from disk by `clearOldPartsAndRemoveFromZK`, but its ZK entry has not
         /// been cleaned up yet (ZK cleanup can lag behind disk cleanup, or the
-        /// server was restarted between the two). The data is preserved in the
-        /// local covering part, and the stale ZK entry will be removed by the
-        /// cleanup thread after startup.
+        /// server was restarted between the two). The stale ZK entry will be
+        /// removed by the cleanup thread after startup.
+        ///
+        /// We check `covering_part` (a ZK part by construction, taken from
+        /// `active_set` which is built from `parts_in_zk`) rather than relying on
+        /// any local-only part: a local part not in ZooKeeper is treated as
+        /// `unexpected` at load time and gets detached as `ignored` later in
+        /// `checkPartsImpl`, so its presence on disk is not a guarantee of data
+        /// preservation. Checking the ZK covering part on disk avoids that pitfall.
         if (!found)
-            found = getActiveContainingPart(part_name) != nullptr;
+        {
+            for (const DiskPtr & disk : disks)
+            {
+                if (disk->existsDirectory(fs::path(path) / covering_part))
+                {
+                    found = true;
+                    break;
+                }
+            }
+        }
 
         if (!found)
         {
             LOG_WARNING(
                 log,
-                "Part {} of table {} exists in ZooKeeper and covered by another part in ZooKeeper ({}), but doesn't exist on any disk "
-                "and no local active part covers it. It may cause false-positive 'part is lost forever' messages",
+                "Part {} of table {} exists in ZooKeeper and covered by another part in ZooKeeper ({}), but neither {} nor {} exists on any disk. "
+                "It may cause false-positive 'part is lost forever' messages",
                 part_name,
                 getStorageID().getNameForLogs(),
+                covering_part,
+                part_name,
                 covering_part);
             ProfileEvents::increment(ProfileEvents::ReplicatedCoveredPartsInZooKeeperOnStart);
             chassert(false);
