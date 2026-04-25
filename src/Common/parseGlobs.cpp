@@ -171,7 +171,10 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             }
             else
             {
-                /// `**` at end or not followed by `/` → match any characters across directories.
+                /// `**` at end or not followed by `/`: preserve the original behavior.
+                /// `[^/]*` cannot contain `/`, but the trailing `[^{}]*` can,
+                /// so the combined pattern matches across directory components
+                /// for any characters other than `{` and `}`.
                 buf_final_processing << "[^/]*[^{}]*";
                 i += 1;
             }
