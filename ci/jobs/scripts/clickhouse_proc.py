@@ -856,6 +856,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
+    def clean_logs(self):
+        """
+        Remove server logs from `log_dir`.
+
+        Used between bugfix validation iterations to keep logs from different
+        build types from being mixed together.
+        """
+        Utils.clean_dir(Path(self.log_dir))
+        return self
+
     @staticmethod
     def _chmod(files):
         for file in files:
