@@ -224,6 +224,7 @@ stop_server
 export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
 export THREAD_POOL_FAULT_INJECTION=1
+export CLICKHOUSE_FAILPOINTS_INJECTION=1
 configure
 configure_limits
 
@@ -293,6 +294,7 @@ unset "${!THREAD_@}"
 # will not allow to load tables asynchronously. Anyway the stress tests was
 # running with fault injection.
 rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
+rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 
 # Use a larger timeout for the post-stress restart: under sanitizers with
 # async_load_databases=false the server may need minutes to load all tables.
