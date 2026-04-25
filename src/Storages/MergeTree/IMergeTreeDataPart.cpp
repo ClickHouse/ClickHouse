@@ -584,9 +584,15 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
     {
         const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
 
-        /// The case when all values are NULL in a Nullable Date column.
-        /// In this case, getExtremes() returns POSITIVE_INFINITY which has type Null.
-        if (hyperrectangle.left.isNull())
+        /// `ColumnNullable::getExtremesNullLast` returns `POSITIVE_INFINITY` (a `Null`
+        /// sentinel) for the bound that points "past the end" of real values:
+        ///   * all-`NULL` parts: both `left` and `right` are `POSITIVE_INFINITY`;
+        ///   * mixed `NULL` / non-`NULL` parts (NullLast): `left` is the real min,
+        ///     but `right` is `POSITIVE_INFINITY` because `NULL` sorts last.
+        /// In both cases, dereferencing the bound as `UInt64` would throw `BAD_GET`,
+        /// so collapse to an empty range and let the non-Nullable `system.parts.min_date` /
+        /// `max_date` columns surface as epoch (`0`).
+        if (hyperrectangle.left.isNull() || hyperrectangle.right.isNull())
             return {};
 
         return {DayNum(static_cast<UInt16>(hyperrectangle.left.safeGet<UInt64>())), DayNum(static_cast<UInt16>(hyperrectangle.right.safeGet<UInt64>()))};
@@ -600,9 +606,11 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
     {
         const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_time_column_pos];
 
-        /// The case when all values are NULL in a Nullable DateTime/DateTime64 column.
-        /// In this case, getExtremes() returns POSITIVE_INFINITY which has type Null.
-        if (hyperrectangle.left.isNull())
+        /// See `getMinMaxDate` for why both bounds need to be checked: all-`NULL` parts
+        /// have both bounds set to `POSITIVE_INFINITY`, but mixed `NULL` / non-`NULL`
+        /// NullLast parts have only `right` set to `POSITIVE_INFINITY` while `left`
+        /// holds the real minimum.
+        if (hyperrectangle.left.isNull() || hyperrectangle.right.isNull())
             return {};
 
         /// The case of DateTime (stored as UInt64)

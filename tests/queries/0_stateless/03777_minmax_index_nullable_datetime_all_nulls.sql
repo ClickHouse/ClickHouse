@@ -138,3 +138,71 @@ SELECT
 FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_date_nonnull' AND active;
 
 DROP TABLE IF EXISTS test_nullable_date_nonnull;
+
+-- =====================================================
+-- Case 7: Mixed `NULL` / non-`NULL` rows in a single part.
+--
+-- For `Nullable` partition-key columns, `ColumnNullable::getExtremesNullLast`
+-- returns `POSITIVE_INFINITY` (`Field::Types::Null`) for the *upper* bound when
+-- the part contains at least one `NULL` row alongside non-`NULL` rows
+-- (NullLast convention: `NULL` sorts last). Without checking
+-- `right.isNull()` in addition to `left.isNull()`, `getMinMaxDate` /
+-- `getMinMaxTime` would call `safeGet<UInt64>` on a `Null` field and throw
+-- `BAD_GET`. This case exercises the mixed-bound path explicitly.
+--
+-- We use `PARTITION BY coalesce(event_time, ...)` so that both `NULL` and
+-- non-`NULL` rows share the same partition id and end up in a single part
+-- whose minmax hyperrectangle has `left` = real value, `right` = `Null`.
+-- =====================================================
+DROP TABLE IF EXISTS test_nullable_datetime_mixed_part;
+
+CREATE TABLE test_nullable_datetime_mixed_part (id UInt64, event_time Nullable(DateTime('UTC')))
+ENGINE = MergeTree()
+PARTITION BY coalesce(event_time, toDateTime('1970-01-01', 'UTC'))
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_nullable_datetime_mixed_part VALUES (1, toDateTime('1970-01-01', 'UTC')), (2, NULL);
+
+-- Reading min_time/max_time must not throw. With the right.isNull() guard
+-- the mixed-bound part returns the empty range and surfaces as epoch (0).
+SELECT toUInt32(min_time) AS min_epoch, toUInt32(max_time) AS max_epoch
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_datetime_mixed_part' AND active;
+
+DROP TABLE IF EXISTS test_nullable_datetime_mixed_part;
+
+-- =====================================================
+-- Case 8: Mixed `NULL` / non-`NULL` rows in a single part — `Nullable(Date)`.
+-- =====================================================
+DROP TABLE IF EXISTS test_nullable_date_mixed_part;
+
+CREATE TABLE test_nullable_date_mixed_part (id UInt64, event_date Nullable(Date))
+ENGINE = MergeTree()
+PARTITION BY coalesce(event_date, toDate('1970-01-01'))
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_nullable_date_mixed_part VALUES (1, toDate('1970-01-01')), (2, NULL);
+
+SELECT toUInt32(min_date) AS min_epoch, toUInt32(max_date) AS max_epoch
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_date_mixed_part' AND active;
+
+DROP TABLE IF EXISTS test_nullable_date_mixed_part;
+
+-- =====================================================
+-- Case 9: Mixed `NULL` / non-`NULL` rows in a single part — `Nullable(DateTime64)`.
+-- =====================================================
+DROP TABLE IF EXISTS test_nullable_datetime64_mixed_part;
+
+CREATE TABLE test_nullable_datetime64_mixed_part (id UInt64, event_time Nullable(DateTime64(3, 'UTC')))
+ENGINE = MergeTree()
+PARTITION BY coalesce(event_time, toDateTime64('1970-01-01 00:00:00.000', 3, 'UTC'))
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_nullable_datetime64_mixed_part VALUES (1, toDateTime64('1970-01-01 00:00:00.000', 3, 'UTC')), (2, NULL);
+
+SELECT toUInt32(min_time) AS min_epoch, toUInt32(max_time) AS max_epoch
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_datetime64_mixed_part' AND active;
+
+DROP TABLE IF EXISTS test_nullable_datetime64_mixed_part;
