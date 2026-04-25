@@ -24,6 +24,7 @@ struct AggregateDescription
     /// TOTALS/BY combinators
     bool totals_combinator = false;
     std::optional<Names> by_columns;
+    std::optional<Names> order_by_columns;
 
     void explain(WriteBuffer & out, const std::string & prefix, size_t additonal_indent) const; /// Get description for EXPLAIN query.
     void explain(JSONBuilder::JSONMap & map) const;

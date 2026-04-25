@@ -343,6 +343,20 @@ public:
                         buffer << calculateActionNodeName(by_nodes[i]);
                     }
                 }
+                else if (function_node.hasOrderByCombinator())
+                {
+                    if (function_arguments_nodes_size > 0)
+                        buffer << ' ';
+                    buffer << "ORDER BY ";
+
+                    const auto & order_by_nodes = function_node.getOrderByColumnsNode()->as<ListNode &>().getNodes();
+                    for (size_t i = 0; i < order_by_nodes.size(); ++i)
+                    {
+                        if (i > 0)
+                            buffer << ", ";
+                        buffer << calculateActionNodeName(order_by_nodes[i]);
+                    }
+                }
 
                 buffer << ')';
 

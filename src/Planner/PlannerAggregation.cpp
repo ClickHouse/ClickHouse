@@ -61,6 +61,18 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggreg
                     std::move(by_name));
             }
         }
+        if (aggregate_function_node_typed.hasOrderByCombinator())
+        {
+            const auto & order_by_nodes = aggregate_function_node_typed
+                .getOrderByColumnsNode()->as<ListNode &>().getNodes();
+            aggregate_description.order_by_columns = Names();
+            aggregate_description.order_by_columns->reserve(order_by_nodes.size());
+            for (const auto & order_by_node : order_by_nodes)
+            {
+                aggregate_description.order_by_columns->emplace_back(
+                    calculateActionNodeName(order_by_node, planner_context));
+            }
+        }
 
 
         aggregate_description.column_name = std::move(node_name);
