@@ -595,7 +595,9 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
         if (hyperrectangle.left.isNull() || hyperrectangle.right.isNull())
             return {};
 
-        return {DayNum(static_cast<UInt16>(hyperrectangle.left.safeGet<UInt64>())), DayNum(static_cast<UInt16>(hyperrectangle.right.safeGet<UInt64>()))};
+        return {
+            DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.left.safeGet<UInt64>())),
+            DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.right.safeGet<UInt64>()))};
     }
     return {};
 }
