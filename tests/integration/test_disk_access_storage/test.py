@@ -183,7 +183,7 @@ def test_replace_rolls_back_on_write_failure():
     instance.query("SYSTEM ENABLE FAILPOINT disk_access_storage_write_entity_fails")
     try:
         error = instance.query_and_get_error(
-            "CREATE OR REPLACE USER u_replace IDENTIFIED WITH plaintext_password BY 'new_pw'"
+            "CREATE USER OR REPLACE u_replace IDENTIFIED WITH plaintext_password BY 'new_pw'"
         )
         assert "FAULT_INJECTED" in error or "Injected fault" in error
     finally:
