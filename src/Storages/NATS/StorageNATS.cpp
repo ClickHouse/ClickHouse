@@ -277,6 +277,12 @@ void StorageNATS::initializeConsumersFunc()
         return;
     }
 
+    /// Snapshot the reconnect counter at the moment of the first successful
+    /// subscribe so that any reconnect that happened concurrently with init
+    /// is reflected in `last_seen_reconnect_count` and is not treated as a
+    /// new reconnect by `streamingToViewsFunc`.
+    last_seen_reconnect_count = consumers_connection->getReconnectCount();
+
     streaming_task->activateAndSchedule();
 }
 
@@ -340,6 +346,27 @@ void StorageNATS::unsubscribeConsumers()
         consumer->unsubscribe();
 
     consumers_ready.store(false);
+}
+
+bool StorageNATS::resubscribeConsumersOnReconnect()
+{
+    std::lock_guard lock(consumers_mutex);
+    for (auto & consumer : consumers)
+    {
+        if (!consumer->needsResubscribeOnReconnect())
+            continue;
+        try
+        {
+            consumer->unsubscribe();
+            consumer->subscribe();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            return false;
+        }
+    }
+    return true;
 }
 
 
@@ -616,6 +643,30 @@ void StorageNATS::streamingToViewsFunc()
     {
         if (consumers_connection && consumers_connection->isConnected())
         {
+            /// JetStream pull subscriptions do not survive a NATS reconnect
+            /// (the application is responsible for re-issuing
+            /// `PUB $JS.API.CONSUMER.MSG.NEXT`). Detect reconnects via the
+            /// monotonic `reconnect_count` and re-subscribe consumers that
+            /// require it. Read the count BEFORE re-subscribing so that a
+            /// reconnect happening DURING re-subscribe is detected on the
+            /// next iteration and triggers another re-subscribe.
+            uint64_t current_reconnect_count = consumers_connection->getReconnectCount();
+            if (current_reconnect_count != last_seen_reconnect_count)
+            {
+                LOG_INFO(
+                    log,
+                    "NATS connection reconnected ({} -> {}). Re-establishing JetStream subscriptions.",
+                    last_seen_reconnect_count,
+                    current_reconnect_count);
+                if (!resubscribeConsumersOnReconnect())
+                {
+                    LOG_WARNING(log, "Failed to re-subscribe NATS JetStream consumers after reconnect; will retry.");
+                    streaming_task->scheduleAfter(RESCHEDULE_MS);
+                    return;
+                }
+                last_seen_reconnect_count = current_reconnect_count;
+            }
+
             auto start_time = std::chrono::steady_clock::now();
 
             mv_attached.store(true);

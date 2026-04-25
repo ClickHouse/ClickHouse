@@ -25,6 +25,11 @@ public:
 
     void subscribe() override;
 
+    /// JetStream pull subscriptions involve out-of-band
+    /// `PUB $JS.API.CONSUMER.MSG.NEXT` calls that libnats does not
+    /// auto-restore on reconnect. Re-subscription is required.
+    bool needsResubscribeOnReconnect() const override { return true; }
+
 protected:
     NATSSubscriptionPtr subscribeToSubject(const String & subject);
 

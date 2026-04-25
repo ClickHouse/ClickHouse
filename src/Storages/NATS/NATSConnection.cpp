@@ -152,6 +152,8 @@ void NATSConnection::disconnectImpl(const Lock & connection_lock)
 
 void NATSConnection::reconnectedCallback(natsConnection *, void * connection)
 {
+    auto * conn = static_cast<NATSConnection *>(connection);
+    conn->reconnect_count.fetch_add(1, std::memory_order_release);
     LOG_DEBUG(callback_logger, "Connection {} got reconnected to NATS server", static_cast<void*>(connection));
 }
 
