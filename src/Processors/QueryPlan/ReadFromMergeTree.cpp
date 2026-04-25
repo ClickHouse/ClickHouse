@@ -1477,8 +1477,22 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             /// here is unreliable. The gate already requires a single underlying part,
             /// so report stream count only.
             LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams (single part)", pipes.size());
+
+            /// Capture the source header before uniting pipes so we can build the
+            /// projection that drops temporary sorting-key columns added back to
+            /// compensate for `PREWHERE` removing them. The downstream sorting step
+            /// builds this projection from `out_projection` only when the early-return
+            /// code paths below run, so we must set it here as well.
+            Block source_header;
+            if (have_input_columns_removed_after_prewhere && !pipes.empty())
+                source_header = pipes.front().getHeader();
+
             auto pipe = Pipe::unitePipes(std::move(pipes));
             pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
+
+            if (have_input_columns_removed_after_prewhere)
+                out_projection = createProjection(source_header);
+
             return pipe;
         }
     }
