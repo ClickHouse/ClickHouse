@@ -56,6 +56,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_key_condition_coalesce_rewrite;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
@@ -785,6 +786,157 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     ActionsDAG & inverted_dag,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
     const ContextPtr & context,
+    bool need_inversion);
+
+/// Rewrite `<op>(coalesce(a_1, ..., a_N), const)` (or with `ifNull`, or with the constant on the
+/// left) into
+///     `(y_1 <op> const)`
+///     `OR (isNull(y_1) AND y_2 <op> const)`
+///     `OR (isNull(y_1) AND isNull(y_2) AND y_3 <op> const)`
+///     `...`
+///     `OR (isNull(y_1) AND ... AND isNull(y_{M-1}) AND y_M <op> const)`
+///     `[OR (isNull(y_1) AND ... AND isNull(y_M) AND (c <op> const))]`
+/// so per-column primary-key and skip indexes on each `y_i` can prune granules through the
+/// existing `use_skip_indexes_for_disjunctions` path in
+/// `MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions`.
+///
+/// The `a_i` list is normalized mirroring `FunctionCoalesce::getReturnTypeImpl`: NULL-literal
+/// args are dropped, and args after the first non-Nullable one are unreachable by short-circuit
+/// and dropped. If that terminator is a non-null constant it is captured as `c` and emitted as
+/// the final branch; if it is a non-constant column, it becomes `y_M` with no separate `c` -
+/// reaching that branch implies `y_M` is the `coalesce` result regardless of its nullability.
+/// Returns `nullptr` if the pattern does not match.
+static const ActionsDAG::Node * tryRewriteCoalesceComparison(
+    const ActionsDAG::Node & node,
+    const String & op_name,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context)
+{
+    if (node.children.size() != 2)
+        return nullptr;
+
+    /// `less(const, x)` ≡ `greater(x, const)`; also the allowlist of ops we rewrite at all.
+    auto mirrored_op = [](std::string_view op) -> std::string_view
+    {
+        if (op == "equals") return "equals";
+        if (op == "less") return "greater";
+        if (op == "greater") return "less";
+        if (op == "lessOrEquals") return "greaterOrEquals";
+        if (op == "greaterOrEquals") return "lessOrEquals";
+        return {};
+    };
+    const std::string_view mirrored = mirrored_op(op_name);
+    if (mirrored.empty())
+        return nullptr;
+
+    auto is_const = [](const ActionsDAG::Node & n)
+    {
+        return n.type == ActionsDAG::ActionType::COLUMN && n.column && isColumnConst(*n.column);
+    };
+
+    const bool c0 = is_const(*node.children[0]);
+    const bool c1 = is_const(*node.children[1]);
+    if (c0 == c1)
+        return nullptr;
+
+    const ActionsDAG::Node * coalesce_node = node.children[c0 ? 1 : 0];
+    const ActionsDAG::Node * const_node = node.children[c0 ? 0 : 1];
+    const std::string_view canonical_op = c0 ? mirrored : std::string_view{op_name};
+
+    if (coalesce_node->type != ActionsDAG::ActionType::FUNCTION)
+        return nullptr;
+
+    const auto & coalesce_name = coalesce_node->function_base->getName();
+    if (coalesce_name != "coalesce" && coalesce_name != "ifNull")
+        return nullptr;
+
+    if (coalesce_node->children.size() < 2)
+        return nullptr;
+
+    /// Normalize the argument list mirroring `FunctionCoalesce::getReturnTypeImpl`, so the
+    /// rewritten DAG is always semantically equivalent to the original `coalesce`.
+    std::vector<const ActionsDAG::Node *> normalized_args;
+    const ActionsDAG::Node * trailing_const = nullptr;
+    normalized_args.reserve(coalesce_node->children.size());
+    for (const auto * child : coalesce_node->children)
+    {
+        if (child->result_type->onlyNull())
+            continue;
+
+        if (!canContainNull(*child->result_type))
+        {
+            /// Non-Nullable terminator: a non-constant column folds into `y_M` (no separate
+            /// trailing branch); a constant becomes `c` in the trailing branch.
+            if (is_const(*child))
+                trailing_const = child;
+            else
+                normalized_args.push_back(child);
+            break;
+        }
+
+        normalized_args.push_back(child);
+    }
+
+    const size_t m = normalized_args.size();
+    const bool has_trailing_const = trailing_const != nullptr;
+
+    /// Degenerate: all args were NULL literals. `coalesce(...) <op> const` is NULL (FALSE in
+    /// WHERE). Let the default path clone the node; not worth special-casing.
+    if (m == 0 && !has_trailing_const)
+        return nullptr;
+
+    std::vector<const ActionsDAG::Node *> cloned_args;
+    cloned_args.reserve(m + (has_trailing_const ? 1 : 0));
+    for (const auto * y : normalized_args)
+        cloned_args.push_back(&cloneDAGWithInversionPushDown(*y, inverted_dag, inputs_mapping, context, false));
+    if (has_trailing_const)
+        cloned_args.push_back(&cloneDAGWithInversionPushDown(*trailing_const, inverted_dag, inputs_mapping, context, false));
+    const auto & const_cloned = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false);
+
+    auto op_func = FunctionFactory::instance().get(String{canonical_op}, context);
+    auto make_cmp = [&](const ActionsDAG::Node * lhs) -> const ActionsDAG::Node &
+    {
+        return inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
+    };
+
+    const size_t total = cloned_args.size();
+    if (total == 1)
+        return &make_cmp(cloned_args[0]);
+
+    auto is_null_func = FunctionFactory::instance().get("isNull", context);
+    auto and_func = FunctionFactory::instance().get("and", context);
+    auto or_func = FunctionFactory::instance().get("or", context);
+
+    /// isNull(y_i) is consumed by branches with index > i, so we need it for i in [0, total - 1).
+    /// The trailing const (if present) only appears as the last branch's `<op> const` node, never
+    /// as an isNull argument - so isNull is built only on the Nullable prefix.
+    std::vector<const ActionsDAG::Node *> is_null_nodes;
+    is_null_nodes.reserve(total - 1);
+    for (size_t i = 0; i + 1 < total; ++i)
+        is_null_nodes.push_back(&inverted_dag.addFunction(is_null_func, {cloned_args[i]}, ""));
+
+    ActionsDAG::NodeRawConstPtrs or_children;
+    or_children.reserve(total);
+    or_children.push_back(&make_cmp(cloned_args[0]));
+    for (size_t i = 1; i < total; ++i)
+    {
+        ActionsDAG::NodeRawConstPtrs and_children;
+        and_children.reserve(i + 1);
+        for (size_t j = 0; j < i; ++j)
+            and_children.push_back(is_null_nodes[j]);
+        and_children.push_back(&make_cmp(cloned_args[i]));
+        or_children.push_back(&inverted_dag.addFunction(and_func, std::move(and_children), ""));
+    }
+
+    return &inverted_dag.addFunction(or_func, std::move(or_children), "");
+}
+
+static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
+    const ActionsDAG::Node & node,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context,
     const bool need_inversion)
 {
     const ActionsDAG::Node * res = nullptr;
@@ -896,6 +1048,12 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 /// We match columns by name, so it is important to fill name correctly.
                 /// So, use empty string to make it automatically.
                 res = &inverted_dag.addFunction(function_builder, children, "");
+                handled_inversion = true;
+            }
+            else if (!need_inversion
+                && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
+                && (res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr)
+            {
                 handled_inversion = true;
             }
             else
