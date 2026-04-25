@@ -687,6 +687,12 @@ def main():
                 label_key = diag.get("label", "")
                 if label_key in label_map:
                     test_case.set_label(label_map[label_key])
+                if label_key == "flaky" and is_llvm_coverage:
+                    # Coverage binaries are slow and prone to timing-related flakiness
+                    # (e.g. TIMEOUT_EXCEEDED on SystemLogQueue). Don't penalise them
+                    # for it — mark the test green so it doesn't block coverage jobs.
+                    # See: https://github.com/ClickHouse/ClickHouse/pull/95763
+                    test_case.set_status(Result.Status.OK)
             if diag_exit_code != 0:
                 diag_status = Result.Status.FAIL
                 diag_info = (

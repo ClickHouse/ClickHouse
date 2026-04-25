@@ -39,6 +39,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.5",
+        {
+            {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+            {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
+        });
         addSettingsChanges(settings_changes_history, "26.4",
         {
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
@@ -51,12 +56,21 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_rand_distribution_parameter", 1e6, 1e6, "New setting to limit shape parameters in random distribution functions, preventing hangs with extreme inputs."},
             {"optimize_truncate_order_by_after_group_by_keys", false, true, "Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix."},
             {"use_statistics_for_part_pruning", false, true, "New setting to use statistics for part pruning during query execution."},
+            {"http_max_fields", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
+            {"http_max_field_name_size", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
+            {"http_max_request_header_size", 0, 10485760, "New setting to limit total HTTP request header size before authentication."},
+            {"http_headers_read_timeout", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."},
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
+            {"query_plan_optimize_lazy_final", false, false, "New setting to optimize reading with FINAL from ReplacingMergeTree using set-based index analysis"},
+            {"max_rows_for_lazy_final", 10000000, 10000000, "New setting for maximum number of rows in the set for lazy FINAL optimization"},
+            {"max_bytes_for_lazy_final", 256000000, 256000000, "New setting for maximum number of bytes in the set for lazy FINAL optimization"},
+            {"min_filtered_ratio_for_lazy_final", 0.5, 0.5, "New setting for minimum ratio of marks filtered for lazy FINAL optimization to proceed"},
             {"query_plan_optimize_join_order_randomize", 0, 0, "New setting to randomize join order statistics for testing."},
             {"enable_materialized_cte", false, false, "New setting"},
             {"s3_uri_style", "auto", "auto", "New setting."},
             {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
+            {"optimize_rewrite_array_exists_to_has", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."},
             {"parallel_replicas_allow_view_over_mergetree", false, false, "New setting"},
             {"read_in_order_use_virtual_row_per_block", false, false, "Emit virtual row after each block during read-in-order to allow more frequent source reprioritization in MergingSortedTransform."},
             {"distributed_plan_prefer_replicas_over_workers", false, false, "New setting to serialize distributed plan for replicas"},
@@ -64,9 +78,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_like_min_pattern_length", 4, 4, "New setting"},
             {"text_index_like_max_postings_to_read", 50, 50, "New setting"},
             {"analyzer_inline_views", false, false, "New setting"},
+            {"distributed_cache_write_request_max_tries", 10, 10, "New setting"},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
+            {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
             {"enable_join_fixed_hash_table_conversion", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."},
             {"allow_experimental_ai_functions", false, false, "New setting"},
             {"ai_function_request_timeout_sec", 60, 60, "New setting"},
@@ -1140,11 +1156,18 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
+            {"share_nested_offsets", true, true, "When set to false, Array columns with dotted names that share a common prefix are treated as independent columns instead of sharing offset files as part of legacy Nested semantics"},
+            {"shared_merge_tree_merge_coordinator_merges_prepare_count", 100, "auto", "Make setting auto: max merge tasks per replica * number of active replicas"},
             {"allow_commit_order_projection", false, false, "New setting"},
             {"replicated_fetches_min_part_level", 0, 0, "New setting"},
             {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
+            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 1800, "Increase default replica set background update interval to 30 minutes"},
             {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"compress_per_column_in_compact_parts", true, true, "New setting"},
         });
