@@ -205,12 +205,22 @@ def should_skip_job(job_name):
     if " Bug Fix" not in _info_cache.pr_body and "Bugfix" in job_name:
         # Don't skip if the corresponding test job file was changed
         skip = True
-        if job_name == JobNames.BUGFIX_VALIDATE_FT and any(
-            f.endswith("jobs/functional_tests.py") for f in changed_files
+        if job_name in (
+            JobNames.BUGFIX_VALIDATE_FT,
+            JobNames.BUGFIX_VALIDATE_FT_AMD,
+            JobNames.BUGFIX_VALIDATE_FT_ARM,
+        ) and any(f.endswith("jobs/functional_tests.py") for f in changed_files):
+            skip = False
+        elif job_name in (
+            JobNames.BUGFIX_VALIDATE_IT,
+            JobNames.BUGFIX_VALIDATE_IT_AMD,
+            JobNames.BUGFIX_VALIDATE_IT_ARM,
+        ) and any(
+            f.endswith("jobs/integration_test_job.py") for f in changed_files
         ):
             skip = False
-        elif job_name == JobNames.BUGFIX_VALIDATE_IT and any(
-            f.endswith("jobs/integration_test_job.py") for f in changed_files
+        elif job_name == JobNames.BUGFIX_VALIDATE_FINAL and any(
+            f.endswith("jobs/bugfix_validation_aggregate.py") for f in changed_files
         ):
             skip = False
 

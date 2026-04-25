@@ -364,8 +364,19 @@ class JobNames:
     BUZZHOUSE = "BuzzHouse"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
+    # Old monolithic names kept for backward compatibility with cached/historical CI runs.
+    # The current architecture splits each test type by arch and adds a final aggregator.
     BUGFIX_VALIDATE_IT = "Bugfix validation (integration tests)"
     BUGFIX_VALIDATE_FT = "Bugfix validation (functional tests)"
+    # Per-arch bugfix validation: each runs the test on master HEAD and on the PR,
+    # always reports SUCCESS (force_success=True), and emits a result artifact.
+    BUGFIX_VALIDATE_FT_AMD = "Bugfix validation (functional tests, amd64)"
+    BUGFIX_VALIDATE_FT_ARM = "Bugfix validation (functional tests, aarch64)"
+    BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
+    BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
+    # Final aggregator: depends on all four per-arch checks; SUCCESS iff at least
+    # one of them validated the bug (test failed on master HEAD AND passed on PR).
+    BUGFIX_VALIDATE_FINAL = "Bugfix validation (final)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
@@ -419,6 +430,16 @@ class ArtifactNames:
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
     FAST_TEST = "FAST_TEST"
+
+    # Bugfix-validation result artifacts (small JSON files emitted by per-arch
+    # bugfix-validation jobs). Each file describes whether the per-arch run
+    # validated the bug (test failed on master HEAD AND passed on PR).
+    # Consumed by the `Bugfix validation (final)` aggregator job.
+    BUGFIX_VALIDATE_FT_AMD_RESULT = "BUGFIX_VALIDATE_FT_AMD_RESULT"
+    BUGFIX_VALIDATE_FT_ARM_RESULT = "BUGFIX_VALIDATE_FT_ARM_RESULT"
+    BUGFIX_VALIDATE_IT_AMD_RESULT = "BUGFIX_VALIDATE_IT_AMD_RESULT"
+    BUGFIX_VALIDATE_IT_ARM_RESULT = "BUGFIX_VALIDATE_IT_ARM_RESULT"
+
     UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
@@ -625,4 +646,19 @@ class ArtifactConfigs:
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
+    )
+    # Per-arch bugfix validation result artifacts. Each per-arch job writes a
+    # small JSON file describing whether the bug was validated on that arch.
+    # The aggregator job `Bugfix validation (final)` consumes these.
+    bugfix_validate_results = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/bugfix_validate_result.json",
+    ).parametrize(
+        names=[
+            ArtifactNames.BUGFIX_VALIDATE_FT_AMD_RESULT,
+            ArtifactNames.BUGFIX_VALIDATE_FT_ARM_RESULT,
+            ArtifactNames.BUGFIX_VALIDATE_IT_AMD_RESULT,
+            ArtifactNames.BUGFIX_VALIDATE_IT_ARM_RESULT,
+        ]
     )

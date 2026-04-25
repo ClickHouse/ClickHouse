@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -1060,6 +1061,29 @@ tar -czf ./ci/tmp/logs.tar.gz \
             R.set_info("Failed to reproduce the bug")
         else:
             R.set_success()
+
+        # Per-arch bugfix-validation jobs always report SUCCESS to GitHub
+        # (Job.Config.force_success=True). The actual outcome is written to
+        # this small JSON, which the `Bugfix validation (final)` aggregator
+        # job consumes as an S3 artifact.
+        result_path = Path(temp_path) / "bugfix_validate_result.json"
+        try:
+            arch = "aarch64" if Utils.is_arm() else "amd64"
+            payload = {
+                "validated": bool(has_failure),
+                "info": (
+                    f"Bug reproduced on master HEAD ({arch}) and fixed on PR"
+                    if has_failure
+                    else f"Failed to reproduce the bug on master HEAD ({arch})"
+                ),
+                "arch": arch,
+                "kind": "integration tests",
+            }
+            with result_path.open("w") as f:
+                json.dump(payload, f)
+            print(f"Wrote bugfix-validation result to {result_path}: {payload}")
+        except OSError as e:
+            print(f"WARN: failed to write {result_path}: {e}")
 
     force_ok_exit = False
     if is_llvm_coverage and llvm_profdata_cmd:

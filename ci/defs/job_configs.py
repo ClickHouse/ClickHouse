@@ -547,9 +547,27 @@ class JobConfigs:
         ),
     )
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
-    bugfix_validation_ft_pr_job = Job.Config(
-        name=JobNames.BUGFIX_VALIDATE_FT,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+    #
+    # Per-arch Bugfix Validation Check (functional tests).
+    #
+    # Each variant (amd64, aarch64) runs the new/modified test on master HEAD
+    # and on the PR. The check is considered to "validate the bug" only when
+    # the test FAILS on master HEAD AND PASSES on the PR for that arch.
+    #
+    # Per-arch jobs are configured with `force_success=True`: they always
+    # report SUCCESS to GitHub, regardless of whether the bug was validated.
+    # The actual outcome is written to a small JSON artifact consumed by the
+    # `Bugfix validation (final)` aggregator job, which decides the final
+    # status: SUCCESS iff at least one arch validated the bug.
+    #
+    # Rationale: some bug fixes are architecture-specific (e.g. SSE2/AVX-only
+    # on x86, NEON-only on aarch64). With a single per-arch check, those PRs
+    # would always fail Bugfix validation on the "wrong" arch. Splitting into
+    # per-arch sub-checks plus a final aggregator allows architecture-specific
+    # fixes to pass when validated on at least one arch.
+    bugfix_validation_ft_pr_jobs = Job.Config(
+        name=JobNames.BUGFIX_VALIDATE,
+        runs_on=None,  # set per ParamSet
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
         run_in_docker="clickhouse/stateless-test+--network=host+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse:mode=1777",
@@ -563,6 +581,18 @@ class JobConfigs:
             ],
         ),
         result_name_for_cidb="Tests",
+        force_success=True,
+    ).parametrize(
+        Job.ParamSet(
+            parameter="functional tests, amd64",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            provides=[ArtifactNames.BUGFIX_VALIDATE_FT_AMD_RESULT],
+        ),
+        Job.ParamSet(
+            parameter="functional tests, aarch64",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            provides=[ArtifactNames.BUGFIX_VALIDATE_FT_ARM_RESULT],
+        ),
     )
     lightweight_functional_tests_job = Job.Config(
         name="Quick functional tests",
@@ -737,12 +767,49 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
     )
-    bugfix_validation_it_job = (
-        common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE_IT)
-        .set_runs_on(RunnerLabels.AMD_SMALL_MEM)
+    # Per-arch Bugfix Validation Check (integration tests). See the rationale
+    # comment above for `bugfix_validation_ft_pr_jobs`. Each per-arch variant
+    # always reports SUCCESS and writes its outcome to a JSON artifact; the
+    # `Bugfix validation (final)` aggregator decides the merge-blocking status.
+    bugfix_validation_it_jobs = (
+        common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE)
         .set_command(
             "python3 ./ci/jobs/integration_test_job.py --options BugfixValidation"
         )
+    )
+    bugfix_validation_it_jobs.force_success = True
+    bugfix_validation_it_jobs = bugfix_validation_it_jobs.parametrize(
+        Job.ParamSet(
+            parameter="integration tests, amd64",
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
+            provides=[ArtifactNames.BUGFIX_VALIDATE_IT_AMD_RESULT],
+        ),
+        Job.ParamSet(
+            parameter="integration tests, aarch64",
+            runs_on=RunnerLabels.ARM_SMALL_MEM,
+            provides=[ArtifactNames.BUGFIX_VALIDATE_IT_ARM_RESULT],
+        ),
+    )
+    # Final aggregator: depends on all four per-arch bugfix-validation result
+    # artifacts. Reads each JSON, returns SUCCESS iff at least one arch
+    # reported `validated == true` (i.e. the test failed on master HEAD AND
+    # passed on the PR on that arch). FAILURE otherwise. This is the only
+    # bugfix-validation check that blocks PR merge.
+    bugfix_validation_final_job = Job.Config(
+        name=JobNames.BUGFIX_VALIDATE_FINAL,
+        runs_on=RunnerLabels.AMD_SMALL,
+        command="python3 ./ci/jobs/bugfix_validation_aggregate.py",
+        requires=[
+            ArtifactNames.BUGFIX_VALIDATE_FT_AMD_RESULT,
+            ArtifactNames.BUGFIX_VALIDATE_FT_ARM_RESULT,
+            ArtifactNames.BUGFIX_VALIDATE_IT_AMD_RESULT,
+            ArtifactNames.BUGFIX_VALIDATE_IT_ARM_RESULT,
+        ],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/bugfix_validation_aggregate.py",
+            ],
+        ),
     )
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
