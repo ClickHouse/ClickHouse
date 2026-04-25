@@ -377,15 +377,27 @@ String normalizeDiskRelativePath(const String & input)
 
 /// Splits an absolute path into (disk, disk-relative-path) by matching the
 /// configured disk path prefix. Returns {nullptr, ""} if no disk matches.
+///
+/// When multiple configured disks have overlapping roots (e.g. `/mnt/user_files/`
+/// and `/mnt/user_files/archive/`), the most specific (longest) matching prefix
+/// wins, so an absolute path under the nested root is routed to the nested disk
+/// instead of being captured by the parent.
 std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_path, const Disks & disks)
 {
+    DiskPtr best_disk;
+    size_t best_prefix_size = 0;
     for (const auto & disk : disks)
     {
-        String disk_prefix = getDiskPathWithSlash(disk);
-        if (absolute_path.starts_with(disk_prefix))
-            return {disk, absolute_path.substr(disk_prefix.size())};
+        const String disk_prefix = getDiskPathWithSlash(disk);
+        if (absolute_path.starts_with(disk_prefix) && disk_prefix.size() > best_prefix_size)
+        {
+            best_disk = disk;
+            best_prefix_size = disk_prefix.size();
+        }
     }
-    return {nullptr, {}};
+    if (!best_disk)
+        return {nullptr, {}};
+    return {best_disk, absolute_path.substr(best_prefix_size)};
 }
 
 /// Returns true if the given absolute user-files path points to an existing file

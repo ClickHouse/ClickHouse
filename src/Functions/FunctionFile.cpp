@@ -166,21 +166,25 @@ public:
 
                     if (!file_path_str.empty() && file_path_str[0] == '/')
                     {
-                        /// Match the matching disk by path prefix, then validate the remaining
-                        /// disk-relative portion (no '..' escape).
+                        /// Match the disk by longest prefix, then validate the remaining
+                        /// disk-relative portion (no '..' escape). Longest-prefix matching
+                        /// keeps absolute-path resolution consistent with `StorageFile` when
+                        /// multiple disks have overlapping roots (e.g. `/mnt/user_files/` and
+                        /// `/mnt/user_files/archive/`): the more specific disk wins.
+                        size_t best_prefix_size = 0;
                         for (const auto & disk : disks)
                         {
                             const String prefix = disk_path_with_slash(disk);
-                            if (file_path_str.starts_with(prefix))
+                            if (file_path_str.starts_with(prefix) && prefix.size() > best_prefix_size)
                             {
                                 found_disk = disk;
-                                relative_path = normalize_relative(file_path_str.substr(prefix.size()));
-                                break;
+                                best_prefix_size = prefix.size();
                             }
                         }
                         if (!found_disk)
                             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                                 "Absolute path '{}' is not inside any user files disk", String(filename));
+                        relative_path = normalize_relative(file_path_str.substr(best_prefix_size));
                     }
                     else
                     {
