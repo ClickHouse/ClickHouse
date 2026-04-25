@@ -78,14 +78,17 @@ SECRETS = [
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
     Secret.Config(
         name="woolenwolf_gh_app.installation_id",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
 ]
 
@@ -368,6 +371,7 @@ class JobNames:
     LIBFUZZER_TEST = "libFuzzer tests"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
+    CI_TESTS = "CI Tests"
 
 
 class ToolSet:

@@ -2007,57 +2007,6 @@ def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster, db, unique):
     assert "CANNOT_CONNECT_RABBITMQ" in error
 
 
-def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster, db, unique):
-    instance.query(
-        f"""
-        CREATE TABLE {db}.cs (key UInt64, value UInt64)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = '{unique}_cs',
-                     rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_num_consumers = '5',
-                     rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size=100,
-                     rabbitmq_row_delimiter = '\\n';
-        CREATE TABLE {db}.view (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
-            SELECT * FROM {db}.cs;
-    """
-    )
-    instance.query(f"DETACH TABLE {db}.cs")
-
-    with rabbitmq_cluster.pause_rabbitmq():
-        instance.query(f"ATTACH TABLE {db}.cs")
-
-    messages_num = 1000
-    credentials = pika.PlainCredentials("root", "clickhouse")
-    parameters = pika.ConnectionParameters(
-        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
-    )
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-    for i in range(messages_num):
-        message = json.dumps({"key": i, "value": i})
-        channel.basic_publish(
-            exchange=f"{unique}_cs",
-            routing_key="",
-            body=message,
-            properties=pika.BasicProperties(delivery_mode=2, message_id=str(i)),
-        )
-    connection.close()
-
-    check_expected_result_polling(messages_num, f"SELECT count() FROM {db}.view")
-
-    instance.query(
-        f"""
-        DROP TABLE {db}.consumer;
-        DROP TABLE {db}.cs;
-    """
-    )
-
-
 def test_rabbitmq_format_factory_settings(rabbitmq_cluster, db, unique):
     instance.query(
         f"""

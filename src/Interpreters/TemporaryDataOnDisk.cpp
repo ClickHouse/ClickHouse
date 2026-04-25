@@ -1,4 +1,5 @@
 #include <memory>
+#include <DataTypes/DataTypeArray.h>
 #include <mutex>
 
 #include <IO/EmptyReadBuffer.h>
@@ -23,8 +24,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>

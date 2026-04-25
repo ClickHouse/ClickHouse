@@ -162,7 +162,7 @@ EOL
 
                 <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
                 <enable_analyzer>
-                    <readonly/>
+                    <min>1</min>
                 </enable_analyzer>
 
                 <!-- Prevent stack overflow -->
@@ -186,6 +186,19 @@ EOL
     </profiles>
 </clickhouse>
 EOL
+
+    if [[ -n "${ENABLE_SERVER_FUZZER:-}" ]]; then
+        cat > /etc/clickhouse-server/users.d/stress_test_serverfuzz.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+    fi
 
     cat > /etc/clickhouse-server/config.d/core.xml <<EOL
 <clickhouse>

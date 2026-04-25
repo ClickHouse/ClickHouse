@@ -32,6 +32,7 @@ namespace
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
+constexpr UInt64 default_distributed_cache_write_request_max_tries = 10lu;
 constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
 constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
 constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
@@ -45,6 +46,7 @@ constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
+constexpr UInt64 default_distributed_cache_write_request_max_tries = DistributedCache::DEFAULT_WRITE_REQUEST_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
 constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MIN_MS;
 constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MAX_MS;
@@ -1073,6 +1075,18 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
     DECLARE(Bool, use_variant_default_implementation_for_comparisons, true, R"(
 Enables or disables default implementation for Variant type in comparison functions.
 )", 0) \
+    DECLARE(Bool, variant_throw_on_type_mismatch, true, R"(
+When applying a function to a [Variant](../../sql-reference/data-types/variant.md) column using the default implementation,
+controls what happens for rows whose actual type is incompatible with the function:
+- `true` (default) — throw an exception.
+- `false` — return `NULL` for those rows instead.
+)", 0) \
+    DECLARE(Bool, dynamic_throw_on_type_mismatch, true, R"(
+When applying a function to a [Dynamic](../../sql-reference/data-types/dynamic.md) column using the default implementation,
+controls what happens for rows whose actual type is incompatible with the function:
+- `true` (default) — throw an exception.
+- `false` — return `NULL` for those rows instead.
+)", 0) \
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
 )", 0) \
@@ -1754,7 +1768,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
     DECLARE(Bool, per_part_index_stats, false, R"(
         Logs index statistics per part
 )", 0) \
-    DECLARE(Bool, materialize_statistics_on_insert, true, R"(
+    DECLARE(Bool, materialize_statistics_on_insert, false, R"(
 If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
@@ -2566,14 +2580,20 @@ Possible values:
 
 - Positive integer.
 )", 0) \
-    DECLARE(UInt64, http_max_fields, 1000000, R"(
+    DECLARE(UInt64, http_max_fields, 1000, R"(
 Maximum number of fields in HTTP header
 )", 0) \
-    DECLARE(UInt64, http_max_field_name_size, 128 * 1024, R"(
+    DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
 Maximum length of field name in HTTP header
 )", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
 Maximum length of field value in HTTP header
+)", 0) \
+    DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
+Maximum total size of all HTTP request headers (names and values combined) in bytes.
+)", 0) \
+    DECLARE(Seconds, http_headers_read_timeout, 30, R"(
+Maximum time in seconds to read all HTTP request headers. This is a total deadline for the entire header parsing phase, not a per-read timeout. Protects against slowloris-style attacks where a client trickles header data slowly to hold connections open.
 )", 0) \
     DECLARE(Bool, http_skip_not_found_url_for_globs, true, R"(
 Skip URLs for globs with HTTP_NOT_FOUND error
@@ -2602,6 +2622,9 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
 )", 0) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+)", 0) \
+    DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
+Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into the disjunction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are handled: the argument list is normalized like `coalesce` itself (`NULL` literals dropped, arguments after the first non-`Nullable` one dropped), and a trailing non-`NULL` constant, if any, is emitted as the final branch. The rewrite is strictly additive for index pruning; runtime filtering still uses the original predicate.
 )", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
@@ -3884,6 +3907,11 @@ Possible values:
     DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
 )", 0) \
+    DECLARE(Bool, read_in_order_use_virtual_row_per_block, false, R"(
+When enabled together with `read_in_order_use_virtual_row`, emit a virtual row after each block read (not only at the beginning of each part).
+This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
+Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
+)", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -5095,6 +5123,14 @@ Possible values:
 - 0 - disabled
 - 1 - enabled
 )", 0) \
+    DECLARE(Bool, asterisk_include_virtual_columns, false, R"(
+Include virtual columns for wildcard query (`SELECT *`).
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+)", 0) \
     DECLARE(Bool, optimize_skip_merged_partitions, false, R"(
 Enables or disables optimization for [OPTIMIZE TABLE ... FINAL](../../sql-reference/statements/optimize.md) query if there is only one part with level > 0 and it doesn't have expired TTL.
 
@@ -5501,7 +5537,7 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Supported only with the analyzer (`enable_analyzer = 1`).
 :::
 )", 0) \
-    DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
+    DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
     DECLARE(Bool, optimize_rewrite_like_perfect_affix, true, R"(
@@ -5996,6 +6032,18 @@ Enable multithreading after evaluating window functions to allow parallel stream
 Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
+)", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
+Optimize reading with FINAL from ReplacingMergeTree by building a set of primary keys and using it for index analysis.
+)", 0) \
+    DECLARE(UInt64, max_rows_for_lazy_final, 10000000, R"(
+Maximum number of rows in the set for lazy FINAL optimization. If exceeded, falls back to normal FINAL.
+)", 0) \
+    DECLARE(UInt64, max_bytes_for_lazy_final, 256000000, R"(
+Maximum number of bytes in the set for lazy FINAL optimization. If exceeded, falls back to normal FINAL.
+)", 0) \
+    DECLARE(Float, min_filtered_ratio_for_lazy_final, 0.5, R"(
+Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. If less than this fraction of marks is filtered, falls back to normal FINAL. Value 0 disables this check.
 )", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
@@ -6523,7 +6571,10 @@ Only has an effect in ClickHouse Cloud. Fetch metrics only from current availabi
 Only has an effect in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
 )", 0) \
     DECLARE(UInt64, distributed_cache_read_request_max_tries, default_distributed_cache_read_request_max_tries, R"(
-Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache request if unsuccessful
+Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache read request if unsuccessful
+)", 0) \
+    DECLARE(UInt64, distributed_cache_write_request_max_tries, default_distributed_cache_write_request_max_tries, R"(
+Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache write request if unsuccessful
 )", 0) \
     DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
 Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache
@@ -6934,6 +6985,9 @@ See also:
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \
+    DECLARE(UInt64, predicate_statistics_sample_rate, 0, R"(
+Collect predicate selectivity statistics into `system.predicate_statistics_log`. When set to N > 0, approximately 1/N of queries are sampled (by the query ID). 0 means disabled.
+)", 0) \
     DECLARE(Bool, allow_create_index_without_type, false, R"(
 Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.
 )", 0) \
@@ -7196,6 +7250,9 @@ Allow usage of materialized views with parallel replicas
     DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
 Allow pushing down filters to part of query which parallel replicas choose to execute
 )", BETA) \
+    DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
+Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.
+)", BETA) \
     DECLARE(Bool, distributed_index_analysis, false, R"(
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.
@@ -7418,6 +7475,9 @@ Note that initially (24.12) there was a server setting (`send_settings_to_client
     DECLARE(Bool, allow_archive_path_syntax, true, R"(
 File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>` if the archive has correct extension.
 )", 0) \
+    DECLARE(S3UriStyle, s3_uri_style, S3UriStyle::AUTO, R"(
+Force the s3 endpoint style. Possible values: auto, virtual_hosted, path.
+)", 0) \
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
@@ -7560,6 +7620,9 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
+    DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
+Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -7735,6 +7798,12 @@ Allow to execute `insert` queries into iceberg.
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_iceberg_remove_orphan_files, false, R"(
+Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, iceberg_orphan_files_older_than_seconds, 259200, R"(
+Default age threshold in seconds for orphan file removal in Iceberg tables. Files newer than this are not considered orphans. Used when the older_than argument is omitted from the remove_orphan_files() procedure call. Default is 259200 (3 days).
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
 Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
 )", EXPERIMENTAL) \
@@ -7860,6 +7929,34 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
+    /* AI function settings */ \
+    DECLARE(Bool, allow_experimental_ai_functions, false, R"(
+Enable experimental AI functions (e.g. `aiGenerateContent`). These functions make external HTTP calls to AI providers.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
+Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_function_max_retries, 0, R"(
+Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_function_retry_initial_delay_ms, 1000, R"(
+Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, ai_function_throw_on_error, true, R"(
+If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
+Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of input tokens, since the number of input tokens of a call are not known in advance. Set to 0 to disable.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
+Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of output tokens, since the number of output tokens of a call are not known in advance. Set to 0 to disable.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
+Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
+If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
+)", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
 

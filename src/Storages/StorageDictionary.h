@@ -87,6 +87,7 @@ public:
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
 
     bool isDictionary() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     void shutdown(bool is_drop) override;
     void startup() override;
 

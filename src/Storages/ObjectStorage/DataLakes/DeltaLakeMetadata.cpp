@@ -503,7 +503,7 @@ struct DeltaLakeMetadataImpl
         std::atomic<int> is_stopped{0};
 
         auto open_file_res = parquet::arrow::OpenFile(
-            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool());
+            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
         THROW_ARROW_NOT_OK(open_file_res.status());
         auto reader = *std::move(open_file_res);
 
@@ -624,7 +624,7 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
 
 static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)
 {
-    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
+    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
     return supports_delta_kernel && context->getSettingsRef()[Setting::allow_experimental_delta_kernel_rs] ;
 }
 

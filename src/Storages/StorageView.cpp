@@ -1,4 +1,5 @@
 #include <Access/ViewDefinerDependencies.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -20,6 +21,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
@@ -35,6 +37,14 @@
 #include <Parsers/QueryParameterVisitor.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/WindowFunctionsUtils.h>
+#include <Planner/findQueryForParallelReplicas.h>
+
 namespace DB
 {
 namespace Setting
@@ -43,6 +53,8 @@ namespace Setting
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
 }
 
 namespace ErrorCodes
@@ -105,10 +117,17 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot)
+ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
+
+    if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree])
+    {
+        if (auto storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context))
+            view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};
+    }
+
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
@@ -162,8 +181,129 @@ StorageView::StorageView(
 
     is_parameterized_view = is_parameterized_view_ || query.isParameterizedView();
     storage_metadata.setSelectQuery(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
+}
+
+/// Build and resolve the view's inner query tree
+/// Then find the leftmost underlying MT storage eligible for parallel replicas.
+/// Returns nullptr if the view is too complex or resolution fails.
+StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const
+{
+    if (isParameterizedView())
+        return nullptr;
+
+    /// When called from INSERT ... SELECT context, the context carries insertion table info.
+    /// If we resolve the view's inner query with this context, table functions like file()
+    /// may incorrectly infer schema from the insertion table (via use_structure_from_insertion_table_in_table_functions),
+    /// poisoning the schema cache with wrong column names.
+    if (context->hasInsertionTable())
+        return nullptr;
+
+    auto inner_query_ast = getInMemoryMetadataPtr(context, false)->getSelectQuery().inner_query;
+
+    QueryTreeNodePtr inner_query_tree;
+    try
+    {
+        inner_query_tree = buildQueryTree(inner_query_ast->clone(), context);
+        QueryTreePassManager pass_manager(context);
+        addQueryTreePasses(pass_manager);
+        pass_manager.runOnlyResolve(inner_query_tree);
+    }
+    catch (const Exception &)
+    {
+        /// The view may reference table functions, use SQL SECURITY DEFINER,
+        /// or have other constructs that prevent resolution with the current user's context.
+        /// Example: 03667_view_with_s3_cluster_and_sql_security_definer.
+        /// Just return nullptr to indicate the view is not suitable for this optimization.
+        tryLogCurrentException(
+            __func__, fmt::format("Failed to resolve inner query of view {}", getStorageID().getFullTableName()), LogsLevel::trace);
+        return nullptr;
+    }
+
+    /// Recursively walk the resolved query tree to find the underlying MergeTree storage.
+    /// For UNION nodes, all branches must be eligible.
+    /// Returns nullptr if the view is not suitable for parallel replicas.
+    std::function<StoragePtr(const IQueryTreeNode *)> find_storage = [&](const IQueryTreeNode * node) -> StoragePtr
+    {
+        while (node)
+        {
+            switch (node->getNodeType())
+            {
+                case QueryTreeNodeType::QUERY:
+                {
+                    const auto & query_node = node->as<QueryNode &>();
+                    /// Only simple pass-through views are eligible. Any clause that changes
+                    /// result semantics when evaluated per-replica must disqualify the view.
+                    if (query_node.hasGroupBy() || query_node.hasHaving()
+                        || query_node.hasWindow() || query_node.hasQualify()
+                        || query_node.hasOrderBy() || query_node.isDistinct()
+                        || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
+                        || query_node.hasLimitBy()
+                        || query_node.hasLimit() || query_node.hasOffset()
+                        || hasWindowFunctionNodes(query_node.getProjectionNode()))
+                        return nullptr;
+
+                    node = query_node.getJoinTree().get();
+                    break;
+                }
+                case QueryTreeNodeType::UNION:
+                {
+                    const auto & union_node = node->as<UnionNode &>();
+
+                    /// Only UNION ALL is safe to parallelize.
+                    if (union_node.getUnionMode() != SelectUnionMode::UNION_ALL)
+                        return nullptr;
+
+                    const auto & queries = union_node.getQueries().getNodes();
+                    if (queries.empty())
+                        return nullptr;
+
+                    /// Check ALL branches of the UNION — not just the first one.
+                    /// Every branch must resolve to an eligible MergeTree storage.
+                    /// The branches may reference different tables, but if the same
+                    /// table appears in multiple branches, reject it —
+                    /// we avoid supporting it, since it requires to complicate parallel replicas protocol
+                    /// and considered as not very practical case
+                    StoragePtr result;
+                    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen_ids;
+                    for (const auto & query : queries)
+                    {
+                        auto branch_storage = find_storage(query.get());
+                        if (!branch_storage)
+                            return nullptr;
+
+                        if (!seen_ids.insert(branch_storage->getStorageID()).second)
+                            return nullptr;
+
+                        if (!result)
+                            result = branch_storage;
+                    }
+                    return result;
+                }
+                case QueryTreeNodeType::TABLE:
+                {
+                    const auto & table_node = node->as<const TableNode &>();
+                    const auto & storage = table_node.getStorage();
+
+                    /// If the table is itself a view, recursively check its inner query.
+                    const auto * nested_view = typeid_cast<const StorageView *>(storage.get());
+                    if (nested_view)
+                        return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
+
+                    if (!isTableNodeEligibleForParallelReplicas(table_node, storage, context))
+                        return nullptr;
+
+                    return table_node.getStorage();
+                }
+                default:
+                    return nullptr;
+            }
+        }
+        return nullptr;
+    };
+
+    return find_storage(inner_query_tree.get());
 }
 
 void StorageView::readImpl(
@@ -189,14 +329,15 @@ void StorageView::readImpl(
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        auto view_context = getViewContext(context, storage_snapshot);
-        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
+        auto view_context = getViewContext(context, storage_snapshot, this);
+        InterpreterSelectQueryAnalyzer interpreter(
+            current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
-        auto view_context = getViewContext(context, storage_snapshot);
+        auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
@@ -240,7 +381,7 @@ void StorageView::drop()
 {
     auto table_id = getStorageID();
 
-    if (getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
+    if (getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->sql_security_type == SQLSecurityType::DEFINER)
         ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 }
 
@@ -250,8 +391,8 @@ void StorageView::alter(
     AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
     DatabaseCatalog::instance()
