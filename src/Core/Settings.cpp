@@ -7232,6 +7232,11 @@ Parts virtually divided into segments to be distributed between replicas for par
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", 0) \
+    DECLARE(Bool, parallel_replicas_prefer_local_replica, true, R"(
+When enabled (default), the local replica is always included in the set of replicas used for parallel reading.
+When disabled, the local replica is not given any preference and replicas are selected purely by the load balancing algorithm.
+This allows queries with `max_parallel_replicas = 1` to be directed to another host, which can improve cache locality when many short queries are distributed across a cluster.
+)", 0) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", 0) \
