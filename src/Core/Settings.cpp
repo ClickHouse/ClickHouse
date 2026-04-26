@@ -3872,7 +3872,7 @@ If it's used on a cluster with a single shard and multiple replicas, disabling t
 Amount of retries while fetching partition from another host.
 )", 0) \
     DECLARE(UInt64, http_max_multipart_form_data_size, 1024 * 1024 * 1024, R"(
-Limit on size of multipart/form-data content. This setting cannot be parsed from URL parameters and should be set in a user profile. Note that content is parsed and external tables are created in memory before the start of query execution. And this is the only limit that has an effect on that stage (limits on max memory usage and max execution time have no effect while reading HTTP form data).
+Limit on size of multipart/form-data content. When native decompression is enabled (via the _decompress parameter), this limit applies to the decompressed data size to prevent decompression bomb attacks. This setting cannot be parsed from URL parameters and should be set in a user profile. Note that content is parsed and external tables are created in memory before the start of query execution. And this is the only limit that has an effect on that stage (limits on max memory usage and max execution time have no effect while reading HTTP form data).
 )", 0) \
     DECLARE(Bool, calculate_text_stack_trace, true, R"(
 Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when a huge amount of wrong queries are executed. In normal cases, you should not disable this option.

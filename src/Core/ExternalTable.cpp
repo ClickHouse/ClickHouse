@@ -196,14 +196,31 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     /// Check if data should be decompressed (native compressed format)
     if (params.has(name + "_decompress"))
     {
-        read_buffer = std::make_unique<CompressedReadBuffer>(
+        auto compressed_buffer = std::make_unique<CompressedReadBuffer>(
             std::move(read_buffer),
             /* allow_different_codecs_ = */ false,
             /* external_data_ = */ true);
 
         /// Optionally disable checksum verification
         if (params.has(name + "_disable_checksum"))
-            static_cast<CompressedReadBuffer &>(*read_buffer).disableChecksumming();
+            compressed_buffer->disableChecksumming();
+
+        /// Apply size limit to decompressed data to prevent decompression bomb attacks
+        if (settings[Setting::http_max_multipart_form_data_size])
+        {
+            read_buffer = std::make_unique<LimitReadBuffer>(
+                std::move(compressed_buffer),
+                LimitReadBuffer::Settings{
+                    .read_no_more = settings[Setting::http_max_multipart_form_data_size],
+                    .expect_eof = true,
+                    .excetion_hint = "the maximum size of decompressed multipart/form-data. "
+                                     "This limit can be tuned by 'http_max_multipart_form_data_size' setting",
+                });
+        }
+        else
+        {
+            read_buffer = std::move(compressed_buffer);
+        }
     }
 
     if (params.has(name + "_structure"))
