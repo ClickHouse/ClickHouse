@@ -45,7 +45,7 @@ ColumnPtr FuzzQuerySource::createColumn()
             continue;
 
         /// AST is too long, will start from the original query.
-        if (config.max_query_length > 500)
+        if (fuzzed_text.size() > config.max_query_length)
         {
             fuzz_base = query;
             continue;
