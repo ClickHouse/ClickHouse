@@ -1,10 +1,15 @@
--- Tags: long
+-- Tags: long, no-random-settings, no-random-merge-tree-settings
 
 -- Test that read-in-order optimization works through CreatingSetsStep (IN subqueries)
 -- when used with full_sorting_merge join.
 -- Previously, DelayedCreatingSetsStep between SortingStep and ReadFromMergeTree
 -- prevented findReadingStep from reaching the reading step, causing a fallback
 -- to ReadPool (Thread) instead of ReadPoolInOrder (InOrder).
+--
+-- The no-random-settings / no-random-merge-tree-settings tags are required because
+-- this test asserts on the EXPLAIN PIPELINE shape, which is sensitive to many
+-- unrelated randomized knobs (merge-tree layout, range splitting, two-level merge
+-- threshold, etc.).
 
 DROP TABLE IF EXISTS data_a;
 DROP TABLE IF EXISTS data_b;
