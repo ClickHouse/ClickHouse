@@ -46,7 +46,6 @@ ReadFromCountByGranularity::ReadFromCountByGranularity(
     , filter_expression(std::move(filter_expression_))
     , filter_column_name(std::move(filter_column_name_))
     , has_filter(has_filter_)
-
 {
 }
 
