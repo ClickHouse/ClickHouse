@@ -265,3 +265,6 @@ RT_create_or_replace_sql_function	CREATE OR REPLACE FUNCTION myFunc AS x -> (x +
 Idempotent_select	1
 Idempotent_create	1
 Idempotent_dict	1
+Idempotent_order_by_collate	1
+Idempotent_order_by_fill	1
+Idempotent_order_by_collate_fill	1

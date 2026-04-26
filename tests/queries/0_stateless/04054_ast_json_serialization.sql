@@ -1530,3 +1530,18 @@ SELECT 'Idempotent_create' AS t,
 SELECT 'Idempotent_dict' AS t,
     formatQueryFromJSON(parseQueryToJSON(formatQueryFromJSON(parseQueryToJSON('CREATE DICTIONARY dict (id UInt64, name String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 1000)'))))
     = formatQueryFromJSON(parseQueryToJSON('CREATE DICTIONARY dict (id UInt64, name String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 1000)'));
+
+-- `ASTOrderByElement` round-trip stability for `COLLATE` / `WITH FILL`:
+-- previously named child keys plus `children` array would duplicate optional
+-- subtrees (collation, fill_*) on every JSON round-trip.
+SELECT 'Idempotent_order_by_collate' AS t,
+    formatQueryFromJSON(parseQueryToJSON(formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t ORDER BY a COLLATE \'en\''))))
+    = formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t ORDER BY a COLLATE \'en\''));
+
+SELECT 'Idempotent_order_by_fill' AS t,
+    formatQueryFromJSON(parseQueryToJSON(formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t ORDER BY a WITH FILL FROM 1 TO 10 STEP 1'))))
+    = formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t ORDER BY a WITH FILL FROM 1 TO 10 STEP 1'));
+
+SELECT 'Idempotent_order_by_collate_fill' AS t,
+    formatQueryFromJSON(parseQueryToJSON(formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t ORDER BY a COLLATE \'en\' WITH FILL FROM 1 TO 10 STEP 1'))))
+    = formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t ORDER BY a COLLATE \'en\' WITH FILL FROM 1 TO 10 STEP 1'));

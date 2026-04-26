@@ -87,12 +87,18 @@ void ASTOrderByElement::writeJSON(WriteBuffer & out) const
         w.writeBool("nulls_direction_was_explicitly_specified", true);
     if (with_fill)
         w.writeBool("with_fill", true);
+    /// Each child is serialized exactly once via its named key.
+    /// `children[0]` is the expression; optional nodes (collation, fill_*) are
+    /// also stored in `children` with positions tracked by the `positions` map.
+    /// We don't emit the generic `children` array to avoid duplicating optional
+    /// nodes on JSON round-trip.
+    if (!children.empty())
+        w.writeChild("expression", children.front());
     w.writeChild("collation", getCollation());
     w.writeChild("fill_from", getFillFrom());
     w.writeChild("fill_to", getFillTo());
     w.writeChild("fill_step", getFillStep());
     w.writeChild("fill_staleness", getFillStaleness());
-    w.writeChildren(children);
 }
 
 void ASTStorageOrderByElement::writeJSON(WriteBuffer & out) const
@@ -110,26 +116,22 @@ void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
     nulls_direction_was_explicitly_specified = r.getBool("nulls_direction_was_explicitly_specified");
     with_fill = r.getBool("with_fill");
 
-    children = r.readChildren();
+    if (auto expression = r.readChild("expression"))
+        children.push_back(std::move(expression));
 
-    auto child = r.readChild("collation");
-    if (child)
+    if (auto child = r.readChild("collation"))
         setCollation(child);
 
-    child = r.readChild("fill_from");
-    if (child)
+    if (auto child = r.readChild("fill_from"))
         setFillFrom(child);
 
-    child = r.readChild("fill_to");
-    if (child)
+    if (auto child = r.readChild("fill_to"))
         setFillTo(child);
 
-    child = r.readChild("fill_step");
-    if (child)
+    if (auto child = r.readChild("fill_step"))
         setFillStep(child);
 
-    child = r.readChild("fill_staleness");
-    if (child)
+    if (auto child = r.readChild("fill_staleness"))
         setFillStaleness(child);
 }
 
