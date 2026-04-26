@@ -29,13 +29,15 @@ After enabling, navigate to `/webterminal` on any ClickHouse HTTP port (for exam
 
 ## Authentication {#authentication}
 
-The web terminal authenticates with the same mechanisms as the HTTP protocol:
+The web terminal authenticates the user against the same `Session` and access-control checks as the HTTP protocol, but credentials are exchanged in-band over the established WebSocket connection rather than via the HTTP upgrade request. After the WebSocket handshake completes, the browser sends the first message as JSON:
 
-- URL query parameters (`user`, `password`).
-- HTTP Basic authentication.
-- `X-ClickHouse-User` and `X-ClickHouse-Key` headers.
+```json
+{"type": "auth", "user": "<user>", "password": "<password>"}
+```
 
-Credentials are sent in the first WebSocket message rather than as part of the upgrade URL, so they are not exposed in access logs or browser history. Invalid credentials cause the server to close the WebSocket with code `1008`; the browser UI re-prompts for credentials.
+This avoids placing credentials in URL query parameters or `Authorization` headers attached to the upgrade request, where they could end up in browser history, server access logs, and reverse-proxy logs. URL parameters, HTTP Basic, and `X-ClickHouse-User`/`X-ClickHouse-Key` headers on the upgrade request are intentionally **not** consulted by `/webterminal`.
+
+Invalid credentials cause the server to close the WebSocket with code `1008`; the browser UI re-prompts for credentials.
 
 ## What the session looks like {#session}
 
