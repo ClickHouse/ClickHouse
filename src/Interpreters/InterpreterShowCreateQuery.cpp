@@ -56,13 +56,11 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         /// Only `SHOW CREATE TABLE` should resolve temporary tables for an unqualified name —
         /// `VIEW` and `DICTIONARY` cannot refer to a temporary table, so resolving to one would
         /// shadow a permanent view/dictionary with the same name and fail with `BAD_ARGUMENTS`.
-        Context::StorageNamespace resolve_table_type;
+        Context::StorageNamespace resolve_table_type = Context::ResolveOrdinary;
         if (show_query->isTemporary())
             resolve_table_type = Context::ResolveExternal;
         else if (query_ptr->as<ASTShowCreateTableQuery>())
             resolve_table_type = Context::ResolveAll;
-        else
-            resolve_table_type = Context::ResolveOrdinary;
         auto table_id = getContext()->resolveStorageID(*show_query, resolve_table_type);
 
         bool is_dictionary = static_cast<bool>(query_ptr->as<ASTShowCreateDictionaryQuery>());
