@@ -2383,12 +2383,21 @@ public:
             /// Use disk-based write (supports S3, etc.). `path` is the absolute display path
             /// of the form `<disk_path>/<relative>`; disk APIs expect the disk-relative form.
             ///
-            /// Some object storages (e.g. S3) do not support append mode, so we always
-            /// rewrite. Callers relying on append semantics have already been caught upstream
-            /// by the `checkIfFormatSupportAppend` guard in `StorageFile::write`, which either
-            /// throws `CANNOT_APPEND_TO_FILE` or routes the write to a fresh indexed file.
+            /// Mirror the semantics of the local-filesystem path (which uses `O_APPEND`):
+            /// when truncation is not requested and the target file exists, append rather
+            /// than overwrite. The upstream guard in `StorageFile::write` rejects appends
+            /// for formats that do not support append, so reaching here in append mode means
+            /// the format is append-capable. Disks that do not implement `WriteMode::Append`
+            /// (e.g. `s3_plain`) will throw `NOT_IMPLEMENTED` from `writeFile`, which is the
+            /// correct, visible failure mode (instead of silently overwriting existing data).
+            const bool truncate = (flags & O_TRUNC) != 0;
+            const WriteMode mode = (!truncate && user_files_disk->existsFile(user_files_disk_relative_path))
+                ? WriteMode::Append
+                : WriteMode::Rewrite;
+            do_not_write_prefix = (mode == WriteMode::Append)
+                && user_files_disk->getFileSize(user_files_disk_relative_path) != 0;
             naked_buffer = user_files_disk->writeFile(
-                user_files_disk_relative_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+                user_files_disk_relative_path, DBMS_DEFAULT_BUFFER_SIZE, mode);
         }
         else
         {
@@ -2573,6 +2582,16 @@ SinkToStoragePtr StorageFile::write(
 
     if (is_partitioned_implementation)
     {
+        /// Partitioned writes still go through `PartitionedStorageFileSink`, which uses
+        /// local filesystem APIs (`fs::create_directories`) and constructs the inner
+        /// `StorageFileSink` without disk parameters. With `user_files_policy` configured,
+        /// this would bypass the `IDisk` abstraction entirely and write to local paths
+        /// (or fail) instead of the configured backend (e.g. S3). Reject explicitly until
+        /// disk-aware partitioned writes are implemented, to avoid silent data corruption.
+        if (user_files_volume)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "INSERT ... PARTITION BY into file() is not supported with user_files_policy");
+
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
 

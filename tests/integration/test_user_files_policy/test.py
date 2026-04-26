@@ -231,3 +231,45 @@ def test_s3_time_virtual_column():
         "FROM file('s3_mtime.csv', 'CSV', 'x UInt64')"
     )
     assert result.strip() == "1"
+
+
+def test_local_insert_appends_to_existing_file():
+    """Append-capable formats (CSV/TSV) must not silently overwrite an existing file."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('append_test.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_local.query(
+        "INSERT INTO FUNCTION file('append_test.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+
+    result = node_local.query(
+        "SELECT count() FROM file('append_test.csv', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "2"
+
+
+def test_local_insert_truncate_on_insert():
+    """`engine_file_truncate_on_insert=1` must overwrite existing data."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('truncate_test.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_local.query(
+        "INSERT INTO FUNCTION file('truncate_test.csv', 'CSV', 'x UInt64') SELECT 2 "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+
+    result = node_local.query(
+        "SELECT * FROM file('truncate_test.csv', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "2"
+
+
+def test_local_partitioned_insert_rejected():
+    """`INSERT ... PARTITION BY` must be rejected with a clear error under user_files_policy
+    until disk-aware partitioned writes are implemented (silent fall-through to the local
+    filesystem would bypass the configured backend)."""
+    with pytest.raises(Exception, match="NOT_IMPLEMENTED|not supported with user_files_policy"):
+        node_local.query(
+            "INSERT INTO FUNCTION file('part_{_partition_id}.csv', 'CSV', 'x UInt64') "
+            "PARTITION BY x SELECT number FROM numbers(3)"
+        )
