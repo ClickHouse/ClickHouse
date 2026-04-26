@@ -12,7 +12,11 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+
+#include <absl/container/flat_hash_map.h>
 
 #include <atomic>
 
@@ -49,7 +53,6 @@ ReadFromCountByGranularity::ReadFromCountByGranularity(
 {
 }
 
-/// A task is a slice of mark ranges from a single part.
 struct CountTask
 {
     DataPartPtr data_part;
@@ -74,20 +77,77 @@ struct CountByGranularityPool
 using CountByGranularityPoolPtr = std::shared_ptr<CountByGranularityPool>;
 using BucketKey = std::vector<Field>;
 
-struct BucketKeyCompare
+struct BucketKeyHash
 {
-    bool operator()(const BucketKey & a, const BucketKey & b) const
+    size_t operator()(const BucketKey & key) const
     {
-        for (size_t i = 0; i < a.size() && i < b.size(); ++i)
-        {
-            if (a[i] < b[i]) return true;
-            if (b[i] < a[i]) return false;
-        }
-        return a.size() < b.size();
+        SipHash hash;
+        for (const auto & field : key)
+            applyVisitor(FieldVisitorHash(hash), field);
+        return hash.get64();
     }
 };
 
-using BucketCounts = std::map<BucketKey, UInt64, BucketKeyCompare>;
+struct MultiNumericKeyHash
+{
+    size_t operator()(const std::vector<UInt64> & key) const
+    {
+        SipHash hash;
+        for (auto v : key)
+            hash.update(v);
+        return hash.get64();
+    }
+};
+
+using SingleNumericCounts = absl::flat_hash_map<UInt64, UInt64>;
+using MultiNumericCounts = absl::flat_hash_map<std::vector<UInt64>, UInt64, MultiNumericKeyHash>;
+using GenericCounts = absl::flat_hash_map<BucketKey, UInt64, BucketKeyHash>;
+
+/// Mapping from bucket expression input name to PK column index.
+/// Precomputed once per source to avoid per-granule string matching.
+struct InputToPKMapping
+{
+    struct Entry
+    {
+        String input_name;
+        size_t pk_index;
+    };
+    /// Entries for bucket expression inputs that need aliasing (qualified name != PK name).
+    std::vector<Entry> aliases;
+    /// All bucket expression inputs mapped to their PK column index, for building index blocks.
+    std::vector<Entry> all;
+};
+
+static InputToPKMapping buildInputToPKMapping(
+    const ExpressionActionsPtr & bucket_expression,
+    const KeyDescription & primary_key)
+{
+    InputToPKMapping mapping;
+    const auto & bucket_inputs = bucket_expression->getActionsDAG().getInputs();
+    for (const auto * input_node : bucket_inputs)
+    {
+        const auto & input_name = input_node->result_name;
+        for (size_t pk_i = 0; pk_i < primary_key.column_names.size(); ++pk_i)
+        {
+            const auto & pk_name = primary_key.column_names[pk_i];
+            if (input_name == pk_name || input_name.ends_with("." + pk_name))
+            {
+                mapping.all.push_back({input_name, pk_i});
+                if (input_name != pk_name)
+                    mapping.aliases.push_back({input_name, pk_i});
+                break;
+            }
+        }
+    }
+    return mapping;
+}
+
+enum class KeyMode : uint8_t
+{
+    SingleNumeric,
+    MultiNumeric,
+    Generic,
+};
 
 static bool bucketColumnsEqual(const Columns & cols, size_t a, size_t b)
 {
@@ -97,7 +157,7 @@ static bool bucketColumnsEqual(const Columns & cols, size_t a, size_t b)
     return true;
 }
 
-static BucketKey getBucketKey(const Columns & cols, size_t row)
+static BucketKey getGenericBucketKey(const Columns & cols, size_t row)
 {
     BucketKey key;
     key.reserve(cols.size());
@@ -125,7 +185,10 @@ public:
         ContextPtr context_,
         ExpressionActionsPtr filter_expression_,
         String filter_column_name_,
-        bool has_filter_)
+        bool has_filter_,
+        InputToPKMapping input_mapping_,
+        KeyMode key_mode_,
+        std::vector<size_t> key_col_positions_)
         : ISource(std::move(header_))
         , pool(std::move(pool_))
         , bucket_expression(std::move(bucket_expression_))
@@ -138,6 +201,9 @@ public:
         , filter_expression(std::move(filter_expression_))
         , filter_column_name(std::move(filter_column_name_))
         , has_filter(has_filter_)
+        , input_mapping(std::move(input_mapping_))
+        , key_mode(key_mode_)
+        , key_col_positions(std::move(key_col_positions_))
     {
     }
 
@@ -156,7 +222,6 @@ protected:
     }
 
 private:
-    /// Create a MergeTreeReader for the given marks (PK columns only).
     MergeTreeReaderPtr createReaderForMarks(
         const DataPartPtr & data_part, const MarkRanges & marks)
     {
@@ -179,68 +244,90 @@ private:
             nullptr, reader_settings, {}, {});
     }
 
-    /// Read a granule's PK columns and count rows per bucket.
-    /// If apply_filter is true, also apply the filter expression
-    /// and only count rows that pass.
-    void countGranuleByReading(
-        IMergeTreeReader & reader, size_t mark, size_t rows_in_granule,
-        bool apply_filter, BucketCounts & bucket_counts)
+    Block readGranule(IMergeTreeReader & reader, size_t mark, size_t rows_in_granule)
     {
         Columns res(primary_key.column_names.size(), nullptr);
         reader.readRows(mark, mark + 1, false, rows_in_granule, 0, res);
 
-        const auto & bucket_inputs = bucket_expression->getActionsDAG().getInputs();
         Block block;
         for (size_t i = 0; i < primary_key.column_names.size(); ++i)
         {
             if (!res[i])
-                return;
-            /// Insert with PK name first (for filter expression).
+                return {};
             block.insert({res[i], primary_key.data_types[i], primary_key.column_names[i]});
-            /// If bucket expression expects a different name, add an alias.
-            if (i < bucket_inputs.size() && bucket_inputs[i]->result_name != primary_key.column_names[i])
-                block.insert({res[i], primary_key.data_types[i], bucket_inputs[i]->result_name});
         }
+        for (const auto & alias : input_mapping.aliases)
+            block.insert({res[alias.pk_index], primary_key.data_types[alias.pk_index], alias.input_name});
+        return block;
+    }
 
-        size_t num_rows = block.rows();
-
-        ColumnPtr filter_col;
-        if (apply_filter && filter_expression)
-        {
-            filter_expression->execute(block);
-            filter_col = block.getByName(filter_column_name).column;
-        }
-
+    Columns executeBucketExpression(Block & block)
+    {
         bucket_expression->execute(block);
-
         Columns bucket_cols;
+        bucket_cols.reserve(group_by_key_names.size());
         for (const auto & key_name : group_by_key_names)
             bucket_cols.push_back(block.getByName(key_name).column);
+        return bucket_cols;
+    }
 
-        BucketKey current_key = getBucketKey(bucket_cols, 0);
+    template <typename BucketCounts, typename GetKey>
+    void countGranuleByReading(
+        IMergeTreeReader & reader, size_t mark, size_t rows_in_granule,
+        BucketCounts & bucket_counts, GetKey && get_key)
+    {
+        Block block = readGranule(reader, mark, rows_in_granule);
+        if (block.columns() == 0 || block.rows() == 0)
+            return;
+
+        Columns bucket_cols = executeBucketExpression(block);
+        size_t num_rows = block.rows();
+        auto current_key = get_key(bucket_cols, 0);
+        size_t run_start = 0;
+
+        for (size_t i = 1; i < num_rows; ++i)
+        {
+            auto key = get_key(bucket_cols, i);
+            if (key != current_key)
+            {
+                bucket_counts[current_key] += i - run_start;
+                current_key = std::move(key);
+                run_start = i;
+            }
+        }
+        bucket_counts[current_key] += num_rows - run_start;
+    }
+
+    template <typename BucketCounts, typename GetKey>
+    void countGranuleWithFilter(
+        IMergeTreeReader & reader, size_t mark, size_t rows_in_granule,
+        BucketCounts & bucket_counts, GetKey && get_key)
+    {
+        Block block = readGranule(reader, mark, rows_in_granule);
+        if (block.columns() == 0 || block.rows() == 0)
+            return;
+
+        filter_expression->execute(block);
+        ColumnPtr filter_col = block.getByName(filter_column_name).column;
+
+        Columns bucket_cols = executeBucketExpression(block);
+        size_t num_rows = block.rows();
+        auto current_key = get_key(bucket_cols, 0);
         size_t run_start = 0;
 
         auto flush_run = [&](size_t run_end)
         {
-            UInt64 count;
-            if (filter_col)
-            {
-                count = 0;
-                for (size_t j = run_start; j < run_end; ++j)
-                    if (filter_col->getBool(j))
-                        ++count;
-            }
-            else
-            {
-                count = run_end - run_start;
-            }
+            UInt64 count = 0;
+            for (size_t j = run_start; j < run_end; ++j)
+                if (filter_col->getBool(j))
+                    ++count;
             if (count > 0)
                 bucket_counts[current_key] += count;
         };
 
         for (size_t i = 1; i < num_rows; ++i)
         {
-            BucketKey key = getBucketKey(bucket_cols, i);
+            auto key = get_key(bucket_cols, i);
             if (key != current_key)
             {
                 flush_run(i);
@@ -251,22 +338,20 @@ private:
         flush_run(num_rows);
     }
 
-    /// Process a set of mark ranges: metadata for same-bucket runs,
-    /// read PK column for boundary/last marks.
-    void processMarkRanges(
+    template <typename BucketCounts, typename GetKey>
+    void processMarkRangesNoFilter(
         const DataPartPtr & data_part,
         const MarkRanges & ranges,
         const Columns & bucket_columns,
         const MergeTreeIndexGranularity & granularity,
         size_t part_rows_count,
         size_t marks_without_final,
-        bool apply_filter,
-        BucketCounts & bucket_counts)
+        BucketCounts & bucket_counts,
+        GetKey && get_key)
     {
         if (ranges.empty())
             return;
 
-        /// Identify boundary marks that need PK column read.
         MarkRanges boundary_marks;
         for (const auto & range : ranges)
         {
@@ -279,8 +364,7 @@ private:
             }
         }
 
-        /// If apply_filter is true, ALL marks need reading (not just boundaries).
-        auto reader = createReaderForMarks(data_part, apply_filter ? ranges : boundary_marks);
+        auto reader = createReaderForMarks(data_part, boundary_marks);
 
         for (const auto & range : ranges)
         {
@@ -290,9 +374,8 @@ private:
                 bool is_last = (mark + 1 >= marks_without_final);
                 bool crosses = !is_last && !bucketColumnsEqual(bucket_columns, mark, mark + 1);
 
-                if (!apply_filter && !is_last && !crosses)
+                if (!is_last && !crosses)
                 {
-                    /// Same bucket, no filter needed: bulk count via metadata.
                     size_t run_end = mark + 1;
                     while (run_end < range.end
                         && run_end + 1 < marks_without_final
@@ -300,19 +383,18 @@ private:
                         && bucketColumnsEqual(bucket_columns, run_end, run_end + 1))
                         ++run_end;
 
-                    auto key = getBucketKey(bucket_columns, mark);
+                    auto key = get_key(bucket_columns, mark);
                     bucket_counts[key] += granularity.getRowsCountInRange(mark, run_end);
                     mark = run_end;
                 }
                 else
                 {
-                    /// Need to read PK column: boundary mark, last mark, or filter required.
                     size_t rows = is_last
                         ? part_rows_count - granularity.getRowsCountInRange(0, mark)
                         : granularity.getRowsCountInRange(mark, mark + 1);
 
                     if (rows > 0 && reader)
-                        countGranuleByReading(*reader, mark, rows, apply_filter, bucket_counts);
+                        countGranuleByReading(*reader, mark, rows, bucket_counts, get_key);
 
                     ++mark;
                 }
@@ -320,93 +402,114 @@ private:
         }
     }
 
-    Chunk processTask(const CountTask & task)
+    template <typename BucketCounts, typename GetKey>
+    void processMarkRangesWithFilter(
+        const DataPartPtr & data_part,
+        const MarkRanges & ranges,
+        const MergeTreeIndexGranularity & granularity,
+        size_t part_rows_count,
+        size_t marks_without_final,
+        BucketCounts & bucket_counts,
+        GetKey && get_key)
+    {
+        if (ranges.empty())
+            return;
+
+        auto reader = createReaderForMarks(data_part, ranges);
+
+        for (const auto & range : ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                bool is_last = (mark + 1 >= marks_without_final);
+                size_t rows = is_last
+                    ? part_rows_count - granularity.getRowsCountInRange(0, mark)
+                    : granularity.getRowsCountInRange(mark, mark + 1);
+
+                if (rows > 0 && reader)
+                    countGranuleWithFilter(*reader, mark, rows, bucket_counts, get_key);
+            }
+        }
+    }
+
+    MarkRanges computeNonExactMarks(const CountTask & task)
+    {
+        MarkRanges non_exact;
+        size_t ei = 0;
+        for (const auto & range : task.mark_ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                while (ei < task.exact_ranges.size() && task.exact_ranges[ei].end <= mark)
+                    ++ei;
+                bool in_exact = ei < task.exact_ranges.size()
+                    && mark >= task.exact_ranges[ei].begin
+                    && mark < task.exact_ranges[ei].end;
+                if (!in_exact)
+                    non_exact.push_back(MarkRange(mark, mark + 1));
+            }
+        }
+        return non_exact;
+    }
+
+    template <typename BucketCounts, typename GetKey, typename InsertKey>
+    Chunk processTaskImpl(
+        const CountTask & task,
+        const Columns & bucket_columns,
+        size_t marks_without_final,
+        GetKey && get_key,
+        InsertKey && insert_key)
     {
         const auto & part = *task.data_part;
         const auto & granularity = *part.index_granularity;
-
-        auto index = part.getIndex();
-        if (!index || index->empty())
-            return {};
-
-        if (granularity.getMarksCount() == 0)
-            return {};
-
-        /// Build block with column names matching what bucket_expression expects.
-        /// The expression DAG may use qualified names (e.g. "__table1.k") from the analyzer,
-        /// while PK index columns use unqualified names ("k").
-        const auto & bucket_inputs = bucket_expression->getActionsDAG().getInputs();
-        Block index_block;
-        for (size_t i = 0; i < bucket_inputs.size() && i < index->size(); ++i)
-            index_block.insert({(*index)[i], primary_key.data_types[i], bucket_inputs[i]->result_name});
-        bucket_expression->execute(index_block);
-
-        Columns bucket_columns;
-        for (const auto & key_name : group_by_key_names)
-            bucket_columns.push_back(index_block.getByName(key_name).column);
-
-        size_t marks_without_final = granularity.getMarksCountWithoutFinal();
 
         BucketCounts bucket_counts;
 
         if (has_filter)
         {
-            /// Exact ranges: all rows match filter, only need bucket split.
-            processMarkRanges(task.data_part, task.exact_ranges, bucket_columns,
+            processMarkRangesNoFilter(task.data_part, task.exact_ranges, bucket_columns,
                 granularity, part.rows_count, marks_without_final,
-                /*apply_filter=*/false, bucket_counts);
+                bucket_counts, get_key);
 
-            /// Non-exact marks: need filter.
-            MarkRanges non_exact;
-            size_t ei = 0;
-            for (const auto & range : task.mark_ranges)
-            {
-                for (size_t mark = range.begin; mark < range.end; ++mark)
-                {
-                    while (ei < task.exact_ranges.size() && task.exact_ranges[ei].end <= mark)
-                        ++ei;
-                    bool in_exact = ei < task.exact_ranges.size()
-                        && mark >= task.exact_ranges[ei].begin
-                        && mark < task.exact_ranges[ei].end;
-                    if (!in_exact)
-                        non_exact.push_back(MarkRange(mark, mark + 1));
-                }
-            }
+            MarkRanges non_exact = computeNonExactMarks(task);
             if (!non_exact.empty())
-                processMarkRanges(task.data_part, non_exact, bucket_columns,
+                processMarkRangesWithFilter(task.data_part, non_exact,
                     granularity, part.rows_count, marks_without_final,
-                    /*apply_filter=*/true, bucket_counts);
+                    bucket_counts, get_key);
         }
         else
         {
-            processMarkRanges(task.data_part, task.mark_ranges, bucket_columns,
+            processMarkRangesNoFilter(task.data_part, task.mark_ranges, bucket_columns,
                 granularity, part.rows_count, marks_without_final,
-                /*apply_filter=*/false, bucket_counts);
+                bucket_counts, get_key);
         }
 
         if (bucket_counts.empty())
             return {};
 
-        return buildChunk(bucket_counts);
+        return buildChunk(bucket_counts, insert_key);
     }
 
-    Chunk buildChunk(const BucketCounts & bucket_counts)
+    template <typename BucketCounts, typename InsertKey>
+    Chunk buildChunk(const BucketCounts & bucket_counts, InsertKey && insert_key)
     {
         const auto & header = getPort().getHeader();
 
         std::vector<MutableColumnPtr> key_cols;
+        key_cols.reserve(group_by_key_names.size());
         for (const auto & key_name : group_by_key_names)
             key_cols.push_back(header.getByName(key_name).type->createColumn());
 
         auto agg_col = ColumnAggregateFunction::create(count_function);
+        agg_col->reserve(bucket_counts.size());
+
+        std::vector<char> state_buf(count_function->sizeOfData());
+        AggregateDataPtr place = state_buf.data();
 
         for (const auto & [bucket_key, count] : bucket_counts)
         {
-            for (size_t i = 0; i < bucket_key.size(); ++i)
-                key_cols[i]->insert(bucket_key[i]);
+            insert_key(key_cols, bucket_key);
 
-            std::vector<char> state(count_function->sizeOfData());
-            AggregateDataPtr place = state.data();
             count_function->create(place);
             AggregateFunctionCount::set(place, count);
             agg_col->insertFrom(place);
@@ -414,25 +517,92 @@ private:
         }
 
         size_t num_rows = agg_col->size();
-        Columns result_columns;
+        Columns result_columns(header.columns());
         ColumnPtr agg_col_ptr = std::move(agg_col);
-        for (size_t i = 0; i < header.columns(); ++i)
-        {
-            bool is_key = false;
-            for (size_t k = 0; k < group_by_key_names.size(); ++k)
-            {
-                if (header.getByPosition(i).name == group_by_key_names[k])
-                {
-                    result_columns.push_back(std::move(key_cols[k]));
-                    is_key = true;
-                    break;
-                }
-            }
-            if (!is_key)
-                result_columns.push_back(agg_col_ptr);
-        }
+
+        for (size_t k = 0; k < key_col_positions.size(); ++k)
+            result_columns[key_col_positions[k]] = std::move(key_cols[k]);
+
+        for (auto & col : result_columns)
+            if (!col)
+                col = agg_col_ptr;
 
         return Chunk(std::move(result_columns), num_rows);
+    }
+
+    Block buildIndexBlock(const IMergeTreeDataPart & part)
+    {
+        auto index = part.getIndex();
+        if (!index || index->empty())
+            return {};
+
+        Block index_block;
+        for (const auto & entry : input_mapping.all)
+        {
+            if (entry.pk_index < index->size() && !index_block.has(entry.input_name))
+                index_block.insert({(*index)[entry.pk_index], primary_key.data_types[entry.pk_index], entry.input_name});
+        }
+        return index_block;
+    }
+
+    Chunk processTask(const CountTask & task)
+    {
+        const auto & part = *task.data_part;
+        const auto & granularity = *part.index_granularity;
+
+        if (granularity.getMarksCount() == 0)
+            return {};
+
+        Block index_block = buildIndexBlock(part);
+        if (index_block.columns() == 0)
+            return {};
+
+        bucket_expression->execute(index_block);
+
+        Columns bucket_columns;
+        bucket_columns.reserve(group_by_key_names.size());
+        for (const auto & key_name : group_by_key_names)
+            bucket_columns.push_back(index_block.getByName(key_name).column);
+
+        size_t marks_without_final = granularity.getMarksCountWithoutFinal();
+
+        switch (key_mode)
+        {
+            case KeyMode::SingleNumeric:
+            {
+                auto get_key = [](const Columns & cols, size_t row) -> UInt64 { return cols[0]->get64(row); };
+                auto insert_key = [](std::vector<MutableColumnPtr> & cols, UInt64 key) { cols[0]->insert(key); };
+                return processTaskImpl<SingleNumericCounts>(task, bucket_columns, marks_without_final, get_key, insert_key);
+            }
+            case KeyMode::MultiNumeric:
+            {
+                size_t n = group_by_key_names.size();
+                auto get_key = [n](const Columns & cols, size_t row) -> std::vector<UInt64>
+                {
+                    std::vector<UInt64> key(n);
+                    for (size_t i = 0; i < n; ++i)
+                        key[i] = cols[i]->get64(row);
+                    return key;
+                };
+                auto insert_key = [](std::vector<MutableColumnPtr> & cols, const std::vector<UInt64> & key)
+                {
+                    for (size_t i = 0; i < key.size(); ++i)
+                        cols[i]->insert(key[i]);
+                };
+                return processTaskImpl<MultiNumericCounts>(task, bucket_columns, marks_without_final, get_key, insert_key);
+            }
+            case KeyMode::Generic:
+            {
+                auto get_key = [](const Columns & cols, size_t row) { return getGenericBucketKey(cols, row); };
+                auto insert_key = [](std::vector<MutableColumnPtr> & cols, const BucketKey & key)
+                {
+                    for (size_t i = 0; i < key.size(); ++i)
+                        cols[i]->insert(key[i]);
+                };
+                return processTaskImpl<GenericCounts>(task, bucket_columns, marks_without_final, get_key, insert_key);
+            }
+        }
+        UNREACHABLE();
     }
 
     CountByGranularityPoolPtr pool;
@@ -446,9 +616,11 @@ private:
     ExpressionActionsPtr filter_expression;
     String filter_column_name;
     bool has_filter;
+    InputToPKMapping input_mapping;
+    KeyMode key_mode;
+    std::vector<size_t> key_col_positions;
 };
 
-/// Intersect two sorted MarkRanges.
 static MarkRanges intersectRanges(const MarkRanges & a, const MarkRanges & b)
 {
     MarkRanges result;
@@ -527,6 +699,38 @@ Pipe ReadFromCountByGranularity::makePipe()
         }
     }
 
+    auto input_mapping = buildInputToPKMapping(bucket_expression, primary_key);
+
+    /// Determine key mode once: execute bucket_expression on a dummy block to get output types.
+    KeyMode key_mode = KeyMode::Generic;
+    {
+        Block dummy;
+        for (const auto & entry : input_mapping.all)
+            dummy.insert({primary_key.data_types[entry.pk_index]->createColumn(), primary_key.data_types[entry.pk_index], entry.input_name});
+        bucket_expression->execute(dummy);
+
+        bool all_numeric = true;
+        for (const auto & key_name : group_by_key_names)
+        {
+            if (!isNativeNumber(dummy.getByName(key_name).type))
+            {
+                all_numeric = false;
+                break;
+            }
+        }
+        if (all_numeric && group_by_key_names.size() == 1)
+            key_mode = KeyMode::SingleNumeric;
+        else if (all_numeric)
+            key_mode = KeyMode::MultiNumeric;
+    }
+
+    /// Precompute key column positions in the output header.
+    const auto & header = getOutputHeader();
+    std::vector<size_t> key_col_positions;
+    key_col_positions.reserve(group_by_key_names.size());
+    for (const auto & key_name : group_by_key_names)
+        key_col_positions.push_back(header->getPositionByName(key_name));
+
     Pipe pipe;
     for (size_t i = 0; i < std::min(actual_streams, pool->tasks.size()); ++i)
     {
@@ -542,7 +746,10 @@ Pipe ReadFromCountByGranularity::makePipe()
             context,
             filter_expression,
             filter_column_name,
-            has_filter);
+            has_filter,
+            input_mapping,
+            key_mode,
+            key_col_positions);
 
         pipe.addSource(std::move(source));
     }
