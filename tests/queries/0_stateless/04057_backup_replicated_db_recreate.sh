@@ -17,36 +17,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB="db_$CLICKHOUSE_DATABASE"
 ZK_PATH="/clickhouse/databases/$DB"
 
-TIMEOUT=10
-
-RECREATE_COUNT_FILE=$(mktemp)
-trap 'rm -f "$RECREATE_COUNT_FILE"' EXIT
+TIMEOUT=30
 
 function create_and_populate()
 {
     $CLICKHOUSE_CLIENT --query "
         CREATE DATABASE IF NOT EXISTS $DB ENGINE = Replicated('$ZK_PATH', 's0', 'r0');
     " > /dev/null 2>&1
-
-    # Create several tables to advance max_log_ptr.
-    for i in $(seq 1 5); do
-        $CLICKHOUSE_CLIENT --query "
-            CREATE TABLE IF NOT EXISTS $DB.t_$i (x UInt64) ENGINE = MergeTree ORDER BY x;
-        " > /dev/null 2>&1
-    done
-}
-
-function drop_and_recreate()
-{
-    local count=0
-    while true; do
-        [[ $SECONDS -gt $TIMEOUT ]] && break
-        if $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1; then
-            count=$((count + 1))
-        fi
-        create_and_populate
-    done
-    echo "$count" > "$RECREATE_COUNT_FILE"
+    $CLICKHOUSE_CLIENT --query "
+        CREATE TABLE IF NOT EXISTS $DB.t (x UInt64) ENGINE = MergeTree ORDER BY x;
+    " > /dev/null 2>&1
 }
 
 function do_backups()
@@ -66,22 +46,46 @@ function do_backups()
 # Set up the initial database.
 create_and_populate
 
-# Run concurrent backups and database recreation.
-drop_and_recreate &
+# Start backup workers in the background. They submit `BACKUP ... ASYNC`
+# requests in a tight loop; the backups run concurrently on the server.
 do_backups &
 do_backups &
+
+# Run database recreation in the foreground synchronously. Foreground execution
+# guarantees that recreate cycles actually complete and are not lost to the
+# background scheduler under randomized settings.
+RECREATE_COUNT=0
+while [[ $SECONDS -lt $TIMEOUT ]]; do
+    if $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1; then
+        RECREATE_COUNT=$((RECREATE_COUNT + 1))
+    fi
+    create_and_populate
+done
 
 wait
 
 # Verify the test actually exercised the regression path: at least one full
-# DROP+recreate cycle must have completed within $TIMEOUT seconds, otherwise
-# `max_log_ptr` never moved backwards and the regression is untested.
-RECREATE_COUNT=$(cat "$RECREATE_COUNT_FILE")
+# DROP+recreate cycle must have completed, otherwise `max_log_ptr` never moved
+# backwards and the regression is untested.
 if [[ $RECREATE_COUNT -ge 1 ]]; then
     echo "recreated"
 else
     echo "not recreated: $RECREATE_COUNT"
 fi
+
+# `BACKUP ... ASYNC` only waits for submission; in-flight backups may still hit
+# the racey code path after the loops above exit. Wait for all submitted backups
+# to leave `CREATING_BACKUP` before checking error states, otherwise we may miss
+# the `LOGICAL_ERROR` this test is meant to catch.
+DEADLINE=$((SECONDS + 60))
+while [[ $SECONDS -lt $DEADLINE ]]; do
+    IN_PROGRESS=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.backups
+        WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%' AND status = 'CREATING_BACKUP'
+    ")
+    [[ "$IN_PROGRESS" == "0" ]] && break
+    sleep 0.5
+done
 
 # Detect the original regression: the LOGICAL_ERROR exception. Backups may
 # legitimately fail under concurrent DROP, but they must never fail with a
