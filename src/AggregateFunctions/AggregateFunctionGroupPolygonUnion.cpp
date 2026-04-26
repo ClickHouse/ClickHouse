@@ -50,25 +50,51 @@ void reduceChunksPairwiseUnion(std::vector<CartesianMultiPolygon> & chunks) // S
 struct GroupPolygonUnionData
 {
     std::vector<CartesianMultiPolygon> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    size_t total_points = 0;
 
-    void add(CartesianMultiPolygon && mp)
+    void add(CartesianMultiPolygon && mp, const char * function_name)
     {
         if (mp.empty())
             return;
+        size_t added = countMultiPolygonPoints(mp);
+        checkPolygonalStateBudget(total_points, added, function_name);
+        total_points += added;
         chunks.push_back(std::move(mp));
-        maybeReduce();
+        maybeReduce(function_name);
     }
 
-    void merge(const GroupPolygonUnionData & other)
+    void merge(const GroupPolygonUnionData & other, const char * function_name)
     {
+        checkPolygonalStateBudget(total_points, other.total_points, function_name);
+        total_points += other.total_points;
         chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
-        maybeReduce();
+        maybeReduce(function_name);
     }
 
-    void maybeReduce()
+    void maybeReduce(const char * function_name)
     {
         if (chunks.size() > UNION_REDUCTION_THRESHOLD)
+        {
             reduceChunksPairwiseUnion(chunks);
+            recountPoints(function_name);
+        }
+    }
+
+    /// Boost union may add intersection vertices, so the post-reduction sum can grow.
+    /// Re-enforce the budget here so post-reduce state never exceeds what deserialize accepts.
+    void recountPoints(const char * function_name)
+    {
+        size_t recomputed = 0;
+        for (const auto & chunk : chunks)
+            recomputed += countMultiPolygonPoints(chunk);
+        if (recomputed > MAX_POINTS_IN_POLYGONAL_STATE)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} state has too many points after reduction: {} (limit {})",
+                function_name,
+                recomputed,
+                MAX_POINTS_IN_POLYGONAL_STATE);
+        total_points = recomputed;
     }
 
     CartesianMultiPolygon getResult()
@@ -121,12 +147,13 @@ public:
             return;
 
         auto mp = fieldToMultiPolygon(field, current_type, getName().c_str());
-        AggregateFunctionGroupPolygonUnion::data(place).add(std::move(mp));
+        AggregateFunctionGroupPolygonUnion::data(place).add(std::move(mp), getName().c_str());
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        AggregateFunctionGroupPolygonUnion::data(place).merge(AggregateFunctionGroupPolygonUnion::data(rhs));
+        AggregateFunctionGroupPolygonUnion::data(place).merge(
+            AggregateFunctionGroupPolygonUnion::data(rhs), getName().c_str());
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -151,7 +178,8 @@ public:
                 getName(),
                 static_cast<int>(GEO_SERDE_VERSION));
 
-        auto & chunks = AggregateFunctionGroupPolygonUnion::data(place).chunks;
+        auto & data = AggregateFunctionGroupPolygonUnion::data(place);
+        auto & chunks = data.chunks;
         UInt64 chunk_count;
         readVarUInt(chunk_count, buf);
         if (chunk_count > MAX_CHUNKS_PER_STATE)
@@ -169,6 +197,7 @@ public:
             chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), total_points);
             validateDeserializedMultiPolygon(chunks[i], getName().c_str());
         }
+        data.total_points = total_points;
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

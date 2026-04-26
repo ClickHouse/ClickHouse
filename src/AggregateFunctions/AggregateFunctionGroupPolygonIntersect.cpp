@@ -39,8 +39,9 @@ struct GroupPolygonIntersectData
 {
     IntersectMode mode = IntersectMode::Uninitialized;
     std::vector<CartesianMultiPolygon> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    size_t total_points = 0;
 
-    void add(CartesianMultiPolygon && mp)
+    void add(CartesianMultiPolygon && mp, const char * function_name)
     {
         if (mode == IntersectMode::Empty)
             return;
@@ -49,8 +50,13 @@ struct GroupPolygonIntersectData
         {
             mode = IntersectMode::Empty;
             chunks.clear();
+            total_points = 0;
             return;
         }
+
+        size_t added = countMultiPolygonPoints(mp);
+        checkPolygonalStateBudget(total_points, added, function_name);
+        total_points += added;
 
         if (mode == IntersectMode::Uninitialized)
         {
@@ -60,10 +66,10 @@ struct GroupPolygonIntersectData
         }
 
         chunks.push_back(std::move(mp));
-        maybeReduce();
+        maybeReduce(function_name);
     }
 
-    void merge(const GroupPolygonIntersectData & other)
+    void merge(const GroupPolygonIntersectData & other, const char * function_name)
     {
         if (mode == IntersectMode::Empty)
             return;
@@ -72,6 +78,7 @@ struct GroupPolygonIntersectData
         {
             mode = IntersectMode::Empty;
             chunks.clear();
+            total_points = 0;
             return;
         }
 
@@ -82,24 +89,30 @@ struct GroupPolygonIntersectData
         {
             mode = other.mode;
             chunks = other.chunks;
+            total_points = other.total_points;
             return;
         }
 
+        checkPolygonalStateBudget(total_points, other.total_points, function_name);
+        total_points += other.total_points;
         chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
-        maybeReduce();
+        maybeReduce(function_name);
     }
 
-    void maybeReduce()
+    void maybeReduce(const char * function_name)
     {
         if (chunks.size() > INTERSECT_REDUCTION_THRESHOLD)
-            reduce();
+            reduce(function_name);
     }
 
     /// Balanced pairwise reduction with early-empty short-circuit.
-    void reduce()
+    void reduce(const char * function_name)
     {
         if (chunks.size() <= 1)
+        {
+            recountPoints(function_name);
             return;
+        }
 
         while (chunks.size() > 1)
         {
@@ -113,6 +126,7 @@ struct GroupPolygonIntersectData
                 {
                     mode = IntersectMode::Empty;
                     chunks.clear();
+                    total_points = 0;
                     return;
                 }
                 chunks[out++] = std::move(tmp);
@@ -126,15 +140,36 @@ struct GroupPolygonIntersectData
         {
             mode = IntersectMode::Empty;
             chunks.clear();
+            total_points = 0;
+            return;
         }
+
+        recountPoints(function_name);
     }
 
-    CartesianMultiPolygon getResult()
+    /// Boost intersection may add intersection vertices, so the post-reduction sum can grow.
+    /// Re-enforce the budget here so post-reduce state never exceeds what deserialize accepts.
+    void recountPoints(const char * function_name)
+    {
+        size_t recomputed = 0;
+        for (const auto & chunk : chunks)
+            recomputed += countMultiPolygonPoints(chunk);
+        if (recomputed > MAX_POINTS_IN_POLYGONAL_STATE)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} state has too many points after reduction: {} (limit {})",
+                function_name,
+                recomputed,
+                MAX_POINTS_IN_POLYGONAL_STATE);
+        total_points = recomputed;
+    }
+
+    CartesianMultiPolygon getResult(const char * function_name)
     {
         if (mode == IntersectMode::Uninitialized || mode == IntersectMode::Empty)
             return {};
 
-        reduce();
+        reduce(function_name);
         if (mode == IntersectMode::Empty || chunks.empty())
             return {};
 
@@ -183,12 +218,13 @@ public:
             return;
 
         auto mp = fieldToMultiPolygon(field, current_type, getName().c_str());
-        AggregateFunctionGroupPolygonIntersect::data(place).add(std::move(mp));
+        AggregateFunctionGroupPolygonIntersect::data(place).add(std::move(mp), getName().c_str());
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        AggregateFunctionGroupPolygonIntersect::data(place).merge(AggregateFunctionGroupPolygonIntersect::data(rhs));
+        AggregateFunctionGroupPolygonIntersect::data(place).merge(
+            AggregateFunctionGroupPolygonIntersect::data(rhs), getName().c_str());
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -251,12 +287,13 @@ public:
                 data.chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), total_points);
                 validateDeserializedMultiPolygon(data.chunks[i], getName().c_str());
             }
+            data.total_points = total_points;
         }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto result = AggregateFunctionGroupPolygonIntersect::data(place).getResult();
+        auto result = AggregateFunctionGroupPolygonIntersect::data(place).getResult(getName().c_str());
         insertMultiPolygonIntoColumn(result, to);
     }
 };
