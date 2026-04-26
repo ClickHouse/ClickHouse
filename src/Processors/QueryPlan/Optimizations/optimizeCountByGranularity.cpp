@@ -39,7 +39,7 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
     if (!aggregating)
         return;
 
-    if (!aggregating->canUseProjection())
+    if (aggregating->isGroupingSets())
         return;
 
     const auto & params = aggregating->getParams();
@@ -219,7 +219,7 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
     source_node.step->setStepDescription("Optimized count by primary key granularity");
     source_node.children = {};
 
-    aggregating->requestOnlyMergeForAggregateProjection(output_header);
+    aggregating->requestOnlyMergeForCountByGranularity(output_header);
     node.children.front() = &source_node;
 
     LOG_DEBUG(getLogger("optimizeCountByGranularity"),
