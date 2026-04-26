@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 SET session_timezone = 'UTC';
 
 -- =====================================================

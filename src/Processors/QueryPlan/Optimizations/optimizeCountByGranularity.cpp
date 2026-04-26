@@ -111,23 +111,9 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
 
         for (const auto & dag_node : prewhere_info.prewhere_actions.getNodes())
         {
-            if (dag_node.type == ActionsDAG::ActionType::INPUT)
-            {
-                bool matches_pk = pk_columns_set.contains(dag_node.result_name);
-                if (!matches_pk)
-                {
-                    for (const auto & pk_col : primary_key.column_names)
-                    {
-                        if (dag_node.result_name.ends_with("." + pk_col))
-                        {
-                            matches_pk = true;
-                            break;
-                        }
-                    }
-                }
-                if (!matches_pk)
-                    return;
-            }
+            if (dag_node.type == ActionsDAG::ActionType::INPUT
+                && !pk_columns_set.contains(dag_node.result_name))
+                return;
         }
 
         auto prewhere_dag = prewhere_info.prewhere_actions.clone();
