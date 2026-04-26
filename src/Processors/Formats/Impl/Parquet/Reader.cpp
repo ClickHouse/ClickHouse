@@ -346,6 +346,20 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
     }
 
+    /// Dynamic, Object (JSON), and Variant columns can hold values of different types in different rows,
+    /// so Parquet physical-type min/max statistics, bloom filters, and page-index stats are not meaningful
+    /// for filtering. Comparing such stats with `KeyCondition` constants of a different type also throws
+    /// `BAD_TYPE_OF_FIELD` in `FieldVisitorAccurateLess`.
+    auto is_dynamic_like_output = [](const OutputColumnInfo & output_info)
+    {
+        DataTypePtr output_type = output_info.output_type;
+        if (output_type->lowCardinality())
+            output_type = assert_cast<const DataTypeLowCardinality &>(*output_type).getDictionaryType();
+        if (output_type->isNullable())
+            output_type = assert_cast<const DataTypeNullable &>(*output_type).getNestedType();
+        return isDynamic(*output_type) || isObject(*output_type) || isVariant(*output_type);
+    };
+
     if (format_filter_info->key_condition)
     {
         for (size_t idx_in_output_block : format_filter_info->key_condition->getUsedColumns())
@@ -357,15 +371,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
             if (!output_info.is_primitive)
                 continue;
-
-            /// Dynamic, Object (JSON), and Variant columns can hold values of different types,
-            /// so Parquet physical-type statistics and bloom filters are not meaningful for filtering.
-            DataTypePtr output_type = output_info.output_type;
-            if (output_type->lowCardinality())
-                output_type = assert_cast<const DataTypeLowCardinality &>(*output_type).getDictionaryType();
-            if (output_type->isNullable())
-                output_type = assert_cast<const DataTypeNullable &>(*output_type).getNestedType();
-            if (isDynamic(*output_type) || isObject(*output_type) || isVariant(*output_type))
+            if (is_dynamic_like_output(output_info))
                 continue;
 
             primitive_columns[output_info.primitive_start].used_by_key_condition = true;
@@ -440,6 +446,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
+                continue;
+            if (is_dynamic_like_output(output_info))
                 continue;
             primitive_columns[output_info.primitive_start].column_index_condition = key_condition.get();
         }
