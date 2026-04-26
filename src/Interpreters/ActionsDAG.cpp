@@ -1827,8 +1827,15 @@ void ActionsDAG::reconcileInputTypesAfterDecorrelation(const Block & actual_head
         }
         else if (node.type == ActionType::ALIAS && !node.children.empty())
         {
+            /// Aliases mirror their child's `result_type` and `column` (see `createAlias`).
+            /// If the child was rebuilt above, refresh both — leaving `node.column` as the
+            /// pre-rebuild constant would later mismatch the new `result_type` (e.g. during
+            /// `ActionsDAG` serialization via `serializeConstant`).
             if (!node.result_type->equals(*node.children[0]->result_type))
+            {
                 node.result_type = node.children[0]->result_type;
+                node.column = node.children[0]->column;
+            }
         }
     }
 }
