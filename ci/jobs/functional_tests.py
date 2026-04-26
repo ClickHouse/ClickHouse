@@ -755,52 +755,79 @@ def main():
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []
 
-    # invert result status for bugfix validation
-    if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
+    # Bugfix validation: invert the result status (only for actual bugfix PRs)
+    # and always write the JSON artifact (for both bugfix and non-bugfix PRs).
+    if is_bugfix_validation and test_result:
+        is_bugfix_pr = (
+            Labels.PR_BUGFIX in info.pr_labels
+            or Labels.PR_CRITICAL_BUGFIX in info.pr_labels
+        )
         has_failure = False
-        for r in test_result.results:
-            r.set_label(Result.Label.XFAIL)
-            if r.status == Result.Status.FAIL:
-                r.status = Result.Status.OK
-                has_failure = True
-            elif r.status == Result.Status.OK:
-                r.status = Result.Status.FAIL
 
-        # Per-arch bugfix-validation contract:
-        # The job's *status* reflects "did the test run and produce a result?"
-        # — NOT "was the bug validated?". The validation outcome is data
-        # (recorded in the JSON artifact below) that the `Bugfix validation
-        # (final)` aggregator consumes to decide the merge-blocking status.
-        #
-        # We deliberately exit with the natural OK status here (no
-        # `force_success=True` flag is used at the job level) so that real
-        # infrastructure errors (server crash, sanitizer assert) still
-        # propagate as failures.
-        if has_failure:
-            test_result.set_info("Bug reproduced on master HEAD; PR validates the fix on this arch")
-        else:
-            print("Failed to reproduce the bug on this arch")
-            test_result.set_info(
-                "Failed to reproduce the bug on this arch; "
-                "see Bugfix validation (final) aggregator for the merge-blocking decision"
-            )
-        test_result.set_success()
+        if is_bugfix_pr:
+            for r in test_result.results:
+                r.set_label(Result.Label.XFAIL)
+                if r.status == Result.Status.FAIL:
+                    r.status = Result.Status.OK
+                    has_failure = True
+                elif r.status == Result.Status.OK:
+                    r.status = Result.Status.FAIL
 
-        # Each per-arch JSON is uploaded as a separate S3 artifact and consumed
-        # by the `Bugfix validation (final)` aggregator job, which OR's the
-        # `validated` fields across all four per-arch results.
+            # Per-arch bugfix-validation contract:
+            # The job's *status* reflects "did the test run and produce a
+            # result?" — NOT "was the bug validated?". The validation outcome
+            # is data (recorded in the JSON artifact below) that the `Bugfix
+            # validation (final)` aggregator consumes to decide the
+            # merge-blocking status.
+            #
+            # We deliberately exit with the natural OK status here (no
+            # `force_success=True` flag is used at the job level) so that
+            # real infrastructure errors (server crash, sanitizer assert)
+            # still propagate as failures.
+            if has_failure:
+                test_result.set_info(
+                    "Bug reproduced on master HEAD; PR validates the fix on this arch"
+                )
+            else:
+                print("Failed to reproduce the bug on this arch")
+                test_result.set_info(
+                    "Failed to reproduce the bug on this arch; "
+                    "see Bugfix validation (final) aggregator for the merge-blocking decision"
+                )
+            test_result.set_success()
+        # else: non-bugfix PR running this job because the test runner script
+        # was modified in this PR. The sanity test (`00001_select_1`) ran;
+        # the natural test_result is sufficient.
+
+        # Always write the JSON artifact when this is a bugfix-validation job.
+        # The praktika runner declares this artifact in `provides=[...]`, so
+        # the file MUST exist for artifact upload to succeed — even on
+        # non-bugfix PRs that exercise this job (e.g., when the test-runner
+        # script was modified). For non-bugfix PRs the JSON records that
+        # fact, and the `Bugfix validation (final)` aggregator treats
+        # `is_bugfix_pr=false` as "nothing to validate" (does not block
+        # merge).
         result_path = Path(temp_dir) / "bugfix_validate_result.json"
         try:
             arch = "aarch64" if Utils.is_arm() else "amd64"
-            payload = {
-                "validated": bool(has_failure),
-                "info": (
+            if is_bugfix_pr:
+                info_msg = (
                     f"Bug reproduced on master HEAD ({arch}) and fixed on PR"
                     if has_failure
                     else f"Failed to reproduce the bug on master HEAD ({arch})"
-                ),
+                )
+            else:
+                info_msg = (
+                    f"Not a bugfix PR ({arch}); job ran sanity test only "
+                    "because the bugfix-validation runner was modified in "
+                    "this PR"
+                )
+            payload = {
+                "validated": bool(has_failure) and is_bugfix_pr,
+                "info": info_msg,
                 "arch": arch,
                 "kind": "functional tests",
+                "is_bugfix_pr": is_bugfix_pr,
             }
             with result_path.open("w") as f:
                 json.dump(payload, f)

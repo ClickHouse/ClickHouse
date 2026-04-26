@@ -1042,25 +1042,22 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
-        assert (
-            is_llvm_coverage is False
-        ), "Bugfix validation with LLVM coverage is not supported"
+    # Bugfix validation: invert the result status (only for actual bugfix PRs
+    # without infrastructure errors) and always write the JSON artifact (for
+    # both bugfix and non-bugfix PRs, so the artifact-upload step succeeds).
+    if is_bugfix_validation:
+        is_bugfix_pr = (
+            Labels.PR_BUGFIX in info.pr_labels
+            or Labels.PR_CRITICAL_BUGFIX in info.pr_labels
+        )
+        if is_bugfix_pr:
+            assert (
+                is_llvm_coverage is False
+            ), "Bugfix validation with LLVM coverage is not supported"
 
-        # Real infrastructure errors (sanitizer assert, OOM, etc.) are kept
-        # as a hard failure of the per-arch job. We do NOT mask them via
-        # `set_success()` and we do NOT write the JSON artifact, so the
-        # aggregator treats this arch as SKIPPED (validated=false). This
-        # keeps `force_success=True` unnecessary at the job-config level
-        # while still letting the other arch validate the bug.
-        if has_error:
-            print(
-                "WARN: Skipping bugfix-validation result write due to "
-                "infrastructure error; aggregator will treat this arch as "
-                "validated=false (SKIPPED)"
-            )
-        else:
-            has_failure = False
+        has_failure = False
+
+        if is_bugfix_pr and not has_error:
             for r in R.results:
                 # invert statuses
                 r.set_label(Result.Label.XFAIL)
@@ -1079,7 +1076,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
             # We deliberately set the natural OK status here (no
             # `force_success=True` flag at the job level) so genuine
             # infrastructure failures still propagate as failures (handled
-            # by the `if has_error:` branch above).
+            # by the `if has_error:` branch below — we still write the JSON
+            # but mark it `skipped=true` so the aggregator excludes this
+            # arch from the validation decision).
             if has_failure:
                 R.set_info(
                     "Bug reproduced on master HEAD; PR validates the fix on this arch"
@@ -1091,29 +1090,64 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     "see Bugfix validation (final) aggregator for the merge-blocking decision"
                 )
             R.set_success()
+        elif is_bugfix_pr and has_error:
+            # Real infrastructure error during bugfix validation. Don't mask
+            # via `set_success()` — let it propagate as a job failure. We
+            # still write the JSON below (skipped=true) so the artifact
+            # upload doesn't fail and the aggregator can see this arch
+            # was unable to validate.
+            print(
+                "WARN: Bugfix validation arch had infrastructure error; "
+                "recording skipped=true in JSON; aggregator will treat this "
+                "arch as SKIPPED (validated=false)"
+            )
+        # else: non-bugfix PR running this job because the test runner script
+        # was modified in this PR. The sanity test (`00001_select_1`) ran;
+        # we keep the natural test_result.
 
-            # Each per-arch JSON is uploaded as a separate S3 artifact and
-            # consumed by the `Bugfix validation (final)` aggregator job,
-            # which OR's the `validated` fields across all four per-arch
-            # results.
-            result_path = Path(temp_path) / "bugfix_validate_result.json"
-            try:
-                arch = "aarch64" if Utils.is_arm() else "amd64"
-                payload = {
-                    "validated": bool(has_failure),
-                    "info": (
-                        f"Bug reproduced on master HEAD ({arch}) and fixed on PR"
-                        if has_failure
-                        else f"Failed to reproduce the bug on master HEAD ({arch})"
-                    ),
-                    "arch": arch,
-                    "kind": "integration tests",
-                }
-                with result_path.open("w") as f:
-                    json.dump(payload, f)
-                print(f"Wrote bugfix-validation result to {result_path}: {payload}")
-            except OSError as e:
-                print(f"WARN: failed to write {result_path}: {e}")
+        # Always write the JSON artifact when this is a bugfix-validation
+        # job. The praktika runner declares this artifact in `provides=[...]`,
+        # so the file MUST exist for artifact upload to succeed — even on
+        # non-bugfix PRs and even when the bugfix-validation arch hit an
+        # infrastructure error. For non-bugfix PRs and infra-error cases the
+        # JSON records that fact, and the aggregator treats
+        # `is_bugfix_pr=false` or `skipped=true` as "nothing to validate on
+        # this arch".
+        result_path = Path(temp_path) / "bugfix_validate_result.json"
+        try:
+            arch = "aarch64" if Utils.is_arm() else "amd64"
+            if not is_bugfix_pr:
+                info_msg = (
+                    f"Not a bugfix PR ({arch}); job ran sanity test only "
+                    "because the bugfix-validation runner was modified in "
+                    "this PR"
+                )
+                skipped = True
+            elif has_error:
+                info_msg = (
+                    f"Skipped on {arch} due to infrastructure error during "
+                    "bugfix validation"
+                )
+                skipped = True
+            elif has_failure:
+                info_msg = f"Bug reproduced on master HEAD ({arch}) and fixed on PR"
+                skipped = False
+            else:
+                info_msg = f"Failed to reproduce the bug on master HEAD ({arch})"
+                skipped = False
+            payload = {
+                "validated": bool(has_failure) and is_bugfix_pr and not has_error,
+                "info": info_msg,
+                "arch": arch,
+                "kind": "integration tests",
+                "is_bugfix_pr": is_bugfix_pr,
+                "skipped": skipped,
+            }
+            with result_path.open("w") as f:
+                json.dump(payload, f)
+            print(f"Wrote bugfix-validation result to {result_path}: {payload}")
+        except OSError as e:
+            print(f"WARN: failed to write {result_path}: {e}")
 
     force_ok_exit = False
     if is_llvm_coverage and llvm_profdata_cmd:

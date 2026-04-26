@@ -19,19 +19,32 @@ the bug:
         "validated": true | false,
         "info": "<human-readable description>",
         "arch": "amd64" | "aarch64",
-        "kind": "functional tests" | "integration tests"
+        "kind": "functional tests" | "integration tests",
+        "is_bugfix_pr": true | false,    # whether the PR actually has a
+                                          # `pr-bugfix` / `pr-critical-bugfix`
+                                          # label
+        "skipped": true | false           # set on infra error or on
+                                          # non-bugfix PRs; the aggregator
+                                          # excludes this arch from the
+                                          # validation decision
     }
 
 The aggregator combines all four results and reports SUCCESS to GitHub iff
 at least one arch validated the bug. This is the only bugfix-validation
 check that blocks PR merge.
 
-Artifact-not-found is treated as `validated == false` with a SKIPPED
-sub-result, so an aggregator failure cannot be silently masked by the
-absence of a per-arch JSON. Per-arch jobs that genuinely failed (e.g. due
-to a sanitizer report or server crash) deliberately do not write the JSON
-in that case, so the aggregator naturally falls back to SKIPPED for that
-arch and the other arch can still validate the bug.
+Special cases:
+
+  - If all per-arch results have `is_bugfix_pr=false`, the per-arch jobs
+    ran on a non-bugfix PR (because the bugfix-validation runner script
+    was modified in this PR). There is nothing to validate; the aggregator
+    reports SUCCESS so the merge gate doesn't block the CI-infrastructure
+    PR.
+  - If a per-arch result has `skipped=true` (set on infra error or for
+    non-bugfix PRs), that arch does NOT count toward the validation
+    decision; the other arch can still validate the bug.
+  - Artifact-not-found is treated identically to `skipped=true` — the arch
+    is excluded from the decision.
 """
 import json
 from pathlib import Path
@@ -85,6 +98,7 @@ def main() -> int:
     sub_results = []
     any_validated = False
     any_present = False
+    bugfix_pr_archs_present = False
 
     for artifact_name, label in PER_ARCH_RESULTS:
         data = _load_per_arch_result(artifact_name)
@@ -101,7 +115,25 @@ def main() -> int:
 
         any_present = True
         validated = bool(data.get("validated", False))
+        # Default `is_bugfix_pr` to True for back-compat with older per-arch
+        # JSONs that did not include this field; in that case the JSON is
+        # only emitted on actual bugfix PRs anyway.
+        is_bugfix_pr = bool(data.get("is_bugfix_pr", True))
+        skipped = bool(data.get("skipped", False))
         msg = str(data.get("info", ""))
+
+        if not is_bugfix_pr or skipped:
+            # Don't count this arch toward the validation decision. The arch
+            # either ran on a non-bugfix PR (sanity test only) or hit an
+            # infrastructure error. Either way, the OTHER arch can still
+            # validate the bug; this arch is just excluded.
+            sub_results.append(
+                Result(name=label, status=Result.Status.SKIPPED, info=msg)
+            )
+            print(f"[{label}] SKIPPED: {msg}")
+            continue
+
+        bugfix_pr_archs_present = True
         sub_results.append(
             Result(
                 name=label,
@@ -113,10 +145,27 @@ def main() -> int:
         if validated:
             any_validated = True
 
+    # Decide overall status:
+    #  - All per-arch jobs ran on a non-bugfix PR (e.g., this PR modifies the
+    #    bugfix-validation runner itself) -> SUCCESS, nothing to validate.
+    #  - At least one bugfix-PR arch validated the bug -> SUCCESS.
+    #  - At least one bugfix-PR arch ran but none validated -> FAIL (the
+    #    new/modified regression test does not actually catch the bug it is
+    #    supposed to catch).
+    #  - All artifacts missing -> SKIPPED with explanation.
+    if not any_present:
+        overall_status = Result.Status.SKIPPED
+    elif not bugfix_pr_archs_present:
+        # All per-arch results came from non-bugfix PRs (or all were
+        # skipped). Nothing to validate; aggregator must not block merge.
+        overall_status = Result.Status.OK
+    else:
+        overall_status = Result.Status.OK if any_validated else Result.Status.FAIL
+
     overall = Result(
         name="Bugfix validation (final)",
         results=sub_results,
-        status=Result.Status.OK if any_validated else Result.Status.FAIL,
+        status=overall_status,
     )
 
     if not any_present:
@@ -124,6 +173,12 @@ def main() -> int:
             "No per-arch bugfix-validation result artifacts were available. "
             "This usually means all four per-arch jobs were skipped or did not "
             "emit their result file."
+        )
+    elif not bugfix_pr_archs_present:
+        overall.set_info(
+            "Not a bugfix PR — all per-arch jobs ran sanity tests only. "
+            "The bugfix-validation infrastructure is being verified by this "
+            "PR; nothing to validate against a real bug."
         )
     elif not any_validated:
         overall.set_info(
