@@ -13,6 +13,9 @@ INSERT INTO tab SELECT 1, 'ccc', 2;
 CREATE ROW POLICY pol1 ON tab USING y != 'ccc' TO ALL;
 
 SET enable_analyzer = 1;
+-- This test asserts ReadType: InOrder for ORDER BY x; the tiny table here
+-- selects all granules, so the PK-selectivity check would otherwise disable read-in-order.
+SET read_in_order_max_primary_key_ratio = 1.0;
 
 SELECT '= full plan: both deferred =';
 EXPLAIN actions=1 SELECT * FROM tab FINAL PREWHERE y != 'ccc' ORDER BY x

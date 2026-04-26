@@ -6,6 +6,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 [ ! -z "$CLICKHOUSE_CLIENT_REDEFINED" ] && CLICKHOUSE_CLIENT=$CLICKHOUSE_CLIENT_REDEFINED
 
+# This test inspects EXPLAIN output for read-in-order optimization paths; the
+# small synthetic table used here selects all granules, which would otherwise
+# trip the read_in_order_max_primary_key_ratio threshold and disable the path.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --read_in_order_max_primary_key_ratio=1.0"
+
 DISABLE_OPTIMIZATION="set optimize_distinct_in_order=0"
 ENABLE_OPTIMIZATION="set optimize_distinct_in_order=1"
 GREP_DISTINCT="grep 'DistinctSortedStreamTransform\|DistinctSortedTransform\|DistinctTransform'"
