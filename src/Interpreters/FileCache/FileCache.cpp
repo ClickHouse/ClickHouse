@@ -2398,6 +2398,18 @@ bool FileCache::doDynamicResizeImpl(
     /// priority write lock they used for queue mutation. Holding only
     /// the priority write lock during steps 3-4 is therefore
     /// insufficient; the state lock is required.
+    ///
+    /// Lock-order note: the order used here is `state -> priority`. The
+    /// only other place in this file that holds both locks simultaneously
+    /// is `loadMetadataForKey`, which uses `priority -> state`. That path
+    /// runs only during `initializeImpl` (gated by `is_initialized`), and
+    /// `applySettingsIfPossible` -> `doDynamicResize` -> `doDynamicResizeImpl`
+    /// is gated by the same `is_initialized` flag (see the early return at
+    /// `applySettingsIfPossible`). The two paths therefore cannot execute
+    /// concurrently, so no ABBA cycle is reachable. Within this function
+    /// the failed-eviction restore path below uses the same `state -> priority`
+    /// order so that all simultaneous acquisitions of both locks inside
+    /// `doDynamicResizeImpl` follow one consistent order.
 
     auto eviction_info = main_priority->collectEvictionInfoForResize(
         desired_limits.max_size,
@@ -2517,8 +2529,12 @@ bool FileCache::doDynamicResizeImpl(
     /// As this case should be very rare (as it can only happen because of a bug)
     /// we allow ourselves to be suboptional here in favour of being robust
     /// and take two locks at the same time to do the restore in the most straightforward way.
-    auto cache_write_lock = cache_guard.writeLock();
+    ///
+    /// Locks are acquired in `state -> priority` order, matching the happy
+    /// path above. This keeps every simultaneous acquisition of both locks
+    /// inside `doDynamicResizeImpl` following a single, consistent order.
     state_lock.lock();
+    auto cache_write_lock = cache_guard.writeLock();
 
     /// Increase the max size and max elements
     /// to the size and number of failed candidates.
