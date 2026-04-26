@@ -1,5 +1,7 @@
 #include <Columns/ColumnLowCardinality.h>
 
+#include <utility>
+
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/NumberTraits.h>
@@ -652,12 +654,17 @@ bool ColumnLowCardinality::containsNull() const
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
-    checkColumn(*column_unique);
+    /// `column_unique` may be shared with the source column when called from
+    /// `create(const ColumnPtr &, const ColumnPtr &, bool)`, so the non-const
+    /// `WrappedPtr::operator*` would go through `assumeMutableRef` and trip
+    /// `chassert(use_count() == 1)`. Use the const overload — `checkColumn`
+    /// only needs read access for type verification.
+    checkColumn(*std::as_const(column_unique));
 }
 ColumnLowCardinality::Dictionary::Dictionary(ColumnPtr column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
-    checkColumn(*column_unique);
+    checkColumn(*std::as_const(column_unique));
 }
 
 void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique_)
