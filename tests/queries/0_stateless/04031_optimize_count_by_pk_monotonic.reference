@@ -313,3 +313,15 @@ no_wrong_key_order
 0
 no_pk_expression
 0
+nullable_pk
+0	90
+1	90
+2	90
+3	90
+4	90
+5	90
+6	90
+7	90
+8	90
+9	90
+\N	100

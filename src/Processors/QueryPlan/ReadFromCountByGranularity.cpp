@@ -10,9 +10,11 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/FilterDescription.h>
 #include <Common/FieldVisitorHash.h>
@@ -135,8 +137,6 @@ static InputToPKMapping buildInputToPKMapping(
     return mapping;
 }
 
-
-
 static bool bucketColumnsEqual(const Columns & cols, size_t a, size_t b)
 {
     for (const auto & col : cols)
@@ -257,6 +257,46 @@ private:
         for (const auto & key_name : group_by_key_names)
             bucket_cols.push_back(block.getByName(key_name).column);
         return bucket_cols;
+    }
+
+    template <typename T, typename ColumnType>
+    void countBlockNullable(Block & block, NumericCounts<T> & bucket_counts, UInt64 & null_count)
+    {
+        Columns bucket_cols = executeBucketExpression(block);
+        const auto & nc = assert_cast<const ColumnNullable &>(*bucket_cols[0]);
+        const auto & nested_data = assert_cast<const ColumnType &>(nc.getNestedColumn()).getData();
+        const auto & nm = nc.getNullMapData();
+        size_t num_rows = block.rows();
+
+        /// Nulls are sorted last. Find where they start.
+        size_t first_null = num_rows;
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            if (nm[i])
+            {
+                first_null = i;
+                break;
+            }
+        }
+
+        if (first_null > 0)
+        {
+            T current_key = nested_data[0];
+            size_t run_start = 0;
+            for (size_t i = 1; i < first_null; ++i)
+            {
+                T key = nested_data[i];
+                if (key != current_key)
+                {
+                    bucket_counts[current_key] += i - run_start;
+                    current_key = key;
+                    run_start = i;
+                }
+            }
+            bucket_counts[current_key] += first_null - run_start;
+        }
+
+        null_count += num_rows - first_null;
     }
 
     template <typename BucketCounts, typename GetKey>
@@ -556,7 +596,10 @@ private:
         size_t marks_without_final = granularity.getMarksCountWithoutFinal();
 
         if (numeric_type_index != TypeIndex::Nothing && group_by_key_names.size() == 1)
-            return dispatchNumericType(task, bucket_columns, marks_without_final);
+        {
+            bool is_nullable = bucket_columns[0]->isNullable();
+            return dispatchNumericType(task, bucket_columns, marks_without_final, is_nullable);
+        }
 
         auto get_key = [](const Columns & cols, size_t row) { return getGenericBucketKey(cols, row); };
         auto insert_key = [](std::vector<MutableColumnPtr> & cols, const BucketKey & key)
@@ -584,29 +627,292 @@ private:
         return processTaskImpl<NumericCounts<T>>(task, bucket_columns, marks_without_final, get_key, insert_key);
     }
 
-    Chunk dispatchNumericType(
+    template <typename T, typename ColumnType>
+    Chunk processTaskNullableNumeric(
         const CountTask & task,
         const Columns & bucket_columns,
         size_t marks_without_final)
     {
+        const auto & nullable_col = assert_cast<const ColumnNullable &>(*bucket_columns[0]);
+        const auto & null_map = nullable_col.getNullMapData();
+
+        /// Null values are sorted last in MergeTree. Find the first null mark.
+        size_t first_null_mark = null_map.size();
+        for (size_t i = 0; i < null_map.size(); ++i)
+        {
+            if (null_map[i])
+            {
+                first_null_mark = i;
+                break;
+            }
+        }
+
+        Columns unwrapped = {nullable_col.getNestedColumnPtr()};
+
+        /// Bucket expression outputs Nullable even for non-null rows; unwrap.
+        auto get_key_unwrap = [](const Columns & cols, size_t row) -> T
+        {
+            const auto & nc = assert_cast<const ColumnNullable &>(*cols[0]);
+            return assert_cast<const ColumnType &>(nc.getNestedColumn()).getData()[row];
+        };
+
+        NumericCounts<T> bucket_counts;
+        UInt64 null_count = 0;
+
+        const auto & part = *task.data_part;
+        const auto & granularity = *part.index_granularity;
+
+        const auto & ranges = has_filter ? task.exact_ranges : task.mark_ranges;
+
+        MarkRanges non_null_ranges;
+        MarkRanges null_ranges;
+        bool has_boundary = false;
+
+        for (const auto & range : ranges)
+        {
+            if (range.end <= first_null_mark)
+            {
+                non_null_ranges.push_back(range);
+            }
+            else if (range.begin > first_null_mark)
+            {
+                null_ranges.push_back(range);
+            }
+            else
+            {
+                if (range.begin < first_null_mark)
+                    non_null_ranges.push_back(MarkRange(range.begin, first_null_mark));
+                has_boundary = true;
+                if (first_null_mark + 1 < range.end)
+                    null_ranges.push_back(MarkRange(first_null_mark + 1, range.end));
+            }
+        }
+
+        /// Non-null marks: reuse processMarkRangesNoFilter with unwrapped columns.
+        /// Boundary granules within non-null ranges may still contain trailing
+        /// null rows (e.g. when all data fits in one granule). Use nullable-aware
+        /// countGranuleByReading that unwraps Nullable output and splits
+        /// non-null/null rows correctly.
+        /// Use first_null_mark as marks upper bound so the last non-null mark
+        /// is not treated as "last mark in part" (which would overcount by
+        /// including null rows in its row count).
+        size_t non_null_marks_bound = std::min(first_null_mark, marks_without_final);
+
+        if (!non_null_ranges.empty())
+        {
+            MarkRanges boundary_marks;
+            for (const auto & range : non_null_ranges)
+            {
+                for (size_t mark = range.begin; mark < range.end; ++mark)
+                {
+                    bool is_last = (mark + 1 >= non_null_marks_bound);
+                    bool crosses = !is_last && !bucketColumnsEqual(unwrapped, mark, mark + 1);
+                    if (is_last || crosses)
+                        boundary_marks.push_back(MarkRange(mark, mark + 1));
+                }
+            }
+
+            auto reader = createReaderForMarks(task.data_part, boundary_marks);
+            for (const auto & range : non_null_ranges)
+            {
+                size_t mark = range.begin;
+                while (mark < range.end)
+                {
+                    bool is_last = (mark + 1 >= non_null_marks_bound);
+                    bool crosses = !is_last && !bucketColumnsEqual(unwrapped, mark, mark + 1);
+
+                    if (!is_last && !crosses)
+                    {
+                        size_t run_end = mark + 1;
+                        while (run_end < range.end
+                            && run_end + 1 < non_null_marks_bound
+                            && bucketColumnsEqual(unwrapped, mark, run_end)
+                            && bucketColumnsEqual(unwrapped, run_end, run_end + 1))
+                            ++run_end;
+
+                        auto key = get_key_unwrap(unwrapped, mark);
+                        bucket_counts[key] += granularity.getRowsCountInRange(mark, run_end);
+                        mark = run_end;
+                    }
+                    else
+                    {
+                        size_t rows = is_last
+                            ? part.rows_count - granularity.getRowsCountInRange(0, mark)
+                            : granularity.getRowsCountInRange(mark, mark + 1);
+                        if (rows > 0 && reader)
+                        {
+                            Block block = readGranule(*reader, mark, rows);
+                            if (block.columns() > 0 && block.rows() > 0)
+                                countBlockNullable<T, ColumnType>(block, bucket_counts, null_count);
+                        }
+                        ++mark;
+                    }
+                }
+            }
+        }
+
+        /// Null marks: all rows are null, pure metadata counting.
+        for (const auto & range : null_ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                bool is_last = (mark + 1 >= marks_without_final);
+                size_t rows = is_last
+                    ? part.rows_count - granularity.getRowsCountInRange(0, mark)
+                    : granularity.getRowsCountInRange(mark, mark + 1);
+                null_count += rows;
+            }
+        }
+
+        /// The single boundary granule at first_null_mark: mixed non-null then null.
+        if (has_boundary)
+        {
+            MarkRanges bm = {MarkRange(first_null_mark, first_null_mark + 1)};
+            auto reader = createReaderForMarks(task.data_part, bm);
+            if (reader)
+            {
+                bool is_last = (first_null_mark + 1 >= marks_without_final);
+                size_t rows = is_last
+                    ? part.rows_count - granularity.getRowsCountInRange(0, first_null_mark)
+                    : granularity.getRowsCountInRange(first_null_mark, first_null_mark + 1);
+
+                if (rows > 0)
+                {
+                    Block block = readGranule(*reader, first_null_mark, rows);
+                    if (block.columns() > 0 && block.rows() > 0)
+                        countBlockNullable<T, ColumnType>(block, bucket_counts, null_count);
+                }
+            }
+        }
+
+        /// Filter path: non-exact marks need reading with filter.
+        if (has_filter)
+        {
+            MarkRanges non_exact = computeNonExactMarks(task);
+            if (!non_exact.empty())
+            {
+                auto reader = createReaderForMarks(task.data_part, non_exact);
+                for (const auto & range : non_exact)
+                {
+                    for (size_t mark = range.begin; mark < range.end; ++mark)
+                    {
+                        bool is_last = (mark + 1 >= marks_without_final);
+                        size_t rows = is_last
+                            ? part.rows_count - granularity.getRowsCountInRange(0, mark)
+                            : granularity.getRowsCountInRange(mark, mark + 1);
+                        if (rows > 0 && reader)
+                        {
+                            Block block = readGranule(*reader, mark, rows);
+                            if (block.columns() == 0 || block.rows() == 0)
+                                continue;
+
+                            filter_expression->execute(block);
+                            FilterDescription filter_desc(*block.getByName(filter_column_name).column);
+                            const auto & filter_data = *filter_desc.data;
+
+                            Columns bucket_cols = executeBucketExpression(block);
+                            const auto & nc = assert_cast<const ColumnNullable &>(*bucket_cols[0]);
+                            const auto & nested_data = assert_cast<const ColumnType &>(nc.getNestedColumn()).getData();
+                            const auto & nm = nc.getNullMapData();
+
+                            for (size_t i = 0; i < block.rows(); ++i)
+                            {
+                                if (!filter_data[i])
+                                    continue;
+                                if (nm[i])
+                                    ++null_count;
+                                else
+                                    ++bucket_counts[nested_data[i]];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (bucket_counts.empty() && null_count == 0)
+            return {};
+
+        return buildChunkNullable<T, ColumnType>(bucket_counts, null_count);
+    }
+
+    template <typename T, typename ColumnType>
+    Chunk buildChunkNullable(const NumericCounts<T> & bucket_counts, UInt64 null_count)
+    {
+        const auto & header = getPort().getHeader();
+        const auto & key_type = header.getByName(group_by_key_names[0]).type;
+
+        auto key_col = key_type->createColumn();
+        auto agg_col = ColumnAggregateFunction::create(count_function);
+        agg_col->reserve(bucket_counts.size() + (null_count > 0 ? 1 : 0));
+
+        std::vector<char> state_buf(count_function->sizeOfData());
+        AggregateDataPtr place = state_buf.data();
+
+        auto insert_count = [&](UInt64 count)
+        {
+            count_function->create(place);
+            AggregateFunctionCount::set(place, count);
+            agg_col->insertFrom(place);
+            count_function->destroy(place);
+        };
+
+        for (const auto & [key, count] : bucket_counts)
+        {
+            assert_cast<ColumnNullable &>(*key_col).getNestedColumn().insert(key);
+            assert_cast<ColumnNullable &>(*key_col).getNullMapData().push_back(UInt8(0));
+            insert_count(count);
+        }
+
+        if (null_count > 0)
+        {
+            key_col->insertDefault();
+            insert_count(null_count);
+        }
+
+        size_t num_rows = agg_col->size();
+        Columns result_columns(header.columns());
+        ColumnPtr agg_col_ptr = std::move(agg_col);
+
+        result_columns[key_col_positions[0]] = std::move(key_col);
+        for (auto & col : result_columns)
+            if (!col)
+                col = agg_col_ptr;
+
+        return Chunk(std::move(result_columns), num_rows);
+    }
+
+    Chunk dispatchNumericType(
+        const CountTask & task,
+        const Columns & bucket_columns,
+        size_t marks_without_final,
+        bool is_nullable)
+    {
+#define DISPATCH(TI, T, CT) \
+    case TypeIndex::TI: \
+        return is_nullable \
+            ? processTaskNullableNumeric<T, CT>(task, bucket_columns, marks_without_final) \
+            : processTaskNumeric<T, CT>(task, bucket_columns, marks_without_final);
+
         switch (numeric_type_index)
         {
-            case TypeIndex::UInt8: return processTaskNumeric<UInt8, ColumnVector<UInt8>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::UInt16: return processTaskNumeric<UInt16, ColumnVector<UInt16>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::UInt32: return processTaskNumeric<UInt32, ColumnVector<UInt32>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::UInt64: return processTaskNumeric<UInt64, ColumnVector<UInt64>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Int8: return processTaskNumeric<Int8, ColumnVector<Int8>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Int16: return processTaskNumeric<Int16, ColumnVector<Int16>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Int32: return processTaskNumeric<Int32, ColumnVector<Int32>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Int64: return processTaskNumeric<Int64, ColumnVector<Int64>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Float32: return processTaskNumeric<Float32, ColumnVector<Float32>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Float64: return processTaskNumeric<Float64, ColumnVector<Float64>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Date: return processTaskNumeric<UInt16, ColumnVector<UInt16>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Date32: return processTaskNumeric<Int32, ColumnVector<Int32>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::DateTime: return processTaskNumeric<UInt32, ColumnVector<UInt32>>(task, bucket_columns, marks_without_final);
-            case TypeIndex::DateTime64: return processTaskNumeric<DateTime64, ColumnDecimal<DateTime64>>(task, bucket_columns, marks_without_final);
+            DISPATCH(UInt8, UInt8, ColumnVector<UInt8>)
+            DISPATCH(UInt16, UInt16, ColumnVector<UInt16>)
+            DISPATCH(UInt32, UInt32, ColumnVector<UInt32>)
+            DISPATCH(UInt64, UInt64, ColumnVector<UInt64>)
+            DISPATCH(Int8, Int8, ColumnVector<Int8>)
+            DISPATCH(Int16, Int16, ColumnVector<Int16>)
+            DISPATCH(Int32, Int32, ColumnVector<Int32>)
+            DISPATCH(Int64, Int64, ColumnVector<Int64>)
+            DISPATCH(Float32, Float32, ColumnVector<Float32>)
+            DISPATCH(Float64, Float64, ColumnVector<Float64>)
+            DISPATCH(Date, UInt16, ColumnVector<UInt16>)
+            DISPATCH(Date32, Int32, ColumnVector<Int32>)
+            DISPATCH(DateTime, UInt32, ColumnVector<UInt32>)
+            DISPATCH(DateTime64, DateTime64, ColumnDecimal<DateTime64>)
             default: UNREACHABLE();
         }
+#undef DISPATCH
     }
 
     CountByGranularityPoolPtr pool;
@@ -717,7 +1023,9 @@ Pipe ReadFromCountByGranularity::makePipe()
 
         if (group_by_key_names.size() == 1)
         {
-            const auto & type = dummy.getByName(group_by_key_names[0]).type;
+            auto type = dummy.getByName(group_by_key_names[0]).type;
+            if (type->isNullable())
+                type = static_cast<const DataTypeNullable &>(*type).getNestedType();
             auto tid = type->getTypeId();
             switch (tid)
             {

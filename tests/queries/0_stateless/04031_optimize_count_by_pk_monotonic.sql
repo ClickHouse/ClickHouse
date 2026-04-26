@@ -294,3 +294,14 @@ SET optimize_trivial_group_by_count_query = 1;
 SELECT 'no_pk_expression';
 SELECT count() > 0 FROM (EXPLAIN description=0 SELECT toStartOfHour(ts) AS hour, count() FROM t_pk_expr GROUP BY hour) WHERE explain LIKE '%ReadFromCountByGranularity%';
 DROP TABLE t_pk_expr;
+
+-- =====================================================
+-- 24. Nullable PK column
+-- =====================================================
+DROP TABLE IF EXISTS t_nullable_pk;
+CREATE TABLE t_nullable_pk (k Nullable(UInt32)) ENGINE = MergeTree() ORDER BY k SETTINGS allow_nullable_key = 1;
+INSERT INTO t_nullable_pk SELECT if(number % 10 = 0, NULL, number) FROM numbers(1000);
+SET optimize_trivial_group_by_count_query = 1;
+SELECT 'nullable_pk';
+SELECT intDiv(k, 100) AS bucket, count() FROM t_nullable_pk GROUP BY bucket ORDER BY bucket;
+DROP TABLE t_nullable_pk;
