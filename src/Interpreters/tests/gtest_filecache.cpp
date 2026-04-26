@@ -1663,6 +1663,9 @@ TEST_F(FileCacheTest, SLRUDynamicResizeRaceWithIncreasePriority)
                 }
                 catch (...)
                 {
+                    /// Surface exceptions for diagnosis if this regression test ever fails.
+                    /// ASSERT_EQ(exceptions_in_promoter, 0) below treats any exception as a failure.
+                    std::cerr << getCurrentExceptionMessage(true) << std::endl;
                     exceptions_in_promoter.fetch_add(1);
                 }
             }
@@ -1688,6 +1691,9 @@ TEST_F(FileCacheTest, SLRUDynamicResizeRaceWithIncreasePriority)
             }
             catch (...)
             {
+                /// Surface exceptions for diagnosis if this regression test ever fails.
+                /// ASSERT_EQ(exceptions_in_resizer, 0) below treats any exception as a failure.
+                std::cerr << getCurrentExceptionMessage(true) << std::endl;
                 exceptions_in_resizer.fetch_add(1);
             }
         }
