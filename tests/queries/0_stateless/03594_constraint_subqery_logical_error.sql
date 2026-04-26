@@ -1,3 +1,7 @@
+-- Tags: no-random-detach
+-- no-random-detach: random DETACH/ATTACH races with INSERT and produces flaky
+-- 'Unexpected packet from server (got Progress)' over the native protocol.
+
 CREATE TABLE check_constraint (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
 INSERT INTO TABLE check_constraint (c0) VALUES (1);
 ALTER TABLE check_constraint ADD CONSTRAINT c0 CHECK (SELECT 1);
