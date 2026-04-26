@@ -486,9 +486,15 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
 
 void StorageMergeTree::drop()
 {
-    assertNotReadonly();
+    /// `DROP TABLE` is allowed even when the table is read-only — only the local metadata
+    /// is removed; `dropAllData` itself skips file cleanup for static storage disks.
+    /// Under `leader_election`, the shared data on object storage is owned by the leader,
+    /// so a follower's drop must skip `dropAllData` to avoid touching the leader's data.
+    /// Capture leader status before `shutdown` stops the election thread.
+    bool skip_data_cleanup = leader_election_ptr && !leader_election_ptr->isLeader();
     shutdown(true);
-    dropAllData();
+    if (!skip_data_cleanup)
+        dropAllData();
 }
 
 void StorageMergeTree::alter(
