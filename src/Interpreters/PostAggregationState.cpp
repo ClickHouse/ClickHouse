@@ -146,7 +146,7 @@ void PostAggregationState::finalizeInto(
 
         auto key = serializeByKey(key_columns, row_num, keys_arena);
 
-        auto it = by_states.find(key);
+        auto *it = by_states.find(key);
         if (!it)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "BY post-state: key not found during finalize (absorb was incomplete)");
