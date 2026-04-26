@@ -389,6 +389,17 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         auto db_and_table = tryGetByUUID(table_id.uuid);
         if (!db_and_table.first || !db_and_table.second)
         {
+            if (db_and_table.first && !db_and_table.second)
+            {
+                /// UUID is used by a database, not a table: the user specified a table UUID that collides with a database UUID.
+                if (exception)
+                    exception->emplace(Exception(
+                        ErrorCodes::TABLE_ALREADY_EXISTS,
+                        "Table UUID {} is already used by database {}",
+                        table_id.uuid,
+                        db_and_table.first->getDatabaseName()));
+                return {};
+            }
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
