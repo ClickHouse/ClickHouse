@@ -155,8 +155,11 @@ bool S3TablesCatalog::tryGetTableMetadata(
     if (!RestCatalog::tryGetTableMetadata(namespace_name, table_name, result))
         return false;
 
-    if (!result.requiresCredentials())
-        return true;
+    /// For S3 Tables the catalog and the underlying data live in AWS S3 under the same
+    /// AWS principal, so endpoint/metadata-location normalization and fallback IAM
+    /// credential injection must always run - even when the engine was created with
+    /// `vended_credentials=0` (which leaves `requiresCredentials()` == false). Otherwise
+    /// reads can lose the catalog endpoint/credentials and fail with auth or routing errors.
 
     bool need_credentials = true;
     if (const auto storage_credentials = result.getStorageCredentials())
