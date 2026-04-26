@@ -87,8 +87,7 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
 
     /// Bail out if any part has lightweight deletes — getRowsCountInRange counts
     /// physical rows, not visible rows, so we'd overcount.
-    const auto & parts_with_ranges = reading->getParts();
-    for (const auto & part : parts_with_ranges)
+    for (const auto & part : reading->getParts())
     {
         if (part.data_part->hasLightweightDelete())
             return;
@@ -174,6 +173,8 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
             return;
     }
 
+    /// Re-read parts after selectRangesToRead may have updated analyzed_result_ptr.
+    const auto & parts_with_ranges = reading->getParts();
     if (parts_with_ranges.empty())
         return;
 

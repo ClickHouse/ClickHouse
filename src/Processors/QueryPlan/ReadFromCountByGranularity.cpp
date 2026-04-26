@@ -196,8 +196,11 @@ private:
         {
             if (!res[i])
                 return;
-            String col_name = (i < bucket_inputs.size()) ? bucket_inputs[i]->result_name : primary_key.column_names[i];
-            block.insert({res[i], primary_key.data_types[i], col_name});
+            /// Insert with PK name first (for filter expression).
+            block.insert({res[i], primary_key.data_types[i], primary_key.column_names[i]});
+            /// If bucket expression expects a different name, add an alias.
+            if (i < bucket_inputs.size() && bucket_inputs[i]->result_name != primary_key.column_names[i])
+                block.insert({res[i], primary_key.data_types[i], bucket_inputs[i]->result_name});
         }
 
         size_t num_rows = block.rows();
@@ -206,8 +209,7 @@ private:
         if (apply_filter && filter_expression)
         {
             filter_expression->execute(block);
-            if (block.has(filter_column_name))
-                filter_col = block.getByName(filter_column_name).column;
+            filter_col = block.getByName(filter_column_name).column;
         }
 
         bucket_expression->execute(block);
