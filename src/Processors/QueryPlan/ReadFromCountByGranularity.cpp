@@ -12,7 +12,9 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/FilterDescription.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -294,7 +296,8 @@ private:
             return;
 
         filter_expression->execute(block);
-        ColumnPtr filter_col = block.getByName(filter_column_name).column;
+        FilterDescription filter_desc(*block.getByName(filter_column_name).column);
+        const auto & filter_data = *filter_desc.data;
 
         Columns bucket_cols = executeBucketExpression(block);
         size_t num_rows = block.rows();
@@ -305,7 +308,7 @@ private:
         {
             UInt64 count = 0;
             for (size_t j = run_start; j < run_end; ++j)
-                if (filter_col->getBool(j))
+                if (filter_data[j])
                     ++count;
             if (count > 0)
                 bucket_counts[current_key] += count;
@@ -564,7 +567,7 @@ private:
         return processTaskImpl<GenericCounts>(task, bucket_columns, marks_without_final, get_key, insert_key);
     }
 
-    template <typename T>
+    template <typename T, typename ColumnType>
     Chunk processTaskNumeric(
         const CountTask & task,
         const Columns & bucket_columns,
@@ -572,11 +575,11 @@ private:
     {
         auto get_key = [](const Columns & cols, size_t row) -> T
         {
-            return assert_cast<const ColumnVector<T> &>(*cols[0]).getData()[row];
+            return assert_cast<const ColumnType &>(*cols[0]).getData()[row];
         };
         auto insert_key = [](std::vector<MutableColumnPtr> & cols, T key)
         {
-            assert_cast<ColumnVector<T> &>(*cols[0]).getData().push_back(key);
+            assert_cast<ColumnType &>(*cols[0]).getData().push_back(key);
         };
         return processTaskImpl<NumericCounts<T>>(task, bucket_columns, marks_without_final, get_key, insert_key);
     }
@@ -588,16 +591,20 @@ private:
     {
         switch (numeric_type_index)
         {
-            case TypeIndex::UInt8: return processTaskNumeric<UInt8>(task, bucket_columns, marks_without_final);
-            case TypeIndex::UInt16: return processTaskNumeric<UInt16>(task, bucket_columns, marks_without_final);
-            case TypeIndex::UInt32: return processTaskNumeric<UInt32>(task, bucket_columns, marks_without_final);
-            case TypeIndex::UInt64: return processTaskNumeric<UInt64>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Int8: return processTaskNumeric<Int8>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Int16: return processTaskNumeric<Int16>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Int32: return processTaskNumeric<Int32>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Int64: return processTaskNumeric<Int64>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Float32: return processTaskNumeric<Float32>(task, bucket_columns, marks_without_final);
-            case TypeIndex::Float64: return processTaskNumeric<Float64>(task, bucket_columns, marks_without_final);
+            case TypeIndex::UInt8: return processTaskNumeric<UInt8, ColumnVector<UInt8>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::UInt16: return processTaskNumeric<UInt16, ColumnVector<UInt16>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::UInt32: return processTaskNumeric<UInt32, ColumnVector<UInt32>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::UInt64: return processTaskNumeric<UInt64, ColumnVector<UInt64>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Int8: return processTaskNumeric<Int8, ColumnVector<Int8>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Int16: return processTaskNumeric<Int16, ColumnVector<Int16>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Int32: return processTaskNumeric<Int32, ColumnVector<Int32>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Int64: return processTaskNumeric<Int64, ColumnVector<Int64>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Float32: return processTaskNumeric<Float32, ColumnVector<Float32>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Float64: return processTaskNumeric<Float64, ColumnVector<Float64>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Date: return processTaskNumeric<UInt16, ColumnVector<UInt16>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Date32: return processTaskNumeric<Int32, ColumnVector<Int32>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::DateTime: return processTaskNumeric<UInt32, ColumnVector<UInt32>>(task, bucket_columns, marks_without_final);
+            case TypeIndex::DateTime64: return processTaskNumeric<DateTime64, ColumnDecimal<DateTime64>>(task, bucket_columns, marks_without_final);
             default: UNREACHABLE();
         }
     }
@@ -698,9 +705,9 @@ Pipe ReadFromCountByGranularity::makePipe()
 
     auto input_mapping = buildInputToPKMapping(bucket_expression, primary_key);
 
-    /// Detect single-numeric fast path: if GROUP BY has exactly one key
-    /// and its bucket expression output is a native numeric type, store its
-    /// TypeIndex for devirtualized column access. Otherwise TypeIndex::Nothing.
+    /// Detect single-column fast path: if GROUP BY has exactly one key
+    /// and its bucket expression output is backed by ColumnVector<T>,
+    /// store its TypeIndex for devirtualized column access.
     TypeIndex numeric_type_index = TypeIndex::Nothing;
     {
         Block dummy;
@@ -711,8 +718,28 @@ Pipe ReadFromCountByGranularity::makePipe()
         if (group_by_key_names.size() == 1)
         {
             const auto & type = dummy.getByName(group_by_key_names[0]).type;
-            if (isNativeNumber(type))
-                numeric_type_index = type->getTypeId();
+            auto tid = type->getTypeId();
+            switch (tid)
+            {
+                case TypeIndex::UInt8:
+                case TypeIndex::UInt16:
+                case TypeIndex::UInt32:
+                case TypeIndex::UInt64:
+                case TypeIndex::Int8:
+                case TypeIndex::Int16:
+                case TypeIndex::Int32:
+                case TypeIndex::Int64:
+                case TypeIndex::Float32:
+                case TypeIndex::Float64:
+                case TypeIndex::Date:
+                case TypeIndex::Date32:
+                case TypeIndex::DateTime:
+                case TypeIndex::DateTime64:
+                    numeric_type_index = tid;
+                    break;
+                default:
+                    break;
+            }
         }
     }
 
