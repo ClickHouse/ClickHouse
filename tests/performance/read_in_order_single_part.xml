@@ -20,7 +20,11 @@
          Read-in-order is standard here, PrefetchingConcat still applies for the single part. -->
     <query>SELECT * FROM read_in_order_single_part WHERE key LIKE 'k/1%' ORDER BY key FORMAT Null</query>
 
-    <!-- ORDER BY without WHERE: all granules, tests pure read + concat throughput. -->
+    <!-- ORDER BY without WHERE: PrefetchingConcat is intentionally NOT used
+         here (the gate in `ReadFromMergeTree::can_use_prefetching_concat`
+         requires `prewhere_info` or `row_level_filter`). This query stays on
+         the existing `MergingSortedTransform` path and guards against perf
+         regressions for filter-less read-in-order queries. -->
     <query>SELECT * FROM read_in_order_single_part ORDER BY key FORMAT Null</query>
 
     <!-- Aggregation in order on the same single-part table. -->
