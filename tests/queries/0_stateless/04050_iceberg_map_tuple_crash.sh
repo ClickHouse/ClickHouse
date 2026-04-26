@@ -24,12 +24,16 @@ ${CLICKHOUSE_CLIENT} --query "
 # creation time and ignores per-query SETTINGS, so we must use the table function
 # to pin the reader path under flaky-check setting randomization.
 
-# Exercise the Arrow reader path (v3=0) where the original std::out_of_range was thrown.
-# After the fix, this path still fails with a separate pre-existing TYPE_MISMATCH
-# (the Arrow reader has its own limitation with Map(Tuple, Tuple) in Iceberg), but it no
+# Exercise the Arrow reader path (v3=0) where the original `std::out_of_range` was thrown.
+# After the fix, this path still fails with a separate pre-existing `TYPE_MISMATCH`
+# (the Arrow reader has its own limitation with `Map(Tuple, Tuple)` in Iceberg), but it no
 # longer triggers `unordered_map::at: key not found`. Count the occurrences of that text:
 # on master this prints 1 (bug present), on this PR it prints 0 (bug fixed).
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM icebergLocal('${ICEBERG_TABLE_PATH}') SETTINGS input_format_parquet_use_native_reader_v3 = 0" 2>&1 | grep -c 'unordered_map::at'
+#
+# Use `SELECT c0 FORMAT Null` rather than `SELECT count()` because trivial-count is
+# answered from Iceberg metadata without invoking `ParquetBlockInputFormat`, so it
+# would not exercise the Arrow column reader regardless of the reader setting.
+${CLICKHOUSE_CLIENT} --query "SELECT c0 FROM icebergLocal('${ICEBERG_TABLE_PATH}') FORMAT Null SETTINGS input_format_parquet_use_native_reader_v3 = 0" 2>&1 | grep -c 'unordered_map::at'
 
 # The native reader v3 path reads the table correctly.
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM icebergLocal('${ICEBERG_TABLE_PATH}') SETTINGS input_format_parquet_use_native_reader_v3 = 1"
