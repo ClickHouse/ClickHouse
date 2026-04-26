@@ -20,10 +20,17 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <Common/ProfileEvents.h>
+
 #include <algorithm>
 #include <memory>
 #include <string>
 
+
+namespace ProfileEvents
+{
+    extern const Event Shards;
+}
 
 namespace DB
 {
@@ -157,6 +164,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
 
     createExtension(nullptr);
+
+    ProfileEvents::increment(ProfileEvents::Shards, max_replicas_to_use);
 
     for (const auto & shard_info : cluster->getShardsInfo())
     {
