@@ -1870,6 +1870,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "metric_log",
         "transposed_metric_log",
         "histogram_metric_log",
+        "predicate_statistics_log",
         "error_log",
         "filesystem_cache_log",
         "filesystem_read_prefetches_log",
