@@ -174,6 +174,9 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
         || nulls_action != rhs_typed.nulls_action)
         return false;
 
+    if (is_totals_combinator != rhs_typed.is_totals_combinator)
+        return false;
+
     /// is_operator is ignored here because it affects only AST formatting
 
     if (!compare_options.compare_types)
@@ -205,6 +208,7 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
     hash_state.update(isAggregateFunction());
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
+    hash_state.update(is_totals_combinator);
 
     /// is_operator is ignored here because it affects only AST formatting
 
@@ -230,6 +234,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
     result_function->is_operator = is_operator;
+    result_function->is_totals_combinator = is_totals_combinator;
 
     return result_function;
 }
@@ -307,6 +312,14 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
             = by_list;
         function_ast->children.push_back(
             function_ast->by_combinator_columns);
+    }
+
+    if (hasOrderByCombinator())
+    {
+        function_ast->order_by_combinator = true;
+        auto order_by_list = getOrderByColumnsNode()->toAST(new_options);
+        function_ast->order_by_combinator_columns = order_by_list;
+        function_ast->children.push_back(function_ast->order_by_combinator_columns);
     }
 
     return function_ast;
