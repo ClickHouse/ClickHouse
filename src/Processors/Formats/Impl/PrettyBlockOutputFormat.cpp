@@ -262,9 +262,25 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     /// Create separators
 
+    /// Optionally render leading padding with Unicode NO-BREAK SPACE (U+00A0, "\xC2\xA0" in UTF-8).
+    /// The visual width is the same as a regular space in monospace, but padding survives tools
+    /// that compress or trim runs of ASCII space. See #95122. Only applies in UTF-8 mode.
+    const bool use_nbsp = format_settings.pretty.use_nbsp_for_leading_padding
+        && format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8;
+    static constexpr std::string_view nbsp_utf8{"\xC2\xA0"};
+
     String left_blank;
     if (format_settings.pretty.row_numbers)
-        left_blank.assign(row_number_width, ' ');
+    {
+        if (use_nbsp)
+        {
+            left_blank.reserve(row_number_width * nbsp_utf8.size());
+            for (size_t i = 0; i < row_number_width; ++i)
+                left_blank.append(nbsp_utf8);
+        }
+        else
+            left_blank.assign(row_number_width, ' ');
+    }
 
     String header_begin;    /// ┏━━┳━━━┓
     String header_end;      /// ┡━━╇━━━┩
@@ -532,7 +548,12 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                         /// Write row number;
                         auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
                         for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
-                            writeChar(' ', out);
+                        {
+                            if (use_nbsp)
+                                writeString(nbsp_utf8, out);
+                            else
+                                writeChar(' ', out);
+                        }
 
                         if (color)
                             out << "\033[90m";

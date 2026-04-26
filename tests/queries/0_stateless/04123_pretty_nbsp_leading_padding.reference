@@ -1,0 +1,3 @@
+default first byte is ASCII space: yes
+nbsp first bytes are UTF-8 U+00A0: yes
+ASCII charset first byte stays ASCII space: yes
