@@ -369,7 +369,10 @@ class JobNames:
     BUGFIX_VALIDATE_IT = "Bugfix validation (integration tests)"
     BUGFIX_VALIDATE_FT = "Bugfix validation (functional tests)"
     # Per-arch bugfix validation: each runs the test on master HEAD and on the PR,
-    # always reports SUCCESS (force_success=True), and emits a result artifact.
+    # naturally exits with OK status after capturing the outcome, and emits a result
+    # artifact. The validation result (whether the bug was reproduced) lives in the
+    # JSON artifact rather than in the job's GitHub status — see
+    # `ci/jobs/bugfix_validation_aggregate.py` for how the four artifacts are combined.
     BUGFIX_VALIDATE_FT_AMD = "Bugfix validation (functional tests, amd64)"
     BUGFIX_VALIDATE_FT_ARM = "Bugfix validation (functional tests, aarch64)"
     BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"

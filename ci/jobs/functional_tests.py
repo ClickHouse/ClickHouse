@@ -765,19 +765,30 @@ def main():
                 has_failure = True
             elif r.status == Result.Status.OK:
                 r.status = Result.Status.FAIL
-        if not has_failure:
-            print("Failed to reproduce the bug")
-            test_result.set_failed().set_info("Failed to reproduce the bug")
-        else:
-            # For bugfix validation, the expected behavior is:
-            # - At least one test must fail (bug reproduced)
-            # - The overall Tests result is treated as success in that case
-            test_result.set_success()
 
-        # Per-arch bugfix-validation jobs always report SUCCESS to GitHub
-        # (Job.Config.force_success=True). The actual outcome is written to
-        # this small JSON, which the `Bugfix validation (final)` aggregator
-        # job consumes as an S3 artifact.
+        # Per-arch bugfix-validation contract:
+        # The job's *status* reflects "did the test run and produce a result?"
+        # — NOT "was the bug validated?". The validation outcome is data
+        # (recorded in the JSON artifact below) that the `Bugfix validation
+        # (final)` aggregator consumes to decide the merge-blocking status.
+        #
+        # We deliberately exit with the natural OK status here (no
+        # `force_success=True` flag is used at the job level) so that real
+        # infrastructure errors (server crash, sanitizer assert) still
+        # propagate as failures.
+        if has_failure:
+            test_result.set_info("Bug reproduced on master HEAD; PR validates the fix on this arch")
+        else:
+            print("Failed to reproduce the bug on this arch")
+            test_result.set_info(
+                "Failed to reproduce the bug on this arch; "
+                "see Bugfix validation (final) aggregator for the merge-blocking decision"
+            )
+        test_result.set_success()
+
+        # Each per-arch JSON is uploaded as a separate S3 artifact and consumed
+        # by the `Bugfix validation (final)` aggregator job, which OR's the
+        # `validated` fields across all four per-arch results.
         result_path = Path(temp_dir) / "bugfix_validate_result.json"
         try:
             arch = "aarch64" if Utils.is_arm() else "amd64"

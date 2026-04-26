@@ -1046,44 +1046,74 @@ tar -czf ./ci/tmp/logs.tar.gz \
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
-        has_failure = False
-        for r in R.results:
-            # invert statuses
-            r.set_label(Result.Label.XFAIL)
-            if r.status == Result.Status.FAIL:
-                r.status = Result.Status.OK
-                has_failure = True
-            elif r.status == Result.Status.OK:
-                r.status = Result.Status.FAIL
-        if not has_failure:
-            print("Failed to reproduce the bug")
-            R.set_failed()
-            R.set_info("Failed to reproduce the bug")
+
+        # Real infrastructure errors (sanitizer assert, OOM, etc.) are kept
+        # as a hard failure of the per-arch job. We do NOT mask them via
+        # `set_success()` and we do NOT write the JSON artifact, so the
+        # aggregator treats this arch as SKIPPED (validated=false). This
+        # keeps `force_success=True` unnecessary at the job-config level
+        # while still letting the other arch validate the bug.
+        if has_error:
+            print(
+                "WARN: Skipping bugfix-validation result write due to "
+                "infrastructure error; aggregator will treat this arch as "
+                "validated=false (SKIPPED)"
+            )
         else:
+            has_failure = False
+            for r in R.results:
+                # invert statuses
+                r.set_label(Result.Label.XFAIL)
+                if r.status == Result.Status.FAIL:
+                    r.status = Result.Status.OK
+                    has_failure = True
+                elif r.status == Result.Status.OK:
+                    r.status = Result.Status.FAIL
+
+            # Per-arch bugfix-validation contract: the job's *status* reflects
+            # "did the test run and produce a result?" — NOT "was the bug
+            # validated?". The validation outcome is data (recorded in the
+            # JSON artifact below) that the `Bugfix validation (final)`
+            # aggregator consumes to decide the merge-blocking status.
+            #
+            # We deliberately set the natural OK status here (no
+            # `force_success=True` flag at the job level) so genuine
+            # infrastructure failures still propagate as failures (handled
+            # by the `if has_error:` branch above).
+            if has_failure:
+                R.set_info(
+                    "Bug reproduced on master HEAD; PR validates the fix on this arch"
+                )
+            else:
+                print("Failed to reproduce the bug on this arch")
+                R.set_info(
+                    "Failed to reproduce the bug on this arch; "
+                    "see Bugfix validation (final) aggregator for the merge-blocking decision"
+                )
             R.set_success()
 
-        # Per-arch bugfix-validation jobs always report SUCCESS to GitHub
-        # (Job.Config.force_success=True). The actual outcome is written to
-        # this small JSON, which the `Bugfix validation (final)` aggregator
-        # job consumes as an S3 artifact.
-        result_path = Path(temp_path) / "bugfix_validate_result.json"
-        try:
-            arch = "aarch64" if Utils.is_arm() else "amd64"
-            payload = {
-                "validated": bool(has_failure),
-                "info": (
-                    f"Bug reproduced on master HEAD ({arch}) and fixed on PR"
-                    if has_failure
-                    else f"Failed to reproduce the bug on master HEAD ({arch})"
-                ),
-                "arch": arch,
-                "kind": "integration tests",
-            }
-            with result_path.open("w") as f:
-                json.dump(payload, f)
-            print(f"Wrote bugfix-validation result to {result_path}: {payload}")
-        except OSError as e:
-            print(f"WARN: failed to write {result_path}: {e}")
+            # Each per-arch JSON is uploaded as a separate S3 artifact and
+            # consumed by the `Bugfix validation (final)` aggregator job,
+            # which OR's the `validated` fields across all four per-arch
+            # results.
+            result_path = Path(temp_path) / "bugfix_validate_result.json"
+            try:
+                arch = "aarch64" if Utils.is_arm() else "amd64"
+                payload = {
+                    "validated": bool(has_failure),
+                    "info": (
+                        f"Bug reproduced on master HEAD ({arch}) and fixed on PR"
+                        if has_failure
+                        else f"Failed to reproduce the bug on master HEAD ({arch})"
+                    ),
+                    "arch": arch,
+                    "kind": "integration tests",
+                }
+                with result_path.open("w") as f:
+                    json.dump(payload, f)
+                print(f"Wrote bugfix-validation result to {result_path}: {payload}")
+            except OSError as e:
+                print(f"WARN: failed to write {result_path}: {e}")
 
     force_ok_exit = False
     if is_llvm_coverage and llvm_profdata_cmd:

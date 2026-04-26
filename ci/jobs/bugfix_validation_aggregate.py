@@ -9,9 +9,11 @@ produced by the per-arch sub-checks:
     - `Bugfix validation (integration tests, amd64)`
     - `Bugfix validation (integration tests, aarch64)`
 
-Each per-arch sub-check always reports SUCCESS to GitHub
-(`force_success=True`) and writes a small JSON artifact describing whether
-the new/modified test on that arch validated the bug:
+Each per-arch sub-check exits with the natural OK status (no
+`force_success=True` flag is used) once it has run the test on master HEAD
+and on the PR, captured the inverted result, and written a small JSON
+artifact describing whether the new/modified test on that arch validated
+the bug:
 
     {
         "validated": true | false,
@@ -26,7 +28,10 @@ check that blocks PR merge.
 
 Artifact-not-found is treated as `validated == false` with a SKIPPED
 sub-result, so an aggregator failure cannot be silently masked by the
-absence of a per-arch JSON.
+absence of a per-arch JSON. Per-arch jobs that genuinely failed (e.g. due
+to a sanitizer report or server crash) deliberately do not write the JSON
+in that case, so the aggregator naturally falls back to SKIPPED for that
+arch and the other arch can still validate the bug.
 """
 import json
 from pathlib import Path

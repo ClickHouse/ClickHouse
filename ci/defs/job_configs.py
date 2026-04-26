@@ -554,10 +554,11 @@ class JobConfigs:
     # and on the PR. The check is considered to "validate the bug" only when
     # the test FAILS on master HEAD AND PASSES on the PR for that arch.
     #
-    # Per-arch jobs are configured with `force_success=True`: they always
-    # report SUCCESS to GitHub, regardless of whether the bug was validated.
-    # The actual outcome is written to a small JSON artifact consumed by the
-    # `Bugfix validation (final)` aggregator job, which decides the final
+    # Per-arch jobs report a NATURAL success status: the job succeeds as long
+    # as it runs the test and captures the outcome. Whether the bug was
+    # validated is a piece of *data* (recorded in a small JSON artifact),
+    # not a piece of *status*. The `Bugfix validation (final)` aggregator job
+    # consumes the four per-arch JSON artifacts and decides the merge-blocking
     # status: SUCCESS iff at least one arch validated the bug.
     #
     # Rationale: some bug fixes are architecture-specific (e.g. SSE2/AVX-only
@@ -565,6 +566,12 @@ class JobConfigs:
     # would always fail Bugfix validation on the "wrong" arch. Splitting into
     # per-arch sub-checks plus a final aggregator allows architecture-specific
     # fixes to pass when validated on at least one arch.
+    #
+    # Note: the per-arch jobs deliberately do NOT use `force_success=True` —
+    # they exit naturally with status OK after capturing the result, so a
+    # genuine infrastructure failure (server crash, sanitizer report, docker
+    # timeout) still propagates as a real failure rather than being silently
+    # masked.
     bugfix_validation_ft_pr_jobs = Job.Config(
         name=JobNames.BUGFIX_VALIDATE,
         runs_on=None,  # set per ParamSet
@@ -581,7 +588,6 @@ class JobConfigs:
             ],
         ),
         result_name_for_cidb="Tests",
-        force_success=True,
     ).parametrize(
         Job.ParamSet(
             parameter="functional tests, amd64",
@@ -769,15 +775,17 @@ class JobConfigs:
     )
     # Per-arch Bugfix Validation Check (integration tests). See the rationale
     # comment above for `bugfix_validation_ft_pr_jobs`. Each per-arch variant
-    # always reports SUCCESS and writes its outcome to a JSON artifact; the
-    # `Bugfix validation (final)` aggregator decides the merge-blocking status.
+    # naturally exits with status OK after capturing the outcome and writes
+    # its result to a JSON artifact; the `Bugfix validation (final)`
+    # aggregator decides the merge-blocking status. As with the FT variant,
+    # `force_success=True` is deliberately NOT used — genuine infrastructure
+    # failures still propagate.
     bugfix_validation_it_jobs = (
         common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE)
         .set_command(
             "python3 ./ci/jobs/integration_test_job.py --options BugfixValidation"
         )
     )
-    bugfix_validation_it_jobs.force_success = True
     bugfix_validation_it_jobs = bugfix_validation_it_jobs.parametrize(
         Job.ParamSet(
             parameter="integration tests, amd64",
