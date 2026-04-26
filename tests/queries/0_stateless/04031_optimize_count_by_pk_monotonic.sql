@@ -1,7 +1,4 @@
--- Tags: no-random-settings
-
 SET session_timezone = 'UTC';
-SET allow_experimental_parallel_reading_from_replicas = 0;
 
 -- =====================================================
 -- Setup: UInt64 key table with enough data for many granules
@@ -26,7 +23,7 @@ SELECT intDiv(k, 100000) AS bucket, count() FROM t_count_gran GROUP BY bucket OR
 -- =====================================================
 SET optimize_trivial_group_by_count_query = 1;
 SELECT 'explain_on';
-SELECT count() > 0 FROM (EXPLAIN description=0 SELECT intDiv(k, 100000) AS bucket, count() FROM t_count_gran GROUP BY bucket) WHERE explain LIKE '%ReadFromCountByGranularity%';
+SELECT count() > 0 FROM (EXPLAIN description=0 SELECT intDiv(k, 100000) AS bucket, count() FROM t_count_gran GROUP BY bucket SETTINGS optimize_trivial_group_by_count_query=1, optimize_aggregation_in_order=0, force_aggregation_in_order=0, allow_experimental_parallel_reading_from_replicas=0, force_aggregate_partitions_independently=0) WHERE explain LIKE '%ReadFromCountByGranularity%';
 
 SET optimize_trivial_group_by_count_query = 0;
 SELECT 'explain_off';
@@ -65,7 +62,7 @@ SELECT 'prewhere_pk_off';
 SELECT intDiv(k, 100000) AS bucket, count() FROM t_count_gran PREWHERE k >= 200000 AND k < 800000 GROUP BY bucket ORDER BY bucket;
 SET optimize_trivial_group_by_count_query = 1;
 SELECT 'prewhere_pk_explain';
-SELECT count() > 0 FROM (EXPLAIN description=0 SELECT intDiv(k, 100000) AS bucket, count() FROM t_count_gran PREWHERE k >= 200000 AND k < 800000 GROUP BY bucket) WHERE explain LIKE '%ReadFromCountByGranularity%';
+SELECT count() > 0 FROM (EXPLAIN description=0 SELECT intDiv(k, 100000) AS bucket, count() FROM t_count_gran PREWHERE k >= 200000 AND k < 800000 GROUP BY bucket SETTINGS optimize_trivial_group_by_count_query=1, optimize_aggregation_in_order=0, force_aggregation_in_order=0, allow_experimental_parallel_reading_from_replicas=0, force_aggregate_partitions_independently=0) WHERE explain LIKE '%ReadFromCountByGranularity%';
 
 -- =====================================================
 -- 4d. PREWHERE on PK but not a range condition: must NOT fire
@@ -141,11 +138,11 @@ INSERT INTO t_count_ts SELECT toDateTime('2024-01-01') + number, number FROM num
 
 SET optimize_trivial_group_by_count_query = 1;
 SELECT 'interval_on';
-SELECT toStartOfInterval(ts, INTERVAL 6 HOUR) AS bucket, count() FROM t_count_ts GROUP BY bucket ORDER BY bucket;
+SELECT toStartOfInterval(ts, INTERVAL 6 HOUR) AS bucket, count() FROM t_count_ts GROUP BY bucket ORDER BY bucket SETTINGS session_timezone='UTC';
 
 SET optimize_trivial_group_by_count_query = 0;
 SELECT 'interval_off';
-SELECT toStartOfInterval(ts, INTERVAL 6 HOUR) AS bucket, count() FROM t_count_ts GROUP BY bucket ORDER BY bucket;
+SELECT toStartOfInterval(ts, INTERVAL 6 HOUR) AS bucket, count() FROM t_count_ts GROUP BY bucket ORDER BY bucket SETTINGS session_timezone='UTC';
 
 DROP TABLE t_count_ts;
 
@@ -275,7 +272,7 @@ SELECT intDiv(a, 10) AS ba, intDiv(b, 50) AS bb, count() FROM t_multi_key GROUP 
 
 SET optimize_trivial_group_by_count_query = 1;
 SELECT 'multi_key_explain';
-SELECT count() > 0 FROM (EXPLAIN description=0 SELECT intDiv(a, 10) AS ba, intDiv(b, 50) AS bb, count() FROM t_multi_key GROUP BY ba, bb) WHERE explain LIKE '%ReadFromCountByGranularity%';
+SELECT count() > 0 FROM (EXPLAIN description=0 SELECT intDiv(a, 10) AS ba, intDiv(b, 50) AS bb, count() FROM t_multi_key GROUP BY ba, bb SETTINGS optimize_trivial_group_by_count_query=1, optimize_aggregation_in_order=0, force_aggregation_in_order=0, allow_experimental_parallel_reading_from_replicas=0, force_aggregate_partitions_independently=0) WHERE explain LIKE '%ReadFromCountByGranularity%';
 
 -- Must NOT fire: GROUP BY only second PK column (skips first)
 SELECT 'no_skip_pk_prefix';
