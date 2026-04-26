@@ -105,7 +105,7 @@ AggregateDataPtr PostAggregationState::findOrCreateByState(std::string_view key)
 /// ===== absorb / finalizeInto =====
 
 void PostAggregationState::absorb(
-    const AggregateDataPtr per_group_place,
+    AggregateDataPtr per_group_place,
     const IColumn ** key_columns,
     size_t row_num,
     Arena * keys_arena)

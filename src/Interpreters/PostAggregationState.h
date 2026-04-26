@@ -66,7 +66,7 @@ public:
     /// `key_columns` must be the array of key columns for the source hash table pass;
     /// unused for TOTALS.
     void absorb(
-        const AggregateDataPtr per_group_place,
+        AggregateDataPtr per_group_place,
         const IColumn ** key_columns,
         size_t row_num,
         Arena * keys_arena);
