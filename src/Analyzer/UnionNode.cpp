@@ -110,16 +110,41 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
     DataTypes projection_column_types;
     projection_column_types.resize(projections_size);
 
+    bool use_variant_as_common_type = getContext()->getSettingsRef()[Setting::use_variant_as_common_type];
+
     size_t columns_size = query_node_projection.size();
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
         for (size_t projection_index = 0; projection_index < projections_size; ++projection_index)
             projection_column_types[projection_index] = projections[projection_index][column_index].type;
 
-        auto result_type = getContext()->getSettingsRef()[Setting::use_variant_as_common_type]
+        auto result_type = use_variant_as_common_type
             ? getLeastSupertypeOrVariant(projection_column_types)
             : getLeastSupertype(projection_column_types);
         result_columns.emplace_back(projections.front()[column_index].name, std::move(result_type));
+    }
+
+    /// Columns with the same name must have the same type in a Block.
+    /// When different positions share a name but got different types (e.g. SELECT NULL, NULL UNION ALL SELECT 'xxx', NULL),
+    /// promote all same-name columns to their common supertype.
+    std::unordered_map<std::string_view, DataTypePtr> name_to_type;
+    for (size_t i = 0; i < columns_size; ++i)
+    {
+        auto [it, inserted] = name_to_type.emplace(result_columns[i].name, result_columns[i].type);
+        if (!inserted && !it->second->equals(*result_columns[i].type))
+        {
+            DataTypes types_to_unify = {it->second, result_columns[i].type};
+            it->second = use_variant_as_common_type
+                ? getLeastSupertypeOrVariant(types_to_unify)
+                : getLeastSupertype(types_to_unify);
+        }
+    }
+
+    for (size_t i = 0; i < columns_size; ++i)
+    {
+        auto it = name_to_type.find(result_columns[i].name);
+        if (!result_columns[i].type->equals(*it->second))
+            result_columns[i].type = it->second;
     }
 
     return result_columns;
