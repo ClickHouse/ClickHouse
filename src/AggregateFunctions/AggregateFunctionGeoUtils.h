@@ -138,6 +138,31 @@ inline void validateValidPolygonalGeometry(const CartesianMultiPolygon & geometr
 }
 
 
+inline size_t countMultiPolygonPoints(const CartesianMultiPolygon & mp)
+{
+    size_t total = 0;
+    for (const auto & poly : mp)
+    {
+        total += poly.outer().size();
+        for (const auto & inner : poly.inners())
+            total += inner.size();
+    }
+    return total;
+}
+
+inline void checkPolygonalStateBudget(size_t current_total, size_t adding, const char * function_name)
+{
+    if (adding > MAX_POINTS_IN_POLYGONAL_STATE - current_total)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Aggregate function {} state has too many points: {} + {} would exceed the limit of {}",
+            function_name,
+            current_total,
+            adding,
+            MAX_POINTS_IN_POLYGONAL_STATE);
+}
+
+
 inline void serializeGeoRing(const CartesianRing & ring, WriteBuffer & buf)
 {
     writeVarUInt(ring.size(), buf);
