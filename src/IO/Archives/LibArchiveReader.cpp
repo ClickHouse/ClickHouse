@@ -79,7 +79,7 @@ public:
 
     std::unique_ptr<SeekableReadBuffer> read_buffer;
     size_t archive_size;
-    char buf[DBMS_DEFAULT_BUFFER_SIZE]{};
+    char buf[DBMS_DEFAULT_BUFFER_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by `read` before use
     std::exception_ptr stored_exception;
 };
 
