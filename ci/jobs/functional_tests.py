@@ -755,16 +755,34 @@ def main():
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []
 
-    # Bugfix validation: invert the result status (only for actual bugfix PRs)
-    # and always write the JSON artifact (for both bugfix and non-bugfix PRs).
+    # Bugfix validation: invert the result status (only for actual bugfix PRs
+    # without infrastructure errors) and always write the JSON artifact (for
+    # both bugfix and non-bugfix PRs, so the artifact-upload step succeeds).
     if is_bugfix_validation and test_result:
         is_bugfix_pr = (
             Labels.PR_BUGFIX in info.pr_labels
             or Labels.PR_CRITICAL_BUGFIX in info.pr_labels
         )
+
+        # Detect infrastructure errors so we don't mask them via
+        # `set_success()`. Two error sources are covered:
+        #   * `test_result.is_error()` — `FTResultsProcessor` set the
+        #     overall status to ERROR (e.g. test runner terminated
+        #     unexpectedly because the server failed to start, Docker pull
+        #     timed out, sanitizer assert during startup).
+        #   * Any individual sub-result with ERROR status — server died on
+        #     a specific test, or test-output parse failure.
+        # These are real infra failures, not test failures, and must not be
+        # silenced by the per-arch success-overwrite below. The aggregator
+        # will see `skipped=true` in the JSON and exclude this arch from
+        # the validation decision; the other arch can still validate.
+        has_error = test_result.is_error() or any(
+            r.is_error() for r in test_result.results
+        )
+
         has_failure = False
 
-        if is_bugfix_pr:
+        if is_bugfix_pr and not has_error:
             for r in test_result.results:
                 r.set_label(Result.Label.XFAIL)
                 if r.status == Result.Status.FAIL:
@@ -783,7 +801,10 @@ def main():
             # We deliberately exit with the natural OK status here (no
             # `force_success=True` flag is used at the job level) so that
             # real infrastructure errors (server crash, sanitizer assert)
-            # still propagate as failures.
+            # still propagate as failures (handled by the
+            # `elif is_bugfix_pr and has_error:` branch below — we still
+            # write the JSON but mark it `skipped=true` so the aggregator
+            # excludes this arch from the validation decision).
             if has_failure:
                 test_result.set_info(
                     "Bug reproduced on master HEAD; PR validates the fix on this arch"
@@ -795,39 +816,58 @@ def main():
                     "see Bugfix validation (final) aggregator for the merge-blocking decision"
                 )
             test_result.set_success()
+        elif is_bugfix_pr and has_error:
+            # Real infrastructure error during bugfix validation. Don't mask
+            # via `set_success()` — let it propagate as a job failure. We
+            # still write the JSON below (skipped=true) so the artifact
+            # upload doesn't fail and the aggregator can see this arch
+            # was unable to validate.
+            print(
+                "WARN: Bugfix validation arch had infrastructure error; "
+                "recording skipped=true in JSON; aggregator will treat this "
+                "arch as SKIPPED (validated=false)"
+            )
         # else: non-bugfix PR running this job because the test runner script
         # was modified in this PR. The sanity test (`00001_select_1`) ran;
         # the natural test_result is sufficient.
 
-        # Always write the JSON artifact when this is a bugfix-validation job.
-        # The praktika runner declares this artifact in `provides=[...]`, so
-        # the file MUST exist for artifact upload to succeed — even on
-        # non-bugfix PRs that exercise this job (e.g., when the test-runner
-        # script was modified). For non-bugfix PRs the JSON records that
-        # fact, and the `Bugfix validation (final)` aggregator treats
-        # `is_bugfix_pr=false` as "nothing to validate" (does not block
-        # merge).
+        # Always write the JSON artifact when this is a bugfix-validation
+        # job. The praktika runner declares this artifact in `provides=[...]`,
+        # so the file MUST exist for artifact upload to succeed — even on
+        # non-bugfix PRs and even when the bugfix-validation arch hit an
+        # infrastructure error. For non-bugfix PRs and infra-error cases the
+        # JSON records that fact, and the `Bugfix validation (final)`
+        # aggregator treats `is_bugfix_pr=false` or `skipped=true` as
+        # "nothing to validate on this arch".
         result_path = Path(temp_dir) / "bugfix_validate_result.json"
         try:
             arch = "aarch64" if Utils.is_arm() else "amd64"
-            if is_bugfix_pr:
-                info_msg = (
-                    f"Bug reproduced on master HEAD ({arch}) and fixed on PR"
-                    if has_failure
-                    else f"Failed to reproduce the bug on master HEAD ({arch})"
-                )
-            else:
+            if not is_bugfix_pr:
                 info_msg = (
                     f"Not a bugfix PR ({arch}); job ran sanity test only "
                     "because the bugfix-validation runner was modified in "
                     "this PR"
                 )
+                skipped = True
+            elif has_error:
+                info_msg = (
+                    f"Skipped on {arch} due to infrastructure error during "
+                    "bugfix validation"
+                )
+                skipped = True
+            elif has_failure:
+                info_msg = f"Bug reproduced on master HEAD ({arch}) and fixed on PR"
+                skipped = False
+            else:
+                info_msg = f"Failed to reproduce the bug on master HEAD ({arch})"
+                skipped = False
             payload = {
-                "validated": bool(has_failure) and is_bugfix_pr,
+                "validated": bool(has_failure) and is_bugfix_pr and not has_error,
                 "info": info_msg,
                 "arch": arch,
                 "kind": "functional tests",
                 "is_bugfix_pr": is_bugfix_pr,
+                "skipped": skipped,
             }
             with result_path.open("w") as f:
                 json.dump(payload, f)
