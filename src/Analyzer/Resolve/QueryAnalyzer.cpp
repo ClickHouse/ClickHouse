@@ -464,7 +464,7 @@ ProjectionName QueryAnalyzer::calculateFunctionProjectionName(const QueryTreeNod
     {
         buffer << " TOTALS";
     }
-    
+
     if (function_node_typed.hasByCombinator())
     {
         const auto & by_nodes

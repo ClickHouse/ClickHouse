@@ -875,7 +875,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             ostr, settings, state,
             nested_dont_need_parens);
     }
-    
+
     if (order_by_combinator
         && order_by_combinator_columns)
     {

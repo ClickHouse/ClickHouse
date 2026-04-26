@@ -780,7 +780,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                 {
                     function_node->setTotalsCombinator();
                 }
-                
+
                 if (function->by_combinator
                     && function->by_combinator_columns)
                 {

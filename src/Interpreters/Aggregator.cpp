@@ -720,7 +720,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     compileAggregateFunctionsIfNeeded();
 #endif
 
-    
+
     /// Initialize post-aggregation for TOTALS/BY combinators.
     post_aggregation.init(params.aggregates, aggregate_functions, offsets_of_aggregate_states, params.keys);}
 
@@ -2327,7 +2327,7 @@ Chunk Aggregator::insertResultsIntoColumns(
                 }
             }
         }
-        
+
 
         for (; aggregate_functions_destroy_index < params.aggregates_size;)
         {

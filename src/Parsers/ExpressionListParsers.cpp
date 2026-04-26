@@ -1228,7 +1228,7 @@ public:
             // ORDER BY combinator
             ParserKeyword order_by_kw(
                 Keyword::ORDER_BY);
-            
+
             bool order_by_matched = order_by_kw.ignore(pos, expected);
 
             if (!has_totals && !has_by
@@ -1249,7 +1249,7 @@ public:
             }
 
 
-            // Only one of the TOTALS, BY ans ORDER BY combinators can be at the one time
+            // Only one of the TOTALS, BY and ORDER BY combinators can be at the one time
             if ((has_totals && has_by)
                 || (has_totals && has_order_by)
                 || (has_by && has_order_by))
