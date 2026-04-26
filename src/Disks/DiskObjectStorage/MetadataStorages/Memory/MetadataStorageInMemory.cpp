@@ -212,6 +212,31 @@ int64_t MetadataStorageInMemory::recordAsRemoved(const StoredObjects & blobs)
     return recorded_count;
 }
 
+std::unordered_map<std::string, MetadataStorageInMemory::FileEntry> MetadataStorageInMemory::cloneFiles() const
+{
+    std::unordered_map<std::string, FileEntry> result;
+    result.reserve(files.size());
+
+    /// Preserve sharing: if multiple `FileEntry` instances reference the same `BlobGroup`,
+    /// they should still share a (single, freshly cloned) `BlobGroup` in the snapshot.
+    std::unordered_map<BlobGroup *, std::shared_ptr<BlobGroup>> clones;
+
+    for (const auto & [path, entry] : files)
+    {
+        FileEntry copy = entry;
+        if (entry.blob_group)
+        {
+            auto [it, inserted] = clones.try_emplace(entry.blob_group.get(), nullptr);
+            if (inserted)
+                it->second = std::make_shared<BlobGroup>(*entry.blob_group);
+            copy.blob_group = it->second;
+        }
+        result.emplace(path, std::move(copy));
+    }
+
+    return result;
+}
+
 /// ==================== Transaction ====================
 
 MetadataStorageInMemoryTransaction::MetadataStorageInMemoryTransaction(MetadataStorageInMemory & metadata_storage_)
@@ -228,7 +253,9 @@ void MetadataStorageInMemoryTransaction::commit(const TransactionCommitOptionsVa
         std::unique_lock lock(metadata_storage.metadata_mutex);
 
         /// Snapshot state before applying, so we can restore on partial failure.
-        auto files_backup = metadata_storage.files;
+        /// Deep-clone `files` so that in-place mutations of `BlobGroup`
+        /// (e.g. `ref_count`, `objects`) by individual operations are also reverted.
+        auto files_backup = metadata_storage.cloneFiles();
         auto directories_backup = metadata_storage.directories;
 
         try

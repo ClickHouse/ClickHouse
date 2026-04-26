@@ -86,6 +86,11 @@ private:
 
     FileEntry * findFile(const std::string & path) const;
 
+    /// Deep clone of `files`: copies entries and produces independent `BlobGroup` instances,
+    /// preserving sharing so that hardlinked entries still point to the same cloned `BlobGroup`.
+    /// Caller must hold `metadata_mutex` exclusively.
+    std::unordered_map<std::string, FileEntry> cloneFiles() const;
+
     mutable SharedMutex metadata_mutex;
 
     const std::string compatible_key_prefix;
