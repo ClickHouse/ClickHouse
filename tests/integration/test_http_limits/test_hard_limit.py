@@ -53,7 +53,7 @@ def test_disk_hard_limit_hit(clickhouse_cluster):
             a19 String)
         ENGINE = MergeTree()
         ORDER BY id
-        SETTINGS storage_policy = 's3', min_bytes_for_wide_part=1000000;
+        SETTINGS storage_policy = 's3', min_bytes_for_wide_part=1000000, add_minmax_index_for_numeric_columns=0;
     """)
 
     node.query("SYSTEM STOP MERGES test_table")
