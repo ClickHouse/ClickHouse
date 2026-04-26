@@ -151,6 +151,13 @@ Clears the uncompressed data cache.
 The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](../../operations/settings/settings.md#use_uncompressed_cache).
 Its size can be configured using the server-level setting [`uncompressed_cache_size`](../../operations/server-configuration-parameters/settings.md#uncompressed_cache_size).
 
+## SYSTEM CLEAR|DROP COLUMNS CACHE {#drop-columns-cache}
+
+Clears the columns cache (deserialized columns kept in memory).
+The columns cache is enabled/disabled with the query/user/profile-level setting [`use_columns_cache`](../../operations/settings/settings.md#use_columns_cache).
+Its size can be configured using the server-level setting [`columns_cache_size`](../../operations/server-configuration-parameters/settings.md#columns_cache_size).
+Use [`system.columns_cache`](../../operations/system-tables/columns_cache.md) to introspect cache contents.
+
 ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
 
 Clears the compiled expression cache.
