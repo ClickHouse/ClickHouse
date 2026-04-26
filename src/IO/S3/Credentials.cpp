@@ -1,4 +1,5 @@
 #include <atomic>
+#include <IO/ExpectCredentialProbe4xxScope.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
@@ -224,6 +225,12 @@ Aws::String AWSEC2MetadataClient::GetResource(const char * resource_path) const
 
 Aws::String AWSEC2MetadataClient::getDefaultCredentials() const
 {
+    /// IMDS HTTP responses with 4xx status are routinely encountered when the
+    /// instance is not running on EC2, when IMDSv2 is enforced, or when the
+    /// metadata hop limit blocks access. The SDK falls through silently in
+    /// these cases; suppress error-level logging so they do not pollute logs.
+    ExpectCredentialProbe4xxScope expect_4xx_scope;
+
     String credentials_string;
     {
         std::lock_guard locker(token_mutex);
@@ -268,6 +275,14 @@ Aws::String AWSEC2MetadataClient::awsComputeUserAgentString()
 
 Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
 {
+    /// IMDSv2 token negotiation (the initial PUT) commonly returns 4xx when the
+    /// instance is not on EC2, when IMDSv2 is disabled, or when the metadata
+    /// hop limit blocks access. The SDK handles these responses internally by
+    /// falling through to IMDSv1 or to the next provider in the chain;
+    /// suppress error-level logging so they do not pollute logs / trigger
+    /// false alerts.
+    ExpectCredentialProbe4xxScope expect_4xx_scope;
+
     String user_agent_string = awsComputeUserAgentString();
     auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
     if (response_code == Aws::Http::HttpResponseCode::BAD_REQUEST
@@ -718,6 +733,13 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
         return;
     }
     Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
+
+    /// STS responses with 4xx status during web-identity refresh are expected
+    /// when the role/token is misconfigured, the session expired, or the regional
+    /// endpoint is unreachable. The SDK retries via a separate retry strategy and
+    /// the chain falls through to subsequent providers; suppress error-level
+    /// logging for the underlying HTTP response so it does not pollute logs.
+    ExpectCredentialProbe4xxScope expect_4xx_scope;
 
     auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
     AWSCredentialsProvider::Reload();

@@ -17,6 +17,7 @@
 #include <Common/Throttler.h>
 #include <Common/re2.h>
 #include <IO/Expect404ResponseScope.h>
+#include <IO/ExpectCredentialProbe4xxScope.h>
 #include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
@@ -651,10 +652,23 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 /// (e.g. If-None-Match: *), not a genuine error.
                 LOG_INFO(log, "Response status: {}, {}", status_code, poco_response.getReason());
             }
-            else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())
+            else
             {
-                /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
-                LOG_ERROR(log, "Response status: {}, {}", status_code, poco_response.getReason());
+                const bool is_expected_404
+                    = (Poco::Net::HTTPResponse::HTTP_NOT_FOUND == status_code && Expect404ResponseScope::is404Expected());
+                const bool is_expected_credential_probe_4xx
+                    = (status_code >= 400 && status_code < 500 && ExpectCredentialProbe4xxScope::isActive());
+
+                if (!is_expected_404 && !is_expected_credential_probe_4xx)
+                {
+                    /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
+                    LOG_ERROR(log, "Response status: {}, {}", status_code, poco_response.getReason());
+                }
+                else if (enable_s3_requests_logging)
+                {
+                    LOG_TEST(log, "Response status: {}, {} (expected during credential probing)",
+                             status_code, poco_response.getReason());
+                }
             }
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
