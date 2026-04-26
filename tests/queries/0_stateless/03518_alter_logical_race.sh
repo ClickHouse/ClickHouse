@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, no-flaky-check
+# no-flaky-check: This test deliberately provokes logical errors via concurrent
+# ALTER and INSERT. Re-running it many times under sanitizers blows the 180s
+# per-test budget and reliably crashes debug builds, which is the bug being documented.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
