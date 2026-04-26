@@ -36,26 +36,34 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     /// Pull available data from inputs into their buffers, capped per input.
     /// Pulling when the buffer is at capacity would let upstream produce
     /// faster than we can consume, growing memory without bound.
+    ///
+    /// `pull(set_not_needed=true)` is required because the input may legitimately
+    /// have `IS_NEEDED == 0` here: an upstream chunk can race with our previous
+    /// `setNotNeeded` (e.g. set when the output became not-needed, or when the
+    /// buffer hit capacity), arriving after the flag was cleared. The toggle
+    /// loop below will re-set `IS_NEEDED` based on the current buffer state.
     {
         size_t idx = 0;
         for (auto & input : inputs)
         {
             if (buffers[idx].size() < max_buffered_chunks && input.hasData())
-                buffers[idx].push_back(input.pull());
+                buffers[idx].push_back(input.pull(true));
             ++idx;
         }
     }
 
-    /// Toggle each non-current input's `needed` state based on whether its
-    /// buffer has room. Setting `needed` on inputs with capacity is what
-    /// drives parallel prefetching — the pipeline executor schedules the
-    /// upstream sources for all "needed" inputs simultaneously. Clearing
-    /// `needed` on full buffers is what stops upstream from over-producing.
+    /// Toggle each input's `needed` state based on whether its buffer has
+    /// room. Setting `needed` on inputs with capacity is what drives parallel
+    /// prefetching — the pipeline executor schedules the upstream sources for
+    /// all "needed" inputs simultaneously. Clearing `needed` on full buffers
+    /// is what stops upstream from over-producing. The current input is
+    /// included so its upstream keeps producing into the buffer rather than
+    /// stalling between consecutive `pull` calls.
     {
         size_t idx = 0;
         for (auto & input : inputs)
         {
-            if (idx != current_input_idx && !input.isFinished())
+            if (!input.isFinished())
             {
                 if (buffers[idx].size() < max_buffered_chunks)
                     input.setNeeded();
