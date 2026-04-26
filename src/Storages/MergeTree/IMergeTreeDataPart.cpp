@@ -595,6 +595,15 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
         if (hyperrectangle.left.isNull() || hyperrectangle.right.isNull())
             return {};
 
+        /// Same protection as `getMinMaxTime`: after `ALTER MODIFY COLUMN ... AFTER`
+        /// reorders a partition-key column, the cached `minmax_idx_date_column_pos`
+        /// can point at a column of some other (non-`Date`) type whose bounds are
+        /// stored as `Int64` etc. `safeGet<UInt64>` would throw `BAD_GET`. Return
+        /// an empty range instead, matching the `pos == -1` and `Null` paths.
+        if (hyperrectangle.left.getType() != Field::Types::UInt64
+            || hyperrectangle.right.getType() != Field::Types::UInt64)
+            return {};
+
         return {
             DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.left.safeGet<UInt64>())),
             DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.right.safeGet<UInt64>()))};
@@ -633,7 +642,22 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 
             return {left.getValue() / left.getScaleMultiplier(), right.getValue() / right.getScaleMultiplier()};
         }
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part minmax index by time is neither DateTime or DateTime64");
+
+        /// Issue #92834: when `ALTER TABLE ... MODIFY COLUMN ... AFTER` reorders a
+        /// partition-key column, the metadata's minmax-column expression is rebuilt
+        /// in the new column order, but `storage.minmax_idx_time_column_pos` (cached
+        /// at table creation/attach) is not. Subsequent `INSERT`s build the per-part
+        /// `hyperrectangle` in the new order while readers of `system.parts.min_time`
+        /// / `max_time` dereference the slot at the stale position — landing on a
+        /// column of some other type. Historically this threw `LOGICAL_ERROR`
+        /// "Part minmax index by time is neither DateTime or DateTime64", surfacing
+        /// as a fatal-looking exception to the user even though the table itself is
+        /// fine. Treat any unexpected `Field` type as "no usable time bounds for
+        /// this part" and return an empty range — matching the `pos == -1` and the
+        /// `Null` bound paths. The deeper stale-position fix is a separate change
+        /// (it requires per-part column-order persistence to be concurrency-safe
+        /// with concurrent `SELECT`s).
+        return {};
     }
     return {};
 }

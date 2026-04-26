@@ -1,26 +1,57 @@
--- Test for `system.parts.min_time` / `max_time` / `min_date` / `max_date`
--- reporting with `Nullable(Date/DateTime/DateTime64)` partition keys. (Found
--- while investigating issue #92834; see that issue for a separate, unrelated
--- stale-position bug after `ALTER MODIFY COLUMN ... AFTER` reorders a
--- partition-key column, which this PR does NOT address.)
+-- Tests for issue #92834: `Logical error: 'Part minmax index by time is neither
+-- DateTime or DateTime64'` thrown from `getMinMaxTime` when querying
+-- `system.parts` after certain `ALTER` / `Nullable` partition-key combinations.
 --
--- Before this fix, `checkPartitionKeyAndInitMinMax` did not unwrap `Nullable`,
--- so `isDate` / `isDateTime` / `isDateTime64` returned false on a `Nullable(...)`
--- partition key and `minmax_idx_{date,time}_column_pos` was left at `-1`. As a
--- result `system.parts.min_*/max_*` silently returned `0` regardless of the
--- actual data in the part — the non-`NULL` mixed case was silently wrong.
+-- Three independent paths can land on a `hyperrectangle` slot whose `Field`
+-- type is not `UInt64` (DateTime) or `Decimal64` (DateTime64):
+--   1. `ALTER TABLE ... MODIFY COLUMN ... AFTER` reorders a partition-key
+--      column. `storage.minmax_idx_time_column_pos` (cached at table
+--      creation/attach) is not refreshed, while subsequent `INSERT`s build the
+--      per-part `hyperrectangle` in the *new* order. The cached pos now points
+--      at a column of some other type (e.g. `Nullable(Int8)` → `Int64` `Field`).
+--   2. A `Nullable(Date/DateTime/DateTime64)` partition-key column with every
+--      row `NULL`: `ColumnNullable::getExtremesNullLast` returns
+--      `POSITIVE_INFINITY` for both bounds (`Field::Types::Null`).
+--   3. The same column type with mixed `NULL` / non-`NULL` rows: only the
+--      upper bound becomes `POSITIVE_INFINITY` because `NULL` sorts last.
 --
--- Unwrapping `Nullable` fixes that, but the same change means that for a part
--- whose partition-key column is all-`NULL`, `hyperrectangle[pos].left` is now
--- `Field::Types::Null` (`POSITIVE_INFINITY`, NullLast). The existing type
--- checks in `getMinMaxDate`/`getMinMaxTime` would then throw
--- `"Part minmax index by time is neither DateTime or DateTime64"`, so
--- `getMinMaxDate`/`getMinMaxTime` also short-circuit on `Field::Types::Null`
--- and return an empty range. `system.parts.min_time`/`max_time` are
--- non-Nullable, so they surface as epoch (`0`) in the all-`NULL` case.
+-- The fix:
+--   * `getMinMaxDate` / `getMinMaxTime` short-circuit on `Field::Types::Null`
+--     for either bound, and (in `getMinMaxTime`) return an empty range for any
+--     unexpected `Field` type instead of throwing `LOGICAL_ERROR`. This makes
+--     `system.parts` queries succeed (showing epoch / `1970-01-01` for those
+--     parts) instead of failing.
+--   * `checkPartitionKeyAndInitMinMax` unwraps `Nullable` before the
+--     `isDate` / `isDateTime` / `isDateTime64` checks, so a non-`NULL`
+--     `Nullable(...)` partition key actually populates `min_*`/`max_*` instead
+--     of staying silently empty.
+--
+-- The deeper root cause of (1) — stale `minmax_idx_*_column_pos` after `ALTER
+-- ... AFTER` — is not addressed here; a concurrency-safe fix needs per-part
+-- column-order persistence and is left for a follow-up.
 
 -- =====================================================
--- Case 1: Direct Nullable(DateTime) partition key with all NULLs.
+-- Case 1: The exact reproducer from issue #92834 (path 1 above).
+-- `Enum NULL` + `DateTime` in the partition key, then
+-- `ALTER MODIFY COLUMN ... AFTER` reorders the columns, then `INSERT`. Reading
+-- `system.parts` previously threw `Part minmax index by time is neither
+-- DateTime or DateTime64`. With the fix, the query must complete.
+-- =====================================================
+DROP TABLE IF EXISTS issue_92834_repro;
+
+CREATE TABLE issue_92834_repro (c1 Enum('a' = 1) NULL, c2 DateTime) ENGINE = MergeTree()
+    PARTITION BY (c1, c2) ORDER BY tuple() SETTINGS allow_nullable_key = 1;
+
+ALTER TABLE issue_92834_repro MODIFY COLUMN c1 Nullable(Int8) AFTER c2;
+
+INSERT INTO TABLE issue_92834_repro (c1) VALUES (1);
+
+SELECT 1 FROM system.parts WHERE database = currentDatabase() AND table = 'issue_92834_repro' AND active;
+
+DROP TABLE IF EXISTS issue_92834_repro;
+
+-- =====================================================
+-- Case 2: Direct Nullable(DateTime) partition key with every row NULL.
 -- Must not throw; min_time/max_time collapse to epoch.
 -- =====================================================
 DROP TABLE IF EXISTS test_nullable_datetime_all_nulls;
@@ -39,7 +70,7 @@ FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_
 DROP TABLE IF EXISTS test_nullable_datetime_all_nulls;
 
 -- =====================================================
--- Case 2: Nullable(DateTime64) variant.
+-- Case 3: Nullable(DateTime64) all-NULL variant.
 -- =====================================================
 DROP TABLE IF EXISTS test_nullable_datetime64_all_nulls;
 
@@ -57,7 +88,7 @@ FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_
 DROP TABLE IF EXISTS test_nullable_datetime64_all_nulls;
 
 -- =====================================================
--- Case 3: Nullable(Date) partition key with all NULLs.
+-- Case 4: Nullable(Date) partition key with every row NULL.
 -- Covers the all-NULL branch in getMinMaxDate.
 -- =====================================================
 DROP TABLE IF EXISTS test_nullable_date_all_nulls;
@@ -76,10 +107,10 @@ FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_
 DROP TABLE IF EXISTS test_nullable_date_all_nulls;
 
 -- =====================================================
--- Case 4: Nullable(DateTime) partition key with a real non-NULL value.
--- Verifies that `removeNullable` is in effect so minmax_idx_time_column_pos gets
--- set and system.parts.min_time / max_time actually reflect the value rather
--- than staying silently at 0 (which would happen if pos stayed -1).
+-- Case 5: Nullable(DateTime) partition key with a real non-NULL value.
+-- Verifies that `removeNullable` is in effect so `minmax_idx_time_column_pos`
+-- gets set and `system.parts.min_time` / `max_time` actually reflect the
+-- value (rather than staying silently at 0 because pos stayed -1).
 -- =====================================================
 DROP TABLE IF EXISTS test_nullable_datetime_nonnull;
 
@@ -99,7 +130,7 @@ FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_
 DROP TABLE IF EXISTS test_nullable_datetime_nonnull;
 
 -- =====================================================
--- Case 5: Nullable(DateTime64) partition key with a real non-NULL value.
+-- Case 6: Nullable(DateTime64) partition key with a real non-NULL value.
 -- Directly covers `removeNullable` for DateTime64.
 -- =====================================================
 DROP TABLE IF EXISTS test_nullable_datetime64_nonnull;
@@ -120,7 +151,7 @@ FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_
 DROP TABLE IF EXISTS test_nullable_datetime64_nonnull;
 
 -- =====================================================
--- Case 6: Nullable(Date) partition key with a real non-NULL value.
+-- Case 7: Nullable(Date) partition key with a real non-NULL value.
 -- =====================================================
 DROP TABLE IF EXISTS test_nullable_date_nonnull;
 
@@ -140,7 +171,7 @@ FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_
 DROP TABLE IF EXISTS test_nullable_date_nonnull;
 
 -- =====================================================
--- Case 7: Mixed `NULL` / non-`NULL` rows in a single part.
+-- Case 8: Mixed `NULL` / non-`NULL` rows in a single part — `Nullable(DateTime)`.
 --
 -- For `Nullable` partition-key columns, `ColumnNullable::getExtremesNullLast`
 -- returns `POSITIVE_INFINITY` (`Field::Types::Null`) for the *upper* bound when
@@ -172,7 +203,7 @@ FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_
 DROP TABLE IF EXISTS test_nullable_datetime_mixed_part;
 
 -- =====================================================
--- Case 8: Mixed `NULL` / non-`NULL` rows in a single part — `Nullable(Date)`.
+-- Case 9: Mixed `NULL` / non-`NULL` rows in a single part — `Nullable(Date)`.
 -- =====================================================
 DROP TABLE IF EXISTS test_nullable_date_mixed_part;
 
@@ -190,7 +221,7 @@ FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_
 DROP TABLE IF EXISTS test_nullable_date_mixed_part;
 
 -- =====================================================
--- Case 9: Mixed `NULL` / non-`NULL` rows in a single part — `Nullable(DateTime64)`.
+-- Case 10: Mixed `NULL` / non-`NULL` rows in a single part — `Nullable(DateTime64)`.
 -- =====================================================
 DROP TABLE IF EXISTS test_nullable_datetime64_mixed_part;
 
