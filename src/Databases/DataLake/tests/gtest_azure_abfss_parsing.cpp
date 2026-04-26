@@ -121,9 +121,34 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationMissingPath)
     TableMetadata metadata;
     metadata.withLocation();
 
-    EXPECT_THROW({
-        metadata.setLocation("abfss://container@account.dfs.core.windows.net");
-    }, DB::Exception);
+    metadata.setLocation("abfss://container@account.dfs.core.windows.net");
+    EXPECT_EQ(metadata.getStorageType(), StorageType::Azure);
+    EXPECT_EQ(metadata.getLocation(), "abfss://container@account.dfs.core.windows.net");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationS3BucketOnly)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://my-table-bucket");
+
+    EXPECT_EQ(metadata.getStorageType(), StorageType::S3);
+    EXPECT_EQ(metadata.getLocation(), "s3://my-table-bucket");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3BucketOnlyAwsS3Tables)
+{
+    const std::string bucket = "971c9583-50d0-4bfd-wme4756mdgfpwmsrsckzrdf8swt7ouse2b--table-s3";
+
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://" + bucket);
+
+    const std::string metadata_file =
+        "s3://" + bucket + "/metadata/00001-5f129330-3deb-43aa-b948-e810811f48b4.metadata.json";
+    EXPECT_EQ(
+        metadata.getMetadataLocation(metadata_file),
+        "metadata/00001-5f129330-3deb-43aa-b948-e810811f48b4.metadata.json");
 }
 
 TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationNonPolarisContainerInPath)

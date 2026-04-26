@@ -46,9 +46,9 @@ struct URI
     static void validateKey(const std::string & key, const Poco::URI & uri);
 };
 
-/// Resolve the S3 endpoint URL for a given AWS region using the SDK's
+/// Expand an AWS region into the corresponding Amazon S3 endpoint URL using the SDK's
 /// Smithy endpoint rules (handles all partitions: standard, China, GovCloud, etc.).
-std::string resolveS3Endpoint(const std::string & region);
+std::string expandRegionToAmazonPath(const std::string & region);
 
 }
 

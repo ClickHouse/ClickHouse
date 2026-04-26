@@ -7,6 +7,8 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <IO/S3/Credentials.h>
 
+#include <Poco/Net/HTTPRequest.h>
+
 #include <aws/core/auth/signer/AWSAuthV4Signer.h>
 
 #include <memory>
@@ -43,12 +45,18 @@ public:
     void dropTable(const String & namespace_name, const String & table_name) const override;
 
 protected:
-    DB::HTTPHeaderEntries getAuthHeaders(
-        bool update_token,
-        const String & method = {},
-        const Poco::URI & url = {},
-        const DB::HTTPHeaderEntries & extra_headers = {},
-        const String & body = {}) const override;
+    /// Override the network primitives instead of `getAuthHeaders` so the SigV4 signer has
+    /// access to the final URL, method, and request body for canonicalisation.
+    DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+        const std::string & endpoint,
+        const Poco::URI::QueryParameters & params = {},
+        const DB::HTTPHeaderEntries & headers = {}) const override;
+
+    void sendRequest(
+        const String & endpoint,
+        Poco::JSON::Object::Ptr request_body,
+        const String & method = Poco::Net::HTTPRequest::HTTP_POST,
+        bool ignore_result = false) const override;
 
 private:
     const String region;

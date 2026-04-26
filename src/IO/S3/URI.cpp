@@ -242,7 +242,7 @@ void URI::validateKey(const String & key, const Poco::URI & uri)
     }
 }
 
-std::string resolveS3Endpoint(const std::string & region)
+std::string expandRegionToAmazonPath(const std::string & region)
 {
     Aws::S3::Endpoint::S3EndpointProvider provider;
     provider.AccessBuiltInParameters().SetStringParameter("Region", Aws::String(region));

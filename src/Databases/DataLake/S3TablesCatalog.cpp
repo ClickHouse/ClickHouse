@@ -21,12 +21,14 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/core/auth/signer/AWSAuthV4Signer.h>
 
 #include <mutex>
+#include <sstream>
 
 namespace DB::ErrorCodes
 {
@@ -175,7 +177,7 @@ bool S3TablesCatalog::tryGetTableMetadata(
     if (result.getEndpoint().empty())
     {
         String endpoint = storage_endpoint.empty()
-            ? DB::S3::resolveS3Endpoint(region)
+            ? DB::S3::expandRegionToAmazonPath(region)
             : storage_endpoint;
         LOG_DEBUG(log, "S3 Tables: no endpoint for {}.{}, injecting: {}", namespace_name, table_name, endpoint);
         result.setEndpoint(endpoint);
@@ -219,26 +221,117 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
     }
 }
 
-DB::HTTPHeaderEntries S3TablesCatalog::getAuthHeaders(
-    bool /*update_token*/,
-    const String & method,
-    const Poco::URI & url,
-    const DB::HTTPHeaderEntries & extra_headers,
-    const String & body) const
+namespace
 {
-    DB::HTTPHeaderEntries all_signed;
-    signRequestWithAWSV4(method, url, extra_headers, body, *signer, region, signing_service, all_signed);
 
-    // signRequestWithAWSV4 returns both input extra_headers and signer-added auth
-    // headers. Only return the auth portion (authorization, x-amz-*); the caller
-    // appends the original request headers separately.
+/// `signRequestWithAWSV4` returns the full set of headers that the AWS SDK kept on
+/// the signed request (input headers + signed auth). We only want the SigV4-specific
+/// ones here (`Authorization`, `X-Amz-*`); the original request headers are appended
+/// separately by the caller. HTTP header names are case-insensitive, and the AWS SDK
+/// is free to vary the casing it emits, so compare using `Poco::icompare`.
+bool isSigV4AuthHeader(const String & name)
+{
+    if (Poco::icompare(name, "authorization") == 0)
+        return true;
+    static constexpr size_t x_amz_prefix_len = 6;
+    return name.size() >= x_amz_prefix_len
+        && Poco::icompare(name, 0, x_amz_prefix_len, "x-amz-") == 0;
+}
+
+DB::HTTPHeaderEntries extractSigV4AuthHeaders(DB::HTTPHeaderEntries && all_signed)
+{
     DB::HTTPHeaderEntries auth_headers;
     for (auto & h : all_signed)
     {
-        if (h.name == "authorization" || h.name.starts_with("x-amz-"))
+        if (isSigV4AuthHeader(h.name))
             auth_headers.push_back(std::move(h));
     }
     return auth_headers;
+}
+
+}
+
+DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
+    const std::string & endpoint,
+    const Poco::URI::QueryParameters & params,
+    const DB::HTTPHeaderEntries & headers) const
+{
+    const auto & context = getContext();
+
+    /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
+    Poco::URI url(base_url / endpoint, /* enable_url_encoding */ false);
+    if (!params.empty())
+        url.setQueryParameters(params);
+
+    DB::HTTPHeaderEntries all_signed;
+    signRequestWithAWSV4(
+        Poco::Net::HTTPRequest::HTTP_GET, url, headers, /* payload */ {},
+        *signer, region, signing_service, all_signed);
+
+    auto result_headers = extractSigV4AuthHeaders(std::move(all_signed));
+    for (const auto & h : headers)
+        result_headers.push_back(h);
+
+    LOG_DEBUG(log, "Requesting (SigV4): {}", url.toString());
+
+    return DB::BuilderRWBufferFromHTTP(url)
+        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+        .withSettings(context->getReadSettings())
+        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+        .withHostFilter(&context->getRemoteHostFilter())
+        .withHeaders(result_headers)
+        .withDelayInit(false)
+        .withSkipNotFound(false)
+        .create(credentials);
+}
+
+void S3TablesCatalog::sendRequest(
+    const String & endpoint,
+    Poco::JSON::Object::Ptr request_body,
+    const String & method,
+    bool ignore_result) const
+{
+    std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    if (request_body)
+        request_body->stringify(oss);
+    const std::string body_str = DB::removeEscapedSlashes(oss.str());
+
+    const auto & context = getContext();
+
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
+    if (!body_str.empty())
+    {
+        out_stream_callback = [body_str](std::ostream & os) { os << body_str; };
+    }
+
+    /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
+    Poco::URI url(endpoint, /* enable_url_encoding */ false);
+
+    DB::HTTPHeaderEntries extra_headers;
+    extra_headers.emplace_back("Content-Type", "application/json");
+
+    DB::HTTPHeaderEntries all_signed;
+    signRequestWithAWSV4(method, url, extra_headers, body_str, *signer, region, signing_service, all_signed);
+
+    auto headers = extractSigV4AuthHeaders(std::move(all_signed));
+    headers.emplace_back("Content-Type", "application/json");
+
+    auto wb = DB::BuilderRWBufferFromHTTP(url)
+        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+        .withMethod(method)
+        .withSettings(context->getReadSettings())
+        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+        .withHostFilter(&context->getRemoteHostFilter())
+        .withHeaders(headers)
+        .withOutCallback(out_stream_callback)
+        .withSkipNotFound(false)
+        .create(credentials);
+
+    String response_str;
+    if (!ignore_result)
+        readJSONObjectPossiblyInvalid(response_str, *wb);
+    else
+        wb->ignoreAll();
 }
 
 }
