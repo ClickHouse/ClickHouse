@@ -62,6 +62,7 @@ namespace S3
 #    include <boost/algorithm/string/split.hpp>
 #    include <boost/algorithm/string/classification.hpp>
 #    include <Poco/Exception.h>
+#    include <Poco/String.h>
 #    include <Poco/URI.h>
 #    include <Poco/Net/HTTPClientSession.h>
 #    include <Poco/Net/HTTPRequest.h>
@@ -387,12 +388,49 @@ std::shared_ptr<AWSEC2MetadataClient> createEC2MetadataClient(const Aws::Client:
 
 String AWSEC2MetadataClient::getAvailabilityZoneOrException()
 {
-    Poco::URI uri(getAWSMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
+    const String endpoint = getAWSMetadataEndpoint();
+
+    /// Try to obtain an IMDSv2 session token. On instances configured for "IMDSv2 only"
+    /// (the AWS-recommended setting), the AZ resource rejects unauthenticated GETs with 401.
+    /// On endpoints that do not support the IMDSv2 token `PUT` the request fails; we then
+    /// fall back to the plain GET. See #81402.
+    String token;
+    try
+    {
+        Poco::URI token_uri(endpoint + EC2_IMDS_TOKEN_RESOURCE);
+        Poco::Net::HTTPClientSession token_session(token_uri.getHost(), token_uri.getPort());
+        token_session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
+
+        Poco::Net::HTTPRequest token_request(Poco::Net::HTTPRequest::HTTP_PUT, token_uri.getPathAndQuery());
+        token_request.set(EC2_IMDS_TOKEN_TTL_HEADER, EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
+        token_request.setContentLength(0);
+        token_session.sendRequest(token_request);
+
+        Poco::Net::HTTPResponse token_response;
+        std::istream & token_stream = token_session.receiveResponse(token_response);
+        if (token_response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
+        {
+            String token_payload;
+            Poco::StreamCopier::copyToString(token_stream, token_payload);
+            Poco::trimInPlace(token_payload);
+            token = std::move(token_payload);
+        }
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Token acquisition is best-effort: any transport-level error here means we
+        /// fall back to the legacy unauthenticated GET below, which preserves
+        /// IMDSv1-only behavior.
+    }
+
+    Poco::URI uri(endpoint + EC2_AVAILABILITY_ZONE_RESOURCE);
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
     session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
 
     Poco::Net::HTTPResponse response;
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPathAndQuery());
+    if (!token.empty())
+        request.set(EC2_IMDS_TOKEN_HEADER, token);
     session.sendRequest(request);
 
     std::istream & rs = session.receiveResponse(response);
