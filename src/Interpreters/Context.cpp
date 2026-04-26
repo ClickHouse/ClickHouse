@@ -318,6 +318,7 @@ namespace Setting
     extern const SettingsBool page_cache_inject_eviction;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString parallel_replicas_custom_key;
+    extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
@@ -7642,7 +7643,8 @@ bool Context::canUseTaskBasedParallelReplicas() const
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
-        && settings_ref[Setting::max_parallel_replicas] > 1
+        && (settings_ref[Setting::max_parallel_replicas] > 1
+            || !settings_ref[Setting::parallel_replicas_prefer_local_replica])
         && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
 }
 

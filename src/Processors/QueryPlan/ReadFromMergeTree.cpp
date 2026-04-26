@@ -3739,7 +3739,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// the read step deliberately reduced streams (e.g. because data is small).
     /// Downstream steps like AggregatingStep use this to avoid expanding the pipeline
     /// back to max_threads, which would create overhead from mostly-empty streams.
-    if (pipeline.getNumStreams() < requested_num_streams)
+    /// Don't set this flag for read-in-order: the stream count there is determined
+    /// by the number of parts and ordering requirements, not by data size.
+    /// After merge-sort, the pipeline will have 1 stream, and AggregatingStep
+    /// should still expand it to max_threads.
+    if (pipeline.getNumStreams() < requested_num_streams && !reader_settings.read_in_order)
         pipeline.setReadStreamCountWasReduced(true);
 
     pipeline.addContext(context);

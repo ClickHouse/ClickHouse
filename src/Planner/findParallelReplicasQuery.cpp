@@ -22,6 +22,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 
 namespace DB
 {
@@ -615,10 +616,13 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
 
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
-    ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     auto [header, new_planner_context] = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
+
+    auto modified_query_tree_for_ast = modified_query_tree->clone();
+    removeGroupingFunctionSpecializations(modified_query_tree_for_ast);
+    ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast);
 
     const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
     if (!table_node)

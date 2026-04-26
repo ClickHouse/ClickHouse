@@ -1,3 +1,4 @@
+#include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -31,7 +32,13 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event Shards;
+}
 
 namespace DB
 {
@@ -64,6 +71,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsOverflowMode timeout_overflow_mode;
@@ -368,6 +376,7 @@ void executeQuery(
     new_context->increaseDistributedDepth();
 
     const size_t shards = cluster->getShardCount();
+    ProfileEvents::increment(ProfileEvents::Shards, shards);
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
@@ -695,7 +704,9 @@ void executeQueryWithParallelReplicas(
 
     const auto & settings = new_context->getSettingsRef();
     /// do not build local plan for distributed queries for now (address it later)
-    if (settings[Setting::allow_experimental_analyzer] && settings[Setting::parallel_replicas_local_plan] && !shard_num)
+    /// when parallel_replicas_prefer_local_replica is false, skip local plan to allow the load balancer to pick any replica
+    if (settings[Setting::allow_experimental_analyzer] && settings[Setting::parallel_replicas_local_plan]
+        && settings[Setting::parallel_replicas_prefer_local_replica] && !shard_num)
     {
         auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
 
@@ -806,7 +817,9 @@ void executeQueryWithParallelReplicas(
 
     auto [header, new_planner_context]
         = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
-    auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
+    auto modified_query_tree_for_ast = modified_query_tree->clone();
+    removeGroupingFunctionSpecializations(modified_query_tree_for_ast);
+    auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast);
 
     executeQueryWithParallelReplicas(
         query_plan,

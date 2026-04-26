@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
+    extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
@@ -711,7 +712,8 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
     LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
 
-    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline])
+    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
+        && settings[Setting::parallel_replicas_prefer_local_replica])
     {
         auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
         return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context, std::move(local_pipeline), coordinator);
