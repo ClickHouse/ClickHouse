@@ -1218,7 +1218,10 @@ public:
 
     std::optional<UInt16> getTCPPortSecure() const;
 
-    /// Register server ports during server starting up. No lock is held.
+    /// Register a server listener port. May be called concurrently from
+    /// `SYSTEM START LISTEN` at runtime (in `clickhouse-local`); re-registering
+    /// the same `port_name` overwrites the previous value, e.g. when an
+    /// ephemeral port-0 listener is stopped and started again on a new port.
     void registerServerPort(String port_name, UInt16 port);
 
     UInt16 getServerPort(const String & port_name) const;
