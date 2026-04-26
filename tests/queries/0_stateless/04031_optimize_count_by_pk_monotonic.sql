@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings
+-- Tags: no-random-settings
 
 SET session_timezone = 'UTC';
 SET allow_experimental_parallel_reading_from_replicas = 0;
