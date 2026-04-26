@@ -1,7 +1,9 @@
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -35,13 +37,14 @@ namespace ErrorCodes
   *
   * arrayReduceInRanges('agg', indices, lengths, arr1, ...)
   */
-class FunctionArrayReduceInRanges : public IFunction, private WithContext
+class FunctionArrayReduceInRanges : public IFunction
 {
 public:
     static const size_t minimum_step = 64;
     static constexpr auto name = "arrayReduceInRanges";
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayReduceInRanges>(context_); }
-    explicit FunctionArrayReduceInRanges(ContextPtr context_) : WithContext(context_) {}
+
+    explicit FunctionArrayReduceInRanges(AggregateFunctionPtr aggregate_function_)
+        : aggregate_function(std::move(aggregate_function_)) {}
 
     String getName() const override { return name; }
 
@@ -53,80 +56,16 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    {
+        return std::make_shared<DataTypeArray>(aggregate_function->getResultType());
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
-    /// lazy initialization in getReturnTypeImpl
-    /// TODO: init in OverloadResolver
-    mutable AggregateFunctionPtr aggregate_function;
+    AggregateFunctionPtr aggregate_function;
 };
-
-
-DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-{
-    /// The first argument is a constant string with the name of the aggregate function
-    ///  (possibly with parameters in parentheses, for example: "quantile(0.99)").
-
-    if (arguments.size() < 3)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function {} doesn't match: passed {}, should be at least 3.",
-            getName(), arguments.size());
-
-    const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
-    if (!aggregate_function_name_column)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
-            "name of aggregate function.", getName());
-
-    const DataTypeArray * ranges_type_array = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
-    if (!ranges_type_array)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an array of ranges.",
-            getName());
-    const DataTypeTuple * ranges_type_tuple = checkAndGetDataType<DataTypeTuple>(ranges_type_array->getNestedType().get());
-    if (!ranges_type_tuple || ranges_type_tuple->getElements().size() != 2)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Each array element in the second argument for function {} must be a tuple (index, length).",
-                        getName());
-    if (!isNativeInteger(ranges_type_tuple->getElements()[0]))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "First tuple member in the second argument for function {} must be ints or uints.", getName());
-    if (!WhichDataType(ranges_type_tuple->getElements()[1]).isNativeUInt())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Second tuple member in the second argument for function {} must be uints.", getName());
-
-    DataTypes argument_types(arguments.size() - 2);
-    for (size_t i = 2, size = arguments.size(); i < size; ++i)
-    {
-        const DataTypeArray * arg = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
-        if (!arg)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Argument {} for function {} must be an array but it has type {}.",
-                            i, getName(), arguments[i].type->getName());
-
-        argument_types[i - 2] = arg->getNestedType();
-    }
-
-    if (!aggregate_function)
-    {
-        String aggregate_function_name_with_params = aggregate_function_name_column->getValue<String>();
-
-        if (aggregate_function_name_with_params.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument for function {} (name of aggregate function) cannot be empty.", getName());
-
-        String aggregate_function_name;
-        Array params_row;
-        getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
-
-        AggregateFunctionProperties properties;
-        auto action = NullsAction::EMPTY;
-        aggregate_function
-            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, params_row, properties);
-    }
-
-    return std::make_shared<DataTypeArray>(aggregate_function->getResultType());
-}
 
 
 ColumnPtr FunctionArrayReduceInRanges::executeImpl(
@@ -385,6 +324,106 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 }
 
 
+namespace
+{
+
+class FunctionArrayReduceInRangesOverloadResolver : public IFunctionOverloadResolver, private WithContext
+{
+public:
+    static constexpr auto name = "arrayReduceInRanges";
+    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionArrayReduceInRangesOverloadResolver>(context_); }
+    explicit FunctionArrayReduceInRangesOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return std::make_shared<DataTypeArray>(resolveAggregateFunction(arguments)->getResultType());
+    }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    {
+        /// buildImpl receives the original arguments which may still have Nullable and/or LowCardinality
+        /// wrappers, because the framework only unwraps these for getReturnTypeImpl, not for buildImpl.
+        auto args_without_nullable = createBlockWithNestedColumns(arguments);
+        for (auto & arg : args_without_nullable)
+        {
+            arg.type = recursiveRemoveLowCardinality(arg.type);
+            arg.column = recursiveRemoveLowCardinality(arg.column);
+        }
+        auto aggregate_function = resolveAggregateFunction(args_without_nullable);
+        auto function = std::make_shared<FunctionArrayReduceInRanges>(std::move(aggregate_function));
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
+    }
+
+private:
+    AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments) const
+    {
+        if (arguments.size() < 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 3.",
+                getName(), arguments.size());
+
+        const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+        if (!aggregate_function_name_column)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
+                "name of aggregate function.", getName());
+
+        const DataTypeArray * ranges_type_array = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
+        if (!ranges_type_array)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an array of ranges.",
+                getName());
+        const DataTypeTuple * ranges_type_tuple = checkAndGetDataType<DataTypeTuple>(ranges_type_array->getNestedType().get());
+        if (!ranges_type_tuple || ranges_type_tuple->getElements().size() != 2)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Each array element in the second argument for function {} must be a tuple (index, length).",
+                            getName());
+        if (!isNativeInteger(ranges_type_tuple->getElements()[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First tuple member in the second argument for function {} must be ints or uints.", getName());
+        if (!WhichDataType(ranges_type_tuple->getElements()[1]).isNativeUInt())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Second tuple member in the second argument for function {} must be uints.", getName());
+
+        DataTypes argument_types(arguments.size() - 2);
+        for (size_t i = 2, size = arguments.size(); i < size; ++i)
+        {
+            const DataTypeArray * arg = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
+            if (!arg)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Argument {} for function {} must be an array but it has type {}.",
+                                i, getName(), arguments[i].type->getName());
+
+            argument_types[i - 2] = arg->getNestedType();
+        }
+
+        String aggregate_function_name_with_params = aggregate_function_name_column->getValue<String>();
+
+        if (aggregate_function_name_with_params.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument for function {} (name of aggregate function) cannot be empty.", getName());
+
+        String aggregate_function_name;
+        Array params_row;
+        getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
+                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
+
+        AggregateFunctionProperties properties;
+        auto action = NullsAction::EMPTY;
+        return AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, params_row, properties);
+    }
+};
+
+}
+
+
 REGISTER_FUNCTION(ArrayReduceInRanges)
 {
     FunctionDocumentation::Description description = R"(
@@ -413,7 +452,7 @@ SELECT arrayReduceInRanges(
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayReduceInRanges>(documentation);
+    factory.registerFunction<FunctionArrayReduceInRangesOverloadResolver>(documentation);
 }
 
 }
