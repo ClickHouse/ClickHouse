@@ -1,17 +1,14 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- Test that PrefetchingConcatProcessor is used for read-in-order from a single part.
 -- When a single part is split into multiple streams for parallel reading,
 -- PrefetchingConcat should be used instead of MergingSorted.
 
--- The presence of PrefetchingConcat in the pipeline depends on several
--- `MergeTree` and query-plan settings that are randomized in flaky-check
--- runs. Pin them explicitly so the check is deterministic: in particular,
--- `read_in_order_two_level_merge_threshold = 0` would force a preliminary
--- merge for a single part and disable the optimization, and
--- `PrefetchingConcat` is only enabled when there is a `PREWHERE` filter,
--- so both `optimize_move_to_prewhere` and `query_plan_optimize_prewhere`
--- must be on. The latter drives the analyzer-based path that actually
--- attaches `prewhere_info` to the `MergeTree` step; without it the filter
--- stays as a separate `FilterStep` and the prefetch gate sees no prewhere.
+-- The presence of PrefetchingConcat in the pipeline depends on many
+-- `MergeTree` and query-plan settings (e.g. `read_in_order_use_virtual_row`,
+-- `query_plan_optimize_lazy_materialization`, `index_granularity_bytes`,
+-- `min_bytes_for_wide_part`) that interact in non-trivial ways with the
+-- splitting/prewhere paths. Rather than enumerate every relevant flag,
+-- disable randomization entirely so the test is deterministic.
 SET read_in_order_two_level_merge_threshold = 100;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET optimize_aggregation_in_order = 0;
@@ -27,7 +24,7 @@ DROP TABLE IF EXISTS t_prefetching_concat;
 CREATE TABLE t_prefetching_concat (path String, value UInt64)
 ENGINE = MergeTree ORDER BY path
 SETTINGS index_granularity = 8192
-AS SELECT concat('path/', toString(number % 100000), '/file.log'), number FROM numbers(5000000);
+AS SELECT concat('path/', toString(number % 100000), '/file.log'), number FROM numbers(1000000);
 
 OPTIMIZE TABLE t_prefetching_concat FINAL;
 
