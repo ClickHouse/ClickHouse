@@ -37,7 +37,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
     extern const SettingsUInt64 recursive_cte_max_in_filter_cardinality;
 }
@@ -456,13 +455,6 @@ public:
         recursive_query_context = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getMutableContext() :
             recursive_query->as<UnionNode &>().getMutableContext();
 
-        /// Disable parallel replicas for recursive CTE step queries. When parallel replicas
-        /// is enabled, JOINs are rewritten to GLOBAL JOINs and the right-side subquery is
-        /// materialized into a cached external table keyed by tree hash. Since the recursive
-        /// CTE temporary table has the same tree structure across steps (only the data changes),
-        /// the hash stays identical and stale cached data is reused, producing wrong results.
-        recursive_query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
-
         /// Save the original additional_table_filters so we can merge CTE-derived filters
         /// with user-specified ones on each recursive step, instead of overwriting them.
         original_additional_table_filters = recursive_query_context->getSettingsRef()[Setting::additional_table_filters].value;
@@ -555,6 +547,16 @@ private:
         /// recursive_step was already incremented above, so >1 means we're executing the recursive query.
         if (recursive_step > 1)
         {
+            /// Disable parallel replicas for recursive CTE step queries. When parallel replicas
+            /// is enabled, JOINs are rewritten to GLOBAL JOINs and the right-side subquery is
+            /// materialized into a cached external table keyed by tree hash. Since the recursive
+            /// CTE temporary table has the same tree structure across steps (only the data changes),
+            /// the hash stays identical and stale cached data is reused, producing wrong results.
+            /// We do this here (rather than in the constructor) so that the seed (non-recursive)
+            /// query — which does not reference the CTE table — keeps the user's parallel replicas
+            /// configuration. Setting it on every recursive iteration is idempotent.
+            recursive_query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+
             const auto max_in_filter_cardinality
                 = recursive_subquery_settings[Setting::recursive_cte_max_in_filter_cardinality].value;
 
