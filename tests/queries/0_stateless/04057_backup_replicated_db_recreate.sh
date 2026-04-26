@@ -74,10 +74,11 @@ else
 fi
 
 # `BACKUP ... ASYNC` only waits for submission; in-flight backups may still hit
-# the racey code path after the loops above exit. Wait for all submitted backups
+# the racy code path after the loops above exit. Wait for all submitted backups
 # to leave `CREATING_BACKUP` before checking error states, otherwise we may miss
 # the `LOGICAL_ERROR` this test is meant to catch.
 DEADLINE=$((SECONDS + 60))
+IN_PROGRESS=1
 while [[ $SECONDS -lt $DEADLINE ]]; do
     IN_PROGRESS=$($CLICKHOUSE_CLIENT --query "
         SELECT count() FROM system.backups
@@ -86,6 +87,12 @@ while [[ $SECONDS -lt $DEADLINE ]]; do
     [[ "$IN_PROGRESS" == "0" ]] && break
     sleep 0.5
 done
+
+# Fail explicitly if backups are still in flight: otherwise the assertion below
+# may run too early and miss a `LOGICAL_ERROR` that surfaces a moment later.
+if [[ "$IN_PROGRESS" != "0" ]]; then
+    echo "still in progress: $IN_PROGRESS"
+fi
 
 # Detect the original regression: the LOGICAL_ERROR exception. Backups may
 # legitimately fail under concurrent DROP, but they must never fail with a
