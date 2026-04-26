@@ -31,14 +31,16 @@ struct GroupConvexHullData
 {
     std::vector<CartesianPoint> points; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    void addMany(const std::vector<CartesianPoint> & new_points) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    void addMany(const std::vector<CartesianPoint> & new_points, const char * function_name) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
+        checkConvexHullStateBudget(points.size(), new_points.size(), function_name);
         points.insert(points.end(), new_points.begin(), new_points.end());
         maybeCompress();
     }
 
-    void merge(const GroupConvexHullData & other)
+    void merge(const GroupConvexHullData & other, const char * function_name)
     {
+        checkConvexHullStateBudget(points.size(), other.points.size(), function_name);
         points.insert(points.end(), other.points.begin(), other.points.end());
         maybeCompress();
     }
@@ -193,12 +195,13 @@ public:
 
         std::vector<CartesianPoint> new_points; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         extractPointsFromField(field, current_type, new_points);
-        AggregateFunctionGroupConvexHull::data(place).addMany(new_points);
+        AggregateFunctionGroupConvexHull::data(place).addMany(new_points, getName().c_str());
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        AggregateFunctionGroupConvexHull::data(place).merge(AggregateFunctionGroupConvexHull::data(rhs));
+        AggregateFunctionGroupConvexHull::data(place).merge(
+            AggregateFunctionGroupConvexHull::data(rhs), getName().c_str());
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

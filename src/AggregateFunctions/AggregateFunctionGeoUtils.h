@@ -162,6 +162,18 @@ inline void checkPolygonalStateBudget(size_t current_total, size_t adding, const
             MAX_POINTS_IN_POLYGONAL_STATE);
 }
 
+inline void checkConvexHullStateBudget(size_t current_total, size_t adding, const char * function_name)
+{
+    if (adding > MAX_POINTS_IN_CONVEX_HULL_STATE - current_total)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Aggregate function {} state has too many points: {} + {} would exceed the limit of {}",
+            function_name,
+            current_total,
+            adding,
+            MAX_POINTS_IN_CONVEX_HULL_STATE);
+}
+
 
 inline void serializeGeoRing(const CartesianRing & ring, WriteBuffer & buf)
 {
