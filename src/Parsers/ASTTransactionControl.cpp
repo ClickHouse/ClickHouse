@@ -2,10 +2,17 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 void ASTTransactionControl::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked /*frame*/) const
 {
@@ -57,7 +64,11 @@ void ASTTransactionControl::writeJSON(WriteBuffer & out) const
 void ASTTransactionControl::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    action = static_cast<QueryType>(r.getInt("action"));
+    Int64 action_value = r.getInt("action");
+    auto action_opt = magic_enum::enum_cast<QueryType>(static_cast<std::underlying_type_t<QueryType>>(action_value));
+    if (!action_opt || static_cast<Int64>(*action_opt) != action_value)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown TransactionControl action: {}", action_value);
+    action = *action_opt;
     if (action == SET_SNAPSHOT)
         snapshot = r.getUInt("snapshot");
 }
