@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Columns/ColumnVector.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -88,20 +89,10 @@ struct BucketKeyHash
     }
 };
 
-struct MultiNumericKeyHash
-{
-    size_t operator()(const std::vector<UInt64> & key) const
-    {
-        SipHash hash;
-        for (auto v : key)
-            hash.update(v);
-        return hash.get64();
-    }
-};
-
-using SingleNumericCounts = absl::flat_hash_map<UInt64, UInt64>;
-using MultiNumericCounts = absl::flat_hash_map<std::vector<UInt64>, UInt64, MultiNumericKeyHash>;
 using GenericCounts = absl::flat_hash_map<BucketKey, UInt64, BucketKeyHash>;
+
+template <typename T>
+using NumericCounts = absl::flat_hash_map<T, UInt64>;
 
 /// Mapping from bucket expression input name to PK column index.
 /// Precomputed once per source to avoid per-granule string matching.
@@ -142,12 +133,7 @@ static InputToPKMapping buildInputToPKMapping(
     return mapping;
 }
 
-enum class KeyMode : uint8_t
-{
-    SingleNumeric,
-    MultiNumeric,
-    Generic,
-};
+
 
 static bool bucketColumnsEqual(const Columns & cols, size_t a, size_t b)
 {
@@ -187,7 +173,7 @@ public:
         String filter_column_name_,
         bool has_filter_,
         InputToPKMapping input_mapping_,
-        KeyMode key_mode_,
+        TypeIndex numeric_type_index_,
         std::vector<size_t> key_col_positions_)
         : ISource(std::move(header_))
         , pool(std::move(pool_))
@@ -202,7 +188,7 @@ public:
         , filter_column_name(std::move(filter_column_name_))
         , has_filter(has_filter_)
         , input_mapping(std::move(input_mapping_))
-        , key_mode(key_mode_)
+        , numeric_type_index(numeric_type_index_)
         , key_col_positions(std::move(key_col_positions_))
     {
     }
@@ -566,43 +552,54 @@ private:
 
         size_t marks_without_final = granularity.getMarksCountWithoutFinal();
 
-        switch (key_mode)
+        if (numeric_type_index != TypeIndex::Nothing && group_by_key_names.size() == 1)
+            return dispatchNumericType(task, bucket_columns, marks_without_final);
+
+        auto get_key = [](const Columns & cols, size_t row) { return getGenericBucketKey(cols, row); };
+        auto insert_key = [](std::vector<MutableColumnPtr> & cols, const BucketKey & key)
         {
-            case KeyMode::SingleNumeric:
-            {
-                auto get_key = [](const Columns & cols, size_t row) -> UInt64 { return cols[0]->get64(row); };
-                auto insert_key = [](std::vector<MutableColumnPtr> & cols, UInt64 key) { cols[0]->insert(key); };
-                return processTaskImpl<SingleNumericCounts>(task, bucket_columns, marks_without_final, get_key, insert_key);
-            }
-            case KeyMode::MultiNumeric:
-            {
-                size_t n = group_by_key_names.size();
-                auto get_key = [n](const Columns & cols, size_t row) -> std::vector<UInt64>
-                {
-                    std::vector<UInt64> key(n);
-                    for (size_t i = 0; i < n; ++i)
-                        key[i] = cols[i]->get64(row);
-                    return key;
-                };
-                auto insert_key = [](std::vector<MutableColumnPtr> & cols, const std::vector<UInt64> & key)
-                {
-                    for (size_t i = 0; i < key.size(); ++i)
-                        cols[i]->insert(key[i]);
-                };
-                return processTaskImpl<MultiNumericCounts>(task, bucket_columns, marks_without_final, get_key, insert_key);
-            }
-            case KeyMode::Generic:
-            {
-                auto get_key = [](const Columns & cols, size_t row) { return getGenericBucketKey(cols, row); };
-                auto insert_key = [](std::vector<MutableColumnPtr> & cols, const BucketKey & key)
-                {
-                    for (size_t i = 0; i < key.size(); ++i)
-                        cols[i]->insert(key[i]);
-                };
-                return processTaskImpl<GenericCounts>(task, bucket_columns, marks_without_final, get_key, insert_key);
-            }
+            for (size_t i = 0; i < key.size(); ++i)
+                cols[i]->insert(key[i]);
+        };
+        return processTaskImpl<GenericCounts>(task, bucket_columns, marks_without_final, get_key, insert_key);
+    }
+
+    template <typename T>
+    Chunk processTaskNumeric(
+        const CountTask & task,
+        const Columns & bucket_columns,
+        size_t marks_without_final)
+    {
+        auto get_key = [](const Columns & cols, size_t row) -> T
+        {
+            return assert_cast<const ColumnVector<T> &>(*cols[0]).getData()[row];
+        };
+        auto insert_key = [](std::vector<MutableColumnPtr> & cols, T key)
+        {
+            assert_cast<ColumnVector<T> &>(*cols[0]).getData().push_back(key);
+        };
+        return processTaskImpl<NumericCounts<T>>(task, bucket_columns, marks_without_final, get_key, insert_key);
+    }
+
+    Chunk dispatchNumericType(
+        const CountTask & task,
+        const Columns & bucket_columns,
+        size_t marks_without_final)
+    {
+        switch (numeric_type_index)
+        {
+            case TypeIndex::UInt8: return processTaskNumeric<UInt8>(task, bucket_columns, marks_without_final);
+            case TypeIndex::UInt16: return processTaskNumeric<UInt16>(task, bucket_columns, marks_without_final);
+            case TypeIndex::UInt32: return processTaskNumeric<UInt32>(task, bucket_columns, marks_without_final);
+            case TypeIndex::UInt64: return processTaskNumeric<UInt64>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Int8: return processTaskNumeric<Int8>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Int16: return processTaskNumeric<Int16>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Int32: return processTaskNumeric<Int32>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Int64: return processTaskNumeric<Int64>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Float32: return processTaskNumeric<Float32>(task, bucket_columns, marks_without_final);
+            case TypeIndex::Float64: return processTaskNumeric<Float64>(task, bucket_columns, marks_without_final);
+            default: UNREACHABLE();
         }
-        UNREACHABLE();
     }
 
     CountByGranularityPoolPtr pool;
@@ -617,7 +614,7 @@ private:
     String filter_column_name;
     bool has_filter;
     InputToPKMapping input_mapping;
-    KeyMode key_mode;
+    TypeIndex numeric_type_index;
     std::vector<size_t> key_col_positions;
 };
 
@@ -701,27 +698,22 @@ Pipe ReadFromCountByGranularity::makePipe()
 
     auto input_mapping = buildInputToPKMapping(bucket_expression, primary_key);
 
-    /// Determine key mode once: execute bucket_expression on a dummy block to get output types.
-    KeyMode key_mode = KeyMode::Generic;
+    /// Detect single-numeric fast path: if GROUP BY has exactly one key
+    /// and its bucket expression output is a native numeric type, store its
+    /// TypeIndex for devirtualized column access. Otherwise TypeIndex::Nothing.
+    TypeIndex numeric_type_index = TypeIndex::Nothing;
     {
         Block dummy;
         for (const auto & entry : input_mapping.all)
             dummy.insert({primary_key.data_types[entry.pk_index]->createColumn(), primary_key.data_types[entry.pk_index], entry.input_name});
         bucket_expression->execute(dummy);
 
-        bool all_numeric = true;
-        for (const auto & key_name : group_by_key_names)
+        if (group_by_key_names.size() == 1)
         {
-            if (!isNativeNumber(dummy.getByName(key_name).type))
-            {
-                all_numeric = false;
-                break;
-            }
+            const auto & type = dummy.getByName(group_by_key_names[0]).type;
+            if (isNativeNumber(type))
+                numeric_type_index = type->getTypeId();
         }
-        if (all_numeric && group_by_key_names.size() == 1)
-            key_mode = KeyMode::SingleNumeric;
-        else if (all_numeric)
-            key_mode = KeyMode::MultiNumeric;
     }
 
     /// Precompute key column positions in the output header.
@@ -748,7 +740,7 @@ Pipe ReadFromCountByGranularity::makePipe()
             filter_column_name,
             has_filter,
             input_mapping,
-            key_mode,
+            numeric_type_index,
             key_col_positions);
 
         pipe.addSource(std::move(source));
