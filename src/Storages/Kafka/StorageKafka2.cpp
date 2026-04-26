@@ -1169,22 +1169,34 @@ void StorageKafka2::cleanConsumers()
     std::vector<CppKafkaConsumerPtr> cpp_consumers_to_close;
     {
         UniqueLock lock(consumers_mutex);
-        /// Wait until all consumers will be released
+        /// Wait until all consumers will be released, with a timeout to avoid hanging forever.
         /// Clang Thread Safety Analysis doesn't understand std::condition_variable::wait and std::unique_lock
-        cv.wait(
+        if (!cv.wait_for(
             lock.getUnderlyingLock(),
+            std::chrono::seconds(KAFKA_CONSUMER_CLOSE_TIMEOUT_S),
             [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS
             {
                 auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr->isInUse(); });
                 return it == consumers.end();
-            });
+            }))
+        {
+            LOG_WARNING(log, "Timed out waiting for consumer(s) to be released, proceeding with shutdown");
+        }
 
+        size_t skipped = 0;
         for (const auto & consumer : consumers)
         {
             if (!consumer->hasConsumer())
                 continue;
+            if (consumer->isInUse())
+            {
+                ++skipped;
+                continue;
+            }
             cpp_consumers_to_close.push_back(consumer->moveConsumer());
         }
+        if (skipped)
+            LOG_WARNING(log, "Skipped closing {} consumer(s) that are still in use", skipped);
     }
 
     cpp_consumers_to_close.clear();
