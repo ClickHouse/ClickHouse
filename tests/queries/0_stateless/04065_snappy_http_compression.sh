@@ -24,3 +24,14 @@ else
     echo "FAIL: expected stream identifier starting with $EXPECTED, got $ACTUAL" >&2
     exit 1
 fi
+
+# Verify request decoding (`Content-Encoding: snappy` on POST body).
+# Round-trip: ask the server to encode a query string into framed snappy via
+# `Accept-Encoding: snappy`, then POST that framed body back as the request body.
+# The server must decode it through `SnappyFramedReadBuffer` and run "SELECT 99".
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_http_compression=1" \
+    -H 'Accept-Encoding: snappy' \
+    -d "SELECT 'SELECT 99' FORMAT RawBLOB" \
+    | ${CLICKHOUSE_CURL} -sS --data-binary @- \
+        -H 'Content-Encoding: snappy' \
+        "${CLICKHOUSE_URL}"
