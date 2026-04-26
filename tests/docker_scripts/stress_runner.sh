@@ -54,6 +54,13 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config 
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
 
+# Start Redpanda (Kafka-compatible broker) so that Kafka engine tests work and
+# do not leave behind broken StorageKafka tables whose background threads cause
+# the server to freeze under sanitizers during the post-stress restart. Fail fast
+# if the broker cannot be started: continuing without it would reintroduce the
+# very failure mode this mitigation is here to prevent.
+bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
+
 start_server || { echo "Failed to start server"; exit 1; }
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start || echo "ERROR: Failed to start log exports"
