@@ -190,12 +190,14 @@ private:
         Columns res(primary_key.column_names.size(), nullptr);
         reader.readRows(mark, mark + 1, false, rows_in_granule, 0, res);
 
+        const auto & bucket_inputs = bucket_expression->getActionsDAG().getInputs();
         Block block;
         for (size_t i = 0; i < primary_key.column_names.size(); ++i)
         {
             if (!res[i])
                 return;
-            block.insert({res[i], primary_key.data_types[i], primary_key.column_names[i]});
+            String col_name = (i < bucket_inputs.size()) ? bucket_inputs[i]->result_name : primary_key.column_names[i];
+            block.insert({res[i], primary_key.data_types[i], col_name});
         }
 
         size_t num_rows = block.rows();
@@ -329,9 +331,13 @@ private:
         if (granularity.getMarksCount() == 0)
             return {};
 
+        /// Build block with column names matching what bucket_expression expects.
+        /// The expression DAG may use qualified names (e.g. "__table1.k") from the analyzer,
+        /// while PK index columns use unqualified names ("k").
+        const auto & bucket_inputs = bucket_expression->getActionsDAG().getInputs();
         Block index_block;
-        for (size_t i = 0; i < primary_key.column_names.size() && i < index->size(); ++i)
-            index_block.insert({(*index)[i], primary_key.data_types[i], primary_key.column_names[i]});
+        for (size_t i = 0; i < bucket_inputs.size() && i < index->size(); ++i)
+            index_block.insert({(*index)[i], primary_key.data_types[i], bucket_inputs[i]->result_name});
         bucket_expression->execute(index_block);
 
         Columns bucket_columns;
