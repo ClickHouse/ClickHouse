@@ -338,8 +338,8 @@ public:
             DateTime64
         };
 
-        ResultType result_type;
-        ToStartOfIntervalOverload overload;
+        ResultType result_type = ResultType::Date;
+        ToStartOfIntervalOverload overload = ToStartOfIntervalOverload::Default;
         auto check_second_argument = [&]
         {
             const DataTypePtr & type_arg2 = arguments[1].type;
