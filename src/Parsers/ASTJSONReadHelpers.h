@@ -69,7 +69,16 @@ public:
         auto child_var = obj.get(key);
         if (child_var.isEmpty())
             return nullptr;
-        const auto & child_obj = child_var.extract<Poco::JSON::Object::Ptr>();
+        Poco::JSON::Object::Ptr child_obj;
+        try
+        {
+            child_obj = child_var.extract<Poco::JSON::Object::Ptr>();
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected JSON object for key '{}' during AST JSON deserialization", key);
+        }
         if (!child_obj)
             return nullptr;
         return IAST::createFromJSON(*child_obj);
