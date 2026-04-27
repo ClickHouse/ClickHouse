@@ -2189,7 +2189,25 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
         return;
 
     const auto & settings = context->getSettingsRef();
-    bool defer_row_policy = settings[Setting::apply_row_policy_after_final] && query_info.row_level_filter;
+
+    /// `apply_row_policy_after_final` was introduced for the soft-delete pattern in
+    /// `ReplacingMergeTree`, where the row policy must not filter out delete-marker
+    /// rows before they win deduplication. For engines whose `FINAL` blends column
+    /// values across multiple source rows (`Summing`, `Aggregating`, `Coalescing`,
+    /// `Graphite`), deferring the row policy is unsafe: the merged row can carry
+    /// data from rows the policy was meant to hide, leaking sensitive values.
+    /// Only the engines that pick a single source row per dedup group can safely
+    /// defer the row-level filter.
+    const auto merging_mode = data.merging_params.mode;
+    const bool engine_safe_to_defer_row_policy =
+           merging_mode == MergeTreeData::MergingParams::Replacing
+        || merging_mode == MergeTreeData::MergingParams::Collapsing
+        || merging_mode == MergeTreeData::MergingParams::VersionedCollapsing
+        || merging_mode == MergeTreeData::MergingParams::Ordinary;
+
+    bool defer_row_policy = settings[Setting::apply_row_policy_after_final]
+        && query_info.row_level_filter
+        && engine_safe_to_defer_row_policy;
     bool defer_prewhere = settings[Setting::apply_prewhere_after_final] && query_info.prewhere_info;
 
     /// If row policy touches non-sorting-key columns, prewhere must be deferred too

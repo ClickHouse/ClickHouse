@@ -1,0 +1,21 @@
+== CoalescingMergeTree ==
+-- apply_row_policy_after_final = 1 --
+key	not sensitive data	\N
+-- apply_row_policy_after_final = 0 --
+key	not sensitive data	\N
+== AggregatingMergeTree (anyLast) ==
+-- apply_row_policy_after_final = 1 --
+key	not sensitive data	\N
+-- apply_row_policy_after_final = 0 --
+key	not sensitive data	\N
+== SummingMergeTree ==
+-- apply_row_policy_after_final = 1 --
+k	public	5
+-- apply_row_policy_after_final = 0 --
+k	public	5
+== ReplacingMergeTree (deferral still works) ==
+-- apply_row_policy_after_final = 1 --
+2	2
+-- apply_row_policy_after_final = 0 --
+1	1
+2	2
