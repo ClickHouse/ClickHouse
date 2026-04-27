@@ -302,6 +302,118 @@ DROP TABLE IF EXISTS t_nullable_pk;
 CREATE TABLE t_nullable_pk (k Nullable(UInt32)) ENGINE = MergeTree() ORDER BY k SETTINGS allow_nullable_key = 1;
 INSERT INTO t_nullable_pk SELECT if(number % 10 = 0, NULL, number) FROM numbers(1000);
 SET optimize_trivial_group_by_count_query = 1;
-SELECT 'nullable_pk';
-SELECT intDiv(k, 100) AS bucket, count() FROM t_nullable_pk GROUP BY bucket ORDER BY bucket;
+SELECT 'nullable_pk_on';
+SELECT intDiv(k, 100) AS bucket, count() FROM t_nullable_pk GROUP BY bucket ORDER BY bucket NULLS LAST;
+SET optimize_trivial_group_by_count_query = 0;
+SELECT 'nullable_pk_off';
+SELECT intDiv(k, 100) AS bucket, count() FROM t_nullable_pk GROUP BY bucket ORDER BY bucket NULLS LAST;
 DROP TABLE t_nullable_pk;
+
+-- =====================================================
+-- 25. DateTime key: toStartOfHour
+-- =====================================================
+DROP TABLE IF EXISTS t_datetime;
+CREATE TABLE t_datetime (ts DateTime) ENGINE = MergeTree() ORDER BY ts;
+INSERT INTO t_datetime SELECT toDateTime('2024-01-01') + number * 60 FROM numbers(5000);
+SET optimize_trivial_group_by_count_query = 1;
+SELECT 'datetime_on';
+SELECT toStartOfHour(ts) AS hour, count() FROM t_datetime GROUP BY hour ORDER BY hour LIMIT 3;
+SET optimize_trivial_group_by_count_query = 0;
+SELECT 'datetime_off';
+SELECT toStartOfHour(ts) AS hour, count() FROM t_datetime GROUP BY hour ORDER BY hour LIMIT 3;
+DROP TABLE t_datetime;
+
+-- =====================================================
+-- 26. Date key: toYYYYMM
+-- =====================================================
+DROP TABLE IF EXISTS t_date;
+CREATE TABLE t_date (d Date) ENGINE = MergeTree() ORDER BY d;
+INSERT INTO t_date SELECT toDate('2024-01-01') + number FROM numbers(400);
+SET optimize_trivial_group_by_count_query = 1;
+SELECT 'date_yyyymm_on';
+SELECT toYYYYMM(d) AS ym, count() FROM t_date GROUP BY ym ORDER BY ym;
+SET optimize_trivial_group_by_count_query = 0;
+SELECT 'date_yyyymm_off';
+SELECT toYYYYMM(d) AS ym, count() FROM t_date GROUP BY ym ORDER BY ym;
+DROP TABLE t_date;
+
+-- =====================================================
+-- 27. Signed integer key
+-- =====================================================
+DROP TABLE IF EXISTS t_signed;
+CREATE TABLE t_signed (k Int32) ENGINE = MergeTree() ORDER BY k;
+INSERT INTO t_signed SELECT number - 500 FROM numbers(1000);
+SET optimize_trivial_group_by_count_query = 1;
+SELECT 'signed_on';
+SELECT intDiv(k, 100) AS bucket, count() FROM t_signed GROUP BY bucket ORDER BY bucket;
+SET optimize_trivial_group_by_count_query = 0;
+SELECT 'signed_off';
+SELECT intDiv(k, 100) AS bucket, count() FROM t_signed GROUP BY bucket ORDER BY bucket;
+DROP TABLE t_signed;
+
+-- =====================================================
+-- 28. Reverse sorting key (ORDER BY k DESC)
+-- =====================================================
+DROP TABLE IF EXISTS t_reverse;
+CREATE TABLE t_reverse (k UInt64) ENGINE = MergeTree() ORDER BY k DESC
+    SETTINGS allow_experimental_reverse_key = 1;
+INSERT INTO t_reverse SELECT number FROM numbers(10000);
+SET optimize_trivial_group_by_count_query = 1;
+SELECT 'reverse_on';
+SELECT intDiv(k, 1000) AS bucket, count() FROM t_reverse GROUP BY bucket ORDER BY bucket SETTINGS optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
+SET optimize_trivial_group_by_count_query = 0;
+SELECT 'reverse_off';
+SELECT intDiv(k, 1000) AS bucket, count() FROM t_reverse GROUP BY bucket ORDER BY bucket SETTINGS optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
+DROP TABLE t_reverse;
+
+-- =====================================================
+-- 29. Nullable with WHERE on PK
+-- =====================================================
+DROP TABLE IF EXISTS t_nullable_where;
+CREATE TABLE t_nullable_where (k Nullable(UInt32)) ENGINE = MergeTree() ORDER BY k
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO t_nullable_where SELECT if(number % 20 = 0, NULL, number) FROM numbers(2000);
+SET optimize_trivial_group_by_count_query = 1;
+SELECT 'nullable_where_on';
+SELECT intDiv(k, 200) AS bucket, count() FROM t_nullable_where WHERE k >= 100 AND k < 900 GROUP BY bucket ORDER BY bucket;
+SET optimize_trivial_group_by_count_query = 0;
+SELECT 'nullable_where_off';
+SELECT intDiv(k, 200) AS bucket, count() FROM t_nullable_where WHERE k >= 100 AND k < 900 GROUP BY bucket ORDER BY bucket;
+DROP TABLE t_nullable_where;
+
+-- =====================================================
+-- 30. All-null part
+-- =====================================================
+DROP TABLE IF EXISTS t_all_null;
+CREATE TABLE t_all_null (k Nullable(UInt32)) ENGINE = MergeTree() ORDER BY k
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO t_all_null SELECT NULL FROM numbers(100);
+SET optimize_trivial_group_by_count_query = 1;
+SELECT 'all_null';
+SELECT intDiv(k, 10) AS bucket, count() FROM t_all_null GROUP BY bucket ORDER BY bucket;
+DROP TABLE t_all_null;
+
+-- =====================================================
+-- 31. Single row
+-- =====================================================
+DROP TABLE IF EXISTS t_single_row;
+CREATE TABLE t_single_row (k UInt64) ENGINE = MergeTree() ORDER BY k;
+INSERT INTO t_single_row VALUES (42);
+SET optimize_trivial_group_by_count_query = 1;
+SELECT 'single_row';
+SELECT intDiv(k, 10) AS bucket, count() FROM t_single_row GROUP BY bucket ORDER BY bucket;
+DROP TABLE t_single_row;
+
+-- =====================================================
+-- 32. DateTime64 key
+-- =====================================================
+DROP TABLE IF EXISTS t_datetime64;
+CREATE TABLE t_datetime64 (ts DateTime64(3)) ENGINE = MergeTree() ORDER BY ts;
+INSERT INTO t_datetime64 SELECT toDateTime64('2024-01-01', 3) + number FROM numbers(5000);
+SET optimize_trivial_group_by_count_query = 1;
+SELECT 'datetime64_on';
+SELECT toStartOfHour(ts) AS hour, count() FROM t_datetime64 GROUP BY hour ORDER BY hour LIMIT 3;
+SET optimize_trivial_group_by_count_query = 0;
+SELECT 'datetime64_off';
+SELECT toStartOfHour(ts) AS hour, count() FROM t_datetime64 GROUP BY hour ORDER BY hour LIMIT 3;
+DROP TABLE t_datetime64;

@@ -63,6 +63,8 @@ struct CountTask
     DataPartPtr data_part;
     MarkRanges mark_ranges;
     MarkRanges exact_ranges;
+    Columns bucket_columns;
+    size_t marks_without_final;
 };
 
 struct CountByGranularityPool
@@ -125,7 +127,16 @@ static InputToPKMapping buildInputToPKMapping(
         for (size_t pk_i = 0; pk_i < primary_key.column_names.size(); ++pk_i)
         {
             const auto & pk_name = primary_key.column_names[pk_i];
-            if (input_name == pk_name || input_name.ends_with("." + pk_name))
+            /// Match exact name or analyzer-qualified name (__tableN.col_name).
+            /// Only accept single-level qualification to avoid ambiguous suffix matches.
+            bool match = (input_name == pk_name);
+            if (!match)
+            {
+                auto dot_pos = input_name.find('.');
+                if (dot_pos != String::npos && input_name.substr(dot_pos + 1) == pk_name)
+                    match = true;
+            }
+            if (match)
             {
                 mapping.all.push_back({input_name, pk_i});
                 if (input_name != pk_name)
@@ -255,7 +266,7 @@ private:
         Columns bucket_cols;
         bucket_cols.reserve(group_by_key_names.size());
         for (const auto & key_name : group_by_key_names)
-            bucket_cols.push_back(block.getByName(key_name).column);
+            bucket_cols.push_back(block.getByName(key_name).column->convertToFullIfNeeded());
         return bucket_cols;
     }
 
@@ -532,8 +543,8 @@ private:
         auto agg_col = ColumnAggregateFunction::create(count_function);
         agg_col->reserve(bucket_counts.size());
 
-        std::vector<char> state_buf(count_function->sizeOfData());
-        AggregateDataPtr place = state_buf.data();
+        auto state_buf = std::make_unique<char[]>(count_function->sizeOfData());
+        AggregateDataPtr place = state_buf.get();
 
         for (const auto & [bucket_key, count] : bucket_counts)
         {
@@ -559,41 +570,13 @@ private:
         return Chunk(std::move(result_columns), num_rows);
     }
 
-    Block buildIndexBlock(const IMergeTreeDataPart & part)
-    {
-        auto index = part.getIndex();
-        if (!index || index->empty())
-            return {};
-
-        Block index_block;
-        for (const auto & entry : input_mapping.all)
-        {
-            if (entry.pk_index < index->size() && !index_block.has(entry.input_name))
-                index_block.insert({(*index)[entry.pk_index], primary_key.data_types[entry.pk_index], entry.input_name});
-        }
-        return index_block;
-    }
-
     Chunk processTask(const CountTask & task)
     {
-        const auto & part = *task.data_part;
-        const auto & granularity = *part.index_granularity;
+        const auto & bucket_columns = task.bucket_columns;
+        size_t marks_without_final = task.marks_without_final;
 
-        if (granularity.getMarksCount() == 0)
+        if (bucket_columns.empty())
             return {};
-
-        Block index_block = buildIndexBlock(part);
-        if (index_block.columns() == 0)
-            return {};
-
-        bucket_expression->execute(index_block);
-
-        Columns bucket_columns;
-        bucket_columns.reserve(group_by_key_names.size());
-        for (const auto & key_name : group_by_key_names)
-            bucket_columns.push_back(index_block.getByName(key_name).column);
-
-        size_t marks_without_final = granularity.getMarksCountWithoutFinal();
 
         if (numeric_type_index != TypeIndex::Nothing && group_by_key_names.size() == 1)
         {
@@ -846,8 +829,8 @@ private:
         auto agg_col = ColumnAggregateFunction::create(count_function);
         agg_col->reserve(bucket_counts.size() + (null_count > 0 ? 1 : 0));
 
-        std::vector<char> state_buf(count_function->sizeOfData());
-        AggregateDataPtr place = state_buf.data();
+        auto state_buf = std::make_unique<char[]>(count_function->sizeOfData());
+        AggregateDataPtr place = state_buf.get();
 
         auto insert_count = [&](UInt64 count)
         {
@@ -904,8 +887,7 @@ private:
             DISPATCH(Int16, Int16, ColumnVector<Int16>)
             DISPATCH(Int32, Int32, ColumnVector<Int32>)
             DISPATCH(Int64, Int64, ColumnVector<Int64>)
-            DISPATCH(Float32, Float32, ColumnVector<Float32>)
-            DISPATCH(Float64, Float64, ColumnVector<Float64>)
+
             DISPATCH(Date, UInt16, ColumnVector<UInt16>)
             DISPATCH(Date32, Int32, ColumnVector<Int32>)
             DISPATCH(DateTime, UInt32, ColumnVector<UInt32>)
@@ -964,10 +946,35 @@ Pipe ReadFromCountByGranularity::makePipe()
     actual_streams = std::max<size_t>(actual_streams, 1);
     size_t marks_per_task = std::max<size_t>((total_marks + actual_streams - 1) / actual_streams, 1);
 
+    auto input_mapping = buildInputToPKMapping(bucket_expression, primary_key);
+
     auto pool = std::make_shared<CountByGranularityPool>();
 
     for (const auto & part_with_ranges : parts_with_ranges)
     {
+        /// Precompute bucket columns once per part.
+        const auto & part = *part_with_ranges.data_part;
+        auto index = part.getIndex();
+        Columns part_bucket_columns;
+        size_t part_marks_without_final = 0;
+
+        if (index && !index->empty() && part.index_granularity->getMarksCount() > 0)
+        {
+            Block index_block;
+            for (const auto & entry : input_mapping.all)
+            {
+                if (entry.pk_index < index->size() && !index_block.has(entry.input_name))
+                    index_block.insert({(*index)[entry.pk_index], primary_key.data_types[entry.pk_index], entry.input_name});
+            }
+            bucket_expression->execute(index_block);
+
+            part_bucket_columns.reserve(group_by_key_names.size());
+            for (const auto & key_name : group_by_key_names)
+                part_bucket_columns.push_back(index_block.getByName(key_name).column->convertToFullIfNeeded());
+
+            part_marks_without_final = part.index_granularity->getMarksCountWithoutFinal();
+        }
+
         size_t range_idx = 0;
         size_t offset_in_range = 0;
 
@@ -1004,12 +1011,12 @@ Pipe ReadFromCountByGranularity::makePipe()
                     .data_part = part_with_ranges.data_part,
                     .mark_ranges = std::move(task_marks),
                     .exact_ranges = std::move(task_exact),
+                    .bucket_columns = part_bucket_columns,
+                    .marks_without_final = part_marks_without_final,
                 });
             }
         }
     }
-
-    auto input_mapping = buildInputToPKMapping(bucket_expression, primary_key);
 
     /// Detect single-column fast path: if GROUP BY has exactly one key
     /// and its bucket expression output is backed by ColumnVector<T>,
@@ -1037,8 +1044,7 @@ Pipe ReadFromCountByGranularity::makePipe()
                 case TypeIndex::Int16:
                 case TypeIndex::Int32:
                 case TypeIndex::Int64:
-                case TypeIndex::Float32:
-                case TypeIndex::Float64:
+
                 case TypeIndex::Date:
                 case TypeIndex::Date32:
                 case TypeIndex::DateTime:
