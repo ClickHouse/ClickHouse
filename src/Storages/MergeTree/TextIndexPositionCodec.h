@@ -9,11 +9,11 @@
 namespace DB
 {
 
-/// Codec for encoding/decoding Roaringish UInt64 position lists.
+/// Codec for encoding/decoding Roaringish 96-bit position lists.
 ///
 /// Format:
 ///   [VarUInt: count]
-///   [count x UInt64: raw entries in little-endian]
+///   [count x 12 bytes: (doc_id:u32, group:u32, bitmap:u32) in little-endian]
 ///
 /// No compression is applied. The position data is read with a small number
 /// of seeks (one per token per part), so raw storage minimizes decode latency.

@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Common/HashTable/StringHashMap.h>
 
+#include <tuple>
 #include <vector>
 
 namespace DB
@@ -10,60 +11,57 @@ namespace DB
 
 /// Roaringish encoding for positional phrase queries.
 ///
-/// Each token occurrence is packed into a UInt64:
-///   [doc_id:32][group:16][bitmap:16]
+/// Each token occurrence is stored as a 96-bit entry with three UInt32 fields:
+///   [doc_id:32][group:32][bitmap:32]
 ///
-/// where group = position / 16, bitmap = 1 << (position % 16).
+/// where group = position / 32, bitmap = 1 << (position % 32).
 /// Multiple occurrences in the same (doc_id, group) are OR'd into one bitmap,
-/// so a single entry can represent up to 16 adjacent positions.
+/// so a single entry can represent up to 32 adjacent positions.
 ///
 /// Phrase matching reduces to sorted-array intersection with bitmap shifts.
-/// The upper 48 bits (doc_id + group) serve as the intersection key.
-/// This layout is a natural operand for AVX-512 VP2INTERSECTQ.
+/// The (doc_id, group) pair serves as the intersection key.
 struct RoaringishEntry
 {
-    UInt64 value;
+    UInt32 doc_id;
+    UInt32 group;
+    UInt32 bitmap;
 
-    static constexpr UInt32 BITMAP_BITS = 16;
-    static constexpr UInt64 BITMAP_MASK = (1ULL << BITMAP_BITS) - 1;
-    static constexpr UInt32 GROUP_BITS = 16;
-    static constexpr UInt32 DOC_ID_BITS = 32;
+    static constexpr UInt32 BITMAP_BITS = 32;
 
-    static RoaringishEntry make(UInt32 doc_id, UInt32 position)
+    static RoaringishEntry make(UInt32 doc_id_, UInt32 position)
     {
-        UInt16 group = static_cast<UInt16>(position / BITMAP_BITS);
-        UInt16 bitmap = static_cast<UInt16>(1U << (position % BITMAP_BITS));
-
-        UInt64 v = (static_cast<UInt64>(doc_id) << 32)
-                 | (static_cast<UInt64>(group) << 16)
-                 | static_cast<UInt64>(bitmap);
-        return {v};
+        return {doc_id_, position / BITMAP_BITS, 1U << (position % BITMAP_BITS)};
     }
 
-    /// Extract the upper 48 bits (doc_id + group) used as the intersection key.
-    UInt64 key() const { return value >> BITMAP_BITS; }
-    UInt32 docId() const { return static_cast<UInt32>(value >> 32); }
-    UInt16 group() const { return static_cast<UInt16>(value >> 16); }
-    UInt16 bitmap() const { return static_cast<UInt16>(value & BITMAP_MASK); }
+    /// The (doc_id, group) pair used as the intersection key.
+    UInt64 key() const { return (static_cast<UInt64>(doc_id) << 32) | group; }
 
-    bool operator<(const RoaringishEntry & other) const { return value < other.value; }
-    bool operator==(const RoaringishEntry & other) const { return value == other.value; }
+    bool operator<(const RoaringishEntry & other) const
+    {
+        return std::tie(doc_id, group, bitmap) < std::tie(other.doc_id, other.group, other.bitmap);
+    }
+
+    bool operator==(const RoaringishEntry & other) const
+    {
+        return std::tie(doc_id, group, bitmap) == std::tie(other.doc_id, other.group, other.bitmap);
+    }
 
     /// Two entries have the same bucket if they share (doc_id, group).
     bool sameBucket(const RoaringishEntry & other) const
     {
-        return key() == other.key();
+        return doc_id == other.doc_id && group == other.group;
     }
 
     void mergeBitmap(const RoaringishEntry & other)
     {
-        value |= (other.value & BITMAP_MASK);
+        chassert(sameBucket(other));
+        bitmap |= other.bitmap;
     }
 
     /// Return a copy with a different doc_id, preserving group and bitmap.
     RoaringishEntry withDocId(UInt32 new_doc_id) const
     {
-        return {(static_cast<UInt64>(new_doc_id) << 32) | (value & 0xFFFFFFFF)};
+        return {new_doc_id, group, bitmap};
     }
 };
 

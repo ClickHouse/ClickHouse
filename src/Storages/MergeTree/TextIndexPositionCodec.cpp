@@ -7,7 +7,7 @@ namespace DB
 
 void TextIndexPositionCodec::encode(const std::vector<RoaringishEntry> & entries, WriteBuffer & out)
 {
-    static_assert(sizeof(RoaringishEntry) == sizeof(UInt64));
+    static_assert(sizeof(RoaringishEntry) == 12);
 
     UInt64 count = entries.size();
     writeVarUInt(count, out);
@@ -18,7 +18,7 @@ void TextIndexPositionCodec::encode(const std::vector<RoaringishEntry> & entries
 
 void TextIndexPositionCodec::decode(ReadBuffer & in, std::vector<RoaringishEntry> & entries)
 {
-    static_assert(sizeof(RoaringishEntry) == sizeof(UInt64));
+    static_assert(sizeof(RoaringishEntry) == 12);
 
     UInt64 count = 0;
     readVarUInt(count, in);

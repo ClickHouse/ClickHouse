@@ -491,7 +491,7 @@ bool MergeTextIndexesTask::executeStep()
                     size_t part_index = segments[current->order].part_index;
                     for (auto & entry : position_entries)
                     {
-                        UInt32 new_doc_id = static_cast<UInt32>((*merged_part_offsets)[part_index, entry.docId()]);
+                        UInt32 new_doc_id = static_cast<UInt32>((*merged_part_offsets)[part_index, entry.doc_id]);
                         entry = entry.withDocId(new_doc_id);
                     }
                 }
