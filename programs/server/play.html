@@ -182,6 +182,8 @@
         #databases-icon
         {
             grid-area: databases-icon;
+            text-decoration: none;
+            display: block;
         }
 
         #databases
@@ -799,9 +801,9 @@
 
 <body>
     <div id="menu">
-        <div id="databases-icon" class="menu-icon">
+        <a id="databases-icon" class="menu-icon" href="">
             <svg id="databases-toggle" viewBox="0 0 9 9"><path d="M0,0 h1 v8 h-1 z"/><path d="M2,0 h1 v8 h-1 z"/><path d="M4,0 h1 v8 h-1 z"/><path d="M6,0 h1 v8 h-1 z"/><path d="M8,3.25 h1 v1.5 h-1 z"/></svg>
-        </div>
+        </a>
         <div id="databases"></div>
         <div id="terminal-icon" class="menu-icon" title="Web Terminal (~)">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -2624,12 +2626,24 @@ function toggleDatabases() {
     }
 }
 
+/// The logo is an <a> element so that Ctrl/Cmd/Shift+click and middle-click
+/// natively open the current page (with the query) in a new tab.
+/// We update the href on mousedown so it always reflects the current URL.
+document.getElementById('databases-icon').addEventListener('mousedown', () => {
+    document.getElementById('databases-icon').href = window.location.href;
+});
+
 databases_toggle.addEventListener('click', e => {
     e.stopPropagation();
+    /// Let the browser handle modifier clicks as a link (open in new tab).
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    /// Normal click: toggle the databases panel instead of following the link.
+    e.preventDefault();
     toggleDatabases();
 });
 
 document.getElementById('menu').addEventListener('click', e => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle') && !e.target.closest('button')) {
         toggleDatabases();
     }
