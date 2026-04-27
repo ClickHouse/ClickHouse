@@ -3923,6 +3923,8 @@ void Context::clearColumnsCache() const
     /// Clear both the base cache and interval index without holding context mutex
     if (cache)
         cache->clearAll();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setPageCache(std::chrono::milliseconds history_window,
