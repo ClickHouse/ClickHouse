@@ -7494,7 +7494,7 @@ Ignore existing partition export and overwrite the zookeeper entry
     DECLARE(UInt64, export_merge_tree_partition_max_retries, 3, R"(
 Maximum number of retries for exporting a merge tree part in an export partition task
 )", 0) \
-    DECLARE(UInt64, export_merge_tree_partition_manifest_ttl, 180, R"(
+    DECLARE(UInt64, export_merge_tree_partition_manifest_ttl, 86400, R"(
 Determines how long the manifest will live in ZooKeeper. It prevents the same partition from being exported twice to the same destination.
 This setting does not affect / delete in progress tasks. It'll only cleanup the completed ones.
 )", 0) \
