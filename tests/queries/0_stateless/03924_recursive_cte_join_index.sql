@@ -112,5 +112,31 @@ WITH RECURSIVE traverse3 AS
 SELECT current_id FROM traverse3 ORDER BY current_id
 SETTINGS recursive_cte_max_in_filter_cardinality = 0;
 
+-- Three-branch recursive CTE where two branches reuse the same alias `x`
+-- for different physical tables. `additional_table_filters` matches by alias
+-- alone, so emitting a single combined filter for key `x` would either reference
+-- columns that do not exist on one of the tables (producing an exception) or
+-- over-constrain both branches. The optimization must skip filter generation
+-- for `x` and let the recursive step run with unfiltered scans.
+DROP TABLE IF EXISTS t_a;
+DROP TABLE IF EXISTS t_b;
+CREATE TABLE t_a (col_a UInt64, val UInt64) ENGINE = MergeTree ORDER BY col_a;
+CREATE TABLE t_b (col_b UInt64, val UInt64) ENGINE = MergeTree ORDER BY col_b;
+
+INSERT INTO t_a VALUES (0, 10);
+INSERT INTO t_b VALUES (10, 20);
+
+WITH RECURSIVE rec AS
+(
+    SELECT CAST(0 AS UInt64) AS id
+  UNION ALL
+    SELECT x.val AS id FROM t_a AS x INNER JOIN rec AS r ON x.col_a = r.id
+  UNION ALL
+    SELECT x.val AS id FROM t_b AS x INNER JOIN rec AS r ON x.col_b = r.id
+)
+SELECT id FROM rec ORDER BY id;
+
 DROP TABLE edges;
 DROP TABLE two_hop;
+DROP TABLE t_a;
+DROP TABLE t_b;

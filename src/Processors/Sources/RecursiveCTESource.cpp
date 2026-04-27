@@ -322,12 +322,30 @@ Map buildAdditionalTableFiltersForRecursiveStep(
     {
         std::vector<String> parts;
         StorageID storage_id = StorageID::createEmpty();
+        /// Set when the same key (e.g. alias) is used for join keys belonging
+        /// to different physical tables — typically when the recursive query
+        /// is a UNION whose branches reuse the same alias for different
+        /// tables. `additional_table_filters` matches by alias alone, so the
+        /// planner cannot disambiguate the two; emitting a combined filter
+        /// would over-constrain (or reference missing columns on) one of
+        /// them. We drop the CTE-derived filter for such keys; user filters
+        /// for the same key are still preserved below.
+        bool ambiguous = false;
     };
     std::map<String, GroupedFilter> filters_by_key; /// keyed by TableExpressionKey::value
     std::set<String> alias_keys;
 
     for (const auto & key_info : *cached_join_keys)
     {
+        auto key = makeTableExpressionKey(key_info);
+        auto & entry = filters_by_key[key.value];
+
+        if (!entry.parts.empty() && entry.storage_id != key_info.real_table_storage_id)
+            entry.ambiguous = true;
+
+        if (entry.ambiguous)
+            continue;
+
         auto values = readColumnValuesFromMemoryStorage(
             working_table_storage, key_info.cte_column_name, context, max_in_filter_cardinality);
 
@@ -343,10 +361,9 @@ Map buildAdditionalTableFiltersForRecursiveStep(
         if (filter_expr.empty())
             continue;
 
-        auto key = makeTableExpressionKey(key_info);
-        auto & entry = filters_by_key[key.value];
+        if (entry.parts.empty())
+            entry.storage_id = key_info.real_table_storage_id;
         entry.parts.push_back(std::move(filter_expr));
-        entry.storage_id = key_info.real_table_storage_id;
         if (key.is_alias)
             alias_keys.insert(key.value);
     }
@@ -383,6 +400,9 @@ Map buildAdditionalTableFiltersForRecursiveStep(
 
     for (auto & [group_key, entry] : filters_by_key)
     {
+        if (entry.ambiguous || entry.parts.empty())
+            continue;
+
         String combined_filter;
         for (size_t i = 0; i < entry.parts.size(); ++i)
         {
