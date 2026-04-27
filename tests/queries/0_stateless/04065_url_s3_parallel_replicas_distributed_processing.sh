@@ -19,22 +19,6 @@ TABLE_NAME="${CLICKHOUSE_DATABASE}.test_04065"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${TABLE_NAME} (x UInt32) ENGINE = MergeTree() ORDER BY x"
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${TABLE_NAME} SELECT number FROM numbers(1000)"
 
-# This is the core bug reproduction: a MergeTree query with parallel replicas
-# where url() appears in a subquery. On the replica, collaborate_with_initiator
-# is true (for parallel replicas coordination), and the old code incorrectly set
-# distributed_processing=true for url(). This caused the replica to send
-# ReadTaskRequest packets to the initiator, which had no task_iterator for url().
-echo "--- parallel replicas with url in subquery ---"
-$CLICKHOUSE_CLIENT <<EOF
-SET enable_analyzer = 1;
-SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
-SET max_parallel_replicas = 3;
-SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-
-SELECT count() FROM ${TABLE_NAME}
-WHERE x IN (SELECT toUInt32(x) FROM url('http://localhost:8123/?query=SELECT+1', 'TSV', 'x UInt8'));
-EOF
-
 # Insert test data into S3
 $CLICKHOUSE_CLIENT <<EOF
 INSERT INTO FUNCTION s3(
@@ -76,4 +60,47 @@ SET parallel_replicas_for_cluster_engines = true;
 SELECT * FROM s3('http://localhost:11111/test/$CLICKHOUSE_DATABASE/04065.tsv', 'TSV', 'x UInt32, y String') ORDER BY x;
 EOF
 
+# Regression test for table functions like `paimonLocal` that do not have a
+# `*Cluster` variant. With `parallel_replicas_for_cluster_engines = 1`, we must
+# not try to rewrite `paimonLocal` to `paimonLocalCluster` on the worker (which
+# would throw "Unknown table function") nor create `StorageObjectStorageCluster`
+# on the initiator (which would distribute the query but each replica would read
+# the same data redundantly).
+mkdir -p "${USER_FILES_PATH}/04065_data_minio/"
+cp -r "${CUR_DIR}/data_minio/paimon_no_partition/" "${USER_FILES_PATH}/04065_data_minio/"
+
+echo "--- paimonLocal (no Cluster variant) with parallel_replicas_for_cluster_engines ---"
+$CLICKHOUSE_CLIENT <<EOF
+SET enable_analyzer = 1;
+SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
+SET max_parallel_replicas = 4;
+SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SET parallel_replicas_for_cluster_engines = true;
+SET enable_time_time64_type = 1;
+
+SELECT count() FROM paimonLocal('${USER_FILES_PATH}/04065_data_minio/paimon_no_partition');
+EOF
+
+# This is the core bug reproduction: a MergeTree query with parallel replicas
+# where url() appears in a subquery. On the replica, collaborate_with_initiator
+# is true (for parallel replicas coordination), and the old code incorrectly set
+# distributed_processing=true for url(). This caused the replica to send
+# ReadTaskRequest packets to the initiator, which had no task_iterator for url().
+#
+# Note: parallel_replicas_for_non_replicated_merge_tree=1 is required so that
+# parallel replicas actually distributes the MergeTree scan; without it the
+# query runs locally on the initiator and the bug never manifests.
+echo "--- parallel replicas with url in subquery ---"
+$CLICKHOUSE_CLIENT <<EOF
+SET enable_analyzer = 1;
+SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
+SET max_parallel_replicas = 3;
+SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SET parallel_replicas_for_non_replicated_merge_tree = 1;
+
+SELECT count() FROM ${TABLE_NAME}
+WHERE x IN (SELECT toUInt32(x) FROM url('http://localhost:8123/?query=SELECT+1', 'TSV', 'x UInt8'));
+EOF
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE_NAME}"
+rm -rf "${USER_FILES_PATH}/04065_data_minio/"

@@ -1,5 +1,3 @@
---- parallel replicas with url in subquery ---
-1
 --- url with parallel replicas ---
 1
 --- s3 with parallel replicas ---
@@ -8,3 +6,7 @@
 1	a
 2	b
 3	c
+--- paimonLocal (no Cluster variant) with parallel_replicas_for_cluster_engines ---
+10
+--- parallel replicas with url in subquery ---
+1
