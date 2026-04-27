@@ -496,7 +496,13 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
         name_collision_id = memory_storage.find(new_entity->getType(), new_entity->getName());
         /// Save the old entity so we can restore it if the disk write fails.
         if (name_collision_id.has_value())
+        {
             old_entity = memory_storage.read(*name_collision_id, /* throw_if_not_exists= */ false);
+            /// `memory_storage` may hold a placeholder (`EntityOnDisk`) that doesn't contain the actual definition.
+            /// Materialize it from disk so the rollback path can restore the file contents on a same-UUID replace.
+            if (old_entity && isNotLoadedFromDisk(old_entity))
+                old_entity = readAccessEntityFromDisk(*name_collision_id);
+        }
     }
 
     /// Do insertion into memory.
