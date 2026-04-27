@@ -421,7 +421,8 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageSnapshotPtr storage_snapshot)
+    StorageSnapshotPtr storage_snapshot,
+    const NameSet & skipped_columns)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -444,7 +445,9 @@ void fillMissingColumns(
             res_columns[i] = nullptr;
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults.
-        if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+        /// But if the column was explicitly skipped during INSERT (all values were
+        /// type-defaults), fill with type-defaults even if a DEFAULT expression exists.
+        if (res_columns[i] || (hasDefault(storage_snapshot, *requested_column) && !skipped_columns.contains(requested_column->getNameInStorage())))
             continue;
 
         std::vector<ColumnPtr> current_offsets;

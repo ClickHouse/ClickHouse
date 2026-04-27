@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
@@ -129,6 +130,9 @@ public:
 
     bool needsPersistence() const;
 
+    const NameSet & getSkippedColumns() const { return skipped_columns; }
+    void setSkippedColumns(NameSet columns) { skipped_columns = std::move(columns); }
+
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
 
     static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);
@@ -154,6 +158,7 @@ private:
     ///   or other engines, the correct settings must always be provided for
     ///   consistent serialization behavior.
     Settings settings;
+    NameSet skipped_columns;
 };
 
 }

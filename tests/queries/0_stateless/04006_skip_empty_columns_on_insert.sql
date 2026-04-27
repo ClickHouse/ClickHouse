@@ -525,3 +525,44 @@ SELECT 'case14_horizontal_merge';
 SELECT * FROM t_skip_empty_horizontal ORDER BY key;
 
 DROP TABLE t_skip_empty_horizontal;
+
+-- ============================================================================
+-- CASE 15: Skipped column retains type-default after ALTER DEFAULT change.
+-- When a column is skipped (all values were type-default), changing its DEFAULT
+-- expression must NOT affect the read value — serialization.json records the
+-- column as skipped, so the reader fills with type-default, not the expression.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_alter_default;
+
+CREATE TABLE t_skip_empty_alter_default
+(
+    key UInt64,
+    a UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- b=0 (type-default) → b should be skipped
+INSERT INTO t_skip_empty_alter_default (key, a, b) VALUES (1, 100, 0);
+
+SELECT 'case15_pre_alter';
+SELECT * FROM t_skip_empty_alter_default ORDER BY key;
+
+-- Change the DEFAULT expression for b. The skipped column must still read as 0.
+ALTER TABLE t_skip_empty_alter_default MODIFY COLUMN b UInt64 DEFAULT 999;
+
+SELECT 'case15_post_alter';
+SELECT * FROM t_skip_empty_alter_default ORDER BY key;
+
+-- New inserts with b=0 should NOT be skipped (b now has a DEFAULT expression)
+INSERT INTO t_skip_empty_alter_default (key, a, b) VALUES (2, 200, 0);
+
+SELECT 'case15_new_insert';
+SELECT * FROM t_skip_empty_alter_default ORDER BY key;
+
+DROP TABLE t_skip_empty_alter_default;

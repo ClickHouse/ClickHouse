@@ -37,6 +37,7 @@ constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
 constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
+constexpr auto KEY_SKIPPED_COLUMNS = "skipped_columns";
 
 }
 
@@ -367,12 +368,14 @@ ISerialization::KindStack SerializationInfoByName::getKindStack(const String & c
 
 MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 {
+    if (!skipped_columns.empty())
+        return MergeTreeSerializationInfoVersion::WITH_SKIPPED_COLUMNS;
     return settings.version;
 }
 
 bool SerializationInfoByName::needsPersistence() const
 {
-    return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
+    return !empty() || !skipped_columns.empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
@@ -408,6 +411,14 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
             object.set(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types);
     }
 
+    if (version >= MergeTreeSerializationInfoVersion::WITH_SKIPPED_COLUMNS && !skipped_columns.empty())
+    {
+        Poco::JSON::Array skipped_arr;
+        for (const auto & name : skipped_columns)
+            skipped_arr.add(name);
+        object.set(KEY_SKIPPED_COLUMNS, std::move(skipped_arr));
+    }
+
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(object, oss);
@@ -420,6 +431,7 @@ SerializationInfoByName SerializationInfoByName::clone() const
     SerializationInfoByName res(settings);
     for (const auto & [name, info] : *this)
         res.emplace(name, info->clone());
+    res.skipped_columns = skipped_columns;
     return res;
 }
 
@@ -442,6 +454,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     Poco::JSON::Array::Ptr columns_array;
     Poco::JSON::Object::Ptr type_versions_obj;
+    Poco::JSON::Array::Ptr skipped_columns_array;
     bool propagate_types_serialization_versions_to_nested_types = false;
     for (const auto & [key, value] : *object)
     {
@@ -460,6 +473,10 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         else if (key == KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES)
         {
             propagate_types_serialization_versions_to_nested_types = value.extract<bool>();
+        }
+        else if (key == KEY_SKIPPED_COLUMNS)
+        {
+            skipped_columns_array = value.extract<Poco::JSON::Array::Ptr>();
         }
         else
         {
@@ -546,6 +563,12 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             info->fromJSON(*elem_object);
             infos.emplace(name, std::move(info));
         }
+    }
+
+    if (skipped_columns_array)
+    {
+        for (const auto & elem : *skipped_columns_array)
+            infos.skipped_columns.insert(elem.extract<String>());
     }
 
     return infos;

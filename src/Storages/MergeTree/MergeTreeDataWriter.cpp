@@ -642,6 +642,7 @@ static void skipEmptyColumnsOnInsert(
     columns = std::move(filtered);
     for (const auto & name : empty_columns)
         infos.erase(name);
+    infos.setSkippedColumns(std::move(empty_columns));
 }
 
 
