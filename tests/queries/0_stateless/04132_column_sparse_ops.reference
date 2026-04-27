@@ -1,0 +1,48 @@
+--- parts_columns: which columns chose sparse serialization ---
+all_1_1_0	Default
+all_1_1_0	Sparse
+all_1_1_0	Sparse
+--- aggregate over sparse Int64 column ---
+300	285	15
+2115	7.05	0	281
+--- aggregate over sparse String column ---
+290	10
+--- GROUP BY on sparse column ---
+0	285
+1	1
+21	1
+41	1
+61	1
+--- filter (WHERE) on sparse column ---
+285
+12
+290
+10
+--- ORDER BY sparse column ---
+281
+261
+241
+221
+201
+0
+0
+0
+0
+0
+--- SELECT with id filter (reads subset) ---
+0	1	s0
+20	21	
+30	0	s30
+40	41	
+--- arithmetic over sparse column ---
+4230	2415	30615
+--- CAST of sparse column ---
+2115	2115
+--- JOIN with sparse columns ---
+2115
+--- subquery with DISTINCT over sparse ---
+16
+--- INSERT SELECT to roundtrip sparse encoding ---
+300	2115	10
+--- ALTER: update a few rows (forces materialization) ---
+300	5112
