@@ -449,19 +449,10 @@ void MetadataStorageInMemoryTransaction::moveFile(const std::string & path_from,
         if (it_from == metadata_storage.files.end())
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path_from);
 
-        /// If destination exists, handle its blob group cleanup (like rename replacing a file).
-        auto it_to = metadata_storage.files.find(path_to);
-        if (it_to != metadata_storage.files.end())
-        {
-            auto & blob_group = it_to->second.blob_group;
-            blob_group->ref_count -= 1;
-            if (blob_group->ref_count == 0)
-            {
-                for (const auto & obj : blob_group->objects)
-                    objects_to_remove.push_back(obj);
-            }
-            metadata_storage.files.erase(it_to);
-        }
+        /// Match `DiskLocal::moveFile` semantics (`renameNoReplace`): reject if destination exists.
+        /// Callers that need overwrite go through `replaceFile`, which routes through unlink semantics.
+        if (metadata_storage.files.contains(path_to))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", path_to);
 
         metadata_storage.files[path_to] = std::move(it_from->second);
         metadata_storage.files.erase(it_from);
