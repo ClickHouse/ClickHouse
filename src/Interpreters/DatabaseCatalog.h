@@ -157,8 +157,10 @@ public:
     /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
     /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
     /// to not accidentally query external non-free service for some trivial things like
-    /// autocompletion hints or system.tables query. We have a setting which allow to show
+    /// autocompletion hints or system.tables / system.columns queries. We have a setting which allow to show
     /// these databases everywhere, but user must explicitly specify it.
+    /// Note: system.databases always passes with_datalake_catalogs = true because listing a database name
+    /// is purely local metadata and never requires calls to an external catalog service.
     Databases getDatabases(GetDatabasesOptions options) const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
