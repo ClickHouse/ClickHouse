@@ -25,6 +25,7 @@ public:
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
+        Grant, /// 'EXPLAIN GRANT ...' or 'EXPLAIN REVOKE ...'
     };
 
     static String toString(ExplainKind kind)
@@ -39,6 +40,10 @@ public:
             case QueryEstimates: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
+            /// `Grant` shares the bare `"EXPLAIN"` prefix with `QueryPlan`; the inner
+            /// `ASTGrantQuery` formats itself as `GRANT ...` or `REVOKE ...`, so the
+            /// roundtripped text disambiguates the kind for the parser.
+            case Grant: return "EXPLAIN";
         }
     }
 
@@ -60,6 +65,8 @@ public:
             return TableOverride;
         if (str == "EXPLAIN CURRENT TRANSACTION")
             return CurrentTransaction;
+        if (str == "EXPLAIN GRANT" || str == "EXPLAIN REVOKE")
+            return Grant;
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown explain kind '{}'", str);
     }

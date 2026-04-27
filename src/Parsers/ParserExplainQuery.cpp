@@ -1,6 +1,7 @@
 #include <Parsers/ParserExplainQuery.h>
 
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/Access/ParserGrantQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
@@ -25,6 +26,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_estimates(Keyword::ESTIMATE);
     ParserKeyword s_table_override(Keyword::TABLE_OVERRIDE);
     ParserKeyword s_current_transaction(Keyword::CURRENT_TRANSACTION);
+    ParserKeyword s_grant(Keyword::GRANT);
+    ParserKeyword s_revoke(Keyword::REVOKE);
 
     if (s_explain.ignore(pos, expected))
     {
@@ -46,6 +49,15 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             kind = ASTExplainQuery::ExplainKind::TableOverride;
         else if (s_current_transaction.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::CurrentTransaction;
+        else
+        {
+            /// Peek for GRANT/REVOKE without consuming the keyword — `ParserGrantQuery`
+            /// re-parses it itself when we delegate to it below.
+            Pos peek = pos;
+            Expected unused;
+            if (s_grant.ignore(peek, unused) || s_revoke.ignore(peek, unused))
+                kind = ASTExplainQuery::ExplainKind::Grant;
+        }
     }
     else
         return false;
@@ -117,6 +129,13 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     else if (kind == ASTExplainQuery::ExplainKind::CurrentTransaction)
     {
         /// Nothing to parse
+    }
+    else if (kind == ASTExplainQuery::ExplainKind::Grant)
+    {
+        ParserGrantQuery grant_p;
+        if (!grant_p.parse(pos, query, expected))
+            return false;
+        explain_query->setExplainedQuery(std::move(query));
     }
     else if (select_only)
     {

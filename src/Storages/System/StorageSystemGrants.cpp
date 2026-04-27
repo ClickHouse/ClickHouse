@@ -43,18 +43,13 @@ ColumnsDescription StorageSystemGrants::getColumnsDescription()
 }
 
 
-void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemGrants::emitGranteeRows(
+    MutableColumns & res_columns,
+    const String & grantee_name,
+    AccessEntityType grantee_type,
+    const AccessRightsElements & elements,
+    bool is_enabled_read_write_grants)
 {
-    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
-    const auto & access_control = context->getAccessControl();
-    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
-        context->checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
-
-    bool is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
-
-    std::vector<UUID> ids = access_control.findAll<User>();
-    boost::range::push_back(ids, access_control.findAll<Role>());
-
     size_t column_index = 0;
     auto & column_user_name = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
     auto & column_user_name_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
@@ -71,9 +66,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
     auto & column_is_partial_revoke = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
     auto & column_grant_option = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
 
-    auto add_row = [&](const String & grantee_name,
-                       AccessEntityType grantee_type,
-                       AccessType access_type,
+    auto add_row = [&](AccessType access_type,
                        const String & access_object,
                        const String * database,
                        const String * table,
@@ -137,40 +130,49 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
         column_grant_option.push_back(grant_option);
     };
 
-    auto add_rows = [&](const String & grantee_name,
-                        AccessEntityType grantee_type,
-                        const AccessRightsElements & elements)
+    for (const auto & element : elements)
     {
-        for (const auto & element : elements)
+        auto access_types = element.access_flags.toAccessTypes();
+        if (access_types.empty() || (!element.anyColumn() && element.columns.empty()))
+            continue;
+
+        const auto * database = element.anyDatabase() ? nullptr : &element.database;
+        const auto * table = element.anyTable() ? nullptr : &element.table;
+
+        String access_object = element.parameter;
+        if (element.hasFilter() && is_enabled_read_write_grants)
         {
-            auto access_types = element.access_flags.toAccessTypes();
-            if (access_types.empty() || (!element.anyColumn() && element.columns.empty()))
-                continue;
-
-            const auto * database = element.anyDatabase() ? nullptr : &element.database;
-            const auto * table = element.anyTable() ? nullptr : &element.table;
-
-            String access_object = element.parameter;
-            if (element.hasFilter() && is_enabled_read_write_grants)
-            {
-                WriteBufferFromOwnString buf;
-                element.formatFilter(buf);
-                access_object += buf.str();
-            }
-
-            if (element.anyColumn())
-            {
-                for (const auto & access_type : access_types)
-                    add_row(grantee_name, grantee_type, access_type, access_object, database, table, nullptr, element.is_partial_revoke, element.grant_option);
-            }
-            else
-            {
-                for (const auto & access_type : access_types)
-                    for (const auto & column : element.columns)
-                        add_row(grantee_name, grantee_type, access_type, access_object, database, table, &column, element.is_partial_revoke, element.grant_option);
-            }
+            WriteBufferFromOwnString buf;
+            element.formatFilter(buf);
+            access_object += buf.str();
         }
-    };
+
+        if (element.anyColumn())
+        {
+            for (const auto & access_type : access_types)
+                add_row(access_type, access_object, database, table, nullptr, element.is_partial_revoke, element.grant_option);
+        }
+        else
+        {
+            for (const auto & access_type : access_types)
+                for (const auto & column : element.columns)
+                    add_row(access_type, access_object, database, table, &column, element.is_partial_revoke, element.grant_option);
+        }
+    }
+}
+
+
+void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+{
+    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
+    const auto & access_control = context->getAccessControl();
+    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
+        context->checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
+
+    bool is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+
+    std::vector<UUID> ids = access_control.findAll<User>();
+    boost::range::push_back(ids, access_control.findAll<Role>());
 
     for (const auto & id : ids)
     {
@@ -186,10 +188,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
         else
             continue;
 
-        const String & grantee_name = entity->getName();
-        const auto grantee_type = entity->getType();
-        auto elements = access->getElements();
-        add_rows(grantee_name, grantee_type, elements);
+        emitGranteeRows(res_columns, entity->getName(), entity->getType(), access->getElements(), is_enabled_read_write_grants);
     }
 }
 
