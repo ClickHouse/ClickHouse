@@ -1,0 +1,31 @@
+--- min / max of Tuple ---
+(0,'b')	(2,'c')
+--- min / max of Array ---
+[0,5]	[3,4]
+--- min / max of Map ---
+{'a':0,'b':5}	{'a':2,'b':3}
+--- min / max of Decimal ---
+-0.5	3.2
+--- min / max of IPv4 / IPv6 ---
+1.1.1.1	192.168.1.1
+::1	2001:db8::1
+--- any_value of Tuple (order-stable via ORDER BY) ---
+(1,'a')
+(3,'c')
+--- argMin / argMax on Tuple value, numeric key ---
+(2,'b')
+(3,'c')
+--- argMin / argMax on Array value ---
+[3,4]
+[3,4]
+--- merge via GROUP BY (multi-partition) ---
+1	(2,'b')	(1,'a')	(1,'a')	(2,'b')
+2	(4,'d')	(3,'c')	(3,'c')	(4,'d')
+--- empty / null handling ---
+(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')
+--- Nullable(Int32) aggregates (min/max only; any/anyLast are non-deterministic) ---
+1	3	2	1
+--- min/max over LowCardinality String ---
+apple	zebra
+--- min over nested Array(Tuple) ---
+[(0,'c')]	[(2,'b')]
