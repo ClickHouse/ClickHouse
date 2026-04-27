@@ -69,7 +69,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_for_lazy_final", 256000000, 256000000, "New setting for maximum number of bytes in the set for lazy FINAL optimization"},
             {"min_filtered_ratio_for_lazy_final", 0.5, 0.5, "New setting for minimum ratio of marks filtered for lazy FINAL optimization to proceed"},
             {"query_plan_optimize_join_order_randomize", 0, 0, "New setting to randomize join order statistics for testing."},
-            {"enable_materialized_cte", false, false, "New setting"},
             {"s3_uri_style", "auto", "auto", "New setting."},
             {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
@@ -96,8 +95,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_max_output_tokens_per_query", 500000, 500000, "New setting"},
             {"ai_function_max_api_calls_per_query", 0, 0, "New setting"},
             {"ai_function_throw_on_quota_exceeded", true, true, "New setting"},
-            {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
-            {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
         });
@@ -1177,7 +1174,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
             {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
-            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
             {"map_serialization_version", "basic", "basic", "Add a setting to control Map serialization version"},
