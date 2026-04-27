@@ -223,12 +223,13 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens")
-    {
         return TextIndexDirectReadMode::Exact;
-    }
 
     bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
     bool has_preprocessor = preprocessor && preprocessor->hasActions();
+    bool has_postprocessor = postprocessor && postprocessor->hasActions();
+
+    const bool read_mode_can_be_exact = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
 
     if (function_name == "equals"
         || function_name == "has"
@@ -237,25 +238,16 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "hasAll")
     {
         /// These functions compare the searched token as a whole and therefore
-        /// exact direct read is only possible with the array token extractor, which
-        /// does not split documents into sub-tokens. A preprocessor changes the
-        /// haystack before tokenization, which cannot be reversed for the needle,
-        /// so Exact mode would produce false negatives. A postprocessor is handled
-        /// consistently (applied to the needle in stringToTokens and to the haystack
-        /// via the query-plan rewrite in optimizeDirectReadFromTextIndex), but Exact
-        /// mode replaces the predicate entirely, bypassing that rewrite; fall back to
-        /// hint mode so the rewritten predicate is evaluated at row level.
-        bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
-        bool has_preprocessor = preprocessor && preprocessor->hasActions();
-        bool has_postprocessor = postprocessor && postprocessor->hasActions();
-        return is_array_tokenizer && !has_preprocessor && !has_postprocessor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        /// exact direct read is only possible with array token extractor, that doesn't
+        /// split documents into tokens. Otherwise we can only use direct read as a hint.
+        return read_mode_can_be_exact ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
     if (function_name == "hasAny")
     {
         /// Function hasAny creates several text search queries with
         /// tokenizers that split strings, so we can't use direct read as a hint.
-        return is_array_tokenizer && !has_preprocessor ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+        return read_mode_can_be_exact ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
     }
 
     if (function_name == "like"
