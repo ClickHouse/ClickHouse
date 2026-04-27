@@ -51,13 +51,13 @@ def _is_infrastructure_error(result: Result) -> bool:
     """Returns True if the result is a failure caused by infrastructure issues."""
     if not result.info:
         return False
-    if result.status in (Result.Status.ERROR, Result.StatusExtended.ERROR):
+    if result.status == Result.Status.ERROR:
         return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
     # Docker compose/pull infrastructure failures may appear with FAIL status
     # when pytest reports fixture (setup phase) errors as test failures.
     # Require both docker context and an infrastructure pattern to avoid
     # false positives on genuine test failures.
-    if result.status in (Result.Status.FAILED, Result.StatusExtended.FAIL):
+    if result.status == Result.Status.FAIL:
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
@@ -76,14 +76,14 @@ def _mark_infrastructure_errors(results: list) -> int:
     for r in results:
         if _is_infrastructure_error(r):
             r.set_label(Result.Label.INFRA)
-            r.status = Result.StatusExtended.SKIPPED
+            r.status = Result.Status.SKIPPED
             count += 1
     if count:
         print(f"Marked {count} test result(s) as infrastructure errors")
     return count
 
 
-def _start_docker_in_docker():
+def start_docker_in_docker():
     with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
         dockerd_proc = subprocess.Popen(
             "./ci/jobs/scripts/docker_in_docker.sh",
@@ -416,6 +416,22 @@ def get_parallel_sequential_tests_to_run(
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
         test_files, total_batches, batch_num, workers, job_options, info
     )
+
+    if "excluded_from_llvm" in (job_options or ""):
+        excluded_from_llvm_set = {
+            f
+            for f in (parallel_test_modules + sequential_test_modules)
+            if any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            or "is_built_with_llvm_coverage" in Path(f"./tests/integration/{f}").read_text()
+        }
+        parallel_test_modules = [f for f in parallel_test_modules if f in excluded_from_llvm_set]
+        sequential_test_modules = [f for f in sequential_test_modules if f in excluded_from_llvm_set]
+        print(
+            f"LLVM coverage disabled-only: kept {len(parallel_test_modules)} parallel and "
+            f"{len(sequential_test_modules)} sequential test files "
+            f"(from LLVM_COVERAGE_SKIP_PREFIXES or containing is_built_with_llvm_coverage)"
+        )
+
     if not args_test:
         return parallel_test_modules, sequential_test_modules
 
@@ -525,7 +541,7 @@ def run_pytest_and_collect_results(
         test_result.results.append(
             Result(
                 name="Timeout",
-                status=Result.StatusExtended.FAIL,
+                status=Result.Status.FAIL,
                 info=test_result.info,
             )
         )
@@ -660,7 +676,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 args.test
             ), "--test must be provided for flaky or bugfix job flavor with local run"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels and Labels.PR_CRITICAL_BUGFIX not in info.pr_labels:
                 # Not a bugfix PR - run a simple sanity test
                 changed_test_modules = ["test_accept_invalid_certificate/test.py"]
             else:
@@ -706,9 +722,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_targeted_check:
         assert not args.test, "--test not supposed to be used for targeted check ???"
         targeter = Targeting(info=info)
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info(
-            clickhouse_path
-        )
+        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
         # no subtask level for integration tests - cannot add this info to the report now
         # results.append(results_with_info)
         if not tests:
@@ -728,7 +742,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
     if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
-        _start_docker_in_docker()
+        start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
     parallel_test_modules, sequential_test_modules = (
@@ -749,6 +763,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
     elif is_parallel:
         sequential_test_modules = []
         assert not is_sequential
+
+    if is_targeted_check and not parallel_test_modules and not sequential_test_modules:
+        # All targeted tests were stale (removed or renamed since the CIDB record).
+        # This is expected — skip gracefully instead of producing a "no results" error.
+        Result.create_from(
+            status=Result.Status.SKIPPED,
+            info="All targeted tests are stale (removed or renamed)",
+        ).complete_job()
 
     if is_flaky_check or is_targeted_check:
         # Sort by module file so all tests from the same file are consecutive.
@@ -974,7 +996,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             ):
                 test_results.append(
                     Result(
-                        name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
+                        name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.FAIL
                     )
                 )
                 attached_files.append("./ci/tmp/dmesg.log")
@@ -992,11 +1014,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
         ), "LLVM coverage with bugfix validation is not supported"
         has_failure = False
         for r in R.results:
-            if r.status == Result.StatusExtended.FAIL:
+            if r.status == Result.Status.FAIL:
                 if r.has_label(Result.Label.OK_ON_RETRY):
                     # Remove label and set to OK
                     r.remove_label(Result.Label.OK_ON_RETRY)
-                    r.status = Result.StatusExtended.OK
+                    r.status = Result.Status.OK
                 else:
                     has_failure = True
         if has_failure:
@@ -1019,19 +1041,19 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation and Labels.PR_BUGFIX in info.pr_labels:
+    if is_bugfix_validation and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
         has_failure = False
         for r in R.results:
             # invert statuses
-            r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
-                r.status = Result.StatusExtended.OK
+            r.set_label(Result.Label.XFAIL)
+            if r.status == Result.Status.FAIL:
+                r.status = Result.Status.OK
                 has_failure = True
-            elif r.status == Result.StatusExtended.OK:
-                r.status = Result.StatusExtended.FAIL
+            elif r.status == Result.Status.OK:
+                r.status = Result.Status.FAIL
         if not has_failure:
             print("Failed to reproduce the bug")
             R.set_failed()
