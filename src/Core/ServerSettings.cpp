@@ -2030,16 +2030,41 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "users",
     };
 
-    /// Collect top-level keys referenced by config:// in http_handlers response_content/response_expression.
-    /// These are user-defined config sections used by StaticRequestHandler and must not be rejected.
-    std::unordered_set<String> config_referenced_keys;
+    /// Collect top-level config sections that are referenced from elsewhere in the config.
+    /// These are user-defined section names that must not be rejected by this check:
+    ///   (a) handler section names referenced by `<protocols><X><handlers>NAME</handlers></X></protocols>`
+    ///       (see `handlers_config_key` in `Server.cpp`);
+    ///   (b) sections referenced via `config://<key>` in handler `response_content` / `response_expression`
+    ///       (see `StaticRequestHandler`).
+    std::unordered_set<String> referenced_keys;
+
+    /// (a) Handler sections referenced by `<protocols>...<handlers>NAME</handlers>...</protocols>`.
+    if (config.has("protocols"))
+    {
+        Poco::Util::AbstractConfiguration::Keys protocols;
+        config.keys("protocols", protocols);
+        for (const auto & proto : protocols)
+        {
+            String key = "protocols." + proto + ".handlers";
+            if (config.has(key))
+            {
+                String handler_section = config.getString(key);
+                if (!handler_section.empty())
+                    referenced_keys.insert(handler_section);
+            }
+        }
+    }
+
+    /// (b) Top-level keys referenced by `config://` inside HTTP handler sections.
+    /// Scan both the legacy `http_handlers*` sections and any custom handler section
+    /// referenced via `<protocols>...<handlers>NAME</handlers>...</protocols>`.
     {
         static const String config_prefix = "config://";
         Poco::Util::AbstractConfiguration::Keys handler_groups;
         config.keys("", handler_groups);
         for (const auto & group : handler_groups)
         {
-            if (!group.starts_with("http_handlers"))
+            if (!group.starts_with("http_handlers") && !referenced_keys.contains(group))
                 continue;
             Poco::Util::AbstractConfiguration::Keys rules;
             config.keys(group, rules);
@@ -2058,7 +2083,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         if (dot_pos != String::npos)
                             ref.resize(dot_pos);
                         if (!ref.empty())
-                            config_referenced_keys.insert(ref);
+                            referenced_keys.insert(ref);
                     }
                 }
             }
@@ -2075,7 +2100,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         if (bracket_pos != String::npos)
             key.resize(bracket_pos);
 
-        if (known_keys.contains(key) || known_complex_sections.contains(key) || config_referenced_keys.contains(key))
+        if (known_keys.contains(key) || known_complex_sections.contains(key) || referenced_keys.contains(key))
             continue;
 
         bool matches_prefix = false;

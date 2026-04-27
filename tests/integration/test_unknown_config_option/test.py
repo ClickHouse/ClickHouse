@@ -19,6 +19,14 @@ node_static_config_ref = cluster_ok.add_instance(
     main_configs=["configs/config.d/static_handler_config_ref.xml"],
 )
 
+# Positive case: a custom top-level handlers section referenced via
+# <protocols>...<handlers>NAME</handlers>...</protocols> must be accepted.
+cluster_protocols = ClickHouseCluster(__file__, name="protocols")
+node_protocols_custom_handlers = cluster_protocols.add_instance(
+    "node_protocols_custom_handlers",
+    main_configs=["configs/config.d/protocols_custom_handlers.xml"],
+)
+
 
 @pytest.fixture(scope="module")
 def start_bad_cluster():
@@ -44,6 +52,13 @@ def start_ok_cluster():
     cluster_ok.shutdown()
 
 
+@pytest.fixture(scope="module")
+def start_protocols_cluster():
+    cluster_protocols.start()
+    yield
+    cluster_protocols.shutdown()
+
+
 def test_unknown_config_option_rejected(start_bad_cluster):
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_exception
     assert "some_completely_unknown_option" in caught_exception
@@ -55,3 +70,12 @@ def test_config_ref_in_http_handler_accepted(start_ok_cluster):
     response = node_static_config_ref.http_request("my_static_response", method="GET")
     assert response.status_code == 200
     assert response.text == "Hello from config://"
+
+
+def test_protocols_custom_handlers_accepted(start_protocols_cluster):
+    # If the unknown-key validator rejected `my_custom_handlers` (the section
+    # referenced by <protocols><alt_http><handlers>my_custom_handlers</handlers>...),
+    # the node would have failed to start.
+    assert (
+        node_protocols_custom_handlers.query("SELECT 1").strip() == "1"
+    )
