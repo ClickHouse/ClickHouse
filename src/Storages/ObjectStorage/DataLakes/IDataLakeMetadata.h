@@ -59,10 +59,18 @@ public:
         std::optional<DB::Range> hyperrectangle;
     };
 
-    // Extract metadata from Iceberg structure
+    // Extract metadata from Iceberg structure.
+    // table_schema_id is the current table schema, used to resolve column names that
+    // appear as keys in the resulting `columns_info` map.
+    // file_schema_id is the schema the data file (and its `value_bounds_`) was written
+    // with — bounds bytes are encoded with that schema's column types, so they must be
+    // deserialized using those types. After schema evolution (e.g. `int` -> `long`)
+    // the two ids differ, and using the table schema's type would misinterpret the
+    // bytes and produce a garbage hyperrectangle.
     explicit DataFileMetaInfo(
         const Iceberg::IcebergSchemaProcessor & schema_processor,
-        Int32 schema_id,
+        Int32 table_schema_id,
+        Int32 file_schema_id,
         const std::unordered_map<Int32, Iceberg::ColumnInfo> & columns_info_,
         const std::unordered_map<Int32, std::pair<Field, Field>> & value_bounds_);
 

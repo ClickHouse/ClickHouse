@@ -397,6 +397,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         object_info->relative_path_with_metadata.setFileMetaInfo(std::make_shared<DataFileMetaInfo>(
                                     *persistent_components.schema_processor,
                                     table_schema_id, /// current schema id to use current column names
+                                    manifest_file_entry->resolved_schema_id, /// file's schema id to interpret value_bounds bytes
                                     manifest_file_entry->parsed_entry->columns_infos,
                                     manifest_file_entry->parsed_entry->value_bounds));
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);

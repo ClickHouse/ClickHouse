@@ -101,7 +101,8 @@ ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
 
 DataFileMetaInfo::DataFileMetaInfo(
     const Iceberg::IcebergSchemaProcessor & schema_processor,
-    Int32 schema_id,
+    Int32 table_schema_id,
+    Int32 file_schema_id,
     const std::unordered_map<Int32, Iceberg::ColumnInfo> & columns_info_,
     const std::unordered_map<Int32, std::pair<Field, Field>> & value_bounds_)
 {
@@ -110,18 +111,27 @@ DataFileMetaInfo::DataFileMetaInfo(
     for (const auto & column : columns_info_)
         column_ids.push_back(column.first);
 
-    auto name_and_types = schema_processor.tryGetFieldsCharacteristics(schema_id, column_ids);
+    /// Names are resolved via the table schema so that the resulting `columns_info`
+    /// map is keyed by the current column names that callers know about.
+    auto table_name_and_types = schema_processor.tryGetFieldsCharacteristics(table_schema_id, column_ids);
     std::unordered_map<Int32, std::string> name_by_index;
-    std::unordered_map<Int32, DataTypePtr> type_by_index;
-    for (const auto & name_and_type : name_and_types)
+    for (const auto & name_and_type : table_name_and_types)
     {
         const auto name = name_and_type.getNameInStorage();
-        auto index = schema_processor.tryGetColumnIDByName(schema_id, name);
+        auto index = schema_processor.tryGetColumnIDByName(table_schema_id, name);
         if (index.has_value())
-        {
             name_by_index[index.value()] = name;
+    }
+
+    /// Types come from the file's schema because `value_bounds_` are encoded with
+    /// that schema's column types — see Iceberg single-value serialization spec.
+    std::unordered_map<Int32, DataTypePtr> type_by_index;
+    auto file_name_and_types = schema_processor.tryGetFieldsCharacteristics(file_schema_id, column_ids);
+    for (const auto & name_and_type : file_name_and_types)
+    {
+        auto index = schema_processor.tryGetColumnIDByName(file_schema_id, name_and_type.getNameInStorage());
+        if (index.has_value())
             type_by_index[index.value()] = name_and_type.type;
-        }
     }
 
     for (const auto & column : columns_info_)
@@ -156,7 +166,8 @@ DataFileMetaInfo::DataFileMetaInfo(
     }
 #else
     (void)schema_processor;
-    (void)schema_id;
+    (void)table_schema_id;
+    (void)file_schema_id;
     (void)columns_info_;
     (void)value_bounds_;
 #endif
