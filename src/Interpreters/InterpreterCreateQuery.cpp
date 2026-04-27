@@ -18,6 +18,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -1663,16 +1664,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                     data_path = (fs::path(user_files_paths.front()).lexically_normal() / data_path).lexically_normal();
             }
 
-            bool inside = false;
-            for (const auto & ufp : user_files_paths)
-            {
-                if (startsWith(data_path, fs::path(ufp).lexically_normal()))
-                {
-                    inside = true;
-                    break;
-                }
-            }
-            if (!inside)
+            if (!pathStartsWith(data_path.string(), user_files_paths))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside user files path to attach it", String(data_path));
 
@@ -1682,16 +1674,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            bool inside = false;
-            for (const auto & ufp : user_files_paths)
-            {
-                if (startsWith(data_path, fs::path(ufp).lexically_normal()))
-                {
-                    inside = true;
-                    break;
-                }
-            }
-            if (!inside)
+            if (!pathStartsWith(data_path.string(), user_files_paths))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside user files path to attach it", String(data_path));
         }
