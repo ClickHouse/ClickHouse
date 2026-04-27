@@ -48,6 +48,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/URI.h>
 
 namespace fs = std::filesystem;
 
@@ -315,7 +316,8 @@ struct DeltaLakeMetadataImpl
                 if (!add_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
-                auto path = add_object->getValue<String>("path");
+                String path;
+                Poco::URI::decode(add_object->getValue<String>("path"), path);
                 auto full_path = fs::path(table_path) / path;
                 result.insert(full_path);
 
@@ -360,7 +362,8 @@ struct DeltaLakeMetadataImpl
                 if (!remove_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
-                auto path = remove_object->getValue<String>("path");
+                String path;
+                Poco::URI::decode(remove_object->getValue<String>("path"), path);
                 result.erase(fs::path(table_path) / path);
             }
         }
@@ -503,7 +506,7 @@ struct DeltaLakeMetadataImpl
         std::atomic<int> is_stopped{0};
 
         auto open_file_res = parquet::arrow::OpenFile(
-            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool());
+            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
         THROW_ARROW_NOT_OK(open_file_res.status());
         auto reader = *std::move(open_file_res);
 
@@ -561,7 +564,8 @@ struct DeltaLakeMetadataImpl
 
         for (size_t i = 0; i < path_column.size(); ++i)
         {
-            const auto path = String(path_column.getDataAt(i));
+            String path;
+            Poco::URI::decode(String(path_column.getDataAt(i)), path);
             if (path.empty())
                 continue;
 
@@ -624,7 +628,7 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
 
 static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)
 {
-    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
+    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
     return supports_delta_kernel && context->getSettingsRef()[Setting::allow_experimental_delta_kernel_rs] ;
 }
 

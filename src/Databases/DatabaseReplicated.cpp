@@ -31,6 +31,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -78,6 +79,8 @@ namespace Setting
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -1336,7 +1339,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     {
         if (ddl_query->getDatabase() != getDatabaseName())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
-        ddl_query->database.reset();
+        ddl_query->reset(ddl_query->database);
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
@@ -1796,8 +1799,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                     /*query=*/create_query_string);
                 auto create_query_context = make_query_context();
 
-                NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
+                {
+                    SelectIntersectExceptQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::intersect_default_mode], create_query_context->getSettingsRef()[Setting::except_default_mode]};
+                    SelectIntersectExceptQueryVisitor{data}.visit(query_ast);
+                }
+                {
+                    NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
+                    NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
+                }
 
                 /// Check larger comment in DatabaseOnDisk::createTableFromAST
                 /// TL;DR applySettingsFromQuery will move the settings from engine to query level

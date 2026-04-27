@@ -611,7 +611,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
-            metadata_snapshot = storage->getInMemoryMetadataPtr();
+            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
         if (options.only_analyze)
             storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
@@ -753,7 +753,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     {settings[Setting::parallel_replicas_mode],
                      settings[Setting::parallel_replicas_custom_key_range_lower],
                      settings[Setting::parallel_replicas_custom_key_range_upper]},
-                    storage->getInMemoryMetadataPtr()->columns,
+                    storage->getInMemoryMetadataPtr(context, false)->columns,
                     context);
             }
             else if (settings[Setting::parallel_replica_offset] > 0)
@@ -3257,12 +3257,22 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
     const auto & query = getSelectQuery();
     SortDescription sort_description = getSortDescription(query, context);
     const UInt64 limit = getLimitForSorting(query, context);
-    const auto max_block_size = context->getSettingsRef()[Setting::max_block_size];
     const auto exact_rows_before_limit = context->getSettingsRef()[Setting::exact_rows_before_limit];
 
+    SortingStep::Settings sort_settings(context->getSettingsRef());
+
     auto merging_sorted = std::make_unique<SortingStep>(
-        query_plan.getCurrentHeader(), std::move(sort_description), max_block_size, limit, exact_rows_before_limit);
+        query_plan.getCurrentHeader(), std::move(sort_description), sort_settings, limit, exact_rows_before_limit);
     merging_sorted->setStepDescription(fmt::format("Merge sorted streams {}", description), options.max_step_description_length);
+
+    /// Buffer incoming pre-sorted streams to decouple the readers from the merger.
+    /// Mirrors the single-node read-in-order case in optimizeReadInOrder.
+    /// If a limit is later pushed down into this step, `updateLimit` will turn buffering back off.
+    if (limit == 0
+        && sort_settings.read_in_order_use_buffering
+        && !sort_settings.read_in_order_use_virtual_row_per_block)
+        merging_sorted->enableBuffering();
+
     query_plan.addStep(std::move(merging_sorted));
 }
 
