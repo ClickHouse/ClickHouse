@@ -2515,14 +2515,20 @@ Possible values:
 
 - Positive integer.
 )", 0) \
-    DECLARE(UInt64, http_max_fields, 1000000, R"(
+    DECLARE(UInt64, http_max_fields, 1000, R"(
 Maximum number of fields in HTTP header
 )", 0) \
-    DECLARE(UInt64, http_max_field_name_size, 128 * 1024, R"(
+    DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
 Maximum length of field name in HTTP header
 )", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
 Maximum length of field value in HTTP header
+)", 0) \
+    DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
+Maximum total size of all HTTP request headers (names and values combined) in bytes.
+)", 0) \
+    DECLARE(Seconds, http_headers_read_timeout, 30, R"(
+Maximum time in seconds to read all HTTP request headers. This is a total deadline for the entire header parsing phase, not a per-read timeout. Protects against slowloris-style attacks where a client trickles header data slowly to hold connections open.
 )", 0) \
     DECLARE(Bool, http_skip_not_found_url_for_globs, true, R"(
 Skip URLs for globs with HTTP_NOT_FOUND error
