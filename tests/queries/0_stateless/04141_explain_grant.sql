@@ -45,4 +45,14 @@ SELECT 'no side effect';
 SELECT count() FROM system.grants
 WHERE user_name = 'test_explain_grant_u1' AND is_partial_revoke = 1;
 
+-- ON CLUSTER is rejected — explanation is local-only. The rejection must fire on the
+-- *original* AST, before `removeOnClusterClauseIfNeeded` would otherwise strip the
+-- clause when `ignore_on_cluster_for_replicated_access_entities_queries=1` with
+-- replicated access storage. We can't easily set up replicated storage in a stateless
+-- test, but we still cover the basic rejection path with the default settings.
+SELECT 'on cluster rejected';
+EXPLAIN GRANT SELECT ON db.t TO test_explain_grant_u1 ON CLUSTER 'test_shard_localhost'; -- { serverError BAD_ARGUMENTS }
+EXPLAIN GRANT SELECT ON db.t TO test_explain_grant_u1 ON CLUSTER 'test_shard_localhost'
+SETTINGS ignore_on_cluster_for_replicated_access_entities_queries = 1; -- { serverError BAD_ARGUMENTS }
+
 DROP USER test_explain_grant_u1, test_explain_grant_u2;

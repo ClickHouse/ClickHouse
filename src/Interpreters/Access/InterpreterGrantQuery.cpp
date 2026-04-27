@@ -518,12 +518,16 @@ void InterpreterGrantQuery::simulate(
     ContextPtr context,
     const SimulationCallback & on_grantee)
 {
-    const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, context);
-    auto & query = updated_query->as<ASTGrantQuery &>();
-
-    if (!query.cluster.empty())
+    /// Reject `ON CLUSTER` on the *original* AST. `removeOnClusterClauseIfNeeded` rewrites
+    /// the cluster clause away when `ignore_on_cluster_for_replicated_access_entities_queries`
+    /// is enabled with replicated access storage — checking after the rewrite would silently
+    /// accept `ON CLUSTER` in that configuration. Explanation is strictly local.
+    if (const auto * original_grant = query_ptr->as<ASTGrantQuery>(); original_grant && !original_grant->cluster.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ON CLUSTER is not supported with EXPLAIN GRANT / EXPLAIN REVOKE — explanation is local-only");
+
+    const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, context);
+    auto & query = updated_query->as<ASTGrantQuery &>();
 
     query.replaceCurrentUserTag(context->getUserName());
     query.access_rights_elements.eraseNotGrantable();

@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <Access/AccessControl.h>
+#include <Access/AccessRights.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>

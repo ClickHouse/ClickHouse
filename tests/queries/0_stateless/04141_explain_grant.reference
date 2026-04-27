@@ -15,3 +15,4 @@ test_explain_grant_u1	SELECT	\N	\N	0
 test_explain_grant_u1	SELECT	system	\N	1
 no side effect
 0
+on cluster rejected
