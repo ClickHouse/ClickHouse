@@ -1,4 +1,5 @@
 import glob
+import io
 import json
 import logging
 import os
@@ -361,7 +362,7 @@ def create_delta_table(
             f"""
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
-            ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
+            ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '{table_name}', format={format})
             """
         )
     elif storage_type == "local":
@@ -390,9 +391,16 @@ def default_upload_directory(
             local_path, remote_path, **kwargs
         )
     elif storage_type == "azure":
-        return started_cluster.default_azure_uploader.upload_directory(
-            local_path, remote_path, **kwargs
+        # Azure blob storage preserves leading slashes in blob names, unlike S3/MinIO which strips
+        # them. Use relative-path mode with a stripped remote prefix so that blob names match what
+        # delta-kernel-rs expects (no leading slash in the az:// table location path component).
+        effective_remote = remote_path.lstrip("/") if remote_path else local_path.lstrip("/")
+        azure_uploader = AzureUploader(
+            started_cluster.blob_service_client,
+            started_cluster.azure_container_name,
+            use_relpath=True,
         )
+        return azure_uploader.upload_directory(local_path, effective_remote, **kwargs)
     elif storage_type == "local":
         return started_cluster.local_uploader.upload_directory(
             local_path, remote_path, **kwargs
@@ -443,7 +451,7 @@ def create_initial_data_file(
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
 )
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -487,9 +495,47 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     )
 
 
+def test_single_log_file_azure_connection_string(started_cluster):
+    """Test DeltaLakeAzure with connection string authentication and delta kernel enabled."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_single_log_file_azure_cs")
+
+    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
+    parquet_data_path = create_initial_data_file(
+        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
+    )
+
+    delta_path = f"/{TABLE_NAME}"
+    write_delta_from_file(spark, parquet_data_path, delta_path)
+
+    files = default_upload_directory(
+        started_cluster,
+        "azure",
+        delta_path,
+        "",
+    )
+
+    assert len(files) == 2  # 1 metadata file + 1 data file
+
+    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLakeAzure('{connection_string}', '{started_cluster.azure_container_name}', '{TABLE_NAME}', Parquet)
+        """
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        inserted_data
+    )
+
+
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
 )
 def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -534,7 +580,7 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
 )
 def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -5036,3 +5082,105 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
         )
     )
     assert filtered >= 2
+
+
+@pytest.mark.parametrize(
+    "use_delta_kernel",
+    ["0", "1"],
+)
+def test_azure_url_encoded_partition_path(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
+    TABLE_NAME = randomize_table_name("test_azure_url_encoded")
+
+    container_client = started_cluster.blob_service_client.get_container_client(
+        started_cluster.azure_container_name
+    )
+
+    # Upload the parquet file at the on-disk (decoded-once) blob path.
+    # Partition value "@INTERNAL@" → directory "org=%40INTERNAL%40" (@ → %40).
+    partition_dir = "org=%40INTERNAL%40"
+    parquet_blob = f"{TABLE_NAME}/{partition_dir}/part-0.parquet"
+
+    schema = pa.schema([
+        pa.field("id", pa.int32()),
+        pa.field("org", pa.string()),
+    ])
+    table_data = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int32()),
+            "org": pa.array(["@INTERNAL@"] * 3, type=pa.string()),
+        },
+        schema=schema,
+    )
+    buf = io.BytesIO()
+    pq.write_table(table_data, buf, compression=None)
+    parquet_bytes = buf.getvalue()
+    container_client.upload_blob(parquet_blob, parquet_bytes, overwrite=True)
+
+    # Build the Delta log manually. add.path is URI-encoded per the Delta protocol:
+    # '%' in the on-disk name (%40) is encoded to '%25', producing %2540.
+    add_path = "org=%2540INTERNAL%2540/part-0.parquet"
+
+    protocol = '{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}'
+    metadata = json.dumps(
+        {
+            "metaData": {
+                "id": str(uuid.uuid4()),
+                "format": {"provider": "parquet", "options": {}},
+                "schemaString": json.dumps(
+                    {
+                        "type": "struct",
+                        "fields": [
+                            {
+                                "name": "id",
+                                "type": "integer",
+                                "nullable": True,
+                                "metadata": {},
+                            },
+                            {
+                                "name": "org",
+                                "type": "string",
+                                "nullable": True,
+                                "metadata": {},
+                            },
+                        ],
+                    }
+                ),
+                "partitionColumns": ["org"],
+                "configuration": {},
+                "createdTime": 1600000000000,
+            }
+        }
+    )
+    add = json.dumps(
+        {
+            "add": {
+                "path": add_path,
+                "partitionValues": {"org": "@INTERNAL@"},
+                "size": len(parquet_bytes),
+                "modificationTime": 1600000000000,
+                "dataChange": True,
+                "stats": json.dumps({"numRecords": 3}),
+            }
+        }
+    )
+
+    log_content = "\n".join([protocol, metadata, add])
+    container_client.upload_blob(
+        f"{TABLE_NAME}/_delta_log/00000000000000000000.json",
+        log_content.encode(),
+        overwrite=True,
+    )
+
+    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE = DeltaLakeAzure('{connection_string}', '{started_cluster.azure_container_name}', '{TABLE_NAME}', Parquet)
+        """
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 3
+
+    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")

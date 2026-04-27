@@ -105,15 +105,14 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
-    StorageInMemoryMetadata getInMemoryMetadata() const override { return getTargetTable()->getInMemoryMetadata(); }
-    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache) const override { return getTargetTable()->getInMemoryMetadataPtr(bypass_metadata_cache); }
-    std::optional<StorageMetadataPtr> tryGetInMemoryMetadataPtr() const override
+
+    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override
     {
         auto target = tryGetTargetTable();
         if (!target)
-            return std::nullopt;
+            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-        return target->getInMemoryMetadataPtr();
+        return target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
     }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -137,7 +136,6 @@ public:
     bool isRemote() const override { return getTargetTable()->isRemote(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
     bool supportsReplication() const override { return getTargetTable()->supportsReplication(); }
-    bool hasLightweightDeletedMask() const override { return getTargetTable()->hasLightweightDeletedMask(); }
     bool supportsLightweightDelete() const override { return getTargetTable()->supportsLightweightDelete(); }
     std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getTargetTable()->supportsLightweightUpdate(); }
     bool supportsDelete() const override { return getTargetTable()->supportsDelete(); }
@@ -146,8 +144,6 @@ public:
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override { return getTargetTable()->supportsTrivialCountOptimization(storage_snapshot, query_context); }
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
-
-    NamesAndTypesList getVirtuals() const { return getTargetTable()->getVirtualsList(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
@@ -188,7 +184,13 @@ public:
         return target->getSerializationHints();
     }
 
-    ActionLock getActionLock(StorageActionBlockType type) override { return getTargetTable()->getActionLock(type); }
+    ActionLock getActionLock(StorageActionBlockType type) override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return {};
+        return target->getActionLock(type);
+    }
 
     TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const { return getTargetTable()->lockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000)); }
     TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
