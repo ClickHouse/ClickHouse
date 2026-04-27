@@ -1,8 +1,10 @@
 -- Reproduces "Not-ready Set is passed as the second argument" exception that occurs when
 -- `buildOrderedSetInplace` is called during primary key analysis for an `IN` subquery and
--- silently fails (e.g. due to subquery timeout with `overflow_mode = 'break'`). The destructive
--- `build()` consumes the source plan, leaving the set permanently unbuilt and causing
--- `FunctionIn` to throw when the pipeline executes.
+-- silently fails (e.g. due to subquery timeout with `overflow_mode = 'break'`). On master
+-- before the fix, `buildOrderedSetInplace` consumed the source plan up front, so the failure
+-- left the set permanently unbuilt and `FunctionIn` threw when the pipeline executed.
+-- The fix runs the in-place pipeline against a clone of the source plan, leaving the original
+-- intact so that `DelayedCreatingSetsStep::makePlansForSets` can still build the set.
 --
 -- Observed in stress test with parallel replicas:
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=d0432097aed783bd35054dce2edcefe0c4e5122c&name_0=MasterCI&name_1=Stress%20test%20%28amd_tsan%29
@@ -28,10 +30,11 @@ SET use_index_for_in_with_subqueries = 1;
 SELECT count() == 66668 FROM null_in_pr WHERE i global not in (SELECT i FROM null_in_pr WHERE dt = 2);
 SELECT count() == 33333 FROM null_in_pr WHERE i global in (SELECT i FROM null_in_pr WHERE dt = 2);
 
--- Enable the failpoint that forces `buildOrderedSetInplace` to report failure after `build()`
--- has already consumed the source plan. On master (without the fix) this path leaves the set
--- permanently unbuilt and triggers "Not-ready Set is passed as the second argument".
--- The fix restores the source plan via the rebuild callback so pipeline-based set building works.
+-- Enable the failpoint that forces `buildOrderedSetInplace` to report failure after the
+-- in-place pipeline has run. On master (without the fix) the source plan was consumed up
+-- front, so this path left the set permanently unbuilt and triggered
+-- "Not-ready Set is passed as the second argument". The fix runs the in-place pipeline on a
+-- clone of the source plan, leaving the original available to `makePlansForSets`.
 SYSTEM ENABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 
 -- `idx` is the primary key, so the IN subquery triggers primary key analysis and
