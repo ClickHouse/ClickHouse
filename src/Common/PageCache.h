@@ -1,10 +1,9 @@
 #pragma once
 
-#include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
-#include <Common/CacheLine.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/thread_local_rng.h>
+#include <IO/BufferWithOwnMemory.h>
 
 /// "Userspace page cache"
 /// A cache for contents of remote files.
@@ -45,7 +44,6 @@ struct PageCacheKey
 
     UInt128 hash() const;
     std::string toString() const;
-    size_t capacity() const { return path.capacity() + file_version.capacity(); }
 };
 
 class PageCacheCell
@@ -54,7 +52,6 @@ public:
     PageCacheKey key;
 
     size_t size() const { return m_size; }
-    size_t capacity() const { return sizeof(*this) + key.capacity() + m_size; }
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 
@@ -74,7 +71,7 @@ struct PageCacheWeightFunction
 {
     size_t operator()(const PageCacheCell & x) const
     {
-        return x.capacity();
+        return x.size();
     }
 };
 
@@ -96,7 +93,7 @@ class PageCache
 private:
     using Base = CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>;
 
-    class alignas(CH_CACHE_LINE_SIZE) Shard : public Base
+    class alignas(std::hardware_destructive_interference_size) Shard : public Base
     {
     public:
         using Base::Base;
@@ -124,13 +121,9 @@ public:
     /// will be just a standalone PageCacheCell not connected to the cache.
     MappedPtr getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load);
 
-    MappedPtr get(const PageCacheKey & key, bool inject_eviction);
-
     bool contains(const PageCacheKey & key, bool inject_eviction) const;
 
-    /// Make the cache smaller by `memory_limit - memory_usage` bytes.
-    /// Returns true if succeeded, false if cache size was reduced as much as possible but it wasn't enough.
-    bool autoResize(Int64 memory_usage, size_t memory_limit);
+    void autoResize(Int64 memory_usage, size_t memory_limit);
 
     void clear();
     size_t sizeInBytes() const;

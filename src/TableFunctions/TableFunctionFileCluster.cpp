@@ -32,9 +32,10 @@ StoragePtr TableFunctionFileCluster::getStorage(
             columns,
             ConstraintsDescription{},
             String{},
-            context->getSettingsRef()[Setting::rename_files_after_processing]};
+            context->getSettingsRef()[Setting::rename_files_after_processing],
+            path_to_archive};
 
-        storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(filename, context), /* distributed_processing = */ true, args);
+        storage = std::make_shared<StorageFile>(filename, context->getUserFilesPath(), true, args);
     }
     else
     {
@@ -57,11 +58,12 @@ void registerTableFunctionFileCluster(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFileCluster>(
         {
-            .description = R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
-            .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
-            .category = FunctionDocumentation::Category::TableFunction
-        },
-        {.allow_readonly = false});
+            .documentation = {
+                .description = R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
+                .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
+                .category = FunctionDocumentation::Category::TableFunction
+            },
+        .allow_readonly = false});
 }
 
 }
