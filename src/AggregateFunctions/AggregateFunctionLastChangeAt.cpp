@@ -186,9 +186,9 @@ public:
             }
             else if (Data::storedEquals(a.prev_value, a.new_value))
             {
-                if (b.prev_value_last_ts < a.prev_value_last_ts)
-                    a.prev_value_last_ts = b.prev_value_last_ts;
-                if (b.new_value_first_ts > a.new_value_first_ts)
+                if (a.prev_value_last_ts == a.new_value_last_ts)
+                    a.new_value_first_ts = b.prev_value_last_ts;
+                if (a.prev_value_last_ts == a.new_value_last_ts)
                     a.new_value_first_ts = b.new_value_first_ts;
             }
 
@@ -220,10 +220,11 @@ public:
             }
             else
             {
-                if (b.prev_value_last_ts < a.prev_value_last_ts)
+                if (a.prev_value_last_ts == a.new_value_last_ts)
+                    a.prev_value_last_ts = b.new_value_first_ts;
+                if (a.prev_value_last_ts == a.new_value_last_ts)
                     a.prev_value_last_ts = b.prev_value_last_ts;
-                if (b.new_value_first_ts > a.new_value_first_ts)
-                    a.new_value_first_ts = b.new_value_first_ts;
+
                 if (b.new_value_last_ts > a.new_value_last_ts)
                     a.new_value_last_ts = b.new_value_last_ts;
             }
@@ -261,6 +262,7 @@ public:
                     prev_value_last_ts = earlier.prev_value_last_ts;
                     new_value_first_ts = earlier.new_value_first_ts;
                     new_value_last_ts  = later.new_value_last_ts;
+
                     if (earlier.new_value_last_ts > later.new_value_last_ts)
                         new_value_last_ts = earlier.new_value_last_ts;
                 }
@@ -271,6 +273,7 @@ public:
                     prev_value_last_ts = later.prev_value_last_ts;
                     new_value_first_ts = earlier.prev_value_last_ts;
                     new_value_last_ts  = later.new_value_last_ts;
+
                     if (earlier.new_value_last_ts > later.new_value_last_ts)
                         new_value_last_ts = earlier.new_value_last_ts;
                 }
@@ -280,8 +283,12 @@ public:
                     Data::copyStored(prev_value, later.prev_value);
                     Data::copyStored(new_value, later.new_value);
                     prev_value_last_ts = later.prev_value_last_ts;
-                    new_value_first_ts = later.new_value_first_ts;
+                    new_value_first_ts = earlier.prev_value_last_ts;
                     new_value_last_ts  = later.new_value_last_ts;
+                    
+                    if (prev_value_last_ts == new_value_first_ts)
+                        new_value_first_ts = earlier.new_value_first_ts;
+
                     if (earlier.new_value_last_ts > later.new_value_last_ts)
                         new_value_last_ts = earlier.new_value_last_ts;
                 }
@@ -305,6 +312,7 @@ public:
                     prev_value_last_ts = later.prev_value_last_ts;
                     new_value_first_ts = earlier.new_value_first_ts;
                     new_value_last_ts  = later.new_value_last_ts;
+
                     if (earlier.new_value_last_ts > later.new_value_last_ts)
                         new_value_last_ts = earlier.new_value_last_ts;
                 }
@@ -315,6 +323,7 @@ public:
                     prev_value_last_ts = earlier.prev_value_last_ts;
                     new_value_first_ts = later.prev_value_last_ts;
                     new_value_last_ts  = later.new_value_last_ts;
+
                     if (earlier.new_value_last_ts > later.new_value_last_ts)
                         new_value_last_ts = earlier.new_value_last_ts;
                 }
@@ -324,8 +333,12 @@ public:
                     Data::copyStored(prev_value, later.prev_value);
                     Data::copyStored(new_value, later.new_value);
                     prev_value_last_ts = earlier.prev_value_last_ts;
-                    new_value_first_ts = later.new_value_first_ts;
+                    new_value_first_ts = later.prev_value_last_ts;
                     new_value_last_ts  = later.new_value_last_ts;
+
+                    if (prev_value_last_ts == new_value_first_ts)
+                        new_value_first_ts = earlier.new_value_first_ts;
+
                     if (earlier.new_value_last_ts > later.new_value_last_ts)
                         new_value_last_ts = earlier.new_value_last_ts;
                 }
@@ -342,7 +355,10 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         const auto & data = this->data(place);
-        TimestampType last_change_at = Data::storedEquals(data.prev_value, data.new_value) ? data.prev_value_last_ts : data.new_value_first_ts;
+
+        TimestampType last_change_at{};
+        if (data.seen)
+            last_change_at = Data::storedEquals(data.prev_value, data.new_value) ? data.prev_value_last_ts : data.new_value_first_ts;
         static_cast<ColumnFixedSizeHelper &>(to).template insertRawData<sizeof(TimestampType)>(
             reinterpret_cast<const char *>(&last_change_at));
     }

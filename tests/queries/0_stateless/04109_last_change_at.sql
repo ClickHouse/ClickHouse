@@ -114,5 +114,23 @@ SELECT lastChangeAtMerge(state) FROM (
     SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 2 AS ts, 0 AS value)
 );
 
+-- (0@1),(1@2),(0@3), (0@4) merged as [1] -> [3] -> [4] -> [2] must give 3, not 4
+SELECT lastChangeAtMerge(state) FROM (
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 1 AS ts, 0 AS value)
+    UNION ALL
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 3 AS ts, 0 AS value)
+    UNION ALL
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 4 AS ts, 0 AS value)
+    UNION ALL
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 2 AS ts, 1 AS value)
+);
+
+-- Bitmap: no null value dereference
+SELECT lastChangeAt(bmp, ts) FROM (
+    SELECT 0 as ts, groupBitmapState(toUInt32(number)) AS bmp
+    FROM numbers(0)
+    GROUP BY ts
+);
+
 -- Error: String value type is unsupported
 SELECT lastChangeAt('x', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
