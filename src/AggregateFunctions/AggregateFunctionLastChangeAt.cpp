@@ -237,7 +237,7 @@ public:
 
             typename Data::StoredType prev_value{};
             typename Data::StoredType new_value{};
-            
+
             TimestampType prev_value_last_ts{};
             TimestampType new_value_first_ts{};
             TimestampType new_value_last_ts{};
