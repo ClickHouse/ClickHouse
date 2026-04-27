@@ -217,6 +217,7 @@ private:
     std::unordered_map<const OutputPort *, UInt64> output_port_index;
 
     void maybeActivateMoreOutputs();
+    void promoteInactiveWaitingOutputs();
 };
 
 }

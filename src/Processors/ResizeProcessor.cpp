@@ -482,6 +482,25 @@ void GradualResizeProcessor::maybeActivateMoreOutputs()
         all_outputs_active = true;
 }
 
+void GradualResizeProcessor::promoteInactiveWaitingOutputs()
+{
+    std::queue<UInt64> remaining;
+    while (!inactive_waiting_outputs.empty())
+    {
+        auto idx = inactive_waiting_outputs.front();
+        inactive_waiting_outputs.pop();
+
+        if (output_ports[idx].status == OutputStatus::Finished)
+            continue;
+
+        if (all_outputs_active || idx < num_active_outputs)
+            waiting_outputs.push(idx);
+        else
+            remaining.push(idx);
+    }
+    inactive_waiting_outputs = std::move(remaining);
+}
+
 /// This implementation uses ResizeProcessor-like many-to-many routing.
 /// All inputs are kept active at all times so upstream parallelism is never throttled.
 /// Data is collected from any input and routed only to active (gradually activated) outputs.
@@ -529,6 +548,11 @@ IProcessor::Status GradualResizeProcessor::prepare(const UpdatedInputPorts & upd
                     }
                     if (num_active_outputs >= output_ports.size())
                         all_outputs_active = true;
+
+                    /// Newly activated outputs may already have requested data and be sitting in
+                    /// `inactive_waiting_outputs`. Promote them now so data can flow to them
+                    /// without waiting for a new updated_outputs event.
+                    promoteInactiveWaitingOutputs();
                 }
             }
             continue;
@@ -628,21 +652,7 @@ IProcessor::Status GradualResizeProcessor::prepare(const UpdatedInputPorts & upd
 
         if (num_active_outputs > prev_active)
         {
-            std::queue<UInt64> remaining;
-            while (!inactive_waiting_outputs.empty())
-            {
-                auto idx = inactive_waiting_outputs.front();
-                inactive_waiting_outputs.pop();
-
-                if (output_ports[idx].status == OutputStatus::Finished)
-                    continue;
-
-                if (idx < num_active_outputs)
-                    waiting_outputs.push(idx);
-                else
-                    remaining.push(idx);
-            }
-            inactive_waiting_outputs = std::move(remaining);
+            promoteInactiveWaitingOutputs();
 
             /// Try to push more data to newly activated outputs.
             while (!waiting_outputs.empty() && !inputs_with_data.empty())
