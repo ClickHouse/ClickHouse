@@ -90,7 +90,7 @@ Poco::Timestamp MetadataStorageInMemory::getLastModified(const std::string & pat
     std::shared_lock lock(metadata_mutex);
     auto * entry = findFile(path);
     if (entry)
-        return entry->last_modified;
+        return entry->blob_group->last_modified;
 
     /// Check if it's a directory
     std::string normalized = path;
@@ -175,7 +175,7 @@ std::string MetadataStorageInMemory::readInlineDataToString(const std::string & 
     auto * entry = findFile(path);
     if (!entry)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
-    return entry->inline_data;
+    return entry->blob_group->inline_data;
 }
 
 StoredObjects MetadataStorageInMemory::getStorageObjects(const std::string & path) const
@@ -298,7 +298,7 @@ void MetadataStorageInMemoryTransaction::writeInlineDataToFile(const std::string
         auto * entry = metadata_storage.findFile(path);
         if (!entry)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
-        entry->inline_data = data;
+        entry->blob_group->inline_data = data;
     });
 }
 
@@ -308,7 +308,7 @@ void MetadataStorageInMemoryTransaction::setLastModified(const std::string & pat
     {
         auto * entry = metadata_storage.findFile(path);
         if (entry)
-            entry->last_modified = timestamp;
+            entry->blob_group->last_modified = timestamp;
     });
 }
 
@@ -433,13 +433,11 @@ void MetadataStorageInMemoryTransaction::createHardLink(const std::string & path
         if (metadata_storage.findFile(path_to))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", path_to);
 
-        /// Share the blob group between source and destination.
+        /// Share the blob group between source and destination so all hardlinks observe
+        /// the same object list, inline data, and modification time (matching disk inode semantics).
         entry->blob_group->ref_count += 1;
         auto & new_entry = metadata_storage.files[path_to];
         new_entry.blob_group = entry->blob_group;
-        new_entry.inline_data = entry->inline_data;
-        new_entry.read_only = entry->read_only;
-        new_entry.last_modified = entry->last_modified;
     });
 }
 
@@ -584,7 +582,7 @@ void MetadataStorageInMemoryTransaction::createMetadataFile(const std::string & 
         auto & entry = metadata_storage.files[path];
         entry.blob_group = std::make_shared<MetadataStorageInMemory::BlobGroup>();
         entry.blob_group->objects = objects;
-        entry.last_modified = Poco::Timestamp();
+        entry.blob_group->last_modified = Poco::Timestamp();
     });
 }
 
@@ -600,7 +598,7 @@ void MetadataStorageInMemoryTransaction::addBlobToMetadata(const std::string & p
             entry = &metadata_storage.files[path];
         }
         entry->blob_group->objects.push_back(object);
-        entry->last_modified = Poco::Timestamp();
+        entry->blob_group->last_modified = Poco::Timestamp();
     });
 }
 
@@ -626,7 +624,7 @@ void MetadataStorageInMemoryTransaction::truncateFile(const std::string & path, 
             accumulated_size += obj.bytes_size;
         }
         entry->blob_group->objects = std::move(new_objects);
-        entry->last_modified = Poco::Timestamp();
+        entry->blob_group->last_modified = Poco::Timestamp();
     });
 }
 

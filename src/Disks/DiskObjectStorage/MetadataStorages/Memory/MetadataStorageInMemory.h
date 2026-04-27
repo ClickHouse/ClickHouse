@@ -66,20 +66,21 @@ public:
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
 
 private:
-    /// Shared blob ownership: multiple FileEntry instances (hardlinks) can share
-    /// the same BlobGroup. Objects are only removed when the last reference is gone.
+    /// Per-inode state shared by all hardlinks: object list, inline data, and modification time.
+    /// On disk, these come from the metadata file content / inode mtime, so hardlinks observe
+    /// the same values. The in-memory storage mirrors that by sharing this struct via shared_ptr.
+    /// `objects` are removed when the last reference is gone.
     struct BlobGroup
     {
         StoredObjects objects;
+        std::string inline_data;
+        Poco::Timestamp last_modified;
         int32_t ref_count = 1; /// number of FileEntry instances sharing this group
     };
 
     struct FileEntry
     {
         std::shared_ptr<BlobGroup> blob_group;
-        std::string inline_data;
-        bool read_only = false;
-        Poco::Timestamp last_modified;
 
         FileEntry() : blob_group(std::make_shared<BlobGroup>()) {}
     };
