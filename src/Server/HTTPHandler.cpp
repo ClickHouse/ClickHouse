@@ -594,6 +594,10 @@ void HTTPHandler::processQuery(
     /// Also check params directly so the detach path is taken when the client sends allow_experimental_detach_non_readonly_queries=1 in the URL.
     const bool want_detach_non_readonly
         = settings[Setting::allow_experimental_detach_non_readonly_queries] || params.getParsedLast<bool>("allow_experimental_detach_non_readonly_queries", false);
+    /// Tracks whether the detach path already ran `customizeContext` on `context`.
+    /// `Context::setQueryParameter` throws on duplicate names, so the sync fallback
+    /// below must skip its own call when this is set.
+    bool context_customized = false;
     if (want_detach_non_readonly && !settings[Setting::async_insert] && request.getMethod() == HTTPServerRequest::HTTP_POST
         && !has_external_data)
     {
@@ -671,6 +675,14 @@ void HTTPHandler::processQuery(
 
             if (ast && IAST::isNonReadOnlyQuery(ast.get()))
             {
+                /// Populate query parameters from URL/header regex captures and `_request_body`
+                /// before forking into the detached thread, so `PredefinedQueryHandler` routes
+                /// see the same context the sync path would. Running this on the parent `context`
+                /// means the copy below inherits the parameters.
+                ReadBufferFromString body_buf_for_customize(std::string_view(body_data.data(), body_data.size()));
+                customizeContext(request, context, body_buf_for_customize);
+                context_customized = true;
+
                 ContextMutablePtr async_context = Context::createCopy(context);
                 async_context->setProgressCallback(nullptr);
 
@@ -763,7 +775,8 @@ void HTTPHandler::processQuery(
         }
     }
 
-    customizeContext(request, context, *in_post_maybe_compressed);
+    if (!context_customized)
+        customizeContext(request, context, *in_post_maybe_compressed);
     std::unique_ptr<ReadBuffer> in;
     if (has_external_data)
     {
