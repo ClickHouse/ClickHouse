@@ -195,7 +195,7 @@ document.getElementById('toggle-light').onclick = () => setColorTheme('light', t
 document.getElementById('toggle-dark').onclick = () => setColorTheme('dark', true);
 
 /// Only show the Web Terminal link when /webterminal is available on this server
-/// (the handler exists only on Linux builds and can be disabled via allow_experimental_webterminal).
+/// (the endpoint is gated by the allow_experimental_webterminal server setting).
 fetch('/webterminal', {method: 'HEAD'}).then(function(resp) {
     if (resp.ok) document.getElementById('webterminal-link').style.display = '';
 }).catch(function() {});

@@ -4217,7 +4217,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     let terminalHiddenByResize = false;
     const MIN_TERMINAL_HEIGHT = 20;
 
-    /// Hide the terminal icon if /webterminal is not available (disabled or non-Linux build)
+    /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal)
     terminalIcon.style.display = 'none';
     fetch('/webterminal', {method: 'HEAD'}).then(function(resp) {
         if (resp.ok) terminalIcon.style.display = '';

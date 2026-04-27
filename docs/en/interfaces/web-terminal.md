@@ -10,7 +10,7 @@ doc_type: 'reference'
 The web terminal is an experimental in-browser interface that provides an interactive `clickhouse-client` session over WebSocket. It is served from any ClickHouse HTTP port at the `/webterminal` path.
 
 :::note
-The web terminal is available on Linux builds only. It is an experimental feature and is disabled by default; see [Enabling the feature](#enabling-the-feature) below.
+The web terminal is an experimental feature and is disabled by default; see [Enabling the feature](#enabling-the-feature) below.
 :::
 
 ## Enabling the feature {#enabling-the-feature}
@@ -52,7 +52,7 @@ The terminal uses [xterm.js](https://xtermjs.org/) for rendering. All assets are
 
 ## Integration with `/play` {#play-integration}
 
-The [`/play`](/interfaces/http) Web SQL UI embeds the web terminal as a dockable panel. Toggle it with the terminal icon in the sidebar or press the `~` key when the query editor is empty. The `/play` page detects `/webterminal` availability at load time and hides the terminal controls when the endpoint is unavailable (disabled, or non-Linux builds).
+The [`/play`](/interfaces/http) Web SQL UI embeds the web terminal as a dockable panel. Toggle it with the terminal icon in the sidebar or press the `~` key when the query editor is empty. The `/play` page detects `/webterminal` availability at load time and hides the terminal controls when the endpoint is unavailable (for example, when the experimental setting is not enabled).
 
 ## Security considerations {#security}
 
@@ -66,4 +66,4 @@ The handler also enforces WebSocket protocol conformance per RFC 6455: unmasked 
 
 ## Platform availability {#platform}
 
-The handler is compiled only on Linux builds. On other platforms, `/webterminal` is not registered and the links to it on the ClickHouse start page and in `/play` are hidden automatically.
+The handler is compiled on all platforms ClickHouse supports. The pseudoterminal layer used by the embedded `clickhouse-client` runner is implemented on top of portable POSIX primitives (`posix_openpt`/`grantpt`/`unlockpt`), with a Linux-specific path that uses the thread-safe `ptsname_r`. The links to `/webterminal` on the ClickHouse start page and in `/play` are hidden automatically when the endpoint is unavailable (for example, when `allow_experimental_webterminal` is not enabled).
