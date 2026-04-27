@@ -781,6 +781,14 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
+    /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
+    /// storage snapshot contains the `datalake_table_state`. Without this the mutation
+    /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
+    /// Normally `updateExternalDynamicMetadataIfExists` is called by the
+    /// analyzer/interpreter for `SELECT` and `INSERT` queries, but `InterpreterAlterQuery`
+    /// does not call it before invoking `mutate`.
+    updateExternalDynamicMetadataIfExists(context_);
+
     auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto storage = getStorageID();
     configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
