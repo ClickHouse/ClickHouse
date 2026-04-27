@@ -23,7 +23,7 @@ function thread_alter()
         ERROR=$($CLICKHOUSE_CLIENT --query "
             ALTER TABLE alter_table ADD COLUMN $1 String DEFAULT '0';
             ALTER TABLE alter_table MODIFY COLUMN $1 UInt64;
-            ALTER TABLE alter_table DROP COLUMN $1;" 2>&1 | tr '\n' ' ')
+            ALTER TABLE alter_table DROP COLUMN $1;" 2>&1 | tr '\n' ' ' || true)
 
         if [[ -n "${ERROR}" \
             && ! "${ERROR}" =~ "You can retry this error" \
