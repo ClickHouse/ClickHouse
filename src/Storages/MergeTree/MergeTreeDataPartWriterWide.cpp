@@ -132,6 +132,7 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
     enumerate_settings.map_buckets_coefficient = settings_.map_buckets_coefficient;
     enumerate_settings.map_buckets_min_avg_size = settings_.map_buckets_min_avg_size;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Wide;
+    enumerate_settings.force_object_shared_data_only = settings_.force_object_shared_data_only;
     return enumerate_settings;
 }
 
@@ -521,6 +522,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
     serialize_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
+    serialize_settings.force_object_shared_data_only = settings.force_object_shared_data_only;
     return serialize_settings;
 }
 

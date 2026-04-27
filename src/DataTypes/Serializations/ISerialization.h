@@ -350,6 +350,12 @@ public:
         /// Type of MergeTree data part we serialize/deserialize data from if any.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
 
+        /// If true, `SerializationObject` should not enumerate any per-dynamic-path
+        /// substreams — every dynamic path stays inside the single `ObjectSharedData`
+        /// substream. Used to prevent `Wide` part file fan-out for small parts when
+        /// `object_shared_data_min_bytes_for_advanced_serialization` is configured.
+        bool force_object_shared_data_only = false;
+
         /// Current level of array. Needed to differentiate stream names of nested array offsets.
         size_t array_level = 0;
     };
@@ -433,6 +439,11 @@ public:
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// If true, `SerializationObject` folds every dynamic path back into the
+        /// single `ObjectSharedData` substream so the writer does not produce a
+        /// per-path `.bin` file. See `EnumerateStreamsSettings::force_object_shared_data_only`.
+        bool force_object_shared_data_only = false;
     };
 
     struct DeserializeBinaryBulkSettings

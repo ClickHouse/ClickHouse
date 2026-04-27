@@ -1159,7 +1159,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-
+            {"object_shared_data_min_bytes_for_advanced_serialization", 0, 0, "New MergeTree setting that, when set, keeps every dynamic path of a JSON / Object / Dynamic column inside the single shared-data substream while the part's estimated size is below the threshold. Avoids the per-dynamic-path file fan-out (and the corresponding `PUT` amplification on object storage) that an under-filled `Wide` part would otherwise cause. Default 0 disables the gate."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {

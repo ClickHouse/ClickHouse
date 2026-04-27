@@ -53,6 +53,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_compact_part;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
+    extern const MergeTreeSettingsUInt64 object_shared_data_min_bytes_for_advanced_serialization;
     extern const MergeTreeSettingsMergeTreeDynamicSerializationVersion dynamic_serialization_version;
     extern const MergeTreeSettingsNonZeroUInt64 max_buckets_in_map;
     extern const MergeTreeSettingsMergeTreeMapBucketsStrategy map_buckets_strategy;
@@ -70,7 +71,8 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     bool rewrite_primary_key_,
     bool save_marks_in_cache_,
     bool save_primary_index_in_memory_,
-    bool blocks_are_granules_size_)
+    bool blocks_are_granules_size_,
+    size_t part_uncompressed_bytes_estimate_)
     : min_compress_block_size((*storage_settings)[MergeTreeSetting::min_compress_block_size] ? (*storage_settings)[MergeTreeSetting::min_compress_block_size] : global_settings[Setting::min_compress_block_size])
     , max_compress_block_size((*storage_settings)[MergeTreeSetting::max_compress_block_size] ? (*storage_settings)[MergeTreeSetting::max_compress_block_size] : global_settings[Setting::max_compress_block_size])
     , marks_compression_codec((*storage_settings)[MergeTreeSetting::marks_compression_codec])
@@ -99,7 +101,19 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
     , compress_per_column_in_compact_parts((*storage_settings)[MergeTreeSetting::compress_per_column_in_compact_parts])
+    , part_uncompressed_bytes_estimate(part_uncompressed_bytes_estimate_)
 {
+    /// Force JSON / Object / Dynamic columns to keep all dynamic paths inside
+    /// the shared-data substream when the part being written is below the
+    /// configured threshold. Without this gate, a default `JSON` column with
+    /// `max_dynamic_paths = 1024` produces 10000+ substream files per Wide
+    /// part — and on object storage that is one `PUT` per file. We require
+    /// a known size estimate (estimate > 0) so that tests / code paths that
+    /// don't supply one continue to behave as before.
+    const auto threshold = (*storage_settings)[MergeTreeSetting::object_shared_data_min_bytes_for_advanced_serialization];
+    force_object_shared_data_only = threshold > 0
+        && part_uncompressed_bytes_estimate > 0
+        && part_uncompressed_bytes_estimate < threshold;
 }
 
 MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const ContextPtr & context)

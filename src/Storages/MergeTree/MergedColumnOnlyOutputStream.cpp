@@ -41,7 +41,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         /*rewrite_primary_key=*/ false,
         save_marks_in_cache,
         save_primary_index_in_memory,
-        /*blocks_are_granules_size=*/ false);
+        /*blocks_are_granules_size=*/ false,
+        part_uncompressed_bytes);
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),

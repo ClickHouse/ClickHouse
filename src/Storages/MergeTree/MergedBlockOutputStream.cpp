@@ -36,7 +36,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool reset_columns_,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
-    WrittenOffsetSubstreams * written_offset_substreams)
+    WrittenOffsetSubstreams * written_offset_substreams,
+    size_t part_uncompressed_bytes_estimate_for_writer)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -48,6 +49,14 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || prewarm_caches.primary_index_cache;
 
+    /// Per-column serializations may want to pick a different layout based on
+    /// the estimated part size (e.g. JSON shared-data-only for small parts).
+    /// Fall back to the prewarm hint when the caller did not supply a separate
+    /// estimate — for the insert path the two values are the same.
+    const size_t writer_estimate = part_uncompressed_bytes_estimate_for_writer != 0
+        ? part_uncompressed_bytes_estimate_for_writer
+        : part_uncompressed_bytes;
+
     writer_settings = MergeTreeWriterSettings(
         data_part->storage.getContext()->getSettingsRef(),
         write_settings_,
@@ -57,7 +66,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         /* rewrite_primary_key = */ true,
         save_marks_in_cache,
         save_primary_index_in_memory,
-        blocks_are_granules_size);
+        blocks_are_granules_size,
+        writer_estimate);
 
     data_part_storage->createDirectories();
 

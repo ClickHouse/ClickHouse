@@ -109,6 +109,11 @@ struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBul
     ColumnObject::Statistics statistics;
     /// If true, statistics will be recalculated during serialization.
     bool recalculate_statistics = false;
+    /// If true, the prefix recorded an empty `sorted_dynamic_paths` and the
+    /// data write must fold every dynamic path of the column into the single
+    /// shared-data substream. Captured at prefix time so the data write does
+    /// not have to re-read the (potentially mutated) settings field.
+    bool fold_dynamic_paths_into_shared_data = false;
 
     /// For flattened serialization only.
     std::vector<std::pair<String, ColumnPtr>> flattened_paths;
@@ -187,6 +192,18 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
         {
             sorted_dynamic_paths = structure_state->sorted_dynamic_paths;
         }
+        /// On the write path, when the caller has asked us to keep all paths in the
+        /// shared-data substream (e.g. small Wide part with `object_shared_data_min_bytes_for_advanced_serialization`),
+        /// pretend that the column has no promoted dynamic paths so the writer
+        /// doesn't allocate a substream per path. The same flag is honored in
+        /// `serializeBinaryBulkStatePrefix` (records empty `sorted_dynamic_paths`)
+        /// and in `serializeBinaryBulkWithMultipleStreams` (folds the dynamic
+        /// columns back into shared data before writing). Restricted to Wide because
+        /// the per-column file fan-out problem only exists in Wide.
+        else if (settings.force_object_shared_data_only && settings.data_part_type == MergeTreeDataPartType::Wide)
+        {
+            sorted_dynamic_paths = std::make_shared<VectorWithMemoryTracking<String>>();
+        }
         else
         {
             sorted_dynamic_paths = std::make_shared<VectorWithMemoryTracking<String>>();
@@ -225,8 +242,24 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
             if (serialization_version.value == SerializationVersion::V3)
             {
                 shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion(settings.object_shared_data_serialization_version);
+                /// Mirror the prefix-side fallback when the part-bytes threshold has
+                /// disabled the per-path fan-out: keep the substream layout matched
+                /// to what the writer will actually produce on disk. Restricted to
+                /// Wide because the fold itself is restricted to Wide.
+                if (settings.force_object_shared_data_only
+                    && settings.data_part_type == MergeTreeDataPartType::Wide
+                    && shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+                    shared_data_serialization_version.value = SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS;
                 /// Avoid creating buckets in shared data for Wide part if shared data is empty.
-                if (settings.data_part_type != MergeTreeDataPartType::Wide || !column_object->getOrCalculateStatistics()->shared_data_paths_statistics.empty())
+                /// When folding is active the column's shared data may be empty (paths live in
+                /// `dynamic_paths`) — but the writer will fold them in, so we must enumerate the
+                /// same bucket layout.
+                const bool has_paths_to_fold_into_shared_data = settings.force_object_shared_data_only
+                    && settings.data_part_type == MergeTreeDataPartType::Wide
+                    && column_object && !column_object->getDynamicPaths().empty();
+                if (settings.data_part_type != MergeTreeDataPartType::Wide
+                    || !column_object->getOrCalculateStatistics()->shared_data_paths_statistics.empty()
+                    || has_paths_to_fold_into_shared_data)
                     num_buckets = settings.object_shared_data_buckets;
             }
 
@@ -313,10 +346,30 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     }
 
     /// Write all dynamic paths in sorted order.
-    object_state->sorted_dynamic_paths.reserve(dynamic_paths.size());
-    for (const auto & [path, _] : dynamic_paths)
-        object_state->sorted_dynamic_paths.push_back(path);
-    std::sort(object_state->sorted_dynamic_paths.begin(), object_state->sorted_dynamic_paths.end());
+    ///
+    /// When `force_object_shared_data_only` is set, we deliberately leave
+    /// `sorted_dynamic_paths` empty so that:
+    ///   - the on-disk prefix records "no dynamic paths" (the reader naturally
+    ///     reconstructs the same layout from disk);
+    ///   - the writer (`MergeTreeDataPartWriterWide::addStreams`) does not
+    ///     allocate one `.bin` per path;
+    ///   - `serializeBinaryBulkWithMultipleStreams` folds the column's dynamic
+    ///     paths back into the single shared-data substream below.
+    ///
+    /// Restricted to Wide parts: the per-column file fan-out problem this fixes
+    /// only exists in Wide. Compact parts pack everything into one .bin and use
+    /// `StatisticsMode::PREFIX`, which would write stale path statistics if the
+    /// fold ran (data is folded after the prefix, but PREFIX commits stats from
+    /// the pre-fold column).
+    object_state->fold_dynamic_paths_into_shared_data
+        = settings.force_object_shared_data_only && settings.data_part_type == MergeTreeDataPartType::Wide;
+    if (!object_state->fold_dynamic_paths_into_shared_data)
+    {
+        object_state->sorted_dynamic_paths.reserve(dynamic_paths.size());
+        for (const auto & [path, _] : dynamic_paths)
+            object_state->sorted_dynamic_paths.push_back(path);
+        std::sort(object_state->sorted_dynamic_paths.begin(), object_state->sorted_dynamic_paths.end());
+    }
 
     /// In V1 version we had max_dynamic_paths parameter written, but now we need only actual number of dynamic paths.
     /// For compatibility we need to write V1 version sometimes, but we should write number of dynamic paths instead of
@@ -337,13 +390,26 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     if (serialization_version.value == SerializationVersion::V3)
     {
         shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion(settings.object_shared_data_serialization_version);
+        /// `object_shared_data_min_bytes_for_advanced_serialization` requires that the
+        /// "advanced" shared-data serialization is only used once a part is large
+        /// enough to amortize its cost. Below the threshold, fall back to
+        /// `map_with_buckets`, which is what the zero-level-parts default uses.
+        if (object_state->fold_dynamic_paths_into_shared_data
+            && shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+            shared_data_serialization_version.value = SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS;
         writeVarUInt(static_cast<UInt64>(shared_data_serialization_version.value), *stream);
         /// If serialization supports buckets, write number of buckets that will be used.
         if (shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS
             || shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
         {
             /// Avoid creating buckets for Wide part if shared data is empty.
-            if (settings.data_part_type != MergeTreeDataPartType::Wide || !statistics->shared_data_paths_statistics.empty())
+            /// When folding is active the input column's shared data may be empty,
+            /// but we are about to fold every dynamic path into it — use the
+            /// configured bucket count so reads of individual paths can still
+            /// parallelize over buckets.
+            if (settings.data_part_type != MergeTreeDataPartType::Wide
+                || !statistics->shared_data_paths_statistics.empty()
+                || (object_state->fold_dynamic_paths_into_shared_data && !dynamic_paths.empty()))
                 shared_data_buckets = settings.object_shared_data_buckets;
 
             writeVarUInt(shared_data_buckets, *stream);
@@ -743,6 +809,77 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
     return state;
 }
 
+namespace
+{
+/// Build a `shared_data` column (Array(Tuple(String, String))) covering rows
+/// `[offset, offset + limit)` of `column_object` such that every dynamic path
+/// is folded into shared data alongside the column's existing shared-data
+/// entries. Per-row entries are kept in sorted order by path name, mirroring
+/// the invariant maintained by `ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths`.
+ColumnPtr foldDynamicPathsIntoSharedData(
+    const ColumnObject & column_object,
+    size_t offset,
+    size_t limit)
+{
+    auto folded_column = DataTypeObject::getTypeOfSharedData()->createColumn();
+    auto [folded_paths, folded_values, folded_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(*folded_column);
+
+    const auto [src_shared_paths, src_shared_values, src_shared_offsets_ptr] = ColumnObject::getSharedDataPathsValuesAndOffsets(*column_object.getSharedDataPtr());
+    const auto & src_shared_offsets = *src_shared_offsets_ptr;
+    const auto & dynamic_paths_ptrs = column_object.getDynamicPathsPtrs();
+
+    /// Sort dynamic paths once; per-row insertion preserves the merge order.
+    std::vector<std::string_view> sorted_dynamic_paths;
+    sorted_dynamic_paths.reserve(dynamic_paths_ptrs.size());
+    for (const auto & [path, _] : dynamic_paths_ptrs)
+        sorted_dynamic_paths.emplace_back(path);
+    std::sort(sorted_dynamic_paths.begin(), sorted_dynamic_paths.end());
+
+    const size_t end_row = limit == 0 ? column_object.size() : std::min(offset + limit, column_object.size());
+
+    for (size_t row = offset; row < end_row; ++row)
+    {
+        size_t dynamic_idx = 0;
+        size_t shared_idx = src_shared_offsets[static_cast<ssize_t>(row) - 1];
+        const size_t shared_end = src_shared_offsets[row];
+
+        /// Merge sorted dynamic paths with the row's existing shared-data entries.
+        while (dynamic_idx < sorted_dynamic_paths.size() && shared_idx < shared_end)
+        {
+            const auto dyn_path = sorted_dynamic_paths[dynamic_idx];
+            const auto src_path = src_shared_paths->getDataAt(shared_idx);
+            if (dyn_path < src_path)
+            {
+                const auto & dyn_column = *dynamic_paths_ptrs.find(dyn_path)->second;
+                ColumnObject::serializePathAndValueIntoSharedData(folded_paths, folded_values, dyn_path, dyn_column, row);
+                ++dynamic_idx;
+            }
+            else
+            {
+                folded_paths->insertFrom(*src_shared_paths, shared_idx);
+                folded_values->insertFrom(*src_shared_values, shared_idx);
+                ++shared_idx;
+            }
+        }
+        for (; dynamic_idx < sorted_dynamic_paths.size(); ++dynamic_idx)
+        {
+            const auto dyn_path = sorted_dynamic_paths[dynamic_idx];
+            const auto & dyn_column = *dynamic_paths_ptrs.find(dyn_path)->second;
+            ColumnObject::serializePathAndValueIntoSharedData(folded_paths, folded_values, dyn_path, dyn_column, row);
+        }
+        for (; shared_idx < shared_end; ++shared_idx)
+        {
+            folded_paths->insertFrom(*src_shared_paths, shared_idx);
+            folded_values->insertFrom(*src_shared_values, shared_idx);
+        }
+
+        folded_offsets->push_back(folded_paths->size());
+    }
+
+    return folded_column;
+}
+}
+
 void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
@@ -807,7 +944,11 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
 
-    if (column_object.getDynamicPaths().size() != object_state->sorted_dynamic_paths.size())
+    /// When folding is active, `sorted_dynamic_paths` was forced to empty by the
+    /// prefix; the in-memory column still has its `dynamic_paths` populated. The
+    /// regular mismatch check would fire incorrectly, so it is gated.
+    if (!object_state->fold_dynamic_paths_into_shared_data
+        && column_object.getDynamicPaths().size() != object_state->sorted_dynamic_paths.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of number of dynamic paths in Object. Expected: {}, Got: {}", object_state->sorted_dynamic_paths.size(), column_object.getDynamicPaths().size());
 
     settings.path.push_back(Substream::ObjectData);
@@ -842,21 +983,50 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     }
 
     settings.path.push_back(Substream::ObjectSharedData);
-    object_state->shared_data_serialization->serializeBinaryBulkWithMultipleStreams(*shared_data, offset, limit, settings, object_state->shared_data_state);
-    if (object_state->recalculate_statistics)
+    if (object_state->fold_dynamic_paths_into_shared_data && !dynamic_paths.empty())
     {
-        /// Calculate statistics for paths in shared data.
-        const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
-        const auto & shared_data_offsets = column_object.getSharedDataOffsets();
-        size_t start = shared_data_offsets[offset - 1];
-        size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
-        for (size_t i = start; i != end; ++i)
+        /// All dynamic paths must be folded into shared data so the writer
+        /// produces a single substream regardless of how many paths the
+        /// in-memory column happens to have promoted.
+        ColumnPtr folded_shared_data = foldDynamicPathsIntoSharedData(column_object, offset, limit);
+        object_state->shared_data_serialization->serializeBinaryBulkWithMultipleStreams(*folded_shared_data, /*offset=*/ 0, /*limit=*/ 0, settings, object_state->shared_data_state);
+
+        if (object_state->recalculate_statistics)
         {
-            auto path = shared_data_paths->getDataAt(i);
-            if (auto it = object_state->statistics.shared_data_paths_statistics.find(path); it != object_state->statistics.shared_data_paths_statistics.end())
-                ++it->second;
-            else if (object_state->statistics.shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
-                object_state->statistics.shared_data_paths_statistics.emplace(path, 1);
+            /// Recompute statistics over the folded column. Each dynamic path
+            /// folded in counts towards `shared_data_paths_statistics`; nothing
+            /// is added to `dynamic_paths_statistics` because no dynamic path
+            /// is actually serialized to its own substream.
+            const auto [folded_paths, _, folded_offsets_ptr] = ColumnObject::getSharedDataPathsValuesAndOffsets(*folded_shared_data);
+            const size_t end_idx = folded_paths->size();
+            for (size_t i = 0; i < end_idx; ++i)
+            {
+                auto path = folded_paths->getDataAt(i);
+                if (auto it = object_state->statistics.shared_data_paths_statistics.find(path); it != object_state->statistics.shared_data_paths_statistics.end())
+                    ++it->second;
+                else if (object_state->statistics.shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
+                    object_state->statistics.shared_data_paths_statistics.emplace(path, 1);
+            }
+        }
+    }
+    else
+    {
+        object_state->shared_data_serialization->serializeBinaryBulkWithMultipleStreams(*shared_data, offset, limit, settings, object_state->shared_data_state);
+        if (object_state->recalculate_statistics)
+        {
+            /// Calculate statistics for paths in shared data.
+            const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
+            const auto & shared_data_offsets = column_object.getSharedDataOffsets();
+            size_t start = shared_data_offsets[offset - 1];
+            size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
+            for (size_t i = start; i != end; ++i)
+            {
+                auto path = shared_data_paths->getDataAt(i);
+                if (auto it = object_state->statistics.shared_data_paths_statistics.find(path); it != object_state->statistics.shared_data_paths_statistics.end())
+                    ++it->second;
+                else if (object_state->statistics.shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
+                    object_state->statistics.shared_data_paths_statistics.emplace(path, 1);
+            }
         }
     }
     settings.path.pop_back();

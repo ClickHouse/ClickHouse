@@ -1,0 +1,15 @@
+-- Below threshold: part stays Wide
+Wide
+-- Below threshold: zero per-dynamic-path substreams
+0
+-- Below threshold: data is readable
+200	4
+-- Threshold disabled: per-dynamic-path substreams ARE present
+1
+-- Setting has no effect on tables without dynamic-subcolumn columns
+Wide
+200
+-- Setting does not change Compact part type
+Compact
+-- Compact part data is readable
+200	4

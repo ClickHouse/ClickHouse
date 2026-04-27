@@ -97,7 +97,8 @@ struct MergeTreeWriterSettings
         bool rewrite_primary_key_,
         bool save_marks_in_cache_,
         bool save_primary_index_in_memory_,
-        bool blocks_are_granules_size_);
+        bool blocks_are_granules_size_,
+        size_t part_uncompressed_bytes_estimate_ = 0);
 
     size_t min_compress_block_size;
     size_t max_compress_block_size;
@@ -131,6 +132,17 @@ struct MergeTreeWriterSettings
     size_t min_columns_to_activate_adaptive_write_buffer;
     size_t adaptive_write_buffer_initial_size;
     bool compress_per_column_in_compact_parts;
+
+    /// Estimated uncompressed size of the part being written, used by per-column
+    /// serializations to choose between layouts that scale differently with size
+    /// (e.g. forcing JSON shared-data only for small parts to avoid file fan-out).
+    /// 0 means "unknown" — code that consults this field must treat 0 as "do not
+    /// override the default layout".
+    size_t part_uncompressed_bytes_estimate = 0;
+    /// Derived from the above and from `object_shared_data_min_bytes_for_advanced_serialization`.
+    /// When true, `SerializationObject` keeps every dynamic path inside the single
+    /// `ObjectSharedData` substream instead of materializing one substream per path.
+    bool force_object_shared_data_only = false;
 };
 
 }

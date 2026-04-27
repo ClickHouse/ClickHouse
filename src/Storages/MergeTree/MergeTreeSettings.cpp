@@ -349,6 +349,24 @@ namespace ErrorCodes
     The number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
     The maximum allowed value is 256.
     )", 0) \
+    DECLARE(UInt64, object_shared_data_min_bytes_for_advanced_serialization, 0, R"(
+    Minimum estimated uncompressed part size (in bytes) at which `JSON` /
+    `Object('json')` / `Dynamic` columns are allowed to materialize each
+    dynamic path as its own `.bin` substream in `Wide` parts. When the part
+    is smaller than this threshold, every dynamic path is folded into the
+    shared-data substream of the column, and the shared-data layout falls
+    back from `advanced` to `map_with_buckets` for that part — collapsing
+    a default 1024-dynamic-path column from 1024+ files down to one bucket
+    set. This avoids the per-file `PUT` amplification on object storage
+    that an under-filled `Wide` part otherwise causes. When set to `0`
+    (the default) the behavior is unchanged: dynamic paths are materialized
+    as individual substreams as soon as the column has them. The threshold
+    only affects `Wide` parts (Compact already packs every column into a
+    single `.bin`) and only the `JSON` / `Object` / `Dynamic` columns of
+    the part — non-dynamic columns keep their `Wide`-style layout.
+    See `https://github.com/ClickHouse/ClickHouse/issues/100960` and
+    `https://github.com/ClickHouse/ClickHouse/issues/102052`.
+    )", 0) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
     Serialization version for Dynamic data type. Required for compatibility.
 

@@ -27,7 +27,8 @@ public:
         bool reset_columns_,
         bool blocks_are_granules_size,
         const WriteSettings & write_settings,
-        WrittenOffsetSubstreams * written_offset_substreams);
+        WrittenOffsetSubstreams * written_offset_substreams,
+        size_t part_uncompressed_bytes_estimate_for_writer = 0);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
