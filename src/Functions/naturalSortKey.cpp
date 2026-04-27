@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB

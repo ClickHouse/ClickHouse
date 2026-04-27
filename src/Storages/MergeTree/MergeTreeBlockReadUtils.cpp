@@ -45,10 +45,10 @@ bool hasMaterializedTextIndex(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const String & virtual_column_name)
 {
-    if (storage_snapshot->metadata->virtuals.empty())
+    if (!storage_snapshot->virtual_columns)
         return false;
 
-    const auto * virtual_column = storage_snapshot->metadata->virtuals.tryGetDescription(virtual_column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    const auto * virtual_column = storage_snapshot->virtual_columns->tryGetDescription(virtual_column_name);
     if (!virtual_column)
         return false;
 
@@ -164,7 +164,7 @@ NameSet injectRequiredColumns(
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
+        .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
     for (size_t i = 0; i < columns.size(); ++i)
@@ -173,18 +173,9 @@ NameSet injectRequiredColumns(
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
 
-        /// Copy columns[i] to avoid a dangling reference: injectRequiredColumnsRecursively may call
-        /// columns.emplace_back, which can reallocate the vector and invalidate any reference into it.
-        String column_name = columns[i];
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
-            column_name,
-            storage_snapshot,
-            alter_conversions,
-            data_part_info_for_reader,
-            options,
-            columns,
-            required_columns,
-            injected_columns);
+            columns[i], storage_snapshot, alter_conversions,
+            data_part_info_for_reader, options, columns, required_columns, injected_columns);
     }
 
     /** Add a column of the minimum size.
@@ -460,7 +451,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
-        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
+        .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
     auto add_step = [&](const PrewhereExprStep & step)
