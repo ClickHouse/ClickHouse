@@ -72,5 +72,38 @@ SELECT lastChangeAtMerge(state) FROM (
     SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 3 AS ts, 1 AS value)
 );
 
+-- Overlap merge order regression: (0@1),(1@2),(1@3) merged as [1]->[3]->[2] must give 2, not 3.
+-- [3] is merged before [2], so [1]+[3] produces last_change_ts=3 (upper bound). When [2] is
+-- merged next its ts=2 falls inside the [1,3] range, triggering the overlap branch, which then
+-- keeps last_change_ts=3 — synthesising a change at ts=3 that never happened.
+SELECT lastChangeAtMerge(state) FROM (
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 1 AS ts, 0 AS value)
+    UNION ALL
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 3 AS ts, 1 AS value)
+    UNION ALL
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 2 AS ts, 1 AS value)
+);
+
+-- Bitmap: same regression — ({0}@1),({1}@2),({1}@3) merged as [1]->[3]->[2] must give 2, not 3.
+SELECT lastChangeAtMerge(state) FROM (
+    SELECT lastChangeAtState(bmp, ts) AS state FROM (
+        SELECT ts, groupBitmapState(toUInt32(n)) AS bmp
+        FROM (SELECT 1 AS ts, 0 AS n)
+        GROUP BY ts
+    )
+    UNION ALL
+    SELECT lastChangeAtState(bmp, ts) AS state FROM (
+        SELECT ts, groupBitmapState(toUInt32(n)) AS bmp
+        FROM (SELECT 3 AS ts, 1 AS n)
+        GROUP BY ts
+    )
+    UNION ALL
+    SELECT lastChangeAtState(bmp, ts) AS state FROM (
+        SELECT ts, groupBitmapState(toUInt32(n)) AS bmp
+        FROM (SELECT 2 AS ts, 1 AS n)
+        GROUP BY ts
+    )
+);
+
 -- Error: String value type is unsupported
 SELECT lastChangeAt('x', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

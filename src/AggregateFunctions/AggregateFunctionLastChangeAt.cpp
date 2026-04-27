@@ -35,227 +35,39 @@ namespace ErrorCodes
 namespace
 {
 
-// ─── Comparable value types ─────────────────────────────────────────────────
+// ─── Data structs ────────────────────────────────────────────────────────────
 
-/// Tracks the timestamp of the last actual change in `value` across an
-/// ordered sequence.  Identical consecutive values are not counted as a change.
-/// When no change is ever observed, returns the first timestamp seen.
 template <typename ValueType, typename TimestampType>
 struct AggregateFunctionLastChangeAtData
 {
-    ValueType first_value{};
-    ValueType last_value{};
-    TimestampType first_ts{};
-    TimestampType last_ts{};
-    TimestampType last_change_ts{};
-    bool has_changes = false;
+    using StoredType = ValueType;
+
+    ValueType prev_value{};
+    TimestampType prev_value_last_ts{};
+    ValueType new_value{};
+    TimestampType new_value_first_ts{};
+    TimestampType new_value_last_ts{};
     bool seen = false;
+
+    static bool storedEquals(const ValueType & a, const ValueType & b) { return a == b; }
+    static void copyStored(ValueType & dst, const ValueType & src) { dst = src; }
+    static void copyData(AggregateFunctionLastChangeAtData & dst, const AggregateFunctionLastChangeAtData & src) { dst = src; }
+    static bool argEquals(const ValueType & arg, const ValueType & stored) { return arg == stored; }
+    static void copyFromArg(ValueType & stored, const ValueType & arg) { stored = arg; }
 };
 
-template <typename ValueType, typename TimestampType>
-class AggregateFunctionLastChangeAt final
-    : public IAggregateFunctionDataHelper<
-        AggregateFunctionLastChangeAtData<ValueType, TimestampType>,
-        AggregateFunctionLastChangeAt<ValueType, TimestampType>>
-{
-    using Data = AggregateFunctionLastChangeAtData<ValueType, TimestampType>;
-
-public:
-    AggregateFunctionLastChangeAt(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionLastChangeAt>{
-            arguments, params, arguments[1]}
-    {
-    }
-
-    bool allocatesMemoryInArena() const override { return false; }
-
-    String getName() const override { return "lastChangeAt"; }
-
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
-    {
-        auto value = unalignedLoad<ValueType>(columns[0]->getRawData().data() + row_num * sizeof(ValueType));
-        auto ts    = unalignedLoad<TimestampType>(columns[1]->getRawData().data() + row_num * sizeof(TimestampType));
-
-        auto & data = this->data(place);
-
-        if (!data.seen)
-        {
-            data.first_value = value;
-            data.first_ts    = ts;
-            data.last_value  = value;
-            data.last_ts     = ts;
-            data.seen        = true;
-        }
-        else
-        {
-            if (value != data.last_value)
-            {
-                data.last_change_ts = ts;
-                data.has_changes    = true;
-            }
-            data.last_value = value;
-            data.last_ts    = ts;
-        }
-    }
-
-    /// Returns true if lhs time range is entirely before rhs time range.
-    bool ALWAYS_INLINE before(const Data & lhs, const Data & rhs) const
-    {
-        if (lhs.last_ts < rhs.first_ts)
-            return true;
-        if (lhs.last_ts == rhs.first_ts && (lhs.last_ts < rhs.last_ts || lhs.first_ts < rhs.first_ts))
-            return true;
-        return false;
-    }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs_ptr, Arena *) const override
-    {
-        auto & a       = this->data(place);
-        const auto & b = this->data(rhs_ptr);
-
-        if (!b.seen)
-            return;
-
-        if (!a.seen)
-        {
-            a = b;
-            return;
-        }
-
-        if (before(a, b))
-        {
-            /// a's range is entirely before b's.
-            const bool boundary_changed = (b.first_value != a.last_value);
-
-            if (b.has_changes)
-            {
-                a.last_change_ts = b.last_change_ts;
-                a.has_changes    = true;
-            }
-            else if (boundary_changed)
-            {
-                a.last_change_ts = b.first_ts;
-                a.has_changes    = true;
-            }
-
-            a.last_value = b.last_value;
-            a.last_ts    = b.last_ts;
-        }
-        else if (before(b, a))
-        {
-            /// b's range is entirely before a's.
-            const bool boundary_changed = (a.first_value != b.last_value);
-
-            TimestampType new_last_change_ts = a.last_change_ts;
-            bool new_has_changes             = a.has_changes;
-
-            if (!a.has_changes && boundary_changed)
-            {
-                new_last_change_ts = a.first_ts;
-                new_has_changes    = true;
-            }
-            else if (!a.has_changes)
-            {
-                new_last_change_ts = b.last_change_ts;
-                new_has_changes    = b.has_changes;
-            }
-
-            a.first_value    = b.first_value;
-            a.first_ts       = b.first_ts;
-            a.last_change_ts = new_last_change_ts;
-            a.has_changes    = new_has_changes;
-        }
-        else
-        {
-            /// Overlapping ranges: keep the later endpoint as authoritative and propagate
-            /// all known changes from both halves.  If the boundary values differ a change
-            /// must have occurred; later.last_ts is a safe (possibly conservative) upper bound.
-            const bool b_is_later      = b.last_ts >= a.last_ts;
-            const Data & later         = b_is_later ? b : a;
-            const Data & earlier       = b_is_later ? a : b;
-
-            TimestampType new_last_change_ts{};
-            bool new_has_changes = false;
-
-            if (later.has_changes)
-            {
-                new_last_change_ts = later.last_change_ts;
-                new_has_changes    = true;
-            }
-            if (earlier.has_changes && (!new_has_changes || earlier.last_change_ts > new_last_change_ts))
-            {
-                new_last_change_ts = earlier.last_change_ts;
-                new_has_changes    = true;
-            }
-            if (earlier.last_value != later.last_value
-                && (!new_has_changes || later.last_ts > new_last_change_ts))
-            {
-                new_last_change_ts = later.last_ts;
-                new_has_changes    = true;
-            }
-
-            ValueType     new_first_value = (b.first_ts < a.first_ts) ? b.first_value : a.first_value;
-            TimestampType new_first_ts    = (b.first_ts < a.first_ts) ? b.first_ts    : a.first_ts;
-
-            a.first_value    = new_first_value;
-            a.first_ts       = new_first_ts;
-            a.last_value     = later.last_value;
-            a.last_ts        = later.last_ts;
-            a.last_change_ts = new_last_change_ts;
-            a.has_changes    = new_has_changes;
-        }
-    }
-
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
-    {
-        const auto & data = this->data(place);
-        writeBinaryLittleEndian(data.first_value, buf);
-        writeBinaryLittleEndian(data.last_value, buf);
-        writeBinaryLittleEndian(data.first_ts, buf);
-        writeBinaryLittleEndian(data.last_ts, buf);
-        writeBinaryLittleEndian(data.last_change_ts, buf);
-        writeBinaryLittleEndian(data.has_changes, buf);
-        writeBinaryLittleEndian(data.seen, buf);
-    }
-
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
-    {
-        auto & data = this->data(place);
-        readBinaryLittleEndian(data.first_value, buf);
-        readBinaryLittleEndian(data.last_value, buf);
-        readBinaryLittleEndian(data.first_ts, buf);
-        readBinaryLittleEndian(data.last_ts, buf);
-        readBinaryLittleEndian(data.last_change_ts, buf);
-        readBinaryLittleEndian(data.has_changes, buf);
-        readBinaryLittleEndian(data.seen, buf);
-    }
-
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
-    {
-        const auto & data = this->data(place);
-        TimestampType result = data.has_changes ? data.last_change_ts : data.first_ts;
-        static_cast<ColumnFixedSizeHelper &>(to).template insertRawData<sizeof(TimestampType)>(
-            reinterpret_cast<const char *>(&result));
-    }
-};
-
-
-// ─── Bitmap value type ──────────────────────────────────────────────────────
-
-/// State for the bitmap specialisation.  Bitmaps are stored as heap-allocated
-/// objects and treated as equal when bitmapXorCardinality == 0.
 template <typename BitmapIntType, typename TimestampType>
 struct AggregateFunctionLastChangeBitmapTimeData
 {
     using BitmapData = AggregateFunctionGroupBitmapData<BitmapIntType>;
+    using StoredType = std::unique_ptr<BitmapData>;
 
-    std::unique_ptr<BitmapData> first_value;
-    std::unique_ptr<BitmapData> last_value;
-    TimestampType first_ts{};
-    TimestampType last_ts{};
-    TimestampType last_change_ts{};
-    bool has_changes = false;
-    bool seen        = false;
+    std::unique_ptr<BitmapData> prev_value;
+    TimestampType prev_value_last_ts{};
+    std::unique_ptr<BitmapData> new_value;
+    TimestampType new_value_first_ts{};
+    TimestampType new_value_last_ts{};
+    bool seen = false;
 
     static void copyBitmap(std::unique_ptr<BitmapData> & dst, const BitmapData & src)
     {
@@ -265,24 +77,40 @@ struct AggregateFunctionLastChangeBitmapTimeData
 
     static bool bitmapsEqual(const BitmapData & a, const BitmapData & b)
     {
-        return a.roaring_bitmap_with_small_set.rb_xor_cardinality(
-                   b.roaring_bitmap_with_small_set) == 0;
+        return a.roaring_bitmap_with_small_set.rb_xor_cardinality(b.roaring_bitmap_with_small_set) == 0;
     }
+
+    static bool storedEquals(const StoredType & a, const StoredType & b) { return bitmapsEqual(*a, *b); }
+    static void copyStored(StoredType & dst, const StoredType & src) { copyBitmap(dst, *src); }
+
+    static void copyData(
+        AggregateFunctionLastChangeBitmapTimeData & dst,
+        const AggregateFunctionLastChangeBitmapTimeData & src)
+    {
+        copyBitmap(dst.prev_value, *src.prev_value);
+        copyBitmap(dst.new_value, *src.new_value);
+        dst.prev_value_last_ts = src.prev_value_last_ts;
+        dst.new_value_first_ts = src.new_value_first_ts;
+        dst.new_value_last_ts  = src.new_value_last_ts;
+        dst.seen               = src.seen;
+    }
+
+    static bool argEquals(const BitmapData & arg, const StoredType & stored) { return bitmapsEqual(arg, *stored); }
+    static void copyFromArg(StoredType & stored, const BitmapData & arg) { copyBitmap(stored, arg); }
 };
 
-template <typename BitmapIntType, typename TimestampType>
-class AggregateFunctionLastChangeBitmapTime final
-    : public IAggregateFunctionDataHelper<
-        AggregateFunctionLastChangeBitmapTimeData<BitmapIntType, TimestampType>,
-        AggregateFunctionLastChangeBitmapTime<BitmapIntType, TimestampType>>
+
+// ─── Shared base ─────────────────────────────────────────────────────────────
+
+template <typename DataT, typename TimestampType, typename Derived>
+class AggregateFunctionLastChangeAtBase
+    : public IAggregateFunctionDataHelper<DataT, Derived>
 {
-    using Data    = AggregateFunctionLastChangeBitmapTimeData<BitmapIntType, TimestampType>;
-    using Bitmap  = AggregateFunctionGroupBitmapData<BitmapIntType>;
+    using Data = DataT;
 
 public:
-    AggregateFunctionLastChangeBitmapTime(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionLastChangeBitmapTime>{
-            arguments, params, arguments[1]}
+    AggregateFunctionLastChangeAtBase(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<Data, Derived>{arguments, params, arguments[1]}
     {
     }
 
@@ -290,39 +118,38 @@ public:
 
     String getName() const override { return "lastChangeAt"; }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    template <typename ValueArg>
+    void ALWAYS_INLINE doAdd(Data & data, const ValueArg & value, TimestampType ts) const
     {
-        const auto & col       = assert_cast<const ColumnAggregateFunction &>(*columns[0]);
-        const auto & new_bmp   = *reinterpret_cast<const Bitmap *>(col.getData()[row_num]);
-        auto ts = unalignedLoad<TimestampType>(columns[1]->getRawData().data() + row_num * sizeof(TimestampType));
-
-        auto & data = this->data(place);
-
         if (!data.seen)
         {
-            Data::copyBitmap(data.first_value, new_bmp);
-            Data::copyBitmap(data.last_value, new_bmp);
-            data.first_ts = ts;
-            data.last_ts  = ts;
-            data.seen     = true;
+            Data::copyFromArg(data.prev_value, value);
+            data.prev_value_last_ts = ts;
+            Data::copyFromArg(data.new_value, value);
+            data.new_value_first_ts = ts;
+            data.new_value_last_ts  = ts;
+            data.seen               = true;
+        }
+        else if (!Data::argEquals(value, data.new_value))
+        {
+            Data::copyStored(data.prev_value, data.new_value);
+            data.prev_value_last_ts = data.new_value_last_ts;
+            Data::copyFromArg(data.new_value, value);
+            data.new_value_first_ts = ts;
+            data.new_value_last_ts  = ts;
         }
         else
         {
-            if (!Data::bitmapsEqual(*data.last_value, new_bmp))
-            {
-                data.last_change_ts = ts;
-                data.has_changes    = true;
-            }
-            Data::copyBitmap(data.last_value, new_bmp);
-            data.last_ts = ts;
+            data.new_value_last_ts = ts;
         }
     }
 
     bool ALWAYS_INLINE before(const Data & lhs, const Data & rhs) const
     {
-        if (lhs.last_ts < rhs.first_ts)
+        if (lhs.new_value_first_ts < rhs.prev_value_last_ts)
             return true;
-        if (lhs.last_ts == rhs.first_ts && (lhs.last_ts < rhs.last_ts || lhs.first_ts < rhs.first_ts))
+        if (lhs.new_value_first_ts == rhs.prev_value_last_ts &&
+            (lhs.new_value_first_ts < rhs.new_value_first_ts || lhs.prev_value_last_ts < rhs.prev_value_last_ts))
             return true;
         return false;
     }
@@ -337,141 +164,285 @@ public:
 
         if (!a.seen)
         {
-            Data::copyBitmap(a.first_value, *b.first_value);
-            Data::copyBitmap(a.last_value, *b.last_value);
-            a.first_ts       = b.first_ts;
-            a.last_ts        = b.last_ts;
-            a.last_change_ts = b.last_change_ts;
-            a.has_changes    = b.has_changes;
-            a.seen           = true;
+            Data::copyData(a, b);
             return;
         }
 
         if (before(a, b))
         {
-            const bool boundary_changed = !Data::bitmapsEqual(*b.first_value, *a.last_value);
-
-            if (b.has_changes)
+            if (!Data::storedEquals(b.prev_value, b.new_value))
             {
-                a.last_change_ts = b.last_change_ts;
-                a.has_changes    = true;
+                Data::copyData(a, b);
+                return;
             }
-            else if (boundary_changed)
+            else if (!Data::storedEquals(a.new_value, b.prev_value))
             {
-                a.last_change_ts = b.first_ts;
-                a.has_changes    = true;
+                Data::copyStored(a.prev_value, a.new_value);
+                a.prev_value_last_ts = a.new_value_last_ts;
+                Data::copyStored(a.new_value, b.prev_value);
+                a.new_value_first_ts = b.prev_value_last_ts;
+                a.new_value_last_ts  = b.new_value_last_ts;
+                return;
+            }
+            else if (Data::storedEquals(a.prev_value, a.new_value))
+            {
+                if (b.prev_value_last_ts < a.prev_value_last_ts)
+                    a.prev_value_last_ts = b.prev_value_last_ts;
+                if (b.new_value_first_ts > a.new_value_first_ts)
+                    a.new_value_first_ts = b.new_value_first_ts;
             }
 
-            Data::copyBitmap(a.last_value, *b.last_value);
-            a.last_ts = b.last_ts;
+            if (b.new_value_last_ts > a.new_value_last_ts)
+                a.new_value_last_ts = b.new_value_last_ts;
         }
         else if (before(b, a))
         {
-            const bool boundary_changed = !Data::bitmapsEqual(*a.first_value, *b.last_value);
-
-            TimestampType new_last_change_ts = a.last_change_ts;
-            bool new_has_changes             = a.has_changes;
-
-            if (!a.has_changes && boundary_changed)
+            if (!Data::storedEquals(a.prev_value, a.new_value))
             {
-                new_last_change_ts = a.first_ts;
-                new_has_changes    = true;
+                return;
             }
-            else if (!a.has_changes)
+            else if (!Data::storedEquals(b.new_value, a.prev_value))
             {
-                new_last_change_ts = b.last_change_ts;
-                new_has_changes    = b.has_changes;
+                Data::copyStored(a.new_value, a.prev_value);
+                a.new_value_first_ts = a.prev_value_last_ts;
+                Data::copyStored(a.prev_value, b.new_value);
+                a.prev_value_last_ts = b.new_value_last_ts;
+                return;
             }
-
-            Data::copyBitmap(a.first_value, *b.first_value);
-            a.first_ts       = b.first_ts;
-            a.last_change_ts = new_last_change_ts;
-            a.has_changes    = new_has_changes;
+            else if (!Data::storedEquals(b.prev_value, b.new_value))
+            {
+                TimestampType buf = (a.new_value_last_ts > b.new_value_last_ts)
+                    ? a.new_value_last_ts
+                    : b.new_value_last_ts;
+                Data::copyData(a, b);
+                a.new_value_last_ts = buf;
+                return;
+            }
+            else
+            {
+                if (b.prev_value_last_ts < a.prev_value_last_ts)
+                    a.prev_value_last_ts = b.prev_value_last_ts;
+                if (b.new_value_first_ts > a.new_value_first_ts)
+                    a.new_value_first_ts = b.new_value_first_ts;
+                if (b.new_value_last_ts > a.new_value_last_ts)
+                    a.new_value_last_ts = b.new_value_last_ts;
+            }
         }
         else
         {
-            /// Overlapping ranges: keep the later endpoint as authoritative and propagate
-            /// all known changes from both halves.  If the boundary values differ a change
-            /// must have occurred; later.last_ts is a safe (possibly conservative) upper bound.
-            const bool b_is_later  = b.last_ts >= a.last_ts;
-            const Data & later     = b_is_later ? b : a;
-            const Data & earlier   = b_is_later ? a : b;
+            /// Overlapping ranges
+            const bool b_is_later = b.new_value_first_ts >= a.new_value_first_ts;
+            const Data & later    = b_is_later ? b : a;
+            const Data & earlier  = b_is_later ? a : b;
 
-            TimestampType new_last_change_ts{};
-            bool new_has_changes = false;
+            typename Data::StoredType prev_value{}, new_value{};
+            TimestampType prev_value_last_ts{}, new_value_first_ts{}, new_value_last_ts{};
 
-            if (later.has_changes)
+            if (earlier.prev_value_last_ts > later.prev_value_last_ts)
             {
-                new_last_change_ts = later.last_change_ts;
-                new_has_changes    = true;
+                // earlier is subrange of later
+
+                if (!Data::storedEquals(later.new_value, earlier.new_value))
+                {
+                    Data::copyStored(prev_value, earlier.new_value);
+                    Data::copyStored(new_value, later.new_value);
+                    prev_value_last_ts = earlier.new_value_last_ts;
+                    new_value_first_ts = later.new_value_first_ts;
+                    new_value_last_ts  = later.new_value_last_ts;
+                }
+                else if (!Data::storedEquals(later.new_value, earlier.prev_value))
+                {
+                    Data::copyStored(prev_value, earlier.prev_value);
+                    Data::copyStored(new_value, later.new_value);
+                    prev_value_last_ts = earlier.prev_value_last_ts;
+                    new_value_first_ts = earlier.new_value_first_ts;
+                    new_value_last_ts  = later.new_value_last_ts;
+                    if (earlier.new_value_last_ts > later.new_value_last_ts)
+                        new_value_last_ts = earlier.new_value_last_ts;
+                }
+                else if (!Data::storedEquals(later.prev_value, earlier.prev_value))
+                {
+                    Data::copyStored(prev_value, later.prev_value);
+                    Data::copyStored(new_value, earlier.prev_value);
+                    prev_value_last_ts = later.prev_value_last_ts;
+                    new_value_first_ts = earlier.prev_value_last_ts;
+                    new_value_last_ts  = later.new_value_last_ts;
+                    if (earlier.new_value_last_ts > later.new_value_last_ts)
+                        new_value_last_ts = earlier.new_value_last_ts;
+                }
+                else
+                {
+                    // all equals
+                    Data::copyStored(prev_value, later.prev_value);
+                    Data::copyStored(new_value, later.new_value);
+                    prev_value_last_ts = later.new_value_last_ts;
+                    new_value_first_ts = later.new_value_first_ts;
+                    new_value_last_ts  = later.new_value_last_ts;
+                    if (earlier.new_value_last_ts > later.new_value_last_ts)
+                        new_value_last_ts = earlier.new_value_last_ts;
+                }
             }
-            if (earlier.has_changes && (!new_has_changes || earlier.last_change_ts > new_last_change_ts))
+            else
             {
-                new_last_change_ts = earlier.last_change_ts;
-                new_has_changes    = true;
+                // earlier and later have intersection
+
+                if (!Data::storedEquals(later.new_value, earlier.new_value))
+                {
+                    Data::copyStored(prev_value, earlier.new_value);
+                    Data::copyStored(new_value, later.new_value);
+                    prev_value_last_ts = earlier.new_value_last_ts;
+                    new_value_first_ts = later.new_value_first_ts;
+                    new_value_last_ts  = later.new_value_last_ts;
+                }
+                else if (!Data::storedEquals(later.new_value, later.prev_value))
+                {
+                    Data::copyStored(prev_value, later.prev_value);
+                    Data::copyStored(new_value, later.new_value);
+                    prev_value_last_ts = later.prev_value_last_ts;
+                    new_value_first_ts = earlier.new_value_first_ts;
+                    new_value_last_ts  = later.new_value_last_ts;
+                    if (earlier.new_value_last_ts > later.new_value_last_ts)
+                        new_value_last_ts = earlier.new_value_last_ts;
+                }
+                else if (!Data::storedEquals(later.prev_value, earlier.prev_value))
+                {
+                    Data::copyStored(prev_value, earlier.prev_value);
+                    Data::copyStored(new_value, later.prev_value);
+                    prev_value_last_ts = earlier.prev_value_last_ts;
+                    new_value_first_ts = later.prev_value_last_ts;
+                    new_value_last_ts  = later.new_value_last_ts;
+                    if (earlier.new_value_last_ts > later.new_value_last_ts)
+                        new_value_last_ts = earlier.new_value_last_ts;
+                }
+                else
+                {
+                    // all equals
+                    Data::copyStored(prev_value, later.prev_value);
+                    Data::copyStored(new_value, later.new_value);
+                    prev_value_last_ts = later.new_value_last_ts;
+                    new_value_first_ts = later.new_value_first_ts;
+                    new_value_last_ts  = later.new_value_last_ts;
+                    if (earlier.new_value_last_ts > later.new_value_last_ts)
+                        new_value_last_ts = earlier.new_value_last_ts;
+                }
             }
-            if (!Data::bitmapsEqual(*earlier.last_value, *later.last_value)
-                && (!new_has_changes || later.last_ts > new_last_change_ts))
-            {
-                new_last_change_ts = later.last_ts;
-                new_has_changes    = true;
-            }
 
-            const bool update_first         = b.first_ts < a.first_ts;
-            const Bitmap & src_first        = update_first ? *b.first_value : *a.first_value;
-            const TimestampType new_first_ts = update_first ? b.first_ts    : a.first_ts;
-            const Bitmap & src_last         = *later.last_value;
-            const TimestampType new_last_ts  = later.last_ts;
-
-            if (&src_first != a.first_value.get())
-                Data::copyBitmap(a.first_value, src_first);
-            if (&src_last != a.last_value.get())
-                Data::copyBitmap(a.last_value, src_last);
-            a.first_ts       = new_first_ts;
-            a.last_ts        = new_last_ts;
-            a.last_change_ts = new_last_change_ts;
-            a.has_changes    = new_has_changes;
-        }
-    }
-
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
-    {
-        const auto & data = this->data(place);
-        writeBinaryLittleEndian(data.first_ts, buf);
-        writeBinaryLittleEndian(data.last_ts, buf);
-        writeBinaryLittleEndian(data.last_change_ts, buf);
-        writeBinaryLittleEndian(data.has_changes, buf);
-        writeBinaryLittleEndian(data.seen, buf);
-        if (data.seen)
-        {
-            data.first_value->roaring_bitmap_with_small_set.write(buf);
-            data.last_value->roaring_bitmap_with_small_set.write(buf);
-        }
-    }
-
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
-    {
-        auto & data = this->data(place);
-        readBinaryLittleEndian(data.first_ts, buf);
-        readBinaryLittleEndian(data.last_ts, buf);
-        readBinaryLittleEndian(data.last_change_ts, buf);
-        readBinaryLittleEndian(data.has_changes, buf);
-        readBinaryLittleEndian(data.seen, buf);
-        if (data.seen)
-        {
-            data.first_value = std::make_unique<Bitmap>();
-            data.first_value->roaring_bitmap_with_small_set.read(buf);
-            data.last_value = std::make_unique<Bitmap>();
-            data.last_value->roaring_bitmap_with_small_set.read(buf);
+            Data::copyStored(a.prev_value, prev_value);
+            Data::copyStored(a.new_value, new_value);
+            a.prev_value_last_ts = prev_value_last_ts;
+            a.new_value_first_ts = new_value_first_ts;
+            a.new_value_last_ts  = new_value_last_ts;
         }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         const auto & data = this->data(place);
-        TimestampType result = data.has_changes ? data.last_change_ts : data.first_ts;
+        TimestampType last_change_at = Data::storedEquals(data.prev_value, data.new_value) ? data.prev_value_last_ts : data.new_value_first_ts;
         static_cast<ColumnFixedSizeHelper &>(to).template insertRawData<sizeof(TimestampType)>(
-            reinterpret_cast<const char *>(&result));
+            reinterpret_cast<const char *>(&last_change_at));
+    }
+};
+
+
+// ─── Comparable value types ──────────────────────────────────────────────────
+
+template <typename ValueType, typename TimestampType>
+class AggregateFunctionLastChangeAt final
+    : public AggregateFunctionLastChangeAtBase<
+        AggregateFunctionLastChangeAtData<ValueType, TimestampType>,
+        TimestampType,
+        AggregateFunctionLastChangeAt<ValueType, TimestampType>>
+{
+    using Data = AggregateFunctionLastChangeAtData<ValueType, TimestampType>;
+    using Base = AggregateFunctionLastChangeAtBase<Data, TimestampType, AggregateFunctionLastChangeAt>;
+
+public:
+    using Base::Base;
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        auto value = unalignedLoad<ValueType>(columns[0]->getRawData().data() + row_num * sizeof(ValueType));
+        auto ts    = unalignedLoad<TimestampType>(columns[1]->getRawData().data() + row_num * sizeof(TimestampType));
+        this->doAdd(this->data(place), value, ts);
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
+    {
+        const auto & data = this->data(place);
+        writeBinaryLittleEndian(data.prev_value, buf);
+        writeBinaryLittleEndian(data.prev_value_last_ts, buf);
+        writeBinaryLittleEndian(data.new_value, buf);
+        writeBinaryLittleEndian(data.new_value_first_ts, buf);
+        writeBinaryLittleEndian(data.new_value_last_ts, buf);
+        writeBinaryLittleEndian(data.seen, buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
+    {
+        auto & data = this->data(place);
+        readBinaryLittleEndian(data.prev_value, buf);
+        readBinaryLittleEndian(data.prev_value_last_ts, buf);
+        readBinaryLittleEndian(data.new_value, buf);
+        readBinaryLittleEndian(data.new_value_first_ts, buf);
+        readBinaryLittleEndian(data.new_value_last_ts, buf);
+        readBinaryLittleEndian(data.seen, buf);
+    }
+};
+
+
+// ─── Bitmap value type ───────────────────────────────────────────────────────
+
+template <typename BitmapIntType, typename TimestampType>
+class AggregateFunctionLastChangeBitmapTime final
+    : public AggregateFunctionLastChangeAtBase<
+        AggregateFunctionLastChangeBitmapTimeData<BitmapIntType, TimestampType>,
+        TimestampType,
+        AggregateFunctionLastChangeBitmapTime<BitmapIntType, TimestampType>>
+{
+    using Data   = AggregateFunctionLastChangeBitmapTimeData<BitmapIntType, TimestampType>;
+    using Bitmap = AggregateFunctionGroupBitmapData<BitmapIntType>;
+    using Base   = AggregateFunctionLastChangeAtBase<Data, TimestampType, AggregateFunctionLastChangeBitmapTime>;
+
+public:
+    using Base::Base;
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        const auto & col     = assert_cast<const ColumnAggregateFunction &>(*columns[0]);
+        const auto & new_bmp = *reinterpret_cast<const Bitmap *>(col.getData()[row_num]);
+        auto ts = unalignedLoad<TimestampType>(columns[1]->getRawData().data() + row_num * sizeof(TimestampType));
+        this->doAdd(this->data(place), new_bmp, ts);
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
+    {
+        const auto & data = this->data(place);
+        writeBinaryLittleEndian(data.prev_value_last_ts, buf);
+        writeBinaryLittleEndian(data.new_value_first_ts, buf);
+        writeBinaryLittleEndian(data.new_value_last_ts, buf);
+        writeBinaryLittleEndian(data.seen, buf);
+        if (data.seen)
+        {
+            data.prev_value->roaring_bitmap_with_small_set.write(buf);
+            data.new_value->roaring_bitmap_with_small_set.write(buf);
+        }
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
+    {
+        auto & data = this->data(place);
+        readBinaryLittleEndian(data.prev_value_last_ts, buf);
+        readBinaryLittleEndian(data.new_value_first_ts, buf);
+        readBinaryLittleEndian(data.new_value_last_ts, buf);
+        readBinaryLittleEndian(data.seen, buf);
+        if (data.seen)
+        {
+            data.prev_value = std::make_unique<Bitmap>();
+            data.prev_value->roaring_bitmap_with_small_set.read(buf);
+            data.new_value = std::make_unique<Bitmap>();
+            data.new_value->roaring_bitmap_with_small_set.read(buf);
+        }
     }
 };
 
@@ -549,7 +520,7 @@ IAggregateFunction * createBitmapWithIntType(
 {
     WhichDataType w(bitmap_int_type);
     IAggregateFunction * res = nullptr;
-    if (w.idx == TypeIndex::UInt8)  res = createBitmapWithTimestampType<UInt8>(ts_type, args...);
+    if (w.idx == TypeIndex::UInt8)       res = createBitmapWithTimestampType<UInt8>(ts_type, args...);
     else if (w.idx == TypeIndex::UInt16) res = createBitmapWithTimestampType<UInt16>(ts_type, args...);
     else if (w.idx == TypeIndex::UInt32) res = createBitmapWithTimestampType<UInt32>(ts_type, args...);
     else if (w.idx == TypeIndex::UInt64) res = createBitmapWithTimestampType<UInt64>(ts_type, args...);
