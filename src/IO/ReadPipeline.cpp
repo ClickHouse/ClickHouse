@@ -463,7 +463,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                     /* use_external_buffer */ false, /* restrict_seek */ false);
             };
 
-            bool use_ext_buf_for_dc = memory_cache.has_value() || async_prefetch.has_value();
+            /// DC manages its own buffer (reads from TCP). Same as the gather path.
+            bool use_ext_buf_for_dc = false;
             impl = DistributedCache::readWithDistributedCache(
                 source->objects.at(0).remote_path,
                 source->objects,
