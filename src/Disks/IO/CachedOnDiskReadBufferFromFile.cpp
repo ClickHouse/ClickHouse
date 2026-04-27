@@ -1085,6 +1085,17 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         }
     }
 
+    if (internal_buffer.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "CachedOnDiskReadBufferFromFile::nextImplStep: internal_buffer is empty. "
+            "use_external_buffer={}, file_offset={}, read_type={}, "
+            "file_segment={}, source_path={}",
+            use_external_buffer, file_offset_of_buffer_end,
+            toString(state->read_type),
+            info.file_segments->front().range().toString(),
+            info.source_file_path);
+
     state->buf->set(internal_buffer.begin(), internal_buffer.size());
     size_t size = 0;
     {

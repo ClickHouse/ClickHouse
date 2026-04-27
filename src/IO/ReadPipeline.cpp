@@ -280,7 +280,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             }
         }
 
-        bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value() || distributed_cache;
+        /// use_external_buffer is true only when a downstream stage (memory cache, async prefetch)
+        /// manages the working buffer. Distributed cache does NOT require it — on master, DC
+        /// always implied async prefetch (use_async_buffer = use_prefetch || use_distributed_cache),
+        /// but in ReadPipeline these are independent stages. DC reads from TCP and manages its own buffer.
+        bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value();
 
         size_t total_objects_size = getTotalSize(source->objects);
         size_t effective_buffer_size = settings.remote_fs_buffer_size;
@@ -288,17 +292,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         if (!use_external_buffer && total_objects_size > 0)
             buffer_size = std::min(buffer_size, total_objects_size);
 
-        impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-            std::move(gather_creator),
-            source->objects,
-            settings,
-            use_external_buffer,
-            buffer_size);
-
         /// -- Stage 3.5: Distributed cache --
         /// When enabled, reads go through distributed cache servers with fallback to
-        /// direct object storage reads. The page cache condition is already handled
-        /// by the caller (DiskObjectStorage::prepareRead checks use_page_cache_with_distributed_cache).
+        /// direct object storage reads via a Gather reader.
 #if ENABLE_DISTRIBUTED_CACHE
         if (distributed_cache)
         {
@@ -307,28 +303,44 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ReadPipeline: distributed cache requires ObjectStorageSource");
 
-            auto dc_storage = dc_obj_source->storage;
-            auto dc_objects = source->objects;
-            auto dc_settings = settings;
-
-            auto fallback_creator = [dc_storage, dc_objects, dc_settings]()
+            /// The fallback must be a full Gather reader — same chain as the non-DC path.
+            /// ReadBufferFromDistributedCache calls set() on the fallback with its own
+            /// internal_buffer before reading, and Gather propagates it to per-object buffers.
+            auto fallback_creator = [gather_creator, objects = source->objects,
+                                     captured_settings = settings, effective_buffer_size]() mutable
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                return dc_storage->readObject(
-                    dc_objects.at(0), dc_settings, {},
-                    /* use_external_buffer */ true, /* restrict_seek */ false);
+                /// The fallback Gather must use use_external_buffer=false and manage its
+                /// own buffer. When DC falls back, it calls set() on the fallback with
+                /// DC's own internal_buffer — which may be empty when DC itself uses
+                /// external buffer mode. A self-buffered Gather works independently.
+                return std::make_unique<ReadBufferFromRemoteFSGather>(
+                    std::move(gather_creator),
+                    objects,
+                    captured_settings,
+                    /* use_external_buffer */ false,
+                    effective_buffer_size);
             };
 
             impl = DistributedCache::readWithDistributedCache(
                 source->objects.at(0).remote_path,
                 source->objects,
                 settings,
-                *dc_storage,
+                *dc_obj_source->storage,
                 use_external_buffer,
                 std::move(fallback_creator),
                 distributed_cache->include_credentials_in_cache_key);
         }
+        else
 #endif
+        {
+            impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(gather_creator),
+                source->objects,
+                settings,
+                use_external_buffer,
+                buffer_size);
+        }
     }
     else
     {
@@ -429,6 +441,39 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 }
             }, source->source);
         }
+
+        /// -- Stage 2.5 (non-gather): Distributed cache --
+#if ENABLE_DISTRIBUTED_CACHE
+        if (distributed_cache)
+        {
+            const auto * dc_obj_source = std::get_if<ObjectStorageSource>(&source->source);
+            if (!dc_obj_source)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ReadPipeline: distributed cache requires ObjectStorageSource");
+
+            /// Fallback: read directly from object storage (same as non-DC path).
+            /// use_external_buffer=false because DC calls set() on the fallback with its
+            /// own internal_buffer which may be empty in external buffer mode.
+            auto fallback_creator = [storage = dc_obj_source->storage,
+                                     object = source->objects.at(0),
+                                     captured_settings = settings]()
+                -> std::unique_ptr<ReadBufferFromFileBase>
+            {
+                return storage->readObject(object, captured_settings, {},
+                    /* use_external_buffer */ false, /* restrict_seek */ false);
+            };
+
+            bool use_ext_buf_for_dc = memory_cache.has_value() || async_prefetch.has_value();
+            impl = DistributedCache::readWithDistributedCache(
+                source->objects.at(0).remote_path,
+                source->objects,
+                settings,
+                *dc_obj_source->storage,
+                use_ext_buf_for_dc,
+                std::move(fallback_creator),
+                distributed_cache->include_credentials_in_cache_key);
+        }
+#endif
     }
 
     /// -- Stage 4: Memory cache --
