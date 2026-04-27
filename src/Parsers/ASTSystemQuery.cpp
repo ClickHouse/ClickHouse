@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -653,6 +654,16 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeString("replica", replica);
     if (!shard.empty())
         w.writeString("shard", shard);
+    if (!zk_name.empty())
+        w.writeString("zk_name", zk_name);
+    if (!full_replica_zk_path.empty())
+        w.writeString("full_replica_zk_path", full_replica_zk_path);
+    if (!replica_zk_path.empty())
+        w.writeString("replica_zk_path", replica_zk_path);
+    if (is_drop_whole_replica)
+        w.writeBool("is_drop_whole_replica", true);
+    if (with_tables)
+        w.writeBool("with_tables", true);
     if (!storage_policy.empty())
         w.writeString("storage_policy", storage_policy);
     if (!volume.empty())
@@ -661,13 +672,105 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeString("disk", disk);
     if (seconds != 0)
         w.writeUInt("seconds", seconds);
+    if (untracked_memory_size != 0)
+        w.writeUInt("untracked_memory_size", untracked_memory_size);
+    if (query_result_cache_tag.has_value())
+        w.writeString("query_result_cache_tag", *query_result_cache_tag);
     if (!filesystem_cache_name.empty())
         w.writeString("filesystem_cache_name", filesystem_cache_name);
+    if (!distributed_cache_server_id.empty())
+        w.writeString("distributed_cache_server_id", distributed_cache_server_id);
+    if (distributed_cache_drop_connections)
+        w.writeBool("distributed_cache_drop_connections", true);
+    if (!key_to_drop.empty())
+        w.writeString("key_to_drop", key_to_drop);
+    if (offset_to_drop.has_value())
+        w.writeUInt("offset_to_drop", *offset_to_drop);
     if (!backup_name.empty())
         w.writeString("backup_name", backup_name);
     w.writeChild("backup_source", backup_source);
+    if (!schema_cache_storage.empty())
+        w.writeString("schema_cache_storage", schema_cache_storage);
+    if (!schema_cache_format.empty())
+        w.writeString("schema_cache_format", schema_cache_format);
+    if (!queue_path.empty())
+        w.writeString("queue_path", queue_path);
     if (!fail_point_name.empty())
         w.writeString("fail_point_name", fail_point_name);
+    if (fail_point_action != FailPointAction::UNSPECIFIED)
+        w.writeInt("fail_point_action", static_cast<Int64>(fail_point_action));
+    if (!delta_kernel_tracing_level.empty())
+        w.writeString("delta_kernel_tracing_level", delta_kernel_tracing_level);
+    if (!coverage_test_name.empty())
+        w.writeString("coverage_test_name", coverage_test_name);
+    if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+        w.writeInt("sync_replica_mode", static_cast<Int64>(sync_replica_mode));
+    if (!src_replicas.empty())
+    {
+        w.writeKey("src_replicas");
+        auto & buf = w.getOut();
+        buf << '[';
+        for (size_t i = 0; i < src_replicas.size(); ++i)
+        {
+            if (i > 0) buf << ',';
+            writeJSONString(src_replicas[i], buf, w.getFormatSettings());
+        }
+        buf << ']';
+    }
+    if (fake_time_for_view.has_value())
+        w.writeInt("fake_time_for_view", *fake_time_for_view);
+    if (!tables.empty())
+    {
+        w.writeKey("tables");
+        auto & buf = w.getOut();
+        buf << '[';
+        for (size_t i = 0; i < tables.size(); ++i)
+        {
+            if (i > 0) buf << ',';
+            buf << "{\"database\":";
+            writeJSONString(tables[i].first, buf, w.getFormatSettings());
+            buf << ",\"table\":";
+            writeJSONString(tables[i].second, buf, w.getFormatSettings());
+            buf << '}';
+        }
+        buf << ']';
+    }
+    if (type == Type::STOP_LISTEN || type == Type::START_LISTEN)
+    {
+        w.writeKey("server_type");
+        auto & buf = w.getOut();
+        buf << "{\"type\":" << static_cast<Int64>(server_type.type);
+        if (!server_type.custom_name.empty())
+        {
+            buf << ",\"custom_name\":";
+            writeJSONString(server_type.custom_name, buf, w.getFormatSettings());
+        }
+        if (!server_type.exclude_types.empty())
+        {
+            buf << ",\"exclude_types\":[";
+            bool first_excl = true;
+            for (auto t : server_type.exclude_types)
+            {
+                if (!first_excl) buf << ',';
+                first_excl = false;
+                buf << static_cast<Int64>(t);
+            }
+            buf << ']';
+        }
+        if (!server_type.exclude_custom_names.empty())
+        {
+            buf << ",\"exclude_custom_names\":[";
+            bool first_excl = true;
+            for (const auto & n : server_type.exclude_custom_names)
+            {
+                if (!first_excl) buf << ',';
+                first_excl = false;
+                writeJSONString(n, buf, w.getFormatSettings());
+            }
+            buf << ']';
+        }
+        buf << '}';
+    }
     if (!cluster.empty())
         w.writeString("cluster", cluster);
     w.writeChildren(children);
@@ -676,7 +779,11 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
 void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    type = static_cast<Type>(r.getInt("query_type"));
+    Int64 query_type_value = r.getInt("query_type");
+    auto query_type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(query_type_value));
+    if (!query_type_opt || static_cast<Int64>(*query_type_opt) != query_type_value)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM query_type: {}", query_type_value);
+    type = *query_type_opt;
     database = r.readChild("database");
     if (database)
         children.push_back(database);
@@ -691,16 +798,105 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     target_function = r.getString("target_function");
     replica = r.getString("replica");
     shard = r.getString("shard");
+    zk_name = r.getString("zk_name");
+    full_replica_zk_path = r.getString("full_replica_zk_path");
+    replica_zk_path = r.getString("replica_zk_path");
+    is_drop_whole_replica = r.getBool("is_drop_whole_replica");
+    with_tables = r.getBool("with_tables");
     storage_policy = r.getString("storage_policy");
     volume = r.getString("volume");
     disk = r.getString("disk");
     seconds = r.getUInt("seconds");
+    untracked_memory_size = r.getUInt("untracked_memory_size");
+    if (r.has("query_result_cache_tag"))
+        query_result_cache_tag = r.getString("query_result_cache_tag");
     filesystem_cache_name = r.getString("filesystem_cache_name");
+    distributed_cache_server_id = r.getString("distributed_cache_server_id");
+    distributed_cache_drop_connections = r.getBool("distributed_cache_drop_connections");
+    key_to_drop = r.getString("key_to_drop");
+    if (r.has("offset_to_drop"))
+        offset_to_drop = r.getUInt("offset_to_drop");
     backup_name = r.getString("backup_name");
     backup_source = r.readChild("backup_source");
     if (backup_source)
         children.push_back(backup_source);
+    schema_cache_storage = r.getString("schema_cache_storage");
+    schema_cache_format = r.getString("schema_cache_format");
+    queue_path = r.getString("queue_path");
     fail_point_name = r.getString("fail_point_name");
+    if (r.has("fail_point_action"))
+    {
+        Int64 action_value = r.getInt("fail_point_action");
+        auto action_opt = magic_enum::enum_cast<FailPointAction>(static_cast<std::underlying_type_t<FailPointAction>>(action_value));
+        if (!action_opt || static_cast<Int64>(*action_opt) != action_value)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM fail_point_action: {}", action_value);
+        fail_point_action = *action_opt;
+    }
+    delta_kernel_tracing_level = r.getString("delta_kernel_tracing_level");
+    coverage_test_name = r.getString("coverage_test_name");
+    if (r.has("sync_replica_mode"))
+    {
+        Int64 mode_value = r.getInt("sync_replica_mode");
+        auto mode_opt = magic_enum::enum_cast<SyncReplicaMode>(static_cast<std::underlying_type_t<SyncReplicaMode>>(mode_value));
+        if (!mode_opt || static_cast<Int64>(*mode_opt) != mode_value)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM sync_replica_mode: {}", mode_value);
+        sync_replica_mode = *mode_opt;
+    }
+    src_replicas = r.readStringArray("src_replicas");
+    if (r.has("fake_time_for_view"))
+        fake_time_for_view = r.getInt("fake_time_for_view");
+    if (r.has("tables"))
+    {
+        auto arr = r.getArray("tables");
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tables' is not a JSON array");
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto t_obj = arr->getObject(i);
+            if (!t_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'tables' array during AST JSON deserialization", i);
+            tables.emplace_back(
+                t_obj->getValue<String>("database"),
+                t_obj->getValue<String>("table"));
+        }
+    }
+    if (r.has("server_type"))
+    {
+        auto srv_obj = r.getNestedObject("server_type");
+        if (!srv_obj)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type' is not a JSON object");
+        Int64 srv_type_value = srv_obj->getValue<Poco::Int64>("type");
+        auto srv_type_opt = magic_enum::enum_cast<ServerType::Type>(static_cast<std::underlying_type_t<ServerType::Type>>(srv_type_value));
+        if (!srv_type_opt || static_cast<Int64>(*srv_type_opt) != srv_type_value)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.type: {}", srv_type_value);
+        server_type.type = *srv_type_opt;
+        if (srv_obj->has("custom_name"))
+            server_type.custom_name = srv_obj->getValue<String>("custom_name");
+        if (srv_obj->has("exclude_types"))
+        {
+            auto arr = srv_obj->getArray("exclude_types");
+            if (arr)
+            {
+                for (unsigned int i = 0; i < arr->size(); ++i)
+                {
+                    Int64 v = arr->getElement<Poco::Int64>(i);
+                    auto opt = magic_enum::enum_cast<ServerType::Type>(static_cast<std::underlying_type_t<ServerType::Type>>(v));
+                    if (!opt || static_cast<Int64>(*opt) != v)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.exclude_types[{}]: {}", i, v);
+                    server_type.exclude_types.insert(*opt);
+                }
+            }
+        }
+        if (srv_obj->has("exclude_custom_names"))
+        {
+            auto arr = srv_obj->getArray("exclude_custom_names");
+            if (arr)
+            {
+                for (unsigned int i = 0; i < arr->size(); ++i)
+                    server_type.exclude_custom_names.insert(arr->getElement<String>(i));
+            }
+        }
+    }
     cluster = r.getString("cluster");
 }
 
