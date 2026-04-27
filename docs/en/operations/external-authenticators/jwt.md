@@ -22,7 +22,7 @@ The authentication flow works as follows:
 1. A client presents a signed JWT via one of the supported transport mechanisms (HTTP `Authorization: Bearer` header, the TCP native protocol, or the gRPC `jwt` field).
 2. ClickHouse validates the token signature.
 3. Required claims (`exp`, `iat`, `iss`, `sub`, `aud`) are verified.
-4. An ephemeral user is created in memory with access rights derived from the `clickhouse:grants` and `clickhouse:roles` token claims, intersected with a permission ceiling.
+4. An ephemeral user is created in memory with access rights derived from the `clickhouse:grants` and `clickhouse:roles` token claims, intersected with a permission limit.
 5. When the token expires, a background garbage collection task removes the user.
 
 ## Token claims {#token-claims}
@@ -41,6 +41,17 @@ Every JWT presented to ClickHouse must contain the following claims:
 | `aud` | Audience. Matched against the provider's expected audience. |
 
 The `kid` (key ID) header claim is also required when JWKS-based key resolution is used.
+
+:::note JWKS mode supports RSA keys only
+While static-key providers accept any of `HS256`, `RS256`, or `ES256`, JWKS-based providers only accept JWKs whose `kty` is `RSA` (i.e., tokens signed with `RS256`). Tokens signed with HMAC (`HS256`) or EC (`ES256`) keys cannot be verified against a JWKS endpoint and will be rejected.
+:::
+
+### Other recognized claims {#other-recognized-claims}
+
+| Claim | Description |
+|---|---|
+| `nbf` | Not-before time. This claim is not required, but if present, tokens are rejected before this time. |
+| `jti` | Reserved. Accepted in tokens but not currently validated or used. |
 
 ### Optional claims {#optional-claims}
 
@@ -92,10 +103,10 @@ The `<claims_hash>` portion changes whenever the `clickhouse:roles` or `clickhou
 Effective access rights are computed as:
 
 ```text
-effective_rights = permission_ceiling ∩ (token_grants ∪ token_roles)
+effective_rights = permission_limit ∩ (token_grants ∪ token_roles)
 ```
 
-Where `permission_ceiling` is the set of access rights held by a reference role or user configured as the upper bound. Rights requested by the token that exceed the ceiling are silently dropped.
+Where `permission_limit` is the set of access rights held by a reference role or user configured as the upper bound. Rights requested by the token that exceed the limit are silently dropped.
 
 ### Token freshness {#token-freshness}
 
@@ -107,18 +118,21 @@ Ephemeral users are created when a token is first authenticated and removed by a
 
 Between GC runs, expired users may still be visible in `system.users` but can no longer authenticate.
 
-### Persistent access assignments via UUID {#persistent-access-assignments}
+### Persistent access assignments {#persistent-access-assignments}
 
-Because the UUID is stable, you can assign settings profiles, quotas, row policies, and column masking policies to a JWT user's UUID using SQL statements. These assignments persist in the access control storage (on disk or in ZooKeeper) and survive token expiry and re-authentication.
+Because the UUID is stable, you can assign settings profiles, quotas, row policies, and column masking policies to a JWT user using SQL statements. These assignments persist in the access control storage (on disk or in ZooKeeper) and survive token expiry and re-authentication.
+
+Reference the user by their current username:
 
 ```sql
--- Assign a settings profile to a JWT user's UUID
-ALTER SETTINGS PROFILE my_profile ADD TO ID('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
 ```
 
 :::note
-The UUID for a given identity can be found in the `id` column of `system.users` while the user is active.
+The username and UUID for a given identity can be found in the `name` and `id` columns of `system.users` while the user is active.
 :::
+
+Note that `ALTER USER` does not work on JWT users directly, as they are read-only. To assign settings profiles, quotas, or policies, use the `ALTER SETTINGS PROFILE`, `ALTER QUOTA`, or `ALTER ROW POLICY` statements as shown above.
 
 ## Differences from regular users {#differences-from-regular-users}
 
@@ -132,7 +146,7 @@ The UUID for a given identity can be found in the `id` column of `system.users` 
 | Username | Auto-generated, volatile | Administrator-chosen, fixed |
 | UUID | Deterministic from `iss`+`sub`+`aud` | Random at creation time |
 | Lifetime | Bounded by token `exp` | Until explicitly dropped |
-| Access rights | Derived from token claims, capped by permission ceiling | Explicitly granted via `GRANT` |
+| Access rights | Derived from token claims, capped by permission limit | Explicitly granted via `GRANT` |
 | Host restrictions | Per-provider network configuration | Per-user `HOST` clause |
 | Settings profiles | Assignable by UUID (persistent) | Directly configurable |
 | Quotas and row policies | Assignable by UUID (persistent) | Directly configurable |
@@ -179,13 +193,27 @@ The `clickhouse-client` supports an interactive OAuth2 device code flow via the 
 clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
 
+## ClickHouse Cloud built-in JWT authenticator {#clickhouse-cloud-built-in}
+
+Every ClickHouse Cloud service comes with a predefined JWT authenticator that is used by SQL Console and the `clickhouse-client` `--login` flow. This authenticator is configured with:
+
+| Parameter | Value |
+|---|---|
+| `iss` (issuer) | `ClickHouse` |
+| `aud` (audience) | The service UUID (visible in the Cloud console URL) |
+| `sub` (subject) | Your ClickHouse Cloud account email address |
+
+The built-in authenticator has a permission limit set to the `default_role` role and the `default` user. This means the effective rights of any JWT user are intersected with the grants held by those two entities, so a token can never escalate privileges beyond what `default_role` and `default` are allowed to do.
+
+You do not need to configure anything to use this authenticator. It is provisioned automatically when the service is created.
+
 ## Interserver communication {#interserver-communication}
 
-When a query is forwarded to another shard or replica, the JWT token is included in the interserver protocol (requires protocol revision 54476 or later). The remote node re-authenticates the token independently, creating its own ephemeral user. This means that all nodes in a cluster must have a matching JWT provider configuration.
+When a query is forwarded to another shard or replica, the JWT token is included in the interserver protocol. The remote node re-authenticates the token independently, creating its own ephemeral user.
 
 ## Troubleshooting {#troubleshooting}
 
-- **No access rights granted:** The permission ceiling may not be configured, or the referenced role or user may lack the required grants. Without a permission ceiling, JWT users receive no access.
+- **No access rights granted:** The referenced role or user may lack the required grants. Ensure the the roles referenced in the `clickhouse:roles` exist and include the appropriate grants.
 - **Token rejected:** Verify that `iss`, `aud`, and the signing algorithm in your token match what the JWT provider expects. If JWKS is used, ensure the token's `kid` matches a key in the provider's key set.
 - **User disappears between queries:** Ephemeral users are removed after token expiry. Use a client that supports token refresh (e.g., `--login` mode) for long-running sessions.
 - **`CREATE USER ... IDENTIFIED WITH jwt` fails:** This is expected. JWT users cannot be created via DDL. They are managed entirely by the token lifecycle.
