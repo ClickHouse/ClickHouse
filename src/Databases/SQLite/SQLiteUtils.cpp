@@ -1,6 +1,7 @@
 #include <Databases/SQLite/SQLiteUtils.h>
 
 #if USE_SQLITE
+#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
@@ -52,17 +53,11 @@ String validateSQLiteDatabasePath(const String & path, const Strings & user_file
 
     if (need_check)
     {
-        bool inside = false;
-        for (const auto & ufp : user_files_paths)
-        {
-            String absolute_ufp = fs::absolute(ufp).lexically_normal();
-            if (absolute_path.starts_with(absolute_ufp))
-            {
-                inside = true;
-                break;
-            }
-        }
-        if (!inside)
+        /// Use a path-aware boundary check (`pathStartsWith`) instead of raw string-prefix
+        /// matching. Plain `starts_with` would incorrectly accept sibling roots that share a
+        /// textual prefix (e.g. allowed `/var/lib/clickhouse/user_files` vs input
+        /// `/var/lib/clickhouse/user_files_evil/db.sqlite`).
+        if (!pathStartsWith(absolute_path, user_files_paths))
         {
             processSQLiteError(fmt::format("SQLite database file path '{}' must be inside 'user_files' directory", path), throw_on_error);
             return "";
