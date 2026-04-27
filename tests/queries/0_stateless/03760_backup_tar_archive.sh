@@ -14,8 +14,8 @@ rm -rf "${backups_disk_root:?}/${backup_name}" 2>/dev/null || true
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t0 SYNC"
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t1 SYNC"
 
-$CLICKHOUSE_CLIENT --query "CREATE TABLE t0 (c1 Int) ENGINE = MergeTree() ORDER BY c1 PARTITION BY (c1 % 6451)"
-$CLICKHOUSE_CLIENT --query "SET min_insert_block_size_rows = 64, optimize_trivial_insert_select = 1; INSERT INTO TABLE t0 (c1) SELECT number FROM numbers(500)"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE t0 (c1 Int) ENGINE = MergeTree() ORDER BY c1 PARTITION BY (c1 % 10)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE t0 (c1) SELECT number FROM numbers(500)"
 
 $CLICKHOUSE_CLIENT --query "BACKUP TABLE t0 TO Disk('backups', '${backup_name}') FORMAT Null"
 
