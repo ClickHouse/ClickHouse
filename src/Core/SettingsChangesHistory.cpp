@@ -41,6 +41,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.2",
         {
+            {"http_max_fields", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
+            {"http_max_field_name_size", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
+            {"http_max_request_header_size", 0, 10485760, "New setting to limit total HTTP request header size before authentication."},
+            {"http_headers_read_timeout", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."},
             {"allow_fuzz_query_functions", false, false, "New setting to enable the fuzzQuery function."},
             {"ast_fuzzer_runs", 0, 0, "New setting to enable server-side AST fuzzer."},
             {"ast_fuzzer_any_query", false, false, "New setting to allow fuzzing all query types, not just read-only."},
