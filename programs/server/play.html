@@ -181,6 +181,8 @@
         #databases-icon
         {
             grid-area: databases-icon;
+            text-decoration: none;
+            display: block;
         }
 
         #databases
@@ -747,9 +749,9 @@
 
 <body>
     <div id="menu">
-        <div id="databases-icon" class="menu-icon">
+        <a id="databases-icon" class="menu-icon" href="">
             <svg id="databases-toggle" viewBox="0 0 9 9"><path d="M0,0 h1 v8 h-1 z"/><path d="M2,0 h1 v8 h-1 z"/><path d="M4,0 h1 v8 h-1 z"/><path d="M6,0 h1 v8 h-1 z"/><path d="M8,3.25 h1 v1.5 h-1 z"/></svg>
-        </div>
+        </a>
         <div id="databases"></div>
         <!-- https://github.com/logos -->
         <div id="github-icon" class="menu-icon">
@@ -2566,12 +2568,24 @@ function toggleDatabases() {
     }
 }
 
+/// The logo is an <a> element so that Ctrl/Cmd/Shift+click and middle-click
+/// natively open the current page (with the query) in a new tab.
+/// We update the href on mousedown so it always reflects the current URL.
+document.getElementById('databases-icon').addEventListener('mousedown', () => {
+    document.getElementById('databases-icon').href = window.location.href;
+});
+
 databases_toggle.addEventListener('click', e => {
     e.stopPropagation();
+    /// Let the browser handle modifier clicks as a link (open in new tab).
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    /// Normal click: toggle the databases panel instead of following the link.
+    e.preventDefault();
     toggleDatabases();
 });
 
 document.getElementById('menu').addEventListener('click', e => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle') && !e.target.closest('button')) {
         toggleDatabases();
     }
