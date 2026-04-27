@@ -1,0 +1,28 @@
+--- forward + head ---
+A
+--- backward + tail ---
+\N
+--- forward + first_match (two matchers; require both) ---
+\N
+--- forward + last_match ---
+\N
+--- backward + first_match ---
+\N
+--- backward + last_match ---
+\N
+--- partitioned with GROUP BY (merge path) ---
+p1	A
+p2	\N
+--- too few events (<= events_size): NULL ---
+\N
+--- empty input ---
+\N
+--- error: invalid direction ---
+--- error: invalid base ---
+--- error: forward + tail is rejected ---
+--- error: backward + head is rejected ---
+--- error: event column must be String ---
+--- max_args_function: max_events=32 allowed ---
+\N
+--- -Distinct aggregator combinator ---
+A
