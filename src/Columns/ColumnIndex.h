@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <utility>
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
@@ -87,7 +88,12 @@ private:
     template <typename IndexType>
     const typename ColumnVector<IndexType>::Container & getIndexesData() const;
 
-    void updateSizeOfType() { size_of_type = getSizeOfIndexType(*indexes, size_of_type); }
+    /// `indexes` may be shared with the source column when called from
+    /// `ColumnLowCardinality::create(const ColumnPtr &, const ColumnPtr &, bool)`,
+    /// so the non-const `WrappedPtr::operator*` would go through `assumeMutableRef`
+    /// and trip `chassert(use_count() == 1)`. Use the const overload — read access
+    /// is enough to inspect the index type.
+    void updateSizeOfType() { size_of_type = getSizeOfIndexType(*std::as_const(indexes), size_of_type); }
     void expandType();
 
     template <typename IndexType>
