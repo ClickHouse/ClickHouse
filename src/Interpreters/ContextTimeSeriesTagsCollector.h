@@ -65,6 +65,12 @@ public:
     TagNamesAndValuesPtr getTagsByGroup(Group group) const;
     std::vector<TagNamesAndValuesPtr> getTagsByGroup(const std::vector<Group> & groups_) const;
 
+    /// Returns a sampling key for a specified group. The sampling key is a stable UInt64 hash
+    /// derived from the tags of a specified group. It's intended as a deterministic sort key
+    /// for sampling operations like `limitk` and `limit_ratio`.
+    UInt64 getSamplingKeyByGroup(Group group) const;
+    std::vector<UInt64> getSamplingKeyByGroup(const std::vector<Group> & groups_) const;
+
     /// Extracts the value of a specified tag, or an empty string if there is no such tag in the group.
     String extractTag(Group group, const String & tag_to_extract) const;
     std::vector<String> extractTag(const std::vector<Group> & groups_, const String & tag_to_extract) const;
@@ -154,25 +160,37 @@ private:
     template <typename TransformFunc2>
     std::vector<Group> transformTags2(const std::vector<Group> & groups1, const std::vector<Group> & groups2, TransformFunc2 && transform_func);
 
+    /// Key for `groups_for_tags`. The hash is computed once in the constructor.
+    struct TagsKey
+    {
+        TagNamesAndValuesPtr tags;
+        UInt64 hash; /// hash calculated from `tags`
+        explicit TagsKey(TagNamesAndValuesPtr tags_);
+    };
+
+    struct Hash
+    {
+        size_t operator()(const TagsKey & key) const { return key.hash; }
+    };
+
+    struct Equal
+    {
+        bool operator()(const TagsKey & left, const TagsKey & right) const;
+    };
+
     /// Adds a group associated with a specified set of tags.
     /// If there is such a group already the function returns it.
     Group tryAddGroupUnlocked(const TagNamesAndValuesPtr & tags) TSA_REQUIRES(mutex);
+    Group tryAddGroupUnlocked(TagsKey && key) TSA_REQUIRES(mutex);
 
     mutable SharedMutex mutex;
 
     std::vector<TagNamesAndValuesPtr> groups TSA_GUARDED_BY(mutex);
 
-    struct Equal
-    {
-        bool operator()(const TagNamesAndValuesPtr & left, const TagNamesAndValuesPtr & right) const;
-    };
+    /// Sampling key (stable UInt64 hash of tags) for each group.
+    std::vector<UInt64> sampling_keys TSA_GUARDED_BY(mutex);
 
-    struct Hash
-    {
-        size_t operator()(const TagNamesAndValuesPtr & ptr) const;
-    };
-
-    std::unordered_map<TagNamesAndValuesPtr, Group, Hash, Equal> groups_for_tags TSA_GUARDED_BY(mutex);
+    std::unordered_map<TagsKey, Group, Hash, Equal> groups_for_tags TSA_GUARDED_BY(mutex);
 
     template <typename IDType>
     struct IDMap

@@ -1754,7 +1754,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Implicit statistics (auto_statistics_types) are not serialized to ZooKeeper,
     /// so we need to re-add them after loading metadata from ZK.
     auto settings = getSettings();
-    auto [auto_stats_types, _] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings);
+    auto [auto_stats_types, _] = getNewImplicitStatisticsTypes(new_metadata, *settings);
     addImplicitStatistics(new_metadata.columns, auto_stats_types);
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
@@ -6647,7 +6647,7 @@ void StorageReplicatedMergeTree::alter(
     commands.apply(future_metadata, query_context);
 
     auto old_settings = getSettings();
-    auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(future_metadata, *old_settings);
+    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
     if (commands.isSettingsAlter())
@@ -8441,11 +8441,6 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
     return pipeline;
-}
-
-bool StorageReplicatedMergeTree::hasLightweightDeletedMask() const
-{
-    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
 }
 
 size_t StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
