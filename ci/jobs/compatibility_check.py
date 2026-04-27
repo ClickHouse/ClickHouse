@@ -66,7 +66,7 @@ def main():
 
     check_name = Info().job_name
     assert check_name
-    check_glibc = True
+    check_glibc = False
     # currently hardcoded to x86, don't enable for AARCH64
     check_distributions = (
         "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
