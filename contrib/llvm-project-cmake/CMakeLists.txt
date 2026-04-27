@@ -402,8 +402,6 @@ target_compile_definitions(llvm-min-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 # musl has these in libc, so no separate libraries needed
 if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-min-tblgen PRIVATE pthread dl)
-elseif (UNIX AND NOT APPLE)
-    target_link_libraries(llvm-min-tblgen PRIVATE pthread)
 endif()
 
 # When using musl, native build tools need CRT objects (crt1, crti, crtn) for _start.
@@ -560,8 +558,6 @@ target_compile_definitions(llvm-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 # musl has these in libc, so no separate libraries needed
 if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-tblgen PRIVATE pthread dl)
-elseif (UNIX AND NOT APPLE)
-    target_link_libraries(llvm-tblgen PRIVATE pthread)
 endif()
 
 # When using musl, native build tools need CRT objects (crt1, crti, crtn) for _start.
