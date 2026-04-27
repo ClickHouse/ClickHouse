@@ -235,8 +235,12 @@ public:
             const Data & later    = b_is_later ? b : a;
             const Data & earlier  = b_is_later ? a : b;
 
-            typename Data::StoredType prev_value{}, new_value{};
-            TimestampType prev_value_last_ts{}, new_value_first_ts{}, new_value_last_ts{};
+            typename Data::StoredType prev_value{};
+            typename Data::StoredType new_value{};
+            
+            TimestampType prev_value_last_ts{};
+            TimestampType new_value_first_ts{};
+            TimestampType new_value_last_ts{};
 
             if (earlier.prev_value_last_ts > later.prev_value_last_ts)
             {
@@ -275,7 +279,7 @@ public:
                     // all equals
                     Data::copyStored(prev_value, later.prev_value);
                     Data::copyStored(new_value, later.new_value);
-                    prev_value_last_ts = later.new_value_last_ts;
+                    prev_value_last_ts = later.prev_value_last_ts;
                     new_value_first_ts = later.new_value_first_ts;
                     new_value_last_ts  = later.new_value_last_ts;
                     if (earlier.new_value_last_ts > later.new_value_last_ts)
@@ -319,7 +323,7 @@ public:
                     // all equals
                     Data::copyStored(prev_value, later.prev_value);
                     Data::copyStored(new_value, later.new_value);
-                    prev_value_last_ts = later.new_value_last_ts;
+                    prev_value_last_ts = earlier.prev_value_last_ts;
                     new_value_first_ts = later.new_value_first_ts;
                     new_value_last_ts  = later.new_value_last_ts;
                     if (earlier.new_value_last_ts > later.new_value_last_ts)
