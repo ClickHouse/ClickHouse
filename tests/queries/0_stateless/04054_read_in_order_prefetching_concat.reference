@@ -12,3 +12,7 @@ reverse_no_prefetching_single_part
 1
 reverse_correctness
 0
+stream_cap_with_many_parts
+1
+stream_cap_with_max_streams_setting
+1

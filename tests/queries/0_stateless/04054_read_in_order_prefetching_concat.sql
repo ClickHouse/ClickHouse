@@ -90,3 +90,39 @@ SELECT countIf(key > prev_key) FROM (
 ) WHERE prev_key != 0;
 
 DROP TABLE t_prefetching_concat_reverse;
+
+-- Stream count cap: with many parts and a small read-stream budget, the total
+-- number of `MergeTreeSelect` read pipelines must not exceed the configured cap.
+-- This guards against per-part splitting inflating stream count beyond
+-- `max_threads` / `max_streams_for_merge_tree_reading` when there are more
+-- parts than streams (where each part needs at least one stream).
+DROP TABLE IF EXISTS t_prefetching_concat_cap;
+CREATE TABLE t_prefetching_concat_cap (key UInt64, value String)
+ENGINE = MergeTree PARTITION BY (key % 16) ORDER BY key;
+INSERT INTO t_prefetching_concat_cap SELECT number, toString(number) FROM numbers(2000000);
+OPTIMIZE TABLE t_prefetching_concat_cap FINAL;
+
+SELECT 'stream_cap_with_many_parts';
+SELECT
+    sum(if(toUInt64OrZero(extract(explain, '× ([0-9]+)')) = 0,
+        toUInt64(1),
+        toUInt64OrZero(extract(explain, '× ([0-9]+)')))) <= 4
+FROM (
+    EXPLAIN PIPELINE
+    SELECT * FROM t_prefetching_concat_cap ORDER BY key
+    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1
+) WHERE explain LIKE '%MergeTreeSelect%';
+
+SELECT 'stream_cap_with_max_streams_setting';
+SELECT
+    sum(if(toUInt64OrZero(extract(explain, '× ([0-9]+)')) = 0,
+        toUInt64(1),
+        toUInt64OrZero(extract(explain, '× ([0-9]+)')))) <= 4
+FROM (
+    EXPLAIN PIPELINE
+    SELECT * FROM t_prefetching_concat_cap ORDER BY key
+    SETTINGS enable_parallel_replicas = 0, max_threads = 16, max_streams_for_merge_tree_reading = 4,
+             allow_asynchronous_read_from_io_pool_for_merge_tree = 0, optimize_read_in_order = 1
+) WHERE explain LIKE '%MergeTreeSelect%';
+
+DROP TABLE t_prefetching_concat_cap;

@@ -1357,26 +1357,41 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         /// Even without PrefetchingConcat, split parts into multiple streams
         /// when the downstream wants parallel streams (e.g. aggregation-in-order).
-        const bool can_split_parts = can_use_per_part_prefetching || (prefer_multiple_streams && num_streams > 1);
+        ///
+        /// Per-part splitting requires at least one stream for every part, so it can
+        /// only stay within the `num_streams` budget when there are no more parts than
+        /// streams. With more parts than streams we fall through to the original
+        /// distribute-by-streams loop below, which groups multiple parts into a single
+        /// stream and keeps the total stream count bounded by `num_streams`.
+        const bool can_split_parts =
+            (can_use_per_part_prefetching || (prefer_multiple_streams && num_streams > 1))
+            && parts_with_ranges.size() <= num_streams;
 
         if (can_split_parts)
         {
             size_t streams_remaining = num_streams;
             size_t marks_remaining_total = info.sum_marks;
+            size_t parts_left = parts_with_ranges.size();
 
             for (const auto & part : parts_with_ranges)
             {
                 const size_t marks_in_part = part.getMarksCount();
 
-                /// Allocate streams proportional to marks, bounded by the global budget.
+                /// Reserve at least one stream for each remaining part (including this one),
+                /// so that the total number of streams never exceeds `num_streams`.
+                const size_t max_streams_for_this_part = streams_remaining > parts_left - 1
+                    ? streams_remaining - (parts_left - 1)
+                    : 1;
+
+                /// Allocate streams proportional to marks, bounded by the per-part cap.
                 size_t part_streams = 1;
-                if (streams_remaining > 1 && marks_remaining_total > 0)
+                if (max_streams_for_this_part > 1 && marks_remaining_total > 0)
                 {
                     part_streams = std::max<size_t>(1,
                         static_cast<size_t>(std::round(
                             static_cast<double>(marks_in_part) / static_cast<double>(marks_remaining_total)
                             * static_cast<double>(streams_remaining))));
-                    part_streams = std::min(part_streams, streams_remaining);
+                    part_streams = std::min(part_streams, max_streams_for_this_part);
 
                     /// Don't create more streams than marks available for concurrent reading.
                     if (marks_in_part < part_streams * info.min_marks_for_concurrent_read)
@@ -1385,6 +1400,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
                 streams_remaining -= std::min(part_streams, streams_remaining);
                 marks_remaining_total -= std::min(marks_in_part, marks_remaining_total);
+                --parts_left;
 
                 if (part_streams <= 1)
                 {
