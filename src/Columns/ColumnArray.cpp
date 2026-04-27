@@ -594,7 +594,10 @@ ColumnPtr ColumnArray::convertToFullColumnIfConst() const
 {
     /// It is possible to have an array with constant data and non-constant offsets.
     /// Example is the result of expression: replicate('hello', [1])
-    return ColumnArray::create(data->convertToFullColumnIfConst(), offsets);
+    auto full_data = data->convertToFullColumnIfConst();
+    if (full_data.get() == data.get())
+        return getPtr();
+    return ColumnArray::create(std::move(full_data), offsets);
 }
 
 void ColumnArray::getExtremes(Field & min, Field & max, size_t start, size_t end) const
