@@ -6,6 +6,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
