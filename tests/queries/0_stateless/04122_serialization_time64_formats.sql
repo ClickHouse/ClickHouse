@@ -37,10 +37,10 @@ SELECT t FROM format(CSV, 't Time64(3)',
 '"12:30:45.123"
 ''00:00:00.000''') ORDER BY t;
 
-SELECT '--- CSV input: deserializeTextCSV without quotes (numeric) ---';
+SELECT '--- CSV input: deserializeTextCSV without quotes (unquoted time strings) ---';
 SELECT t FROM format(CSV, 't Time64(3)',
-'45045123
-0') ORDER BY t;
+'12:30:45.123
+00:00:00.000') ORDER BY t;
 
 SELECT '--- TSV input: deserializeTextEscaped ---';
 SELECT t FROM format(TabSeparated, 't Time64(3)',
