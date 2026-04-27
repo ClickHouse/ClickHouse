@@ -36,15 +36,18 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
     while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(std::as_const(data).get()))
         data = const_data->getDataColumnPtr();
 
-    if (data->size() != 1)
+    /// `data` stays shared with the caller after the loop, so dereferences must
+    /// also use the const path to avoid the same assertion.
+    const auto & const_data = std::as_const(data);
+    if (const_data->size() != 1)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-                        "Incorrect size of nested column in constructor of ColumnConst: {}, must be 1.", data->size());
+                        "Incorrect size of nested column in constructor of ColumnConst: {}, must be 1.", const_data->size());
 
     /// Check that the value is initialized. We do it earlier, before it will be used, to ease debugging.
 #if defined(MEMORY_SANITIZER)
-    if (data->isFixedAndContiguous())
+    if (const_data->isFixedAndContiguous())
     {
-        auto value = data->getDataAt(0);
+        auto value = const_data->getDataAt(0);
         __msan_check_mem_is_initialized(value.data(), value.size());
     }
 #endif
