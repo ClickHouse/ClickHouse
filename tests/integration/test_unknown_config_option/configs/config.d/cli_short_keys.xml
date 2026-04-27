@@ -1,0 +1,13 @@
+<clickhouse>
+    <!--
+        Simulates short CLI options that argsToConfig() injects as top-level
+        keys when the server is started with -C/-L/-E/-P/-h/-V. These must be
+        accepted by checkUnknownSettings.
+    -->
+    <C>/etc/clickhouse-server/config.xml</C>
+    <L>/var/log/clickhouse-server/clickhouse-server.log</L>
+    <E>/var/log/clickhouse-server/clickhouse-server.err.log</E>
+    <P>/var/run/clickhouse-server/clickhouse-server.pid</P>
+    <h>1</h>
+    <V>1</V>
+</clickhouse>

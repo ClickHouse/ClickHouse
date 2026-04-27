@@ -27,6 +27,14 @@ node_protocols_custom_handlers = cluster_protocols.add_instance(
     main_configs=["configs/config.d/protocols_custom_handlers.xml"],
 )
 
+# Positive case: short CLI option keys (C/L/E/P/h/V) injected by `argsToConfig`
+# must not be rejected by checkUnknownSettings.
+cluster_short_cli = ClickHouseCluster(__file__, name="short_cli")
+node_short_cli = cluster_short_cli.add_instance(
+    "node_short_cli",
+    main_configs=["configs/config.d/cli_short_keys.xml"],
+)
+
 
 @pytest.fixture(scope="module")
 def start_bad_cluster():
@@ -59,6 +67,13 @@ def start_protocols_cluster():
     cluster_protocols.shutdown()
 
 
+@pytest.fixture(scope="module")
+def start_short_cli_cluster():
+    cluster_short_cli.start()
+    yield
+    cluster_short_cli.shutdown()
+
+
 def test_unknown_config_option_rejected(start_bad_cluster):
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_exception
     assert "some_completely_unknown_option" in caught_exception
@@ -79,3 +94,10 @@ def test_protocols_custom_handlers_accepted(start_protocols_cluster):
     assert (
         node_protocols_custom_handlers.query("SELECT 1").strip() == "1"
     )
+
+
+def test_short_cli_option_keys_accepted(start_short_cli_cluster):
+    # If the unknown-key validator rejected the single-letter keys C/L/E/P/h/V
+    # that argsToConfig injects for short CLI options, the node would have
+    # failed to start.
+    assert node_short_cli.query("SELECT 1").strip() == "1"

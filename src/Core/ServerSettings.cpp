@@ -2025,6 +2025,17 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// Poco internal layers (SystemConfiguration injects "system" into the layered config)
         "system",
+
+        /// Short forms of the CLI options above. `argsToConfig` strips all
+        /// leading hyphens and stores the remainder as the top-level key,
+        /// so e.g. `-C config.xml` becomes the top-level key `C`.
+        /// Keep in sync with `BaseDaemon::defineOptions` and `Server::defineOptions`.
+        "C", /// -C: alias for --config-file
+        "L", /// -L: alias for --log-file
+        "E", /// -E: alias for --errorlog-file
+        "P", /// -P: alias for --pid-file
+        "h", /// -h: alias for --help
+        "V", /// -V: alias for --version
     };
 
     /// Some config sections have user-defined names (e.g., graphite rollup rules, HTTP handlers).
