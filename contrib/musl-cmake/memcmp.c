@@ -51,7 +51,7 @@ int memcmp(const void *vl, const void *vr, size_t n)
         uint8x16_t eq = vceqq_u8(a, b);
         /* Compress each byte's top bit to a 64-bit mask (4 bits per lane). */
         uint64_t mask = vgetq_lane_u64(vreinterpretq_u64_u8(
-            vshrn_n_u16(vreinterpretq_u16_u8(eq), 4)), 0);
+            vshrn_n_u16(vreinterpret_u16_u8(eq), 4)), 0);
         if (mask != UINT64_C(0xFFFFFFFFFFFFFFFF))
         {
             unsigned idx = (unsigned)(__builtin_ctzll(~mask) >> 2);
