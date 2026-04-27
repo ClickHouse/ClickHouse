@@ -37,7 +37,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects objects, std::optional<size_t> read_hint)
@@ -143,11 +142,6 @@ void ReadPipeline::needDecryption(String path, size_t buffer_size, KeyFinderFunc
     decryption_stages.push_back(DecryptionStage{.path = std::move(path), .buffer_size = buffer_size, .key_finder = std::move(key_finder)});
 }
 
-void ReadPipeline::needDecompression(bool allow_different_codecs)
-{
-    decompression = DecompressionStage{.allow_different_codecs = allow_different_codecs};
-}
-
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 {
     if (!source)
@@ -160,9 +154,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 
     if (source->objects.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source has no stored objects");
-
-    if (decompression)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReadPipeline: decompression stage is not yet implemented");
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
 
@@ -551,8 +542,6 @@ String ReadPipeline::describe() const
         append("AsyncPrefetch");
     if (!decryption_stages.empty())
         append("Decrypt");
-    if (decompression)
-        append("Decompress");
 
     return result.empty() ? "(empty)" : result;
 }

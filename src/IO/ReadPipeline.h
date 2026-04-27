@@ -164,9 +164,6 @@ public:
     /// read from the encryption header. It must return the decryption key.
     void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
 
-    /// -- Decompression stage --
-    void needDecompression(bool allow_different_codecs = false);
-
     /// -- Build the final ReadBuffer chain --
     /// Uses the ReadSettings stored via setReadSettings().
     std::unique_ptr<ReadBufferFromFileBase> build() const;
@@ -222,10 +219,6 @@ private:
         KeyFinderFunc key_finder;
     };
 
-    struct DecompressionStage
-    {
-        bool allow_different_codecs = false;
-    };
 
     struct DistributedCacheStage
     {
@@ -239,7 +232,6 @@ private:
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::vector<DecryptionStage> decryption_stages;
-    std::optional<DecompressionStage> decompression;
     std::optional<ReadSettings> read_settings;
 };
 
