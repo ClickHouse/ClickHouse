@@ -797,7 +797,30 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
     for (Int64 i = actions_stack_size; i >= 0; --i)
     {
-        actions_stack[i].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
+        auto column_type = column_node.getColumnType();
+
+        /// When inside a lambda scope, if the column name matches a lambda argument name,
+        /// use the lambda argument type. At runtime, name-based binding in the ActionsDAG
+        /// will resolve this column to the lambda parameter, not the table column.
+        /// This matters when `*` expansion introduces a table column whose name is shadowed
+        /// by a lambda parameter — the DAG input type must match the lambda parameter type.
+        const auto & scope_node = actions_stack[i].getScopeNode();
+        if (scope_node && scope_node->getNodeType() == QueryTreeNodeType::LAMBDA)
+        {
+            const auto & lambda = scope_node->as<LambdaNode &>();
+            const auto & arg_names = lambda.getArgumentNames();
+            const auto & arg_nodes = lambda.getArguments().getNodes();
+            for (size_t j = 0; j < arg_names.size(); ++j)
+            {
+                if (arg_names[j] == column_node_name)
+                {
+                    column_type = arg_nodes[j]->getResultType();
+                    break;
+                }
+            }
+        }
+
+        actions_stack[i].addInputColumnIfNecessary(column_node_name, column_type);
 
         auto column_source = column_node.getColumnSourceOrNull();
         if (column_source &&
@@ -921,6 +944,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     lambda_actions_dag.getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
     lambda_actions_dag.removeUnusedActions(Names(1, lambda_expression_node_name));
 
+    /// The actual return type from the lambda actions DAG may differ from the query tree's
+    /// return type when a lambda parameter name shadows a table column name and `*` expansion
+    /// introduces the table column into the lambda body. In the query tree, `*` expands to
+    /// the table column type, but in the DAG, name-based binding resolves it to the lambda
+    /// parameter type. Use the DAG's actual output type to keep types consistent.
+    auto actual_lambda_return_type = lambda_actions_dag.getOutputs().front()->result_type;
+
     Names captured_column_names;
     ActionsDAG::NodeRawConstPtrs lambda_children;
     Names required_column_names = lambda_actions_dag.getRequiredColumnsNames();
@@ -945,21 +975,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), CompileExpressions::yes);
     auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
-        std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
+        std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, actual_lambda_return_type, lambda_expression_node_name, true);
 
     // TODO: Pass IFunctionBase here not FunctionCaptureOverloadResolver.
     const auto * actions_node = actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
-
-    if (!result_type->equals(*actions_node->result_type))
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Lambda resolved type {} is not equal to type from actions DAG {}",
-            result_type, actions_node->result_type);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = level + 1; i < actions_stack_size; ++i)
     {
         auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputColumnIfNecessary(lambda_node_name, result_type);
+        actions_stack_node.addInputColumnIfNecessary(lambda_node_name, actions_node->result_type);
     }
 
     return {lambda_node_name, levels};

@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (x UInt32) ENGINE = MergeTree ORDER BY tuple();
+SELECT * FROM t PREWHERE NULL + arrayMap(x -> *, [1]);
+DROP TABLE t;
+
