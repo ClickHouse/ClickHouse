@@ -196,7 +196,8 @@ public:
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
-        bool need_only_count_ = false);
+        bool need_only_count_ = false,
+        StorageID storage_id_ = StorageID::createEmpty());
 
     ~StorageURLSource() override;
 
@@ -237,12 +238,14 @@ private:
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;
+    std::optional<time_t> current_file_last_modified;
     String format;
     const std::optional<FormatSettings> & format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
     bool need_only_count;
+    StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 

@@ -197,25 +197,6 @@ void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
-void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
-{
-    for (const auto & interpreter : nested_interpreters)
-    {
-        if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))
-        {
-            auto filter = select_interpreter->getRowPolicyFilter();
-            if (filter)
-            {
-                for (const auto & row_policy : filter->policies)
-                {
-                    auto name = row_policy->getFullName().toString();
-                    elem.used_row_policies.emplace(std::move(name));
-                }
-            }
-        }
-    }
-}
-
 void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

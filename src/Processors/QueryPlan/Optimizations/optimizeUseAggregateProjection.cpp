@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Sources/NullSource.h>
@@ -362,8 +363,9 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection
-        && !reading.getMergeTreeData().has_lightweight_delete_parts.load();
+    bool can_use_minmax_projection = allow_implicit_projections
+        && metadata->minmax_count_projection
+        && !reading.getMutationsSnapshot()->hasLightweightDeletedMask();
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
@@ -674,6 +676,10 @@ std::optional<String> optimizeUseAggregateProjections(
             LOG_DEBUG(logger, "{}", stat.description);
 
             inexact_ranges_select_result->selected_parts = parent_parts_with_ranges.size();
+            /// The original result may have exceeded_row_limits set because the full table scan
+            /// was over the limit.  After subtracting exact ranges the remaining rows are fewer,
+            /// so clear the flag — the reduced result will be re-checked during execution.
+            inexact_ranges_select_result->exceeded_row_limits = false;
             if (parent_parts_with_ranges.empty())
             {
                 chassert(inexact_ranges_select_result->selected_marks == 0);
@@ -951,7 +957,8 @@ std::optional<String> optimizeUseAggregateProjections(
         const auto & expected_header = node.step->getOutputHeader();
         if (blocksHaveEqualStructure(*projection_header, *expected_header))
         {
-            node.step->updateInputHeader(projection_header);
+            if (!has_parent_parts)
+                node.step->updateInputHeader(projection_header);
         }
         else
         {
@@ -969,7 +976,26 @@ std::optional<String> optimizeUseAggregateProjections(
     }
 
     if (has_parent_parts)
-        node.children.push_back(source_node);
+    {
+        if (aggregating)
+        {
+            node.children.push_back(source_node);
+        }
+        else
+        {
+            /// Some parts have no projection data. DistinctStep must see rows from both readings
+            /// to return the correct set of distinct values; union them into its single input.
+            auto * main_node = node.children.front();
+            SharedHeaders input_headers = {
+                main_node->step->getOutputHeader(),
+                source_node->step->getOutputHeader(),
+            };
+            auto & union_node = nodes.emplace_back();
+            union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
+            union_node.children = {main_node, source_node};
+            node.children.front() = &union_node;
+        }
+    }
     else
         node.children.front() = source_node;
 

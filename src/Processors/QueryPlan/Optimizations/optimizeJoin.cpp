@@ -6,17 +6,15 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
-#include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -30,12 +28,7 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
-
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-
-#include <Storages/StorageMemory.h>
 
 #include <algorithm>
 #include <limits>
@@ -69,6 +62,7 @@ namespace Setting
 
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
 RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
+RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
 namespace QueryPlanOptimizations
 {
@@ -476,6 +470,7 @@ struct QueryGraphBuilder
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
         String dummy_stats;
+        UInt64 effective_randomize_seed = 0;
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
@@ -486,7 +481,9 @@ struct QueryGraphBuilder
             , statistics_context(optimization_settings_, root_node)
             , join_settings(join_settings_)
             , sorting_settings(sorting_settings_)
-        {}
+            , effective_randomize_seed(optimization_settings_.query_plan_optimize_join_order_randomize)
+        {
+        }
     };
 
     std::shared_ptr<BuilderContext> context;
@@ -583,6 +580,13 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
             auto child_join_kind = child_join_step->getJoinOperator().kind;
             bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
             allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
+            /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
+            /// with `join_use_nulls` making right-side columns Nullable). Flattening
+            /// such joins allows the optimizer to reorder them, which can separate
+            /// a relation from the join that causes its type change, leading to
+            /// type changes being applied at the wrong step and the exception
+            /// "Cannot fold actions for projection".
+            allow_child_join_kind = allow_child_join_kind && child_join_step->typeChangingSides().empty();
             if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
             {
                 QueryGraphBuilder child_graph(graph.context);
@@ -621,6 +625,9 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     if (!label.empty())
         stats.table_name = label;
+
+    if (UInt64 seed = graph.context->effective_randomize_seed)
+        stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
@@ -1208,6 +1215,28 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     {
         join_step->setOptimized();
         return;
+    }
+
+    /// Skip join order optimization if children's output headers have overlapping column names.
+    /// The `JoinExpressionActions` constructor used during join reconstruction requires unique column names
+    /// across left and right sides. Overlapping names can occur when scalar subquery results and join
+    /// table aliases collide (e.g. both sides produce `__table2`).
+    {
+        auto left_header = node.children[0]->step->getOutputHeader();
+        auto right_header = node.children[1]->step->getOutputHeader();
+
+        std::unordered_set<std::string_view> left_names;
+        for (const auto & col : *left_header)
+            left_names.insert(col.name);
+
+        for (const auto & col : *right_header)
+        {
+            if (left_names.contains(col.name))
+            {
+                join_step->setOptimized();
+                return;
+            }
+        }
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
