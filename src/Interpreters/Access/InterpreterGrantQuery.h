@@ -32,7 +32,7 @@ public:
     /// / `EXPLAIN REVOKE` to preview the resulting `system.grants` rows without committing.
     /// `ON CLUSTER` is not supported by simulation and is rejected up front.
     using SimulationCallback = std::function<void(const String & grantee_name, AccessEntityType grantee_type, const AccessRights & access)>;
-    static void simulate(const ASTPtr & query_ptr, ContextPtr context, const SimulationCallback & on_grantee);
+    static void simulate(const ASTPtr & query_ptr, ContextPtr query_context, const SimulationCallback & on_grantee);
 
 private:
     ASTPtr query_ptr;

@@ -515,7 +515,7 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
 
 void InterpreterGrantQuery::simulate(
     const ASTPtr & query_ptr,
-    ContextPtr context,
+    ContextPtr query_context,
     const SimulationCallback & on_grantee)
 {
     /// Reject `ON CLUSTER` on the *original* AST. `removeOnClusterClauseIfNeeded` rewrites
@@ -526,10 +526,10 @@ void InterpreterGrantQuery::simulate(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ON CLUSTER is not supported with EXPLAIN GRANT / EXPLAIN REVOKE — explanation is local-only");
 
-    const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, context);
+    const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, query_context);
     auto & query = updated_query->as<ASTGrantQuery &>();
 
-    query.replaceCurrentUserTag(context->getUserName());
+    query.replaceCurrentUserTag(query_context->getUserName());
     query.access_rights_elements.eraseNotGrantable();
 
     if (!query.access_rights_elements.sameOptions())
@@ -537,8 +537,8 @@ void InterpreterGrantQuery::simulate(
     if (!query.access_rights_elements.empty() && query.access_rights_elements[0].is_partial_revoke && !query.is_revoke)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A partial revoke should be revoked, not granted");
 
-    auto & access_control = context->getAccessControl();
-    auto current_user_access = context->getAccess();
+    const auto & access_control = query_context->getAccessControl();
+    auto current_user_access = query_context->getAccess();
 
     /// Validate TABLE ENGINE parameter names if explicitly specified — same as `execute`.
     for (const auto & element : query.access_rights_elements)
@@ -551,7 +551,7 @@ void InterpreterGrantQuery::simulate(
         }
     }
 
-    std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, context->getUserID()}.getMatchingIDs(access_control);
+    std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, query_context->getUserID()}.getMatchingIDs(access_control);
 
     AccessRightsElements elements_to_grant;
     AccessRightsElements elements_to_revoke;
@@ -561,7 +561,7 @@ void InterpreterGrantQuery::simulate(
     RolesOrUsersSet roles_to_revoke;
     collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
 
-    String current_database = context->getCurrentDatabase();
+    String current_database = query_context->getCurrentDatabase();
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
     query.access_rights_elements.replaceEmptyDatabase(current_database);
