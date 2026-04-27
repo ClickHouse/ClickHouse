@@ -236,6 +236,9 @@ void MergeTreeIndexGranuleVectorSpann::serializeBinaryWithMultipleStreams(MergeT
     LOG_TRACE(logger, "Wrote vector_spann index granule: {}", statistics.toString());
 }
 
+/// Loads all posting lists for this skip-index granule into memory (see loop over readPostingList below).
+/// Paper-style selective IO would read only the posting ranges for centroids visited by the query; that needs API work:
+/// calculateApproximateNearestNeighbors receives only `granule`, not MergeTreeIndexReader streams (see MergeTreeDataSelectExecutor::filterMarksUsingIndex).
 void MergeTreeIndexGranuleVectorSpann::deserializeBinaryWithMultipleStreams(
     MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
 {
@@ -412,6 +415,7 @@ std::pair<std::vector<SpannCentroidOffset>, std::vector<std::vector<SpannPosting
     for (size_t i = 0; i < k; ++i)
     {
         offsets[i].offset = pos;
+        /// Skewed nearest-centroid assignment can make one list huge; raise centroid_ratio if this fails.
         if (postings_by_centroid[i].size() > vector_spann_max_entries_per_posting_list)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
@@ -498,7 +502,7 @@ void MergeTreeIndexAggregatorVectorSpann::update(const Block & block, size_t * p
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
     if (!which.isFloat32())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "vector_spann index (M1) supports only Array(Float32)");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "vector_spann index supports only Array(Float32)");
 
     const auto & column_array_data = column_array->getData();
     const auto & column_float = typeid_cast<const ColumnFloat32 &>(column_array_data);
@@ -569,6 +573,7 @@ bool MergeTreeIndexConditionVectorSpann::alwaysUnknownOrTrue() const
     return false;
 }
 
+/// Vector search path provides only the deserialized granule (no MergeTreeIndexReader / part streams here).
 NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
 {
     if (!parameters)
@@ -790,11 +795,11 @@ void spannIndexValidator(const IndexDescription & index, bool /* attach */)
     const DataTypePtr data_type = index.sample_block.getDataTypes()[0];
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
     if (!data_type_array)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "vector_spann index (M1) can only be created on columns of type Array(Float32)");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "vector_spann index can only be created on columns of type Array(Float32)");
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
     if (!which.isFloat32())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "vector_spann index (M1) can only be created on columns of type Array(Float32)");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "vector_spann index can only be created on columns of type Array(Float32)");
 }
 
 }

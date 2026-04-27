@@ -26,9 +26,9 @@ struct SpannParams
     unum::usearch::scalar_kind_t scalar_kind{};
     UsearchHnswParams usearch_hnsw_params;
     float centroid_ratio = default_vector_spann_centroid_ratio;
-    /// Not read from index SQL in M1; reserved for future closure-expansion tuning.
+    /// Not read from index SQL yet; reserved for future closure-expansion tuning.
     float closure_epsilon = default_vector_spann_closure_epsilon;
-    /// Not read from index SQL in M1; reserved for future posting-list replica limits.
+    /// Not read from index SQL yet; reserved for future posting-list replica limits.
     UInt32 max_replicas = default_vector_spann_max_replicas;
 };
 
@@ -72,7 +72,7 @@ struct MergeTreeIndexGranuleVectorSpann final : public IMergeTreeIndexGranule
 
     USearchIndexWithSerializationPtr centroid_index;
     std::vector<SpannCentroidOffset> centroid_offsets;
-    /// Built during insert/merge; serialized into the posting substream. After deserialize, holds all postings for the granule (M1 loads eagerly).
+    /// Built during insert/merge; serialized into the posting substream. After deserialize, holds all postings for the granule (eager load).
     std::vector<std::vector<SpannPostingEntry>> postings_by_centroid;
 
 private:
