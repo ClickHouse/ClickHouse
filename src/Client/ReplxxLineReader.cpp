@@ -159,7 +159,12 @@ public:
         }
         catch (const std::runtime_error & e)
         {
+            /// musl defines `stderr` as a recursive macro `(stderr)`,
+            /// which triggers `-Wdisabled-macro-expansion` when used as a function argument.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
             fmt::print(stderr, "{}", e.what());
+#pragma clang diagnostic pop
         }
     }
 
