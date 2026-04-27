@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -50,7 +51,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool extremes;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -502,6 +505,25 @@ void registerStorageView(StorageFactory & factory)
     {
         if (args.query.storage)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Specifying ENGINE is not allowed for a View");
+
+        /// Resolve INTERSECT/EXCEPT precedence before constructing StorageView.
+        /// StorageView's constructor runs NormalizeSelectWithUnionQueryVisitor which
+        /// does not understand INTERSECT/EXCEPT modes and would incorrectly drop
+        /// SELECT branches connected by these operators.
+        /// This is needed when the AST is freshly parsed from stored metadata
+        /// (e.g. during ATTACH) and has not been through executeQuery's visitors.
+        /// For already-processed ASTs (e.g. from CREATE VIEW via executeQuery),
+        /// this is a safe no-op since INTERSECT/EXCEPT modes have already been
+        /// converted to ASTSelectIntersectExceptQuery nodes.
+        if (args.query.select)
+        {
+            auto context = args.getContext();
+            SelectIntersectExceptQueryVisitor::Data data{
+                context->getSettingsRef()[Setting::intersect_default_mode],
+                context->getSettingsRef()[Setting::except_default_mode]};
+            auto select = args.query.select->ptr();
+            SelectIntersectExceptQueryVisitor{data}.visit(select);
+        }
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     });
