@@ -1265,7 +1265,8 @@ class JobConfigs:
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        run_in_docker="clickhouse/performance-comparison",
+        # --privileged for mlock/CAP_IPC_LOCK
+        run_in_docker="clickhouse/performance-comparison+--privileged",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
