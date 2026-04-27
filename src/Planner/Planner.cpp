@@ -917,13 +917,24 @@ ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
 
     const auto & sort_description = query_analysis_result.sort_description;
 
+    SortingStep::Settings sort_settings(settings);
+
     auto merging_sorted = std::make_unique<SortingStep>(
         query_plan.getCurrentHeader(),
         sort_description,
-        settings[Setting::max_block_size],
+        sort_settings,
         query_analysis_result.partial_sorting_limit,
         settings[Setting::exact_rows_before_limit]);
     merging_sorted->setStepDescription(description);
+
+    /// Buffer incoming pre-sorted streams to decouple the readers from the merger.
+    /// Mirrors the single-node read-in-order case in optimizeReadInOrder.
+    /// If a limit is later pushed down into this step, `updateLimit` will turn buffering back off.
+    if (query_analysis_result.partial_sorting_limit == 0
+        && sort_settings.read_in_order_use_buffering
+        && !sort_settings.read_in_order_use_virtual_row_per_block)
+        merging_sorted->enableBuffering();
+
     query_plan.addStep(std::move(merging_sorted));
 }
 
