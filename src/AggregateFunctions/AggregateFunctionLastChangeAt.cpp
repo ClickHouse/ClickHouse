@@ -159,6 +159,8 @@ public:
         auto & a       = this->data(place);
         const auto & b = this->data(rhs_ptr);
 
+        TimestampType buf;
+
         if (!b.seen)
             return;
 
@@ -211,7 +213,7 @@ public:
             }
             else if (!Data::storedEquals(b.prev_value, b.new_value))
             {
-                TimestampType buf = (a.new_value_last_ts > b.new_value_last_ts)
+                buf = (a.new_value_last_ts > b.new_value_last_ts)
                     ? a.new_value_last_ts
                     : b.new_value_last_ts;
                 Data::copyData(a, b);
@@ -220,10 +222,12 @@ public:
             }
             else
             {
-                if (a.prev_value_last_ts == a.new_value_last_ts)
-                    a.prev_value_last_ts = b.new_value_first_ts;
-                if (a.prev_value_last_ts == a.new_value_last_ts)
-                    a.prev_value_last_ts = b.prev_value_last_ts;
+                buf = a.new_value_first_ts;
+                a.new_value_first_ts = b.new_value_first_ts == b.prev_value_last_ts ? a.prev_value_last_ts : b.new_value_first_ts;
+                a.prev_value_last_ts = b.prev_value_last_ts;
+
+                if (a.prev_value_last_ts == a.new_value_first_ts)
+                    a.new_value_first_ts = buf;
 
                 if (b.new_value_last_ts > a.new_value_last_ts)
                     a.new_value_last_ts = b.new_value_last_ts;
@@ -285,7 +289,7 @@ public:
                     prev_value_last_ts = later.prev_value_last_ts;
                     new_value_first_ts = earlier.prev_value_last_ts;
                     new_value_last_ts  = later.new_value_last_ts;
-                    
+
                     if (prev_value_last_ts == new_value_first_ts)
                         new_value_first_ts = earlier.new_value_first_ts;
 

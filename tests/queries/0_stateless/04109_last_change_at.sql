@@ -132,5 +132,13 @@ SELECT lastChangeAt(bmp, ts) FROM (
     GROUP BY ts
 );
 
+-- carries earliest timestamp when before(b, a), so returns 1
+SELECT lastChangeAtMerge(state) FROM
+(
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 2 AS ts, 0 AS value UNION ALL SELECT 3, 0)
+    UNION ALL
+    SELECT lastChangeAtState(value, ts) AS state FROM (SELECT 1 AS ts, 0 AS value)
+);
+
 -- Error: String value type is unsupported
 SELECT lastChangeAt('x', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
