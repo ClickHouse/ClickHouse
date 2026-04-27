@@ -1,5 +1,6 @@
 #include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <base/scope_guard.h>
 
