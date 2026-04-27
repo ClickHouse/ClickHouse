@@ -71,7 +71,6 @@ int mainEntryClickHouseChecksumForCompressedBlock(int, char **);
 int mainEntryClickHouseClient(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
-int mainEntryClickHouseDockerInit(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
 int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
@@ -152,7 +151,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"su", mainEntryClickHouseSU},
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
-    {"docker-init", mainEntryClickHouseDockerInit},
     {"check-marks", mainEntryClickHouseCheckMarks},
     {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
     {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
