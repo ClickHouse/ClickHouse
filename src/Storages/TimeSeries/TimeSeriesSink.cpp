@@ -832,7 +832,7 @@ void TimeSeriesSink::consumeMetrics(const Block & block)
         *new_metric_family_column,
         *new_type_column, *new_unit_column, *new_help_column);
 
-    /// We've already checked that at least one non-empty `metric_family` presents.
+    /// We've already checked that at least one non-empty `metric_family` is present.
     chassert(!new_metric_family_column->empty());
 
     /// Step 3. Assemble the block and push it to the "metrics" table.
