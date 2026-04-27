@@ -68,6 +68,9 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Poco/JSON/Stringifier.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/StorageSystemReplicatedPartitionExports.h>
@@ -75,6 +78,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/ExportPartitionUtils.h>
 
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
@@ -129,6 +133,7 @@
 #include "Storages/ExportReplicatedMergeTreePartitionTaskEntry.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <IO/SharedThreadPools.h>
 
 #include <base/types.h>
@@ -209,6 +214,7 @@ namespace Setting
     extern const SettingsBool export_merge_tree_partition_force_export;
     extern const SettingsUInt64 export_merge_tree_partition_max_retries;
     extern const SettingsUInt64 export_merge_tree_partition_manifest_ttl;
+    extern const SettingsUInt64 export_merge_tree_partition_task_timeout_seconds;
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsBool output_format_parquet_parallel_encoding;
     extern const SettingsMaxThreads max_threads;
@@ -219,6 +225,10 @@ namespace Setting
     extern const SettingsBool export_merge_tree_part_throw_on_pending_patch_parts;
     extern const SettingsBool export_merge_tree_partition_lock_inside_the_task;
     extern const SettingsString export_merge_tree_part_filename_pattern;
+    extern const SettingsBool write_full_path_in_iceberg_metadata;
+    extern const SettingsBool allow_insert_into_iceberg;
+    extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
+    extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
 }
 
 
@@ -334,7 +344,7 @@ namespace ErrorCodes
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool enable_experimental_export_merge_tree_partition_feature;
+    extern const ServerSettingsBool allow_experimental_export_merge_tree_partition;
 }
 
 namespace ActionLocks
@@ -511,7 +521,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     /// Will be activated by restarting thread.
     mutations_finalizing_task->deactivate();
 
-    if (getContext()->getServerSettings()[ServerSetting::enable_experimental_export_merge_tree_partition_feature])
+    if (getContext()->getServerSettings()[ServerSetting::allow_experimental_export_merge_tree_partition])
     {
         export_merge_tree_partition_manifest_updater = std::make_shared<ExportPartitionManifestUpdatingTask>(*this);
 
@@ -4563,16 +4573,25 @@ void StorageReplicatedMergeTree::mutationsFinalizingTask()
 }
 
 void StorageReplicatedMergeTree::exportMergeTreePartitionUpdatingTask()
-{   
+{
     try
     {
         export_merge_tree_partition_manifest_updater->poll();
+    }
+    catch (const Coordination::Exception & e)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        if (e.code == Coordination::Error::ZSESSIONEXPIRED)
+        {
+            LOG_DEBUG(log, "Export partition updating task: ZooKeeper session expired, waking up restarting thread");
+            restarting_thread.wakeup();
+            return;
+        }
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
-
 
     export_merge_tree_partition_updating_task->scheduleAfter(30 * 1000);
 }
@@ -4581,7 +4600,14 @@ void StorageReplicatedMergeTree::selectPartsToExport()
 {
     try
     {
-        export_merge_tree_partition_task_scheduler->run();
+        if (parts_mover.moves_blocker.isCancelled())
+        {
+            LOG_INFO(log, "Export partition select task: Moves are blocked, skipping");
+        }
+        else
+        {
+            export_merge_tree_partition_task_scheduler->run();
+        }
     }
     catch (...)
     {
@@ -4597,9 +4623,25 @@ void StorageReplicatedMergeTree::exportMergeTreePartitionStatusHandlingTask()
     {
         export_merge_tree_partition_manifest_updater->handleStatusChanges();
     }
+    catch (const Coordination::Exception & e)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        if (e.code == Coordination::Error::ZSESSIONEXPIRED)
+        {
+            restarting_thread.wakeup();
+        }
+        else
+        {
+            /// if an exception is thrown, we might have unprocessed status changes, so we need to schedule the task again
+            export_merge_tree_partition_status_handling_task->scheduleAfter(5000);
+        }
+
+        return;
+    }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        export_merge_tree_partition_status_handling_task->scheduleAfter(5000);
     }
 }
 
@@ -6007,7 +6049,7 @@ void StorageReplicatedMergeTree::partialShutdown()
     mutations_updating_task->deactivate();
     mutations_finalizing_task->deactivate();
 
-    if (getContext()->getServerSettings()[ServerSetting::enable_experimental_export_merge_tree_partition_feature])
+    if (getContext()->getServerSettings()[ServerSetting::allow_experimental_export_merge_tree_partition])
     {
         export_merge_tree_partition_updating_task->deactivate();
         export_merge_tree_partition_select_task->deactivate();
@@ -8239,10 +8281,11 @@ void StorageReplicatedMergeTree::fetchPartition(
 
 void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand & command, ContextPtr query_context)
 {
-    if (!query_context->getServerSettings()[ServerSetting::enable_experimental_export_merge_tree_partition_feature])
+    if (!query_context->getServerSettings()[ServerSetting::allow_experimental_export_merge_tree_partition])
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Exporting merge tree partition is experimental. Set the server setting `enable_experimental_export_merge_tree_partition_feature` to enable it");
+            "Exporting merge tree partition is experimental. Set the server setting `allow_experimental_export_merge_tree_partition` to enable it (on all replicas).\n"
+            "If you are exporting to an Apache Iceberg table, you also need to enable the setting `allow_experimental_insert_into_iceberg` on all replicas. The same goes for `allow_experimental_export_merge_tree_part`");
     }
 
     const auto dest_database = query_context->resolveDatabase(command.to_database);
@@ -8255,7 +8298,7 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Exporting to the same table is not allowed");
     }
 
-    if (!dest_storage->supportsImport())
+    if (!dest_storage->supportsImport(query_context))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Destination storage {} does not support MergeTree parts or uses unsupported partitioning", dest_storage->getName());
 
     auto query_to_string = [] (const ASTPtr & ast)
@@ -8271,8 +8314,14 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     if (src_snapshot->getColumns().getReadable().sizeOfDifference(destination_snapshot->getColumns().getInsertable()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
-    if (query_to_string(src_snapshot->getPartitionKeyAST()) != query_to_string(destination_snapshot->getPartitionKeyAST()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
+    /// for data lakes this check is performed later. It is a bit more complex as we need to convert the iceberg partition spec
+    /// to the MergeTree partition spec and compare the two.
+    if (!dest_storage->isDataLake())
+    {
+        if (query_to_string(src_snapshot->getPartitionKeyAST()) != query_to_string(destination_snapshot->getPartitionKeyAST()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
+    }
+    
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
 
@@ -8401,6 +8450,7 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     manifest.create_time = time(nullptr);
     manifest.max_retries = query_context->getSettingsRef()[Setting::export_merge_tree_partition_max_retries];
     manifest.ttl_seconds = query_context->getSettingsRef()[Setting::export_merge_tree_partition_manifest_ttl];
+    manifest.task_timeout_seconds = query_context->getSettingsRef()[Setting::export_merge_tree_partition_task_timeout_seconds];
     manifest.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     manifest.parallel_formatting = query_context->getSettingsRef()[Setting::output_format_parallel_formatting];
     manifest.parquet_parallel_encoding = query_context->getSettingsRef()[Setting::output_format_parquet_parallel_encoding];
@@ -8408,9 +8458,51 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     manifest.max_rows_per_file = query_context->getSettingsRef()[Setting::export_merge_tree_part_max_rows_per_file];
     manifest.lock_inside_the_task = query_context->getSettingsRef()[Setting::export_merge_tree_partition_lock_inside_the_task];
 
-
     manifest.file_already_exists_policy = query_context->getSettingsRef()[Setting::export_merge_tree_part_file_already_exists_policy].value;
     manifest.filename_pattern = query_context->getSettingsRef()[Setting::export_merge_tree_part_filename_pattern].value;
+    manifest.write_full_path_in_iceberg_metadata = query_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata];
+
+    if (dest_storage->isDataLake())
+    {
+#if USE_AVRO
+        auto * object_storage = dynamic_cast<StorageObjectStorage *>(dest_storage.get());
+
+        /// in theory this should never happen, but just in case
+        if (!object_storage)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Destination storage {} is not a StorageObjectStorage", dest_storage->getName());
+        }
+
+        auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(query_context));
+        if (!iceberg_metadata)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Destination storage {} is a data lake but not an iceberg table", dest_storage->getName());
+        }
+
+        if (!query_context->getSettingsRef()[Setting::allow_insert_into_iceberg])
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Iceberg writes are experimental. "
+                "To allow its usage, enable the setting allow_experimental_insert_into_iceberg (on all replicas). The same goes for `allow_experimental_export_merge_tree_partition` and `allow_experimental_export_merge_tree_part`");
+        }
+
+        const auto metadata_object = iceberg_metadata->getMetadataJSON(query_context);
+
+        ExportPartitionUtils::verifyIcebergPartitionCompatibility(
+            metadata_object, src_snapshot->getPartitionKeyAST());
+
+        std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        oss.exceptions(std::ios::failbit);
+        metadata_object->stringify(oss);
+        manifest.iceberg_metadata_json = oss.str();
+
+        manifest.max_bytes_per_file = query_context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file];
+        manifest.max_rows_per_file = query_context->getSettingsRef()[Setting::iceberg_insert_max_rows_in_data_file];
+
+#else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data lake export requires Avro support");
+#endif
+    }
 
     ops.emplace_back(zkutil::makeCreateRequest(
         fs::path(partition_exports_path) / "metadata.json", 
@@ -8462,7 +8554,18 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
 
     if (code != Coordination::Error::ZOK)
+    {
+        if (code == Coordination::Error::ZNODEEXISTS
+            && zkutil::getFailedOpIndex(code, responses) == 0)
+        {
+            /// Lost the race on the root export node. Current code already
+            /// validated (exists / expired / force) — so this is *always* a race.
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Export with key {} was created concurrently by another replica. Retry if needed",
+                export_key);
+        }
         throw zkutil::KeeperException::fromPath(code, partition_exports_path);
+    }
 }
 
 

@@ -574,4 +574,42 @@ static constexpr const char * manifest_entry_v2_schema = R"(
 }
 )";
 
+/// Schema for the per-data-file sidecar Avro files written alongside every data file
+/// during import/export.  The sidecar carries the row count and byte size that cannot
+/// be cheaply inferred from the data file itself without a full scan.
+static constexpr const char * data_file_sidecar_schema = R"(
+{
+    "type": "record",
+    "name": "data_file_metadata",
+    "fields": [
+        {"name": "record_count",       "type": "long"},
+        {"name": "file_size_in_bytes", "type": "long"},
+        {
+            "name": "column_sizes",
+            "type": {"type": "array", "items": {"type": "record", "name": "cs_entry",
+                "fields": [{"name": "key", "type": "int"}, {"name": "value", "type": "long"}]}},
+            "default": []
+        },
+        {
+            "name": "null_value_counts",
+            "type": {"type": "array", "items": {"type": "record", "name": "nvc_entry",
+                "fields": [{"name": "key", "type": "int"}, {"name": "value", "type": "long"}]}},
+            "default": []
+        },
+        {
+            "name": "lower_bounds",
+            "type": {"type": "array", "items": {"type": "record", "name": "lb_entry",
+                "fields": [{"name": "key", "type": "int"}, {"name": "value", "type": "bytes"}]}},
+            "default": []
+        },
+        {
+            "name": "upper_bounds",
+            "type": {"type": "array", "items": {"type": "record", "name": "ub_entry",
+                "fields": [{"name": "key", "type": "int"}, {"name": "value", "type": "bytes"}]}},
+            "default": []
+        }
+    ]
+}
+)";
+
 }

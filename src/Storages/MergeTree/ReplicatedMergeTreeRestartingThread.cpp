@@ -37,7 +37,7 @@ namespace MergeTreeSetting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool enable_experimental_export_merge_tree_partition_feature;
+    extern const ServerSettingsBool allow_experimental_export_merge_tree_partition;
 }
 
 namespace ErrorCodes
@@ -186,7 +186,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.mutations_finalizing_task->activateAndSchedule();
     storage.merge_selecting_task->activateAndSchedule();
 
-    if (storage.getContext()->getServerSettings()[ServerSetting::enable_experimental_export_merge_tree_partition_feature])
+    if (storage.getContext()->getServerSettings()[ServerSetting::allow_experimental_export_merge_tree_partition])
     {
         storage.export_merge_tree_partition_updating_task->activateAndSchedule();
         storage.export_merge_tree_partition_select_task->activateAndSchedule();

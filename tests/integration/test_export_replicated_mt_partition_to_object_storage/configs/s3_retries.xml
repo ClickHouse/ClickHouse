@@ -1,3 +1,0 @@
-<clickhouse>
-    <s3_retry_attempts>3</s3_retry_attempts>
-</clickhouse>

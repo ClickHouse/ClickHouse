@@ -51,6 +51,7 @@ struct MergeTreePartExportManifest
         FileAlreadyExistsPolicy file_already_exists_policy_,
         const Settings & settings_,
         const StorageMetadataPtr & metadata_snapshot_,
+        const String & iceberg_metadata_json_,
         std::function<void(CompletionCallbackResult)> completion_callback_ = {})
         : destination_storage_ptr(destination_storage_ptr_),
           data_part(data_part_),
@@ -59,6 +60,7 @@ struct MergeTreePartExportManifest
           file_already_exists_policy(file_already_exists_policy_),
           settings(settings_),
           metadata_snapshot(metadata_snapshot_),
+          iceberg_metadata_json(iceberg_metadata_json_),
           completion_callback(completion_callback_),
           create_time(time(nullptr)) {}
 
@@ -73,6 +75,8 @@ struct MergeTreePartExportManifest
     /// Metadata snapshot captured at the time of query validation to prevent race conditions with mutations
     /// Otherwise the export could fail if the schema changes between validation and execution
     StorageMetadataPtr metadata_snapshot;
+
+    String iceberg_metadata_json;
 
     std::function<void(CompletionCallbackResult)> completion_callback;
 

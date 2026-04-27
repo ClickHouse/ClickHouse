@@ -1,108 +1,17 @@
 import logging
-import pytest
-import random
-import string
 import time
-from typing import Optional
 import uuid
 
+import pytest
+
 from helpers.cluster import ClickHouseCluster
+from helpers.export_partition_helpers import (
+    wait_for_exception_count,
+    wait_for_export_status,
+    wait_for_export_to_start,
+)
 from helpers.network import PartitionManager
 
-
-def wait_for_export_status(
-    node,
-    mt_table: str,
-    s3_table: str,
-    partition_id: str,
-    expected_status: str = "COMPLETED",
-    timeout: int = 30,
-    poll_interval: float = 0.5,
-):
-    start_time = time.time()
-    last_status = None
-    while time.time() - start_time < timeout:
-        status = node.query(
-            f"""
-            SELECT status FROM system.replicated_partition_exports
-            WHERE source_table = '{mt_table}'
-                AND destination_table = '{s3_table}'
-                AND partition_id = '{partition_id}'
-            """
-        ).strip()
-        
-        last_status = status
-
-        if status and status == expected_status:
-            return status
-
-        time.sleep(poll_interval)
-
-    raise TimeoutError(
-        f"Export status did not reach '{expected_status}' within {timeout}s. Last status: '{last_status}'")
-
-
-def wait_for_export_to_start(
-    node,
-    mt_table: str,
-    s3_table: str,
-    partition_id: str,
-    timeout: int = 10,
-    poll_interval: float = 0.2,
-):
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        count = node.query(
-            f"""
-            SELECT count() FROM system.replicated_partition_exports
-            WHERE source_table = '{mt_table}'
-              AND destination_table = '{s3_table}'
-              AND partition_id = '{partition_id}'
-            """
-        ).strip()
-        
-        if count != '0':
-            return True
-        
-        time.sleep(poll_interval)
-    
-    raise TimeoutError(f"Export did not start within {timeout}s. ")
-
-
-def wait_for_exception_count(
-    node,
-    mt_table: str,
-    s3_table: str,
-    partition_id: str,
-    min_exception_count: int = 1,
-    timeout: int = 30,
-    poll_interval: float = 0.5,
-):
-    """Wait for exception_count to reach at least min_exception_count."""
-    start_time = time.time()
-    last_exception_count = None
-    while time.time() - start_time < timeout:
-        exception_count_str = node.query(
-            f"""
-            SELECT exception_count FROM system.replicated_partition_exports
-            WHERE source_table = '{mt_table}'
-              AND destination_table = '{s3_table}'
-              AND partition_id = '{partition_id}'
-            """
-        ).strip()
-        
-        if exception_count_str:
-            exception_count = int(exception_count_str)
-            last_exception_count = exception_count
-            if exception_count >= min_exception_count:
-                return exception_count
-        
-        time.sleep(poll_interval)
-    
-    raise TimeoutError(
-        f"Exception count did not reach {min_exception_count} within {timeout}s. "
-        f"Last exception_count: {last_exception_count if last_exception_count is not None else 'N/A'}"
-    )
 
 
 def skip_if_remote_database_disk_enabled(cluster):
@@ -211,6 +120,8 @@ def create_s3_table(node, s3_table):
 
 
 def create_tables_and_insert_data(node, mt_table, s3_table, replica_name):
+    node.query(f"DROP TABLE IF EXISTS {mt_table} SYNC")
+    # enable_block_number_column and enable_block_offset_column are needed for patch parts support
     node.query(f"CREATE TABLE {mt_table} (id UInt64, year UInt16) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{mt_table}', '{replica_name}') PARTITION BY year ORDER BY tuple() SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1")
     node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020), (3, 2020), (4, 2021)")
 
@@ -412,6 +323,71 @@ def test_kill_export(cluster, system_table_prefer_remote_information):
     assert node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020") == '0\n', "Partition 2020 was written to S3, it was not killed as expected"
 
 
+def test_kill_export_resilient_to_status_handling_failure(cluster):
+    """KILL EXPORT PARTITION must eventually take effect even when the first
+    attempt to handle the ZK status-change event throws (simulated via a ONCE
+    failpoint).  The re-queue + reschedule mechanism retries after ~5 s and
+    the second attempt succeeds because the ONCE failpoint has already fired."""
+    skip_if_remote_database_disk_enabled(cluster)
+    node = cluster.instances["replica1"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"kill_resilient_mt_{postfix}"
+    s3_table = f"kill_resilient_s3_{postfix}"
+
+    create_tables_and_insert_data(node, mt_table, s3_table, "replica1")
+
+    minio_ip = cluster.minio_ip
+    minio_port = cluster.minio_port
+
+    with PartitionManager() as pm:
+        pm.add_rule({
+            "instance": node,
+            "destination": node.ip_address,
+            "protocol": "tcp",
+            "source_port": minio_port,
+            "action": "REJECT --reject-with tcp-reset",
+        })
+
+        pm.add_rule({
+            "instance": node,
+            "destination": minio_ip,
+            "protocol": "tcp",
+            "destination_port": minio_port,
+            "action": "REJECT --reject-with tcp-reset",
+        })
+
+        node.query(
+            f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}"
+            f" SETTINGS export_merge_tree_partition_max_retries = 50"
+        )
+
+        node.query("SYSTEM ENABLE FAILPOINT export_partition_status_change_throw")
+
+        node.query(
+            f"KILL EXPORT PARTITION WHERE partition_id = '2020'"
+            f" AND source_table = '{mt_table}' AND destination_table = '{s3_table}'")
+
+        # sleep for a while to let the kill to be processed
+        time.sleep(5)
+
+    # The ONCE failpoint makes the first handleStatusChanges() throw.
+    # The catch re-queues the key and scheduleAfter(5000) arms a retry.
+    # Wait up to 15 s (5 s retry delay + margin) for the kill to propagate.
+    wait_for_export_status(node, mt_table, s3_table, "2020", "KILLED", timeout=15)
+
+    # query the local status export_merge_tree_partition_system_table_prefer_remote_information=0
+    assert (
+        node.query(
+            f"SELECT status FROM system.replicated_partition_exports"
+            f" WHERE partition_id = '2020'"
+            f"   AND source_table = '{mt_table}'"
+            f"   AND destination_table = '{s3_table}'"
+            f" SETTINGS export_merge_tree_partition_system_table_prefer_remote_information = 0"
+        ).strip() == "KILLED"
+    ), "Export was not killed — status change was lost after the injected failure"
+
+
 def test_drop_source_table_during_export(cluster):
     skip_if_remote_database_disk_enabled(cluster)
     node = cluster.instances["replica1"]
@@ -454,12 +430,15 @@ def test_drop_source_table_during_export(cluster):
         
         export_queries = f"""
             ALTER TABLE {mt_table}
-            EXPORT PARTITION ID '2020' TO TABLE {s3_table};
+            EXPORT PARTITION ID '2020' TO TABLE {s3_table} SETTINGS s3_retry_attempts = 500, export_merge_tree_partition_max_retries = 50;
             ALTER TABLE {mt_table}
-            EXPORT PARTITION ID '2021' TO TABLE {s3_table};
+            EXPORT PARTITION ID '2021' TO TABLE {s3_table} SETTINGS s3_retry_attempts = 500, export_merge_tree_partition_max_retries = 50;
         """
 
         node.query(export_queries)
+
+        wait_for_export_status(node, mt_table, s3_table, "2020", "PENDING")
+        wait_for_export_status(node, mt_table, s3_table, "2021", "PENDING")
 
         # This should kill the background operations and drop the table
         node.query(f"DROP TABLE {mt_table}")
@@ -647,6 +626,7 @@ def test_inject_short_living_failures(cluster):
         WHERE source_table = '{mt_table}'
           AND destination_table = '{s3_table}'
           AND partition_id = '2020'
+          SETTINGS export_merge_tree_partition_system_table_prefer_remote_information = 1
         """
     )
     assert int(exception_count.strip()) >= 1, "Expected at least one exception"
@@ -1525,4 +1505,3 @@ def test_export_partition_resumes_after_stop_moves_during_export(cluster):
 
     row_count = int(node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020").strip())
     assert row_count == 3, f"Expected 3 rows in S3 after export completed, got {row_count}"
-

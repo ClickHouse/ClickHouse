@@ -2,9 +2,7 @@
 
 ## Overview
 
-The `ALTER TABLE EXPORT PARTITION` command exports entire partitions from Replicated*MergeTree tables to object storage (S3, Azure Blob Storage, etc.), typically in Parquet format. This feature coordinates export part operations across all replicas using ZooKeeper.
-
-Each MergeTree part will become a separate file with the following name convention: `<table_directory>/<partitioning>/<data_part_name>_<merge_tree_part_checksum>.<format>`. To ensure atomicity, a commit file containing the relative paths of all exported parts is also shipped. A data file should only be considered part of the dataset if a commit file references it. The commit file will be named using the following convention: `<table_directory>/commit_<partition_id>_<transaction_id>`.
+The `ALTER TABLE EXPORT PARTITION` command exports entire partitions from Replicated*MergeTree tables to object storage (S3, Azure Blob Storage, etc.) or data lakes like Apache Iceberg tables (with and without catalogs), typically in Parquet format. This feature coordinates export part operations across all replicas using ZooKeeper.
 
 The set of parts that are exported is based on the list of parts the replica that received the export command sees. The other replicas will assist in the export process if they have those parts locally. Otherwise they will ignore it.
 
@@ -15,6 +13,20 @@ The same partition can not be exported to the same destination more than once. T
 The export task can be killed by issuing the kill command: `KILL EXPORT PARTITION <where predicate for system.replicated_partition_exports>`.
 
 The task is persistent - it should be resumed after crashes, failures and etc.
+
+### On Apache Iceberg storage exports:
+
+Each MergeTree part will become a separate file (or more depending on `max_bytes` and `max_rows` settings) following the engine naming convention. Once all parts have been exported, new snapshots / manifest files are generated and the data is comitted using the Apache Iceberg commit mechanism.
+
+The manifest file produced by the commit contains a summary field `clickhouse.export-partition-transaction-id` that stores the transaction id. This field is used to implement idempotency and avoid data duplication. Some Apache Iceberg storage managers employ old manifests cleanup, ClickHouse does not.
+
+**IMPORTANT**: In case the storage is managed by a 3rd party application that cleans up old manifest files, it is important that the TTL of such files are greater than the timeout of export partition tasks. If it is not configured in such a way, it is possible to accidentally duplicate data in the extremely rare case a ClickHouse node is the only node working on a given export task, commits the data to Iceberg, crashes before marking the task as done and only boots up after the manifest cleanup has deleted the commit manifest. In such scenario, ClickHouse would attempt to commit those files again producing duplicates. The task timeout on ClickHouse side is controlled by the setting `export_merge_tree_partition_task_timeout_seconds`.
+
+The Iceberg manifest files contain statistics about the data. Exporting a merge tree partition is a non ephemeral long running task, in which nodes can be turned off and turned on. This means the stats of individual files need to be persisted somewhere in order to produce the final manifest. This is implemented through sidecars. Each data file exported will contain a "sibling" sidecar file named `<data_file_name>_clickhouse_export_part_sidecar.avro`. ClickHouse does not clean up these files, and they can be safely deleted once the data is comitted.
+
+### On plain object storage exports:
+
+Each MergeTree part will become a separate file with the following name convention: `<table_directory>/<partitioning>/<data_part_name>_<merge_tree_part_checksum>.<format>`. To ensure atomicity, a commit file containing the relative paths of all exported parts is also shipped. A data file should only be considered part of the dataset if a commit file references it. The commit file will be named using the following convention: `<table_directory>/commit_<partition_id>_<transaction_id>`.
 
 ## Syntax
 
@@ -35,7 +47,7 @@ TO TABLE [destination_database.]destination_table
 
 ### Server Settings
 
-#### `enable_experimental_export_merge_tree_partition_feature` (Required)
+#### `allow_experimental_export_merge_tree_partition` (Required)
 
 - **Type**: `Bool`
 - **Default**: `false`
@@ -47,7 +59,7 @@ TO TABLE [destination_database.]destination_table
 
 - **Type**: `Bool`
 - **Default**: `false`
-- **Description**: Ignore existing partition export and overwrite the ZooKeeper entry. Allows re-exporting a partition to the same destination before the manifest expires.
+- **Description**: Ignore existing partition export and overwrite the ZooKeeper entry. Allows re-exporting a partition to the same destination before the manifest expires. **IMPORTANT:** this is dangerous because it can lead to duplicated data, use it with caution.
 
 #### `export_merge_tree_partition_max_retries` (Optional)
 
@@ -70,23 +82,34 @@ TO TABLE [destination_database.]destination_table
   - `error` - Throw an error if the file already exists
   - `overwrite` - Overwrite the file
 
-### export_merge_tree_part_throw_on_pending_mutations
+### `export_merge_tree_part_throw_on_pending_mutations` (Optional)
 
 - **Type**: `bool`
 - **Default**: `true`
 - **Description**: If set to true, throws if pending mutations exists for a given part. Note that by default mutations are applied to all parts, which means that if a mutation in practice would only affetct part/partition x, all the other parts/partition will throw upon export. The exception is when the `IN PARTITION` clause was used in the mutation command. Note the `IN PARTITION` clause is not properly implemented for plain MergeTree tables.
 
-### export_merge_tree_part_throw_on_pending_patch_parts
+### `export_merge_tree_part_throw_on_pending_patch_parts` (Optional)
 
 - **Type**: `bool`
 - **Default**: `true`
 - **Description**: If set to true, throws if pending patch parts exists for a given part. Note that by default mutations are applied to all parts, which means that if a mutation in practice would only affetct part/partition x, all the other parts/partition will throw upon export. The exception is when the `IN PARTITION` clause was used in the mutation command. Note the `IN PARTITION` clause is not properly implemented for plain MergeTree tables.
 
-### export_merge_tree_part_filename_pattern
+### `export_merge_tree_part_filename_pattern` (Optional)
 
 - **Type**: `String`
 - **Default**: `{part_name}_{checksum}`
 - **Description**: Pattern for the filename of the exported merge tree part. The `part_name` and `checksum` are calculated and replaced on the fly. Additional macros are supported.
+
+### `export_merge_tree_partition_task_timeout_seconds` (Optional)
+
+- **Type**: `UInt64`
+- **Default**: `3600`
+- **Description**: The timeout is measured from the manifest's create_time. Set to 0 to disable the timeout.
+When the timeout is exceeded the task transitions to KILLED (same terminal state as `KILL QUERY ... EXPORT PARTITION`), and `last_exception` is populated with a timeout reason.
+
+Notes:
+- Enforcement is best-effort: actual kill latency is bounded by one manifest-updater poll cycle (~30s) plus ZooKeeper watch propagation.
+- Since both this timeout and `export_merge_tree_partition_manifest_ttl` are measured from `create_time`, keep `export_merge_tree_partition_manifest_ttl` greater than `export_merge_tree_partition_task_timeout_seconds` if you want the KILLED entry to remain visible in `system.replicated_partition_exports` after the timeout fires.
 
 ## Examples
 

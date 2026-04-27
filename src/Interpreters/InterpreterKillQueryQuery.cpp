@@ -40,7 +40,7 @@ namespace Setting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool enable_experimental_export_merge_tree_partition_feature;
+    extern const ServerSettingsBool allow_experimental_export_merge_tree_partition;
 }
 
 namespace ErrorCodes
@@ -259,10 +259,10 @@ BlockIO InterpreterKillQueryQuery::execute()
     }
     case ASTKillQueryQuery::Type::ExportPartition:
     {
-        if (!getContext()->getServerSettings()[ServerSetting::enable_experimental_export_merge_tree_partition_feature])
+        if (!getContext()->getServerSettings()[ServerSetting::allow_experimental_export_merge_tree_partition])
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Exporting merge tree partition is experimental. Set the server setting `enable_experimental_export_merge_tree_partition_feature` to enable it");
+                "Exporting merge tree partition is experimental. Set the server setting `allow_experimental_export_merge_tree_partition` to enable it");
         }
 
         Block exports_block = getSelectResult(

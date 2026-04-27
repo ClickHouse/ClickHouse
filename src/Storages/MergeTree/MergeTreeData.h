@@ -1051,6 +1051,7 @@ public:
         const StoragePtr & destination_storage,
         const String & transaction_id,
         ContextPtr query_context,
+        const std::optional<String> & iceberg_metadata_json = std::nullopt,
         bool allow_outdated_parts = false,
         std::function<void(MergeTreePartExportManifest::CompletionCallbackResult)> completion_callback = {});
 
@@ -1059,6 +1060,7 @@ public:
         const StorageID & destination_storage_id,
         const String & transaction_id,
         ContextPtr query_context,
+        const std::optional<String> & iceberg_metadata_json = std::nullopt,
         bool allow_outdated_parts = false,
         std::function<void(MergeTreePartExportManifest::CompletionCallbackResult)> completion_callback = {});
 

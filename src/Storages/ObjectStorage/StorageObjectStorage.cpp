@@ -37,6 +37,9 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/MultiFileStorageObjectStorageSink.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Poco/JSON/Parser.h>
 
 
 namespace DB
@@ -601,8 +604,11 @@ bool StorageObjectStorage::optimize(
     return configuration->optimize(metadata_snapshot, context, format_settings);
 }
 
-bool StorageObjectStorage::supportsImport() const
+bool StorageObjectStorage::supportsImport(ContextPtr local_context) const
 {
+    if (isDataLake())
+        return configuration->getExternalMetadata()->supportsImport(local_context);
+
     if (!configuration->partition_strategy)
         return false;
 
@@ -612,7 +618,6 @@ bool StorageObjectStorage::supportsImport() const
     return configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE;
 }
 
-
 SinkToStoragePtr StorageObjectStorage::import(
     const std::string & file_name,
     Block & block_with_partition_values,
@@ -620,9 +625,21 @@ SinkToStoragePtr StorageObjectStorage::import(
     bool overwrite_if_exists,
     std::size_t max_bytes_per_file,
     std::size_t max_rows_per_file,
+    const std::optional<std::string> & iceberg_metadata_json_string,
     const std::optional<FormatSettings> & format_settings_,
     ContextPtr local_context)
 {
+    if (isDataLake())
+    {
+        return configuration->getExternalMetadata()->import(
+            catalog,
+            new_file_path_callback,
+            std::make_shared<const Block>(getInMemoryMetadataPtr()->getSampleBlock()),
+            *iceberg_metadata_json_string,
+            format_settings_ ? format_settings_ : format_settings,
+            local_context);
+    }
+
     std::string partition_key;
 
     if (configuration->partition_strategy)
@@ -651,8 +668,40 @@ SinkToStoragePtr StorageObjectStorage::import(
         local_context);
 }
 
-void StorageObjectStorage::commitExportPartitionTransaction(const String & transaction_id, const String & partition_id, const Strings & exported_paths, ContextPtr local_context)
+void StorageObjectStorage::commitExportPartitionTransaction(
+    const String & transaction_id,
+    const String & partition_id,
+    const Strings & exported_paths,
+    const IcebergCommitExportPartitionArguments & iceberg_commit_export_partition_arguments,
+    ContextPtr local_context)
 {
+    if (isDataLake())
+    {
+        /// Parse the Iceberg metadata snapshot (stored in ZooKeeper at export-start time) only to
+        /// extract the schema-id and partition-spec-id that were current when the export began.
+        /// partition_columns and partition_types are derived inside commitExportPartitionTransaction
+        /// from the same JSON, so only partition_values need to be carried here.
+        Poco::JSON::Parser iceberg_parser;
+        Poco::JSON::Object::Ptr iceberg_metadata =
+            iceberg_parser.parse(iceberg_commit_export_partition_arguments.metadata_json_string).extract<Poco::JSON::Object::Ptr>();
+
+        const auto original_schema_id = iceberg_metadata->getValue<Int64>(Iceberg::f_current_schema_id);
+        const auto partition_spec_id   = iceberg_metadata->getValue<Int64>(Iceberg::f_default_spec_id);
+
+        configuration->getExternalMetadata()->commitExportPartitionTransaction(
+            catalog,
+            storage_id,
+            transaction_id,
+            original_schema_id,
+            partition_spec_id,
+            iceberg_commit_export_partition_arguments.partition_values,
+            std::make_shared<const Block>(getInMemoryMetadataPtr()->getSampleBlock()),
+            exported_paths,
+            configuration,
+            local_context);
+        return;
+    }
+
     const String commit_object = configuration->getRawPath().path + "/commit_" + partition_id + "_" + transaction_id;
 
     /// if file already exists, nothing to be done

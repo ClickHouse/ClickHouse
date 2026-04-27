@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `ALTER TABLE EXPORT PART` command exports individual MergeTree data parts to object storage (S3, Azure Blob Storage, etc.), typically in Parquet format. A commit file is shipped to the same destination directory containing all data files exported within that transaction.
+The `ALTER TABLE EXPORT PART` command exports individual MergeTree data parts to object storage (S3, Azure Blob Storage, etc.) or data lakes like Apache Iceberg tables (with and without catalogs), typically in Parquet format.
 
 **Key Characteristics:**
 - **Experimental feature** - must be enabled via `allow_experimental_export_merge_tree_part` setting
@@ -10,6 +10,14 @@ The `ALTER TABLE EXPORT PART` command exports individual MergeTree data parts to
 - **Ephemeral** - no automatic retry mechanism; manual retry required on failure
 - **Idempotent** - safe to re-export the same part (skips by default if file exists)
 - **Preserves sort order** from the source table
+
+### On Apache Iceberg storage exports:
+
+Each MergeTree part will become a separate file (or more depending on `max_bytes` and `max_rows` settings) following the engine naming convention. Once the part has been exported, new snapshots / manifest files are generated and the data is committed using the Apache Iceberg commit mechanism.
+
+### On plain object storage exports:
+
+A commit file is shipped to the same destination directory containing all data files exported within that transaction.
 
 ## Syntax
 
@@ -72,19 +80,28 @@ In case a table function is used as the destination, the schema can be omitted a
 - **Default**: `0`
 - **Description**: Maximum number of rows to write to a single file when exporting a merge tree part. 0 means no limit. This is not a hard limit, and it highly depends on the output format granularity and input source chunk size. Using this might break idempotency, use it with care.
 
-### export_merge_tree_part_throw_on_pending_mutations
+#### `export_merge_tree_part_file_already_exists_policy` (Optional)
+
+- **Type**: `MergeTreePartExportFileAlreadyExistsPolicy`
+- **Default**: `skip`
+- **Description**: Policy for handling files that already exist during export. Possible values:
+  - `skip` - Skip the file if it already exists
+  - `error` - Throw an error if the file already exists
+  - `overwrite` - Overwrite the file
+
+### `export_merge_tree_part_throw_on_pending_mutations` (Optional)
 
 - **Type**: `bool`
 - **Default**: `true`
 - **Description**: If set to true, throws if pending mutations exists for a given part. Note that by default mutations are applied to all parts, which means that if a mutation in practice would only affetct part/partition x, all the other parts/partition will throw upon export. The exception is when the `IN PARTITION` clause was used in the mutation command. Note the `IN PARTITION` clause is not properly implemented for plain MergeTree tables.
 
-### export_merge_tree_part_throw_on_pending_patch_parts
+### `export_merge_tree_part_throw_on_pending_patch_parts` (Optional)
 
 - **Type**: `bool`
 - **Default**: `true`
 - **Description**: If set to true, throws if pending patch parts exists for a given part. Note that by default mutations are applied to all parts, which means that if a mutation in practice would only affetct part/partition x, all the other parts/partition will throw upon export. The exception is when the `IN PARTITION` clause was used in the mutation command. Note the `IN PARTITION` clause is not properly implemented for plain MergeTree tables.
 
-### export_merge_tree_part_filename_pattern
+### `export_merge_tree_part_filename_pattern` (Optional)
 
 - **Type**: `String`
 - **Default**: `{part_name}_{checksum}`

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
@@ -20,6 +21,7 @@
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Poco/JSON/Object.h>
 
 #include <expected>
 #include <optional>
@@ -475,7 +477,7 @@ public:
         ContextPtr /*context*/,
         bool /*async_insert*/);
 
-    virtual bool supportsImport() const
+    virtual bool supportsImport(ContextPtr) const
     {
       return false;
     }
@@ -492,16 +494,28 @@ It is currently only implemented in StorageObjectStorage.
         bool /* overwrite_if_exists */,
         std::size_t /* max_bytes_per_file */,
         std::size_t /* max_rows_per_file */,
+        const std::optional<std::string> & /* iceberg_metadata_json_string */,
         const std::optional<FormatSettings> & /* format_settings */,
         ContextPtr /* context */)
     {
       throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Import is not implemented for storage {}", getName());
     }
 
+    struct IcebergCommitExportPartitionArguments
+    {
+      std::string metadata_json_string;
+      /// Partition column values (after transforms). Callers are responsible for
+      /// populating this: the partition-export path parses them from the persisted
+      /// JSON string, while the direct EXPORT PART path reads them from the part's
+      /// partition key.
+      std::vector<Field> partition_values;
+    };
+
     virtual void commitExportPartitionTransaction(
       const String & /* transaction_id */,
       const String & /* partition_id */,
       const Strings & /* exported_paths */,
+      const IcebergCommitExportPartitionArguments & /* iceberg_commit_export_partition_arguments */,
       ContextPtr /* local_context */)
   {
       throw Exception(ErrorCodes::NOT_IMPLEMENTED, "commitExportPartitionTransaction is not implemented for storage type {}", getName());

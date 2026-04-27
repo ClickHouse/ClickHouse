@@ -74,8 +74,7 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
-
-    bool supportsImport() const override;
+    bool supportsImport(ContextPtr) const override;
 
     SinkToStoragePtr import(
         const std::string & /* file_name */,
@@ -84,6 +83,7 @@ public:
         bool /* overwrite_if_exists */,
         std::size_t /* max_bytes_per_file */,
         std::size_t /* max_rows_per_file */,
+        const std::optional<std::string> & /* iceberg_metadata_json_string */,
         const std::optional<FormatSettings> & /* format_settings_ */,
         ContextPtr /* context */) override;
 
@@ -91,6 +91,7 @@ public:
         const String & transaction_id,
         const String & partition_id,
         const Strings & exported_paths,
+        const IcebergCommitExportPartitionArguments & iceberg_commit_export_partition_arguments,
         ContextPtr local_context) override;
 
     void truncate(

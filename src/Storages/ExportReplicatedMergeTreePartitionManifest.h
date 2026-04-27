@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/Exception.h>
 #include <Interpreters/StorageID.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
@@ -110,6 +111,7 @@ struct ExportReplicatedMergeTreePartitionManifest
     time_t create_time;
     size_t max_retries;
     size_t ttl_seconds;
+    size_t task_timeout_seconds;
     size_t max_threads;
     bool parallel_formatting;
     bool parquet_parallel_encoding;
@@ -118,6 +120,8 @@ struct ExportReplicatedMergeTreePartitionManifest
     MergeTreePartExportManifest::FileAlreadyExistsPolicy file_already_exists_policy;
     String filename_pattern;
     bool lock_inside_the_task; /// todo temporary
+    bool write_full_path_in_iceberg_metadata = false;
+    String iceberg_metadata_json;
 
     std::string toJsonString() const
     {
@@ -129,7 +133,12 @@ struct ExportReplicatedMergeTreePartitionManifest
         json.set("destination_table", destination_table);
         json.set("source_replica", source_replica);
         json.set("number_of_parts", number_of_parts);
-        
+
+        if (!iceberg_metadata_json.empty())
+        {
+            json.set("iceberg_metadata_json", iceberg_metadata_json);
+        }
+
         Poco::JSON::Array::Ptr parts_array = new Poco::JSON::Array();
         for (const auto & part : parts)
             parts_array->add(part);
@@ -144,7 +153,9 @@ struct ExportReplicatedMergeTreePartitionManifest
         json.set("create_time", create_time);
         json.set("max_retries", max_retries);
         json.set("ttl_seconds", ttl_seconds);
+        json.set("task_timeout_seconds", task_timeout_seconds);
         json.set("lock_inside_the_task", lock_inside_the_task);
+        json.set("write_full_path_in_iceberg_metadata", write_full_path_in_iceberg_metadata);
         std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
         Poco::JSON::Stringifier::stringify(json, oss);
@@ -166,12 +177,19 @@ struct ExportReplicatedMergeTreePartitionManifest
         manifest.source_replica = json->getValue<String>("source_replica");
         manifest.number_of_parts = json->getValue<size_t>("number_of_parts");
         manifest.max_retries = json->getValue<size_t>("max_retries");
+
+        if (json->has("iceberg_metadata_json"))
+        {
+            manifest.iceberg_metadata_json = json->getValue<String>("iceberg_metadata_json");
+        }
+
         auto parts_array = json->getArray("parts");
         for (size_t i = 0; i < parts_array->size(); ++i)
             manifest.parts.push_back(parts_array->getElement<String>(static_cast<unsigned int>(i)));
         
         manifest.create_time = json->getValue<time_t>("create_time");
         manifest.ttl_seconds = json->getValue<size_t>("ttl_seconds");
+        manifest.task_timeout_seconds = json->getValue<size_t>("task_timeout_seconds");
         manifest.max_threads = json->getValue<size_t>("max_threads");
         manifest.parallel_formatting = json->getValue<bool>("parallel_formatting");
         manifest.parquet_parallel_encoding = json->getValue<bool>("parquet_parallel_encoding");
@@ -191,6 +209,8 @@ struct ExportReplicatedMergeTreePartitionManifest
         }
 
         manifest.lock_inside_the_task = json->getValue<bool>("lock_inside_the_task");
+
+        manifest.write_full_path_in_iceberg_metadata = json->getValue<bool>("write_full_path_in_iceberg_metadata");
 
         return manifest;
     }

@@ -20,7 +20,6 @@ namespace ProfileEvents
     extern const Event ExportPartitionZooKeeperSet;
     extern const Event ExportPartitionZooKeeperRemove;
     extern const Event ExportPartitionZooKeeperMulti;
-    extern const Event ExportPartitionZooKeeperExists;
 }
 
 
@@ -36,30 +35,6 @@ namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-    ContextPtr getContextCopyWithTaskSettings(const ContextPtr & context, const ExportReplicatedMergeTreePartitionManifest & manifest)
-    {
-        auto context_copy = Context::createCopy(context);
-        context_copy->makeQueryContextForExportPart();
-        context_copy->setCurrentQueryId(manifest.query_id);
-        context_copy->setSetting("output_format_parallel_formatting", manifest.parallel_formatting);
-        context_copy->setSetting("output_format_parquet_parallel_encoding", manifest.parquet_parallel_encoding);
-        context_copy->setSetting("max_threads", manifest.max_threads);
-        context_copy->setSetting("export_merge_tree_part_file_already_exists_policy", String(magic_enum::enum_name(manifest.file_already_exists_policy)));
-        context_copy->setSetting("export_merge_tree_part_max_bytes_per_file", manifest.max_bytes_per_file);
-        context_copy->setSetting("export_merge_tree_part_max_rows_per_file", manifest.max_rows_per_file);
-
-        /// always skip pending mutations and patch parts because we already validated the parts during query processing
-        context_copy->setSetting("export_merge_tree_part_throw_on_pending_mutations", false);
-        context_copy->setSetting("export_merge_tree_part_throw_on_pending_patch_parts", false);
-
-        context_copy->setSetting("export_merge_tree_part_filename_pattern", manifest.filename_pattern);
-
-	return context_copy;
-    }
 }
 
 ExportPartitionTaskScheduler::ExportPartitionTaskScheduler(StorageReplicatedMergeTree & storage_)
@@ -199,7 +174,7 @@ void ExportPartitionTaskScheduler::run()
 
             LOG_INFO(storage.log, "ExportPartition scheduler task: Scheduling part export: {}", zk_part_name);
 
-            auto context = getContextCopyWithTaskSettings(storage.getContext(), manifest);
+            auto context = ExportPartitionUtils::getContextCopyWithTaskSettings(storage.getContext(), manifest);
 
             /// todo arthur this code path does not perform all the validations a simple part export does because we are not calling exportPartToTable directly.
             /// the schema and everything else has been validated when the export partition task was created, but nothing prevents the destination table from being
@@ -217,6 +192,7 @@ void ExportPartitionTaskScheduler::run()
                     context->getSettingsRef()[Setting::export_merge_tree_part_file_already_exists_policy].value,
                     context->getSettingsCopy(),
                     storage.getInMemoryMetadataPtr(),
+                    manifest.iceberg_metadata_json,
                     [this, key, zk_part_name, manifest, destination_storage]
                     (MergeTreePartExportManifest::CompletionCallbackResult result)
                     {
@@ -263,7 +239,8 @@ void ExportPartitionTaskScheduler::run()
                         part->name,
                         destination_storage_id,
                         manifest.transaction_id,
-                        getContextCopyWithTaskSettings(storage.getContext(), manifest),
+                        context,
+                        manifest.iceberg_metadata_json,
                         /*allow_outdated_parts*/ true,
                         [this, key, zk_part_name, manifest, destination_storage]
                         (MergeTreePartExportManifest::CompletionCallbackResult result)
@@ -342,7 +319,31 @@ void ExportPartitionTaskScheduler::handlePartExportSuccess(
 
     LOG_INFO(storage.log, "ExportPartition scheduler task: All parts are processed, will try to commit export partition");
 
-    ExportPartitionUtils::commit(manifest, destination_storage, zk, storage.log.load(), export_path, storage.getContext());
+    try
+    {
+        auto context = ExportPartitionUtils::getContextCopyWithTaskSettings(storage.getContext(), manifest);
+        ExportPartitionUtils::commit(manifest, destination_storage, zk, storage.log.load(), export_path, context, storage);
+    }
+    catch (const Exception & e)
+    {
+        LOG_INFO(storage.log, "ExportPartition scheduler task: Caught exception while committing export partition, {}", e.message());
+
+        /// Bump commit-attempts counter; transition to FAILED once the budget is exhausted.
+        /// Prevents the task from remaining stuck in PENDING if commit() fails persistently
+        /// (e.g. schema/spec mismatch, prolonged destination outage).
+        const bool became_failed = ExportPartitionUtils::handleCommitFailure(
+            zk,
+            export_path,
+            manifest.max_retries,
+            storage.log.load());
+
+        if (became_failed)
+        {
+            LOG_WARNING(storage.log,
+                "ExportPartition scheduler task: Commit for {} transitioned to FAILED after exhausting max_retries={}",
+                export_path.string(), manifest.max_retries);
+        }
+    }
 }
 
 void ExportPartitionTaskScheduler::handlePartExportFailure(
@@ -450,42 +451,9 @@ void ExportPartitionTaskScheduler::handlePartExportFailure(
         LOG_INFO(storage.log, "ExportPartition scheduler task: Retry count limit not exceeded for part {}, will increment retry count", part_name);
     }
 
-    const auto exceptions_per_replica_path = export_path / "exceptions_per_replica" / storage.replica_name;
-    const auto count_path = exceptions_per_replica_path / "count";
-    const auto last_exception_path = exceptions_per_replica_path / "last_exception";
-
-    ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
-    ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperExists);
-    if (zk->exists(exceptions_per_replica_path))
-    {
-        LOG_INFO(storage.log, "ExportPartition scheduler task: Exceptions per replica path exists, no need to create it");
-        std::string num_exceptions_string;
-        if (zk->tryGet(count_path, num_exceptions_string))
-        {
-            const auto num_exceptions = parse<size_t>(num_exceptions_string) + 1;
-            ops.emplace_back(zkutil::makeSetRequest(count_path, std::to_string(num_exceptions), -1));
-        }
-        else
-        {
-            /// TODO maybe we should find a better way to handle this case, not urgent
-            LOG_INFO(storage.log, "ExportPartition scheduler task: Failed to get number of exceptions, will not increment it");
-        }
-
-        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
-        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperGet);
-
-        ops.emplace_back(zkutil::makeSetRequest(last_exception_path / "part", part_name, -1));
-        ops.emplace_back(zkutil::makeSetRequest(last_exception_path / "exception", exception->message(), -1));
-    }
-    else
-    {
-        LOG_INFO(storage.log, "ExportPartition scheduler task: Exceptions per replica path does not exist, will create it");
-        ops.emplace_back(zkutil::makeCreateRequest(exceptions_per_replica_path, "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(count_path, "1", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(last_exception_path, "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(last_exception_path / "part", part_name, zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(last_exception_path / "exception", exception->message(), zkutil::CreateMode::Persistent));
-    }
+    ExportPartitionUtils::appendExceptionOps(
+        ops, zk, export_path, storage.replica_name, part_name,
+        exception->message(), storage.log.load());
 
     ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
     ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperMulti);

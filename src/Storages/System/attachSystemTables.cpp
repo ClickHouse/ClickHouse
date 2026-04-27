@@ -148,7 +148,7 @@ namespace DB
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool enable_experimental_export_merge_tree_partition_feature;
+    extern const ServerSettingsBool allow_experimental_export_merge_tree_partition;
 }
 
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
@@ -239,7 +239,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemMerges>(context, system_database, "merges", "Contains a list of merges currently executing merges of MergeTree tables and their progress. Each merge operation is represented by a single row.");
     attach<StorageSystemMoves>(context, system_database, "moves", "Contains information about in-progress data part moves of MergeTree tables. Each data part movement is represented by a single row.");
     attach<StorageSystemExports>(context, system_database, "exports", "Contains a list of exports currently executing exports of MergeTree tables and their progress. Each export operation is represented by a single row.");
-    if (context->getServerSettings()[ServerSetting::enable_experimental_export_merge_tree_partition_feature])
+    if (context->getServerSettings()[ServerSetting::allow_experimental_export_merge_tree_partition])
     {
         attach<StorageSystemReplicatedPartitionExports>(context, system_database, "replicated_partition_exports", "Contains a list of partition exports of ReplicatedMergeTree tables and their progress. Each export operation is represented by a single row.");
     }
