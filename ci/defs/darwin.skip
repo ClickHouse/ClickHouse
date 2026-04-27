@@ -131,6 +131,8 @@
 01133_max_result_rows
 01160_table_dependencies
 01162_strange_mutations
+01172_transaction_counters
+01173_transaction_control_queries
 01177_group_array_moving
 01182_materialized_view_different_structure
 01211_optimize_skip_unused_shards_type_mismatch
@@ -201,6 +203,7 @@
 01602_insert_into_table_function_cluster
 01602_max_distributed_connections
 01602_modified_julian_day_msan
+01615_random_one_shard_insertion
 01621_clickhouse_compressor
 01636_nullable_fuzz2
 01639_distributed_sync_insert_zero_rows
@@ -258,6 +261,7 @@
 01890_materialized_distributed_join
 01892_setting_limit_offset_distributed
 01901_in_literal_shard_prune
+01903_http_fields
 01903_ssd_cache_dictionary_array_type
 01903_ssd_cache_dictionary_array_type                                                                                                                                    
 01904_ssd_cache_dictionary_default_nullable_type
@@ -505,6 +509,7 @@
 03155_analyzer_interpolate
 03156_analyzer_array_join_distributed
 03160_pretty_format_tty
+03161_clickhouse_keeper_client_create_sequential
 03164_analyzer_global_in_alias
 03164_parallel_replicas_range_filter_min_max
 03164_selects_with_pk_usage_profile_event
@@ -524,6 +529,8 @@
 03221_merge_profile_events
 03228_clickhouse_local_copy_argument
 03229_query_condition_cache_folded_constants
+03230_keeper_cp_mv_commands
+03231_keeper_cpr_mvr_commands
 03232_workload_create_and_drop
 03240_insert_select_named_tuple
 03243_cluster_not_found_column
@@ -634,15 +641,18 @@
 03746_buffers_input_output_format_misc
 03748_async_insert_reset_setting
 03749_arrayROCAUC_variant_type
+03752_attach_as_replicated_transaction_metadata
 03757_optimize_skip_unused_shards_with_type_cast
 03761_trace_profile_events_list
 03761_trace_profile_events_list                                                                                                                                          
 03778_print_time_initial_query
+03783_contingency_window_functions_distributed
 03783_part_log_mutation_ids_mt
 03783_serialize_into_sparse_with_subcolumn_extraction
 03786_AST_formatting_inconsistencies_in_debug_check
 03787_no_excessive_output_on_syntax_error
 03794_global_in_nullable_type_mismatch
+03803_transaction_mutation_race
 03811_negative_limit_offset_distributed_large
 03811_sparse_column_aggregation_with_sum
 03811_test_hint_after_comment
@@ -652,6 +662,7 @@
 03836_distributed_index_analysis_pk_expression
 03836_distributed_index_analysis_skip_index_expression
 03911_fractional_limit_offset_distributed_large
+03916_attach_as_replicated_implicit_transaction
 03918_allow_nullable_tuple_in_extracted_subcolumns_not_changeable
 03928_loop_row_policy
 03976_geometry_functions_accept_subtypes
@@ -678,6 +689,12 @@
 04054_join_optimizer_overlapping_column_names
 04056_execute_as_format
 04056_npy_large_shape_validation
+04057_transaction_version_metadata_lifecycle
+04058_transaction_concurrent_removal
+04060_transaction_snapshot_visibility
+04061_analyzer_inline_view
 04061_http_pool_tcp_buffer_async_metrics
+04061_keeper_client_watch_commands
 04061_trivial_count_aggregate_function_argument_types_distributed
+04064_keeper_client_lsr_commands
 04070_exact_count_max_rows_to_read
