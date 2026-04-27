@@ -181,6 +181,30 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
     auto bucket_dag = group_by_dag->clone();
     auto bucket_expression = std::make_shared<ExpressionActions>(std::move(bucket_dag));
 
+    /// Verify all bucket expression inputs map to PK columns.
+    const auto & bucket_inputs = bucket_expression->getActionsDAG().getInputs();
+    for (const auto * input_node : bucket_inputs)
+    {
+        const auto & input_name = input_node->result_name;
+        bool found = false;
+        for (const auto & pk_name : primary_key.column_names)
+        {
+            if (input_name == pk_name)
+            {
+                found = true;
+                break;
+            }
+            auto dot_pos = input_name.find('.');
+            if (dot_pos != String::npos && input_name.substr(dot_pos + 1) == pk_name)
+            {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            return;
+    }
+
     Block header_block;
     for (const auto & key_name : params.keys)
     {
