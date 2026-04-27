@@ -199,6 +199,37 @@ def test_replace_rolls_back_on_write_failure():
     instance.query("DROP USER u_replace")
 
 
+def test_replace_rolls_back_on_write_failure_after_restart():
+    # Same as `test_replace_rolls_back_on_write_failure`, but exercises the
+    # placeholder path: after a restart, the user is held in memory as an
+    # `EntityOnDisk` placeholder until first read. The rollback must
+    # materialize the real definition from disk, otherwise restoring it
+    # would persist a stub instead of the original entity.
+    instance.query("DROP USER IF EXISTS u_replace_after_restart")
+    instance.query(
+        "CREATE USER u_replace_after_restart IDENTIFIED WITH plaintext_password BY 'old_pw'"
+    )
+    original = instance.query("SHOW CREATE USER u_replace_after_restart")
+
+    instance.restart_clickhouse()  # Now the user is an `EntityOnDisk` placeholder.
+
+    instance.query("SYSTEM ENABLE FAILPOINT disk_access_storage_write_entity_fails")
+    try:
+        error = instance.query_and_get_error(
+            "CREATE USER OR REPLACE u_replace_after_restart IDENTIFIED WITH plaintext_password BY 'new_pw'"
+        )
+        assert "FAULT_INJECTED" in error or "Injected fault" in error
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT disk_access_storage_write_entity_fails")
+
+    assert instance.query("SHOW CREATE USER u_replace_after_restart") == original
+
+    instance.restart_clickhouse()
+    assert instance.query("SHOW CREATE USER u_replace_after_restart") == original
+
+    instance.query("DROP USER u_replace_after_restart")
+
+
 def test_recovery_when_sql_file_is_missing():
     # Server should not fail to start when an entity is referenced from `users.list`
     # but its corresponding `<uuid>.sql` file is missing on disk. The list rebuild
