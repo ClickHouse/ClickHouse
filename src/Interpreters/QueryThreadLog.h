@@ -4,7 +4,6 @@
 #include <Interpreters/ClientInfo.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 

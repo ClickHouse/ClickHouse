@@ -3,19 +3,11 @@
 #include <base/hex.h>
 #include <Common/formatIPv6.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-parameter"
-#pragma clang diagnostic ignored "-Wsign-compare"
-#include <dragonbox/dragonbox_to_chars.h>
-#pragma clang diagnostic pop
+#include <zmij.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
-}
 
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
@@ -97,19 +89,27 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 template <typename F>
 static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer & buf, F && write_quoted_string)
 {
-    static constexpr std::string_view distinct_str = "distinct";
-    static constexpr std::string_view all_str = "all";
-    static constexpr std::string_view table_str = "table";
-    static constexpr std::string_view select_str = "select";
+    /// These are valid identifiers but are problematic if present unquoted in SQL query
+    /// because they are keywords that the parser interprets as clause starters or modifiers,
+    /// causing the formatted AST to fail parsing back.
+    auto isCaseInsensitiveEqual = [](std::string_view a, std::string_view b)
+    {
+        return a.size() == b.size()
+            && 0 == strncasecmp(a.data(), b.data(), a.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
+    };
+
     if (isValidIdentifier(s)
-        /// These are valid identifiers but are problematic if present unquoted in SQL query.
-        && !(s.size() == distinct_str.size() && 0 == strncasecmp(s.data(), "distinct", s.size()))
-        && !(s.size() == all_str.size() && 0 == strncasecmp(s.data(), "all", s.size()))
-        && !(s.size() == table_str.size() && 0 == strncasecmp(s.data(), "table", s.size()))
+        && !isCaseInsensitiveEqual(s, "distinct")
+        && !isCaseInsensitiveEqual(s, "all")
+        && !isCaseInsensitiveEqual(s, "table")
         /// SELECT unquoted as an identifier would be re-parsed as the SELECT keyword and produce a
         /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which
         /// re-parses as a subquery (SELECT [x]) with a different structure.
-        && !(s.size() == select_str.size() && 0 == strncasecmp(s.data(), "select", s.size())))
+        && !isCaseInsensitiveEqual(s, "select")
+        /// These keywords cause parsing ambiguity when used as function or identifier names
+        /// because the parser consumes them as clause-starting keywords.
+        && !isCaseInsensitiveEqual(s, "from")
+        && !isCaseInsensitiveEqual(s, "values"))
     {
         writeString(s, buf);
     }
@@ -308,8 +308,6 @@ template <typename T>
 requires is_floating_point<T>
 size_t writeFloatTextFastPath(T x, char * buffer)
 {
-    Int64 result = 0;
-
     if constexpr (std::is_same_v<T, Float64>)
     {
         DecomposedFloat64 decomposed(x);
@@ -327,7 +325,7 @@ size_t writeFloatTextFastPath(T x, char * buffer)
         if (exp > 53 && exp <= 62)
             return writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
 
-        return jkj::dragonbox::to_chars_n(x, buffer) - buffer;
+        return zmij::detail::write(x, buffer) - buffer;
     }
     else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, BFloat16>)
     {
@@ -351,6 +349,8 @@ size_t writeFloatTextFastPath(T x, char * buffer)
         ///               writeFloatTextFastPathFloat32Rounded to adjust, matching
         ///               dragonbox exactly for all ~4.3 billion Float32 values
         ///               (positive and negative, exhaustively verified).
+        ///               zmij was patched to produce identical output to dragonbox,
+        ///               so these results still hold.
         ///
         /// exp < 0:     |value| < 1, not an integer.
         /// exp > 30:    |value| >= 2^31, overflows Int32.
@@ -363,13 +363,9 @@ size_t writeFloatTextFastPath(T x, char * buffer)
         if (exp > 24 && exp <= 30)
             return writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
 
-        /// Not an integer, or exp out of range: use dragonbox.
-        return jkj::dragonbox::to_chars_n(f32, buffer) - buffer;
+        /// Not an integer, or exp out of range: use zmij.
+        return zmij::detail::write(f32, buffer) - buffer;
     }
-
-    if (result <= 0)
-        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print floating point number");
-    return result;
 }
 
 template size_t writeFloatTextFastPath(Float64 x, char * buffer);
