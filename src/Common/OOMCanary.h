@@ -6,6 +6,8 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <optional>
+#include <string>
 
 namespace DB
 {
@@ -18,10 +20,11 @@ namespace DB
 /// a configurable amount of memory. Its `oom_score_adj` is set to 1000
 /// (the maximum), so the kernel OOM killer will target it first.
 ///
-/// A dedicated monitor thread blocks on waitpid(). When the canary dies
-/// (typically SIGKILL from OOM killer), the monitor executes the response
-/// sequence: purge jemalloc arenas, kill all queries, cancel all merges,
-/// write to `system.crash_log`, flush system logs, and optionally relaunch.
+/// A dedicated monitor thread blocks on `waitpid`. When the canary dies from
+/// `SIGKILL` and Linux OOM-kill counters confirm an OOM event, the monitor
+/// executes the response sequence: purge jemalloc arenas, kill all queries,
+/// cancel all merges, write to `system.crash_log`, flush system logs, and
+/// optionally relaunch.
 ///
 /// Non-Linux platforms: the canary is a no-op (start returns immediately).
 class OOMCanary
@@ -70,11 +73,22 @@ private:
     /// Execute the OOM response sequence.
     void onCanaryDied();
 
+    struct OOMKillCounters
+    {
+        std::optional<uint64_t> cgroup_oom_kill;
+        std::optional<uint64_t> global_oom_kill;
+    };
+
+    OOMKillCounters readOOMKillCounters() const;
+    bool hasOOMKillCounterAdvanced(const OOMKillCounters & before, const OOMKillCounters & after) const;
+
     std::atomic<pid_t> canary_pid{-1};
     std::atomic<bool> running{false};
     std::atomic<bool> shutdown_requested{false};
     bool relaunch_enabled = false;
     size_t canary_size_bytes = 0;
+    std::optional<std::string> cgroup_memory_events_path;
+    OOMKillCounters oom_kill_counters_before_spawn;
 
     /// Protects start/stop transitions
     std::mutex state_mutex;

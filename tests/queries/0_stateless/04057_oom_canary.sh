@@ -108,6 +108,7 @@ if [[ -z "$tcp_port" ]]; then
     exit 1
 fi
 
+client_args=(--send_logs_level=warning --database=default --port "$tcp_port")
 fatal_message='was killed by signal 9'
 relaunch_message='OOM canary relaunched with new pid'
 
@@ -129,7 +130,9 @@ fi
 
 echo "canary found"
 
-# Step 2: Kill the canary to simulate OOM killer behavior
+# Step 2: Make the monitor observe deterministic OOM evidence, then kill the
+# canary to exercise the OOM response path without requiring real memory pressure.
+"$CLICKHOUSE_BINARY" client "${client_args[@]}" --query "SYSTEM ENABLE FAILPOINT oom_canary_force_oom_evidence"
 kill -9 "$canary_pid"
 
 # Step 3: Wait for the server to detect the canary death, execute response, and relaunch.
@@ -147,7 +150,7 @@ for _ in $(seq 1 100); do
 done
 
 # Step 4: Verify the server is still alive and responding
-result=$("$CLICKHOUSE_BINARY" client --send_logs_level=warning --database=default --port "$tcp_port" --query "SELECT 1" 2>&1)
+result=$("$CLICKHOUSE_BINARY" client "${client_args[@]}" --query "SELECT 1" 2>&1)
 if [[ "$result" == "1" ]]; then
     echo "server alive after canary kill"
 else
@@ -182,7 +185,6 @@ fi
 
 # Step 7: Verify that the OOM canary event was written to system.crash_log.
 # Poll because crash_log flushes asynchronously (flush_interval_milliseconds = 1s).
-client_args=(--send_logs_level=warning --database=default --port "$tcp_port")
 crash_rows=0
 for _ in $(seq 1 30); do
     "$CLICKHOUSE_BINARY" client "${client_args[@]}" --query "SYSTEM FLUSH LOGS crash_log" 2>/dev/null || true

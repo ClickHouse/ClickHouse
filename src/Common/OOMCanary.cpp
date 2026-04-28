@@ -1,9 +1,12 @@
 #include <Common/OOMCanary.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/StackTrace.h>
 #include <Common/FramePointers.h>
 #include <base/errnoToString.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/CrashLog.h>
@@ -11,11 +14,17 @@
 
 #if defined(OS_LINUX)
 #    include <Common/Jemalloc.h>
+#    include <base/cgroupsv2.h>
 #    include <sys/mman.h>
 #    include <sys/types.h>
 #    include <sys/wait.h>
+#    include <algorithm>
 #    include <csignal>
 #    include <cstdint>
+#    include <filesystem>
+#    include <optional>
+#    include <string>
+#    include <string_view>
 #    include <unistd.h>
 #    include <fcntl.h>
 #    include <sys/syscall.h>
@@ -35,6 +44,54 @@ constexpr Int32 OOM_CANARY_SIGNAL_CODE = SI_KERNEL;
 #else
 constexpr Int32 OOM_CANARY_SIGNAL_CODE = 0;
 #endif
+
+#if defined(OS_LINUX)
+std::optional<uint64_t> readCounterFromFile(const std::string & path, std::string_view key)
+{
+    try
+    {
+        ReadBufferFromFile in(path);
+
+        while (!in.eof())
+        {
+            std::string current_key;
+            readStringUntilWhitespace(current_key, in);
+            if (current_key.empty() && in.eof())
+                break;
+
+            assertChar(' ', in);
+
+            uint64_t value = 0;
+            readIntText(value, in);
+
+            if (current_key == key)
+                return value;
+
+            std::string rest_of_line;
+            readStringUntilNewlineInto(rest_of_line, in);
+            in.tryIgnore(1);
+        }
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::string> getCgroupMemoryEventsPath()
+{
+    if (auto cgroup_path = getCgroupsV2PathContainingFile("memory.events"))
+        return (std::filesystem::path(*cgroup_path) / "memory.events").string();
+    return std::nullopt;
+}
+#endif
+}
+
+namespace FailPoints
+{
+extern const char oom_canary_force_oom_evidence[];
 }
 
 OOMCanary::OOMCanary(ContextMutablePtr context_)
@@ -75,6 +132,8 @@ void OOMCanary::start(const Config & config)
     relaunch_enabled = config.relaunch;
     canary_size_bytes = config.size_bytes;
     shutdown_requested.store(false, std::memory_order_relaxed);
+    cgroup_memory_events_path = getCgroupMemoryEventsPath();
+    oom_kill_counters_before_spawn = readOOMKillCounters();
 
     pid_t pid = spawnCanary(config.size_bytes);
     if (pid < 0)
@@ -268,6 +327,38 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
         ::pause();
 }
 
+OOMCanary::OOMKillCounters OOMCanary::readOOMKillCounters() const
+{
+    OOMKillCounters counters;
+
+    if (cgroup_memory_events_path)
+        counters.cgroup_oom_kill = readCounterFromFile(*cgroup_memory_events_path, "oom_kill");
+
+    counters.global_oom_kill = readCounterFromFile("/proc/vmstat", "oom_kill");
+
+    return counters;
+}
+
+bool OOMCanary::hasOOMKillCounterAdvanced(const OOMKillCounters & before, const OOMKillCounters & after) const
+{
+    bool force_oom_evidence = false;
+    fiu_do_on(FailPoints::oom_canary_force_oom_evidence, { force_oom_evidence = true; });
+    if (force_oom_evidence)
+        return true;
+
+    /// Prefer the current memory cgroup counter: it is local to the server's
+    /// cgroup and avoids treating unrelated host OOM kills as canary events.
+    if (before.cgroup_oom_kill && after.cgroup_oom_kill)
+        return *after.cgroup_oom_kill > *before.cgroup_oom_kill;
+
+    /// `/proc/vmstat` is global, so it is only a fallback for hosts where a
+    /// cgroup-local OOM counter is not observable.
+    if (before.global_oom_kill && after.global_oom_kill)
+        return *after.global_oom_kill > *before.global_oom_kill;
+
+    return false;
+}
+
 void OOMCanary::monitorThread()
 {
     LOG_INFO(log, "OOM canary monitor thread started, watching pid {}", canary_pid.load(std::memory_order_relaxed));
@@ -318,23 +409,35 @@ void OOMCanary::monitorThread()
                 break;
             }
 
-            /// The canary was killed (likely by OOM killer)
+            /// The canary was killed by a signal; verify OOM evidence before
+            /// running disruptive recovery actions.
             if (WIFSIGNALED(status))
             {
                 int sig = WTERMSIG(status);
 
                 if (sig == SIGKILL)
                 {
-                    should_run_oom_response = true;
+                    OOMKillCounters oom_kill_counters_after = readOOMKillCounters();
 
-                    LOG_FATAL(log, "OOM canary child pid {} was killed by signal {}. "
-                        "This likely indicates the system is under severe memory pressure.",
-                        current_pid, sig);
+                    if (hasOOMKillCounterAdvanced(oom_kill_counters_before_spawn, oom_kill_counters_after))
+                    {
+                        should_run_oom_response = true;
 
-                    /// A genuine OOM kill resets the rapid-relaunch counter
-                    /// because it is expected behavior, not a child bug.
-                    rapid_relaunch_count = 0;
-                    backoff_sec = initial_backoff_sec;
+                        LOG_FATAL(log, "OOM canary child pid {} was killed by signal {} and Linux OOM-kill counters advanced. "
+                            "This indicates the system is under severe memory pressure.",
+                            current_pid, sig);
+
+                        /// A genuine OOM kill resets the rapid-relaunch counter
+                        /// because it is expected behavior, not a child bug.
+                        rapid_relaunch_count = 0;
+                        backoff_sec = initial_backoff_sec;
+                    }
+                    else
+                    {
+                        LOG_WARNING(log, "OOM canary child pid {} was killed by signal {}, but no Linux OOM-kill counter advanced. "
+                            "Skipping OOM response because this looks like an external `SIGKILL` rather than an OOM kill.",
+                            current_pid, sig);
+                    }
                 }
                 else
                 {
@@ -384,6 +487,7 @@ void OOMCanary::monitorThread()
 
                 backoff_sec = std::min(backoff_sec * 2, max_backoff_sec);
 
+                oom_kill_counters_before_spawn = readOOMKillCounters();
                 pid_t new_pid = spawnCanary(canary_size_bytes);
                 if (new_pid > 0)
                 {
