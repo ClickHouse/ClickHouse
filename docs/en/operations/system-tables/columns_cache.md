@@ -61,5 +61,8 @@ LIMIT 10
 ## See Also {#see-also}
 
 - [`columns_cache_size`](/operations/server-configuration-parameters/settings#columns_cache_size) server setting
+- [`columns_cache_size_ratio`](/operations/server-configuration-parameters/settings#columns_cache_size_ratio) server setting
 - [`use_columns_cache`](/operations/settings/settings#use_columns_cache) query setting
+- [`enable_reads_from_columns_cache`](/operations/settings/settings#enable_reads_from_columns_cache) query setting
+- [`enable_writes_to_columns_cache`](/operations/settings/settings#enable_writes_to_columns_cache) query setting
 - [`SYSTEM DROP COLUMNS CACHE`](/sql-reference/statements/system#drop-columns-cache) query
