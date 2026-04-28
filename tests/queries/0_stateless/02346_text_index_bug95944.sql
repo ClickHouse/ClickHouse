@@ -90,3 +90,22 @@ SELECT '-- Verify preprocessed array tokens are indexed';
 SELECT token FROM mergeTreeTextIndex(currentDatabase(), tab, idx) ORDER BY token;
 
 DROP TABLE tab;
+
+SELECT 'Test ALIAS name colliding with tokenizer identifier';
+
+CREATE TABLE tab
+(
+    s String,
+    `array` String ALIAS s,
+    INDEX idx(s) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO tab VALUES ('hello'), ('world');
+
+SELECT count() FROM tab WHERE has(s, 'hello');
+SELECT count() FROM tab WHERE has(s, 'world');
+SELECT count() FROM tab WHERE has(s, 'nonexistent');
+
+DROP TABLE tab;

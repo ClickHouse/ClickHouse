@@ -35,3 +35,7 @@ Test ALIAS column with Array type and preprocessor
 bar_suffix
 baz_suffix
 foo_suffix
+Test ALIAS name colliding with tokenizer identifier
+1
+1
+0
