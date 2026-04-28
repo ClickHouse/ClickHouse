@@ -346,37 +346,55 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
     auto component_guard = Coordination::setCurrentComponent("DatabaseWithAltersOnDiskBase::alterDatabaseComment");
-    std::lock_guard lock{mutex};
 
-    const String old_comment = comment;
-    comment = command.comment.value();
+    String old_comment;
+    ASTPtr create_query;
+    bool managed_by_shared_catalog = false;
 
-    try
     {
+        std::lock_guard lock{mutex};
+
+        old_comment = comment;
+        comment = command.comment.value();
+
 #if CLICKHOUSE_CLOUD
-        bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName());
+        managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName());
         if (managed_by_shared_catalog && !SharedDatabaseCatalog::isInitialQuery(query_context))
             return;
 #endif
-        const ASTPtr create_query = getCreateDatabaseQueryImpl();
-        if (!create_query)
-            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
-#if CLICKHOUSE_CLOUD
-        if (managed_by_shared_catalog)
-        {
 
+        try
+        {
+            create_query = getCreateDatabaseQueryImpl();
+            if (!create_query)
+                throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+
+            if (!managed_by_shared_catalog)
+                DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
+        }
+        catch (...)
+        {
+            comment = old_comment;
+            throw;
+        }
+    }
+
+#if CLICKHOUSE_CLOUD
+    if (managed_by_shared_catalog)
+    {
+        try
+        {
             auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
             query_context->setVersionToWaitSharedCatalog(version_to_wait);
-            return;
         }
+        catch (...)
+        {
+            std::lock_guard lock{mutex};
+            comment = old_comment;
+            throw;
+        }
+    }
 #endif
-        DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
-    }
-    catch (...)
-    {
-        comment = old_comment;
-        throw;
-    }
 }
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
