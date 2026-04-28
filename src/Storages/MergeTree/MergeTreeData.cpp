@@ -9389,16 +9389,25 @@ Block MergeTreeData::getSkipIndexAggregationBlock(
             }
         }
 
-        /// Per-partition state: merged set block + partition key values
+        /// Per-partition state: aggregate columns + partition key values
         struct SetPartitionState
         {
-            Block merged_block;  /// Merged set values across all granules. No explicit de-duplication is needed:
-                                 /// values may repeat across granules, but all `uniq*` aggregate functions
-                                 /// internally de-duplicate, so duplicates do not affect the result.
+            /// Aggregate columns for incremental aggregation instead of materializing all values in merged_block.
+            std::vector<MutableColumnPtr> agg_columns;
             Row partition_values;
             bool has_overflow = false;
         };
         std::unordered_map<String, SetPartitionState> partition_state;
+
+        /// Create aggregate function columns for incremental aggregation
+        const DataTypePtr data_type = index_desc.data_types[0];
+        std::vector<AggregateFunctionPtr> agg_funcs;
+        for (const auto & agg_desc : aggregate_descriptions)
+        {
+            const Array & parameters = agg_desc.parameters;
+            AggregateFunctionProperties properties;
+            agg_funcs.push_back(AggregateFunctionFactory::instance().get(agg_desc.function->getName(), NullsAction::EMPTY, {data_type}, parameters, properties));
+        }
 
         for (size_t row = 0, part_idx = 0; row < pruning_result.rows; ++row, ++part_idx)
         {
@@ -9449,16 +9458,17 @@ Block MergeTreeData::getSkipIndexAggregationBlock(
                     break;
                 }
 
-                /// Append granule values to the merged block
-                if (state.merged_block.columns() == 0)
+                /// Initialize aggregate columns for this partition on first granule
+                if (state.agg_columns.empty())
                 {
-                    state.merged_block = set_granule->block.cloneEmpty();
-                    for (size_t i = 0; i < state.merged_block.columns(); ++i)
-                        state.merged_block.getByPosition(i).column = state.merged_block.getByPosition(i).column->cloneEmpty();
+                    for (const auto & func : agg_funcs)
+                        state.agg_columns.push_back(ColumnAggregateFunction::create(func));
                 }
-                for (size_t i = 0; i < set_granule->block.columns(); ++i)
-                    state.merged_block.getByPosition(i).column->assumeMutableRef().insertRangeFrom(
-                        *set_granule->block.getByPosition(i).column, 0, set_granule->block.rows());
+
+                /// Incrementally add granule values to aggregate states
+                for (size_t col_idx = 0; col_idx < set_granule->block.columns(); ++col_idx)
+                    insertAggColumn(assert_cast<ColumnAggregateFunction &>(*state.agg_columns[col_idx]),
+                                    *set_granule->block.getByPosition(col_idx).column);
             }
 
             if (state.has_overflow)
@@ -9468,35 +9478,35 @@ Block MergeTreeData::getSkipIndexAggregationBlock(
         if (partition_state.empty())
             return {};
 
-        const DataTypePtr data_type = index_desc.data_types[0];
-        std::vector<AggResultColumnInfo> agg_columns;
-        for (const auto & agg_desc : aggregate_descriptions)
-        {
-            /// Reuse the original aggregate function to preserve parameters (e.g. uniqCombined(15)).
-            /// The function's argument types may differ from the index column type, so we must
-            /// reconstruct with the index column type but keep the same parameters.
-            const Array & parameters = agg_desc.parameters;
-            AggregateFunctionProperties properties;
-            auto func = AggregateFunctionFactory::instance().get(agg_desc.function->getName(), NullsAction::EMPTY, {data_type}, parameters, properties);
-            agg_columns.push_back({agg_desc.column_name, data_type, ColumnAggregateFunction::create(func), func});
-        }
-
+        /// Merge all partition aggregate states into result columns
         std::unordered_map<String, MutableColumnPtr> key_columns;
+        std::vector<AggResultColumnInfo> result_agg_columns;
+        for (size_t i = 0; i < agg_funcs.size(); ++i)
+            result_agg_columns.push_back({aggregate_descriptions[i].column_name, data_type, ColumnAggregateFunction::create(agg_funcs[i]), agg_funcs[i]});
+
         for (auto & [agg_key, state] : partition_state)
         {
-            if (state.merged_block.columns() == 0 || state.merged_block.rows() == 0)
+            if (state.agg_columns.empty())
                 continue;
-
-            LOG_TRACE(log, "Set index aggregation: partition `{}`, {} merged rows", agg_key, state.merged_block.rows());
 
             insert_partition_keys(key_columns, state.partition_values);
 
-            const auto & index_col = *state.merged_block.getByPosition(0).column;
-            for (auto & agg_col : agg_columns)
-                insertAggColumn(assert_cast<ColumnAggregateFunction &>(*agg_col.column), index_col);
+            for (size_t i = 0; i < state.agg_columns.size(); ++i)
+            {
+                auto & result_col = assert_cast<ColumnAggregateFunction &>(*result_agg_columns[i].column);
+                auto & source_col = assert_cast<const ColumnAggregateFunction &>(*state.agg_columns[i]);
+                if (source_col.empty())
+                    continue;
+
+                /// Insert first granule's aggregate state as a new row
+                result_col.insertFrom(source_col.getData()[0]);
+                /// Merge remaining granules into the same row
+                for (size_t row = 1; row < source_col.size(); ++row)
+                    result_col.insertMergeFrom(source_col, row);
+            }
         }
 
-        Block result = buildAggResultBlock(required_columns, group_by_key_to_partition_idx, key_columns, agg_columns, partition_key, pruning_result);
+        Block result = buildAggResultBlock(required_columns, group_by_key_to_partition_idx, key_columns, result_agg_columns, partition_key, pruning_result);
         if (!result.columns())
             return {};
 
