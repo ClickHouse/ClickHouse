@@ -6,6 +6,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/filesystemHelpers.h>
 #include <Disks/IVolume.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
@@ -263,20 +264,8 @@ public:
 
             try
             {
-                if (need_check)
-                {
-                    bool inside = false;
-                    for (const auto & ufp : user_files_absolute_paths)
-                    {
-                        if (file_path.string().starts_with(ufp))
-                        {
-                            inside = true;
-                            break;
-                        }
-                    }
-                    if (!inside)
-                        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside user files path");
-                }
+                if (need_check && !pathStartsWith(file_path.string(), user_files_absolute_paths))
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside user files path");
 
                 ReadBufferFromFile in(file_path);
                 auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
