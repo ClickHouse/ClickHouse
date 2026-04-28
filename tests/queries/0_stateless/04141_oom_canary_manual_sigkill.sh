@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-test_dir=$(mktemp -d "${CLICKHOUSE_TMP}/04104_oom_canary_no_relaunch.XXXXXX")
+test_dir=$(mktemp -d "${CLICKHOUSE_TMP}/04141_oom_canary_manual_sigkill.XXXXXX")
 mkdir -p "$test_dir/data" "$test_dir/tmp" "$test_dir/user_files" "$test_dir/format_schemas"
 server_log="${test_dir}/server.log"
 
@@ -69,7 +69,7 @@ CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY \
     --oom_canary_enable true \
     --allow_experimental_oom_canary true \
     --oom_canary_size 1048576 \
-    --oom_canary_relaunch false \
+    --oom_canary_relaunch true \
     --logger.log "$server_log" \
     --logger.errorlog "$test_dir/error.log" \
     >& "$test_dir/stdout.log" &
@@ -120,54 +120,52 @@ fi
 
 echo "canary found"
 
-"$CLICKHOUSE_BINARY" client "${client_args[@]}" --query "SYSTEM ENABLE FAILPOINT oom_canary_force_oom_evidence"
 kill -9 "$canary_pid"
 
-monitor_exited=0
+new_canary_pid=""
 for _ in $(seq 1 100); do
-    if grep -q "OOM canary monitor thread exiting" "$server_log" 2>/dev/null; then
-        monitor_exited=1
-        break
-    fi
+    for child in $(pgrep -P "$server_pid" 2>/dev/null); do
+        oom_adj=$(cat "/proc/$child/oom_score_adj" 2>/dev/null)
+        if [[ "$oom_adj" == "1000" ]] && [[ "$child" != "$canary_pid" ]]; then
+            new_canary_pid="$child"
+            break 2
+        fi
+    done
     sleep 0.1
 done
 
-if [[ "$monitor_exited" -ne 1 ]]; then
-    echo "canary monitor did not exit" >&2
-    tail -n 100 "$server_log" >&2
-    exit 1
-fi
-
 result=$("$CLICKHOUSE_BINARY" client "${client_args[@]}" --query "SELECT 1" 2>&1)
 if [[ "$result" == "1" ]]; then
-    echo "server alive after canary kill"
+    echo "server alive after manual canary kill"
 else
-    echo "server not responding after canary kill" >&2
+    echo "server not responding after manual canary kill" >&2
     exit 1
 fi
 
-has_canary=0
-for child in $(pgrep -P "$server_pid" 2>/dev/null); do
-    oom_adj=$(cat "/proc/$child/oom_score_adj" 2>/dev/null)
-    if [[ "$oom_adj" == "1000" ]]; then
-        has_canary=1
-        break
-    fi
-done
-
-if [[ "$has_canary" -eq 0 ]]; then
-    echo "canary not relaunched"
+if [[ -n "$new_canary_pid" ]]; then
+    echo "canary relaunched"
 else
-    echo "unexpected canary relaunch" >&2
+    echo "canary relaunch not detected" >&2
     exit 1
 fi
 
-if grep -q "OOM canary relaunched with new pid" "$server_log"; then
-    echo "unexpected relaunch log entry" >&2
+if grep -q "Skipping OOM response" "$server_log"; then
+    echo "non-oom kill skipped"
+else
+    echo "manual canary kill was not classified as non-OOM" >&2
     tail -n 100 "$server_log" >&2
     exit 1
+fi
+
+if grep -q "Queued OOM canary event in system.crash_log" "$server_log"; then
+    echo "unexpected crash_log event" >&2
+    tail -n 100 "$server_log" >&2
+    exit 1
+else
+    echo "no crash_log event queued"
 fi
 
 kill "$server_pid" 2>/dev/null
 wait "$server_pid" 2>/dev/null
 server_pid=""
+

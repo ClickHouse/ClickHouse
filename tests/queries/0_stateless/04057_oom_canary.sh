@@ -26,6 +26,15 @@ cat > "$test_dir/config.xml" << XMLEOF
     <mark_cache_size>0</mark_cache_size>
     <uncompressed_cache_size>0</uncompressed_cache_size>
     <shutdown_wait_unfinished>0</shutdown_wait_unfinished>
+    <default_profile>default</default_profile>
+    <background_schedule_pool_size>4</background_schedule_pool_size>
+    <background_buffer_flush_schedule_pool_size>1</background_buffer_flush_schedule_pool_size>
+    <background_pool_size>2</background_pool_size>
+    <background_common_pool_size>2</background_common_pool_size>
+    <background_move_pool_size>1</background_move_pool_size>
+    <background_fetches_pool_size>1</background_fetches_pool_size>
+    <tables_loader_background_pool_size>1</tables_loader_background_pool_size>
+    <tables_loader_foreground_pool_size>1</tables_loader_foreground_pool_size>
     <users_config>$test_dir/users.xml</users_config>
     <crash_log>
         <database>system</database>

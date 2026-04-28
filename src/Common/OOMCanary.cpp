@@ -133,6 +133,11 @@ void OOMCanary::start(const Config & config)
     canary_size_bytes = config.size_bytes;
     shutdown_requested.store(false, std::memory_order_relaxed);
     cgroup_memory_events_path = getCgroupMemoryEventsPath();
+    if (!cgroup_memory_events_path)
+    {
+        LOG_WARNING(log, "Cannot observe cgroup v2 `memory.events`; OOM canary will relaunch after `SIGKILL`, "
+            "but will not run the OOM response without cgroup-local OOM evidence");
+    }
     oom_kill_counters_before_spawn = readOOMKillCounters();
 
     pid_t pid = spawnCanary(config.size_bytes);
@@ -331,16 +336,21 @@ OOMCanary::OOMKillCounters OOMCanary::readOOMKillCounters() const
 {
     OOMKillCounters counters;
 
+    /// `memory.events` is monotonic for the current cgroup and is the only
+    /// signal we use for OOM response. Host-wide counters such as
+    /// `/proc/vmstat:oom_kill` are intentionally ignored because another
+    /// workload on the same host can advance them.
     if (cgroup_memory_events_path)
         counters.cgroup_oom_kill = readCounterFromFile(*cgroup_memory_events_path, "oom_kill");
-
-    counters.global_oom_kill = readCounterFromFile("/proc/vmstat", "oom_kill");
 
     return counters;
 }
 
 bool OOMCanary::hasOOMKillCounterAdvanced(const OOMKillCounters & before, const OOMKillCounters & after) const
 {
+    /// Tests use this failpoint to exercise the recovery path without creating
+    /// real memory pressure. Production builds without `libfiu` compile this to
+    /// a no-op, so the decision still depends only on cgroup OOM evidence.
     bool force_oom_evidence = false;
     fiu_do_on(FailPoints::oom_canary_force_oom_evidence, { force_oom_evidence = true; });
     if (force_oom_evidence)
@@ -350,11 +360,6 @@ bool OOMCanary::hasOOMKillCounterAdvanced(const OOMKillCounters & before, const 
     /// cgroup and avoids treating unrelated host OOM kills as canary events.
     if (before.cgroup_oom_kill && after.cgroup_oom_kill)
         return *after.cgroup_oom_kill > *before.cgroup_oom_kill;
-
-    /// `/proc/vmstat` is global, so it is only a fallback for hosts where a
-    /// cgroup-local OOM counter is not observable.
-    if (before.global_oom_kill && after.global_oom_kill)
-        return *after.global_oom_kill > *before.global_oom_kill;
 
     return false;
 }
@@ -534,7 +539,7 @@ void OOMCanary::onCanaryDied()
     /// Step 3: Kill all queries (D-08: uses existing CancelReason::CANCELLED_BY_USER)
     try
     {
-        context->getProcessList().killAllQueries();
+        context->getProcessList().killAllQueriesBestEffort();
         LOG_INFO(log, "Killed all running queries");
     }
     catch (...)
@@ -570,23 +575,16 @@ void OOMCanary::onCanaryDied()
             /*signal_description=*/"OOM Canary: canary process killed by SIGKILL",
             /*current_exception_trace=*/empty_frames,
             /*current_exception_trace_size=*/0);
-        LOG_INFO(log, "Wrote OOM canary event to system.crash_log");
+        LOG_INFO(log, "Queued OOM canary event in system.crash_log");
     }
     catch (...)
     {
         LOG_WARNING(log, "Failed to write to system.crash_log: {}", getCurrentExceptionMessage(true));
     }
 
-    /// Step 6: Flush system logs
-    try
-    {
-        context->handleCrash();
-        LOG_INFO(log, "Flushed system logs");
-    }
-    catch (...)
-    {
-        LOG_WARNING(log, "Failed to flush system logs: {}", getCurrentExceptionMessage(true));
-    }
+    /// Do not call `Context::handleCrash` here. It may synchronously wait for
+    /// system logs for a long time, leaving the server without a canary while
+    /// memory pressure is still high. The crash log queue flushes asynchronously.
 }
 
 #else // !OS_LINUX

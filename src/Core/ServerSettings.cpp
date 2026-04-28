@@ -1493,6 +1493,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Must be enabled in addition to `oom_canary_enable` for the canary to actually start.
     The canary installs high-impact server behavior (global query cancellation, merge cancellation,
     `system.crash_log` writes) and is gated until production validation is complete.
+    The OOM response requires cgroup v2 `memory.events` OOM-kill evidence.
     )", 0) \
     DECLARE(Bool, oom_canary_enable, false, R"(
     Enable the OOM canary: a sacrificial child process that attracts the Linux OOM killer

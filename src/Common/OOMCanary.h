@@ -70,16 +70,28 @@ private:
     /// Monitor thread function: waitpid loop, response, optional relaunch.
     void monitorThread();
 
-    /// Execute the OOM response sequence.
+    /// Execute the OOM response sequence. This path intentionally avoids slow
+    /// synchronous system-log flushing so the monitor can relaunch the canary
+    /// promptly after shedding memory.
     void onCanaryDied();
 
     struct OOMKillCounters
     {
+        /// Snapshot of cgroup v2 `memory.events:oom_kill`. This is deliberately
+        /// cgroup-local; a global host counter can be advanced by unrelated
+        /// processes and would make manual canary kills look like OOM events.
         std::optional<uint64_t> cgroup_oom_kill;
-        std::optional<uint64_t> global_oom_kill;
     };
 
+    /// Read the OOM evidence used to classify canary death. Missing counters
+    /// are represented as `std::nullopt`, which makes the response conservative:
+    /// the canary may still be relaunched, but global query cancellation is not
+    /// triggered without local OOM evidence.
     OOMKillCounters readOOMKillCounters() const;
+
+    /// Returns true only when the local OOM counter moved forward between the
+    /// canary spawn and its `SIGKILL`. `waitpid` alone cannot distinguish the
+    /// kernel OOM killer from an operator's `kill -9`.
     bool hasOOMKillCounterAdvanced(const OOMKillCounters & before, const OOMKillCounters & after) const;
 
     std::atomic<pid_t> canary_pid{-1};

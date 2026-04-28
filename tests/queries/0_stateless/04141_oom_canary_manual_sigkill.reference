@@ -1,0 +1,5 @@
+canary found
+server alive after manual canary kill
+canary relaunched
+non-oom kill skipped
+no crash_log event queued
