@@ -58,7 +58,7 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
+    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
     void read(
         QueryPlan & query_plan,

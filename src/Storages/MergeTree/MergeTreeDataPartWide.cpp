@@ -82,7 +82,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
-    const VirtualsDescriptionPtr & virtual_columns,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -93,7 +92,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
     return std::make_unique<MergeTreeDataPartWriterWide>(
         data_part_name_, logger_name_, serializations_, data_part_storage_,
         index_granularity_info_, storage_settings_, columns_list,
-        metadata_snapshot, virtual_columns, indices_to_recalc,
+        metadata_snapshot, indices_to_recalc,
         marks_file_extension_,
         default_codec_, writer_settings, std::move(computed_index_granularity),
         written_offset_substreams);
