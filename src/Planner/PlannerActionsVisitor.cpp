@@ -20,6 +20,7 @@
 #include <DataTypes/FieldToDataType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/UUIDHelpers.h>
 #include <Common/quoteString.h>
 
 #include <Columns/ColumnSet.h>
@@ -837,10 +838,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             const auto & arg_names = lambda_node.getArgumentNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
-                String disambiguated = column_node_name + "_lambda_captured";
-                size_t suffix = 0;
-                while (actions_stack[i].containsNode(disambiguated))
-                    disambiguated = column_node_name + "_lambda_captured_" + std::to_string(suffix++);
+                String disambiguated = column_node_name + "_" + toString(UUIDHelpers::generateV4());
 
                 actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
 

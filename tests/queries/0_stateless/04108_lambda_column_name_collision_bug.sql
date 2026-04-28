@@ -33,18 +33,16 @@ SELECT * FROM t PREWHERE arrayMap(x -> x + 1, [1])[1] + arrayMap(x -> *, [1])[1]
 
 DROP TABLE t;
 
--- The disambiguated name uses suffix "_lambda_captured". If the table already has
--- a column with that name, the code must fall back to "_lambda_captured_0", etc.
+-- Multi-column table where the lambda body references both columns
+-- and one column name collides with the lambda argument.
 DROP TABLE IF EXISTS t2;
-CREATE TABLE t2 (x UInt32, x_lambda_captured UInt32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t2 (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t2 VALUES (100, 1)(200, 2);
 
--- Reference both columns so the lambda DAG contains INPUT "x" AND INPUT "x_lambda_captured".
--- Renaming "x" tries "x_lambda_captured" first, hits the existing node, falls back to "x_lambda_captured_0".
-SELECT 'suffix dedup: PREWHERE';
-SELECT * FROM t2 PREWHERE arrayMap(x -> t2.x + t2.x_lambda_captured, [1])[1] > 50;
+SELECT 'multi-column: PREWHERE';
+SELECT * FROM t2 PREWHERE arrayMap(x -> t2.x + t2.y, [1])[1] > 50;
 
-SELECT 'suffix dedup: WHERE';
-SELECT * FROM t2 WHERE arrayMap(x -> t2.x + t2.x_lambda_captured, [1])[1] > 50;
+SELECT 'multi-column: WHERE';
+SELECT * FROM t2 WHERE arrayMap(x -> t2.x + t2.y, [1])[1] > 50;
 
 DROP TABLE t2;
