@@ -128,17 +128,18 @@ IndexDescription IndexDescription::getIndexFromAST(
     {
         result.arguments = index_type->arguments->clone();
 
-        /// Replace ALIAS column references in the index argument values (e.g. in the text index preprocessor)
-        /// the same way we do for the index expression itself in initExpressionInfo.
-        using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-        ReplaceAliasToExprVisitor::Data alias_data{columns};
-        for (auto & child : result.arguments->children)
+        if (result.type == TEXT_INDEX_NAME)
         {
-            const auto * func = child->as<ASTFunction>();
-            if (func && func->name == "equals" && func->arguments && func->arguments->children.size() == 2)
-                ReplaceAliasToExprVisitor{alias_data}.visit(func->arguments->children[1]);
-            else
-                ReplaceAliasToExprVisitor{alias_data}.visit(child);
+            /// Replace ALIAS column references in text index argument values (e.g. in the preprocessor)
+            /// the same way we do for the index expression itself in initExpressionInfo.
+            using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+            ReplaceAliasToExprVisitor::Data alias_data{columns};
+            for (auto & child : result.arguments->children)
+            {
+                const auto * func = child->as<ASTFunction>();
+                if (func && func->name == "equals" && func->arguments && func->arguments->children.size() == 2)
+                    ReplaceAliasToExprVisitor{alias_data}.visit(func->arguments->children[1]);
+            }
         }
     }
 
