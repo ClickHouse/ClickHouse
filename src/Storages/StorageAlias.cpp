@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 StorageAlias::StorageAlias(
@@ -176,6 +177,26 @@ void StorageAlias::alter(
     AlterLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
+
+    /// ALTER through alias on a table in a Replicated database is not supported
+    /// when the alias and target are in different databases. This is because the
+    /// DDL worker path is bypassed and metadata changes won't be replicated to
+    /// other replicas in ZooKeeper. If both are in the same Replicated database,
+    /// the DDL worker handles the ALTER correctly.
+    auto target_storage_id = target_storage->getStorageID();
+    if (getStorageID().database_name != target_storage_id.database_name)
+    {
+        auto target_db = DatabaseCatalog::instance().tryGetDatabase(target_storage_id.database_name);
+        if (target_db && target_db->getEngineName() == "Replicated")
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "ALTER through alias is not supported when the target table is in a different Replicated database. "
+                "Execute the ALTER directly on the target table: {}",
+                target_storage_id.getNameForLogs());
+        }
+    }
+
     target_storage->alter(params, local_context, table_lock_holder);
 }
 
