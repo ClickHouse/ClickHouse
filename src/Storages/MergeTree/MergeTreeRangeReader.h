@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
+#include <Storages/MergeTree/ANNSearchUtils.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 #include <mutex>
@@ -451,6 +452,12 @@ private:
 
     /// Special logic for vector search: fills a virtual column "_distance" and fills a filter on part offsets returned by vector index
     void fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & result, ColumnPtr & part_offsets_auto_column);
+
+    /// ANN indexed path: fills "_distance" from pre-computed results and filter on (block_number, block_offset) pairs
+    void fillDistanceColumnAndFilterForANNSearch(Columns & columns, ReadResult & result);
+
+    /// ANN unindexed path: computes "_distance" at runtime from the embedding column and reference vector
+    void fillDistanceColumnFromEmbRuntime(Columns & columns, ReadResult & result, const ANNSearchParameters & params);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;

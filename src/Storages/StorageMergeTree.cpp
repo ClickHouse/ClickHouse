@@ -3,6 +3,15 @@
 #include <optional>
 #include <ranges>
 
+#include "config.h"
+#if USE_DISKANN
+#    include <Storages/MergeTree/ANNIndex/ANNIndexManager.h>
+#    include <Storages/MergeTree/ANNIndex/ANNIndexTableMeta.h>
+#    include <Storages/MergeTree/ANNIndex/BuildANNIndexTask.h>
+#    include <Storages/MergeTree/MergeTreeIndexANN.h>
+#    include <Disks/IDiskTransaction.h>
+#endif
+
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
@@ -114,6 +123,13 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
+#if USE_DISKANN
+    extern const MergeTreeSettingsBool ann_enable;
+    extern const MergeTreeSettingsUInt64 ann_group_min_rows;
+    extern const MergeTreeSettingsUInt64 ann_group_max_rows;
+    extern const MergeTreeSettingsUInt64 ann_group_max_parts;
+    extern const MergeTreeSettingsUInt64 ann_retired_grace_seconds;
+#endif
 }
 
 namespace ErrorCodes
@@ -211,6 +227,16 @@ StorageMergeTree::StorageMergeTree(
     loadMutations();
     loadDeduplicationLog();
     prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
+
+#if USE_DISKANN
+    /// The secondary-index metadata is already in place by now, so the manager will be
+    /// constructed iff the table has an `ann` index. `loadFromDisk` recovers the active /
+    /// retired group state by scanning the ANN root directory and consulting the table-level
+    /// `meta.json` for the shape fingerprint.
+    ensureANNIndexManager(metadata_);
+    if (auto mgr = getANNIndexManager())
+        mgr->loadFromDisk();
+#endif
 }
 
 
@@ -509,6 +535,30 @@ void StorageMergeTree::alter(
                 resetSerializationHints(parts_lock);
             }
 
+#if USE_DISKANN
+            /// Synchronise the ANN index manager with the new metadata:
+            ///   - ADD INDEX    : construct the manager and load any pre-existing on-disk state;
+            ///   - DROP INDEX   : retire all active groups and drop the manager pointer;
+            ///   - MODIFY INDEX : if the shape changed, retire all active groups before the
+            ///                    ensure* call swaps in a fresh manager with the new shape.
+            {
+                ANNIndexShapeFingerprint old_shape;
+                ANNIndexShapeFingerprint new_shape;
+                bool had_ann = extractANNShapeFromMetadata(old_metadata, old_shape);
+                bool has_ann = extractANNShapeFromMetadata(new_metadata, new_shape);
+
+                if (had_ann && (!has_ann || new_shape != old_shape))
+                {
+                    if (auto mgr = getANNIndexManager())
+                        mgr->invalidateAllGroupsForShapeChange();
+                }
+
+                ensureANNIndexManager(new_metadata);
+                if (auto mgr = getANNIndexManager())
+                    mgr->loadFromDisk();
+            }
+#endif
+
             if (!maybe_mutation_commands.empty())
                 mutation_version = startMutation(maybe_mutation_commands, local_context);
         }
@@ -801,7 +851,19 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
     /// Validate partition IDs (if any) before starting mutation
-    getPartitionIdsAffectedByCommands(commands, query_context);
+    auto affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
+
+#if USE_DISKANN
+    /// Retire every ANN group that overlaps an affected part before the mutation starts queueing.
+    /// The retirement is resilient to later failures in `startMutation`: the groups are already
+    /// copy-on-write published as retired, so stale hits can no longer be returned by searches.
+    if (auto ann_mgr = getANNIndexManager(); ann_mgr && mutationTouchesANNIndexColumn(commands))
+    {
+        auto affected_parts = collectActivePartsForPartitions(affected_partition_ids);
+        if (!affected_parts.empty())
+            ann_mgr->invalidateGroupsForMutation(affected_parts);
+    }
+#endif
 
     Int64 version;
     {
@@ -1818,8 +1880,195 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         mutation_wait_event.notify_all();
     }
 
+#if USE_DISKANN
+    /// ANN (DiskANN) index: try to pick an unindexed batch and dispatch it to the dedicated
+    /// background pool. Only attempted when no merge/mutation was scheduled above so that we
+    /// do not slow down foreground compaction, and only when the table's settings enable it.
+    auto ann_manager_ptr = getANNIndexManager();
+    if (ann_manager_ptr && (*getSettings())[MergeTreeSetting::ann_enable])
+    {
+        auto & ann_manager = *ann_manager_ptr;
+        if (auto reservation = ann_manager.tryReserveBuildSlot())
+        {
+            ANNIndexDefinition definition;
+            if (extractANNDefinitionFromMetadata(*metadata_snapshot, definition))
+            {
+                auto entry = ann_manager.selectPartsForBuild(
+                    *this,
+                    getStorageSnapshot(metadata_snapshot, getContext()),
+                    std::move(definition),
+                    (*getSettings())[MergeTreeSetting::ann_group_min_rows],
+                    (*getSettings())[MergeTreeSetting::ann_group_max_rows],
+                    (*getSettings())[MergeTreeSetting::ann_group_max_parts]);
+
+                if (entry)
+                {
+                    auto build_task = std::make_shared<BuildANNIndexTask>(
+                        *this,
+                        std::move(entry),
+                        &ann_manager,
+                        shared_lock,
+                        common_assignee_trigger,
+                        std::move(reservation));
+
+                    if (assignee.scheduleANNBuildTask(build_task))
+                        return true;
+                    /// Scheduling failed — `build_task` (and the reservation it owns) goes out
+                    /// of scope, RAII rolls back the reservation.
+                }
+            }
+            /// `reservation` (still held here) goes out of scope and rolls back. Any thrown
+            /// exception bubbles up the same way.
+        }
+    }
+#endif
+
     return false;
 }
+
+#if USE_DISKANN
+size_t StorageMergeTree::clearRetiredANNIndexGroups()
+{
+    auto manager_ptr = getANNIndexManager();
+    if (!manager_ptr)
+        return 0;
+    auto & manager = *manager_ptr;
+
+    const auto volume = manager.getVolume();
+    if (!volume)
+        return 0;
+    auto disk = volume->getDisk(0);
+    const auto & root = manager.getRelativeRootPath();
+
+    const auto grace_seconds = std::chrono::seconds(
+        static_cast<UInt64>((*getSettings())[MergeTreeSetting::ann_retired_grace_seconds]));
+
+    size_t cleaned = 0;
+
+    /// Phase 1: drop retired groups whose grace window has elapsed and which are no longer
+    /// held by any search thread. Each retired group corresponds to a `deleting_ann_<uuid>/`
+    /// directory that can be removed with a single recursive delete — the name prefix itself
+    /// is the state marker, there is no catalog file to update.
+    const auto retired_dirs = manager.getRetiredGroupDirs();
+    const auto now = std::chrono::steady_clock::now();
+
+    for (const auto & dir : retired_dirs)
+    {
+        const auto retired_at = manager.getRetiredAt(dir);
+        if (retired_at == std::chrono::steady_clock::time_point{})
+            continue;
+        if (now - retired_at < grace_seconds)
+            continue;
+
+        /// `use_count` is best-effort: the manager holds one strong reference; an active
+        /// searcher adds another. This is an opportunistic check — the grace window is the
+        /// real correctness mechanism.
+        if (auto group_ptr = manager.getRetiredGroupPtr(dir); group_ptr && group_ptr.use_count() > 2)
+            continue;
+
+        try
+        {
+            const std::string rel_group_path = (std::filesystem::path(root) / dir).string();
+            disk->removeRecursive(rel_group_path);
+            manager.forgetRetiredGroup(dir);
+            ++cleaned;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log.load(), "clearRetiredANNIndexGroups: failed to delete retired group `" + dir + "`");
+        }
+    }
+
+    /// Phase 2: sweep true orphans. Anything on disk under the ANN root that the manager
+    /// does not know about (no active group, no retired group, no in-flight build) is a
+    /// crash / abort leftover and gets removed. The previous prefix-based heuristic was
+    /// unsafe: an in-progress build's `tmp_ann_<uuid>/` is `tmp_ann_*` by construction, so
+    /// pattern matching alone could not tell it apart from a crashed build's leftover.
+    try
+    {
+        for (const auto & name : manager.listGroupDirsOnDisk())
+        {
+            if (manager.isPathKnown(name))
+                continue;
+
+            try
+            {
+                const std::string rel_path = (std::filesystem::path(root) / name).string();
+                disk->removeRecursive(rel_path);
+                ++cleaned;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log.load(), "clearRetiredANNIndexGroups: failed to delete orphan directory `" + name + "`");
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log.load(), "clearRetiredANNIndexGroups: failed to enumerate group directories");
+    }
+
+    return cleaned;
+}
+
+void StorageMergeTree::triggerANNIndexBuildAsync()
+{
+    auto manager_ptr = getANNIndexManager();
+    if (!manager_ptr)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table `{}` has no ANN index", getStorageID().getNameForLogs());
+    auto & manager = *manager_ptr;
+
+    /// Fire-and-forget: we dispatch one build round to the dedicated BG executor and return
+    /// immediately. DiskANN builds take minutes to tens of minutes — blocking the client on a
+    /// TCP connection that long is unfriendly in every direction. Callers that need to wait for
+    /// coverage to complete should poll `system.ann_index_coverage`.
+    ///
+    /// If another build is already in flight (BG scheduler picked it up after a recent INSERT),
+    /// or if there is nothing left to build, this call is a no-op — the user's intent to "make
+    /// sure a build is in motion" is satisfied either way.
+
+    auto reservation = manager.tryReserveBuildSlot();
+    if (!reservation)
+        return;                                               /// Already in flight — nothing to do.
+
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+
+    ANNIndexDefinition definition;
+    if (!extractANNDefinitionFromMetadata(*metadata_snapshot, definition))
+    {
+        /// `reservation` rolls back via RAII when this throw unwinds.
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "SYSTEM BUILD ANN INDEX: table has an `ann` index in metadata but definition failed to parse");
+    }
+
+    auto entry = manager.selectPartsForBuild(
+        *this,
+        getStorageSnapshot(metadata_snapshot, getContext()),
+        std::move(definition),
+        /*min_rows=*/ 0,              /// Force-build on demand: ignore the normal min threshold.
+        (*getSettings())[MergeTreeSetting::ann_group_max_rows],
+        (*getSettings())[MergeTreeSetting::ann_group_max_parts]);
+
+    if (!entry)
+        return;                                               /// Nothing unindexed; reservation rolls back.
+
+    auto table_lock = lockForShare(RWLockImpl::NO_QUERY,
+        (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+
+    auto build_task = std::make_shared<BuildANNIndexTask>(
+        *this,
+        std::move(entry),
+        &manager,
+        std::move(table_lock),
+        /*task_result_callback=*/ [](bool) {},
+        std::move(reservation));
+
+    /// On success, `reservation` lives inside `build_task` (and its commit happens in
+    /// `BuildANNIndexTask::finish`). On failure, the temporary `build_task` is destroyed and
+    /// the reservation rolls back via RAII.
+    (void)getContext()->getANNBuildExecutor()->trySchedule(build_task);
+}
+#endif
 
 UInt64 StorageMergeTree::getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
 {
@@ -3191,54 +3440,5 @@ CommittingBlocksSet StorageMergeTree::getCommittingBlocks() const
     std::lock_guard lock(committing_blocks_mutex);
     return committing_blocks;
 }
+
 }
-
-// Phase 1B: Table-Level Vector Index Support Implementation
-
-void StorageMergeTree::registerTableVectorIndex(
-    const String & index_name,
-    const TableVectorIndexConfig & config)
-{
-    std::unique_lock lock(table_vector_indexes_mutex);
-    auto index = std::make_shared<MergeTreeTableVectorIndex>(config);
-    table_vector_indexes[index_name] = index;
-    LOG_INFO(log, "Registered table-level vector index: {} on column {}", index_name, config.column_name);
-}
-
-std::map<String, MergeTreeTableVectorIndexPtr> StorageMergeTree::getTableVectorIndexes() const
-{
-    std::shared_lock lock(table_vector_indexes_mutex);
-    return table_vector_indexes;
-}
-
-MergeTreeTableVectorIndexPtr StorageMergeTree::getTableVectorIndex(const String & index_name) const
-{
-    std::shared_lock lock(table_vector_indexes_mutex);
-    auto it = table_vector_indexes.find(index_name);
-    if (it != table_vector_indexes.end())
-        return it->second;
-    return nullptr;
-}
-
-void StorageMergeTree::unregisterTableVectorIndex(const String & index_name)
-{
-    std::unique_lock lock(table_vector_indexes_mutex);
-    size_t erased = table_vector_indexes.erase(index_name);
-    if (erased > 0)
-        LOG_INFO(log, "Unregistered table-level vector index: {}", index_name);
-}
-
-void StorageMergeTree::updateTableVectorIndexMetadata(
-    const String & index_name,
-    const PartVectorIndexMetadata & metadata)
-{
-    std::shared_lock lock(table_vector_indexes_mutex);
-    auto it = table_vector_indexes.find(index_name);
-    if (it != table_vector_indexes.end())
-    {
-        it->second->updatePartMetadata(metadata.part_name, metadata);
-        LOG_DEBUG(log, "Updated table-level vector index metadata for {} in part {}", 
-                  index_name, metadata.part_name);
-    }
-}
-

@@ -1,0 +1,16 @@
+-- L2 index, matching distance function: rewrite fires
+1	1
+-- L2 index, cosineDistance: rewrite must NOT fire (metric mismatch)
+1	1
+-- L2 index, dotProduct: rewrite must NOT fire (no IP metric exists)
+1	1
+-- Cosine index, matching distance function: rewrite fires
+1	1
+-- Cosine index, L2Distance: rewrite must NOT fire (metric mismatch)
+1	1
+-- Cosine index, dotProduct: rewrite must NOT fire (no IP metric exists)
+1	1
+-- L2 table answered with cosineDistance returns the exact (full-scan) top-5
+1
+-- Cosine table answered with L2Distance returns the exact (full-scan) top-5
+1

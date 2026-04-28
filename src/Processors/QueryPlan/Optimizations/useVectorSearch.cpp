@@ -13,80 +13,10 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeTableVectorIndex.h>
 #include <Storages/StorageMergeTree.h>
 
 namespace DB::QueryPlanOptimizations
 {
-
-// Phase 1C: Table-Level Vector Index Support
-
-/// Helper function to select candidate parts using table-level vector indexes
-/// Returns std::nullopt if the table doesn't have table-level indexes or feature is disabled
-std::optional<std::vector<String>> selectCandidatePartsForVectorSearch(
-    const MergeTreeData & merge_tree_data,
-    const String & search_column,
-    const std::vector<Float64> & reference_vector,
-    size_t limit,
-    ContextPtr context)
-{
-    // Phase 1C: Check feature flag
-    if (!context->getSettings().use_table_level_vector_indexes)
-        return std::nullopt;
-    
-    // Phase 1C: Try to cast to StorageMergeTree
-    const auto * storage = dynamic_cast<const StorageMergeTree *>(
-        &merge_tree_data);
-    if (!storage)
-        return std::nullopt;
-    
-    // Phase 1C: Get all table-level vector indexes
-    auto indexes = storage->getTableVectorIndexes();
-    if (indexes.empty())
-        return std::nullopt;
-    
-    // Phase 1C: Find an index for the search column
-    MergeTreeTableVectorIndexPtr suitable_index = nullptr;
-    for (const auto & [index_name, index_ptr] : indexes)
-    {
-        if (index_ptr->getConfig().column_name == search_column)
-        {
-            suitable_index = index_ptr;
-            break;
-        }
-    }
-    
-    if (!suitable_index)
-        return std::nullopt;
-    
-    // Phase 1C: Select candidate granules using the table-level index
-    Float64 candidate_multiplier = context->getSettings()
-        .table_vector_index_candidate_multiplier;
-    UInt32 max_candidates = static_cast<UInt32>(
-        limit * candidate_multiplier);
-    
-    auto candidate_granules = suitable_index->selectCandidateGranules(
-        reference_vector,
-        "L2Distance",  // Phase 1C: Hardcoded for now, will detect from query in Phase 2
-        max_candidates,
-        0.0f  // Phase 1C: No threshold filtering for now
-    );
-    
-    // Phase 1C: Extract unique part names from candidates
-    std::set<String> candidate_parts_set;
-    for (const auto & [part_name, granule_id] : candidate_granules)
-    {
-        candidate_parts_set.insert(part_name);
-    }
-    
-    // Phase 1C: Return as vector if we found candidates
-    if (candidate_parts_set.empty())
-        return std::nullopt;
-    
-    std::vector<String> result(candidate_parts_set.begin(), candidate_parts_set.end());
-    return result;
-}
-
 
 /// Vector search queries have this form:
 ///     SELECT [...]

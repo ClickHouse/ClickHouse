@@ -241,6 +241,9 @@ public:
 
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
+
+    /// Check if the metadata has an `ann` (table-level DiskANN) index
+    static bool hasANNIndex(const StorageInMemoryMetadata & metadata);
 };
 
 }

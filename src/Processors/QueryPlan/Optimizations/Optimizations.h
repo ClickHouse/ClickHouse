@@ -37,6 +37,9 @@ struct Optimization
         size_t max_limit_for_vector_search_queries;
         bool vector_search_with_rescoring;
         VectorSearchFilterStrategy vector_search_filter_strategy;
+        bool ann_search_force_brute_force;
+        size_t ann_search_list_size;
+        size_t ann_beam_width;
 
         /// Other settings
         size_t use_index_for_in_with_subqueries_max_values;
@@ -105,6 +108,10 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
 /// Extract limit and reference vector for vector similarity index
 size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+/// Identify ORDER BY <distance>(vec, ref) LIMIT N on a table with a `TYPE ann(...)` index and
+/// attach the extracted `ANNSearchParameters` to the underlying `ReadFromMergeTree` step.
+size_t tryUseANNSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
 /// Convert join to subquery with IN if output columns tied to only one table
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
@@ -140,7 +147,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 18> optimizations = {{
+    static const std::array<Optimization, 19> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -154,6 +161,7 @@ inline const auto & getOptimizations()
         {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
         {tryUseVectorSearch, "useVectorSearch", &QueryPlanOptimizationSettings::try_use_vector_search},
+        {tryUseANNSearch, "useANNSearch", &QueryPlanOptimizationSettings::try_use_ann_search},
         {tryConvertJoinToIn, "convertJoinToIn", &QueryPlanOptimizationSettings::convert_join_to_in},
         {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
         {tryConvertAnyJoinToSemiOrAntiJoin, "convertAnyJoinToSemiOrAntiJoin", &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
@@ -184,6 +192,7 @@ void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+bool optimizeANNSearchSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
 void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);

@@ -59,6 +59,9 @@ struct JobAndPool;
 class MergeTreeTransaction;
 struct ZeroCopyLock;
 
+class ANNIndexManager;
+using ANNIndexManagerPtr = std::shared_ptr<ANNIndexManager>;
+
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
 
@@ -1381,6 +1384,24 @@ public:
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
+    /// Table-level ANN (DiskANN) index coordinator. Returns `nullptr` when the table has no
+    /// `ann` secondary index. Access is lock-free: the pointer is published atomically when
+    /// ADD / DROP / MODIFY INDEX applies the metadata change.
+    ANNIndexManagerPtr getANNIndexManager() const;
+
+    /// Construct the ANN index manager if the metadata has an `ann` index, otherwise clear it.
+    /// Idempotent: re-calling with the same shape is a no-op; re-calling with a changed shape
+    /// replaces the previously-held manager. Does not load from disk - the caller is responsible
+    /// for invoking `ANNIndexManager::loadFromDisk` when appropriate.
+    void ensureANNIndexManager(const StorageInMemoryMetadata & metadata);
+
+    /// Returns `true` iff any command in `commands` touches the source column of an `ann` index.
+    bool mutationTouchesANNIndexColumn(const MutationCommands & commands) const;
+
+    /// Returns the currently-active data parts that belong to `partition_ids`. When
+    /// `partition_ids` is empty, all active parts are returned (used for table-wide mutations).
+    DataPartsVector collectActivePartsForPartitions(const std::set<String> & partition_ids) const;
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
@@ -2003,6 +2024,11 @@ private:
     bool isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const;
 
     ConditionSelectivityEstimatorPtr cached_selectivity_estimator;
+
+    /// Table-level ANN index coordinator. Published atomically; the pointer may be null when
+    /// the table has no `ann` index. Writers hold `ann_index_manager_mutex` when swapping.
+    std::shared_ptr<ANNIndexManager> ann_index_manager;
+    mutable std::mutex ann_index_manager_mutex;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

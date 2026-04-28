@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/ANNSearchUtils.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ColumnsDescription.h>
@@ -108,6 +109,16 @@ public:
     virtual const RangesInDataPartReadHints & getReadHints() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
+    }
+
+    virtual void setANNSearchParameters(const ANNSearchParameters & /*params*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setANNSearchParameters not implemented for this reader");
+    }
+
+    virtual const std::optional<ANNSearchParameters> & getANNSearchParameters() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getANNSearchParameters not implemented for this reader");
     }
 };
 

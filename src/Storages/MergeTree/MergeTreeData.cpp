@@ -89,6 +89,12 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+
+#include "config.h"
+#if USE_DISKANN
+#    include <Storages/MergeTree/MergeTreeIndexANN.h>
+#    include <Storages/MergeTree/ANNIndex/ANNIndexManager.h>
+#endif
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
@@ -1007,6 +1013,8 @@ void MergeTreeData::checkProperties(
     {
         std::unordered_set<String> indices_names;
         std::unordered_set<String> columns_with_text_indexes;
+        std::unordered_set<String> columns_with_ann_indexes;
+        std::unordered_set<String> columns_with_vector_similarity_indexes;
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -1049,6 +1057,74 @@ void MergeTreeData::checkProperties(
 
                 columns_with_text_indexes.insert(column);
             }
+
+            /// An `ann` index and a `vector_similarity` index on the same column are mutually
+            /// exclusive: both claim ownership of the vector-search code path and cannot coexist
+            /// meaningfully. Reject the overlap here so that later code can assume at most one
+            /// of the two types ever covers a given column.
+            if ((index.type == "ann" || index.type == "vector_similarity") && !index.column_names.empty())
+            {
+                const auto & column = index.column_names[0];
+                if (index.type == "ann")
+                {
+                    if (columns_with_vector_similarity_indexes.contains(column))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Column {} cannot have both an `ann` and a `vector_similarity` index",
+                            backQuote(column));
+                    columns_with_ann_indexes.insert(column);
+                }
+                else
+                {
+                    if (columns_with_ann_indexes.contains(column))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Column {} cannot have both an `ann` and a `vector_similarity` index",
+                            backQuote(column));
+                    columns_with_vector_similarity_indexes.insert(column);
+                }
+            }
+        }
+    }
+
+    /// Environmental preconditions for the table-level ANN (DiskANN) index. They depend on the
+    /// storage-level settings / disks and therefore cannot be enforced by the secondary-index
+    /// validator on its own. Run on both CREATE and ALTER so that CREATE fails early instead of
+    /// producing a table that cannot be used.
+    ///
+    /// Note: the Replicated-engine rejection cannot be placed here because CREATE TABLE flows
+    /// through the base `MergeTreeData` ctor before the derived storage's vtable is ready; a
+    /// virtual `getName()` call here would trigger a pure-virtual invocation. Instead, it is
+    /// enforced in `checkAlterIsPossible` (which runs only after construction) and on CREATE via
+    /// a guard in the concrete storage constructor.
+    if (new_metadata.secondary_indices.hasType("ann"))
+    {
+        for (const auto & disk : getDisks())
+        {
+            if (disk->isRemote())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ANN index requires local disks only; disk '{}' is remote", disk->getName());
+        }
+
+        /// Compose the effective settings: start from the storage-level `getSettings()` snapshot
+        /// (already initialised by the base-class constructor before `checkProperties` is called
+        /// on CREATE) and layer any pending `settings_changes` coming from `MODIFY SETTING`.
+        /// Using `getDefaultSettings()` here would trigger a pure-virtual call during CREATE
+        /// because the derived engine's vtable is not yet live when the base ctor runs.
+        auto effective_settings_snapshot = getSettings();
+        MergeTreeSettings effective_settings = *effective_settings_snapshot;
+        if (new_metadata.settings_changes)
+        {
+            const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            effective_settings.applyChanges(new_changes);
+        }
+
+        if (!effective_settings[MergeTreeSetting::enable_block_number_column]
+            || !effective_settings[MergeTreeSetting::enable_block_offset_column])
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Tables with an ANN index require both `enable_block_number_column` and "
+                "`enable_block_offset_column` to be enabled");
         }
     }
 
@@ -4250,6 +4326,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
+#if USE_DISKANN
+    /// Reject `ADD INDEX ... TYPE ann / vector_similarity` that would end up on a column already
+    /// carrying the other kind of vector index.
+    validateNoCoexistingANNAndVectorSimilarity(new_metadata);
+#endif
+
     auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
@@ -4265,6 +4347,50 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
+
+    /// Guards for the table-level ANN (DiskANN) index. These constraints cannot be recovered
+    /// from at runtime, so we reject them at ALTER time:
+    ///   1. Replicated engines are not yet supported.
+    ///   2. All underlying disks must be local (the FFI layer reads the index files as plain
+    ///      local paths; remote-disk abstractions are transparent to it).
+    ///   3. The `_block_number` / `_block_offset` virtual columns must remain enabled because
+    ///      they make up the row identity triplet used on the query path.
+    if (AlterCommands::hasANNIndex(new_metadata))
+    {
+        if (getName().starts_with("Replicated"))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ANN index is not supported on Replicated tables in the current release");
+
+        for (const auto & disk : getDisks())
+        {
+            if (disk->isRemote())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ANN index requires local disks only; disk '{}' is remote", disk->getName());
+        }
+
+        /// Compose the effective settings the table would have after the ALTER and check the two
+        /// block-column flags. We must not read `getSettings()` directly here because the ALTER
+        /// may be a pure `MODIFY SETTING` that is about to turn one of them off.
+        auto effective_settings = getDefaultSettings();
+        if (old_metadata.settings_changes)
+        {
+            const auto & old_changes = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            effective_settings->applyChanges(old_changes);
+        }
+        if (new_metadata.settings_changes)
+        {
+            const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            effective_settings->applyChanges(new_changes);
+        }
+
+        if (!(*effective_settings)[MergeTreeSetting::enable_block_number_column]
+            || !(*effective_settings)[MergeTreeSetting::enable_block_offset_column])
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Tables with an ANN index require both `enable_block_number_column` and "
+                "`enable_block_offset_column` to be enabled");
+        }
+    }
 
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks() && !commands.isSettingsAlter() && !commands.isCommentAlter())
@@ -10931,5 +11057,115 @@ String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSe
     return file_name;
 }
 
+ANNIndexManagerPtr MergeTreeData::getANNIndexManager() const
+{
+#if USE_DISKANN
+    std::lock_guard lock(ann_index_manager_mutex);
+    return ann_index_manager;
+#else
+    return nullptr;
+#endif
+}
+
+void MergeTreeData::ensureANNIndexManager(const StorageInMemoryMetadata & metadata)
+{
+#if USE_DISKANN
+    /// DDL guard: fail fast if the metadata mixes `ann` and `vector_similarity` on the same
+    /// column. This is checked here (not only in `checkAlterIsPossible`) so that a direct
+    /// metadata change via ATTACH / replica bootstrap also rejects the bad combination.
+    validateNoCoexistingANNAndVectorSimilarity(metadata);
+
+    ANNIndexDefinition definition;
+    bool has_ann_index = extractANNDefinitionFromMetadata(metadata, definition);
+
+    std::lock_guard lock(ann_index_manager_mutex);
+    if (!has_ann_index)
+    {
+        ann_index_manager.reset();
+        return;
+    }
+
+    /// Keep the existing manager as long as the shape matches. Shape changes are handled by the
+    /// ALTER / MODIFY INDEX path, which retires all active groups before we reach this point.
+    if (ann_index_manager && ann_index_manager->getShape() == definition.shape
+        && ann_index_manager->getHashSeed() == definition.hash_seed)
+    {
+        return;
+    }
+
+    auto storage_policy = getStoragePolicy();
+    VolumePtr volume = storage_policy ? storage_policy->getVolume(0) : nullptr;
+    if (!volume)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot construct ANNIndexManager without a storage volume");
+
+    ANNIndexManager::Config cfg;
+    cfg.volume = std::move(volume);
+    cfg.relative_root_path = std::filesystem::path(relative_data_path) / "anns";
+    cfg.shape = definition.shape;
+    cfg.hash_algo = definition.hash_algo;
+    cfg.hash_seed = definition.hash_seed;
+    cfg.search_defaults = definition.search_defaults;
+    cfg.log = getLogger("ANNIndexManager(" + getStorageID().getNameForLogs() + ")");
+
+    ann_index_manager = std::make_shared<ANNIndexManager>(std::move(cfg));
+#else
+    (void)metadata;
+#endif
+}
+
+bool MergeTreeData::mutationTouchesANNIndexColumn(const MutationCommands & commands) const
+{
+#if USE_DISKANN
+    auto metadata = getInMemoryMetadataPtr(getContext(), false);
+    if (!metadata)
+        return false;
+
+    String ann_column = getANNIndexColumnName(*metadata);
+    if (ann_column.empty())
+        return false;
+
+    for (const auto & cmd : commands)
+    {
+        switch (cmd.type)
+        {
+            case MutationCommand::UPDATE:
+                if (cmd.column_to_update_expression.contains(ann_column))
+                    return true;
+                break;
+            case MutationCommand::DELETE:
+                /// DELETE may remove any row, including ones indexed by the ANN coordinator.
+                return true;
+            case MutationCommand::MATERIALIZE_COLUMN:
+            case MutationCommand::DROP_COLUMN:
+            case MutationCommand::RENAME_COLUMN:
+                if (cmd.column_name == ann_column)
+                    return true;
+                break;
+            default:
+                break;
+        }
+    }
+    return false;
+#else
+    (void)commands;
+    return false;
+#endif
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::collectActivePartsForPartitions(const std::set<String> & partition_ids) const
+{
+    auto all_active = getDataPartsVectorForInternalUsage();
+    if (partition_ids.empty())
+        return all_active;
+
+    DataPartsVector filtered;
+    filtered.reserve(all_active.size());
+    for (const auto & part : all_active)
+    {
+        if (part && partition_ids.contains(part->info.getPartitionId()))
+            filtered.push_back(part);
+    }
+    return filtered;
+}
 
 }

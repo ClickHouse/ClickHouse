@@ -317,6 +317,7 @@ add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Sto
 add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
 add_object_library(clickhouse_storages_mergetree_patch_parts Storages/MergeTree/PatchParts)
 add_object_library(clickhouse_storages_mergetree_projection_index Storages/MergeTree/ProjectionIndex)
+add_object_library(clickhouse_storages_mergetree_ann_index Storages/MergeTree/ANNIndex)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
@@ -820,7 +821,17 @@ if (ENABLE_TESTS)
 
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
+    if (NOT TARGET ch_contrib::nuraft)
+        list(FILTER dbms_gtest_sources EXCLUDE REGEX ".*gtest_compact_children_set\\.cpp$")
+    endif()
     clickhouse_add_executable(unit_tests_dbms ${dbms_gtest_sources})
+
+    # Test helpers that are not themselves gtest entry points. Auto-discovery above only picks
+    # up files whose basename starts with `gtest`, so non-gtest shared fixtures must be listed
+    # explicitly.
+    target_sources(unit_tests_dbms PRIVATE
+        "${ClickHouse_SOURCE_DIR}/src/Storages/MergeTree/tests/MergeTreeTestHarness.cpp"
+    )
 
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE

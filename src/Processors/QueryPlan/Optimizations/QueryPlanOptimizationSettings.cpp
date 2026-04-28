@@ -57,6 +57,8 @@ namespace Setting
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
+    extern const SettingsBool try_use_ann_search;
+    extern const SettingsBool vector_search_force_brute_force;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -89,6 +91,8 @@ namespace Setting
     extern const SettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
     extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 ann_beam_width;
+    extern const SettingsUInt64 ann_search_list_size;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
@@ -140,6 +144,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     aggregate_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_aggregate_partitions_independently];
     remove_redundant_distinct = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_redundant_distinct];
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
+    try_use_ann_search = from[Setting::query_plan_enable_optimizations] && from[Setting::try_use_ann_search];
+    ann_search_force_brute_force = from[Setting::vector_search_force_brute_force];
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
@@ -208,6 +214,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
     vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
     vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
+    ann_search_list_size = from[Setting::ann_search_list_size].value;
+    ann_beam_width = from[Setting::ann_beam_width].value;
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 

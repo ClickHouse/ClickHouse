@@ -60,6 +60,18 @@ public:
 
     Block getHeader() const override { return header; }
 
+    /// Set ANN search parameters for per-part column differentiation.
+    /// When set, unindexed parts will have the vector column added back
+    /// to their read columns for runtime distance computation.
+    ///
+    /// NB: Because `fillPerPartInfos` runs from the base constructor (before any subclass
+    /// setter has had a chance to run), this method re-builds affected `per_part_infos`
+    /// entries after `ann_search_parameters` has been stored, so that unindexed parts pick up
+    /// the vector column. This keeps the call sites trivial (setter instead of constructor
+    /// parameter) while preserving the E-01 contract: after `setANNSearchParameters` returns,
+    /// every `per_part_info` observes the post-setter value.
+    void setANNSearchParameters(std::optional<ANNSearchParameters> params);
+
 protected:
     /// Initialized in constructor
     const StorageSnapshotPtr storage_snapshot;
@@ -109,6 +121,7 @@ protected:
     std::vector<MergeTreeReadTaskInfoPtr> per_part_infos;
     RangesInPatchParts ranges_in_patch_parts;
     std::vector<bool> is_part_on_remote_disk;
+    std::optional<ANNSearchParameters> ann_search_parameters;
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
 };

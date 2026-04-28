@@ -22,7 +22,6 @@
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
-#include <Storages/MergeTree/MergeTreeTableVectorIndex.h>
 
 
 namespace DB
@@ -121,39 +120,25 @@ public:
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
+    /// Garbage-collect retired ANN index groups whose grace window has elapsed and which are
+    /// no longer referenced by any in-flight search. Also sweeps orphan `tmp_ann_*` and
+    /// `deleting_ann_*` directories (leftovers from a crashed build or from a code path that
+    /// dropped the retired entry early). Called by `MergeTreeCleanupThread`. Returns the
+    /// number of directories actually removed from disk.
+    size_t clearRetiredANNIndexGroups();
+
+    /// Fire-and-forget: dispatch one ANN index build round to the dedicated background executor
+    /// and return immediately. DiskANN builds take minutes to tens of minutes, so we don't hold
+    /// the client's TCP connection. Used by `SYSTEM BUILD ANN INDEX [db.]table`. If another
+    /// build is already in flight or nothing is unindexed, this is a no-op. Callers that need to
+    /// wait for full coverage should poll `system.ann_index_coverage`.
+    void triggerANNIndexBuildAsync();
+
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
-    // Phase 1B: Table-Level Vector Index Support
-    /// Register a table-level vector index for this table
-    /// Called during table creation/alteration when ADD INDEX with type='vector_similarity'
-    void registerTableVectorIndex(
-        const String & index_name,
-        const TableVectorIndexConfig & config);
-    
-    /// Get all registered table-level vector indexes for this table
-    /// Thread-safe: uses shared_lock on table_vector_indexes_mutex
-    std::map<String, MergeTreeTableVectorIndexPtr> getTableVectorIndexes() const;
-    
-    /// Get a specific table-level vector index by name
-    /// Returns nullptr if not found
-    MergeTreeTableVectorIndexPtr getTableVectorIndex(const String & index_name) const;
-    
-    /// Unregister a table-level vector index (called on DROP INDEX)
-    void unregisterTableVectorIndex(const String & index_name);
-    
-    /// Called by merge/mutation tasks to update index metadata
-    void updateTableVectorIndexMetadata(
-        const String & index_name,
-        const PartVectorIndexMetadata & metadata);
-
 private:
-    // Phase 1B: Table-level vector indexes
-    std::map<String, MergeTreeTableVectorIndexPtr> table_vector_indexes;
-    mutable std::shared_mutex table_vector_indexes_mutex;
-
-
     /// Mutex and condvar for synchronous mutations wait
     std::mutex mutation_wait_mutex;
     std::condition_variable mutation_wait_event;

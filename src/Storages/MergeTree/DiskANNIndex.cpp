@@ -4,10 +4,18 @@
 
 #include <diskann_ffi.h>
 #include <Common/Exception.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 
-#include <algorithm>
+namespace ProfileEvents
+{
+    extern const Event DiskANNBuildCount;
+    extern const Event DiskANNBuildMicroseconds;
+
+    extern const Event DiskANNDistanceComputeCount;
+    extern const Event DiskANNDistanceComputeRows;
+    extern const Event DiskANNDistanceComputeMicroseconds;
+}
 
 namespace DB
 {
@@ -34,7 +42,7 @@ namespace
 
 std::string getLastFFIError()
 {
-    char buf[512];
+    char buf[1024];
     int64_t len = diskann_last_error(buf, sizeof(buf));
     if (len <= 0)
         return "unknown error";
@@ -43,143 +51,212 @@ std::string getLastFFIError()
 
 }
 
-DiskANNIndexWithSerialization::DiskANNIndexWithSerialization(
+DiskANNDiskIndexBuilder::DiskANNDiskIndexBuilder(
     size_t dimensions,
-    DiskANNMetric metric_,
-    DiskANNParams params)
+    DiskANNMetric metric,
+    DiskANNBuildOptions options)
     : dim(dimensions)
-    , metric(metric_)
 {
-    handle = diskann_create_index(
+    handle = diskann_create_disk_builder(
         static_cast<uint32_t>(dim),
         toFFIMetric(metric),
-        params.pruned_degree,
-        params.max_degree,
-        params.l_build,
-        params.alpha);
+        options.pruned_degree,
+        options.max_degree,
+        options.l_build,
+        options.alpha,
+        options.num_threads,
+        options.pq_chunks,
+        options.build_ram_limit_gb);
 
     if (handle < 0)
-        throwFromFFIError("DiskANN create_index failed");
+        throwFromFFIError("DiskANN create_disk_builder failed");
 }
 
-DiskANNIndexWithSerialization::DiskANNIndexWithSerialization(
-    int64_t handle_,
-    size_t dimensions,
-    DiskANNMetric metric_)
-    : handle(handle_)
-    , dim(dimensions)
-    , metric(metric_)
-{
-}
-
-DiskANNIndexWithSerialization::~DiskANNIndexWithSerialization()
+DiskANNDiskIndexBuilder::~DiskANNDiskIndexBuilder()
 {
     if (handle >= 0)
-        diskann_drop_index(handle);
+        diskann_drop_builder(handle);
 }
 
-DiskANNIndexWithSerialization::DiskANNIndexWithSerialization(DiskANNIndexWithSerialization && other) noexcept
+DiskANNDiskIndexBuilder::DiskANNDiskIndexBuilder(DiskANNDiskIndexBuilder && other) noexcept
     : handle(other.handle)
     , dim(other.dim)
-    , metric(other.metric)
 {
     other.handle = -1;
 }
 
-DiskANNIndexWithSerialization & DiskANNIndexWithSerialization::operator=(DiskANNIndexWithSerialization && other) noexcept
+DiskANNDiskIndexBuilder & DiskANNDiskIndexBuilder::operator=(DiskANNDiskIndexBuilder && other) noexcept
 {
     if (this != &other)
     {
         if (handle >= 0)
-            diskann_drop_index(handle);
+            diskann_drop_builder(handle);
 
         handle = other.handle;
         dim = other.dim;
-        metric = other.metric;
         other.handle = -1;
     }
     return *this;
 }
 
-void DiskANNIndexWithSerialization::build(const float * vectors, size_t count)
+void DiskANNDiskIndexBuilder::setDataPath(const std::string & path)
 {
-    auto rc = diskann_insert_batch(handle, vectors, count, static_cast<uint32_t>(dim));
+    auto rc = diskann_builder_set_data_path(handle, path.c_str());
     if (rc < 0)
-        throwFromFFIError("DiskANN insert_batch failed");
+        throwFromFFIError("DiskANN builder_set_data_path failed");
 }
 
-size_t DiskANNIndexWithSerialization::search(const float * query, size_t k, uint64_t * ids, float * distances) const
+void DiskANNDiskIndexBuilder::setIndexPrefix(const std::string & prefix)
 {
-    auto rc = diskann_search(handle, query, static_cast<uint32_t>(dim), k, ids, distances);
+    auto rc = diskann_builder_set_index_prefix(handle, prefix.c_str());
     if (rc < 0)
-        throwFromFFIError("DiskANN search failed");
-    return static_cast<size_t>(rc);
+        throwFromFFIError("DiskANN builder_set_index_prefix failed");
 }
 
-void DiskANNIndexWithSerialization::serialize(WriteBuffer & ostr) const
+void DiskANNDiskIndexBuilder::build() const
 {
-    uint8_t * out_ptr = nullptr;
-    uint64_t out_size = 0;
-
-    auto rc = diskann_serialize(handle, &out_ptr, &out_size);
+    Stopwatch watch;
+    auto rc = diskann_builder_build(handle);
+    ProfileEvents::increment(ProfileEvents::DiskANNBuildCount);
+    ProfileEvents::increment(ProfileEvents::DiskANNBuildMicroseconds, watch.elapsedMicroseconds());
     if (rc < 0)
-        throwFromFFIError("DiskANN serialize failed");
-
-    try
-    {
-        ostr.write(reinterpret_cast<const char *>(out_ptr), out_size);
-    }
-    catch (...)
-    {
-        diskann_free_buffer(out_ptr);
-        throw;
-    }
-
-    diskann_free_buffer(out_ptr);
+        throwFromFFIError("DiskANN builder_build failed");
 }
 
-DiskANNIndexWithSerialization DiskANNIndexWithSerialization::deserialize(
-    ReadBuffer & istr,
-    size_t dimensions,
-    DiskANNMetric metric_)
+bool DiskANNDiskIndexBuilder::indexFilesExist(const std::string & index_prefix)
 {
-    /// Read entire buffer into a string
-    std::string buf;
-    {
-        constexpr size_t chunk_size = 65536;
-        while (!istr.eof())
-        {
-            size_t old_size = buf.size();
-            buf.resize(old_size + chunk_size);
-            size_t bytes_read = istr.read(buf.data() + old_size, chunk_size);
-            buf.resize(old_size + bytes_read);
-        }
-    }
-
-    int64_t new_handle = diskann_deserialize(
-        reinterpret_cast<const uint8_t *>(buf.data()),
-        buf.size());
-
-    if (new_handle < 0)
-        throwFromFFIError("DiskANN deserialize failed");
-
-    return DiskANNIndexWithSerialization(new_handle, dimensions, metric_);
-}
-
-size_t DiskANNIndexWithSerialization::size() const
-{
-    if (handle < 0)
-        return 0;
-
-    auto rc = diskann_index_size(handle);
+    auto rc = diskann_index_file_exists(index_prefix.c_str());
     if (rc < 0)
-        throwFromFFIError("DiskANN index_size failed");
-    return static_cast<size_t>(rc);
+        throwFromFFIError("DiskANN index_file_exists failed");
+    return rc == 1;
 }
 
-[[noreturn]] void DiskANNIndexWithSerialization::throwFromFFIError(const std::string & context)
+[[noreturn]] void DiskANNDiskIndexBuilder::throwFromFFIError(const std::string & context)
 {
     throw Exception(ErrorCodes::INCORRECT_DATA, "{}: {}", context, getLastFFIError());
+}
+
+DiskANNDiskIndexSearcher::DiskANNDiskIndexSearcher(
+    size_t dimensions,
+    DiskANNMetric metric,
+    const std::string & index_prefix,
+    DiskANNSearchOptions options_)
+    : dim(dimensions)
+    , options(options_)
+{
+    handle = diskann_open_searcher(
+        index_prefix.c_str(),
+        static_cast<uint32_t>(dim),
+        toFFIMetric(metric),
+        options.num_threads,
+        options.search_io_limit,
+        options.num_nodes_to_cache);
+
+    if (handle < 0)
+        throwFromFFIError("DiskANN open_searcher failed");
+}
+
+DiskANNDiskIndexSearcher::~DiskANNDiskIndexSearcher()
+{
+    if (handle >= 0)
+        diskann_close_searcher(handle);
+}
+
+DiskANNDiskIndexSearcher::DiskANNDiskIndexSearcher(DiskANNDiskIndexSearcher && other) noexcept
+    : handle(other.handle)
+    , dim(other.dim)
+    , options(other.options)
+{
+    other.handle = -1;
+}
+
+DiskANNDiskIndexSearcher & DiskANNDiskIndexSearcher::operator=(DiskANNDiskIndexSearcher && other) noexcept
+{
+    if (this != &other)
+    {
+        if (handle >= 0)
+            diskann_close_searcher(handle);
+
+        handle = other.handle;
+        dim = other.dim;
+        options = other.options;
+        other.handle = -1;
+    }
+    return *this;
+}
+
+size_t DiskANNDiskIndexSearcher::search(
+    const float * query,
+    size_t query_dim,
+    size_t k,
+    uint64_t * ids,
+    float * distances,
+    size_t search_list_size,
+    size_t beam_width) const
+{
+    if (query_dim != dim)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "DiskANN search: query dimension {} does not match index dimension {}",
+            query_dim,
+            dim);
+
+    auto effective_search_list_size = search_list_size > 0
+        ? search_list_size
+        : static_cast<size_t>(options.default_search_list_size);
+    auto effective_beam_width = beam_width > 0
+        ? beam_width
+        : static_cast<size_t>(options.default_beam_width);
+
+    auto rc = diskann_search_disk_index(
+        handle,
+        query,
+        static_cast<uint32_t>(query_dim),
+        static_cast<uint32_t>(k),
+        static_cast<uint32_t>(effective_search_list_size),
+        static_cast<uint32_t>(effective_beam_width),
+        ids,
+        distances);
+
+    if (rc < 0)
+        throwFromFFIError("DiskANN search_disk_index failed");
+
+    return static_cast<size_t>(rc);
+}
+
+[[noreturn]] void DiskANNDiskIndexSearcher::throwFromFFIError(const std::string & context)
+{
+    throw Exception(ErrorCodes::INCORRECT_DATA, "{}: {}", context, getLastFFIError());
+}
+
+void DiskANNComputeDistances(
+    DiskANNMetric metric,
+    size_t dim,
+    const float * query,
+    const float * candidates,
+    size_t n,
+    float * out)
+{
+    if (n == 0)
+        return;
+
+    Stopwatch watch;
+    auto rc = diskann_compute_distances(
+        toFFIMetric(metric),
+        static_cast<uint32_t>(dim),
+        query,
+        candidates,
+        static_cast<uint64_t>(n),
+        out);
+    ProfileEvents::increment(ProfileEvents::DiskANNDistanceComputeCount);
+    ProfileEvents::increment(ProfileEvents::DiskANNDistanceComputeRows, n);
+    ProfileEvents::increment(ProfileEvents::DiskANNDistanceComputeMicroseconds, watch.elapsedMicroseconds());
+
+    if (rc < 0)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "DiskANN compute_distances failed: {}",
+            getLastFFIError());
 }
 
 }

@@ -68,6 +68,7 @@ private:
     void syncReplica(ASTSystemQuery & query);
     void setReplicaReadiness(bool ready);
     void waitLoadingParts();
+    void buildANNIndexSync(ASTSystemQuery & query);
 
     void loadPrimaryKeys();
     void unloadPrimaryKeys();

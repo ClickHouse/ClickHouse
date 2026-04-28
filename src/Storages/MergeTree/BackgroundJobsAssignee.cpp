@@ -98,6 +98,14 @@ bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, b
 }
 
 
+bool BackgroundJobsAssignee::scheduleANNBuildTask(ExecutableTaskPtr ann_build_task)
+{
+    bool res = getContext()->getANNBuildExecutor()->trySchedule(ann_build_task);
+    res ? trigger() : postpone();
+    return res;
+}
+
+
 String BackgroundJobsAssignee::toString(Type type)
 {
     switch (type)
@@ -143,6 +151,7 @@ void BackgroundJobsAssignee::finish()
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        getContext()->getANNBuildExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }
 }
 

@@ -6002,6 +6002,65 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, try_use_ann_search, true, R"(
+Toggles a query-plan-level optimization which tries to use the table-level ANN (DiskANN) index.
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, vector_search_force_brute_force, false, R"(
+If enabled, queries that would otherwise be routed through the table-level ANN (DiskANN) index
+fall back to a full brute-force scan over all parts. Useful as a baseline in benchmarks that
+want to compare the ANN index against an exhaustive scan on the same data.
+
+:::note
+This is an expert-level setting and is intended for benchmarking and debugging.
+:::
+)", 0) \
+    DECLARE(UInt64, ann_search_list_size, 0, R"(
+Per-query override for the ANN graph-search candidate list size (`L_search` in DiskANN). Larger
+values explore more of the graph and improve recall at the cost of latency. Zero (the default)
+keeps the value baked into the index at DDL time, so existing tables behave unchanged.
+
+:::note
+This is an expert-level setting for tuning recall vs. throughput; useful for sweeping the
+recall/QPS Pareto curve without rebuilding the index.
+:::
+)", 0) \
+    DECLARE(UInt64, ann_beam_width, 0, R"(
+Per-query override for the ANN graph-search beam width (`B` in DiskANN). Controls how many
+candidates are expanded in parallel each iteration. Zero (the default) keeps the value baked
+into the index at DDL time.
+
+:::note
+This is an expert-level setting for tuning ANN search throughput.
+:::
+)", 0) \
+    DECLARE(String, vector_search_unindexed_metric_source, "sql", R"(
+Selects the distance kernel used by the unindexed-parts code path of a vector search query
+(parts not yet covered by the ANN index, or the entire table when
+`vector_search_force_brute_force` is enabled).
+
+Possible values:
+
+- `'sql'`   — use ClickHouse's SQL distance function (e.g. `L2Distance`, `cosineDistance`).
+              This is the default and matches the function written in `ORDER BY`.
+- `'index'` — use the same SIMD distance kernel that the underlying ANN index uses internally.
+              Lets benchmarks isolate the algorithmic speed-up of the index from kernel-level
+              SIMD differences. Requires that the table has at least one ANN index group built
+              for the queried column; otherwise the path silently falls back to `'sql'`.
+
+Note that index kernels follow the metric's mathematical definition as used internally by the
+index (for DiskANN: `L2` returns squared L2; `Cosine` returns `1 - cosine_similarity`), so
+absolute distance values may differ from the SQL function — top-K ordering is preserved.
+)", 0) \
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
@@ -7342,25 +7401,6 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
     DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
 Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'.
 )", 0, vector_search_postfilter_multiplier) \
-    DECLARE(Bool, use_table_level_vector_indexes, true, R"(
-Enable table-level vector indexes for vector search optimization. When enabled, queries with ORDER BY distance functions can use pre-built vector indexes to accelerate neighbor discovery.
-Phase 1B feature flag. If disabled, falls back to full table scan.
-)", 0) \
-    DECLARE(Float, table_vector_index_candidate_multiplier, 2.0, R"(
-Tuning parameter for table-level vector index candidate selection. The number of candidates returned from the index is multiplied by this factor.
-Higher values = more thorough search (may include more candidates), slower query.
-Lower values = faster query, may miss some neighbors.
-)", 0.1, 10.0) \
-    DECLARE(String, table_vector_index_part_selection, "metadata", R"(
-Strategy for selecting candidate parts when using table-level vector indexes. Options:
-- 'metadata' - Use metadata-based centroid distance (Phase 1C, default)
-- 'global' - Use hierarchical HNSW graph (Phase 2, future)
-)", 0) \
-    DECLARE(UInt64, table_vector_index_representatives_per_part, 100, R"(
-Number of vector representatives sampled per part for building table-level vector index metadata.
-Higher values = more accurate metadata, more memory.
-Lower values = faster index build, less accurate.
-)", 1, 10000) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \
