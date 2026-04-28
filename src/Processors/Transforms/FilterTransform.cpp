@@ -162,7 +162,7 @@ void FilterTransform::doTransform(Chunk & chunk)
         columns.clear();
 
         if (expression)
-            expression->execute(block, num_rows_before_filtration);
+            expression->execute(block, num_rows_before_filtration, false, false, [this]() { return isCancelled(); });
 
         columns = block.getColumns();
         types = block.getDataTypes();
