@@ -9,6 +9,12 @@
 -- Observed in stress test with parallel replicas:
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=d0432097aed783bd35054dce2edcefe0c4e5122c&name_0=MasterCI&name_1=Stress%20test%20%28amd_tsan%29
 --
+-- The `prepared_sets_build_ordered_set_inplace_fail` failpoint fires once inside
+-- `CreatingSetsTransform::generate` and skips `finishInsert`, so the in-place build leaves
+-- `set_and_key->set->isCreated()` false. With the fix, the cloned source preserves the
+-- original `source` plan and `makePlansForSets` rebuilds the set. Without the fix, the
+-- consumed source would leave the set permanently unbuilt and `FunctionIn` would throw.
+--
 -- Tags: replica, no-parallel
 -- - no-parallel - global failpoint `prepared_sets_build_ordered_set_inplace_fail`
 
@@ -30,18 +36,16 @@ SET use_index_for_in_with_subqueries = 1;
 SELECT count() == 66668 FROM null_in_pr WHERE i global not in (SELECT i FROM null_in_pr WHERE dt = 2);
 SELECT count() == 33333 FROM null_in_pr WHERE i global in (SELECT i FROM null_in_pr WHERE dt = 2);
 
--- Enable the failpoint that forces `buildOrderedSetInplace` to report failure after the
--- in-place pipeline has run. On master (without the fix) the source plan was consumed up
--- front, so this path left the set permanently unbuilt and triggered
--- "Not-ready Set is passed as the second argument". The fix runs the in-place pipeline on a
--- clone of the source plan, leaving the original available to `makePlansForSets`.
+-- The failpoint fires ONCE: it skips `finishInsert` on the first `CreatingSetsTransform`
+-- pass (the in-place build during primary key analysis), causing `buildOrderedSetInplace`
+-- to return nullptr. With the fix, the cloned source plan lets `makePlansForSets` rebuild
+-- the set in the deferred pipeline, where the failpoint is already consumed and
+-- `finishInsert` runs normally. Without the fix, source is consumed up front and
+-- `FunctionIn` would throw "Not-ready Set is passed as the second argument".
 SYSTEM ENABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 
 -- `idx` is the primary key, so the IN subquery triggers primary key analysis and
 -- `buildOrderedSetInplace` is actually called here.
 SELECT count() > 0 FROM null_in_pr WHERE idx global in (SELECT idx FROM null_in_pr WHERE dt = 2);
-SELECT count() >= 0 FROM null_in_pr WHERE idx global not in (SELECT idx FROM null_in_pr WHERE dt = 1);
-
-SYSTEM DISABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 
 DROP TABLE null_in_pr;

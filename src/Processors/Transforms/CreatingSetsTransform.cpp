@@ -9,6 +9,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <exception>
@@ -22,6 +23,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int UNKNOWN_EXCEPTION;
+}
+
+namespace FailPoints
+{
+    extern const char prepared_sets_build_ordered_set_inplace_fail[];
 }
 
 CreatingSetsTransform::~CreatingSetsTransform()
@@ -232,11 +238,17 @@ Chunk CreatingSetsTransform::generate()
 {
     if (set_and_key->set && !set_from_cache)
     {
-        set_and_key->set->finishInsert();
-        if (promise_to_build)
+        bool skip_finish_insert = false;
+        fiu_do_on(FailPoints::prepared_sets_build_ordered_set_inplace_fail, { skip_finish_insert = true; });
+
+        if (!skip_finish_insert)
         {
-            promise_to_build->set_value(set_and_key->set);
-            promise_to_build.reset();
+            set_and_key->set->finishInsert();
+            if (promise_to_build)
+            {
+                promise_to_build->set_value(set_and_key->set);
+                promise_to_build.reset();
+            }
         }
     }
 
