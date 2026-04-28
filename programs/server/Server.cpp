@@ -1683,7 +1683,10 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
-    ServerSettings::checkUnknownSettings(config(), config_path);
+    /// Validate the loaded XML config directly (not the layered config) so that command-line
+    /// options injected by `argsToConfig` (`--config-file`, `--daemon`, `-C`, ...) and Poco-internal
+    /// layers (`system`, `application`) are not mistaken for unknown top-level config keys.
+    ServerSettings::checkUnknownSettings(*loaded_config.configuration, config_path);
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
@@ -2190,7 +2193,9 @@ try
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
-            ServerSettings::checkUnknownSettings(config(), config_path);
+            /// Same as on initial load: validate the reloaded XML config rather than the layered
+            /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
+            ServerSettings::checkUnknownSettings(*loaded_config, config_path);
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
