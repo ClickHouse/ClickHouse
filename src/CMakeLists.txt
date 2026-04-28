@@ -726,8 +726,11 @@ target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)
 target_link_libraries(dbms PUBLIC boost::context)
 
-if (ENABLE_NLP)
+if (TARGET ch_contrib::stemmer)
     target_link_libraries(dbms PUBLIC ch_contrib::stemmer)
+endif()
+
+if (ENABLE_NLP)
     target_link_libraries(dbms PUBLIC ch_contrib::wnb)
     target_link_libraries(dbms PUBLIC ch_contrib::lemmagen)
 endif()
