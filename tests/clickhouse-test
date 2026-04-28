@@ -1410,6 +1410,7 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
         # changing grace_hash_join_initial_buckets is giving wrong results in a test
         # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
