@@ -426,7 +426,7 @@ private:
         /// currently running. Between consecutive `threadFunc` invocations (reschedule gaps),
         /// `active_mv_streamers` is 0 while the MV is still attached, so checking the streamer
         /// counter alone would let direct reads sneak in and produce inconsistent user behavior.
-        if (DatabaseCatalog::instance().getDependentViews(kafka_storage.getStorageID()).size() > 0)
+        if (!DatabaseCatalog::instance().getDependentViews(kafka_storage.getStorageID()).empty())
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
 
         /// Atomically check that no MV streamer is active and register all direct readers.
