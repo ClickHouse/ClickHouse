@@ -506,7 +506,26 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
 
     /// Main I/O loop: bridge WebSocket <-> PTY
     bool running = true;
+    /// Track whether a close frame has already been sent so we do not
+    /// emit a second close (or further data) after the close handshake,
+    /// which would violate RFC 6455.
+    bool close_sent = false;
     char pty_buf[4096];
+
+    auto send_close_once = [&](uint16_t code, const String & reason)
+    {
+        if (close_sent)
+            return;
+        close_sent = true;
+        try
+        {
+            sendWebSocketClose(socket, code, reason);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to send WebSocket close frame");
+        }
+    };
 
     /// State for WebSocket frame reassembly (RFC 6455 fragmentation)
     String fragment_buffer;
@@ -573,7 +592,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
 
                 if (frame.protocol_error)
                 {
-                    sendWebSocketClose(socket, 1002, "Protocol error");
+                    send_close_once(1002, "Protocol error");
                     running = false;
                     continue;
                 }
@@ -590,7 +609,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                     switch (frame.opcode)
                     {
                         case 0x08: /// Close frame
-                            sendWebSocketClose(socket, 1000, "Bye");
+                            send_close_once(1000, "Bye");
                             running = false;
                             break;
                         case 0x09: /// Ping
@@ -608,7 +627,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                     /// A new data frame while a fragmented message is in progress is a protocol error
                     if (in_fragmented_message)
                     {
-                        sendWebSocketClose(socket, 1002, "Protocol error: new message during fragmentation");
+                        send_close_once(1002, "Protocol error: new message during fragmentation");
                         running = false;
                         continue;
                     }
@@ -622,14 +641,14 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                     /// Continuation frame without a preceding data frame is a protocol error
                     if (!in_fragmented_message)
                     {
-                        sendWebSocketClose(socket, 1002, "Protocol error: unexpected continuation frame");
+                        send_close_once(1002, "Protocol error: unexpected continuation frame");
                         running = false;
                         continue;
                     }
                     if (fragment_buffer.size() + frame.payload.size() > MAX_MESSAGE_SIZE)
                     {
                         LOG_WARNING(log, "WebSocket message exceeded size limit");
-                        sendWebSocketClose(socket, 1009, "Message too big");
+                        send_close_once(1009, "Message too big");
                         running = false;
                         continue;
                     }
@@ -725,36 +744,33 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
             running = false;
     }
 
-    /// Drain remaining PTY output
-    for (;;)
+    /// Drain remaining PTY output and send the final close frame only when
+    /// no close has been emitted yet. RFC 6455 forbids data frames or a second
+    /// close after the close handshake has started.
+    if (!close_sent)
     {
-        struct pollfd pfd = {};
-        pfd.fd = pty_master_fd;
-        pfd.events = POLLIN;
-        if (poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN))
-            break;
-        ssize_t n = read(pty_master_fd, pty_buf, sizeof(pty_buf));
-        if (n <= 0)
-            break;
-        try
+        for (;;)
         {
-            sendWebSocketBinary(socket, pty_buf, static_cast<size_t>(n));
+            struct pollfd pfd = {};
+            pfd.fd = pty_master_fd;
+            pfd.events = POLLIN;
+            if (poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN))
+                break;
+            ssize_t n = read(pty_master_fd, pty_buf, sizeof(pty_buf));
+            if (n <= 0)
+                break;
+            try
+            {
+                sendWebSocketBinary(socket, pty_buf, static_cast<size_t>(n));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to drain PTY output to WebSocket");
+                break;
+            }
         }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to drain PTY output to WebSocket");
-            break;
-        }
-    }
 
-    /// Send WebSocket close frame
-    try
-    {
-        sendWebSocketClose(socket, 1000, "Session ended");
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to send WebSocket close frame");
+        send_close_once(1000, "Session ended");
     }
 
     /// socket.shutdown() is handled by SCOPE_EXIT above
