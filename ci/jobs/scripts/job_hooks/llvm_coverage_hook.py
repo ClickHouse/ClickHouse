@@ -41,24 +41,14 @@ def check():
         diff_url = d.get("diff_url", "")
         uncovered_code_url = d.get("uncovered_code_url", "")
 
-        def fmt_cov(pct: float, hit: int, total: int) -> str:
-            if total > 0:
-                return f"{pct:.2f}% ({hit:,}/{total:,})"
-            return f"{pct:.2f}%"
-
-        def fmt_delta(pct_delta: float, hit_delta: int) -> str:
-            if hit_delta != 0:
-                return f"{pct_delta:+.2f}% ({hit_delta:+,})"
-            return f"{pct_delta:+.2f}%"
-
         if info.pr_number > 0:
             body = (
                 f"### LLVM Coverage Report\n\n"
                 f"| Metric | Baseline | Current | Δ |\n"
                 f"|--------|----------|---------|---|\n"
-                f"| Lines | {fmt_cov(b_line_cov, b_line_hit, b_line_total)} | {fmt_cov(c_line_cov, c_line_hit, c_line_total)} | {fmt_delta(c_line_cov - b_line_cov, c_line_hit - b_line_hit)} |\n"
-                f"| Functions | {fmt_cov(b_function_cov, b_func_hit, b_func_total)} | {fmt_cov(c_function_cov, c_func_hit, c_func_total)} | {fmt_delta(c_function_cov - b_function_cov, c_func_hit - b_func_hit)} |\n"
-                f"| Branches | {fmt_cov(b_branch_cov, b_branch_hit, b_branch_total)} | {fmt_cov(c_branch_cov, c_branch_hit, c_branch_total)} | {fmt_delta(c_branch_cov - b_branch_cov, c_branch_hit - b_branch_hit)} |\n"
+                f"| Lines | {b_line_cov:.2f}% | {c_line_cov:.2f}% | {c_line_cov - b_line_cov:+.2f}% |\n"
+                f"| Functions | {b_function_cov:.2f}% | {c_function_cov:.2f}% | {c_function_cov - b_function_cov:+.2f}% |\n"
+                f"| Branches | {b_branch_cov:.2f}% | {c_branch_cov:.2f}% | {c_branch_cov - b_branch_cov:+.2f}% |\n"
             )
             if pr_changed_lines_info:
                 changed_line = f"\n**Changed lines:** {pr_changed_lines_info}"

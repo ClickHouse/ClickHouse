@@ -13,6 +13,11 @@ from ci.praktika.result import Result
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
 
+# Coverage data lives in the public ClickHouse CIDB, accessible from any CI environment.
+# Use this URL for all coverage queries so that private-repo CI (which may not have
+# access to an internal CIDB) can still query test coverage data.
+_PUBLIC_CIDB_URL = "https://play.clickhouse.com"
+
 # Query to fetch failed tests from CIDB for a given PR.
 # Pre-filters out commit/check_name combinations with >= 20 failures — these indicate
 # widespread failures (e.g. build broken, environment issue) where every test failed,
@@ -62,8 +67,7 @@ class Targeting:
         result = set()
         if hasattr(self, '_diff_text') and self._diff_text:
             # Reuse already-fetched diff text to extract changed file names — avoids
-            # a second gh API call and works when the PR diff was pre-fetched via
-            # --diff-file or the rate limit is exhausted.
+            # a second diff fetch and works when the diff was pre-fetched via --diff-file.
             changed_files = [
                 m.group(1)
                 for m in re.finditer(r'^\+\+\+ b/(.+)$', self._diff_text, re.MULTILINE)
@@ -121,7 +125,7 @@ class Targeting:
             JOB_TYPE=self.job_type,
             TEST_NAME_PATTERN=test_name_pattern,
         )
-        query_result = cidb.query(query, log_level="")
+        query_result = cidb.query(query, log_level="") or ""
         # Parse test names from the query result
         for line in query_result.strip().split("\n"):
             if line.strip():
@@ -183,6 +187,25 @@ class Targeting:
     PASS_WEIGHT_SIBLING       = 0.25  # Pass 2: test covers a sibling file in the same source directory
     PASS_WEIGHT_KEYWORD       = 0.20  # Fallback: test filename contains domain keywords from changed files
 
+    # Shared-registry files: purely declarative files whose changes are virtually always
+    # additive (`extern const Event …`, new setting entries, new error codes).  Every
+    # test emits profile events / reads settings, so coverage for any changed line in
+    # these files returns thousands of tests and floods the candidate pool with noise
+    # (the real signal lives in the other files touched by the same PR).  Skip them
+    # entirely from coverage, sibling, indirect, and keyword-fallback passes.
+    SHARED_REGISTRY_FILES = frozenset({
+        "src/Common/ProfileEvents.cpp",
+        "src/Common/ProfileEvents.h",
+        "src/Common/CurrentMetrics.cpp",
+        "src/Common/CurrentMetrics.h",
+        "src/Common/ErrorCodes.cpp",
+        "src/Common/ErrorCodes.h",
+        "src/Common/SettingsChanges.cpp",
+        "src/Core/Settings.cpp",
+        "src/Core/SettingsChangesHistory.cpp",
+        "src/Core/SettingsChangesHistory.h",
+    })
+
     def get_tests_by_changed_lines(self, changed_lines: list,
                                    hunk_ranges: dict | None = None) -> dict:
         """
@@ -218,12 +241,21 @@ class Targeting:
             (f, ln)
             for f, ln in changed_lines
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
+            and f not in self.SHARED_REGISTRY_FILES
         ]
         skipped = len(changed_lines) - len(coverage_lines)
         if skipped:
             print(
-                f"[find_tests] skipping {skipped} lines in non-tracked files "
-                f"(test scripts, docs, CI, contrib)"
+                f"[find_tests] skipping {skipped} lines in non-tracked or shared-registry "
+                f"files (test scripts, docs, CI, contrib, ProfileEvents/Settings registries)"
+            )
+        skipped_registry = sorted(
+            {f for f, _ in changed_lines if f in self.SHARED_REGISTRY_FILES}
+        )
+        if skipped_registry:
+            print(
+                f"[find_tests] skipping {len(skipped_registry)} shared-registry file(s): "
+                f"{skipped_registry}"
             )
 
         # Return the original (full) key-set in the result dict so that
@@ -339,7 +371,7 @@ class Targeting:
         HAVING region_test_count <= {BROAD_REGION_HARD_CAP}
         """
 
-        cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+        cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
         t_query = time.monotonic()
         raw = cidb.query(query, log_level="") or ""
         print(f"[find_tests] CIDB query: {time.monotonic()-t_query:.2f}s, response={len(raw)} bytes")
@@ -954,7 +986,7 @@ class Targeting:
         if sparse_files:
             from ci.praktika.cidb import CIDB
             from ci.praktika.settings import Settings
-            _cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+            _cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
             # sparse_files are already stored-paths (./src/...)
             sparse_conds = " OR ".join(
                 f"file = '{self._escape_sql_string(f)}'"
@@ -1099,7 +1131,7 @@ class Targeting:
         try:
             from ci.praktika.cidb import CIDB
             from ci.praktika.settings import Settings
-            cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+            cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
             t0 = time.monotonic()
             raw = cidb.query(query, log_level="") or ""
             elapsed = time.monotonic() - t0
@@ -1294,7 +1326,7 @@ class Targeting:
         try:
             from ci.praktika.cidb import CIDB
             from ci.praktika.settings import Settings
-            cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+            cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
             t0 = time.monotonic()
             raw = cidb.query(query, log_level="") or ""
             print(
@@ -1528,7 +1560,7 @@ class Targeting:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that were changed or added",
-            status=Result.StatusExtended.OK,
+            status=Result.Status.OK,
             info=info,
         )
 
@@ -1547,7 +1579,7 @@ class Targeting:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that failed in previous runs",
-            status=Result.StatusExtended.OK,
+            status=Result.Status.OK,
             info=info,
         )
 
@@ -1617,19 +1649,35 @@ class Targeting:
         return hunks
 
     def get_diff_text(self) -> str:
-        """Fetch the PR diff text (cached on self._diff_text after first call)."""
-        if not hasattr(self, '_diff_text') or not self._diff_text:
-            assert self.info.pr_number > 0, "Diff fetching applicable for PRs only"
+        """Fetch the PR diff text (cached on self._diff_text after first call).
+
+        CI containers have no .git directory. Use the GitHub API via curl.
+        For public repos no auth is needed; for private repos GITHUB_TOKEN is used.
+        """
+        if hasattr(self, '_diff_text') and self._diff_text is not None:
+            return self._diff_text
+        assert self.info.pr_number > 0, "Diff fetching applicable for PRs only"
+        repo = self.info.repo_name or "ClickHouse/ClickHouse"
+        if self.info.is_local_run:
             self._diff_text = Shell.get_output(
-                f"gh pr diff {self.info.pr_number} --repo ClickHouse/ClickHouse"
+                f"gh pr diff {self.info.pr_number} --repo {repo}"
+            )
+        else:
+            # Use GitHub REST API to get the diff. Works for both public and private
+            # repos; private repos require GITHUB_TOKEN (available in Actions env).
+            token = os.environ.get("GITHUB_TOKEN", "")
+            auth = f'-H "Authorization: Bearer {token}"' if token else ""
+            self._diff_text = Shell.get_output(
+                f"curl -sSf {auth} "
+                f"-H 'Accept: application/vnd.github.v3.diff' "
+                f"'https://api.github.com/repos/{repo}/pulls/{self.info.pr_number}'"
             )
         return self._diff_text
 
     def get_changed_lines_from_diff(self):
         """
         Return changed lines from the PR diff.
-        Always fetches the diff from GitHub using `gh pr diff` so that results
-        reflect the actual PR regardless of the local checkout state.
+        In CI fetches the diff from GitHub API; for local runs uses `gh pr diff`.
         """
         assert self.info.pr_number > 0, "Find tests by diff applicable for PRs only"
         return self._parse_diff_lines(self.get_diff_text())
@@ -1672,6 +1720,7 @@ class Targeting:
             f for f, ln in changed_lines
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
             and (f.endswith(".cpp") or f.endswith(".h"))
+            and f not in self.SHARED_REGISTRY_FILES
             and not any(pairs for (ff, _), pairs in line_to_tests.items() if ff == f)
         ]
         # Deduplicate file list.
@@ -1708,6 +1757,7 @@ class Targeting:
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
             and (f.endswith(".cpp") or f.endswith(".h"))
             and f not in cpp_with_zero_coverage
+            and f not in self.SHARED_REGISTRY_FILES
             and any(pairs for (ff, _), pairs in line_to_tests.items() if ff == f)
         ))
         # Always run the supplementary keyword pass: keyword tests get PASS_WEIGHT_KEYWORD
@@ -1892,7 +1942,7 @@ class Targeting:
             info += f"Bottom test: {bottom} (score={width_score[bottom]:.6f})\n"
 
         return ranked, Result(
-            name="tests found by coverage", status=Result.StatusExtended.OK, info=info
+            name="tests found by coverage", status=Result.Status.OK, info=info
         )
 
     def get_all_relevant_tests_with_info(self):
@@ -1909,12 +1959,12 @@ class Targeting:
                     seen.add(t)
                     ranked.append(t)
 
-        # Integration tests run changed test suboptimally (entire module), it might be too long
-        # limit it to stateless tests only
-        if self.job_type == self.STATELESS_JOB_TYPE:
-            changed_tests, result = self.get_changed_or_new_tests_with_info()
-            add_tests(changed_tests)
-            results.append(result)
+        # Changed/new tests are already covered by the flaky check — skip them
+        # in the targeted check to avoid duplication.
+        # if self.job_type == self.STATELESS_JOB_TYPE:
+        #     changed_tests, result = self.get_changed_or_new_tests_with_info()
+        #     add_tests(changed_tests)
+        #     results.append(result)
 
         previously_failed_tests, result = self.get_previously_failed_tests_with_info()
         add_tests(previously_failed_tests)
@@ -1934,7 +1984,7 @@ class Targeting:
                 results.append(
                     Result(
                         name="tests found by coverage",
-                        status=Result.StatusExtended.OK,
+                        status=Result.Status.OK,
                         info=f"Skipped: {e}",
                     )
                 )
@@ -1942,7 +1992,7 @@ class Targeting:
 
         return ranked, Result(
             name="Fetch relevant tests",
-            status=Result.Status.SUCCESS,
+            status=Result.Status.OK,
             info=f"Found {len(ranked)} relevant tests",
             results=results,
         )
@@ -1978,7 +2028,7 @@ if __name__ == "__main__":
 
     # If a pre-fetched diff file is provided, monkey-patch get_diff_text so both
     # get_changed_lines_from_diff and get_most_relevant_tests read from the file
-    # rather than calling gh pr diff.
+    # rather than fetching the diff.
     if args.diff_file:
         import types
         diff_text = Path(args.diff_file).read_text()

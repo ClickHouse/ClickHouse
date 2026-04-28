@@ -756,9 +756,9 @@ R"(SELECT
 arrayIntersect([1, 2], [1, 3], [2, 3]) AS empty_intersection,
 arrayIntersect([1, 2], [1, 3], [1, 4]) AS non_empty_intersection
 )", R"(
-┌─non_empty_intersection─┬─empty_intersection─┐
-│ []                     │ [1]                │
-└────────────────────────┴────────────────────┘
+┌─empty_intersection─┬─non_empty_intersection─┐
+│ []                 │ [1]                    │
+└────────────────────┴────────────────────────┘
 )"}};
     FunctionDocumentation::IntroducedIn intersect_introduced_in = {1, 1};
     FunctionDocumentation::Category intersect_category = FunctionDocumentation::Category::Array;

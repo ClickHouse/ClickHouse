@@ -24,7 +24,11 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Timespan.h>
 
+#include <climits>
+#include <sys/stat.h>
+
 #include <queue>
+#include <unordered_map>
 
 #include "config.h"
 
@@ -94,6 +98,17 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
     extern const int HTTP_CONNECTION_LIMIT_REACHED;
+}
+
+
+static const char * connectionGroupTypeToString(HTTPConnectionGroupType type)
+{
+    switch (type)
+    {
+        case HTTPConnectionGroupType::DISK: return "Disk";
+        case HTTPConnectionGroupType::STORAGE: return "Storage";
+        case HTTPConnectionGroupType::HTTP: return "HTTP";
+    }
 }
 
 
@@ -179,6 +194,32 @@ public:
         return limits;
     }
 
+    void setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes sizes)
+    {
+        if (sizes.rcvbuf > static_cast<size_t>(INT_MAX))
+        {
+            LOG_ERROR(log, "rcvbuf value {} exceeds maximum {}, ignore buffer settings for {}", sizes.rcvbuf, INT_MAX, connectionGroupTypeToString(type));
+            return;
+        }
+        if (sizes.sndbuf > static_cast<size_t>(INT_MAX))
+        {
+            LOG_ERROR(log, "sndbuf value {} exceeds maximum {}, ignore buffer settings for {}", sizes.sndbuf, INT_MAX, connectionGroupTypeToString(type));
+            return;
+        }
+
+        std::lock_guard lock(mutex);
+        if (sizes.rcvbuf != socket_buffer_sizes.rcvbuf || sizes.sndbuf != socket_buffer_sizes.sndbuf)
+            LOG_DEBUG(log, "Socket buffer sizes updated for group {}: rcvbuf={}, sndbuf={}", connectionGroupTypeToString(type), sizes.rcvbuf, sizes.sndbuf);
+
+        socket_buffer_sizes = sizes;
+    }
+
+    HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes() const
+    {
+        std::lock_guard lock(mutex);
+        return socket_buffer_sizes;
+    }
+
     bool isSoftLimitReached() const
     {
         std::lock_guard lock(mutex);
@@ -191,7 +232,7 @@ public:
         return total_connections_in_group >= limits.store_limit;
     }
 
-    void atConnectionCreate(std::string host, UInt16 port)
+    void atConnectionCreate(Poco::Net::HTTPClientSession * session, std::string host, UInt16 port)
     {
         std::lock_guard lock(mutex);
 
@@ -199,29 +240,38 @@ public:
             throw Exception(
                 ErrorCodes::HTTP_CONNECTION_LIMIT_REACHED,
                 "Cannot create new connection to {}:{}, hard limit {} for connections in group {} is reached",
-                host, port, limits.hard_limit, getType());
+                host, port, limits.hard_limit, connectionGroupTypeToString(getType()));
 
         ++total_connections_in_group;
+        live_connections.emplace(session, 0);
 
         if (total_connections_in_group >= limits.warning_limit && total_connections_in_group >= mute_warning_until)
         {
             mute_warning_until = roundUp(total_connections_in_group, HTTPConnectionPools::Limits::warning_step);
             LOG_WARNING(log, "Too many active sessions in group {}, count {}, warning limit {}, next warning at {}",
-                        type, total_connections_in_group, limits.warning_limit, mute_warning_until);
+                        connectionGroupTypeToString(type), total_connections_in_group, limits.warning_limit, mute_warning_until);
         }
     }
 
-    void atConnectionDestroy() noexcept
+    void updateSocketInode(Poco::Net::HTTPClientSession * session, uint64_t inode) noexcept
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = live_connections.find(session); it != live_connections.end())
+            it->second = inode;
+    }
+
+    void atConnectionDestroy(Poco::Net::HTTPClientSession * session) noexcept
     {
         std::lock_guard lock(mutex);
 
         --total_connections_in_group;
+        live_connections.erase(session);
 
         const size_t gap = 20;
         const size_t reduced_warning_limit = limits.warning_limit > gap ? limits.warning_limit - gap : 1;
         if (mute_warning_until > 0 && total_connections_in_group < reduced_warning_limit)
         {
-            LOG_WARNING(log, "Sessions count is OK in the group {}, count {}", type, total_connections_in_group);
+            LOG_WARNING(log, "Sessions count is OK in the group {}, count {}", connectionGroupTypeToString(type), total_connections_in_group);
             mute_warning_until = 0;
         }
     }
@@ -229,6 +279,21 @@ public:
     HTTPConnectionGroupType getType() const { return type; }
 
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const { return metrics; }
+
+    /// Return cached socket inodes of all tracked connections.
+    /// Inodes are updated by PooledConnection after each connect/reconnect.
+    std::vector<uint64_t> getSocketInodes() const
+    {
+        std::lock_guard lock(mutex);
+        std::vector<uint64_t> inodes;
+        inodes.reserve(live_connections.size());
+        for (const auto & [_, inode] : live_connections)
+        {
+            if (inode != 0)
+                inodes.push_back(inode);
+        }
+        return inodes;
+    }
 
 private:
     bool isHardLimitReached() const TSA_REQUIRES(mutex)
@@ -245,6 +310,8 @@ private:
     HTTPConnectionPools::Limits limits TSA_GUARDED_BY(mutex) = HTTPConnectionPools::Limits();
     size_t total_connections_in_group TSA_GUARDED_BY(mutex) = 0;
     size_t mute_warning_until TSA_GUARDED_BY(mutex) = 0;
+    HTTPConnectionPools::SocketBufferSizes socket_buffer_sizes TSA_GUARDED_BY(mutex);
+    std::unordered_map<Poco::Net::HTTPClientSession *, uint64_t> live_connections TSA_GUARDED_BY(mutex);
 };
 
 
@@ -358,6 +425,7 @@ private:
                 Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
+            notifySocketInode();
         }
 
         String getTarget() const
@@ -476,13 +544,15 @@ private:
                     response_stream_completed = false;
                 }
             }
+            /// Unregister from live_connections first, before tearing down session internals,
+            /// so that the async metrics thread cannot dereference a partially-destructed session.
+            group->atConnectionDestroy(this);
+
             response_stream = nullptr;
             Session::setSendDataHooks();
             Session::setReceiveDataHooks();
             Session::setSendThrottler();
             Session::setReceiveThrottler();
-
-            group->atConnectionDestroy();
 
             if (!isExpired)
                 if (auto lock = pool.lock())
@@ -507,7 +577,7 @@ private:
         {
             // atConnectionCreate can throw. If it does, this object's constructor fails and its destructor won't be called,
             // so we must call atConnectionCreate before incrementing active_count to avoid leaking the metric increment.
-            group->atConnectionCreate(Session::getHost(), Session::getPort());
+            group->atConnectionCreate(this, Session::getHost(), Session::getPort());
             CurrentMetrics::add(metrics.active_count);
         }
 
@@ -524,9 +594,28 @@ private:
             return std::make_shared<make_shared_enabler>(std::forward<Args>(args)...);
         }
 
+        /// Notify the connection group about the current socket inode.
+        /// Called after connect/reconnect so the async metrics thread can map sockets to netlink data.
+        void notifySocketInode()
+        {
+            try
+            {
+                auto fd = Session::socket().impl()->sockfd();
+                if (fd < 0)
+                    return;
+                struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init)
+                if (fstat(fd, &st) == 0)
+                    group->updateSocketInode(this, st.st_ino);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: socket may not be connected yet
+            {
+            }
+        }
+
         void doConnect(UInt64 * connect_time)
         {
             Session::reconnect(connect_time);
+            notifySocketInode();
         }
 
         bool isCompleted() const
@@ -594,37 +683,34 @@ public:
             expired_connections.clear();
         });
 
+        ConnectionPtr reused_connection;
+
         {
             std::lock_guard lock(mutex);
             expired_connections.reserve(stored_connections.size());
 
             wipeExpiredImpl(expired_connections);
 
-            while (!stored_connections.empty())
+            if (!stored_connections.empty())
             {
-                auto it = stored_connections.top();
+                reused_connection = stored_connections.top();
                 stored_connections.pop();
-
-                /// Check if the server has already closed this connection (sent FIN/RST).
-                /// This catches the case where the server's actual keep-alive timeout is shorter
-                /// than what the pool assumes (e.g. S3 closes idle connections after ~5s while our
-                /// pool may assume 30s).
-                if (isStale(*it))
-                {
-                    it->markAsExpired();
-                    expired_connections.push_back(it);
-                    ProfileEvents::increment(getMetrics().expired, 1);
-                    CurrentMetrics::sub(getMetrics().stored_count, 1);
-                    continue;
-                }
-
-                setTimeouts(*it, timeouts);
-
-                ProfileEvents::increment(getMetrics().reused, 1);
-                CurrentMetrics::sub(getMetrics().stored_count, 1);
-
-                return it;
             }
+        }
+
+        if (reused_connection)
+        {
+            ProfileEvents::increment(getMetrics().reused, 1);
+            CurrentMetrics::sub(getMetrics().stored_count, 1);
+
+            setTimeouts(*reused_connection, timeouts);
+
+            /// Apply socket buffer sizes outside the lock because applySocketBufferSizes
+            /// can throw, and PooledConnection destructor during stack unwinding would
+            /// try to re-lock this mutex, causing a deadlock.
+            applySocketBufferSizes(*reused_connection, group->getSocketBufferSizes());
+
+            return reused_connection;
         }
 
         return prepareNewConnection(timeouts, connect_time);
@@ -660,12 +746,12 @@ public:
             ProfileEvents::increment(getMetrics().expired, expired_connections.size());
         });
 
-        auto isSoftLimitReached = group->isSoftLimitReached();
+        auto is_soft_limit_reached = group->isSoftLimitReached();
         while (!stored_connections.empty())
         {
             auto connection = stored_connections.top();
 
-            if (!isExpired(connection, isSoftLimitReached))
+            if (!isExpired(connection, is_soft_limit_reached) && !isStale(*connection))
                 return stored_connections.size();
 
             stored_connections.pop();
@@ -695,6 +781,19 @@ private:
         return connection->isKeepAliveExpired(0.8);
     }
 
+    /// Apply SO_RCVBUF/SO_SNDBUF to a connection socket.
+    /// Note: once setsockopt(SO_RCVBUF) is called on a socket, the kernel permanently
+    /// disables TCP autotuning for that socket. Changing the setting back to 0 will stop
+    /// calling setsockopt on new connections, but already-configured pooled connections
+    /// will retain their fixed buffer sizes until they expire naturally from the pool.
+    static void applySocketBufferSizes(Session & connection, const HTTPConnectionPools::SocketBufferSizes & buf_sizes)
+    {
+        if (buf_sizes.rcvbuf > 0)
+            connection.socket().setReceiveBufferSize(static_cast<int>(buf_sizes.rcvbuf));
+        if (buf_sizes.sndbuf > 0)
+            connection.socket().setSendBufferSize(static_cast<int>(buf_sizes.sndbuf));
+    }
+
     /// Detect connections that have been silently closed by the remote end.
     /// An idle keep-alive connection should have no data pending in the socket.
     /// If poll(SELECT_READ, 0) returns true on such a connection, it means the
@@ -716,9 +815,7 @@ private:
     ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-
         connection->setKeepAlive(true);
-        setTimeouts(*connection, timeouts);
 
         if (!proxy_configuration.isEmpty())
         {
@@ -730,8 +827,12 @@ private:
 
         try
         {
+            setTimeouts(*connection, timeouts);
+
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
             connection->doConnect(connect_time);
+
+            applySocketBufferSizes(*connection, group->getSocketBufferSizes());
         }
         catch (...)
         {
@@ -742,6 +843,7 @@ private:
         }
 
         ProfileEvents::increment(getMetrics().created);
+
         return connection;
     }
 
@@ -764,6 +866,7 @@ private:
         {
             auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
             connection_to_store->assign(connection);
+            connection_to_store->notifySocketInode();
 
             {
                 MemoryTrackerSwitcher switcher{&total_memory_tracker};
@@ -906,10 +1009,28 @@ public:
         http_group->setLimits(std::move(http));
     }
 
+    void setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes disk, HTTPConnectionPools::SocketBufferSizes storage, HTTPConnectionPools::SocketBufferSizes http)
+    {
+        disk_group->setSocketBufferSizes(std::move(disk));
+        storage_group->setSocketBufferSizes(std::move(storage));
+        http_group->setSocketBufferSizes(std::move(http));
+    }
+
     void dropCache()
     {
         std::lock_guard lock(mutex);
         endpoints_pool.clear();
+    }
+
+    HTTPConnectionPools::PoolSocketInodes getSocketInodes()
+    {
+        /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
+        /// The groups are created once in the constructor and never replaced.
+        return {
+            .disk = disk_group->getSocketInodes(),
+            .storage = storage_group->getSocketInodes(),
+            .http = http_group->getSocketInodes()
+        };
     }
 
 protected:
@@ -1000,6 +1121,11 @@ void HTTPConnectionPools::setLimits(HTTPConnectionPools::Limits disk, HTTPConnec
     impl->setLimits(std::move(disk), std::move(storage), std::move(http));
 }
 
+void HTTPConnectionPools::setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes disk, HTTPConnectionPools::SocketBufferSizes storage, HTTPConnectionPools::SocketBufferSizes http)
+{
+    impl->setSocketBufferSizes(std::move(disk), std::move(storage), std::move(http));
+}
+
 void HTTPConnectionPools::dropCache()
 {
     impl->dropCache();
@@ -1010,4 +1136,10 @@ HTTPConnectionPools::getPool(HTTPConnectionGroupType type, const Poco::URI & uri
 {
     return impl->getPool(type, uri, proxy_configuration);
 }
+
+HTTPConnectionPools::PoolSocketInodes HTTPConnectionPools::getSocketInodes()
+{
+    return impl->getSocketInodes();
+}
+
 }
