@@ -125,7 +125,14 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
     if (index_type && index_type->arguments)
+    {
         result.arguments = index_type->arguments->clone();
+        /// Replace ALIAS column references in the index arguments (e.g. in the text index preprocessor)
+        /// the same way we do for the index expression itself in initExpressionInfo.
+        using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+        ReplaceAliasToExprVisitor::Data alias_data{columns};
+        ReplaceAliasToExprVisitor{alias_data}.visit(result.arguments);
+    }
 
     return result;
 }

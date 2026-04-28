@@ -1,0 +1,37 @@
+Test ALIAS column without preprocessor
+1
+1
+1
+0
+-- Verify original-case tokens are indexed (no preprocessor)
+Hello
+WORLD
+default
+name
+-- Verify text index is used by hasToken
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 1/1
+Test ALIAS column with preprocessor
+1
+1
+1
+0
+-- Verify preprocessed tokens are indexed (all lowercased)
+default
+hello
+name
+world
+-- Verify text index is used by hasToken
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 1/1
+Test ALIAS column with Array type and preprocessor
+1
+1
+1
+0
+-- Verify preprocessed array tokens are indexed
+bar_suffix
+baz_suffix
+foo_suffix
