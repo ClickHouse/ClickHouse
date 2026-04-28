@@ -33,7 +33,6 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , read_buffer_creator(std::move(read_buffer_creator_))
     , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
-    , with_file_cache(settings.enable_filesystem_cache)
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
