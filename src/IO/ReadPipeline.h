@@ -39,13 +39,13 @@ using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesL
 ///   auto buf = pipeline.build();
 ///
 /// Stage ordering (innermost to outermost, fixed at build time):
-///   1. Source        -- base ReadBuffer (S3, Azure, HDFS, local file)
-///   2. DiskCache     -- CachedOnDiskReadBufferFromFile
-///   3. Gather        -- ReadBufferFromRemoteFSGather (auto for multi-object)
-///   4. MemoryCache   -- CachedInMemoryReadBufferFromFile
-///   5. AsyncPrefetch -- AsynchronousBoundedReadBuffer
-///   6. Decrypt       -- ReadBufferFromEncryptedFile
-///   7. Decompress    -- CompressedReadBufferFromFile
+///   1. Source             -- base ReadBuffer (S3, Azure, HDFS, local file)
+///   2. DiskCache          -- CachedOnDiskReadBufferFromFile
+///   3. Gather             -- ReadBufferFromRemoteFSGather (multi-object files)
+///   4. DistributedCache   -- ReadBufferFromDistributedCache (with fallback to Gather)
+///   5. MemoryCache        -- CachedInMemoryReadBufferFromFile
+///   6. AsyncPrefetch      -- AsynchronousBoundedReadBuffer
+///   7. Encryption         -- ReadBufferFromEncryptedFile (may have multiple layers)
 class ReadPipeline
 {
 public:
