@@ -1174,13 +1174,9 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     }
 
     {
-        ReadSettings modified_settings{read_settings};
-        modified_settings.local_fs_buffer_size = 10;
-        modified_settings.remote_fs_buffer_size = 10;
-
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, user, read_buffer_creator,
-            modified_settings.getFilesystemCacheSettings(), modified_settings.remote_fs_buffer_size, modified_settings.local_fs_buffer_size,
+            read_settings.getFilesystemCacheSettings(), /* remote_fs_buffer_size */ 10, /* local_fs_buffer_size */ 10,
             "test", s.size(), false, false, std::nullopt, nullptr);
 
         cached_buffer->next();
