@@ -8,9 +8,8 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <mongocxx/instance.hpp>
@@ -60,11 +59,10 @@ struct MongoDBConfiguration
  *  Read only.
  *  One stream only.
  */
-class StorageMongoDB final : public StorageWithCommonVirtualColumns
+class StorageMongoDB final : public IStorage
 {
 public:
     static MongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
-    static MongoDBConfiguration getConfigurationFromCollection(MutableNamedCollectionPtr named_collection, ContextPtr context);
 
     StorageMongoDB(
         const StorageID & table_id_,
@@ -75,11 +73,6 @@ public:
 
     std::string getName() const override { return "MongoDB"; }
     bool isRemote() const override { return true; }
-    bool isExternalDatabase() const override { return true; }
-
-    static VirtualColumnsDescription createVirtuals();
-
-    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

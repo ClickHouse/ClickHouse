@@ -2,12 +2,9 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
-#include <Interpreters/HistogramMetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
@@ -18,8 +15,6 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
-#include <Interpreters/DeltaMetadataLog.h>
-#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/DistributedCacheServerLog.h>
@@ -33,14 +28,15 @@
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/DeadLetterQueue.h>
-#include <Interpreters/PredicateStatisticsLog.h>
-#include <Common/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
 #include <Common/ThreadPool.h>
 
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -81,9 +77,9 @@ void SystemLogQueue<LogElement>::push(LogElement && element)
 
 
     /// Queue resize can allocate memory
-    /// - MemoryTrackerUntrackedAllocationsBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
+    /// - MemoryTrackerDebugBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
     /// - MemoryTrackerBlockerInThread here because this allocation should not be take into account in the query scope (since it will be freed outside of it)
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
@@ -169,18 +165,10 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     // there is no obligation to call notifyFlush before waitFlush, than we have to be sure that flush_event has been triggered before we wait the result
     notifyFlushUnlocked(expected_flushed_index, should_prepare_tables_anyway);
 
-    // prepared_tables starts from -1, so we need to wait for prepared_tables >= 0 when expected_flushed_index == 0 to make sure the table is created
-    // In theory it should be possible to wait only for prepared_tables, but:
-    // 1. It reflects the logic more precisely
-    // 2. One extra comparison shouldn't matter here
-    auto result = confirm_event.wait_for(
-        lock,
-        std::chrono::seconds(timeout_seconds),
-        [&]
-        {
-            return (flushed_index >= expected_flushed_index && (!should_prepare_tables_anyway || prepared_tables >= expected_flushed_index))
-                || is_shutdown;
-        });
+    auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
+    {
+        return (flushed_index >= expected_flushed_index) || is_shutdown;
+    });
 
     if (!result)
     {
@@ -214,8 +202,6 @@ void SystemLogQueue<LogElement>::confirm(SystemLogQueue<LogElement>::Index last_
 template <typename LogElement>
 typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
 {
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
-
     PopResult result;
     size_t prev_ignored_logs = 0;
 
@@ -324,6 +310,8 @@ void SystemLogBase<LogElement>::stopFlushThread()
 template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
+    /// This allocation should not be take into account in the query scope (since it will be freed outside of it)
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
     queue->push(std::move(element));
 }
 
