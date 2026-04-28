@@ -28,7 +28,7 @@ SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
     SELECT count() FROM tab WHERE hasToken(name, 'Hello')
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+LIMIT 3;
 
 DROP TABLE tab;
 
@@ -61,7 +61,7 @@ SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
     SELECT count() FROM tab WHERE hasToken(name, 'hello')
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3;
+LIMIT 3;
 
 DROP TABLE tab;
 
@@ -73,7 +73,7 @@ CREATE TABLE tab
     lower_tags Array(String) ALIAS arrayMap(x -> lower(x), tags),
     INDEX idx(lower_tags) TYPE text(
         tokenizer = array,
-        preprocessor = arrayMap(x -> concat(x, '_suffix'), lower_tags)
+        preprocessor = concat(lower_tags, '_suffix')
     )
 )
 ENGINE = MergeTree
@@ -81,9 +81,9 @@ ORDER BY tuple();
 
 INSERT INTO tab VALUES (['Foo', 'BAR']), (['Baz']);
 
-SELECT count() FROM tab WHERE has(lower_tags, 'foo_suffix');
-SELECT count() FROM tab WHERE has(lower_tags, 'bar_suffix');
-SELECT count() FROM tab WHERE has(lower_tags, 'baz_suffix');
+SELECT count() FROM tab WHERE has(lower_tags, 'foo');
+SELECT count() FROM tab WHERE has(lower_tags, 'bar');
+SELECT count() FROM tab WHERE has(lower_tags, 'baz');
 SELECT count() FROM tab WHERE has(lower_tags, 'nonexistent');
 
 SELECT '-- Verify preprocessed array tokens are indexed';
