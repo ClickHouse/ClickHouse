@@ -44,6 +44,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_prefer_local_replica", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."},
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
+            {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
+            {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -95,8 +97,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_throw_on_quota_exceeded", true, true, "New setting"},
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
-            {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
-            {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
