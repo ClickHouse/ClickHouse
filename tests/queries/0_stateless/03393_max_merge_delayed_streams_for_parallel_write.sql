@@ -25,7 +25,9 @@ settings
     -- avoid superfluous merges
     merge_selector_base = 1000,
     min_columns_to_activate_adaptive_write_buffer = 0,
-    auto_statistics_types = '';
+    auto_statistics_types = '',
+    -- the test caps memory tightly; per-column auto minmax indices add overhead and trigger MEMORY_LIMIT_EXCEEDED
+    add_minmax_index_for_numeric_columns = 0;
 
 insert into metric_log select * from generateRandom() limit 10;
 
