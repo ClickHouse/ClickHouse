@@ -5,6 +5,11 @@ version = "0.1.0"
 
 [dependencies]
 bincode = "1"
+diskann = { path = "../../../contrib/diskann/diskann" }
+diskann-disk = { path = "../../../contrib/diskann/diskann-disk" }
+diskann-providers = { path = "../../../contrib/diskann/diskann-providers" }
+diskann-utils = { path = "../../../contrib/diskann/diskann-utils" }
+diskann-vector = { path = "../../../contrib/diskann/diskann-vector" }
 serde = { version = "1", features = ["derive"] }
 
 [lib]
