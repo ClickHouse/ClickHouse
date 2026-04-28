@@ -24,11 +24,11 @@ namespace ErrorCodes
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
-    const ReadSettings & settings_,
+    size_t min_bytes_for_seek_,
     bool use_external_buffer_,
     size_t buffer_size)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
-    , settings(settings_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
     , query_id(CurrentThread::getQueryId())
@@ -205,7 +205,7 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
         if (current_buf && offset > position)
         {
             size_t diff = offset - position;
-            if (diff < settings.remote_read_min_bytes_for_seek)
+            if (diff < min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset;

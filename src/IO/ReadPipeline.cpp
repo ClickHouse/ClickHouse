@@ -311,7 +311,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 return std::make_unique<ReadBufferFromRemoteFSGather>(
                     std::move(creator_copy),
                     objects,
-                    captured_settings,
+                    captured_settings.remote_read_min_bytes_for_seek,
                     /* use_external_buffer */ false,
                     effective_buffer_size);
             };
@@ -331,7 +331,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             impl = std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(gather_creator),
                 source->objects,
-                settings,
+                settings.remote_read_min_bytes_for_seek,
                 use_external_buffer,
                 buffer_size);
         }
