@@ -522,17 +522,18 @@ public:
         return node_name_to_node.contains(node_name);
     }
 
-    /// Record that a column with this name was added to this (lambda) scope
-    /// but its source is outside — i.e. `visitColumn` did not stop here.
-    void recordColumnFromOuterScope(const std::string & column_name)
+    /// Add an alias so that `node_name` resolves to an existing node in
+    /// `node_name_to_node`. Used when a table column inside a lambda body was
+    /// given a disambiguated name at the lambda scope; the outer scope still
+    /// has the column under its original name and needs this alias for the
+    /// capture loop to find it by the disambiguated name.
+    void addNodeAlias(const std::string & alias_name, const ActionsDAG::Node * node)
     {
-        columns_from_outer_scope.insert(column_name);
-    }
-
-    /// Check whether a column was recorded as coming from an outer scope.
-    bool isColumnFromOuterScope(const std::string & column_name) const
-    {
-        return columns_from_outer_scope.contains(column_name);
+        /// The map uses string_view keys that must point to stable storage.
+        /// Node names are backed by Node::result_name in the DAG's node list.
+        /// Alias names have no such backing, so we store them ourselves.
+        auto & stored = owned_alias_names.emplace_back(alias_name);
+        node_name_to_node[stored] = node;
     }
 
     [[maybe_unused]] bool containsInputNode(const std::string & node_name)
@@ -651,12 +652,9 @@ private:
     std::unordered_map<std::string_view, const ActionsDAG::Node *> node_name_to_node;
     ActionsDAG & actions_dag;
     QueryTreeNodePtr scope_node;
-
-    /// Column names that were added to this scope by `visitColumn` but whose source
-    /// is outside this scope (i.e. `visitColumn` continued past this level).
-    /// Only meaningful for lambda scopes; used to detect name collisions between
-    /// lambda arguments and captured table columns.
-    NameSet columns_from_outer_scope;
+    /// Stable storage for alias names added via addNodeAlias, because
+    /// node_name_to_node keys are string_views and need a persistent backing.
+    std::list<String> owned_alias_names;
 };
 
 class PlannerActionsVisitorImpl
@@ -826,12 +824,35 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             return {column_node_name, Levels(i)};
         }
 
-        /// Column was not sourced from this scope. If this scope is a lambda,
-        /// record that the column comes from outside — it will be needed in
-        /// visitLambda to detect collisions with lambda argument names.
+        /// When a table column's name collides with a lambda argument name (possible
+        /// when use_column_identifier_as_action_node_name = false, e.g. in PREWHERE),
+        /// the INPUT "x" added above is indistinguishable from the lambda argument in
+        /// the capture loop, so the table column would never be captured.  Add a second
+        /// INPUT with a disambiguated name at the lambda scope, and register aliases at
+        /// every outer scope so the capture loop can find the node by that name.
         const auto & scope = actions_stack[i].getScopeNode();
         if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
-            actions_stack[i].recordColumnFromOuterScope(column_node_name);
+        {
+            const auto & lambda_node = scope->as<LambdaNode &>();
+            const auto & arg_names = lambda_node.getArgumentNames();
+            if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
+            {
+                String disambiguated = column_node_name + "_lambda_captured";
+                size_t suffix = 0;
+                while (actions_stack[i].containsNode(disambiguated))
+                    disambiguated = column_node_name + "_lambda_captured_" + std::to_string(suffix++);
+
+                actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
+
+                for (Int64 j = i - 1; j >= 0; --j)
+                {
+                    const auto * input_node = actions_stack[j].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
+                    actions_stack[j].addNodeAlias(disambiguated, input_node);
+                }
+
+                return {disambiguated, Levels(0)};
+            }
+        }
     }
 
     return {column_node_name, Levels(0)};
@@ -951,21 +972,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     ActionsDAG::NodeRawConstPtrs lambda_children;
     Names required_column_names = lambda_actions_dag.getRequiredColumnsNames();
 
-    /// Save the set of columns that `visitColumn` recorded as traversing past
-    /// this lambda scope (i.e. their source is outside the lambda).
-    /// Must be done before pop_back destroys the scope.
-    const auto & lambda_scope = actions_stack.back();
-    NameSet columns_from_outer = {};
-    for (const auto & name : required_column_names)
-        if (lambda_scope.isColumnFromOuterScope(name))
-            columns_from_outer.insert(name);
-
     actions_stack.pop_back();
     levels.reset(actions_stack.size());
     size_t level = levels.max();
 
     const auto & lambda_argument_names = lambda_node.getArgumentNames();
-    NameSet lambda_dag_node_names; /// Populated lazily on first collision.
 
     for (const auto & required_column_name : required_column_names)
     {
@@ -975,37 +986,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             lambda_children.push_back(actions_stack[level].getNodeOrThrow(required_column_name));
             captured_column_names.push_back(required_column_name);
-        }
-        else if (columns_from_outer.contains(required_column_name))
-        {
-            /// Name matches a lambda argument, but `visitColumn` recorded that a
-            /// table column with this name traversed past the lambda scope (its
-            /// source is outside the lambda). Rename the INPUT in the lambda DAG
-            /// to break the collision with the lambda argument binding, then
-            /// capture the table column from the outer scope.
-            const auto * outer_node = actions_stack[level].getNodeOrThrow(required_column_name);
-
-            /// Build the set of all node names in the lambda DAG (lazily, once)
-            /// to guarantee the disambiguated name is unique.
-            if (lambda_dag_node_names.empty())
-            {
-                for (const auto & dag_node : lambda_actions_dag.getNodes())
-                    lambda_dag_node_names.insert(dag_node.result_name);
-            }
-
-            String disambiguated = required_column_name + "_lambda_captured";
-            size_t suffix = 0;
-            while (lambda_dag_node_names.contains(disambiguated))
-                disambiguated = required_column_name + "_lambda_captured_" + std::to_string(suffix++);
-
-            lambda_actions_dag.renameInput(required_column_name, disambiguated);
-            lambda_dag_node_names.erase(required_column_name);
-            lambda_dag_node_names.insert(disambiguated);
-
-            if (lambda_expression_node_name == required_column_name)
-                lambda_expression_node_name = disambiguated;
-            lambda_children.push_back(outer_node);
-            captured_column_names.push_back(disambiguated);
         }
     }
 
