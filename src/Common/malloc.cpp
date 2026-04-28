@@ -210,13 +210,13 @@ void * pvalloc(size_t size)
 #endif
 
 /// On glibc, reallocarray is declared with __THROW (noexcept).
-/// On FreeBSD, it is declared without noexcept, so we must match.
-#if !defined(OS_FREEBSD)
+/// On FreeBSD and musl, it is declared without noexcept, so we must match.
+#if !defined(OS_FREEBSD) && !defined(USE_MUSL)
 extern "C" void * reallocarray(void * ptr, size_t nmemb, size_t size) noexcept;
 #endif
 
 void * reallocarray(void * ptr, size_t nmemb, size_t size)
-#if !defined(OS_FREEBSD)
+#if !defined(OS_FREEBSD) && !defined(USE_MUSL)
     noexcept
 #endif
 {
