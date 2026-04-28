@@ -21,6 +21,9 @@
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
 00597_push_down_predicate_long
 02559_multiple_read_steps_in_prewhere
+
+    https://github.com/ClickHouse/ClickHouse/issues/48881
+    Wrong primary key analysis under parallel replicas
 03517_wrong_primary_key_analysis
 
     https://github.com/ClickHouse/ClickHouse/issues/74335
