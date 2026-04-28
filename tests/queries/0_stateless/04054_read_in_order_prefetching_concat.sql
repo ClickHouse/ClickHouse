@@ -91,38 +91,28 @@ SELECT countIf(key > prev_key) FROM (
 
 DROP TABLE t_prefetching_concat_reverse;
 
--- Stream count cap: with many parts and a small read-stream budget, the total
--- number of `MergeTreeSelect` read pipelines must not exceed the configured cap.
--- This guards against per-part splitting inflating stream count beyond
--- `max_threads` / `max_streams_for_merge_tree_reading` when there are more
--- parts than streams (where each part needs at least one stream).
+-- When there are more parts than `num_streams`, the per-part path cannot stay
+-- within the budget (it needs at least one stream per part), so it must be
+-- rejected and execution must fall back to the original distribute-by-streams
+-- loop. We verify this by asserting that `PrefetchingConcat` does not appear
+-- in the pipeline.
 DROP TABLE IF EXISTS t_prefetching_concat_cap;
 CREATE TABLE t_prefetching_concat_cap (key UInt64, value String)
 ENGINE = MergeTree PARTITION BY (key % 16) ORDER BY key;
 INSERT INTO t_prefetching_concat_cap SELECT number, toString(number) FROM numbers(2000000);
 OPTIMIZE TABLE t_prefetching_concat_cap FINAL;
 
-SELECT 'stream_cap_with_many_parts';
-SELECT
-    sum(if(toUInt64OrZero(extract(explain, '× ([0-9]+)')) = 0,
-        toUInt64(1),
-        toUInt64OrZero(extract(explain, '× ([0-9]+)')))) <= 4
-FROM (
-    EXPLAIN PIPELINE
-    SELECT * FROM t_prefetching_concat_cap ORDER BY key
+SELECT 'no_prefetching_with_more_parts_than_streams';
+SELECT count() = 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_cap ORDER BY key
     SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1
-) WHERE explain LIKE '%MergeTreeSelect%';
+) WHERE explain LIKE '%PrefetchingConcat%';
 
-SELECT 'stream_cap_with_max_streams_setting';
-SELECT
-    sum(if(toUInt64OrZero(extract(explain, '× ([0-9]+)')) = 0,
-        toUInt64(1),
-        toUInt64OrZero(extract(explain, '× ([0-9]+)')))) <= 4
-FROM (
-    EXPLAIN PIPELINE
-    SELECT * FROM t_prefetching_concat_cap ORDER BY key
+SELECT 'no_prefetching_with_max_streams_setting';
+SELECT count() = 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_cap ORDER BY key
     SETTINGS enable_parallel_replicas = 0, max_threads = 16, max_streams_for_merge_tree_reading = 4,
              allow_asynchronous_read_from_io_pool_for_merge_tree = 0, optimize_read_in_order = 1
-) WHERE explain LIKE '%MergeTreeSelect%';
+) WHERE explain LIKE '%PrefetchingConcat%';
 
 DROP TABLE t_prefetching_concat_cap;
