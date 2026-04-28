@@ -597,7 +597,7 @@ ColumnPtr ColumnArray::convertToFullColumnIfConst() const
     auto full_data = data->convertToFullColumnIfConst();
     if (full_data.get() == data.get())
         return getPtr();
-    return ColumnArray::create(std::move(full_data), offsets);
+    return ColumnArray::create(full_data, offsets);
 }
 
 void ColumnArray::getExtremes(Field & min, Field & max, size_t start, size_t end) const
