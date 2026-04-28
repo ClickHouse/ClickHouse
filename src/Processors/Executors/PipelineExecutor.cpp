@@ -54,8 +54,9 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
 {
     if (process_list_element)
     {
-        profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles]
-            && process_list_element->getContext()->getProcessorsProfileLog();
+        // profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles]
+        //     && process_list_element->getContext()->getProcessorsProfileLog();
+        profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles];
         trace_processors = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_processors];
         trace_cpu_scheduling = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_cpu_scheduling];
     }
