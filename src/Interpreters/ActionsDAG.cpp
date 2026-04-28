@@ -30,6 +30,7 @@
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
@@ -1738,11 +1739,20 @@ void ActionsDAG::reconcileInputTypesAfterDecorrelation(const Block & actual_head
         header_types[col.name] = col.type;
     }
 
+    /// Track nodes whose `result_type` or constant-folding `column` was modified during
+    /// reconciliation. A downstream `FUNCTION` node depends on both, so we must rebuild it
+    /// when any of its children appears in this set, even when child argument types are
+    /// unchanged: constant folding is sensitive to the child's `column` too. For example,
+    /// `isNull(x)` is constant-folded to `0` while `x` is non-Nullable; once `x` becomes
+    /// `Nullable(...)`, `isNull(x)` is no longer constant, yet its `result_type` stays
+    /// `UInt8`. A parent like `plus(isNull(x), 1)` would otherwise keep a stale cached
+    /// constant.
+    std::unordered_set<const Node *> changed;
+
     /// Update INPUT node types to match the actual header.
     /// This is needed because correlated columns may have become Nullable
-    /// in the outer scope (e.g. due to group_by_use_nulls + ROLLUP/CUBE),
+    /// in the outer scope (e.g. due to `group_by_use_nulls` + ROLLUP/CUBE),
     /// but the placeholder was created with the original non-Nullable type.
-    bool any_type_changed = false;
     for (auto & node : nodes)
     {
         if (node.type != ActionType::INPUT)
@@ -1752,39 +1762,56 @@ void ActionsDAG::reconcileInputTypesAfterDecorrelation(const Block & actual_head
         if (it != header_types.end() && !node.result_type->equals(*it->second))
         {
             node.result_type = it->second;
-            any_type_changed = true;
+            changed.insert(&node);
         }
     }
 
-    if (!any_type_changed)
+    if (changed.empty())
         return;
 
     /// Walk through all nodes in topological order (the nodes list is ordered inputs-first)
-    /// and rebuild any FUNCTION/ALIAS nodes whose children's types changed.
+    /// and rebuild any FUNCTION/ALIAS nodes whose children changed.
     for (auto & node : nodes)
     {
         if (node.type == ActionType::FUNCTION && node.function_base)
         {
             const auto & expected_types = node.function_base->getArgumentTypes();
-            bool mismatch = false;
-            for (size_t i = 0; i < node.children.size() && i < expected_types.size(); ++i)
+            bool needs_rebuild = false;
+            for (size_t i = 0; i < node.children.size(); ++i)
             {
-                if (!expected_types[i]->equals(*node.children[i]->result_type))
+                if (changed.contains(node.children[i]))
                 {
-                    mismatch = true;
+                    needs_rebuild = true;
+                    break;
+                }
+                if (i < expected_types.size() && !expected_types[i]->equals(*node.children[i]->result_type))
+                {
+                    needs_rebuild = true;
                     break;
                 }
             }
 
-            if (!mismatch)
+            if (!needs_rebuild)
                 continue;
 
             /// Non-factory functions (e.g. `FunctionCapture` for lambda captures) cannot be rebuilt here.
-            /// Leave the node untouched; those scenarios are not covered by this reconciliation and
-            /// will surface as a clear execution-time error if they occur.
+            /// Drop any stale constant cache so downstream consumers do not rely on it, and mark the
+            /// node as changed so dependent FUNCTION nodes re-evaluate too. The result type may also
+            /// be inconsistent with the new children, but we have no way to recompute it; if execution
+            /// reaches such a node it will surface as a clear runtime type-mismatch exception.
             auto resolver = FunctionFactory::instance().tryGet(node.function_base->getName(), context);
             if (!resolver)
+            {
+                if (node.column)
+                {
+                    node.column = nullptr;
+                    changed.insert(&node);
+                }
                 continue;
+            }
+
+            DataTypePtr old_result_type = node.result_type;
+            ColumnPtr old_column = node.column;
 
             auto [arguments, all_const] = getFunctionArguments(node.children);
             auto new_function_base = resolver->build(arguments);
@@ -1824,6 +1851,9 @@ void ActionsDAG::reconcileInputTypesAfterDecorrelation(const Block & actual_head
                     node.column = std::move(column);
                 }
             }
+
+            if (!old_result_type->equals(*node.result_type) || old_column.get() != node.column.get())
+                changed.insert(&node);
         }
         else if (node.type == ActionType::ALIAS && !node.children.empty())
         {
@@ -1832,8 +1862,12 @@ void ActionsDAG::reconcileInputTypesAfterDecorrelation(const Block & actual_head
             /// child's `column` may have been recomputed (or cleared) during the FUNCTION
             /// rebuild branch above, and a stale alias `column` would later be used by
             /// consumers such as `ActionsDAG` serialization (`serializeConstant`).
+            DataTypePtr old_result_type = node.result_type;
+            ColumnPtr old_column = node.column;
             node.result_type = node.children[0]->result_type;
             node.column = node.children[0]->column;
+            if (!old_result_type->equals(*node.result_type) || old_column.get() != node.column.get())
+                changed.insert(&node);
         }
     }
 }
