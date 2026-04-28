@@ -9,6 +9,7 @@
 #include <IO/SnappyFramedReadBuffer.h>
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
+#include <base/unaligned.h>
 
 namespace DB
 {
@@ -137,8 +138,8 @@ bool SnappyFramedReadBuffer::nextImpl()
             String chunk_buf(chunk_data_size, '\0');
             readExact(chunk_buf.data(), chunk_data_size, /*allow_partial_eof=*/false);
 
-            uint32_t expected_crc = 0;
-            memcpy(&expected_crc, chunk_buf.data(), 4);
+            /// Snappy framing format encodes the masked CRC-32C as little-endian.
+            uint32_t expected_crc = unalignedLoadLittleEndian<uint32_t>(chunk_buf.data());
 
             const char * compressed = chunk_buf.data() + 4;
 
@@ -189,8 +190,8 @@ bool SnappyFramedReadBuffer::nextImpl()
             String chunk_buf(chunk_data_size, '\0');
             readExact(chunk_buf.data(), chunk_data_size, /*allow_partial_eof=*/false);
 
-            uint32_t expected_crc = 0;
-            memcpy(&expected_crc, chunk_buf.data(), 4);
+            /// Snappy framing format encodes the masked CRC-32C as little-endian.
+            uint32_t expected_crc = unalignedLoadLittleEndian<uint32_t>(chunk_buf.data());
 
             decompress_buffer.assign(chunk_buf.data() + 4, payload_size);
 
