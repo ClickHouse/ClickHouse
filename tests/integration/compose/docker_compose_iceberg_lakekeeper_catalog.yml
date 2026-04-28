@@ -16,8 +16,6 @@ services:
       retries: 10
       start_period: 30s
     depends_on:
-      minio1:
-        condition: service_started
       migrate:
         condition: service_completed_successfully
       db:

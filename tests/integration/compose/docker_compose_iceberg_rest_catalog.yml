@@ -1,9 +1,6 @@
 services:
   rest:
     image: tabulario/iceberg-rest:1.6.0
-    depends_on:
-      minio1:
-        condition: service_started
     ports:
       - "${ICEBERG_REST_CATALOG_PORT}:8181"
     environment:

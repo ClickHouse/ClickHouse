@@ -2,9 +2,6 @@ services:
   hive:
     image: clickhouse/integration-test-with-hms
     restart: unless-stopped
-    depends_on:
-      minio1:
-        condition: service_started
     ports:
       - "${HMS_CATALOG_PORT}:9083"
     environment:

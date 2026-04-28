@@ -1,9 +1,6 @@
 services:
   nessie:
     image: ghcr.io/projectnessie/nessie:0.107.2
-    depends_on:
-      minio1:
-        condition: service_started
     ports:
       - "${ICEBERG_REST_CATALOG_PORT}:19120"
     environment:

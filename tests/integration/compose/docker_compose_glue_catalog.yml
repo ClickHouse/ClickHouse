@@ -1,9 +1,6 @@
 services:
   glue:
     image: motoserver/moto:5.1.5
-    depends_on:
-      minio1:
-        condition: service_started
     ports:
       - "${GLUE_CATALOG_PORT}:3000"
     environment:
