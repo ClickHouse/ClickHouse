@@ -965,6 +965,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     size_t level = levels.max();
 
     const auto & lambda_argument_names = lambda_node.getArgumentNames();
+    NameSet lambda_dag_node_names; /// Populated lazily on first collision.
 
     for (const auto & required_column_name : required_column_names)
     {
@@ -983,8 +984,24 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             /// to break the collision with the lambda argument binding, then
             /// capture the table column from the outer scope.
             const auto * outer_node = actions_stack[level].getNodeOrThrow(required_column_name);
+
+            /// Build the set of all node names in the lambda DAG (lazily, once)
+            /// to guarantee the disambiguated name is unique.
+            if (lambda_dag_node_names.empty())
+            {
+                for (const auto & dag_node : lambda_actions_dag.getNodes())
+                    lambda_dag_node_names.insert(dag_node.result_name);
+            }
+
             String disambiguated = required_column_name + "_lambda_captured";
+            size_t suffix = 0;
+            while (lambda_dag_node_names.contains(disambiguated))
+                disambiguated = required_column_name + "_lambda_captured_" + std::to_string(suffix++);
+
             lambda_actions_dag.renameInput(required_column_name, disambiguated);
+            lambda_dag_node_names.erase(required_column_name);
+            lambda_dag_node_names.insert(disambiguated);
+
             if (lambda_expression_node_name == required_column_name)
                 lambda_expression_node_name = disambiguated;
             lambda_children.push_back(outer_node);

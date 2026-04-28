@@ -19,3 +19,9 @@ sibling lambdas: capture + argument
 sibling lambdas reversed
 100
 200
+suffix dedup: PREWHERE
+100	1
+200	2
+suffix dedup: WHERE
+100	1
+200	2

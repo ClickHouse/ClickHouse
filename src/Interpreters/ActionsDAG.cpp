@@ -307,6 +307,10 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
 
 void ActionsDAG::renameInput(const std::string & old_name, const std::string & new_name)
 {
+    for (const auto & node : nodes)
+        if (node.result_name == new_name)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot rename INPUT {} to {} because a node with that name already exists", old_name, new_name);
+
     for (auto & node : nodes)
     {
         if (node.type == ActionType::INPUT && node.result_name == old_name)
