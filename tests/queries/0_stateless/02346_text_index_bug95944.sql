@@ -104,8 +104,8 @@ ORDER BY tuple();
 
 INSERT INTO tab VALUES ('hello'), ('world');
 
-SELECT count() FROM tab WHERE has(s, 'hello');
-SELECT count() FROM tab WHERE has(s, 'world');
-SELECT count() FROM tab WHERE has(s, 'nonexistent');
+SELECT count() FROM tab WHERE hasToken(s, 'hello');
+SELECT count() FROM tab WHERE hasToken(s, 'world');
+SELECT count() FROM tab WHERE hasToken(s, 'nonexistent');
 
 DROP TABLE tab;
