@@ -20,7 +20,6 @@
 #include <DataTypes/FieldToDataType.h>
 
 #include <Common/FieldVisitorToString.h>
-#include <Common/UUIDHelpers.h>
 #include <Common/quoteString.h>
 
 #include <Columns/ColumnSet.h>
