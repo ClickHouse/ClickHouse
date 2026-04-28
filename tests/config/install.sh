@@ -275,6 +275,12 @@ else
     rm -f $DEST_SERVER_PATH/config.d/cannot_allocate_thread_injection.xml ||:
 fi
 
+if [[ -n "$CLICKHOUSE_FAILPOINTS_INJECTION" ]] && [[ "$CLICKHOUSE_FAILPOINTS_INJECTION" -eq 1 ]]; then
+    ln -sf $SRC_PATH/config.d/fail_points_active.xml $DEST_SERVER_PATH/config.d/
+else
+    rm -f $DEST_SERVER_PATH/config.d/fail_points_active.xml ||:
+fi
+
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
 value_create_snapshot_on_exit=$((RANDOM % 2))
 echo "Replacing create_snapshot_on_exit with $value_create_snapshot_on_exit"
