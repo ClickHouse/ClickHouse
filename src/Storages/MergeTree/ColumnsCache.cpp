@@ -21,6 +21,17 @@ void ColumnsCache::removeStaleKeys(const std::vector<Key> & stale_keys)
     std::lock_guard lock(interval_index_mutex);
     for (const auto & key : stale_keys)
     {
+        /// Re-check that the key is actually missing from Base before erasing
+        /// from interval_index. Between the Base::get(key) probe in getIntersecting
+        /// (which observed nullptr) and the lock acquisition above, another thread
+        /// may have re-inserted the same key via set(). In that case the index
+        /// entry is now fresh and must not be erased. Base::contains() is a
+        /// non-touching lookup and it is safe to call while holding
+        /// interval_index_mutex (lock order: interval_index_mutex -> CacheBase mutex,
+        /// matching set/removePart/clearAll).
+        if (Base::contains(key))
+            continue;
+
         PartIdentifier part_id{key.table_uuid, key.part_name};
         auto part_it = interval_index.find(part_id);
         if (part_it == interval_index.end())

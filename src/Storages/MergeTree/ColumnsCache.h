@@ -170,8 +170,9 @@ public:
     /// Used by SYSTEM DROP COLUMNS CACHE.
     /// Holds interval_index_mutex across both operations so that a concurrent
     /// set() cannot insert into interval_index between the two clears.
-    /// This is deadlock-safe: set() releases the CacheBase internal lock
-    /// before acquiring interval_index_mutex, so there is no lock-order cycle.
+    /// This is deadlock-safe because both paths use the same lock order:
+    /// interval_index_mutex first, then briefly the CacheBase internal mutex
+    /// (taken inside Base::set / Base::clear). There is no lock-order cycle.
     void clearAll()
     {
         std::lock_guard lock(interval_index_mutex);
