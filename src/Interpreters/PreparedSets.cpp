@@ -46,6 +46,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -363,7 +364,21 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// `is_created`), `DelayedCreatingSetsStep::makePlansForSets` can still build the set later.
     /// Otherwise the set would remain permanently unbuilt and `FunctionIn` would throw
     /// "Not-ready Set is passed as the second argument".
-    auto plan = std::make_unique<QueryPlan>(source->clone());
+    ///
+    /// Many `IQueryPlanStep` subclasses do not implement `clone`. If the source plan cannot be
+    /// cloned, skip the in-place optimization and leave `source` intact so that the set can be
+    /// built later via the normal pipeline path in `makePlansForSets`.
+    std::unique_ptr<QueryPlan> plan;
+    try
+    {
+        plan = std::make_unique<QueryPlan>(source->clone());
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+            throw;
+        return nullptr;
+    }
 
     auto creating_set = std::make_unique<CreatingSetStep>(
         plan->getCurrentHeader(),
