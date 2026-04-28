@@ -139,6 +139,53 @@ jobs:
               fi
             fi
 
+            # If still not marked for rerun, check Praktika result JSONs for
+            # infrastructure error patterns in the top-level info field (e.g. network
+            # failures during docker pull, disk full, OOM).  This catches cases where
+            # the job reached the "Run" step but failed due to infra issues before
+            # running any tests, so the sub-results list is empty.
+            if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ] && [ -n "$pr_number" ] && [ -n "$run_sha" ]; then
+              infra_patterns="network is unreachable|No space left on device|Cannot allocate memory|Name or service not known|Temporary failure in name resolution|Connection reset by peer|Cannot connect to the Docker daemon|OCI runtime create failed"
+
+              failed_job_names_infra=$(echo "$jobs_raw" | jq -r '
+                .jobs[] | select(.conclusion == "failure") |
+                select(.name != "Config Workflow" and .name != "Finish Workflow") |
+                .name
+              ')
+
+              all_infra=true
+              has_jobs=false
+              while IFS= read -r job_name; do
+                [ -z "$job_name" ] && continue
+                has_jobs=true
+                normalized=$(echo "$job_name" | tr '[:upper:]' '[:lower:]' | \
+                  sed 's/[^a-z0-9_]/_/g; s/__*/_/g')
+                result_url="https://s3.amazonaws.com/clickhouse-test-reports/PRs/${pr_number}/${run_sha}/result_${normalized}.json"
+
+                result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
+                if [ -z "$result_json" ]; then
+                  all_infra=false
+                  break
+                fi
+
+                job_status=$(echo "$result_json" | jq -r '.status // empty')
+                job_info=$(echo "$result_json" | jq -r '.info // empty')
+                if [ "$job_status" != "error" ] || [ -z "$job_info" ]; then
+                  all_infra=false
+                  break
+                fi
+                if ! echo "$job_info" | grep -qiE "$infra_patterns"; then
+                  all_infra=false
+                  break
+                fi
+              done <<< "$failed_job_names_infra"
+
+              if [ "$all_infra" = "true" ] && [ "$has_jobs" = "true" ]; then
+                should_rerun=true
+                echo "  Infrastructure failure detected (infra error pattern in Praktika results)."
+              fi
+            fi
+
             # Check if "Config Workflow" failed in its "Run" step (e.g. due to
             # pr_labels_and_category.py rejecting the changelog category).  If the PR
             # description was edited after the failure (same HEAD commit, so no new

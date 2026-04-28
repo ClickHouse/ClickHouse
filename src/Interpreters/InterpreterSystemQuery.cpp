@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <DataTypes/DataTypesNumber.h>
 #include <csignal>
 #include <filesystem>
 #include <utility>
@@ -22,8 +23,8 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -36,6 +37,7 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -55,6 +57,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageMaterializedView.h>
@@ -128,6 +131,8 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -882,6 +887,9 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::FLUSH_DISTRIBUTED:
             flushDistributed(query);
+            break;
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+            flushObjectStorageQueue(query);
             break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
@@ -1717,8 +1725,14 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
                 /*query=*/create_query_string);
             auto create_query_context = make_create_context();
 
-            NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
-            NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
+            {
+                SelectIntersectExceptQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::intersect_default_mode], create_query_context->getSettingsRef()[Setting::except_default_mode]};
+                SelectIntersectExceptQueryVisitor{data}.visit(query_ast);
+            }
+            {
+                NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
+            }
 
             LOG_INFO(log, "Restoring {}", query_ast->formatForLogging());
             InterpreterCreateQuery(query_ast, create_query_context).execute();
@@ -2149,6 +2163,23 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
 
+void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
+{
+    auto context = getContext();
+    context->checkAccess(AccessType::SYSTEM_FLUSH_OBJECT_STORAGE_QUEUE, table_id);
+
+    if (query.queue_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PATH must be specified for SYSTEM FLUSH OBJECT STORAGE QUEUE");
+
+    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto * queue = dynamic_cast<StorageObjectStorageQueue *>(table.get());
+    if (!queue)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
+
+    queue->waitForPathToBeProcessed(query.queue_path, context);
+}
+
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
@@ -2491,6 +2522,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_DISTRIBUTED:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_OBJECT_STORAGE_QUEUE, query.getDatabase(), query.getTable());
             break;
         }
         case Type::FLUSH_LOGS:
