@@ -422,6 +422,13 @@ private:
         if (actual_consumers == 0)
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "No Kafka consumers available for direct read");
 
+        /// Reject direct reads whenever a materialized view is attached, even if no streamer is
+        /// currently running. Between consecutive `threadFunc` invocations (reschedule gaps),
+        /// `active_mv_streamers` is 0 while the MV is still attached, so checking the streamer
+        /// counter alone would let direct reads sneak in and produce inconsistent user behavior.
+        if (DatabaseCatalog::instance().getDependentViews(kafka_storage.getStorageID()).size() > 0)
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
+
         /// Atomically check that no MV streamer is active and register all direct readers.
         /// This is done under consumers_mutex to prevent a TOCTOU race with threadFunc,
         /// which performs the symmetric check (active_direct_readers == 0) before starting
