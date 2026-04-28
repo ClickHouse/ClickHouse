@@ -12,10 +12,13 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO ${TABLE_NAME} SELECT * FROM system.numbe
 
 SETTINGS="enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_for_non_replicated_merge_tree=1"
 
-# With the fix, the bug is deterministic: a single iteration is sufficient.
-# The flaky-check job re-runs the test multiple times with random settings,
-# providing additional repetition to detect any regression.
-NUM_ITERATIONS=1
+# A small handful of iterations is needed to reliably trigger the race on master:
+# the bugfix-validation job runs this test once against the master binary (without
+# the fix) and expects it to fail there. With only 1 iteration the race sometimes
+# does not trigger and bugfix-validation reports "Failed to reproduce the bug".
+# 5 iterations × 8 functions = 40 query invocations, expected runtime ~5s in
+# stateless tests and ~90s under flaky-check randomization (well within 180s).
+NUM_ITERATIONS=5
 
 function check_rows_read_client_json()
 {
