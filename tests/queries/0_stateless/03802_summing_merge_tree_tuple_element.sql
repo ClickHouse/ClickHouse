@@ -260,3 +260,39 @@ SELECT 'Zero row - after OPTIMIZE:';
 SELECT id, metrics FROM test_summing_zero_row ORDER BY id;
 
 DROP TABLE test_summing_zero_row;
+
+-- Test 9: SummingMergeTree - nested xxxMap inside an outer Tuple.
+-- Covers the Map discovery branch with aggregate_all_columns=false.
+SELECT '=== Test 9: SummingMergeTree Nested xxxMap inside Tuple ===';
+
+DROP TABLE IF EXISTS test_summing_top_level_map;
+DROP TABLE IF EXISTS test_summing_wrapped_map;
+
+CREATE TABLE test_summing_top_level_map (
+    id UInt64,
+    ratesMap Tuple(ID Array(UInt64), Value Array(UInt64))
+) ENGINE = SummingMergeTree ORDER BY id
+SETTINGS allow_tuple_element_aggregation = 1;
+
+CREATE TABLE test_summing_wrapped_map (
+    id UInt64,
+    metrics Tuple(
+        ratesMap Tuple(ID Array(UInt64), Value Array(UInt64))
+    )
+) ENGINE = SummingMergeTree ORDER BY id
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO test_summing_top_level_map VALUES (1, ([1, 2], [10, 20])), (1, ([1, 3], [100, 200]));
+INSERT INTO test_summing_wrapped_map   VALUES (1, (([1, 2], [10, 20]))), (1, (([1, 3], [100, 200])));
+
+OPTIMIZE TABLE test_summing_top_level_map FINAL;
+OPTIMIZE TABLE test_summing_wrapped_map   FINAL;
+
+SELECT 'Top-level Map - after OPTIMIZE:';
+SELECT id, ratesMap FROM test_summing_top_level_map ORDER BY id;
+
+SELECT 'Wrapped Map - after OPTIMIZE:';
+SELECT id, metrics FROM test_summing_wrapped_map ORDER BY id;
+
+DROP TABLE test_summing_top_level_map;
+DROP TABLE test_summing_wrapped_map;

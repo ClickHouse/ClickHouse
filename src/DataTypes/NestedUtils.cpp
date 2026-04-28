@@ -296,13 +296,7 @@ static void flattenTupleRecursiveImpl(
     /// If the column is ColumnConst, expand it to a full column first,
     /// so that all leaf columns are always non-const after flattening.
     ColumnPtr materialized_column = column->convertToFullColumnIfConst();
-    const ColumnTuple * column_tuple = typeid_cast<const ColumnTuple *>(materialized_column.get());
-
-    if (!column_tuple)
-    {
-        emit_leaf(materialized_column, data_type, name_prefix);
-        return;
-    }
+    const auto * column_tuple = assert_cast<const ColumnTuple *>(materialized_column.get());
 
     const DataTypes & element_types = tuple_type->getElements();
     const auto & sub_columns = column_tuple->getColumns();
@@ -382,6 +376,8 @@ Columns flattenTupleColumnsRecursive(const Block & header, const Columns & colum
                 result.push_back(col);
             });
     }
+
+    chassert(result.size() == total_flattened);
     return result;
 }
 

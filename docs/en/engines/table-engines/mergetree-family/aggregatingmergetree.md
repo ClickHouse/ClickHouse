@@ -210,7 +210,24 @@ CREATE TABLE agg_tuples
 ) ENGINE = AggregatingMergeTree()
 ORDER BY key
 SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO agg_tuples VALUES (1, (100, 5));
+INSERT INTO agg_tuples VALUES (1, (200, 8));
+INSERT INTO agg_tuples VALUES (2, (50, 3));
+
+OPTIMIZE TABLE agg_tuples FINAL;
+
+SELECT * FROM agg_tuples ORDER BY key;
 ```
+
+```text
+┌─key─┬─metrics───┐
+│   1 │ (300, 8)  │
+│   2 │ (50, 3)   │
+└─────┴───────────┘
+```
+
+`total_visits` is aggregated with `sum` (100 + 200 = 300), while `unique_users` is aggregated with `max` (max(5, 8) = 8).
 
 ## Related content {#related-content}
 

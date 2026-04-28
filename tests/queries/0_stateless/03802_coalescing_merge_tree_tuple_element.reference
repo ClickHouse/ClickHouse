@@ -24,3 +24,8 @@ Nested Tuple partition key - with FINAL:
 1	(10,(20))	(100,400)
 Nested Tuple partition key - after OPTIMIZE:
 1	(10,(20))	(100,400)
+=== Test 5: CoalescingMergeTree Nested xxxMap inside Tuple ===
+Coalescing top-level Map - after OPTIMIZE:
+1	([1,3],[100,200])
+Coalescing wrapped Map - after OPTIMIZE:
+1	(([1,3],[100,200]))

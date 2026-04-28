@@ -972,27 +972,6 @@ void MergeTreeData::checkProperties(
         }
     }
 
-    if (!attach && (*getSettings())[MergeTreeSetting::allow_tuple_element_aggregation])
-    {
-        for (size_t i = 0; i < sorting_key_size; ++i)
-        {
-            const auto & type = new_sorting_key.data_types[i];
-            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-            if (tuple_type && !tuple_type->getElements().empty() && !type->hasCustomName())
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Sorting key column '{}' has Tuple type '{}'. When "
-                    "setting 'allow_tuple_element_aggregation' is enabled, "
-                    "plain Tuple columns cannot be used as sorting key because flattening "
-                    "would change the column names used for ordering. "
-                    "Consider extracting individual fields as separate sorting key columns.",
-                    new_sorting_key.column_names[i],
-                    type->getName());
-            }
-        }
-    }
-
     auto new_columns_for_analysis = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(new_metadata.columns, new_metadata.virtuals);
     auto old_columns_for_analysis = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(old_metadata.columns, old_metadata.virtuals);
 
@@ -1666,10 +1645,25 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
 
     if (allow_tuple_element_aggregation)
     {
-        if (mode != Summing && mode != Aggregating && mode != Coalescing)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'allow_tuple_element_aggregation' is only supported for SummingMergeTree, AggregatingMergeTree and CoalescingMergeTree");
+        /// Reject plain Tuple columns in sorting key: flattening changes column names used for ordering.
+        const auto & sorting_key = metadata.getSortingKey();
+        for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+        {
+            const auto & type = sorting_key.data_types[i];
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            if (tuple_type && !tuple_type->getElements().empty() && !type->hasCustomName())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Sorting key column '{}' has Tuple type '{}'. When "
+                    "setting 'allow_tuple_element_aggregation' is enabled, "
+                    "plain Tuple columns cannot be used as sorting key because flattening "
+                    "would change the column names used for ordering. "
+                    "Consider extracting individual fields as separate sorting key columns.",
+                    sorting_key.column_names[i],
+                    type->getName());
+            }
+        }
     }
 
     /// TODO Checks for Graphite mode.

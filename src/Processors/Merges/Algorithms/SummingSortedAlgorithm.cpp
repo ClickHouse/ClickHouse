@@ -298,9 +298,13 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         bool is_non_empty_tuple = typeid_cast<const DataTypeTuple *>(column.type.get()) && !typeid_cast<const DataTypeTuple *>(column.type.get())->getElements().empty();
         if (aggregate_all_columns && (is_non_empty_tuple || typeid_cast<const DataTypeArray *>(column.type.get())) && !simple)
         {
-            const auto map_name = Nested::extractTableName(column.name);
-            /// if nested table name ends with `Map` it is a possible candidate for special handling
-            if (map_name == column.name || !endsWith(map_name, "Map"))
+            /// Under flattening, use splitName(reverse=true) to keep the full parent path
+            /// for nested Map columns like "a.bMap.c".
+            const auto map_name = allow_tuple_element_aggregation
+                ? Nested::splitName(column.name, /*reverse=*/true).first
+                : Nested::extractTableName(column.name);
+
+            if (map_name == column.name || !endsWith(map_name, "Map") || allow_tuple_element_aggregation)
             {
                 if (!column_names_to_sum.empty()
                     && !isColumnOrAncestorInNames(column.name, column_names_to_sum, original_column_names, allow_tuple_element_aggregation))
@@ -351,7 +355,10 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         /// Discover nested Maps and find columns for summation
         if (typeid_cast<const DataTypeArray *>(column.type.get()) && !simple)
         {
-            const auto map_name = Nested::extractTableName(column.name);
+            /// Under flattening, use splitName(reverse=true) to keep the full parent path.
+            const auto map_name = allow_tuple_element_aggregation
+                ? Nested::splitName(column.name, /*reverse=*/true).first
+                : Nested::extractTableName(column.name);
             /// if nested table name ends with `Map` it is a possible candidate for special handling
             if (map_name == column.name || !endsWith(map_name, "Map"))
             {

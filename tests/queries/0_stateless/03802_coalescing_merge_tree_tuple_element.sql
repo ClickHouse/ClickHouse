@@ -123,3 +123,42 @@ SELECT 'Nested Tuple partition key - after OPTIMIZE:';
 SELECT id, pk, val FROM test_coalescing_tuple_partition ORDER BY id;
 
 DROP TABLE test_coalescing_tuple_partition;
+
+-- Test 5: CoalescingMergeTree - nested xxxMap inside an outer Tuple
+-- Covers the aggregate_all_columns=true branch of defineColumns in
+-- SummingSortedAlgorithm (CoalescingMergeTree reuses that algorithm).
+-- The leaf column name "metrics.ratesMap.ID" requires splitName(reverse=true)
+-- to recover the full parent path "metrics.ratesMap" for xxxMap detection.
+SELECT '=== Test 5: CoalescingMergeTree Nested xxxMap inside Tuple ===';
+
+DROP TABLE IF EXISTS test_coalescing_top_level_map;
+DROP TABLE IF EXISTS test_coalescing_wrapped_map;
+
+CREATE TABLE test_coalescing_top_level_map (
+    id UInt64,
+    ratesMap Tuple(ID Array(UInt64), Value Array(UInt64))
+) ENGINE = CoalescingMergeTree ORDER BY id
+SETTINGS allow_tuple_element_aggregation = 1;
+
+CREATE TABLE test_coalescing_wrapped_map (
+    id UInt64,
+    metrics Tuple(
+        ratesMap Tuple(ID Array(UInt64), Value Array(UInt64))
+    )
+) ENGINE = CoalescingMergeTree ORDER BY id
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO test_coalescing_top_level_map VALUES (1, ([1, 2], [10, 20])), (1, ([1, 3], [100, 200]));
+INSERT INTO test_coalescing_wrapped_map   VALUES (1, (([1, 2], [10, 20]))), (1, (([1, 3], [100, 200])));
+
+OPTIMIZE TABLE test_coalescing_top_level_map FINAL;
+OPTIMIZE TABLE test_coalescing_wrapped_map   FINAL;
+
+SELECT 'Coalescing top-level Map - after OPTIMIZE:';
+SELECT id, ratesMap FROM test_coalescing_top_level_map ORDER BY id;
+
+SELECT 'Coalescing wrapped Map - after OPTIMIZE:';
+SELECT id, metrics FROM test_coalescing_wrapped_map ORDER BY id;
+
+DROP TABLE test_coalescing_top_level_map;
+DROP TABLE test_coalescing_wrapped_map;

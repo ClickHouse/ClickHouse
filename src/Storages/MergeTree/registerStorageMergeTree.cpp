@@ -902,7 +902,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (arg_num != arg_cnt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of engine arguments.");
 
-    merging_params.allow_tuple_element_aggregation = (*storage_settings)[MergeTreeSetting::allow_tuple_element_aggregation];
+    /// Only SummingMergeTree, AggregatingMergeTree and CoalescingMergeTree understand
+    /// `allow_tuple_element_aggregation`. For other engines the setting is silently
+    /// ignored so that the default value can be flipped on without breaking them.
+    if (merging_params.mode == MergeTreeData::MergingParams::Summing
+        || merging_params.mode == MergeTreeData::MergingParams::Aggregating
+        || merging_params.mode == MergeTreeData::MergingParams::Coalescing)
+    {
+        merging_params.allow_tuple_element_aggregation
+            = (*storage_settings)[MergeTreeSetting::allow_tuple_element_aggregation];
+    }
+    else
+    {
+        merging_params.allow_tuple_element_aggregation = false;
+    }
 
     if (replicated)
     {

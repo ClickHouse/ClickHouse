@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS agg_table
     agg SimpleAggregateFunction(sumMap, Tuple(Array(Int16), Array(UInt64)))
 )
 ENGINE = AggregatingMergeTree()
-ORDER BY (xxx, time);
+ORDER BY (xxx, time)
+SETTINGS allow_tuple_element_aggregation = false;
 
 INSERT INTO agg_table SELECT toDateTime('2020-10-01 19:20:30'), 'hello', ([any(number)], sum(number)), sum(number),
     sumMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))) FROM numbers(10);

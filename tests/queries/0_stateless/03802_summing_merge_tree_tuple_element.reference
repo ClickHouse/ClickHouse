@@ -59,3 +59,8 @@ Zero row - with FINAL:
 3	(400,100,(0))
 Zero row - after OPTIMIZE:
 3	(400,100,(0))
+=== Test 9: SummingMergeTree Nested xxxMap inside Tuple ===
+Top-level Map - after OPTIMIZE:
+1	([1,2,3],[110,20,200])
+Wrapped Map - after OPTIMIZE:
+1	(([1,2,3],[110,20,200]))
