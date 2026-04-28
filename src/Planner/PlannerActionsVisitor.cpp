@@ -522,23 +522,19 @@ public:
         return node_name_to_node.contains(node_name);
     }
 
-    /// Add an alias so that `node_name` resolves to an existing node in
-    /// `node_name_to_node`. Used when a table column inside a lambda body was
-    /// given a disambiguated name at the lambda scope; the outer scope still
-    /// has the column under its original name and needs this alias for the
-    /// capture loop to find it by the disambiguated name.
-    void addNodeAlias(const std::string & alias_name, const ActionsDAG::Node * node)
+    /// Add a DAG ALIAS node so that `alias_name` resolves to `child`.
+    /// Used when a table column inside a lambda body was given a disambiguated
+    /// name at the lambda scope; other scopes still have the column under its
+    /// original name and need this alias for expression building and capture.
+    const ActionsDAG::Node * addAliasIfNecessary(const std::string & alias_name, const ActionsDAG::Node * child)
     {
-        if (node_name_to_node.contains(alias_name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Cannot add alias {} because a node with that name already exists",
-                alias_name);
+        auto it = node_name_to_node.find(alias_name);
+        if (it != node_name_to_node.end())
+            return it->second;
 
-        /// The map uses string_view keys that must point to stable storage.
-        /// Node names are backed by Node::result_name in the DAG's node list.
-        /// Alias names have no such backing, so we store them ourselves.
-        auto & stored = owned_alias_names.emplace_back(alias_name);
-        node_name_to_node[stored] = node;
+        const auto * node = &actions_dag.addAlias(*child, alias_name);
+        node_name_to_node[node->result_name] = node;
+        return node;
     }
 
     [[maybe_unused]] bool containsInputNode(const std::string & node_name)
@@ -657,9 +653,6 @@ private:
     std::unordered_map<std::string_view, const ActionsDAG::Node *> node_name_to_node;
     ActionsDAG & actions_dag;
     QueryTreeNodePtr scope_node;
-    /// Stable storage for alias names added via addNodeAlias, because
-    /// node_name_to_node keys are string_views and need a persistent backing.
-    std::list<String> owned_alias_names;
 };
 
 class PlannerActionsVisitorImpl
@@ -847,17 +840,18 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                 actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
 
                 /// Inner scopes (above i) were already visited by the main loop
-                /// and have "x" under its original name.  Add an alias so the
-                /// expression builder can find the node by the disambiguated name.
+                /// and have "x" under its original name.  Add a DAG ALIAS node so
+                /// the expression builder and removeUnusedActions can find a node
+                /// with result_name equal to the disambiguated name.
                 for (Int64 k = actions_stack_size; k > i; --k)
-                    actions_stack[k].addNodeAlias(disambiguated, actions_stack[k].getNodeOrThrow(column_node_name));
+                    actions_stack[k].addAliasIfNecessary(disambiguated, actions_stack[k].getNodeOrThrow(column_node_name));
 
                 /// Outer scopes (below i) haven't been visited yet.
-                /// Add the column under its original name and register the alias.
+                /// Add the column under its original name and register an alias.
                 for (Int64 j = i - 1; j >= 0; --j)
                 {
                     const auto * input_node = actions_stack[j].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
-                    actions_stack[j].addNodeAlias(disambiguated, input_node);
+                    actions_stack[j].addAliasIfNecessary(disambiguated, input_node);
                 }
 
                 return {disambiguated, Levels(0)};

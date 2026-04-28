@@ -25,11 +25,13 @@ SELECT * FROM t PREWHERE arrayMap(y -> *, [1])[1] > 50;
 
 -- Sibling lambdas: first captures table column, second uses lambda argument.
 -- The second lambda must NOT be confused by the first lambda having added x to the outer scope.
+-- Output the computed value directly to distinguish correct binding (lambda arg 1 → 1+1=2)
+-- from incorrect binding (table column 100/200 → 101/201).
 SELECT 'sibling lambdas: capture + argument';
-SELECT * FROM t PREWHERE arrayMap(x -> *, [1])[1] + arrayMap(x -> x + 1, [1])[1] > 50;
+SELECT arrayMap(x -> x + 1, [1])[1] FROM t PREWHERE arrayMap(x -> *, [1])[1] + arrayMap(x -> x + 1, [1])[1] > 50;
 
 SELECT 'sibling lambdas reversed';
-SELECT * FROM t PREWHERE arrayMap(x -> x + 1, [1])[1] + arrayMap(x -> *, [1])[1] > 50;
+SELECT arrayMap(x -> x + 1, [1])[1] FROM t PREWHERE arrayMap(x -> x + 1, [1])[1] + arrayMap(x -> *, [1])[1] > 50;
 
 -- Nested lambdas: inner lambda references table column x, which collides
 -- with the outer lambda's argument x.  The disambiguated name must be
