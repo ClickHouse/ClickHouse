@@ -68,9 +68,15 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
 }
 
-bool dagContainsNonReadySet(const ActionsDAG & dag)
+FilterResult filterResultForNotMatchedRows(
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name,
+    const Block & input_stream_header,
+    bool allow_unknown_function_arguments
+)
 {
-    for (const auto & node : dag.getNodes())
+    /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
+    for (const auto & node : filter_dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
         {
@@ -82,23 +88,10 @@ bool dagContainsNonReadySet(const ActionsDAG & dag)
             {
                 auto future_set = column_set->getData();
                 if (!future_set || !future_set->get())
-                    return true;
+                    return FilterResult::UNKNOWN;
             }
         }
     }
-    return false;
-}
-
-FilterResult filterResultForNotMatchedRows(
-    const ActionsDAG & filter_dag,
-    const String & filter_column_name,
-    const Block & input_stream_header,
-    bool allow_unknown_function_arguments
-)
-{
-    /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
-    if (dagContainsNonReadySet(filter_dag))
-        return FilterResult::UNKNOWN;
 
     ActionsDAG::IntermediateExecutionResult filter_input;
 

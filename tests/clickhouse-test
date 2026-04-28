@@ -1143,7 +1143,6 @@ class FailureReason(enum.Enum):
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
     NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
-    LINUX_ONLY = "supported only on Linux"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -2486,9 +2485,6 @@ class TestCase:
 
         if "no-darwin" in tags and platform.system() == "Darwin":
             return FailureReason.NOT_SUPPORTED_ON_DARWIN
-
-        if "linux" in tags and platform.system() != "Linux":
-            return FailureReason.LINUX_ONLY
 
         # Do not run *Log and Memory engine-specific tests
         if (
@@ -6444,7 +6440,6 @@ if __name__ == "__main__":
         main(args)
     except ServerDied as e:
         print(f"{e}", file=sys.stderr)
-        traceback.print_exc()
         sys.exit(1)
     except Terminated as e:
         print(f"Terminated with {e.signal} signal", file=sys.stderr)

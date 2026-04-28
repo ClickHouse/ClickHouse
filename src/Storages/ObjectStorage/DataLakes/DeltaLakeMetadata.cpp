@@ -48,7 +48,6 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <Poco/URI.h>
 
 namespace fs = std::filesystem;
 
@@ -316,8 +315,7 @@ struct DeltaLakeMetadataImpl
                 if (!add_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
-                String path;
-                Poco::URI::decode(add_object->getValue<String>("path"), path);
+                auto path = add_object->getValue<String>("path");
                 auto full_path = fs::path(table_path) / path;
                 result.insert(full_path);
 
@@ -362,8 +360,7 @@ struct DeltaLakeMetadataImpl
                 if (!remove_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
-                String path;
-                Poco::URI::decode(remove_object->getValue<String>("path"), path);
+                auto path = remove_object->getValue<String>("path");
                 result.erase(fs::path(table_path) / path);
             }
         }
@@ -564,8 +561,7 @@ struct DeltaLakeMetadataImpl
 
         for (size_t i = 0; i < path_column.size(); ++i)
         {
-            String path;
-            Poco::URI::decode(String(path_column.getDataAt(i)), path);
+            const auto path = String(path_column.getDataAt(i));
             if (path.empty())
                 continue;
 
