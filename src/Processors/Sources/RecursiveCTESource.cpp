@@ -565,6 +565,10 @@ private:
         /// For recursive steps, inject additional_table_filters to push join key values
         /// into MergeTree's key condition, enabling index usage.
         /// recursive_step was already incremented above, so >1 means we're executing the recursive query.
+        /// The interpreter receives a per-step copy of the context so that the per-step setting
+        /// mutations below do not race with concurrent reads of the shared Settings object
+        /// from other recursive CTEs (e.g. nested ones) that share `recursive_query_context`.
+        auto interpreter_context = recursive_step > 1 ? Context::createCopy(recursive_query_context) : recursive_query_context;
         if (recursive_step > 1)
         {
             /// Disable parallel replicas for recursive CTE step queries. When parallel replicas
@@ -575,21 +579,21 @@ private:
             /// We do this here (rather than in the constructor) so that the seed (non-recursive)
             /// query — which does not reference the CTE table — keeps the user's parallel replicas
             /// configuration. Setting it on every recursive iteration is idempotent.
-            recursive_query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+            interpreter_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
 
             const auto max_in_filter_cardinality
                 = recursive_subquery_settings[Setting::recursive_cte_max_in_filter_cardinality].value;
 
             auto filters = buildAdditionalTableFiltersForRecursiveStep(
                 recursive_query, cached_join_keys, recursive_table_nodes,
-                working_temporary_table_storage, recursive_query_context,
+                working_temporary_table_storage, interpreter_context,
                 original_additional_table_filters,
                 max_in_filter_cardinality);
 
-            recursive_query_context->setSetting("additional_table_filters", Field(std::move(filters)));
+            interpreter_context->setSetting("additional_table_filters", Field(std::move(filters)));
         }
 
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, interpreter_context, select_query_options);
         auto pipeline_builder = interpreter->buildQueryPipeline();
 
         pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
