@@ -229,7 +229,7 @@ void transformColumnsWithSharedIndex(
     std::function<ColumnPtr(const ColumnPtr &)> index_transform,
     std::function<void(ColumnPtr &)> non_replicated_transform,
     std::span<size_t> positions = {});
-/// Same as abouve, but apply the same transformation to replicated and non replicated columns.
+/// Same as above, but apply the same transformation to replicated and non replicated columns.
 void transformColumnsWithSharedIndex(
     Columns & columns,
     std::function<ColumnPtr(const ColumnPtr &)> transform,

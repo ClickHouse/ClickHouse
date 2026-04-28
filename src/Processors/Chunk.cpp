@@ -5,7 +5,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -262,7 +261,7 @@ void compactReplicatedColumns(Chunk & chunk)
     for (const auto & [_, index_to_nested_cols] : index_to_nested_cols_map)
     {
         const auto & [shared_index, nested_columns, positions] = index_to_nested_cols;
-        
+
         ColumnIndex column_index(shared_index);
         auto result = column_index.buildCompactIndexedColumns(nested_columns);
         if (result.compact_indexes.get() != shared_index.get())
