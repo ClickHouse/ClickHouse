@@ -347,15 +347,10 @@ def main():
 
         res = CH.run_test(fast_test_command)
 
-        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run()
+        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
+            runner_exit_code=0 if res else 1,
+        )
         if not res:
-            test_results.results.append(
-                Result.create_from(
-                    name="clickhouse-test",
-                    status=Result.Status.FAIL,
-                    info="clickhouse-test error",
-                )
-            )
             attach_debug = True
 
         results.append(test_results)

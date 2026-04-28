@@ -172,7 +172,8 @@ static struct InitFiu
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
-    REGULAR(disk_access_storage_write_entity_fails)
+    REGULAR(disk_access_storage_write_entity_fails) \
+    REGULAR(query_metric_log_delay_collect)
 
 namespace FailPoints
 {
