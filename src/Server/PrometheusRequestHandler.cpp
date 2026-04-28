@@ -8,6 +8,7 @@
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <base/scope_guard.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -15,6 +16,7 @@
 
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
 #include <IO/SnappyReadBuffer.h>
 #include <IO/SnappyWriteBuffer.h>
@@ -118,6 +120,10 @@ public:
 
     virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
 
+    /// When true, `handleRequest` parses `application/x-www-form-urlencoded` (and multipart) bodies for POST/PUT.
+    /// Must stay false for RemoteWrite/RemoteRead so the raw body stream stays available for protobuf.
+    virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
+
 protected:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
@@ -128,7 +134,12 @@ protected:
             params.reset();
         });
 
-        params = std::make_unique<HTMLForm>(default_settings, request);
+        const auto & method = request.getMethod();
+        if (shouldParseFormFromRequestBody(request)
+            && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
+            params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
+        else
+            params = std::make_unique<HTMLForm>(default_settings, request);
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
         if (!authenticateUserAndMakeContext(request, response))
@@ -196,7 +207,13 @@ protected:
         context->applySettingsChanges(settings_changes);
 
         /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-        context->setCurrentQueryId(params->get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+        String query_id = params->get("query_id", request.get("X-ClickHouse-Query-Id", ""));
+
+        /// Sanitize query_id: remove ASCII control characters to prevent CRLF injection
+        /// into HTTP response headers (the query_id is reflected in X-ClickHouse-Query-Id).
+        std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
+
+        context->setCurrentQueryId(query_id);
     }
 
     void onException() override
@@ -328,6 +345,8 @@ class PrometheusRequestHandler::QueryAPIImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
+
+    bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
