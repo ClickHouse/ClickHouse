@@ -27,6 +27,8 @@ ReadFromMergeTree (default.test_skip_index_set_agg)
 7
 ReadFromMergeTree (default.test_skip_index_set_agg)
 7
+ReadFromPreparedSource (skip_set_value)
+7	7
 ReadFromMergeTree (default.test_skip_index_set_agg)
 17.428571428571427
 ReadFromPreparedSource (skip_set_value)

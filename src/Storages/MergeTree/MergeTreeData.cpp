@@ -9465,10 +9465,10 @@ Block MergeTreeData::getSkipIndexAggregationBlock(
                         state.agg_columns.push_back(ColumnAggregateFunction::create(func));
                 }
 
-                /// Incrementally add granule values to aggregate states
-                for (size_t col_idx = 0; col_idx < set_granule->block.columns(); ++col_idx)
-                    insertAggColumn(assert_cast<ColumnAggregateFunction &>(*state.agg_columns[col_idx]),
-                                    *set_granule->block.getByPosition(col_idx).column);
+                /// set index has one column, but query may have multiple aggregates over it
+                const auto & source_column = *set_granule->block.getByPosition(0).column;
+                for (auto & agg_column : state.agg_columns)
+                    insertAggColumn(assert_cast<ColumnAggregateFunction &>(*agg_column), source_column);
             }
 
             if (state.has_overflow)
@@ -9494,7 +9494,7 @@ Block MergeTreeData::getSkipIndexAggregationBlock(
             for (size_t i = 0; i < state.agg_columns.size(); ++i)
             {
                 auto & result_col = assert_cast<ColumnAggregateFunction &>(*result_agg_columns[i].column);
-                auto & source_col = assert_cast<const ColumnAggregateFunction &>(*state.agg_columns[i]);
+                const auto & source_col = assert_cast<const ColumnAggregateFunction &>(*state.agg_columns[i]);
                 if (source_col.empty())
                     continue;
 

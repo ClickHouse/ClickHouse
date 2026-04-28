@@ -112,6 +112,14 @@ SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniq(value, id) FROM test_skip_ind
 SELECT uniq(value, id) FROM test_skip_index_set_agg;
 
 -- ==================================================
+-- Multi-aggregate over same column
+-- ==================================================
+
+-- Multiple uniq* aggregates over the same set-indexed column should all use skip index
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniq(value), uniqExact(value) FROM test_skip_index_set_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT uniq(value), uniqExact(value) FROM test_skip_index_set_agg;
+
+-- ==================================================
 -- set index only supports uniq* functions, not min/max/count/sum/avg
 -- ==================================================
 
