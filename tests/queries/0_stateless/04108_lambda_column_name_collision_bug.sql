@@ -31,6 +31,15 @@ SELECT * FROM t PREWHERE arrayMap(x -> *, [1])[1] + arrayMap(x -> x + 1, [1])[1]
 SELECT 'sibling lambdas reversed';
 SELECT * FROM t PREWHERE arrayMap(x -> x + 1, [1])[1] + arrayMap(x -> *, [1])[1] > 50;
 
+-- Nested lambdas: inner lambda references table column x, which collides
+-- with the outer lambda's argument x.  The disambiguated name must be
+-- visible at the inner lambda scope.
+SELECT 'nested lambdas: PREWHERE';
+SELECT * FROM t PREWHERE arrayMap(x -> arrayMap(y -> t.x, [1])[1], [1])[1] > 50;
+
+SELECT 'nested lambdas: WHERE';
+SELECT * FROM t WHERE arrayMap(x -> arrayMap(y -> t.x, [1])[1], [1])[1] > 50;
+
 DROP TABLE t;
 
 -- Multi-column table where the lambda body references both columns

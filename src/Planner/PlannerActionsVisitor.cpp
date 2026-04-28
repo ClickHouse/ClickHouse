@@ -529,6 +529,11 @@ public:
     /// capture loop to find it by the disambiguated name.
     void addNodeAlias(const std::string & alias_name, const ActionsDAG::Node * node)
     {
+        if (node_name_to_node.contains(alias_name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot add alias {} because a node with that name already exists",
+                alias_name);
+
         /// The map uses string_view keys that must point to stable storage.
         /// Node names are backed by Node::result_name in the DAG's node list.
         /// Alias names have no such backing, so we store them ourselves.
@@ -841,6 +846,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
                 actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
 
+                /// Inner scopes (above i) were already visited by the main loop
+                /// and have "x" under its original name.  Add an alias so the
+                /// expression builder can find the node by the disambiguated name.
+                for (Int64 k = actions_stack_size; k > i; --k)
+                    actions_stack[k].addNodeAlias(disambiguated, actions_stack[k].getNodeOrThrow(column_node_name));
+
+                /// Outer scopes (below i) haven't been visited yet.
+                /// Add the column under its original name and register the alias.
                 for (Int64 j = i - 1; j >= 0; --j)
                 {
                     const auto * input_node = actions_stack[j].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());

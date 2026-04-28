@@ -19,6 +19,12 @@ sibling lambdas: capture + argument
 sibling lambdas reversed
 100
 200
+nested lambdas: PREWHERE
+100
+200
+nested lambdas: WHERE
+100
+200
 multi-column: PREWHERE
 100	1
 200	2
