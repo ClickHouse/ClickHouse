@@ -52,6 +52,14 @@ boundingBoxCartesian collinear points
 [(0,0),(10,0),(10,10),(0,10),(0,0)]
 boundingBoxCartesian WKT MultiPolygon
 [(0,0),(7,0),(7,7),(0,7),(0,0)]
+boundingBoxCartesian Geometry Point
+[(3,4),(3,4),(3,4),(3,4),(3,4)]
+boundingBoxCartesian Geometry LineString
+[(1,2),(5,2),(5,8),(1,8),(1,2)]
+boundingBoxCartesian Geometry Polygon
+[(0,0),(4,0),(4,4),(0,4),(0,0)]
+boundingBoxCartesian Geometry MultiPolygon
+[(0,0),(7,0),(7,7),(0,7),(0,0)]
 centroidCartesian Point
 (2,3)
 centroidCartesian Ring
@@ -59,9 +67,9 @@ centroidCartesian Ring
 centroidCartesian Polygon
 (2,2)
 centroidCartesian LineString
-(0,0)
+(2,0)
 centroidCartesian MultiLineString
-(0,0)
+(2,0)
 centroidCartesian MultiPolygon
 (3,3)
 centroidCartesian WKT
@@ -80,3 +88,11 @@ centroidCartesian collinear points
 (0,0)
 centroidCartesian WKT MultiPolygon
 (3.5,3.5)
+centroidCartesian Geometry Point
+(2,3)
+centroidCartesian Geometry LineString
+(2,0)
+centroidCartesian Geometry Polygon
+(2,2)
+centroidCartesian Geometry MultiPolygon
+(3,3)

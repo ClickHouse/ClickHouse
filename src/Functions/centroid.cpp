@@ -55,6 +55,8 @@ public:
 
     bool useDefaultImplementationForVariant() const override { return false; }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
@@ -76,36 +78,22 @@ public:
         }
         else
         {
-            /// Individual geometry type path.
-            auto geo_type = getGeometryColumnTypeFromDataType(arguments.front().type);
-            if (geo_type)
-            {
-                Field field;
-                for (size_t i = 0; i < input_rows_count; ++i)
+            callOnGeometryDataType<Point>(
+                arguments[0].type,
+                [&](const auto & type)
                 {
-                    arguments.front().column->get(i, field);
-                    processField(field, *geo_type, serializer);
-                }
-            }
-            else
-            {
-                callOnGeometryDataType<Point>(
-                    arguments[0].type,
-                    [&](const auto & type)
+                    using TypeConverter = std::decay_t<decltype(type)>;
+                    using Converter = typename TypeConverter::Type;
+
+                    auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
+
+                    for (size_t i = 0; i < input_rows_count; ++i)
                     {
-                        using TypeConverter = std::decay_t<decltype(type)>;
-                        using Converter = typename TypeConverter::Type;
-
-                        auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
-
-                        for (size_t i = 0; i < input_rows_count; ++i)
-                        {
-                            Point centroid{};
-                            boost::geometry::centroid(geometries[i], centroid);
-                            serializer.add(centroid);
-                        }
-                    });
-            }
+                        Point centroid{};
+                        boost::geometry::centroid(geometries[i], centroid);
+                        serializer.add(centroid);
+                    }
+                });
         }
 
         return serializer.finalize();

@@ -77,6 +77,15 @@ SELECT boundingBoxCartesian([(0., 0.), (5., 5.), (10., 10.), (0., 0.)]);
 SELECT 'boundingBoxCartesian WKT MultiPolygon';
 SELECT boundingBoxCartesian(readWKTMultiPolygon('MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)), ((5 5, 5 7, 7 7, 7 5, 5 5)))'));
 
+SELECT 'boundingBoxCartesian Geometry Point';
+SELECT boundingBoxCartesian(readWKT('POINT(3 4)'));
+SELECT 'boundingBoxCartesian Geometry LineString';
+SELECT boundingBoxCartesian(readWKT('LINESTRING(1 2, 5 8)'));
+SELECT 'boundingBoxCartesian Geometry Polygon';
+SELECT boundingBoxCartesian(readWKT('POLYGON((0 0, 0 4, 4 4, 4 0, 0 0))'));
+SELECT 'boundingBoxCartesian Geometry MultiPolygon';
+SELECT boundingBoxCartesian(readWKT('MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)), ((5 5, 5 7, 7 7, 7 5, 5 5)))'));
+
 SELECT boundingBoxCartesian(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'centroidCartesian Point';
@@ -120,6 +129,15 @@ SELECT centroidCartesian([(0., 0.), (5., 5.), (10., 10.), (0., 0.)]);
 
 SELECT 'centroidCartesian WKT MultiPolygon';
 SELECT centroidCartesian(readWKTMultiPolygon('MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)), ((5 5, 5 7, 7 7, 7 5, 5 5)))'));
+
+SELECT 'centroidCartesian Geometry Point';
+SELECT centroidCartesian(readWKT('POINT(2 3)'));
+SELECT 'centroidCartesian Geometry LineString';
+SELECT centroidCartesian(readWKT('LINESTRING(0 0, 4 0)'));
+SELECT 'centroidCartesian Geometry Polygon';
+SELECT centroidCartesian(readWKT('POLYGON((0 0, 0 4, 4 4, 4 0, 0 0))'));
+SELECT 'centroidCartesian Geometry MultiPolygon';
+SELECT centroidCartesian(readWKT('MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)), ((4 4, 4 6, 6 6, 6 4, 4 4)))'));
 
 SELECT centroidCartesian(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
