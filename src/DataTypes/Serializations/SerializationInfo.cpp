@@ -416,7 +416,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         Poco::JSON::Array skipped_arr;
         for (const auto & name : skipped_columns)
             skipped_arr.add(name);
-        object.set(KEY_SKIPPED_COLUMNS, std::move(skipped_arr));
+        object.set(KEY_SKIPPED_COLUMNS, skipped_arr);
     }
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
