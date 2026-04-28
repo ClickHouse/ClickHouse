@@ -26,6 +26,16 @@ namespace DB
   *   they try to claim leadership with a conditional write (If-Match: stale_etag).
   * - If the lease file doesn't exist, any replica can create it with (If-None-Match: *).
   * - If a conditional write fails (PreconditionFailed), the writer lost the race and stays a follower.
+  *
+  * Clock skew assumption:
+  * - The protocol relies on wall-clock timestamps embedded in the lease file. Participating
+  *   nodes must keep their clocks synchronized to within `session_timeout`; otherwise a
+  *   follower with a fast clock can prematurely declare a healthy leader's lease expired
+  *   and try to claim leadership. The conditional write on the next heartbeat will still
+  *   prevent dual-writer states (only one of the two writes can win the ETag race), but
+  *   excessive skew can cause unnecessary leadership churn. Future-dated timestamps
+  *   beyond `session_timeout` are treated as stale to bound the impact in the opposite
+  *   direction. Use NTP or an equivalent time-sync service on all nodes.
   */
 class MergeTreeLeaderElection
 {
