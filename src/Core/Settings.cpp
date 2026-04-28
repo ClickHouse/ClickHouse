@@ -7625,6 +7625,9 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
+    DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled. It prevents read in order through join optimization.
+)", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \
