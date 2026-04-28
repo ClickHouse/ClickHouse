@@ -1898,3 +1898,48 @@ def test_blob_storage_log_multipart(cluster):
     assert int(r[3]) >= 1, blob_storage_log  # At least one log entry
 
     azure_query(node, "DROP TABLE test_blob_storage_log_multipart")
+
+
+def test_reject_invalid_upload_part_size_settings(cluster):
+    node = cluster.instances["node"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    query = (
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage("
+        f"'{storage_account_url}', 'cont', 'reject_invalid_upload_part_size.csv', "
+        f"'{account_name}', '{account_key}', 'CSV', 'auto', 'a UInt32') "
+        f"SELECT 1"
+    )
+
+    invalid_cases = [
+        ({"azure_min_upload_part_size": 0}, "min_upload_part_size"),
+        ({"azure_max_blocks_in_multipart_upload": 0}, "max_blocks_in_multipart_upload"),
+        (
+            {
+                "azure_min_upload_part_size": 1024,
+                "azure_max_upload_part_size": 512,
+            },
+            "max_upload_part_size",
+        ),
+        (
+            {
+                "azure_strict_upload_part_size": 0,
+                "azure_upload_part_size_multiply_factor": 0,
+            },
+            "upload_part_size_multiply_factor",
+        ),
+        (
+            {
+                "azure_strict_upload_part_size": 0,
+                "azure_upload_part_size_multiply_parts_count_threshold": 0,
+            },
+            "upload_part_size_multiply_parts_count_threshold",
+        ),
+    ]
+
+    for settings, expected_substring in invalid_cases:
+        error = azure_query(node, query, expect_error=True, settings=settings)
+        assert "INVALID_SETTING_VALUE" in error, (settings, error)
+        assert expected_substring in error, (settings, error)
