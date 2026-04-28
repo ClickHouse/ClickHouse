@@ -88,6 +88,7 @@ Optional parameters:
 - `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
 - `kafka_compression_codec` — Compression codec used for producing messages. Supported: empty string, `none`, `gzip`, `snappy`, `lz4`, `zstd`. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used. Default: empty string.
 - `kafka_compression_level` — Compression level parameter for algorithm selected by kafka_compression_codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: `[0-9]` for `gzip`; `[0-12]` for `lz4`; only `0` for `snappy`; `[0-12]` for `zstd`; `-1` = codec-dependent default compression level. Default: `-1`.
+- `kafka_map_virtual_columns_on_write` — If enabled, columns with special names `_key`, `_timestamp`, `_headers.name` and `_headers.value` in the table schema are mapped to the corresponding Kafka message metadata on `INSERT` and are excluded from the message payload. See [Mapping columns to Kafka message metadata](#mapping-columns-to-kafka-message-metadata). Default: `false`.
 
 Examples:
 
@@ -266,6 +267,43 @@ Additional virtual columns when `kafka_handle_error_mode='stream'`:
 - `_error` - Exception message happened during failed parsing. Data type: `String`.
 
 Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
+
+## Mapping columns to Kafka message metadata {#mapping-columns-to-kafka-message-metadata}
+
+When producing messages with `INSERT INTO`, the Kafka engine always uses a column named `_key` (of type `String`) as the Kafka message key and a column named `_timestamp` (of type `DateTime`) as the Kafka message timestamp — if those columns exist in the table. By default, these columns also appear in the produced message payload alongside the other columns.
+
+With `kafka_map_virtual_columns_on_write = 1`, the behaviour changes:
+
+- `_key` (type `String`) — mapped to the Kafka message key.
+- `_timestamp` (type `DateTime`) — mapped to the Kafka message timestamp.
+- `_headers.name` (type `Array(String)`) and `_headers.value` (type `Array(String)`) — mapped to Kafka message headers. Each pair `(_headers.name[i], _headers.value[i])` becomes one Kafka header. Because `_headers.name` and `_headers.value` share the `_headers` Nested prefix, ClickHouse requires both arrays to have the same size for every row.
+
+Columns with these names are **excluded from the message payload** only if their types match those listed above; otherwise they stay in the payload, so schemas that happen to reuse these names for unrelated data keep working.
+
+Example:
+
+```sql
+CREATE TABLE kafka_out
+(
+    event_json String,
+    `_key` String,
+    `_timestamp` DateTime,
+    `_headers.name` Array(String),
+    `_headers.value` Array(String)
+)
+ENGINE = Kafka
+SETTINGS
+    kafka_broker_list = 'broker:9092',
+    kafka_topic_list = 'events',
+    kafka_group_name = 'events-producer',
+    kafka_format = 'JSONEachRow',
+    kafka_map_virtual_columns_on_write = 1;
+
+INSERT INTO kafka_out VALUES
+    ('{"a":1}', 'session-42', now(), ['source', 'trace_id'], ['api', 'abc-123']);
+```
+
+The produced Kafka message has payload `{"event_json":"{\"a\":1}"}`, key `session-42`, the current timestamp, and two headers `source=api` and `trace_id=abc-123`.
 
 ## Data formats support {#data-formats-support}
 

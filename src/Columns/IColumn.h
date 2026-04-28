@@ -923,7 +923,7 @@ bool isColumnNullable(const IColumn & column);
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 
-/// Implement methods to devirtualize some calls of IColumn in final descendents.
+/// Implement methods to devirtualize some calls of IColumn in final descendants.
 /// `typename Parent` is needed because some columns don't inherit IColumn directly.
 /// See ColumnFixedSizeHelper for example.
 template <typename Derived, typename Parent = IColumn>

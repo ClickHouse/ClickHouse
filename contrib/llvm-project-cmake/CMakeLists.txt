@@ -3,7 +3,7 @@
 # Builds LLVM libraries without including LLVM's own CMake definitions.
 # Uses llvm-tblgen built from sources to generate .inc files at build time.
 
-if (APPLE OR SANITIZE STREQUAL "memory")
+if (SANITIZE STREQUAL "memory")
     set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
     set (ENABLE_DWARF_PARSER_DEFAULT OFF)
 else()
