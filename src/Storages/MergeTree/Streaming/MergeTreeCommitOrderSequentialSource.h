@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Storages/MergeTree/Streaming/CommitOrderStrategy.h>
+#include <Storages/MergeTree/Streaming/CommitOrderReadStrategy.h>
 #include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
 
 namespace DB
