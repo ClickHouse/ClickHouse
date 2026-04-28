@@ -511,9 +511,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         impl = std::make_unique<AsynchronousBoundedReadBuffer>(
             std::move(impl),
             *async_prefetch->reader,
-            settings,
             async_buffer_size,
             min_bytes_for_seek,
+            settings.priority,
+            settings.page_cache_block_size,
+            settings.enable_filesystem_read_prefetches_log,
             async_prefetch->async_read_counters,
             async_prefetch->prefetches_log);
     }
