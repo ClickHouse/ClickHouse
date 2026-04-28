@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-random-detach
+# Tags: long, zookeeper, no-replicated-database, no-shared-merge-tree, no-random-detach
+# Tag long: many concurrent ALTER CLEAR COLUMN with replication_alter_partitions_sync=2 can be slow under randomized settings in flaky check
 # no-random-detach: test checks replication state
 # Tag no-replicated-database: Old syntax is not allowed
 # no-shared-merge-tree -- old syntax
