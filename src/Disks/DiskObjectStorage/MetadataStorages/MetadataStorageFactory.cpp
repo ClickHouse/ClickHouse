@@ -107,9 +107,12 @@ MetadataStoragePtr MetadataStorageFactory::create(
 {
     const auto type = getMetadataType(config, config_prefix, compatibility_type_hint);
 
-    /// borrow_from_cache object storage loses all data on restart,
+    /// `borrow_from_cache` object storage loses all data on restart,
     /// so it must use in-memory metadata; any persistent metadata type would leave stale entries.
-    if (compatibility_type_hint == "memory" && type != "memory")
+    /// The check is based on the actual object storage type rather than the compatibility hint,
+    /// because the hint is only set when `metadata_type` is missing from the config.
+    const auto object_storage_type = object_storages->takePointingTo(cluster->getLocalLocation())->getType();
+    if (object_storage_type == ObjectStorageType::BorrowFromCache && type != "memory")
     {
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                         "Object storage type `borrow_from_cache` requires metadata_type='memory', got '{}'", type);
