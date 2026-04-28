@@ -46,6 +46,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -251,11 +252,13 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::createQueryPlanForRetry(const 
         {
             return std::make_unique<QueryPlan>(source->clone());
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            if (!query_plan_builder)
+            /// Many `IQueryPlanStep` subclasses do not implement `clone`. If the original plan cannot be
+            /// cloned, fall back to rebuilding it via `query_plan_builder`. If neither path is available,
+            /// the caller's fallback uses `extractSubplan` on the executed plan instead.
+            if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                 throw;
-            /// The original plan could not be cloned; fall through and rebuild it via `query_plan_builder`.
         }
     }
 
