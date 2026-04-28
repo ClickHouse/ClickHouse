@@ -237,8 +237,16 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
 void RemoteSource::cancel(CancelReason reason) noexcept
 {
+    /// Make reason selection atomic with the first-canceller gate, so concurrent cancels
+    /// with different reasons cannot make `onCancel` observe a reason from a losing caller.
+    /// Mirrors `ISource::cancel`, but records `reason` between the gate and `onCancel`,
+    /// guaranteeing that the value `onCancel` reads was written by the winning thread.
+    bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
+    if (already_cancelled)
+        return;
+
     cancel_reason.store(reason, std::memory_order_release);
-    ISource::cancel(reason);
+    onCancel();
 }
 
 void RemoteSource::onCancel() noexcept
