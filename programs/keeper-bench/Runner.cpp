@@ -1461,20 +1461,54 @@ void addToBatchAndMaybeFlush(Coordination::ZooKeeper & zookeeper, Coordination::
     }
 }
 
-void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path)
+void removeRecursiveManual(Coordination::ZooKeeper & zookeeper, const std::string & path, Coordination::Requests & batch)
 {
+    namespace fs = std::filesystem;
+
     auto promise = std::make_shared<std::promise<Coordination::Error>>();
     auto future = promise->get_future();
-    zookeeper.removeRecursive(path, /*remove_nodes_limit=*/ 100000000,
-        [promise](const Coordination::RemoveRecursiveResponse & response)
-        {
-            promise->set_value(response.error);
-        });
+
+    Strings children;
+    auto list_callback = [promise, &children](const Coordination::ListResponse & response)
+    {
+        children = response.names;
+        promise->set_value(response.error);
+    };
+    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {}, false, false);
     auto error = future.get();
     if (error == Coordination::Error::ZNONODE)
         return;
     if (error != Coordination::Error::ZOK)
-        throw zkutil::KeeperException(error, "Failed to recursively remove {}", path);
+        throw zkutil::KeeperException(error, "Failed to list children of {}", path);
+
+    for (const auto & child : children)
+        removeRecursiveManual(zookeeper, fs::path(path) / child, batch);
+
+    addToBatchAndMaybeFlush(zookeeper, batch, zkutil::makeRemoveRequest(path, -1));
+}
+
+void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path, bool allow_native)
+{
+    if (allow_native && zookeeper.isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
+    {
+        auto promise = std::make_shared<std::promise<Coordination::Error>>();
+        auto future = promise->get_future();
+        zookeeper.removeRecursive(path, /*remove_nodes_limit=*/ 100000000,
+            [promise](const Coordination::RemoveRecursiveResponse & response)
+            {
+                promise->set_value(response.error);
+            });
+        auto error = future.get();
+        if (error == Coordination::Error::ZNONODE)
+            return;
+        if (error != Coordination::Error::ZOK)
+            throw zkutil::KeeperException(error, "Failed to recursively remove {}", path);
+        return;
+    }
+
+    Coordination::Requests batch;
+    removeRecursiveManual(zookeeper, path, batch);
+    flushMulti(zookeeper, batch);
 }
 
 }
@@ -1482,6 +1516,8 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
 void BenchmarkContext::initializeFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     default_acls = getDefaultACLs();
+
+    use_remove_recursive = config.getBool("use_remove_recursive", true);
 
     std::cerr << "---- Parsing setup ---- " << std::endl;
     static const std::string setup_key = "setup";
@@ -1621,7 +1657,7 @@ void BenchmarkContext::startup(Coordination::ZooKeeper & zookeeper)
 
         std::string root_path = std::filesystem::path("/") / node_name;
         std::cerr << "Cleaning up " << root_path << std::endl;
-        removeRecursive(zookeeper, root_path);
+        removeRecursive(zookeeper, root_path, use_remove_recursive);
 
         Coordination::Requests batch;
         node->createNodes(zookeeper, batch, "/", default_acls, tagged_paths);
@@ -1649,6 +1685,6 @@ void BenchmarkContext::cleanup(Coordination::ZooKeeper & zookeeper)
         auto node_name = node->name.getString();
         std::string root_path = std::filesystem::path("/") / node_name;
         std::cerr << "Cleaning up " << root_path << std::endl;
-        removeRecursive(zookeeper, root_path);
+        removeRecursive(zookeeper, root_path, use_remove_recursive);
     }
 }
