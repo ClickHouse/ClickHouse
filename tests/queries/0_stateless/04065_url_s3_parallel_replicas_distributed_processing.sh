@@ -66,8 +66,13 @@ EOF
 # would throw "Unknown table function") nor create `StorageObjectStorageCluster`
 # on the initiator (which would distribute the query but each replica would read
 # the same data redundantly).
-mkdir -p "${USER_FILES_PATH}/04065_data_minio/"
-cp -r "${CUR_DIR}/data_minio/paimon_no_partition/" "${USER_FILES_PATH}/04065_data_minio/"
+# Use a per-database directory to avoid collisions between concurrent iterations
+# in the flaky check (multiple parallel runs share `USER_FILES_PATH`, so the
+# trailing `rm -rf` from one iteration could remove data while another iteration
+# is still reading it).
+PAIMON_DATA_DIR="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_04065_data_minio"
+mkdir -p "${PAIMON_DATA_DIR}"
+cp -r "${CUR_DIR}/data_minio/paimon_no_partition/" "${PAIMON_DATA_DIR}/"
 
 echo "--- paimonLocal (no Cluster variant) with parallel_replicas_for_cluster_engines ---"
 $CLICKHOUSE_CLIENT <<EOF
@@ -78,7 +83,7 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 SET parallel_replicas_for_cluster_engines = true;
 SET enable_time_time64_type = 1;
 
-SELECT count() FROM paimonLocal('${USER_FILES_PATH}/04065_data_minio/paimon_no_partition');
+SELECT count() FROM paimonLocal('${PAIMON_DATA_DIR}/paimon_no_partition');
 EOF
 
 # This is the core bug reproduction: a MergeTree query with parallel replicas
@@ -103,4 +108,4 @@ WHERE x IN (SELECT toUInt32(x) FROM url('http://localhost:8123/?query=SELECT+1',
 EOF
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE_NAME}"
-rm -rf "${USER_FILES_PATH}/04065_data_minio/"
+rm -rf "${PAIMON_DATA_DIR}"
