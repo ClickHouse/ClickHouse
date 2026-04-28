@@ -88,6 +88,20 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     }
 }
 
+template <typename Result, typename Error, typename... Args>
+void throwIfError(const Aws::Utils::Outcome<Result, Error> & response, fmt::format_string<Args...> context_fmt, Args &&... args)
+{
+    if (!response.IsSuccess())
+    {
+        const auto & err = response.GetError();
+        throw S3Exception(
+            fmt::format("{} (Code: {}, S3 exception: '{}'), {}",
+                        err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName(),
+                        fmt::format(context_fmt, std::forward<Args>(args)...)),
+            err.GetErrorType());
+    }
+}
+
 template <typename Result, typename Error>
 void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::function<String()> && msg)
 {
@@ -321,7 +335,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
 
         outcome = client.get()->ListObjectsV2(request);
-        throwIfError(outcome);
+        throwIfError(outcome, "while listing objects in bucket '{}' with prefix '{}' on disk '{}'", uri.bucket, path, disk_name);
 
         auto result = outcome.GetResult();
         auto objects = result.GetContents();
@@ -513,7 +527,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
         }
         if (!updated)
         {
-            e.addMessage("while reading " + path);
+            e.addMessage("while reading '{}' in bucket '{}' on disk '{}'", path, uri.bucket, disk_name);
             throw;
         }
     }
