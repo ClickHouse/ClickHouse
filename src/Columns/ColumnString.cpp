@@ -47,6 +47,12 @@ void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t l
 void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 #endif
 {
+    /// Inserting zero copies is a no-op regardless of `position`. Returning early avoids
+    /// eagerly reading `offsets[position - 1]` below, which would go out of bounds on
+    /// a caller-side garbage `position` (e.g. from a `size_t` underflow).
+    if (length == 0)
+        return;
+
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
     const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
     const size_t src_buf_size

@@ -77,6 +77,56 @@ private:
     UInt64 step_between_chunks;
 };
 
+/// Generates a fixed number of values starting from a given value, advancing by a given step.
+/// The step is applied as-is using unsigned arithmetic, which means wrapping steps can be used
+/// to produce descending sequences (e.g. UInt64(0) - abs_step wraps so that addition becomes subtraction).
+///
+/// This source is used by `generate_series` for descending series (negative step).
+class SimpleSteppedNumbersSource : public ISource
+{
+public:
+    SimpleSteppedNumbersSource(
+        UInt64 block_size_,
+        UInt64 start_,
+        UInt64 step_,
+        UInt64 total_count_,
+        const std::string & column_name)
+        : ISource(NumbersSource::createHeader(column_name))
+        , block_size(block_size_)
+        , next(start_)
+        , step(step_)
+        , remaining(total_count_)
+    {
+    }
+
+    String getName() const override { return "SimpleSteppedNumbers"; }
+
+protected:
+    Chunk generate() override
+    {
+        if (remaining == 0)
+            return {};
+
+        UInt64 count = std::min(block_size, remaining);
+        auto column = ColumnUInt64::create(count);
+        ColumnUInt64::Container & vec = column->getData();
+
+        iotaWithStepOptimized(vec.data(), count, next, step);
+
+        next += count * step;
+        remaining -= count;
+
+        progress(column->size(), column->byteSize());
+        return {Columns{std::move(column)}, count};
+    }
+
+private:
+    UInt64 block_size;
+    UInt64 next;
+    UInt64 step;
+    UInt64 remaining;
+};
+
 struct RangeWithStep
 {
     UInt64 left;    /// first value in the range
@@ -446,6 +496,44 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
     chassert(numbers_storage.step != UInt64{0});
 
+    /// Descending series (e.g. `generate_series(10, 0, -1)`): compute exact output count
+    /// from domain size and step, then use `SimpleSteppedNumbersSource` with a wrapping step.
+    /// The step stored in storage is always the positive absolute value; the wrapping trick
+    /// (UInt64(0) - step) makes unsigned addition equivalent to subtraction.
+    /// TODO: Support filter pushdown for negative step as well.
+    if (numbers_storage.descending)
+    {
+        chassert(numbers_storage.limit.has_value());
+        UInt128 domain_size = *numbers_storage.limit;
+        UInt128 count128 = (domain_size + numbers_storage.step - 1) / numbers_storage.step;
+
+        chassert(count128 <= std::numeric_limits<UInt64>::max());
+
+        UInt64 total_count = static_cast<UInt64>(count128);
+
+        /// We cannot push down LIMIT if we have a filter. Consider:
+        ///   SELECT * FROM generate_series(10, 0, -1) WHERE generate_series < 3 LIMIT 1
+        /// Pushing LIMIT 1 would generate only {10}, which the filter discards, returning
+        /// empty instead of the correct {2}.
+        if (limit.has_value() && !filter_actions_dag)
+            total_count = std::min(total_count, static_cast<UInt64>(*limit));
+
+        if (total_count == 0)
+        {
+            add_null_source();
+            return pipe;
+        }
+
+        NumbersLikeUtils::checkLimits(context->getSettingsRef(), total_count);
+
+        UInt64 wrapping_step = UInt64(0) - numbers_storage.step;
+        auto source = std::make_shared<SimpleSteppedNumbersSource>(
+            max_block_size, numbers_storage.offset, wrapping_step, total_count, numbers_storage.column_name);
+        source->addTotalRowsApprox(total_count);
+        pipe.addSource(std::move(source));
+        return pipe;
+    }
+
     /// Extract ranges/bounds implied by the WHERE clause.
     ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr, context);
     KeyCondition condition(inverted_dag, context, column_names, key_expression);
@@ -521,13 +609,13 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
     if (numbers_storage.limit.has_value())
     {
-        const UInt64 storage_limit = *numbers_storage.limit;
+        const UInt128 storage_limit = *numbers_storage.limit;
 
         /// Domain of `numbers(offset, limit[, step])` is [offset, offset + limit), potentially wrapping at 2^64.
-        if (std::numeric_limits<UInt64>::max() - numbers_storage.offset >= storage_limit)
+        if (static_cast<UInt128>(std::numeric_limits<UInt64>::max() - numbers_storage.offset) >= storage_limit)
         {
             append_stepped_intersections(
-                Range(FieldRef(numbers_storage.offset), true, FieldRef(numbers_storage.offset + storage_limit), false), remainder);
+                Range(FieldRef(numbers_storage.offset), true, FieldRef(static_cast<UInt64>(numbers_storage.offset + storage_limit)), false), remainder);
         }
         /// Wrap-around case, for example: numbers(18446744073709551614, 5) produces:
         /// [18446744073709551614, 18446744073709551615] then [0, 2].
@@ -537,8 +625,8 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             append_stepped_intersections(
                 Range(FieldRef(numbers_storage.offset), true, FieldRef(std::numeric_limits<UInt64>::max()), true), remainder);
 
-            auto overflow_end = UInt128(numbers_storage.offset) + UInt128(storage_limit);
-            UInt64 wrapped_end = UInt64(overflow_end - std::numeric_limits<UInt64>::max() - 1);
+            auto overflow_end = static_cast<UInt128>(numbers_storage.offset) + storage_limit;
+            UInt64 wrapped_end = static_cast<UInt64>(overflow_end - std::numeric_limits<UInt64>::max() - 1);
 
             /// Wrapped segment starts at 0 and ends at `wrapped_end` (exclusive).
 

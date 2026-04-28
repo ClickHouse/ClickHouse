@@ -758,10 +758,9 @@ void obfuscateIdentifier(std::string_view src, WriteBuffer & result, WordMap & o
             result.write('_');
             ++word_begin;
         }
-        else if (word_has_alphanumerics && isUpperAlphaASCII(src_pos[0]))
+        else if (word_has_alphanumerics && src_pos > src.data() && isUpperAlphaASCII(src_pos[0]) && isLowerAlphaASCII(src_pos[-1])) /// xX
         {
-            if (src_pos > src.data() && isLowerAlphaASCII(src_pos[-1])) /// xX
-                append_word();
+            append_word();
         }
 
         ++src_pos;
@@ -1051,10 +1050,18 @@ void obfuscateLiteral(
                     /// Obfuscate number but keep it within same power of two range.
 
                     uint64_t obfuscated = hash_func_num.get64();
-                    uint64_t log2 = bitScanReverse(num);
 
-                    obfuscated = (1ULL << log2) + obfuscated % (1ULL << log2);
-                    writeIntText(obfuscated, result);
+                    if (num == 0)
+                    {
+                        /// readIntText may overflow to zero for very large numbers.
+                        writeIntText(obfuscated, result);
+                    }
+                    else
+                    {
+                        uint64_t log2 = bitScanReverse(num);
+                        obfuscated = (1ULL << log2) + obfuscated % (1ULL << log2);
+                        writeIntText(obfuscated, result);
+                    }
                 }
             }
         }
