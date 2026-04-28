@@ -371,6 +371,7 @@ class JobNames:
     LIBFUZZER_TEST = "libFuzzer tests"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
+    CI_TESTS = "CI Tests"
 
 
 class ToolSet:
