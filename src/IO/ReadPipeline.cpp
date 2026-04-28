@@ -314,8 +314,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 /// own buffer. When DC falls back, it calls set() on the fallback with
                 /// DC's own internal_buffer — which may be empty when DC itself uses
                 /// external buffer mode. A self-buffered Gather works independently.
+                /// Copy, not move: fallback may be called multiple times (e.g. after
+                /// connection pool exhaustion on different read ranges).
+                auto creator_copy = gather_creator;
                 return std::make_unique<ReadBufferFromRemoteFSGather>(
-                    std::move(gather_creator),
+                    std::move(creator_copy),
                     objects,
                     captured_settings,
                     /* use_external_buffer */ false,
