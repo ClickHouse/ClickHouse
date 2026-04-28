@@ -290,6 +290,13 @@ public:
             auto json = String(json_col->getDataAt(i));
             auto ast = IAST::createFromJSON(json, max_ast_depth, max_ast_elements);
 
+            /// Defense in depth: also walk the constructed AST and verify its
+            /// post-build size/depth, mirroring `checkASTSizeLimits` in `executeQuery`.
+            if (max_ast_depth)
+                ast->checkDepth(max_ast_depth);
+            if (max_ast_elements)
+                ast->checkSize(max_ast_elements);
+
             WriteBufferFromOwnString buf;
             if (orig_col)
             {

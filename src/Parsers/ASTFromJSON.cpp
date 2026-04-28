@@ -66,6 +66,8 @@
 
 #include <Common/Exception.h>
 
+#include <base/scope_guard.h>
+
 #include <Poco/Exception.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -260,6 +262,10 @@ ASTPtr IAST::createFromJSON(const Poco::JSON::Object & json)
     ++json_deser_current_depth;
     ++json_deser_current_elements;
 
+    /// Decrement the depth counter on every exit path (including exceptions),
+    /// so a failed `readJSON` does not leak depth state for subsequent calls.
+    SCOPE_EXIT({ --json_deser_current_depth; });
+
     if (!json.has("type"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSON object missing 'type' field for AST deserialization");
 
@@ -276,8 +282,6 @@ ASTPtr IAST::createFromJSON(const Poco::JSON::Object & json)
     /// Populate from JSON via virtual dispatch.
     /// readJSON may recursively call createFromJSON for child nodes.
     node->readJSON(json);
-
-    --json_deser_current_depth;
 
     return node;
 }
