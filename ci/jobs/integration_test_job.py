@@ -1029,8 +1029,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
             R.set_success()
             has_error = False
 
-    # If all non-OK results are infrastructure errors, do not treat as a real failure
-    if has_error:
+    # If all non-OK results are infrastructure errors, do not treat as a real
+    # failure. Skip this clearing in bugfix-validation mode — there, we want
+    # infra-only runs to keep `has_error = True` so the bugfix-validation block
+    # below treats this arch as SKIPPED (not as `validated=true` via the
+    # FAIL→OK inversion path). See clickhouse-gh[bot] inline review on PR
+    # #103541 (2026-04-27): without this gate, an infra-only run on a Bug Fix
+    # PR would clear `has_error`, then the inversion would turn the infra
+    # `FAIL` results into `OK`, set `has_failure=True`, and emit a JSON with
+    # `validated=true, skipped=false`. The aggregator would then incorrectly
+    # report "bug reproduced on master and fixed on PR" for an arch that
+    # actually failed to run the test at all.
+    if has_error and not is_bugfix_validation:
         non_ok = [r for r in test_results if not r.is_ok()]
         if non_ok and all(r.has_label(Result.Label.INFRA) for r in non_ok):
             print(
