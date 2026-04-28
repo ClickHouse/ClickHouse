@@ -522,6 +522,19 @@ public:
         return node_name_to_node.contains(node_name);
     }
 
+    /// Record that a column with this name was added to this (lambda) scope
+    /// but its source is outside — i.e. `visitColumn` did not stop here.
+    void recordColumnFromOuterScope(const std::string & column_name)
+    {
+        columns_from_outer_scope.insert(column_name);
+    }
+
+    /// Check whether a column was recorded as coming from an outer scope.
+    bool isColumnFromOuterScope(const std::string & column_name) const
+    {
+        return columns_from_outer_scope.contains(column_name);
+    }
+
     [[maybe_unused]] bool containsInputNode(const std::string & node_name)
     {
         const auto * node = tryGetNode(node_name);
@@ -638,6 +651,12 @@ private:
     std::unordered_map<std::string_view, const ActionsDAG::Node *> node_name_to_node;
     ActionsDAG & actions_dag;
     QueryTreeNodePtr scope_node;
+
+    /// Column names that were added to this scope by `visitColumn` but whose source
+    /// is outside this scope (i.e. `visitColumn` continued past this level).
+    /// Only meaningful for lambda scopes; used to detect name collisions between
+    /// lambda arguments and captured table columns.
+    NameSet columns_from_outer_scope;
 };
 
 class PlannerActionsVisitorImpl
@@ -806,6 +825,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             return {column_node_name, Levels(i)};
         }
+
+        /// Column was not sourced from this scope. If this scope is a lambda,
+        /// record that the column comes from outside — it will be needed in
+        /// visitLambda to detect collisions with lambda argument names.
+        const auto & scope = actions_stack[i].getScopeNode();
+        if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
+            actions_stack[i].recordColumnFromOuterScope(column_node_name);
     }
 
     return {column_node_name, Levels(0)};
@@ -925,6 +951,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     ActionsDAG::NodeRawConstPtrs lambda_children;
     Names required_column_names = lambda_actions_dag.getRequiredColumnsNames();
 
+    /// Save the set of columns that `visitColumn` recorded as traversing past
+    /// this lambda scope (i.e. their source is outside the lambda).
+    /// Must be done before pop_back destroys the scope.
+    const auto & lambda_scope = actions_stack.back();
+    NameSet columns_from_outer = {};
+    for (const auto & name : required_column_names)
+        if (lambda_scope.isColumnFromOuterScope(name))
+            columns_from_outer.insert(name);
+
     actions_stack.pop_back();
     levels.reset(actions_stack.size());
     size_t level = levels.max();
@@ -939,6 +974,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             lambda_children.push_back(actions_stack[level].getNodeOrThrow(required_column_name));
             captured_column_names.push_back(required_column_name);
+        }
+        else if (columns_from_outer.contains(required_column_name))
+        {
+            /// Name matches a lambda argument, but `visitColumn` recorded that a
+            /// table column with this name traversed past the lambda scope (its
+            /// source is outside the lambda). Rename the INPUT in the lambda DAG
+            /// to break the collision with the lambda argument binding, then
+            /// capture the table column from the outer scope.
+            const auto * outer_node = actions_stack[level].getNodeOrThrow(required_column_name);
+            String disambiguated = required_column_name + "_lambda_captured";
+            lambda_actions_dag.renameInput(required_column_name, disambiguated);
+            if (lambda_expression_node_name == required_column_name)
+                lambda_expression_node_name = disambiguated;
+            lambda_children.push_back(outer_node);
+            captured_column_names.push_back(disambiguated);
         }
     }
 

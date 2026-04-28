@@ -305,6 +305,19 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
+void ActionsDAG::renameInput(const std::string & old_name, const std::string & new_name)
+{
+    for (auto & node : nodes)
+    {
+        if (node.type == ActionType::INPUT && node.result_name == old_name)
+        {
+            node.result_name = new_name;
+            return;
+        }
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "No INPUT node with name {} in ActionsDAG", old_name);
+}
+
 const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant)
 {
     if (!column.column)

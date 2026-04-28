@@ -1,0 +1,21 @@
+PREWHERE arrayMap(x -> *, [1])
+100
+200
+WHERE arrayMap(x -> *, [1])
+100
+200
+PREWHERE arrayMap(x -> t.x, [1])
+100
+200
+WHERE arrayMap(x -> t.x, [1])
+100
+200
+PREWHERE arrayMap(y -> *, [1])
+100
+200
+sibling lambdas: capture + argument
+100
+200
+sibling lambdas reversed
+100
+200

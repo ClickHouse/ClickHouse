@@ -177,6 +177,10 @@ public:
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
+    /// Rename an INPUT node from old_name to new_name. Used to disambiguate lambda argument name
+    /// collisions with captured column names.
+    void renameInput(const std::string & old_name, const std::string & new_name);
+
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;
 
