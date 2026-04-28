@@ -179,13 +179,13 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
         return;
 
     auto bucket_dag = group_by_dag->clone();
-    auto bucket_expression = std::make_shared<ExpressionActions>(std::move(bucket_dag));
 
-    /// Verify all bucket expression inputs map to PK columns.
-    const auto & bucket_inputs = bucket_expression->getActionsDAG().getInputs();
-    for (const auto * input_node : bucket_inputs)
+    /// Normalize bucket DAG input names: replace analyzer-qualified names
+    /// (__tableN.col_name) with bare PK column names so the bucket expression
+    /// can be executed directly on blocks built from PK index columns.
+    for (const auto * input_node : bucket_dag.getInputs())
     {
-        const auto & input_name = input_node->result_name;
+        auto & input_name = const_cast<ActionsDAG::Node *>(input_node)->result_name;
         bool found = false;
         for (const auto & pk_name : primary_key.column_names)
         {
@@ -197,6 +197,7 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
             auto dot_pos = input_name.find('.');
             if (dot_pos != String::npos && input_name.substr(dot_pos + 1) == pk_name)
             {
+                input_name = pk_name;
                 found = true;
                 break;
             }
@@ -204,6 +205,8 @@ void optimizeCountByGranularity(QueryPlan::Node & node, QueryPlan::Nodes & nodes
         if (!found)
             return;
     }
+
+    auto bucket_expression = std::make_shared<ExpressionActions>(std::move(bucket_dag));
 
     Block header_block;
     for (const auto & key_name : params.keys)

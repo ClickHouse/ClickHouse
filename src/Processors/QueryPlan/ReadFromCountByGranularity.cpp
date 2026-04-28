@@ -100,54 +100,6 @@ using GenericCounts = absl::flat_hash_map<BucketKey, UInt64, BucketKeyHash>;
 template <typename T>
 using NumericCounts = absl::flat_hash_map<T, UInt64>;
 
-/// Mapping from bucket expression input name to PK column index.
-/// Precomputed once per source to avoid per-granule string matching.
-struct InputToPKMapping
-{
-    struct Entry
-    {
-        String input_name;
-        size_t pk_index;
-    };
-    /// Entries for bucket expression inputs that need aliasing (qualified name != PK name).
-    std::vector<Entry> aliases;
-    /// All bucket expression inputs mapped to their PK column index, for building index blocks.
-    std::vector<Entry> all;
-};
-
-static InputToPKMapping buildInputToPKMapping(
-    const ExpressionActionsPtr & bucket_expression,
-    const KeyDescription & primary_key)
-{
-    InputToPKMapping mapping;
-    const auto & bucket_inputs = bucket_expression->getActionsDAG().getInputs();
-    for (const auto * input_node : bucket_inputs)
-    {
-        const auto & input_name = input_node->result_name;
-        for (size_t pk_i = 0; pk_i < primary_key.column_names.size(); ++pk_i)
-        {
-            const auto & pk_name = primary_key.column_names[pk_i];
-            /// Match exact name or analyzer-qualified name (__tableN.col_name).
-            /// Only accept single-level qualification to avoid ambiguous suffix matches.
-            bool match = (input_name == pk_name);
-            if (!match)
-            {
-                auto dot_pos = input_name.find('.');
-                if (dot_pos != String::npos && input_name.substr(dot_pos + 1) == pk_name)
-                    match = true;
-            }
-            if (match)
-            {
-                mapping.all.push_back({input_name, pk_i});
-                if (input_name != pk_name)
-                    mapping.aliases.push_back({input_name, pk_i});
-                break;
-            }
-        }
-    }
-    return mapping;
-}
-
 static bool bucketColumnsEqual(const Columns & cols, size_t a, size_t b)
 {
     for (const auto & col : cols)
@@ -185,7 +137,6 @@ public:
         ExpressionActionsPtr filter_expression_,
         String filter_column_name_,
         bool has_filter_,
-        InputToPKMapping input_mapping_,
         TypeIndex numeric_type_index_,
         std::vector<size_t> key_col_positions_)
         : ISource(std::move(header_))
@@ -200,7 +151,6 @@ public:
         , filter_expression(std::move(filter_expression_))
         , filter_column_name(std::move(filter_column_name_))
         , has_filter(has_filter_)
-        , input_mapping(std::move(input_mapping_))
         , numeric_type_index(numeric_type_index_)
         , key_col_positions(std::move(key_col_positions_))
     {
@@ -255,8 +205,6 @@ private:
                 return {};
             block.insert({res[i], primary_key.data_types[i], primary_key.column_names[i]});
         }
-        for (const auto & alias : input_mapping.aliases)
-            block.insert({res[alias.pk_index], primary_key.data_types[alias.pk_index], alias.input_name});
         return block;
     }
 
@@ -632,11 +580,14 @@ private:
 
         Columns unwrapped = {nullable_col.getNestedColumnPtr()};
 
-        /// Bucket expression outputs Nullable even for non-null rows; unwrap.
+        /// Bucket expression outputs Nullable for granule-level data, but
+        /// index-level unwrapped columns are already non-nullable.
+        /// Handle both cases.
         auto get_key_unwrap = [](const Columns & cols, size_t row) -> T
         {
-            const auto & nc = assert_cast<const ColumnNullable &>(*cols[0]);
-            return assert_cast<const ColumnType &>(nc.getNestedColumn()).getData()[row];
+            if (const auto * nc = typeid_cast<const ColumnNullable *>(cols[0].get()))
+                return assert_cast<const ColumnType &>(nc->getNestedColumn()).getData()[row];
+            return assert_cast<const ColumnType &>(*cols[0]).getData()[row];
         };
 
         NumericCounts<T> bucket_counts;
@@ -908,7 +859,6 @@ private:
     ExpressionActionsPtr filter_expression;
     String filter_column_name;
     bool has_filter;
-    InputToPKMapping input_mapping;
     TypeIndex numeric_type_index;
     std::vector<size_t> key_col_positions;
 };
@@ -946,8 +896,6 @@ Pipe ReadFromCountByGranularity::makePipe()
     actual_streams = std::max<size_t>(actual_streams, 1);
     size_t marks_per_task = std::max<size_t>((total_marks + actual_streams - 1) / actual_streams, 1);
 
-    auto input_mapping = buildInputToPKMapping(bucket_expression, primary_key);
-
     auto pool = std::make_shared<CountByGranularityPool>();
 
     for (const auto & part_with_ranges : parts_with_ranges)
@@ -961,11 +909,8 @@ Pipe ReadFromCountByGranularity::makePipe()
         if (index && !index->empty() && part.index_granularity->getMarksCount() > 0)
         {
             Block index_block;
-            for (const auto & entry : input_mapping.all)
-            {
-                if (entry.pk_index < index->size() && !index_block.has(entry.input_name))
-                    index_block.insert({(*index)[entry.pk_index], primary_key.data_types[entry.pk_index], entry.input_name});
-            }
+            for (size_t i = 0; i < primary_key.column_names.size() && i < index->size(); ++i)
+                index_block.insert({(*index)[i], primary_key.data_types[i], primary_key.column_names[i]});
             bucket_expression->execute(index_block);
 
             part_bucket_columns.reserve(group_by_key_names.size());
@@ -1024,8 +969,8 @@ Pipe ReadFromCountByGranularity::makePipe()
     TypeIndex numeric_type_index = TypeIndex::Nothing;
     {
         Block dummy;
-        for (const auto & entry : input_mapping.all)
-            dummy.insert({primary_key.data_types[entry.pk_index]->createColumn(), primary_key.data_types[entry.pk_index], entry.input_name});
+        for (size_t i = 0; i < primary_key.column_names.size(); ++i)
+            dummy.insert({primary_key.data_types[i]->createColumn(), primary_key.data_types[i], primary_key.column_names[i]});
         bucket_expression->execute(dummy);
 
         if (group_by_key_names.size() == 1)
@@ -1080,7 +1025,6 @@ Pipe ReadFromCountByGranularity::makePipe()
             filter_expression,
             filter_column_name,
             has_filter,
-            input_mapping,
             numeric_type_index,
             key_col_positions);
 
