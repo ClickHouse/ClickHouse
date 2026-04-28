@@ -77,7 +77,7 @@ def main():
                     query_results.append(
                         Result(
                             name=f"{QUERY_NUM}_{i}",
-                            status=Result.Status.SUCCESS,
+                            status=Result.Status.OK,
                             duration=float(time_err),
                         )
                     )

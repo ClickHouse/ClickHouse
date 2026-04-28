@@ -51,13 +51,13 @@ def _is_infrastructure_error(result: Result) -> bool:
     """Returns True if the result is a failure caused by infrastructure issues."""
     if not result.info:
         return False
-    if result.status in (Result.Status.ERROR, Result.StatusExtended.ERROR):
+    if result.status == Result.Status.ERROR:
         return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
     # Docker compose/pull infrastructure failures may appear with FAIL status
     # when pytest reports fixture (setup phase) errors as test failures.
     # Require both docker context and an infrastructure pattern to avoid
     # false positives on genuine test failures.
-    if result.status in (Result.Status.FAILED, Result.StatusExtended.FAIL):
+    if result.status == Result.Status.FAIL:
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
@@ -76,14 +76,14 @@ def _mark_infrastructure_errors(results: list) -> int:
     for r in results:
         if _is_infrastructure_error(r):
             r.set_label(Result.Label.INFRA)
-            r.status = Result.StatusExtended.SKIPPED
+            r.status = Result.Status.SKIPPED
             count += 1
     if count:
         print(f"Marked {count} test result(s) as infrastructure errors")
     return count
 
 
-def _start_docker_in_docker():
+def start_docker_in_docker():
     with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
         dockerd_proc = subprocess.Popen(
             "./ci/jobs/scripts/docker_in_docker.sh",
@@ -541,7 +541,7 @@ def run_pytest_and_collect_results(
         test_result.results.append(
             Result(
                 name="Timeout",
-                status=Result.StatusExtended.FAIL,
+                status=Result.Status.FAIL,
                 info=test_result.info,
             )
         )
@@ -742,7 +742,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
     if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
-        _start_docker_in_docker()
+        start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
     parallel_test_modules, sequential_test_modules = (
@@ -996,7 +996,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             ):
                 test_results.append(
                     Result(
-                        name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
+                        name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.FAIL
                     )
                 )
                 attached_files.append("./ci/tmp/dmesg.log")
@@ -1014,11 +1014,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
         ), "LLVM coverage with bugfix validation is not supported"
         has_failure = False
         for r in R.results:
-            if r.status == Result.StatusExtended.FAIL:
+            if r.status == Result.Status.FAIL:
                 if r.has_label(Result.Label.OK_ON_RETRY):
                     # Remove label and set to OK
                     r.remove_label(Result.Label.OK_ON_RETRY)
-                    r.status = Result.StatusExtended.OK
+                    r.status = Result.Status.OK
                 else:
                     has_failure = True
         if has_failure:
@@ -1048,12 +1048,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
         has_failure = False
         for r in R.results:
             # invert statuses
-            r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
-                r.status = Result.StatusExtended.OK
+            r.set_label(Result.Label.XFAIL)
+            if r.status == Result.Status.FAIL:
+                r.status = Result.Status.OK
                 has_failure = True
-            elif r.status == Result.StatusExtended.OK:
-                r.status = Result.StatusExtended.FAIL
+            elif r.status == Result.Status.OK:
+                r.status = Result.Status.FAIL
         if not has_failure:
             print("Failed to reproduce the bug")
             R.set_failed()
