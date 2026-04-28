@@ -313,7 +313,10 @@ ExpressionActionsPtr analyzeExpressionToActions(
     CompileExpressions compile_expressions)
 {
     auto dag = analyzeExpressionToActionsDAG(expression_ast, available_columns, context, add_aliases);
-    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context, compile_expressions));
+    /// Match ExpressionAnalyzer::getActions(add_aliases, remove_unused_result=true) which constructs
+    /// ExpressionActions with project_inputs = add_aliases && remove_unused_result. With the default
+    /// project_result=true in the DAG, remove_unused_result is effectively true here.
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context, compile_expressions), add_aliases);
 }
 
 }
