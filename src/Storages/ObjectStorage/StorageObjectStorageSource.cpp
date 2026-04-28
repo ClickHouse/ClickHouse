@@ -923,10 +923,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// When NOT using distributed cache, build the read buffer chain via ReadPipeline.
     if (!impl)
     {
+        /// Prefer bigger buffer size when filesystem cache is active
+        if (modified_read_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
+            modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
+                modified_read_settings.remote_fs_buffer_size,
+                modified_read_settings.prefetch_buffer_size);
+
         ReadPipeline pipeline;
 
         StoredObject stored_object(object_info.getPath(), "", object_size);
-        pipeline.setSource(object_storage, StoredObjects{stored_object});
+        pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
         /// Filesystem cache
         if (use_filesystem_cache)
@@ -985,14 +991,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 context_->getAsyncReadCounters(),
                 context_->getFilesystemReadPrefetchesLog());
         }
-
-        /// Prefer bigger buffer size when filesystem cache is active
-        if (modified_read_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
-            modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
-                modified_read_settings.remote_fs_buffer_size,
-                modified_read_settings.prefetch_buffer_size);
-
-        pipeline.setReadSettings(modified_read_settings);
 
         LOG_TRACE(
             log, "Downloading object {} of size {} {} initial prefetch (pipeline: {})",

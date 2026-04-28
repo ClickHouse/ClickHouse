@@ -94,18 +94,20 @@ public:
     ReadPipeline & operator=(ReadPipeline &&) = default;
 
     /// -- Source stage --
+    /// Each setter takes ReadSettings which are stored alongside the source
+    /// and used by build() for buffer sizing and readObject() calls.
 
     /// Set source from an object storage.
-    void setSource(ObjectStoragePtr storage, StoredObjects objects, std::optional<size_t> read_hint = {});
+    void setSource(ObjectStoragePtr storage, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint = {});
 
     /// Set source from a local file path.
-    void setLocalFileSource(String path, StoredObjects objects, std::optional<size_t> read_hint = {});
+    void setLocalFileSource(String path, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint = {});
 
     /// Set source from a backup.
-    void setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects);
+    void setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects, const ReadSettings & read_settings);
 
     /// Set source with a custom buffer creator (for testing or custom backends).
-    void setSource(StoredObjects objects, BufferCreator creator);
+    void setSource(StoredObjects objects, BufferCreator creator, const ReadSettings & read_settings);
 
     /// -- Gather stage (ReadBufferFromRemoteFSGather) --
     /// Joins multiple stored objects into a single seekable buffer.
@@ -114,7 +116,6 @@ public:
     void needGather();
 
     /// -- Disk cache stage --
-    void needDiskCache(FileCachePtr cache, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
     void needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
     /// Overload with a custom cache key and origin, bypassing the default `FileCacheKey::fromPath` derivation.
@@ -127,7 +128,6 @@ public:
         std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
     /// -- Memory cache stage --
-    void needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix);
     void needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings);
 
     /// Overload with a fully custom page cache key (path + file_version), bypassing the default
@@ -154,18 +154,13 @@ public:
         AsyncReadCountersPtr async_read_counters = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log = nullptr);
 
-    /// Set the read settings used by build() to construct the buffer chain.
-    /// Must be called before build(). Typically called by prepareRead() after
-    /// applying disk-specific adjustments (e.g. IO scheduling).
-    void setReadSettings(ReadSettings settings) { read_settings = std::move(settings); }
-
     /// -- Decryption stage --
     /// The key_finder callback is called at build time with the key fingerprint
     /// read from the encryption header. It must return the decryption key.
     void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
 
     /// -- Build the final ReadBuffer chain --
-    /// Uses the ReadSettings stored via setReadSettings().
+    /// Uses the ReadSettings stored in the source stage.
     std::unique_ptr<ReadBufferFromFileBase> build() const;
 
     /// Returns a human-readable description of active stages,
@@ -177,7 +172,6 @@ public:
 
     /// Queries.
     bool hasSource() const { return source.has_value(); }
-    bool hasReadSettings() const { return read_settings.has_value(); }
     const StoredObjects & getStoredObjects() const;
 
 private:
@@ -185,6 +179,7 @@ private:
     {
         StoredObjects objects;
         std::variant<ObjectStorageSource, LocalFileSource, BackupSource, CustomSource> source;
+        ReadSettings read_settings;
     };
 
     struct DiskCacheStage
@@ -232,7 +227,6 @@ private:
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::vector<DecryptionStage> decryption_stages;
-    std::optional<ReadSettings> read_settings;
 };
 
 }

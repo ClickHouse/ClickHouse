@@ -41,8 +41,6 @@ std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
 {
     ReadPipeline pipeline;
     prepareRead(name, settings, read_hint, pipeline);
-    if (!pipeline.hasReadSettings())
-        pipeline.setReadSettings(settings);
     return pipeline.build();
 }
 

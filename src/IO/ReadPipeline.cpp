@@ -39,42 +39,41 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects objects, std::optional<size_t> read_hint)
+void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint)
 {
     source = SourceStage{
         .objects = std::move(objects),
-        .source = ObjectStorageSource{.storage = std::move(object_storage), .read_hint = read_hint}};
+        .source = ObjectStorageSource{.storage = std::move(object_storage), .read_hint = read_hint},
+        .read_settings = read_settings};
 }
 
-void ReadPipeline::setLocalFileSource(String path, StoredObjects objects, std::optional<size_t> read_hint)
+void ReadPipeline::setLocalFileSource(String path, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint)
 {
     source = SourceStage{
         .objects = std::move(objects),
-        .source = LocalFileSource{.path = std::move(path), .read_hint = read_hint}};
+        .source = LocalFileSource{.path = std::move(path), .read_hint = read_hint},
+        .read_settings = read_settings};
 }
 
-void ReadPipeline::setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects)
+void ReadPipeline::setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects, const ReadSettings & read_settings)
 {
     source = SourceStage{
         .objects = std::move(objects),
-        .source = BackupSource{.backup = std::move(backup), .path = std::move(path)}};
+        .source = BackupSource{.backup = std::move(backup), .path = std::move(path)},
+        .read_settings = read_settings};
 }
 
-void ReadPipeline::setSource(StoredObjects objects, BufferCreator creator)
+void ReadPipeline::setSource(StoredObjects objects, BufferCreator creator, const ReadSettings & read_settings)
 {
     source = SourceStage{
         .objects = std::move(objects),
-        .source = CustomSource{.creator = std::move(creator)}};
+        .source = CustomSource{.creator = std::move(creator)},
+        .read_settings = read_settings};
 }
 
 void ReadPipeline::needGather()
 {
     gather = true;
-}
-
-void ReadPipeline::needDiskCache(FileCachePtr cache, std::shared_ptr<FilesystemCacheLog> cache_log)
-{
-    disk_cache = DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::nullopt, .custom_cache_key = std::nullopt, .custom_origin = std::nullopt};
 }
 
 void ReadPipeline::needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log)
@@ -95,11 +94,6 @@ void ReadPipeline::needDiskCache(
         .cache_settings = std::move(cache_settings),
         .custom_cache_key = std::move(cache_key),
         .custom_origin = std::move(origin)};
-}
-
-void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix)
-{
-    memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix), .page_cache_settings = std::nullopt, .custom_cache_path = {}, .custom_file_version = {}};
 }
 
 void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings)
@@ -147,10 +141,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (!source)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source stage is not set, call setSource first");
 
-    if (!read_settings)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: read settings are not set, call setReadSettings first");
-
-    const auto & settings = *read_settings;
+    const auto & settings = source->read_settings;
 
     if (source->objects.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source has no stored objects");

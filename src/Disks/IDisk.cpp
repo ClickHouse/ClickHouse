@@ -87,8 +87,6 @@ std::unique_ptr<ReadBufferFromFileBase> IDisk::readFile(
     prepareRead(path, settings, read_hint, pipeline);
     if (!pipeline.hasSource())
         return std::make_unique<ReadBufferFromEmptyFile>();
-    if (!pipeline.hasReadSettings())
-        pipeline.setReadSettings(settings);
     return pipeline.build();
 }
 

@@ -102,9 +102,8 @@ try
     std::string data = "hello world";
 
     ReadPipeline pipeline;
-    pipeline.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data));
+    pipeline.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data), ReadSettings{});
 
-    pipeline.setReadSettings(ReadSettings{});
     auto buf = pipeline.build();
     ASSERT_TRUE(buf != nullptr);
 
@@ -126,10 +125,8 @@ try
     std::string data = "hello world";
 
     ReadPipeline pipeline;
-    pipeline.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data));
+    pipeline.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data), ReadSettings{});
     pipeline.needGather();
-
-    pipeline.setReadSettings(ReadSettings{});
     auto buf = pipeline.build();
     ASSERT_TRUE(buf != nullptr);
 
@@ -160,10 +157,9 @@ try
     ReadPipeline pipeline;
     pipeline.setSource(
         StoredObjects{testObject("obj/a", data_a.size()), testObject("obj/b", data_b.size())},
-        std::move(creator));
+        std::move(creator),
+        ReadSettings{});
     pipeline.needGather();
-
-    pipeline.setReadSettings(ReadSettings{});
     auto buf = pipeline.build();
     ASSERT_TRUE(buf != nullptr);
 
@@ -190,10 +186,9 @@ try
     ReadPipeline pipeline;
     pipeline.setSource(
         StoredObjects{testObject("obj/a", 3), testObject("obj/b", 3), testObject("obj/c", 3)},
-        std::move(creator));
+        std::move(creator),
+        ReadSettings{});
     pipeline.needGather();
-
-    pipeline.setReadSettings(ReadSettings{});
     auto buf = pipeline.build();
 
     /// Seek to offset 4 (middle of second object) and read the rest.
@@ -214,7 +209,6 @@ TEST(ReadPipeline, BuildWithoutSourceThrows)
 try
 {
     ReadPipeline pipeline;
-    pipeline.setReadSettings(ReadSettings{});
     EXPECT_THROW(pipeline.build(), Exception);
 }
 catch (...)
@@ -227,8 +221,7 @@ TEST(ReadPipeline, BuildWithEmptyObjectsThrows)
 try
 {
     ReadPipeline pipeline;
-    pipeline.setSource(StoredObjects{}, memoryCreator("data"));
-    pipeline.setReadSettings(ReadSettings{});
+    pipeline.setSource(StoredObjects{}, memoryCreator("data"), ReadSettings{});
     EXPECT_THROW(pipeline.build(), Exception);
 }
 catch (...)
@@ -249,7 +242,7 @@ TEST(ReadPipeline, DescribeEmpty)
 TEST(ReadPipeline, DescribeSourceOnly)
 {
     ReadPipeline pipeline;
-    pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""));
+    pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""), ReadSettings{});
     EXPECT_EQ(pipeline.describe(), "Source(Custom)");
 }
 
@@ -257,8 +250,8 @@ TEST(ReadPipeline, DescribeSourceOnly)
 TEST(ReadPipeline, DescribeMultipleStages)
 {
     ReadPipeline pipeline;
-    pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""));
-    pipeline.needDiskCache(nullptr);
+    pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""), ReadSettings{});
+    pipeline.needDiskCache(nullptr, FilesystemCacheSettings{});
     pipeline.needGather();
     EXPECT_EQ(pipeline.describe(), "Source(Custom) -> DiskCache -> Gather");
 }
@@ -271,7 +264,7 @@ TEST(ReadPipeline, HasSource)
     ReadPipeline pipeline;
     EXPECT_FALSE(pipeline.hasSource());
 
-    pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""));
+    pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""), ReadSettings{});
     EXPECT_TRUE(pipeline.hasSource());
 }
 
@@ -281,7 +274,7 @@ try
 {
     ReadPipeline pipeline;
     auto obj = testObject(42);
-    pipeline.setSource(StoredObjects{obj}, memoryCreator(""));
+    pipeline.setSource(StoredObjects{obj}, memoryCreator(""), ReadSettings{});
 
     const auto & objects = pipeline.getStoredObjects();
     ASSERT_EQ(objects.size(), 1u);
@@ -314,14 +307,13 @@ try
     std::string data = "clone test data";
 
     ReadPipeline original;
-    original.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data));
+    original.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data), ReadSettings{});
 
     ReadPipeline cloned = original.clone();
 
     EXPECT_TRUE(cloned.hasSource());
     EXPECT_EQ(cloned.describe(), "Source(Custom)");
 
-    cloned.setReadSettings(ReadSettings{});
     auto buf = cloned.build();
     String result;
     readStringUntilEOF(result, *buf);
@@ -337,18 +329,16 @@ TEST(ReadPipeline, CloneIsIndependent)
 try
 {
     ReadPipeline original;
-    original.setSource(StoredObjects{testObject()}, memoryCreator("original"));
+    original.setSource(StoredObjects{testObject()}, memoryCreator("original"), ReadSettings{});
 
     ReadPipeline cloned = original.clone();
-    cloned.setSource(StoredObjects{testObject()}, memoryCreator("cloned"));
+    cloned.setSource(StoredObjects{testObject()}, memoryCreator("cloned"), ReadSettings{});
 
-    original.setReadSettings(ReadSettings{});
     auto buf1 = original.build();
     String result1;
     readStringUntilEOF(result1, *buf1);
     EXPECT_EQ(result1, "original");
 
-    cloned.setReadSettings(ReadSettings{});
     auto buf2 = cloned.build();
     String result2;
     readStringUntilEOF(result2, *buf2);

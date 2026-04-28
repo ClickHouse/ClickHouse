@@ -764,8 +764,8 @@ void DiskObjectStorage::prepareRead(
             [](const StoredObject &, const ReadSettings &, bool, bool)
             {
                 return std::make_unique<ReadBufferFromEmptyFile>();
-            });
-        pipeline.setReadSettings(settings);
+            },
+            settings);
         return;
     }
 
@@ -773,11 +773,18 @@ void DiskObjectStorage::prepareRead(
     auto global_context = Context::getGlobalContextInstance();
     auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
+    /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
+    /// Must be done before setSource, which stores read_settings in the pipeline.
+    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
+        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+        && storage->supportsCache()
+        && read_settings.enable_filesystem_cache;
+
+    if (prefer_bigger_buffer_size)
+        read_settings.remote_fs_buffer_size = std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size);
+
     /// Object storage files may be split across multiple blobs — gather joins them.
     pipeline.needGather();
-
-    /// Note: read_settings (with IO scheduling applied) are stored in the pipeline
-    /// at the end of this method, after all adjustments are finalized.
 
     /// Delegate to the object storage to set source and add cache stage if needed.
     /// CachedObjectStorage::prepareRead adds needDiskCache automatically.
@@ -811,7 +818,7 @@ void DiskObjectStorage::prepareRead(
         if (!object_namespace.empty())
             cache_path_prefix += object_namespace + "/";
 
-        pipeline.needMemoryCache(read_settings.page_cache, std::move(cache_path_prefix));
+        pipeline.needMemoryCache(read_settings.page_cache, std::move(cache_path_prefix), read_settings.getPageCacheSettings());
     }
 
     /// Async prefetch.
@@ -823,18 +830,6 @@ void DiskObjectStorage::prepareRead(
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
     }
-
-    /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
-    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
-        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-        && storage->supportsCache()
-        && read_settings.enable_filesystem_cache;
-
-    if (prefer_bigger_buffer_size)
-        read_settings.remote_fs_buffer_size = std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size);
-
-    /// Update the stored settings with the final buffer size.
-    pipeline.setReadSettings(read_settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(

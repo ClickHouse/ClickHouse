@@ -390,13 +390,12 @@ void DiskLocal::prepareRead(
     pipeline.setLocalFileSource(
         full_path.string(),
         StoredObjects{obj},
+        settings,
         read_hint);
 
     /// Page cache for local disk reads — handled as a pipeline stage.
     if (settings.use_page_cache_for_local_disks && settings.page_cache)
-        pipeline.needMemoryCache(settings.page_cache, "local:");
-
-    pipeline.setReadSettings(settings);
+        pipeline.needMemoryCache(settings.page_cache, "local:", settings.getPageCacheSettings());
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

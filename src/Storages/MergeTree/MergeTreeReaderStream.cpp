@@ -91,8 +91,6 @@ void MergeTreeReaderStream::init()
         if (!pipeline.hasSource())
             return std::make_unique<ReadBufferFromEmptyFile>();
 
-        if (!pipeline.hasReadSettings())
-            pipeline.setReadSettings(read_settings);
         return pipeline.build();
     };
 
@@ -126,8 +124,6 @@ void MergeTreeReaderStream::init()
                 if (!pipeline.hasSource())
                     return std::make_unique<ReadBufferFromEmptyFile>();
 
-                if (!pipeline.hasReadSettings())
-                    pipeline.setReadSettings(read_settings);
                 return pipeline.build();
             },
             uncompressed_cache,

@@ -154,9 +154,7 @@ void DiskBackup::prepareRead(
     auto file_size = backup->getFileSize(replaced_path);
     StoredObject obj(replaced_path, replaced_path, file_size);
 
-    pipeline.setBackupSource(backup, replaced_path, StoredObjects{obj});
-
-    pipeline.setReadSettings(settings);
+    pipeline.setBackupSource(backup, replaced_path, StoredObjects{obj}, settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskBackup::writeFile(const String &, size_t, WriteMode, const WriteSettings &)

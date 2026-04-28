@@ -82,7 +82,7 @@ void CachedObjectStorage::prepareRead(
     if (read_settings.enable_filesystem_cache && cache->isInitialized())
     {
         auto global_context = Context::getGlobalContextInstance();
-        pipeline.needDiskCache(cache, global_context->getFilesystemCacheLog());
+        pipeline.needDiskCache(cache, read_settings.getFilesystemCacheSettings(), global_context->getFilesystemCacheLog());
     }
 }
 
