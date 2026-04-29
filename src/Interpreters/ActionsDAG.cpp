@@ -1796,17 +1796,18 @@ void ActionsDAG::reconcileInputTypesAfterDecorrelation(const Block & actual_head
 
             /// Non-factory functions (e.g. `FunctionCapture` for lambda captures) cannot be rebuilt here.
             /// Drop any stale constant cache so downstream consumers do not rely on it, and mark the
-            /// node as changed so dependent FUNCTION nodes re-evaluate too. The result type may also
-            /// be inconsistent with the new children, but we have no way to recompute it; if execution
-            /// reaches such a node it will surface as a clear runtime type-mismatch exception.
+            /// node as changed so dependent FUNCTION nodes re-evaluate too. We mark the node as
+            /// changed even when `node.column` was already null: a downstream factory `FUNCTION` may
+            /// have argument types that still match this node's stale `result_type` and would
+            /// otherwise skip rebuild, silently keeping its own stale constant folding. The result
+            /// type may also be inconsistent with the new children, but we have no way to recompute
+            /// it; if execution reaches such a node it will surface as a clear runtime type-mismatch
+            /// exception.
             auto resolver = FunctionFactory::instance().tryGet(node.function_base->getName(), context);
             if (!resolver)
             {
-                if (node.column)
-                {
-                    node.column = nullptr;
-                    changed.insert(&node);
-                }
+                node.column = nullptr;
+                changed.insert(&node);
                 continue;
             }
 
