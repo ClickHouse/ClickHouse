@@ -163,21 +163,31 @@ def test_failover(started_cluster):
     # Restart the old leader
     leader.start_clickhouse()
 
-    # The old leader should now be a follower (since the new leader holds the lease).
-    # Wait for the old leader to discover the lease and verify it becomes read-only.
+    # The old leader must come back up as a follower without ever accepting a write.
+    # On startup `is_leader` is false, and the first heartbeat on a lease still held by
+    # the new leader keeps it false — so any successful INSERT here would indicate a
+    # dual-writer window (split-brain) and must fail the test immediately.
+    #
+    # We retry the INSERT for a bounded period to give the table time to load after
+    # restart (a server-not-ready error is not the same as a dual-writer), but we
+    # require every attempt to either fail with TABLE_IS_READ_ONLY or with a transient
+    # startup error. A single successful INSERT fails the test.
     deadline = time.monotonic() + 60
     old_leader_is_readonly = False
     while time.monotonic() < deadline:
         try:
             leader.query("INSERT INTO test_fo VALUES (999)")
-            # If the insert succeeded, the old leader hasn't become read-only yet.
-            # Clean up and retry.
-            time.sleep(2)
         except Exception as e:
             if "TABLE_IS_READ_ONLY" in str(e):
                 old_leader_is_readonly = True
                 break
-            raise
+            # Transient startup errors (e.g. server still loading) are tolerated.
+            time.sleep(1)
+            continue
+        raise AssertionError(
+            "Restarted old leader accepted a write while the new leader holds the lease "
+            "(dual-writer / split-brain window detected)"
+        )
 
     assert old_leader_is_readonly, "Restarted old leader did not become read-only"
     logging.info(f"Old leader {leader.name} is now read-only as expected")
