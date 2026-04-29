@@ -46,9 +46,31 @@ done
 */
 
 
-#define DefineStringView(STRUCT) \
-\
-struct STRUCT : public std::string_view {}; \
+namespace
+{
+
+struct StringView_Compare1_Ptrs : public std::string_view {};
+struct StringView_Compare1_Index : public std::string_view {};
+struct StringView_CompareMemcmp : public std::string_view {};
+struct StringView_Compare8_1_byUInt64 : public std::string_view {};
+struct StringView_Compare16_1_byMemcmp : public std::string_view {};
+struct StringView_Compare16_1_byUInt64_logicAnd : public std::string_view {};
+struct StringView_Compare16_1_byUInt64_bitAnd : public std::string_view {};
+
+#ifdef __SSE4_1__
+struct StringView_Compare16_1_byIntSSE : public std::string_view {};
+struct StringView_Compare16_1_byFloatSSE : public std::string_view {};
+struct StringView_Compare16_1_bySSE4 : public std::string_view {};
+struct StringView_Compare16_1_bySSE4_wide : public std::string_view {};
+struct StringView_Compare16_1_bySSE_wide : public std::string_view {};
+#endif
+
+struct StringView_CompareAlwaysTrue : public std::string_view {};
+struct StringView_CompareAlmostAlwaysTrue : public std::string_view {};
+
+} /// close anonymous namespace for ZeroTraits/DefaultHash specializations
+
+#define DefineStringViewTraits(STRUCT) \
 \
 namespace ZeroTraits \
 { \
@@ -68,25 +90,27 @@ struct DefaultHash<STRUCT> \
     } \
 };
 
-DefineStringView(StringView_Compare1_Ptrs)
-DefineStringView(StringView_Compare1_Index)
-DefineStringView(StringView_CompareMemcmp)
-DefineStringView(StringView_Compare8_1_byUInt64)
-DefineStringView(StringView_Compare16_1_byMemcmp)
-DefineStringView(StringView_Compare16_1_byUInt64_logicAnd)
-DefineStringView(StringView_Compare16_1_byUInt64_bitAnd)
+DefineStringViewTraits(StringView_Compare1_Ptrs)
+DefineStringViewTraits(StringView_Compare1_Index)
+DefineStringViewTraits(StringView_CompareMemcmp)
+DefineStringViewTraits(StringView_Compare8_1_byUInt64)
+DefineStringViewTraits(StringView_Compare16_1_byMemcmp)
+DefineStringViewTraits(StringView_Compare16_1_byUInt64_logicAnd)
+DefineStringViewTraits(StringView_Compare16_1_byUInt64_bitAnd)
 
 #ifdef __SSE4_1__
-DefineStringView(StringView_Compare16_1_byIntSSE)
-DefineStringView(StringView_Compare16_1_byFloatSSE)
-DefineStringView(StringView_Compare16_1_bySSE4)
-DefineStringView(StringView_Compare16_1_bySSE4_wide)
-DefineStringView(StringView_Compare16_1_bySSE_wide)
+DefineStringViewTraits(StringView_Compare16_1_byIntSSE)
+DefineStringViewTraits(StringView_Compare16_1_byFloatSSE)
+DefineStringViewTraits(StringView_Compare16_1_bySSE4)
+DefineStringViewTraits(StringView_Compare16_1_bySSE4_wide)
+DefineStringViewTraits(StringView_Compare16_1_bySSE_wide)
 #endif
 
-DefineStringView(StringView_CompareAlwaysTrue)
-DefineStringView(StringView_CompareAlmostAlwaysTrue)
+DefineStringViewTraits(StringView_CompareAlwaysTrue)
+DefineStringViewTraits(StringView_CompareAlmostAlwaysTrue)
 
+namespace
+{
 
 inline bool operator==(StringView_Compare1_Ptrs lhs, StringView_Compare1_Ptrs rhs)
 {
@@ -501,7 +525,6 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
 
 #endif
 
-
 #define Op(METHOD) \
 inline bool operator==(StringView_Compare16_1_ ## METHOD lhs, StringView_Compare16_1_ ## METHOD rhs) \
 { \
@@ -604,8 +627,9 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, const char * na
         << std::endl;
 }
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleHashMapString2(int argc, char ** argv)
 {
     if (argc < 3)
     {

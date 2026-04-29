@@ -323,10 +323,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
-            provides=[
-                ArtifactNames.CH_ARM_BINARY,
-                ArtifactNames.PARSER_MEMORY_PROFILER,
-            ],
+            provides=[ArtifactNames.CH_ARM_BINARY],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )

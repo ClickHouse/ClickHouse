@@ -38,7 +38,7 @@ int readAndPrint(DB::ReadBuffer & in)
     }
 }
 
-int main(int, char **)
+int mainEntryExampleReadBuffer(int, char **)
 {
     {
         std::string s = "-123456 123.456 вася pe\\ttya\t'\\'xyz\\\\'";
