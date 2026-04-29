@@ -52,6 +52,14 @@ ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription
     {
         case ViewTarget::Data:
         {
+            /// Column "metric_locality_id".
+            {
+                auto ml_column = time_series_columns.get(TimeSeriesColumnNames::MetricLocalityId);
+                /// Filled explicitly on insert (see Prometheus remote write); strip placeholder default from the logical table.
+                ml_column.default_desc = {};
+                columns.add(std::move(ml_column));
+            }
+
             /// Column "id".
             {
                 auto id_column = time_series_columns.get(TimeSeriesColumnNames::ID);

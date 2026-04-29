@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/TimeSeriesDefinitionNormalizer.h>
 
 #include <Common/quoteString.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -87,6 +88,7 @@ void TimeSeriesDefinitionNormalizer::reorderColumns(ASTCreateQuery & create) con
     };
 
     /// Reorder columns for the "data" table.
+    add_column_in_correct_order(TimeSeriesColumnNames::MetricLocalityId);
     add_column_in_correct_order(TimeSeriesColumnNames::ID);
     add_column_in_correct_order(TimeSeriesColumnNames::Timestamp);
     add_column_in_correct_order(TimeSeriesColumnNames::Value);
@@ -123,7 +125,7 @@ void TimeSeriesDefinitionNormalizer::reorderColumns(ASTCreateQuery & create) con
         throw Exception(
             ErrorCodes::INCOMPATIBLE_COLUMNS,
             "{}: Column {} can't be used in this table. "
-            "The TimeSeries table engine supports only a limited set of columns (id, timestamp, value, metric_name, tags, metric_family_name, type, unit, help). "
+            "The TimeSeries table engine supports only a limited set of columns (metric_locality_id, id, timestamp, value, metric_name, tags, metric_family_name, type, unit, help). "
             "Extra columns representing tags must be specified in the 'tags_to_columns' setting.",
             time_series_storage_id.getNameForLogs(), columns_by_name.begin()->first);
     }
@@ -186,7 +188,18 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
         return makeASTDataType("Nullable", type);
     };
 
+    auto get_uint32_type = [] { return makeASTDataType("UInt32"); };
+
     /// Add missing columns for the "data" table.
+    if (!is_next_column_named(TimeSeriesColumnNames::MetricLocalityId))
+    {
+        make_new_column(TimeSeriesColumnNames::MetricLocalityId, get_uint32_type());
+        /// Placeholder default so the column is insertable via Prometheus remote write metadata checks; inner data table strips it.
+        auto & ml_col = typeid_cast<ASTColumnDeclaration &>(*columns[position - 1]);
+        ml_col.default_specifier = ColumnDefaultSpecifier::Default;
+        ml_col.setDefaultExpression(make_intrusive<ASTLiteral>(Field{UInt32{0}}));
+    }
+
     if (!is_next_column_named(TimeSeriesColumnNames::ID))
         make_new_column(TimeSeriesColumnNames::ID, get_uuid_type());
 
@@ -425,6 +438,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
             {
                 inner_storage_def.set(inner_storage_def.order_by,
                                       makeASTOperator("tuple",
+                                                      make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricLocalityId),
                                                       make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
                                                       make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
             }

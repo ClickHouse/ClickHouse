@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -61,6 +63,7 @@ void TimeSeriesColumnsValidator::validateColumnsImpl(const ColumnsDescription & 
     };
 
     /// Validate columns for the "data" table.
+    validateColumnForMetricLocalityId(get_column_description(TimeSeriesColumnNames::MetricLocalityId));
     validateColumnForID(get_column_description(TimeSeriesColumnNames::ID));
     validateColumnForTimestamp(get_column_description(TimeSeriesColumnNames::Timestamp));
     validateColumnForValue(get_column_description(TimeSeriesColumnNames::Value));
@@ -118,6 +121,10 @@ void TimeSeriesColumnsValidator::validateTargetColumnsImpl(ViewTarget::Kind targ
     {
         case ViewTarget::Data:
         {
+            /// `metric_locality_id` may be absent on legacy external data tables (pre-locality MergeTree layout).
+            if (const auto * ml = target_columns.tryGet(TimeSeriesColumnNames::MetricLocalityId))
+                validateColumnForMetricLocalityId(*ml);
+
             /// Here "check_default = false" because it's ok for the "id" column in the target table not to contain
             /// an expression for calculating the identifier of a time series.
             validateColumnForID(get_column_description(TimeSeriesColumnNames::ID), /* check_default= */ false);
@@ -167,6 +174,15 @@ void TimeSeriesColumnsValidator::validateColumnForID(const ColumnDescription & c
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "The DEFAULT expression for column {} must contain an expression "
                         "which will be used to calculate the identifier of each time series: {} {} DEFAULT ...",
                         column.name, column.name, column.type->getName());
+    }
+}
+
+void TimeSeriesColumnsValidator::validateColumnForMetricLocalityId(const ColumnDescription & column) const
+{
+    if (!isUInt32(removeNullable(column.type)))
+    {
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Column {} has illegal data type {}, expected UInt32",
+                        column.name, column.type->getName());
     }
 }
 

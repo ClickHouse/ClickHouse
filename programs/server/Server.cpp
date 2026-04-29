@@ -78,6 +78,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/registerBuiltinSQLUserDefinedFunctions.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
@@ -2923,6 +2924,7 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+        registerBuiltinSQLUserDefinedFunctions(global_context);
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }

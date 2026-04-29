@@ -7,6 +7,7 @@ namespace DB
 struct TimeSeriesColumnNames
 {
     /// The "data" table contains time series:
+    static constexpr const char * MetricLocalityId = "metric_locality_id";
     static constexpr const char * ID = "id";
     static constexpr const char * Timestamp = "timestamp";
     static constexpr const char * Value = "value";

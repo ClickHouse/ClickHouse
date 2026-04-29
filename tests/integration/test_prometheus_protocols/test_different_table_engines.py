@@ -13,6 +13,7 @@ node = cluster.add_instance(
     user_configs=["configs/allow_experimental_time_series_table.xml"],
     handle_prometheus_remote_read=(9093, "/read"),
     handle_prometheus_remote_write=(9093, "/write"),
+    with_prometheus_writer=True,
     with_prometheus_reader=True,
     with_prometheus_receiver=True,
 )
@@ -205,3 +206,7 @@ def test_external_tables():
         "DATA mydata TAGS mytags METRICS mymetrics"
     )
     check()
+    # External DATA override: mydata has no metric_locality_id (only id, timestamp, value).
+    # The demo preset sends samples only (no WriteRequest.metadata), so METRICS is not exercised here.
+    assert int(node.query("SELECT count() FROM timeSeriesData(prometheus)").strip()) >= 1
+    assert int(node.query("SELECT count() FROM timeSeriesTags(prometheus)").strip()) >= 1

@@ -18,9 +18,13 @@ public:
 
         /// Data types of the corresponding columns in the TimeSeries table.
         /// We use these data types for the columns we read from table function timeSeriesSelector().
+        DataTypePtr metric_locality_id_data_type;
         DataTypePtr id_data_type;
         DataTypePtr timestamp_data_type;
         DataTypePtr scalar_data_type;
+
+        /// False when the data target MergeTree has no physical `metric_locality_id` column (legacy / external table).
+        bool data_inner_table_has_metric_locality_id = true;
 
         PrometheusQueryTree selector;
 

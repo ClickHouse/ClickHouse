@@ -28,6 +28,7 @@ public:
 
     /// Each of the following functions validates a specific column type.
     void validateColumnForID(const ColumnDescription & column, bool check_default = true) const;
+    void validateColumnForMetricLocalityId(const ColumnDescription & column) const;
     void validateColumnForTimestamp(const ColumnDescription & column) const;
     void validateColumnForTimestamp(const ColumnDescription & column, UInt32 & out_scale) const;
     void validateColumnForValue(const ColumnDescription & column) const;

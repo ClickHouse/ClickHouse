@@ -1,0 +1,5 @@
+<clickhouse>
+    <allow_experimental_webassembly_udf>true</allow_experimental_webassembly_udf>
+    <!-- Match engines enabled in the test binary (see system.build_options USE_WASMTIME / USE_WASMEDGE). -->
+    <webassembly_udf_engine>wasmedge</webassembly_udf_engine>
+</clickhouse>

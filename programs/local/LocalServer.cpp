@@ -23,6 +23,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/registerBuiltinSQLUserDefinedFunctions.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Access/AccessControl.h>
 #include <Access/DiskAccessStorage.h>
@@ -1174,6 +1175,8 @@ void LocalServer::processConfig()
         DatabaseCatalog::instance().createBackgroundTasks();
         DatabaseCatalog::instance().startupBackgroundTasks();
     }
+
+    registerBuiltinSQLUserDefinedFunctions(global_context);
 
     std::string default_database = getClientConfiguration().getString("database", server_default_database);
     if (default_database.empty())
