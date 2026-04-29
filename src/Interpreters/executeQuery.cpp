@@ -2415,6 +2415,47 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 }
 
 
+/// Helper that runs the failpoints used to test crash-log/stack-trace features.
+/// Kept separate (and `noinline`) from `executeQuery` so the symbolizer always
+/// reports a frame whose function name contains "executeQuery", regardless of
+/// how the compiler lays out the catch handlers in the surrounding function
+/// (the symbol attribution for cold paths inside `executeQuery` can otherwise
+/// be lost depending on unrelated changes in this translation unit).
+[[gnu::noinline, gnu::cold]]
+static void executeQueryFailpoints()
+{
+    fiu_do_on(FailPoints::terminate_with_exception,
+    {
+        try
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint terminate_with_exception");
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
+    });
+
+    fiu_do_on(FailPoints::terminate_with_std_exception,
+    {
+        try
+        {
+            throw std::runtime_error("Failpoint terminate_with_std_exception");
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
+    });
+
+    fiu_do_on(FailPoints::libcxx_hardening_out_of_bounds_assertion,
+    {
+        std::vector<int> v;
+        (void)v[0];
+    });
+}
+
+
 std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query,
     ContextMutablePtr context,
@@ -2449,35 +2490,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     /// The 'SYSTEM ENABLE FAILPOINT terminate_with_exception' query itself should succeed.
     if (ast && !ast->as<ASTSystemQuery>())
     {
-        fiu_do_on(FailPoints::terminate_with_exception,
-        {
-            try
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint terminate_with_exception");
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
-        });
-
-        fiu_do_on(FailPoints::terminate_with_std_exception,
-        {
-            try
-            {
-                throw std::runtime_error("Failpoint terminate_with_std_exception");
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
-        });
-
-        fiu_do_on(FailPoints::libcxx_hardening_out_of_bounds_assertion,
-        {
-            std::vector<int> v;
-            (void)v[0];
-        });
+        executeQueryFailpoints();
     }
 
     if (!flags.internal && ast)
