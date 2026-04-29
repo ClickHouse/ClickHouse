@@ -1,18 +1,19 @@
 simple grant
-test_explain_grant_u1	\N	SELECT	db	t	\N	0	0
+test_explain_grant_u1	\N	SELECT		db	t	\N	0	0
 umbrella grant
-test_explain_grant_u1	CREATE DATABASE	foo	\N
-test_explain_grant_u1	CREATE TABLE	foo	\N
-test_explain_grant_u1	CREATE VIEW	foo	\N
-test_explain_grant_u1	CREATE DICTIONARY	foo	\N
+test_explain_grant_u1	\N	CREATE DATABASE		foo	\N	\N	0	0
+test_explain_grant_u1	\N	CREATE TABLE		foo	\N	\N	0	0
+test_explain_grant_u1	\N	CREATE VIEW		foo	\N	\N	0	0
+test_explain_grant_u1	\N	CREATE DICTIONARY		foo	\N	\N	0	0
 with grant option
-test_explain_grant_u1	SELECT	\N	1	0
-multiple grantees
-test_explain_grant_u1	SELECT	db	t
-test_explain_grant_u2	SELECT	db	t
+test_explain_grant_u1	\N	SELECT		\N	\N	\N	0	1
+grantee u1
+test_explain_grant_u1	\N	SELECT		db	t	\N	0	0
+grantee u2
+test_explain_grant_u2	\N	SELECT		db	t	\N	0	0
 partial revoke
-test_explain_grant_u1	SELECT	\N	\N	0
-test_explain_grant_u1	SELECT	system	\N	1
+test_explain_grant_u1	\N	SELECT		\N	\N	\N	0	0
+test_explain_grant_u1	\N	SELECT		system	\N	\N	1	0
 no side effect
 0
 on cluster rejected

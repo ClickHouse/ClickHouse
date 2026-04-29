@@ -161,12 +161,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
         /// with `(SELECT * FROM viewExplain('<kind>', '<explain_settings>', (SELECT ...)))`
 
-        /// `Grant` and `QueryPlan` share the bare `"EXPLAIN"` prefix in `toString`. When we
-        /// flatten the kind into a string literal for `viewExplain`, use the long form so the
-        /// `fromString` roundtrip on the table-function side maps back to the right kind.
-        String kind_str = explain_query.getKind() == ASTExplainQuery::ExplainKind::Grant
-            ? "EXPLAIN GRANT"
-            : ASTExplainQuery::toString(explain_query.getKind());
+        String kind_str = ASTExplainQuery::toString(explain_query.getKind());
 
         String settings_str;
         if (ASTPtr settings_ast = explain_query.getSettings())
@@ -179,11 +174,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         const ASTPtr & explained_ast = explain_query.getExplainedQuery();
         if (explained_ast)
         {
-            /// `EXPLAIN GRANT` / `EXPLAIN REVOKE` produce typed rows (matching `system.grants`),
-            /// so wrapping them in a subquery is well-defined even though the inner AST is not a
-            /// SELECT.
-            const bool is_grant_explain = explain_query.getKind() == ASTExplainQuery::ExplainKind::Grant;
-            if (!explained_ast->as<ASTSelectWithUnionQuery>() && !is_grant_explain)
+            if (!explained_ast->as<ASTSelectWithUnionQuery>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN inside subquery supports only SELECT queries");
 
             auto view_explain = makeASTFunction("viewExplain",
