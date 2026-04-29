@@ -197,7 +197,7 @@ test_params_hackernews_10m = {
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: 256,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 10,
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: False,
     NEW_TRUTH_SET_FILE: None,
@@ -217,7 +217,7 @@ test_params_cohere_wiki_20m = {
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 10,
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
     GENERATE_TRUTH_SET: False,
     NEW_TRUTH_SET_FILE: None,
@@ -645,7 +645,7 @@ class RunTest:
         for truth_record in self._truth_set:
             query_source = self._render_query_source_sql(truth_record)
             q_start = current_time_ms()
-            ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS use_skip_indexes = 1, max_parallel_replicas = 1"
+            ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS use_skip_indexes = 1, max_parallel_replicas = 1, vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 10"
             result = chclient.query(ann_search_query)
             q_end = current_time_ms()
             runtime = runtime + (q_end - q_start)
