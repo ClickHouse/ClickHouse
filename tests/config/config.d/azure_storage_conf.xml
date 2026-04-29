@@ -16,7 +16,7 @@
                 <disk>azure</disk>
                 <path>azure_cache/</path>
                 <cache_policy>LRU</cache_policy>
-                <max_size>100000000</max_size>
+                <max_size>8589934592</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </cached_azure>
             <cached_azure_encrypted>
