@@ -22,9 +22,10 @@ namespace DB
 ///
 /// A dedicated monitor thread blocks on `waitpid`. When the canary dies from
 /// `SIGKILL` and Linux OOM-kill counters confirm an OOM event, the monitor
-/// executes the response sequence: purge jemalloc arenas, kill all queries,
-/// cancel all merges, write to `system.crash_log`, flush system logs, and
-/// optionally relaunch.
+/// executes the response sequence: purge jemalloc arenas, best-effort cancel
+/// all queries, cancel all merges, queue event to `system.crash_log`, and
+/// optionally relaunch. Note that synchronous system log flushing is
+/// deliberately avoided under memory pressure.
 ///
 /// Non-Linux platforms: the canary is a no-op (start returns immediately).
 class OOMCanary
