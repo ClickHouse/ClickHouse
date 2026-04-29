@@ -1,0 +1,38 @@
+Negative tests
+splitByNonAlpha tokenizer
+[]
+['abc','def','foo','bar']
+['xäöüx','code','hello','world']
+ngrams tokenizer
+[]
+['abc','bc ','c d',' de','def']
+['abcde','bcdef']
+splitByString tokenizer
+['a','bb','ccc']
+['a','bb','ccc']
+asciiCJK tokenizer
+['hello','world']
+['你','好','世','界']
+['hello_world']
+array tokenizer
+[]
+['abc def']
+With preprocessor
+['hello','world','abc']
+['HELLO','WORLD']
+Ignores extra text index params
+['hello','world']
+FixedString input
+['abc','def']
+Non-const input
+['abc','def']
+NULL input
+\N
+\N
+Column values
+['abc','DEF']
+['heLlO','World']
+['xäöüx','code']
+['abc','def']
+['hello','world']
+['xäöüx','code']
