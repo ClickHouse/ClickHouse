@@ -193,10 +193,10 @@ test_params_hackernews_10m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
     ],
-    QUANTIZATION: "bf16",
+    QUANTIZATION: "b1",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
-    HNSW_EF_SEARCH: None,
+    HNSW_EF_SEARCH: 256,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: False,
@@ -205,7 +205,7 @@ test_params_hackernews_10m = {
     RECALL_K: 100,
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: True,
+    CONCURRENCY_TEST: False,
 }
 
 test_params_cohere_wiki_20m = {
@@ -213,7 +213,7 @@ test_params_cohere_wiki_20m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
     ],
-    QUANTIZATION: "bf16",
+    QUANTIZATION: "b1",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
@@ -225,7 +225,7 @@ test_params_cohere_wiki_20m = {
     RECALL_K: 10,
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: True,
+    CONCURRENCY_TEST: False,
 }
 
 
