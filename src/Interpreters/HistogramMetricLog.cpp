@@ -1,6 +1,7 @@
 #include <Interpreters/HistogramMetricLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Core/Settings.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/HistogramMetrics.h>
 #include <DataTypes/DataTypeDate.h>
@@ -10,12 +11,18 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 
 #include <limits>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool system_histogram_metric_log_show_zero_values;
+}
 
 ColumnsDescription HistogramMetricLogElement::getColumnsDescription()
 {
@@ -60,6 +67,7 @@ void HistogramMetricLog::stepFunction(TimePoint current_time)
     const auto event_time = std::chrono::system_clock::to_time_t(current_time);
     const auto event_date = static_cast<UInt16>(DateLUT::instance().toDayNum(event_time));
     const auto event_time_microseconds = timeInMicroseconds(current_time);
+    const bool show_zero_values = getContext()->getSettingsRef()[Setting::system_histogram_metric_log_show_zero_values];
 
     const auto & factory = HistogramMetrics::Factory::instance();
     factory.forEachFamily([&](const HistogramMetrics::MetricFamily & family)
@@ -86,13 +94,19 @@ void HistogramMetricLog::stepFunction(TimePoint current_time)
             UInt64 cumulative = 0;
             for (size_t i = 0; i < buckets.size() + 1; ++i)
             {
-                cumulative += metric.getCounter(i);
+                const UInt64 counter = metric.getCounter(i);
+                if (counter == 0 && !show_zero_values)
+                    continue;
+                cumulative += counter;
                 Float64 bound = (i < buckets.size()) ? buckets[i] : std::numeric_limits<Float64>::infinity();
                 elem.histogram.push_back(Tuple{bound, cumulative});
             }
 
             elem.count = cumulative;
             elem.sum = metric.getSum();
+
+            if (cumulative == 0 && !show_zero_values)
+                return;
 
             add(std::move(elem));
         });
