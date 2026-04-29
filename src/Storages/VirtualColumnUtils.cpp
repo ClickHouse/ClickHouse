@@ -42,6 +42,7 @@
 #include <Functions/indexHint.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/StorageSnapshot.h>
@@ -204,7 +205,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
             return;
 
         const auto & type = pair.getTypeInStorage();
-        desc.addEphemeral(name, type, "");
+        desc.addEphemeral(name, type, "", VirtualsMaterializationPlace::Reader);
     };
 
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
@@ -556,8 +557,20 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     /// Convert to boolean via notEquals(x, 0) instead of a truncating numeric cast.
                     /// A plain CAST(256, 'UInt8') would give 0 (since 256 % 256 == 0), losing truthiness
                     /// for values like 256, 512, 65536, 2147483648, etc.  See #101269.
+                    ///
+                    /// Use removeNullable to get the nested type's default (zero, not NULL).
+                    /// DataTypeNullable::getDefault() returns Null(), but notEquals(x, NULL)
+                    /// always returns NULL (SQL three-valued logic), which is treated as false and
+                    /// would incorrectly filter out all rows/parts.  See #101433 and #103049.
+                    /// Special case: Nullable(Nothing) — the child is a bare NULL literal.
+                    /// Nothing has no getDefault, so fall back to the Nullable default
+                    /// (Null field), which makes notEquals(x, NULL) -> NULL -> false.  Correct.
                     ActionsDAG tmp_dag;
-                    auto zero_column = res->result_type->createColumnConst(1, res->result_type->getDefault());
+                    auto nested_type = removeNullable(res->result_type);
+                    auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
+                        ? res->result_type->getDefault()
+                        : nested_type->getDefault();
+                    auto zero_column = res->result_type->createColumnConst(1, zero_field);
                     const auto & zero_node = tmp_dag.addColumn({zero_column, res->result_type, "0"});
                     auto ne_func = FunctionFactory::instance().get("notEquals", context);
                     res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
@@ -720,6 +733,49 @@ DataPartsVector filterDataPartsWithExpression(
     return filtered_parts;
 }
 
+Names filterVirtualColumns(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsKind & kind_to_filter,
+    const VirtualsMaterializationPlace & place_to_filter)
+{
+    Names result;
+    result.reserve(column_names.size());
+    for (const auto & name : column_names)
+    {
+        if (metadata_snapshot->isVirtualColumn(name))
+            if (metadata_snapshot->virtuals.tryGet(name, kind_to_filter, place_to_filter))
+                continue;
+
+        result.push_back(name);
+    }
+
+    /// If all requested columns were common virtuals, we still need at least one
+    /// physical column so the storage has something to read.
+    if (result.empty())
+        if (const auto & all_physical = metadata_snapshot->getColumns().getAllPhysical(); !all_physical.empty())
+            result.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
+
+    return result;
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns)
+{
+    return getColumnsWithVirtualsForAnalysis(
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()),
+        virtual_columns.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns)
+{
+    auto result = columns;
+    for (const auto & col : virtual_columns)
+        if (!result.contains(col.name))
+            result.push_back(col);
+
+    return result;
+}
+
 std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
 {
     Names physical_names;
@@ -728,9 +784,9 @@ std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_
     {
         /// If the column exists in the table schema, treat it as physical even if
         /// a virtual column with the same name is registered.
-        if (storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name))
+        if (storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name))
             physical_names.push_back(name);
-        else if (storage_snapshot->virtual_columns->tryGetDescription(name))
+        else if (storage_snapshot->metadata->virtuals.tryGetDescription(name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
             virtual_names.push_back(name);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' is neither physical nor virtual", name);

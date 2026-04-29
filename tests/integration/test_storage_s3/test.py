@@ -884,6 +884,7 @@ def run_s3_mocks(started_cluster):
             ("unstable_server.py", "resolver", "8081"),
             ("echo.py", "resolver", "8082"),
             ("no_list_objects.py", "resolver", "8083"),
+            ("gcs_transcode_mock.py", "resolver", "8084"),
         ],
     )
 
@@ -2689,7 +2690,11 @@ def test_archive(started_cluster):
     node = started_cluster.instances["dummy"]
     node2 = started_cluster.instances["dummy2"]
     node_old = started_cluster.instances["dummy_old"]
-    if "25.3" not in node_old.query("SELECT version()"):
+    try:
+        need_restart = "25.3" not in node_old.query("SELECT version()")
+    except Exception:
+        need_restart = True
+    if need_restart:
         node_old.restart_with_original_version(clear_data_dir=True)
 
     assert (
@@ -2999,7 +3004,11 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
 
     query_id = f"{table_name}_query_6"
     node_old = started_cluster.instances["dummy_old"]
-    if "25.3" not in node_old.query("SELECT version()"):
+    try:
+        need_restart = "25.3" not in node_old.query("SELECT version()")
+    except Exception:
+        need_restart = True
+    if need_restart:
         node_old.restart_with_original_version(clear_data_dir=True)
 
     node_old.query(
@@ -3173,7 +3182,11 @@ def test_file_pruning_with_hive_style_partitioning_2(started_cluster):
         )
 
     node_old = started_cluster.instances["dummy_old"]
-    if "25.3" not in node_old.query("SELECT version()"):
+    try:
+        need_restart = "25.3" not in node_old.query("SELECT version()")
+    except Exception:
+        need_restart = True
+    if need_restart:
         node_old.restart_with_original_version(clear_data_dir=True)
 
     node_old.query(
@@ -3236,3 +3249,21 @@ def test_schema_inference_cache_multi_path(started_cluster):
     assert "1\ta\n2\tb\n" == instance.query(
         f"SELECT * FROM url('{s3_path_prefix}/test1.parquet')"
     )
+
+
+def test_gcs_decompressive_transcoding(started_cluster):
+    """Mock at resolver:8084 omits Content-Length on HEAD and GET
+    Without the fix, s3() would silently return 0 rows"""
+    instance = started_cluster.instances["dummy"]
+
+    result = instance.query(
+        "SELECT count() FROM s3("
+        "'http://resolver:8084/bucket/data.jsonl', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == "3"
+
+    result = instance.query(
+        "SELECT * FROM s3("
+        "'http://resolver:8084/bucket/data.jsonl', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'

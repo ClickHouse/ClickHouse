@@ -451,6 +451,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"any_join_distinct_right_table_keys", trueOrFalseSetting},
     {"asterisk_include_alias_columns", trueOrFalseSettingNoOracle},
     {"asterisk_include_materialized_columns", trueOrFalseSettingNoOracle},
+    {"asterisk_include_virtual_columns", trueOrFalseSettingNoOracle},
     {"async_insert", trueOrFalseSettingNoOracle},
     {"async_insert_deduplicate", trueOrFalseSettingNoOracle},
     {"async_insert_threads", threadSetting},
@@ -809,7 +810,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_parquet_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_preserve_order", trueOrFalseSettingNoOracle},
     {"input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalseSettingNoOracle},
-    {"input_format_parquet_use_native_reader_v3", trueOrFalseSetting},
+
     {"input_format_parquet_page_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_use_offset_index", trueOrFalseSetting},
     {"input_format_protobuf_flatten_google_wrappers", trueOrFalseSettingNoOracle},
@@ -1085,7 +1086,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
          {},
          false)},
-    {"output_format_parquet_compliant_nested_types", trueOrFalseSettingNoOracle},
     {"output_format_parquet_compression_method",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -1108,16 +1108,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_parquet_geometadata", trueOrFalseSettingNoOracle},
     {"output_format_parquet_parallel_encoding", trueOrFalseSettingNoOracle},
     {"output_format_parquet_string_as_string", trueOrFalseSettingNoOracle},
-    {"output_format_parquet_use_custom_encoder", trueOrFalseSettingNoOracle},
-    {"output_format_parquet_version",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings choices = {"'1.0'", "'2.4'", "'2.6'", "'2.latest'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
+
     {"output_format_parquet_write_bloom_filter", trueOrFalseSettingNoOracle},
     {"output_format_parquet_write_page_index", trueOrFalseSettingNoOracle},
     {"output_format_pretty_color",
@@ -1349,6 +1340,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_uncompressed_cache", trueOrFalseSettingNoOracle},
     {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"use_variant_default_implementation_for_comparisons", trueOrFalseSettingNoOracle},
+    {"variant_throw_on_type_mismatch", trueOrFalseSettingNoOracle},
+    {"dynamic_throw_on_type_mismatch", trueOrFalseSettingNoOracle},
     {"use_with_fill_by_sorting_prefix", trueOrFalseSetting},
     {"validate_enum_literals_in_operators", trueOrFalseSettingNoOracle},
     {"validate_experimental_and_suspicious_types_inside_nested_types", trueOrFalseSettingNoOracle},

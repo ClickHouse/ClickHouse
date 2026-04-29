@@ -60,7 +60,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Server/waitServersToFinish.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
@@ -123,7 +123,7 @@
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/KeeperHTTPHandlerFactory.h>
-#include <Server/ArrowFlightHandler.h>
+#include <Server/ArrowFlight/ArrowFlightServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <filesystem>
@@ -228,6 +228,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
+    extern const ServerSettingsUInt64 disk_connections_rcvbuf;
+    extern const ServerSettingsUInt64 disk_connections_sndbuf;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -240,6 +242,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 http_connections_store_limit;
     extern const ServerSettingsUInt64 http_connections_hard_limit;
     extern const ServerSettingsUInt64 http_connections_warn_limit;
+    extern const ServerSettingsUInt64 http_connections_rcvbuf;
+    extern const ServerSettingsUInt64 http_connections_sndbuf;
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
     extern const ServerSettingsDouble index_mark_cache_size_ratio;
@@ -338,6 +342,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 storage_connections_store_limit;
     extern const ServerSettingsUInt64 storage_connections_hard_limit;
     extern const ServerSettingsUInt64 storage_connections_warn_limit;
+    extern const ServerSettingsUInt64 storage_connections_rcvbuf;
+    extern const ServerSettingsUInt64 storage_connections_sndbuf;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsString temporary_data_in_cache;
@@ -2503,6 +2509,20 @@ try
                     new_server_settings[ServerSetting::http_connections_hard_limit],
                 });
 
+            HTTPConnectionPools::instance().setSocketBufferSizes(
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::disk_connections_rcvbuf],
+                    new_server_settings[ServerSetting::disk_connections_sndbuf],
+                },
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::storage_connections_rcvbuf],
+                    new_server_settings[ServerSetting::storage_connections_sndbuf],
+                },
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::http_connections_rcvbuf],
+                    new_server_settings[ServerSetting::http_connections_sndbuf],
+                });
+
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 
             if (global_context->isServerCompletelyStarted())
@@ -2542,6 +2562,13 @@ try
             /// synchronously.
             can_initialize_keeper_async = global_context->tryCheckClientConnectionToMyKeeperCluster();
         }
+        /// Initialize certificates before Keeper RAFT so that NuRaft SSL contexts
+        /// can register with CertificateReloader for hot-reload support.
+#if USE_SSL
+        CertificateReloader::instance().tryLoad(config());
+        CertificateReloader::instance().tryLoadClient(config());
+#endif
+
         /// Initialize keeper RAFT.
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
         FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
@@ -3495,7 +3522,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "Arrow Flight compatibility protocol: " + address.toString(),
-                    std::unique_ptr<IGRPCServer>(new ArrowFlightHandler(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, makeSocketAddress(listen_host, port, &logger()))),
                     true);
             });
         }
