@@ -42,6 +42,16 @@ namespace
             path.erase(0, 1);
         return path;
     }
+
+    bool pathPartEndsWithSlash(const std::string & path)
+    {
+        const auto path_end = path.find_first_of("?#");
+        if (path_end == std::string::npos)
+            return path.ends_with('/');
+        if (path_end == 0)
+            return false;
+        return path[path_end - 1] == '/';
+    }
 }
 
 namespace ErrorCodes
@@ -106,7 +116,7 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
             if (max_keys && children.size() >= max_keys)
                 break;
 
-            if (entry.ends_with('/'))
+            if (pathPartEndsWithSlash(entry))
             {
                 if (!known_directories.emplace(entry).second)
                     continue;
