@@ -258,49 +258,49 @@ void StorageMergeTree::startup()
         /// NOTE background task will also do the above cleanups periodically.
     }
 
-    if ((*getSettings())[MergeTreeSetting::leader_election])
-    {
-        /// The first disk should be the main data disk.
-        ObjectStoragePtr object_storage = getDisks().front()->getObjectStorage();
-
-        auto heartbeat_ms = (*getSettings())[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
-        auto session_timeout_ms = (*getSettings())[MergeTreeSetting::leader_election_session_timeout].totalMilliseconds();
-
-        String lease_path = getRelativeDataPath() + "leader_election";
-
-        leader_election_ptr = std::make_unique<MergeTreeLeaderElection>(
-            getStorageID(),
-            std::move(object_storage),
-            std::move(lease_path),
-            getContext(),
-            heartbeat_ms,
-            session_timeout_ms);
-
-        leader_election_ptr->setOnLeadershipChangeCallback([this](bool became_leader)
-        {
-            if (became_leader)
-            {
-                LOG_INFO(log, "Became leader, starting background operations");
-                clearEmptyParts();
-                clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
-                cleanup_thread.start();
-                background_operations_assignee.start();
-                startBackgroundMovesIfNeeded();
-            }
-            else
-            {
-                LOG_INFO(log, "Lost leadership, stopping background operations");
-                background_operations_assignee.finish();
-                background_moves_assignee.finish();
-                cleanup_thread.stop();
-            }
-        });
-
-        leader_election_ptr->start();
-    }
-
     try
     {
+        if ((*getSettings())[MergeTreeSetting::leader_election])
+        {
+            /// The first disk should be the main data disk.
+            ObjectStoragePtr object_storage = getDisks().front()->getObjectStorage();
+
+            auto heartbeat_ms = (*getSettings())[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
+            auto session_timeout_ms = (*getSettings())[MergeTreeSetting::leader_election_session_timeout].totalMilliseconds();
+
+            String lease_path = getRelativeDataPath() + "leader_election";
+
+            leader_election_ptr = std::make_unique<MergeTreeLeaderElection>(
+                getStorageID(),
+                std::move(object_storage),
+                std::move(lease_path),
+                getContext(),
+                heartbeat_ms,
+                session_timeout_ms);
+
+            leader_election_ptr->setOnLeadershipChangeCallback([this](bool became_leader)
+            {
+                if (became_leader)
+                {
+                    LOG_INFO(log, "Became leader, starting background operations");
+                    clearEmptyParts();
+                    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+                    cleanup_thread.start();
+                    background_operations_assignee.start();
+                    startBackgroundMovesIfNeeded();
+                }
+                else
+                {
+                    LOG_INFO(log, "Lost leadership, stopping background operations");
+                    background_operations_assignee.finish();
+                    background_moves_assignee.finish();
+                    cleanup_thread.stop();
+                }
+            });
+
+            leader_election_ptr->start();
+        }
+
         /// When leader_election is enabled, background write operations (merges, mutations, cleanup)
         /// are started/stopped by the leadership change callback. Only start them here if we are not
         /// doing leader election (i.e., this is a standalone writer).
