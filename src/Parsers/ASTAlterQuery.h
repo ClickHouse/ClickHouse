@@ -224,7 +224,7 @@ public:
     String to_table;
 
     String snapshot_name;
-    IAST * snapshot_desc;
+    IAST * snapshot_desc = nullptr;
 
     /// For EXECUTE command (e.g. expire_snapshots)
     String execute_command_name;

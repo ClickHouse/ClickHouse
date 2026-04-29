@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 String ASTCreateWasmFunctionQuery::getID(char delim) const
@@ -206,17 +207,17 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
     {
         auto arr = r.getArray("function_settings");
         if (!arr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "'function_settings' is not an array during AST JSON deserialization");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'function_settings' is not an array during AST JSON deserialization");
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto change_obj = arr->getObject(i);
             if (!change_obj)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Null element at index {} in 'function_settings' array during AST JSON deserialization", i);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'function_settings' array during AST JSON deserialization", i);
             SettingChange change;
             change.name = change_obj->getValue<String>("name");
             auto value_obj = change_obj->getObject("value");
             if (!value_obj)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing 'value' at index {} in 'function_settings' array during AST JSON deserialization", i);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' at index {} in 'function_settings' array during AST JSON deserialization", i);
             change.value = JSONObjectReader::readFieldFromObject(*value_obj);
             function_settings.push_back(std::move(change));
         }
