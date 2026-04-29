@@ -161,10 +161,13 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     {
         /// `**/` (globstar followed by `/`) matches zero or more directory components.
         /// Use `[^/]` so directory names containing `{` or `}` are still matched.
+        /// Require `previous != '*'` so the rewrite does not overlap with longer star
+        /// runs (e.g. `***/file.txt` must keep its legacy three-star expansion).
         if (i + 2 < almost_res.size()
             && almost_res[i] == '*'
             && almost_res[i + 1] == '*'
-            && almost_res[i + 2] == '/')
+            && almost_res[i + 2] == '/'
+            && previous != '*')
         {
             buf_final_processing << "([^/]*/)*";
             i += 3;
