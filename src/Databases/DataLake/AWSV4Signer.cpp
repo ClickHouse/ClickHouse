@@ -12,8 +12,8 @@
 #include <aws/core/http/standard/StandardHttpRequest.h>
 #include <aws/core/http/URI.h>
 #include <aws/core/utils/memory/AWSMemory.h>
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
 
-#include <sstream>
 #include <utility>
 
 namespace DB
@@ -32,16 +32,15 @@ namespace
 
 Aws::Http::HttpMethod mapPocoMethodToAws(const String & method)
 {
-    using Aws::Http::HttpMethod;
     using Poco::Net::HTTPRequest;
 
-    static const std::pair<String, HttpMethod> supported_methods[] = {
-        {HTTPRequest::HTTP_GET, HttpMethod::HTTP_GET},
-        {HTTPRequest::HTTP_POST, HttpMethod::HTTP_POST},
-        {HTTPRequest::HTTP_PUT, HttpMethod::HTTP_PUT},
-        {HTTPRequest::HTTP_DELETE, HttpMethod::HTTP_DELETE},
-        {HTTPRequest::HTTP_HEAD, HttpMethod::HTTP_HEAD},
-        {HTTPRequest::HTTP_PATCH, HttpMethod::HTTP_PATCH},
+    static const std::pair<String, Aws::Http::HttpMethod> supported_methods[] = {
+        {HTTPRequest::HTTP_GET, Aws::Http::HttpMethod::HTTP_GET},
+        {HTTPRequest::HTTP_POST, Aws::Http::HttpMethod::HTTP_POST},
+        {HTTPRequest::HTTP_PUT, Aws::Http::HttpMethod::HTTP_PUT},
+        {HTTPRequest::HTTP_DELETE, Aws::Http::HttpMethod::HTTP_DELETE},
+        {HTTPRequest::HTTP_HEAD, Aws::Http::HttpMethod::HTTP_HEAD},
+        {HTTPRequest::HTTP_PATCH, Aws::Http::HttpMethod::HTTP_PATCH},
     };
 
     for (const auto & [poco_method, aws_method] : supported_methods)
@@ -75,7 +74,7 @@ void signRequestWithAWSV4(
 
     if (!payload.empty())
     {
-        auto body_stream = Aws::MakeShared<std::stringstream>("AWSV4Signer");
+        auto body_stream = Aws::MakeShared<Aws::StringStream>("AWSV4Signer");
         body_stream->write(payload.data(), static_cast<std::streamsize>(payload.size()));
         body_stream->seekg(0);
         request.AddContentBody(body_stream);

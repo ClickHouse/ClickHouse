@@ -162,9 +162,9 @@ bool S3TablesCatalog::tryGetTableMetadata(
     /// reads can lose the catalog endpoint/credentials and fail with auth or routing errors.
 
     bool need_credentials = true;
-    if (const auto storage_credentials = result.getStorageCredentials())
+    if (result.hasStorageCredentials())
     {
-        auto creds = std::dynamic_pointer_cast<S3Credentials>(storage_credentials);
+        auto creds = std::dynamic_pointer_cast<S3Credentials>(result.getStorageCredentials());
         if (creds && !creds->isEmpty())
             need_credentials = false;
     }
@@ -173,6 +173,7 @@ bool S3TablesCatalog::tryGetTableMetadata(
     {
         LOG_DEBUG(log, "S3 Tables: no vended credentials for {}.{}, injecting catalog IAM credentials", namespace_name, table_name);
         auto aws_creds = credentials_provider->GetAWSCredentials();
+        result.withStorageCredentials();
         result.setStorageCredentials(std::make_shared<S3Credentials>(
             aws_creds.GetAWSAccessKeyId(), aws_creds.GetAWSSecretKey(), aws_creds.GetSessionToken()));
     }
