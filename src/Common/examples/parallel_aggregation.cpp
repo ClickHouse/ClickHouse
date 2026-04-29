@@ -30,6 +30,16 @@
 /// for file in UserID URLHash RefererHash WatchID Title SearchPhrase URLDomain ClientIP RegionID; do echo -e "\n---------------------- $file ----------------------\n"; for method in 22 506 507; do ./src/Common/examples/parallel_aggregation 90000000 64 $method < src/Common/examples/${file}.bin; done; done
 
 
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
+}
+
+namespace
+{
+
 using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
 using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
 
@@ -40,14 +50,6 @@ using Source = std::vector<Key>;
 
 using Map = HashMap<Key, Value>;
 using MapTwoLevel = TwoLevelHashMap<Key, Value>;
-
-
-namespace CurrentMetrics
-{
-    extern const Metric LocalThread;
-    extern const Metric LocalThreadActive;
-    extern const Metric LocalThreadScheduled;
-}
 
 struct SmallLock
 {
@@ -1564,8 +1566,9 @@ void mergeTwoLevelSwiss(MapTwoLevelSwiss * maps, size_t num_threads, size_t buck
 }
 #endif
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleParallelAggregation(int argc, char ** argv)
 {
     size_t n = std::stol(argv[1]);
     size_t num_threads = std::stol(argv[2]);
