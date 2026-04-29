@@ -1548,7 +1548,6 @@ void StorageWindowView::writeIntoWindowView(
             make_intrusive<ASTIdentifier>(window_view.timestamp_column_name),
             make_intrusive<ASTLiteral>(lateness_bound));
 
-        ASTPtr query = filter_function;
         NamesAndTypesList columns;
         columns.emplace_back(window_view.timestamp_column_name, std::make_shared<DataTypeDateTime>());
 
