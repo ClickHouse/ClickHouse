@@ -3,6 +3,7 @@
 # Based on prepare-ci-ami.sh but adapted for macOS
 
 set -xeuo pipefail
+trap reboot EXIT
 
 echo "Running macOS runner prepare script"
 
@@ -148,4 +149,3 @@ INIT_ENVIRONMENT=${INIT_ENVIRONMENT:-macos}
 aws s3 cp "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
 rm -rf /Users/ec2-user/actions-runner/_work
 sudo -u ec2-user -i bash -c "/Users/ec2-user/venv/bin/python /tmp/runner-init.py --environment \"$INIT_ENVIRONMENT\""
-reboot
