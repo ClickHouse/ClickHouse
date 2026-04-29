@@ -95,10 +95,11 @@ void HistogramMetricLog::stepFunction(TimePoint current_time)
             for (size_t i = 0; i < buckets.size() + 1; ++i)
             {
                 const UInt64 counter = metric.getCounter(i);
-                if (counter == 0 && !show_zero_values)
+                const bool is_inf_bucket = (i == buckets.size());
+                if (counter == 0 && !is_inf_bucket && !show_zero_values)
                     continue;
                 cumulative += counter;
-                Float64 bound = (i < buckets.size()) ? buckets[i] : std::numeric_limits<Float64>::infinity();
+                Float64 bound = is_inf_bucket ? std::numeric_limits<Float64>::infinity() : buckets[i];
                 elem.histogram.push_back(Tuple{bound, cumulative});
             }
 
