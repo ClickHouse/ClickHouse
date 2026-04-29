@@ -14,6 +14,7 @@
 
 #include <cstdlib>
 #include <Common/assert_cast.h>
+#include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -579,6 +580,15 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "You must specify setting input_format_msgpack_number_of_columns "
                         "to extract table schema from MsgPack data");
+
+    /// Guard against absurdly large values that would cause std::length_error
+    /// or trigger sanitizer OOM aborts in vector::reserve() below.
+    /// Uses the same limit as Native format readers (see Core/Defines.h).
+    if (number_of_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "input_format_msgpack_number_of_columns = {} is too large "
+                        "(maximum: {})",
+                        number_of_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
 }
 
 

@@ -33,6 +33,7 @@
 #include <numeric>
 #include <deque>
 #include <iterator>
+#include <thread>
 
 using namespace DB;
 
@@ -204,11 +205,10 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 {
     try
     {
-        if (!hash_joins[0]->data->twoLevelMapIsUsed())
+        if (!build_phase_finished || !hash_joins[0]->data->twoLevelMapIsUsed())
             return;
 
-        if (build_phase_finished)
-            updateStatistics(hash_joins, stats_collecting_params);
+        updateStatistics(hash_joins, stats_collecting_params);
 
         for (size_t i = 0; i < slots; ++i)
         {
@@ -262,6 +262,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
     while (blocks_left > 0)
     {
+        bool made_progress = false;
+
         /// insert blocks into corresponding HashJoin instances
         for (size_t i = 0; i < dispatched_blocks.size(); ++i)
         {
@@ -274,6 +276,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
                 if (!lock.owns_lock())
                     continue;
+
+                made_progress = true;
 
                 if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
                 {
@@ -291,6 +295,11 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                     return false;
             }
         }
+
+        /// If no slot was available in this pass, yield to avoid burning CPU while waiting
+        /// for other threads to finish inserting into their respective hash join slots
+        if (!made_progress)
+            std::this_thread::yield();
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())
@@ -349,6 +358,11 @@ public:
     {
         if (!current_result)
         {
+            /// Skip empty dispatched blocks to avoid running the full join machinery for nothing,
+            /// keep the last block so joinScatteredBlock produces the correct output header
+            while (next_block + 1 < dispatched_blocks.size() && dispatched_blocks[next_block].rows() == 0)
+                ++next_block;
+
             if (next_block >= dispatched_blocks.size())
                 return {Block(), nullptr, true};
 
@@ -543,7 +557,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
         key_columns.push_back(key_col_no_lc.get());
     }
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+    extractNestedColumnsAndNullMap(key_columns, null_map);
 
     auto calculate_selector = [&](auto & maps)
     {
@@ -674,6 +688,16 @@ UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode
         hash.update(name);
 
     return hash.get64();
+}
+
+BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
+{
+    chassert(slot_idx < hash_joins.size());
+    auto & hash_join = hash_joins[slot_idx];
+    std::lock_guard lock(hash_join->mutex);
+    if (!hash_join->data || !hash_join->data->getJoinedData())
+        return {};
+    return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
 }
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
