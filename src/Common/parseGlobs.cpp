@@ -156,46 +156,43 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     std::string almost_res = oss_for_replacing.str();
 
     WriteBufferFromOwnString buf_final_processing;
-    for (size_t i = 0; i < almost_res.size(); ++i)
+    char previous = ' ';
+    for (size_t i = 0; i < almost_res.size();)
     {
+        /// `**/` (globstar followed by `/`) matches zero or more directory components.
+        /// Use `[^/]` so directory names containing `{` or `}` are still matched.
+        if (i + 2 < almost_res.size()
+            && almost_res[i] == '*'
+            && almost_res[i + 1] == '*'
+            && almost_res[i + 2] == '/')
+        {
+            buf_final_processing << "([^/]*/)*";
+            i += 3;
+            previous = '/';
+            continue;
+        }
+
+        /// For every other case (including `**` not followed by `/`, and runs of 3+ stars),
+        /// keep the original character-by-character logic so the legacy regex is preserved.
         const char letter = almost_res[i];
-
-        if (letter == '*' && i + 1 < almost_res.size() && almost_res[i + 1] == '*')
+        if (previous == '*' && letter == '*')
         {
-            if (i + 2 < almost_res.size() && almost_res[i + 2] == '/')
+            buf_final_processing << "[^{}]";
+        }
+        else if ((letter == '?') || (letter == '*'))
+        {
+            buf_final_processing << "[^/]"; /// '?' is any symbol except '/'
+            if (letter == '?')
             {
-                /// `**/` → match zero or more path segments (each ending with `/`).
-                /// Use `[^/]` so directory names containing `{` or `}` are still matched.
-                buf_final_processing << "([^/]*/)*";
-                i += 2;
+                ++i;
+                continue;
             }
-            else
-            {
-                /// `**` at end or not followed by `/`: preserve the original behavior.
-                /// `[^/]*` cannot contain `/`, but the trailing `[^{}]*` can,
-                /// so the combined pattern matches across directory components
-                /// for any characters other than `{` and `}`.
-                buf_final_processing << "[^/]*[^{}]*";
-                i += 1;
-            }
-            continue;
         }
-
-        if (letter == '*')
-        {
-            buf_final_processing << "[^/]*"; /// '*' matches any characters except '/'
-            continue;
-        }
-
-        if (letter == '?')
-        {
-            buf_final_processing << "[^/]"; /// '?' is any single symbol except '/'
-            continue;
-        }
-
-        if (letter == '.' || letter == '{' || letter == '}')
+        else if ((letter == '.') || (letter == '{') || (letter == '}'))
             buf_final_processing << '\\';
         buf_final_processing << letter;
+        previous = letter;
+        ++i;
     }
     return buf_final_processing.str();
 }

@@ -54,6 +54,12 @@ TEST(Common, makeRegexpPatternFromGlobs)
     /// `**` at end (not followed by `/`) keeps old behavior
     EXPECT_EQ(makeRegexpPatternFromGlobs("data/**"), "data/[^/]*[^{}]*");
 
+    /// Runs of 3+ consecutive stars (no trailing `/`) keep the legacy regex.
+    /// The `**/` rewrite must not leak into these patterns.
+    EXPECT_EQ(makeRegexpPatternFromGlobs("***"), "[^/]*[^{}]*[^{}]*");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("a***b"), "a[^/]*[^{}]*[^{}]*b");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("****"), "[^/]*[^{}]*[^{}]*[^{}]*");
+
     /// Verify that `**/` patterns actually match expected paths
     {
         re2::RE2 re(makeRegexpPatternFromGlobs("data/**/part1.tsv"));
