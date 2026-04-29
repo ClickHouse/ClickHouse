@@ -9,7 +9,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 
-int main(int, char **)
+int mainEntryExampleODirectAndDirtyPages(int, char **)
 {
     using namespace DB;
 
