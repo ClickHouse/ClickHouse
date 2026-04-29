@@ -86,7 +86,7 @@ public:
             if (str_view.find('\0') != std::string_view::npos)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid JSON string in function {}: embedded NUL byte",
+                    "Invalid JSON string in function {}: embedded NULL byte",
                     getName());
 
             rapidjson::Document document;
