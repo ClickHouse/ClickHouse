@@ -91,12 +91,19 @@ IProcessor::PipelineUpdate LazyUnorderedReadFromMergeTreeSource::updatePipeline(
     auto readers = buildReaders();
     lazy_materializing_rows.reset();
 
+    /// `readers` may contain transforms whose output ports are already connected
+    /// to subsequent processors inside the pipe. Only the unconnected output ports
+    /// are the real outputs of the pipe and should be plugged into our inputs.
     for (auto & processor : readers)
     {
-        auto & proc_output = processor->getOutputs().front();
-        inputs.emplace_back(proc_output.getHeader(), this);
-        connect(proc_output, inputs.back());
-        inputs.back().setNeeded();
+        for (auto & proc_output : processor->getOutputs())
+        {
+            if (proc_output.isConnected())
+                continue;
+            inputs.emplace_back(proc_output.getHeader(), this);
+            connect(proc_output, inputs.back());
+            inputs.back().setNeeded();
+        }
     }
 
     return PipelineUpdate{.to_add = std::move(readers), .to_remove = {}};
