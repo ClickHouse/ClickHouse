@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 # Coverage for RestoreSettings::RestoreTableCreationMode string/integer parsing
-# in RestoreSettings.cpp: exercises the 'create', 'if_not_exists', and
-# 'must_exist' code paths in SettingFieldRestoreTableCreationMode::setValue().
+# in RestoreSettings.cpp: exercises the 'create', 'if-not-exists', and
+# 'must-exist' code paths in SettingFieldRestoreTableCreationMode::setValue().
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,23 +28,23 @@ $CLICKHOUSE_CLIENT \
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM t_restore_create;"
 
 # ---------------------------------------------------------------------------
-# create_table = 'if_not_exists' — table absent, should create it.
+# create_table = 'if-not-exists' — table absent, should create it.
 # ---------------------------------------------------------------------------
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_restore_ifne;"
 $CLICKHOUSE_CLIENT \
-    --query "RESTORE TABLE t_restore_src AS t_restore_ifne FROM File('${BACKUP_NAME}.zip') SETTINGS create_table = 'if_not_exists'" \
+    --query "RESTORE TABLE t_restore_src AS t_restore_ifne FROM File('${BACKUP_NAME}.zip') SETTINGS create_table = 'if-not-exists'" \
     --format Null
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM t_restore_ifne;"
 
 # ---------------------------------------------------------------------------
-# create_table = 'must_exist' — pre-create table, then restore into it.
+# create_table = 'must-exist' — pre-create table, then restore into it.
 # ---------------------------------------------------------------------------
 $CLICKHOUSE_CLIENT --query "
 DROP TABLE IF EXISTS t_restore_me;
 CREATE TABLE t_restore_me (x UInt32) ENGINE = MergeTree ORDER BY x;
 "
 $CLICKHOUSE_CLIENT \
-    --query "RESTORE TABLE t_restore_src AS t_restore_me FROM File('${BACKUP_NAME}.zip') SETTINGS create_table = 'must_exist'" \
+    --query "RESTORE TABLE t_restore_src AS t_restore_me FROM File('${BACKUP_NAME}.zip') SETTINGS create_table = 'must-exist'" \
     --format Null
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM t_restore_me;"
 
