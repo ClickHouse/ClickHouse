@@ -167,8 +167,18 @@ void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTree
 
     for (auto & child : term->getChildren())
     {
-        if (child)
-            replaceToConstants(child, graph);
+        if (!child)
+            continue;
+        /// Do not descend into subqueries — constraint graph is scoped to the outer query's
+        /// table expressions. Walking into QUERY/UNION nodes would replace ColumnNodes inside
+        /// `correlated_columns_list` with ConstantNodes, corrupting the list and causing a
+        /// `Bad cast from DB::ConstantNode to DB::ColumnNode` exception in
+        /// `CollectTopLevelColumnIdentifiersVisitor`. Mirrors the `needChildVisit` guards added
+        /// to `ComponentCollectorVisitor` and `SubstituteColumnVisitor` in this same pass.
+        const auto child_type = child->getNodeType();
+        if (child_type == QueryTreeNodeType::QUERY || child_type == QueryTreeNodeType::UNION)
+            continue;
+        replaceToConstants(child, graph);
     }
 }
 
