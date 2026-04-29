@@ -18,6 +18,8 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int DIRECTORY_DOESNT_EXIST;
+    extern const int CANNOT_RMDIR;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -161,7 +163,10 @@ uint32_t MetadataStorageInMemory::getHardlinkCount(const std::string & path) con
     auto * entry = findFile(path);
     if (!entry)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
-    return entry->blob_group->ref_count;
+    /// Match `MetadataStorageFromDisk::getHardlinkCount`: `ref_count` stores the number of *extra* links,
+    /// so a regular non-hardlinked file returns 0. Internally we initialise `BlobGroup::ref_count = 1`
+    /// to use it as a lifetime counter, so subtract one here to expose the on-disk-equivalent contract.
+    return entry->blob_group->ref_count - 1;
 }
 
 std::string MetadataStorageInMemory::readFileToString(const std::string & /* path */) const
@@ -374,6 +379,21 @@ void MetadataStorageInMemoryTransaction::removeDirectory(const std::string & pat
         std::string normalized = path;
         if (!normalized.empty() && normalized.back() != '/')
             normalized += '/';
+
+        if (!metadata_storage.directories.contains(normalized))
+            throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory does not exist: {}", path);
+
+        /// Match `DiskLocal::removeDirectory` semantics (`rmdir`): reject if the directory is not empty.
+        for (const auto & [file_path, _] : metadata_storage.files)
+        {
+            if (file_path.starts_with(normalized))
+                throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory is not empty: {}", path);
+        }
+
+        auto dir_it = metadata_storage.directories.upper_bound(normalized);
+        if (dir_it != metadata_storage.directories.end() && dir_it->starts_with(normalized))
+            throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory is not empty: {}", path);
+
         metadata_storage.directories.erase(normalized);
     });
 }
