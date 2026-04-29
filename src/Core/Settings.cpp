@@ -2384,7 +2384,7 @@ When set to 1, a random seed is generated, when set to a value > 1, that value i
 This is intended for testing to find errors caused by different join orderings.
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, enable_join_transitive_predicates, false, R"(
+    DECLARE(Bool, enable_join_transitive_predicates, true, R"(
 Infer transitive equi-join predicates from existing join conditions.
 For example, given `A.x = B.x` and `B.x = C.x`, a synthetic `A.x = C.x` predicate
 is added so the join order optimizer can consider direct (A JOIN C) plans.
