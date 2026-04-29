@@ -152,6 +152,11 @@ StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine
             configuration.random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
     }
 
+    /// `max_query_length == 0` would make `FuzzQuerySource::createColumn` loop forever:
+    /// every non-empty fuzzed AST exceeds the cap, the loop resets and never produces a row.
+    if (configuration.max_query_length == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "FuzzQuery `max_query_length` must be greater than 0");
+
     return configuration;
 }
 

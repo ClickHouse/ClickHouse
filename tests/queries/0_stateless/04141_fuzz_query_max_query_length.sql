@@ -18,3 +18,6 @@ FROM (
     FROM fuzzQuery('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10', 600, 42)
     LIMIT 100
 );
+
+-- `max_query_length = 0` would otherwise enter an infinite loop in `FuzzQuerySource::createColumn`.
+SELECT * FROM fuzzQuery('SELECT 1', 0, 42); -- { serverError BAD_ARGUMENTS }
