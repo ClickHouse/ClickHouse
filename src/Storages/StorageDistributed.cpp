@@ -272,7 +272,15 @@ std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, ContextPtr context, const NamesAndTypesList & columns, bool project)
 {
-    return analyzeExpressionToActions(sharding_key, columns, context, project);
+    /// Sharding key expressions go through the legacy `TreeRewriter` + `ExpressionAnalyzer`
+    /// path because `buildShardingKeyExpression` is invoked from `StorageDistributed`'s
+    /// constructor (table initialization).  The Analyzer helper `analyzeExpressionToActions`
+    /// eagerly executes subquery sets via `buildSetInplace`, which would run subqueries
+    /// during table init / DDL analysis instead of staying lazy — breaking startup if the
+    /// subquery source is unavailable.
+    ASTPtr query = sharding_key;
+    auto syntax_result = TreeRewriter(context).analyze(query, columns);
+    return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
 void checkShardingKeyExistsAndIsNumeric(const ASTPtr & sharding_key_ast, ContextPtr context, const NamesAndTypesList & columns)
