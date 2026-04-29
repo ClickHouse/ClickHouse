@@ -822,7 +822,11 @@ void DiskObjectStorage::prepareRead(
     }
 
     /// Async prefetch.
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    /// When distributed cache is active, `AsynchronousBoundedReadBuffer` is required even without
+    /// prefetching: it maintains the position/seek/setReadUntilPosition contract that upstream
+    /// buffers (e.g. `ReadBufferFromEncryptedFile`) rely on. `ReadBufferFromDistributedCache`
+    /// does not implement this contract on its own.
+    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool || use_distributed_cache)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
         pipeline.needAsyncPrefetch(
