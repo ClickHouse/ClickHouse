@@ -21,6 +21,7 @@
 #include <IO/SnappyReadBuffer.h>
 #if USE_SNAPPY
 #include <snappy.h>
+#include <snappy-sinksource.h>
 #endif
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
 #include <Interpreters/Context.h>
@@ -47,6 +48,25 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
 }
+
+#if USE_SNAPPY
+namespace
+{
+
+/// A `snappy::Sink` that forwards compressed bytes directly into a `WriteBuffer`.
+/// Avoids materializing a full-size compressed buffer for raw-block snappy outputs
+/// (used by Prometheus remote-read responses).
+class WriteBufferSnappySink : public snappy::Sink
+{
+public:
+    explicit WriteBufferSnappySink(WriteBuffer & out_) : out(out_) {}
+    void Append(const char * bytes, size_t n) override { out.write(bytes, n); }
+private:
+    WriteBuffer & out;
+};
+
+}
+#endif
 
 /// Base implementation of a prometheus protocol.
 class PrometheusRequestHandler::Impl
@@ -332,13 +352,15 @@ public:
         response.set("Content-Encoding", "snappy");
 
         /// Prometheus remote-read uses raw snappy block compression (not the snappy framing format
-        /// used by SnappyWriteBuffer for HTTP Content-Encoding). Serialize, compress, and write directly.
+        /// used by `SnappyWriteBuffer` for HTTP `Content-Encoding`). Stream the compressed bytes
+        /// directly into the response writer through a `snappy::Sink` so we avoid materializing
+        /// a full-size compressed buffer in addition to the serialized protobuf.
         String serialized;
         read_response.SerializeToString(&serialized);
-        String compressed;
-        snappy::Compress(serialized.data(), serialized.size(), &compressed);
         auto & out = getOutputStream(response);
-        out.write(compressed.data(), compressed.size());
+        snappy::ByteArraySource source(serialized.data(), serialized.size());
+        WriteBufferSnappySink sink(out);
+        snappy::Compress(&source, &sink);
         out.finalize();
 
 #else

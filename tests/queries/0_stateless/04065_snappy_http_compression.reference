@@ -1,3 +1,4 @@
 < Content-Encoding: snappy
 OK: snappy framing stream identifier found
 99
+OK: malformed snappy request rejected
