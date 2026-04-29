@@ -479,6 +479,35 @@ public:
         /// with user-specified ones on each recursive step, instead of overwriting them.
         original_additional_table_filters = recursive_query_context->getSettingsRef()[Setting::additional_table_filters].value;
 
+        /// Collect all QueryNodes/UnionNodes inside the recursive query that share the recursive
+        /// query's mutable context. On each recursive step we re-point their `mutable_context`
+        /// at a per-step copy so the planner sees per-step settings (the planner reads settings
+        /// from the query node's mutable context, not from the interpreter's context).
+        std::vector<IQueryTreeNode *> nodes_to_visit;
+        nodes_to_visit.push_back(recursive_query.get());
+        while (!nodes_to_visit.empty())
+        {
+            auto * node = nodes_to_visit.back();
+            nodes_to_visit.pop_back();
+
+            if (auto * qn = node->as<QueryNode>())
+            {
+                if (qn->getMutableContext() == recursive_query_context)
+                    recursive_query_nodes_with_shared_context.push_back(node);
+            }
+            else if (auto * un = node->as<UnionNode>())
+            {
+                if (un->getMutableContext() == recursive_query_context)
+                    recursive_query_nodes_with_shared_context.push_back(node);
+            }
+
+            for (auto & child : node->getChildren())
+            {
+                if (child)
+                    nodes_to_visit.push_back(child.get());
+            }
+        }
+
         const auto & recursive_query_projection_columns = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getProjectionColumns() :
             recursive_query->as<UnionNode &>().computeProjectionColumns();
 
@@ -568,6 +597,12 @@ private:
         /// The interpreter receives a per-step copy of the context so that the per-step setting
         /// mutations below do not race with concurrent reads of the shared Settings object
         /// from other recursive CTEs (e.g. nested ones) that share `recursive_query_context`.
+        ///
+        /// We also re-point the recursive query's QueryNode/UnionNode `mutable_context` at this
+        /// per-step copy: `Planner::buildPlannerContext` reads its settings directly from the
+        /// query node's mutable context (not from the interpreter's context), so without this
+        /// the per-step settings are silently ignored. Restoring the original context after the
+        /// step is unnecessary because the next step rebuilds a fresh copy from the original.
         auto interpreter_context = recursive_step > 1 ? Context::createCopy(recursive_query_context) : recursive_query_context;
         if (recursive_step > 1)
         {
@@ -591,6 +626,18 @@ private:
                 max_in_filter_cardinality);
 
             interpreter_context->setSetting("additional_table_filters", Field(std::move(filters)));
+
+            /// Re-point the query tree's mutable context at the per-step copy. We tracked the
+            /// nodes that share the recursive-query context at construction time, so this works
+            /// across all subsequent steps even though previous steps already replaced the
+            /// pointer with their own per-step copies.
+            for (auto * node : recursive_query_nodes_with_shared_context)
+            {
+                if (auto * qn = node->as<QueryNode>())
+                    qn->getMutableContext() = interpreter_context;
+                else if (auto * un = node->as<UnionNode>())
+                    un->getMutableContext() = interpreter_context;
+            }
         }
 
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, interpreter_context, select_query_options);
@@ -658,6 +705,7 @@ private:
 
     std::optional<std::vector<JoinKeyInfo>> cached_join_keys;
     Map original_additional_table_filters;
+    std::vector<IQueryTreeNode *> recursive_query_nodes_with_shared_context;
 
     size_t recursive_step = 0;
     size_t read_rows_during_recursive_step = 0;
