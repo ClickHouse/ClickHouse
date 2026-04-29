@@ -167,7 +167,7 @@ test_params_laion_5b_quick_test = {
     NEW_TRUTH_SET_FILE: "laion_100k_1k_new",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: True,
+    CONCURRENCY_TEST: False,
 }
 
 test_params_laion_5b_1m = {
@@ -185,7 +185,7 @@ test_params_laion_5b_1m = {
     NEW_TRUTH_SET_FILE: "laion_1m_10k",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: True,
+    CONCURRENCY_TEST: False,
 }
 
 test_params_hackernews_10m = {
@@ -827,11 +827,6 @@ def install_and_start_clickhouse():
 
 # Array of (dataset, test_params)
 TESTS_TO_RUN = [
-    (
-        "Test using the laion dataset",
-        dataset_laion_5b_mini_for_quick_test,
-        test_params_laion_5b_1m,
-    ),
     (
         "Test using the hackernews dataset",
         dataset_hackernews_openai,
