@@ -630,6 +630,8 @@ CancellationCode QueryStatus::cancelQueryBestEffort(CancelReason reason) noexcep
     }
     catch (...)
     {
+        /// Ok: this is the low-memory best-effort cancellation path. The caller
+        /// cannot rely on allocations or exception formatting here.
         return CancellationCode::Unknown;
     }
 }

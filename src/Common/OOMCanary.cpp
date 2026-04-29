@@ -74,6 +74,8 @@ std::optional<uint64_t> readCounterFromFile(const std::string & path, std::strin
     }
     catch (...)
     {
+        /// Ok: this is best-effort cgroup evidence probing. Missing or
+        /// malformed files make the OOM response conservative.
         return std::nullopt;
     }
 
@@ -374,7 +376,11 @@ void OOMCanary::monitorThread()
     int rapid_relaunch_count = 0;
     int backoff_sec = initial_backoff_sec;
 
-    while (!shutdown_requested.load(std::memory_order_acquire))
+    /// Do not put `shutdown_requested` in the loop condition. During relaunch
+    /// a new child can be published just before `stop` kills it; the monitor
+    /// must still enter `waitpid` once more to reap that child instead of
+    /// exiting immediately and leaving a zombie.
+    while (true)
     {
         int status = 0;
         pid_t current_pid = canary_pid.load(std::memory_order_relaxed);
@@ -497,6 +503,23 @@ void OOMCanary::monitorThread()
                 if (new_pid > 0)
                 {
                     canary_pid.store(new_pid, std::memory_order_relaxed);
+
+                    /// Publish the new pid before checking shutdown. If `stop`
+                    /// starts after this store, it can see and kill the child.
+                    /// If `stop` already passed its kill step while `canary_pid`
+                    /// was still -1, this thread observes the shutdown request
+                    /// here and reaps the child itself before exiting.
+                    if (shutdown_requested.load(std::memory_order_acquire))
+                    {
+                        LOG_INFO(log, "Terminating newly relaunched OOM canary pid {} because shutdown was requested", new_pid);
+                        ::kill(new_pid, SIGKILL);
+                        int wait_status = 0;
+                        while (::waitpid(new_pid, &wait_status, 0) < 0 && errno == EINTR)
+                            ;
+                        canary_pid.store(-1, std::memory_order_relaxed);
+                        break;
+                    }
+
                     LOG_INFO(log, "OOM canary relaunched with new pid {}", new_pid);
                     continue;
                 }
@@ -561,19 +584,22 @@ void OOMCanary::onCanaryDied()
     /// Step 5: Write to system.crash_log
     try
     {
-        StackTrace empty_trace(NoCapture{});
-        FramePointers empty_frames{};
+        /// We want a useful stack trace in crash_log for operators to diagnose
+        /// why the canary was killed. Using current thread's stack is better
+        /// than a completely empty one.
+        StackTrace stack_trace;
+        FramePointers current_exception_trace{};
         collectCrashLog(
             /*signal=*/9,
             /*signal_code=*/OOM_CANARY_SIGNAL_CODE,
-            /*thread_id=*/0,
-            /*query_id=*/"",
+            /*thread_id=*/CurrentThread::get().thread_id,
+            /*query_id=*/"OOMCanary",
             /*query=*/"",
-            /*stack_trace=*/empty_trace,
+            /*stack_trace=*/stack_trace,
             /*fault_address=*/std::nullopt,
             /*fault_access_type=*/"",
-            /*signal_description=*/"OOM Canary: canary process killed by SIGKILL",
-            /*current_exception_trace=*/empty_frames,
+            /*signal_description=*/"OOM Canary: canary process killed by SIGKILL (cgroup OOM evidence detected)",
+            /*current_exception_trace=*/current_exception_trace,
             /*current_exception_trace_size=*/0);
         LOG_INFO(log, "Queued OOM canary event in system.crash_log");
     }
@@ -582,9 +608,11 @@ void OOMCanary::onCanaryDied()
         LOG_WARNING(log, "Failed to write to system.crash_log: {}", getCurrentExceptionMessage(true));
     }
 
-    /// Do not call `Context::handleCrash` here. It may synchronously wait for
-    /// system logs for a long time, leaving the server without a canary while
-    /// memory pressure is still high. The crash log queue flushes asynchronously.
+    /// Do not call `Context::handleCrash()` here. It may synchronously wait for
+    /// multiple system logs (including query_log) for up to 180 seconds. During
+    /// that window there would be no canary while memory pressure is still high.
+    /// The crash_log is queued and will be flushed asynchronously by its
+    /// background thread (or by the test via SYSTEM FLUSH LOGS).
 }
 
 #else // !OS_LINUX
