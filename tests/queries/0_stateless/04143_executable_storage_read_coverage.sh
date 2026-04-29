@@ -3,6 +3,10 @@
 # Uses clickhouse-local with a custom user_scripts_path so no server-side script
 # installation is required.  user_scripts_path is a server config option, so it
 # must be passed via --config-file rather than as a bare CLI argument.
+#
+# ExecutablePool requires send_chunk_header=1 so the persistent process knows
+# when each chunk ends.  The script must echo the chunk size back before the
+# processed rows.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,6 +36,23 @@ while IFS=$'\t' read -r key val; do
 done
 SCRIPT
 chmod +x "${SCRIPTS_DIR}/uppercase.sh"
+
+# ---------------------------------------------------------------------------
+# Script 3: chunk-header-aware transform for ExecutablePool.
+# Reads the chunk size, echoes it, then processes exactly that many rows.
+# Loops so the persistent pool process handles multiple queries.
+# ---------------------------------------------------------------------------
+cat > "${SCRIPTS_DIR}/uppercase_pool.sh" << 'SCRIPT'
+#!/usr/bin/env bash
+while IFS= read -r n; do
+    printf '%s\n' "${n}"
+    for ((i = 0; i < n; i++)); do
+        IFS=$'\t' read -r key val
+        printf '%s\t%s\n' "${key}" "${val^^}"
+    done
+done
+SCRIPT
+chmod +x "${SCRIPTS_DIR}/uppercase_pool.sh"
 
 # Build a minimal config that sets user_scripts_path for this session.
 CONFIG_FILE="${SCRIPTS_DIR}/local_config.xml"
@@ -72,7 +93,8 @@ SELECT * FROM t_exec_input ORDER BY id;
 
 # ---------------------------------------------------------------------------
 # Test 3: ExecutablePool with an input_query — covers transformToSingleBlockSources
-#          and the is_executable_pool branch.
+#          and the is_executable_pool branch.  send_chunk_header=1 is required so
+#          the persistent process knows when each chunk ends.
 # ---------------------------------------------------------------------------
 $CLICKHOUSE_LOCAL \
     --config-file="${CONFIG_FILE}" \
@@ -81,8 +103,8 @@ CREATE TABLE src (id UInt32, val String) ENGINE = Memory;
 INSERT INTO src VALUES (10, 'alpha'), (20, 'beta');
 
 CREATE TABLE t_exec_pool (id UInt32, val String)
-ENGINE = ExecutablePool('uppercase.sh', 'TSV', (SELECT id, val FROM src ORDER BY id))
-SETTINGS pool_size = 1;
+ENGINE = ExecutablePool('uppercase_pool.sh', 'TSV', (SELECT id, val FROM src ORDER BY id))
+SETTINGS send_chunk_header = 1, pool_size = 1;
 
 SELECT * FROM t_exec_pool ORDER BY id;
 "
