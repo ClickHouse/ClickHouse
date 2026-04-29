@@ -64,8 +64,7 @@ public:
         unsigned indent_count = 4;
         if (arguments.size() > 1)
         {
-            const auto & indent_col = arguments[1].column;
-            UInt64 indent_value = (*indent_col)[0].safeGet<UInt64>();
+            UInt64 indent_value = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<UInt64>()
             if (indent_value > 32)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
