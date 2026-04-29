@@ -454,8 +454,11 @@ pub unsafe extern "C" fn cellToCenterChild(
 /// H3Error stringToH3(const char *str, H3Index *out)
 ///
 /// Matches the C H3 library (`sscanf(str, "%" PRIx64, out)`): reads the longest
-/// valid hex prefix (after optional leading whitespace and optional "0x"/"0X"),
-/// ignores trailing garbage. Returns `E_FAILED` only if no hex digit is parsed.
+/// valid hex prefix (after optional leading whitespace, optional sign, and
+/// optional "0x"/"0X"), ignores trailing garbage. Saturates to `u64::MAX` on
+/// overflow (more than 16 significant hex digits) and applies unsigned
+/// wraparound for a leading `-`, matching glibc `sscanf` behavior.
+/// Returns `E_FAILED` only if no hex digit is parsed.
 #[no_mangle]
 pub unsafe extern "C" fn stringToH3(str_ptr: *const c_char, out: *mut H3Index) -> H3Error {
     if str_ptr.is_null() {
@@ -469,6 +472,13 @@ pub unsafe extern "C" fn stringToH3(str_ptr: *const c_char, out: *mut H3Index) -
     while i < bytes.len() && bytes[i].is_ascii_whitespace() {
         i += 1;
     }
+    // Optional sign (matches sscanf "%x" which accepts an optional sign and
+    // applies unsigned wraparound, e.g. "-1" -> 0xFFFFFFFFFFFFFFFF).
+    let mut negate = false;
+    if i < bytes.len() && (bytes[i] == b'-' || bytes[i] == b'+') {
+        negate = bytes[i] == b'-';
+        i += 1;
+    }
     // Optional "0x"/"0X" prefix (sscanf %x accepts it).
     if i + 1 < bytes.len() && bytes[i] == b'0' && (bytes[i + 1] == b'x' || bytes[i + 1] == b'X') {
         i += 2;
@@ -476,6 +486,7 @@ pub unsafe extern "C" fn stringToH3(str_ptr: *const c_char, out: *mut H3Index) -
 
     let mut result: u64 = 0;
     let mut count = 0usize;
+    let mut overflow = false;
     while i < bytes.len() {
         let digit = match bytes[i] {
             b'0'..=b'9' => bytes[i] - b'0',
@@ -483,11 +494,15 @@ pub unsafe extern "C" fn stringToH3(str_ptr: *const c_char, out: *mut H3Index) -
             b'A'..=b'F' => bytes[i] - b'A' + 10,
             _ => break,
         };
-        // Saturate on overflow: sscanf behavior is undefined on overflow, but
-        // the 64-bit H3 index fits exactly 16 hex digits, so stop accumulating
-        // past that point to avoid wraparound.
-        if count < 16 {
-            result = (result << 4) | u64::from(digit);
+        if !overflow {
+            // Saturate to u64::MAX once a left-shift would discard a non-zero
+            // bit (matches glibc `sscanf` ERANGE behavior).
+            if result > (u64::MAX >> 4) {
+                result = u64::MAX;
+                overflow = true;
+            } else {
+                result = (result << 4) | u64::from(digit);
+            }
         }
         count += 1;
         i += 1;
@@ -495,6 +510,9 @@ pub unsafe extern "C" fn stringToH3(str_ptr: *const c_char, out: *mut H3Index) -
 
     if count == 0 {
         return E_FAILED;
+    }
+    if negate {
+        result = result.wrapping_neg();
     }
     *out = result;
     E_SUCCESS
@@ -1122,6 +1140,55 @@ mod tests {
         out = 0;
         let s = CString::new("xyz").unwrap();
         assert_eq!(unsafe { stringToH3(s.as_ptr(), &mut out) }, E_FAILED);
+    }
+
+    #[test]
+    fn test_string_to_h3_signed_prefix() {
+        use std::ffi::CString;
+        let mut out: H3Index = 0;
+        // "-1" -> sscanf wraps to 0xFFFFFFFFFFFFFFFF (unsigned negation).
+        let s = CString::new("-1").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr(), &mut out) }, E_SUCCESS);
+        assert_eq!(out, u64::MAX);
+        // "+1" -> 1
+        out = 0;
+        let s = CString::new("+1").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr(), &mut out) }, E_SUCCESS);
+        assert_eq!(out, 1);
+        // "-0xff" -> -255 wraps to 0xFFFFFFFFFFFFFF01
+        out = 0;
+        let s = CString::new("-0xff").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr(), &mut out) }, E_SUCCESS);
+        assert_eq!(out, 0xFFFFFFFFFFFFFF01);
+        // Sign with no digits -> E_FAILED
+        out = 0;
+        let s = CString::new("-z").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr(), &mut out) }, E_FAILED);
+    }
+
+    #[test]
+    fn test_string_to_h3_overflow_saturates() {
+        use std::ffi::CString;
+        let mut out: H3Index = 0;
+        // Exactly 16 hex digits at u64::MAX boundary.
+        let s = CString::new("ffffffffffffffff").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr(), &mut out) }, E_SUCCESS);
+        assert_eq!(out, u64::MAX);
+        // Leading zeros do not count toward overflow.
+        out = 0;
+        let s = CString::new("00ffffffffffffffff").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr(), &mut out) }, E_SUCCESS);
+        assert_eq!(out, u64::MAX);
+        // 17 significant hex digits saturate to u64::MAX.
+        out = 0;
+        let s = CString::new("1ffffffffffffffff").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr(), &mut out) }, E_SUCCESS);
+        assert_eq!(out, u64::MAX);
+        // 17 digits with low value still overflows because the top digit shifts out.
+        out = 0;
+        let s = CString::new("10000000000000000").unwrap();
+        assert_eq!(unsafe { stringToH3(s.as_ptr(), &mut out) }, E_SUCCESS);
+        assert_eq!(out, u64::MAX);
     }
 
     #[test]
