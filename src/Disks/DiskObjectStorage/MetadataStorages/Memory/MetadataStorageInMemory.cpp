@@ -498,6 +498,13 @@ void MetadataStorageInMemoryTransaction::moveDirectory(const std::string & path_
                 "Cannot move directory {} to {}: destination is inside the source subtree",
                 path_from, path_to);
 
+        /// Match `DiskLocal::moveDirectory` semantics (`rename`): fail when the source does not
+        /// exist as a directory. Without this check, a move of a non-existent source still
+        /// inserts `prefix_to` into `directories`, fabricating an empty destination directory.
+        if (!metadata_storage.directories.contains(prefix_from))
+            throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
+                "Source directory does not exist: {}", path_from);
+
         /// Move files
         std::vector<std::pair<std::string, MetadataStorageInMemory::FileEntry>> to_move;
         for (auto it = metadata_storage.files.begin(); it != metadata_storage.files.end();)
