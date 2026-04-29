@@ -675,7 +675,7 @@ def main():
                     CH.wait_ready()
 
                     ft_res_processor_bt = FTResultsProcessor(wd=temp_dir)
-                    run_tests(
+                    bt_runner_exit_code = run_tests(
                         batch_num=0,
                         batch_total=0,
                         tests=tests,
@@ -683,7 +683,9 @@ def main():
                         random_order=True,
                         rerun_count=1,
                     )
-                    bt_result = ft_res_processor_bt.run()
+                    bt_result = ft_res_processor_bt.run(
+                        runner_exit_code=bt_runner_exit_code
+                    )
 
                     # Check fatal messages for this build type
                     bt_fatals = CH.check_fatal_messages_in_logs()
