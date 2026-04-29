@@ -19,3 +19,4 @@ SELECT prettyPrintJSON(''); -- { serverError BAD_ARGUMENTS }
 -- Embedded NUL bytes must not silently truncate the input
 SELECT prettyPrintJSON(concat('{"a":1}', char(0), 'garbage')); -- { serverError BAD_ARGUMENTS }
 SELECT length(prettyPrintJSON(concat(repeat('{"a":', 1000), '1', repeat('}', 1000)))) > 0;
+SELECT prettyPrintJSON('{"a" : ' || number || '}', 2) FROM numbers(5);

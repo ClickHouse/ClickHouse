@@ -39,7 +39,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -64,7 +64,7 @@ public:
         unsigned indent_count = 4;
         if (arguments.size() > 1)
         {
-            UInt64 indent_value = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<UInt64>()
+            UInt64 indent_value = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<UInt64>();
             if (indent_value > 32)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
