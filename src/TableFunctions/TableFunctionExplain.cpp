@@ -131,7 +131,10 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
 
         const auto & query_arg = subquery->children[0];
 
-        if (!query_arg->as<ASTSelectWithUnionQuery>())
+        /// `EXPLAIN GRANT` / `EXPLAIN REVOKE` accept an `ASTGrantQuery` inner. Other kinds
+        /// still require `SELECT` — they materialise from a query plan.
+        const bool is_grant_explain = kind == ASTExplainQuery::ExplainKind::Grant;
+        if (!query_arg->as<ASTSelectWithUnionQuery>() && !is_grant_explain)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function '{}' requires a EXPLAIN's SELECT query argument, got '{}'",
                 getName(), query_arg->formatForErrorMessage());
