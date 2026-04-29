@@ -110,24 +110,7 @@ void TableMetadata::setLocation(const std::string & location_)
             bucket = location_.substr(pos_to_bucket);
         }
         else
-            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_)
-
-        /// Azure ABFSS format: extract container (before @) and account (after @)
-        bucket = bucket_part.substr(0, at_pos);
-        azure_account_with_suffix = bucket_part.substr(at_pos + 1);
-
-        /// Some catalogs (e.g. Apache Polaris) follow the ADLS Gen2 filesystem convention
-        /// of including the container name as the first segment of the path in abfss:// locations,
-        /// e.g. abfss://container@account.dfs.core.windows.net/container/actual/path.
-        /// We record this as a flag so that `constructLocation` and `getMetadataLocation` can
-        /// strip the redundant prefix when needed, while `path` itself is left intact so that
-        /// `getLocation` remains a round-trip of `setLocation`.
-        if (polaris_style_abfss_paths && path.starts_with(bucket + "/"))
-            abfss_has_container_path_prefix = true;
-
-        LOG_TEST(getLogger("TableMetadata"),
-                 "Parsed Azure location - container: {}, account: {}, path: {}",
-                 bucket, azure_account_with_suffix, path);
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
     }
     else
     {
@@ -145,6 +128,16 @@ void TableMetadata::setLocation(const std::string & location_)
             /// Azure ABFSS format: extract container (before @) and account (after @)
             bucket = bucket_part.substr(0, at_pos);
             azure_account_with_suffix = bucket_part.substr(at_pos + 1);
+
+            /// Some catalogs (e.g. Apache Polaris) follow the ADLS Gen2 filesystem convention
+            /// of including the container name as the first segment of the path in abfss:// locations,
+            /// e.g. abfss://container@account.dfs.core.windows.net/container/actual/path.
+            /// We record this as a flag so that `constructLocation` and `getMetadataLocation` can
+            /// strip the redundant prefix when needed, while `path` itself is left intact so that
+            /// `getLocation` remains a round-trip of `setLocation`.
+            if (polaris_style_abfss_paths && path.starts_with(bucket + "/"))
+                abfss_has_container_path_prefix = true;
+
             LOG_TEST(getLogger("TableMetadata"),
                     "Parsed Azure location - container: {}, account: {}, path: {}",
                     bucket, azure_account_with_suffix, path);
