@@ -32,12 +32,17 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
-    nested_column = getNestedColumn().convertToFullColumnIfConst();
+    /// Use the const `ColumnPtr` accessors (`getNestedColumnPtr`, `getNullMapColumnPtr`) so we go through
+    /// `immutable_ptr::operator->`/`operator*` rather than the `WrappedPtr`'s mutable accessors. The latter
+    /// call `assumeMutableRef`, which now `chassert(use_count() == 1)`. When this constructor is reached via
+    /// `ColumnNullable::create(const ColumnPtr &, const ColumnPtr &)`, the caller still holds an immutable
+    /// reference to the underlying column, so `use_count()` is at least 2 and the assertion would fire.
+    nested_column = getNestedColumnPtr()->convertToFullColumnIfConst();
 
-    if (!getNestedColumn().canBeInsideNullable())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
+    if (!getNestedColumnPtr()->canBeInsideNullable())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumnPtr()->getName());
 
-    if (isColumnConst(*null_map))
+    if (isColumnConst(*getNullMapColumnPtr()))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
 }
 
