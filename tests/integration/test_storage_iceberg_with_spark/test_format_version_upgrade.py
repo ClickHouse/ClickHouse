@@ -7,14 +7,25 @@ triggering a logical error. Each manifest list / manifest file carries its
 own format version in its Avro metadata, so v1 files left behind after an
 upgrade remain readable alongside newer v2 metadata.
 
+For backward compatibility with manifests written by older ClickHouse
+versions (which did not include the `format-version` Avro metadata key),
+`AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata` falls
+back to schema-based detection: presence of the `sequence_number` field at
+the top level signals v2, its absence signals v1.
+
 Regression test for https://github.com/ClickHouse/ClickHouse/issues/86776
 """
 
 import json
+import os
 import re
 import time
 
 import pytest
+
+from avro.datafile import DataFileReader, DataFileWriter
+from avro.io import DatumReader, DatumWriter
+import avro.schema as avro_schema
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
@@ -46,6 +57,49 @@ def _write_iceberg_metadata(instance, table_name, meta, prev_path):
     )
 
 
+def _rewrite_avro_without_format_version(local_in, local_out):
+    """Read an Avro file and write it back without the `format-version` metadata key,
+    preserving every other user-defined metadata entry, the schema, and the codec."""
+    with open(local_in, "rb") as fin:
+        reader = DataFileReader(fin, DatumReader())
+        schema_str = reader.meta["avro.schema"].decode("utf-8")
+        codec_bytes = reader.meta.get("avro.codec", b"null")
+        codec = codec_bytes.decode("utf-8") if isinstance(codec_bytes, bytes) else codec_bytes
+        user_meta = {
+            k: v for k, v in reader.meta.items()
+            if not k.startswith("avro.") and k != "format-version"
+        }
+        records = list(reader)
+        reader.close()
+
+    parsed_schema = avro_schema.parse(schema_str)
+    with open(local_out, "wb") as fout:
+        writer = DataFileWriter(fout, DatumWriter(), parsed_schema, codec=codec)
+        for k, v in user_meta.items():
+            writer.set_meta(k, v)
+        for record in records:
+            writer.append(record)
+        writer.close()
+
+
+def _strip_format_version_avro_metadata(instance, table_name, tmp_dir):
+    """Strip the `format-version` Avro metadata key from every manifest list and manifest
+    file of the table, simulating manifests written by an older ClickHouse version."""
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+    listing = instance.exec_in_container(
+        ["bash", "-c", f"ls {metadata_dir}/*.avro 2>/dev/null || true"]
+    ).strip()
+    avro_files = [p for p in listing.split("\n") if p]
+    assert avro_files, f"Expected at least one .avro manifest file under {metadata_dir}"
+
+    for i, remote_path in enumerate(avro_files):
+        local_in = os.path.join(tmp_dir, f"in_{i}.avro")
+        local_out = os.path.join(tmp_dir, f"out_{i}.avro")
+        instance.copy_file_from_container(remote_path, local_in)
+        _rewrite_avro_without_format_version(local_in, local_out)
+        instance.copy_file_to_container(local_out, remote_path)
+
+
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_format_version_upgrade_v1_to_v2(started_cluster_iceberg_with_spark, storage_type):
     """Create a v1 table, insert data, upgrade metadata to v2, then read."""
@@ -73,6 +127,50 @@ def test_format_version_upgrade_v1_to_v2(started_cluster_iceberg_with_spark, sto
     _write_iceberg_metadata(instance, table_name, meta, prev_path)
 
     # Reading after format version upgrade should work without exception
+    result = instance.query(f"SELECT sum(x) FROM {table_name}")
+    assert result.strip() == "6"
+
+    instance.query(f"DROP TABLE {table_name}")
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_format_version_avro_metadata_fallback(
+    started_cluster_iceberg_with_spark, storage_type, format_version, tmp_path
+):
+    """Reads must succeed for manifests that lack the `format-version` Avro metadata key.
+
+    Older ClickHouse versions wrote both manifest lists and manifest files without that
+    key, and `AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata` falls
+    back to schema-based detection (presence of `sequence_number` at the top level
+    ⇒ v2, absence ⇒ v1). This test covers both branches of that fallback.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    table_name = f"test_fmt_avro_fallback_v{format_version}_{get_uuid_str()}"
+
+    create_iceberg_table(
+        storage_type, instance, table_name,
+        started_cluster_iceberg_with_spark, "(x Int)",
+        format_version=format_version,
+    )
+
+    instance.query(
+        f"INSERT INTO {table_name} VALUES (1), (2), (3);",
+        settings=ICEBERG_SETTINGS,
+    )
+
+    # Sanity check: read works with the `format-version` Avro metadata key present.
+    result = instance.query(f"SELECT sum(x) FROM {table_name}")
+    assert result.strip() == "6"
+
+    _strip_format_version_avro_metadata(instance, table_name, str(tmp_path))
+
+    # The Iceberg metadata cache holds deserialized manifest files; drop it so the
+    # next read picks up the on-disk files we just rewrote without the
+    # `format-version` Avro metadata key.
+    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+
+    # After stripping the key, reads must still succeed via schema-based fallback.
     result = instance.query(f"SELECT sum(x) FROM {table_name}")
     assert result.strip() == "6"
 
