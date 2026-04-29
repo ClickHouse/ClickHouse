@@ -28,12 +28,14 @@ node_protocols_custom_handlers = cluster_protocols.add_instance(
 )
 
 # Reload regression: the unknown-key check also runs on `SYSTEM RELOAD CONFIG`,
-# not only at startup. Use a separate cluster that starts with a valid config
-# and then have the test inject / remove a bad config.d file at runtime.
+# not only at startup. Use a separate cluster that starts with a minimal
+# placeholder config (no `<http_handlers>`) so that the test can later inject
+# `<http_handlers>` via a `config.d/` file without colliding with merged rules
+# from another file.
 cluster_reload = ClickHouseCluster(__file__, name="reload")
 node_reload = cluster_reload.add_instance(
     "node_reload",
-    main_configs=["configs/config.d/static_handler_config_ref.xml"],
+    main_configs=["configs/config.d/reload_initial.xml"],
     stay_alive=True,
 )
 
