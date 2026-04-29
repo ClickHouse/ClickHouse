@@ -52,3 +52,112 @@ TEST(RopeNode, SharedOwnership)
     EXPECT_EQ(node1.data(), buf->data());
     EXPECT_EQ(node2.data(), buf->data() + 256);
 }
+
+TEST(Rope, AppendAndIterate)
+{
+    auto buf1 = std::make_shared<OwnedRopeBuffer>(100);
+    std::memset(buf1->data(), 'A', 100);
+    auto buf2 = std::make_shared<OwnedRopeBuffer>(200);
+    std::memset(buf2->data(), 'B', 200);
+
+    Rope rope;
+    rope.append(RopeNode{buf1, 0, 100, 0});
+    rope.append(RopeNode{buf2, 0, 200, 100});
+
+    EXPECT_EQ(rope.range().offset, 0);
+    EXPECT_EQ(rope.range().size, 300);
+    EXPECT_EQ(rope.getNodes().size(), 2);
+    EXPECT_FALSE(rope.empty());
+}
+
+TEST(Rope, AppendRope)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+
+    Rope rope1;
+    rope1.append(RopeNode{buf, 0, 50, 0});
+
+    Rope rope2;
+    rope2.append(RopeNode{buf, 50, 50, 50});
+
+    rope1.append(std::move(rope2));
+    EXPECT_EQ(rope1.getNodes().size(), 2);
+    EXPECT_EQ(rope1.range().size, 100);
+}
+
+TEST(Rope, SliceFullRange)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(300);
+    std::memset(buf->data(), 'X', 300);
+
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    rope.append(RopeNode{buf, 100, 100, 100});
+    rope.append(RopeNode{buf, 200, 100, 200});
+
+    auto slice = rope.slice(Range{0, 300});
+    EXPECT_EQ(slice.range().offset, 0);
+    EXPECT_EQ(slice.range().size, 300);
+    EXPECT_EQ(slice.totalBytes(), 300);
+    EXPECT_EQ(slice.getNodes().size(), 3);
+}
+
+TEST(Rope, SliceMiddle)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(300);
+
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    rope.append(RopeNode{buf, 100, 100, 100});
+    rope.append(RopeNode{buf, 200, 100, 200});
+
+    auto slice = rope.slice(Range{50, 200});
+    EXPECT_EQ(slice.range().offset, 50);
+    EXPECT_EQ(slice.range().size, 200);
+    EXPECT_EQ(slice.totalBytes(), 200);
+
+    auto & nodes = slice.getNodes();
+    EXPECT_EQ(nodes[0].logical_offset, 50);
+    EXPECT_EQ(nodes[0].size, 50);
+    EXPECT_EQ(nodes[0].buffer_offset, 50);
+    EXPECT_EQ(nodes[1].logical_offset, 100);
+    EXPECT_EQ(nodes[1].size, 100);
+    EXPECT_EQ(nodes[2].logical_offset, 200);
+    EXPECT_EQ(nodes[2].size, 50);
+}
+
+TEST(Rope, SliceSingleNodeMiddle)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(1000);
+
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 1000, 0});
+
+    auto slice = rope.slice(Range{100, 200});
+    EXPECT_EQ(slice.getNodes().size(), 1);
+    EXPECT_EQ(slice.getNodes()[0].buffer_offset, 100);
+    EXPECT_EQ(slice.getNodes()[0].size, 200);
+    EXPECT_EQ(slice.getNodes()[0].logical_offset, 100);
+}
+
+TEST(Rope, EmptyRope)
+{
+    Rope rope;
+    EXPECT_TRUE(rope.empty());
+    EXPECT_EQ(rope.range().size, 0);
+}
+
+TEST(RopeSlice, KeepsBufferAlive)
+{
+    std::weak_ptr<RopeBuffer> weak;
+    RopeSlice slice;
+    {
+        auto buf = std::make_shared<OwnedRopeBuffer>(64);
+        weak = buf;
+
+        Rope rope;
+        rope.append(RopeNode{buf, 0, 64, 0});
+        slice = rope.slice(Range{0, 64});
+    }
+    EXPECT_FALSE(weak.expired());
+}

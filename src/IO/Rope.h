@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <vector>
 
 namespace DB
 {
@@ -36,14 +37,14 @@ public:
     OwnedRopeBuffer(const OwnedRopeBuffer &) = delete;
     OwnedRopeBuffer & operator=(const OwnedRopeBuffer &) = delete;
 
-    char * data() override { return data_; }
-    const char * data() const override { return data_; }
-    size_t size() const override { return size_; }
+    char * data() override { return buf_data; }
+    const char * data() const override { return buf_data; }
+    size_t size() const override { return buf_size; }
     void transferTo(MemoryTracker * new_tracker) override;
 
 private:
-    char * data_;
-    size_t size_;
+    char * buf_data;
+    size_t buf_size;
 };
 
 /// Single node in a rope. References a slice of a RopeBuffer.
@@ -57,6 +58,38 @@ struct RopeNode
     char * data() { return buffer->data() + buffer_offset; }
     const char * data() const { return buffer->data() + buffer_offset; }
     Range range() const { return {logical_offset, size}; }
+};
+
+class RopeSlice;
+
+/// Contiguous sequence of RopeNodes covering a logical range.
+class Rope
+{
+public:
+    Range range() const;
+    void append(RopeNode node);
+    void append(Rope && other);
+    RopeSlice slice(Range req) const;
+    const std::vector<RopeNode> & getNodes() const { return nodes; }
+    bool empty() const { return nodes.empty(); }
+
+private:
+    std::vector<RopeNode> nodes;
+};
+
+/// Lightweight view into a Rope. Holds shared_ptr refs to buffers.
+class RopeSlice
+{
+public:
+    RopeSlice() = default;
+    Range range() const;
+    const std::vector<RopeNode> & getNodes() const { return nodes; }
+    bool empty() const { return nodes.empty(); }
+    size_t totalBytes() const;
+
+private:
+    std::vector<RopeNode> nodes;
+    friend class Rope;
 };
 
 }
