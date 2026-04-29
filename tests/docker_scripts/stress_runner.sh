@@ -13,8 +13,6 @@ ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-# shellcheck disable=SC1091
-source /repo/tests/docker_scripts/utils.lib
 
 install_packages package_folder
 
@@ -324,5 +322,3 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-collect_core_dumps

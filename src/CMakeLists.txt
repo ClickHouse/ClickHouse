@@ -71,6 +71,10 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (ENABLE_EXAMPLES)
+    add_subdirectory (Examples)
+endif()
+
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     # Files inherited via extract_into_parent_list that would be marked to remove heavy symbols otherwise
     set_source_files_properties(
