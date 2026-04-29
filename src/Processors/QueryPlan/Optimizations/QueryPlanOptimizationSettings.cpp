@@ -253,7 +253,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 
-    min_columns_for_join_lazy_indexing = from[Setting::query_plan_min_columns_for_join_lazy_indexing];
+    min_columns_for_join_lazy_indexing = from[Setting::query_plan_enable_optimizations] ? from[Setting::query_plan_min_columns_for_join_lazy_indexing] : 0;
     max_limit_for_join_lazy_indexing = from[Setting::query_plan_max_limit_for_join_lazy_indexing];
 
     max_threads = from[Setting::max_threads];
