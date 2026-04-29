@@ -1408,6 +1408,9 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
+            if (params.token_filter.count(std::string_view(token_start, token_length)))
+                return false;
+
             bool inserted;
             TokenToPostingsBuilderMap::LookupResult it;
 
@@ -1612,6 +1615,16 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
+static const String ARGUMENT_TOKEN_FILTER = "token_filter";
+
+/// Same stop words as Lucene EnglishAnalyzer, and CLucene.
+static const std::vector<String> ENGLISH_STOP_WORDS =
+{
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for",
+    "if", "in", "into", "is", "it", "no", "not", "of", "on", "or",
+    "such", "that", "the", "their", "then", "there", "these", "they",
+    "this", "to", "was", "will", "with"
+};
 
 namespace
 {
@@ -1661,6 +1674,61 @@ ASTPtr extractASTOption(std::unordered_map<String, ASTPtr> & options, const Stri
     return nullptr;
 }
 
+absl::flat_hash_set<String> extractTokenFilter(std::unordered_map<String, ASTPtr> & options)
+{
+    auto it = options.find(ARGUMENT_TOKEN_FILTER);
+    if (it == options.end())
+        return {};
+
+    ASTPtr ast = it->second;
+    options.erase(it);
+
+    absl::flat_hash_set<String> token_filter;
+
+    if (const auto * literal = ast->as<ASTLiteral>())
+    {
+        if (literal->value.getType() == Field::Types::String)
+        {
+            const String preset = literal->value.safeGet<String>();
+            if (preset == "english")
+                token_filter.insert(ENGLISH_STOP_WORDS.begin(), ENGLISH_STOP_WORDS.end());
+            else
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unknown token filter preset '{}'. Supported presets: 'english'",
+                    preset);
+        }
+        else if (literal->value.getType() == Field::Types::Array)
+        {
+            for (const auto & element : literal->value.safeGet<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Text index argument '{}' array elements must be string literals",
+                        ARGUMENT_TOKEN_FILTER);
+                token_filter.insert(element.safeGet<String>());
+            }
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index argument '{}' must be a string constant ('english') or an array of strings, but got {}",
+                ARGUMENT_TOKEN_FILTER, literal->value.getTypeName());
+        }
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Text index argument '{}' must be a string constant ('english') or an array of strings",
+            ARGUMENT_TOKEN_FILTER);
+    }
+
+    return token_filter;
+}
+
 std::pair<String, ASTPtr> parseNamedArgument(const ASTFunction * ast_equal_function)
 {
     if (!ast_equal_function
@@ -1707,12 +1775,14 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
     UInt64 dictionary_block_frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
+    auto token_filter = extractTokenFilter(options);
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
-        std::move(preprocessor_ast)};
+        std::move(preprocessor_ast),
+        std::move(token_filter)};
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
     auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
@@ -1745,6 +1815,8 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
+
+    std::ignore = extractTokenFilter(options);
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));

@@ -1,0 +1,38 @@
+Negative cases
+-- token_filter must be a string constant (preset name) or an array of strings
+splitByNonAlpha
+-- english filter
+brown
+dog
+fox
+lazy
+quick
+splitByNonAlpha
+-- custom filter
+a
+brown
+lazy
+quick
+the
+splitByString
+-- english filter
+bold
+brave
+ngrams
+-- custom filter
+bcd
+cde
+sparseGrams
+-- custom filter
+array
+-- english filter
+brown
+lazy
+quick
+asciiCJK
+-- english filter
+brown
+dog
+fox
+lazy
+quick
