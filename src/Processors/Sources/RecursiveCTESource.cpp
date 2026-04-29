@@ -479,10 +479,13 @@ public:
         /// with user-specified ones on each recursive step, instead of overwriting them.
         original_additional_table_filters = recursive_query_context->getSettingsRef()[Setting::additional_table_filters].value;
 
-        /// Collect all QueryNodes/UnionNodes inside the recursive query that share the recursive
-        /// query's mutable context. On each recursive step we re-point their `mutable_context`
+        /// Collect all QueryNodes/UnionNodes inside the recursive query, together with their
+        /// original `mutable_context`. On each recursive step we re-point their `mutable_context`
         /// at a per-step copy so the planner sees per-step settings (the planner reads settings
-        /// from the query node's mutable context, not from the interpreter's context).
+        /// from the query node's mutable context, not from the interpreter's context). For each
+        /// branch of a UNION, the analyzer creates a `QueryNode` with its own context (a copy of
+        /// the parent), so we must visit and update every nested node — not only those that
+        /// happen to share the outer recursive query's context.
         std::vector<IQueryTreeNode *> nodes_to_visit;
         nodes_to_visit.push_back(recursive_query.get());
         while (!nodes_to_visit.empty())
@@ -491,15 +494,9 @@ public:
             nodes_to_visit.pop_back();
 
             if (auto * qn = node->as<QueryNode>())
-            {
-                if (qn->getMutableContext() == recursive_query_context)
-                    recursive_query_nodes_with_shared_context.push_back(node);
-            }
+                recursive_query_nodes_and_original_contexts.push_back({node, qn->getMutableContext()});
             else if (auto * un = node->as<UnionNode>())
-            {
-                if (un->getMutableContext() == recursive_query_context)
-                    recursive_query_nodes_with_shared_context.push_back(node);
-            }
+                recursive_query_nodes_and_original_contexts.push_back({node, un->getMutableContext()});
 
             for (auto & child : node->getChildren())
             {
@@ -598,24 +595,16 @@ private:
         /// mutations below do not race with concurrent reads of the shared Settings object
         /// from other recursive CTEs (e.g. nested ones) that share `recursive_query_context`.
         ///
-        /// We also re-point the recursive query's QueryNode/UnionNode `mutable_context` at this
-        /// per-step copy: `Planner::buildPlannerContext` reads its settings directly from the
-        /// query node's mutable context (not from the interpreter's context), so without this
-        /// the per-step settings are silently ignored. Restoring the original context after the
-        /// step is unnecessary because the next step rebuilds a fresh copy from the original.
+        /// We also re-point every QueryNode/UnionNode inside the recursive query at a per-step
+        /// copy of its own original context: `Planner::buildPlannerContext` reads its settings
+        /// directly from the query node's mutable context (not from the interpreter's context),
+        /// and for `UNION ALL` branches the planner spawns a child `Planner` for each branch
+        /// using that branch's own context, so the per-step settings must be visible there too.
+        /// Restoring the original context after the step is unnecessary because the next step
+        /// rebuilds fresh copies from the originals captured at construction time.
         auto interpreter_context = recursive_step > 1 ? Context::createCopy(recursive_query_context) : recursive_query_context;
         if (recursive_step > 1)
         {
-            /// Disable parallel replicas for recursive CTE step queries. When parallel replicas
-            /// is enabled, JOINs are rewritten to GLOBAL JOINs and the right-side subquery is
-            /// materialized into a cached external table keyed by tree hash. Since the recursive
-            /// CTE temporary table has the same tree structure across steps (only the data changes),
-            /// the hash stays identical and stale cached data is reused, producing wrong results.
-            /// We do this here (rather than in the constructor) so that the seed (non-recursive)
-            /// query — which does not reference the CTE table — keeps the user's parallel replicas
-            /// configuration. Setting it on every recursive iteration is idempotent.
-            interpreter_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
-
             const auto max_in_filter_cardinality
                 = recursive_subquery_settings[Setting::recursive_cte_max_in_filter_cardinality].value;
 
@@ -625,18 +614,52 @@ private:
                 original_additional_table_filters,
                 max_in_filter_cardinality);
 
-            interpreter_context->setSetting("additional_table_filters", Field(std::move(filters)));
-
-            /// Re-point the query tree's mutable context at the per-step copy. We tracked the
-            /// nodes that share the recursive-query context at construction time, so this works
-            /// across all subsequent steps even though previous steps already replaced the
-            /// pointer with their own per-step copies.
-            for (auto * node : recursive_query_nodes_with_shared_context)
+            /// Disable parallel replicas for recursive CTE step queries. When parallel replicas
+            /// is enabled, JOINs are rewritten to GLOBAL JOINs and the right-side subquery is
+            /// materialized into a cached external table keyed by tree hash. Since the recursive
+            /// CTE temporary table has the same tree structure across steps (only the data changes),
+            /// the hash stays identical and stale cached data is reused, producing wrong results.
+            /// We do this only for recursive iterations (not the seed) so that the seed query —
+            /// which does not reference the CTE table — keeps the user's parallel replicas
+            /// configuration. Setting it on every recursive iteration is idempotent.
+            auto apply_step_overrides = [&](ContextMutablePtr & ctx)
             {
+                ctx->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+                ctx->setSetting("additional_table_filters", Field(filters));
+            };
+
+            apply_step_overrides(interpreter_context);
+
+            /// Re-point each tracked QueryNode/UnionNode `mutable_context` at a per-step copy of
+            /// its own original context, deduplicating so nodes that originally shared a context
+            /// continue to share one after the rewrite.
+            std::map<Context *, ContextMutablePtr> step_context_for_original;
+            for (const auto & [node, original_context] : recursive_query_nodes_and_original_contexts)
+            {
+                ContextMutablePtr step_context;
+                if (original_context == recursive_query_context)
+                {
+                    step_context = interpreter_context;
+                }
+                else
+                {
+                    auto it = step_context_for_original.find(original_context.get());
+                    if (it != step_context_for_original.end())
+                    {
+                        step_context = it->second;
+                    }
+                    else
+                    {
+                        step_context = Context::createCopy(original_context);
+                        apply_step_overrides(step_context);
+                        step_context_for_original.emplace(original_context.get(), step_context);
+                    }
+                }
+
                 if (auto * qn = node->as<QueryNode>())
-                    qn->getMutableContext() = interpreter_context;
+                    qn->getMutableContext() = step_context;
                 else if (auto * un = node->as<UnionNode>())
-                    un->getMutableContext() = interpreter_context;
+                    un->getMutableContext() = step_context;
             }
         }
 
@@ -705,7 +728,13 @@ private:
 
     std::optional<std::vector<JoinKeyInfo>> cached_join_keys;
     Map original_additional_table_filters;
-    std::vector<IQueryTreeNode *> recursive_query_nodes_with_shared_context;
+
+    struct RecursiveQueryNodeAndOriginalContext
+    {
+        IQueryTreeNode * node;
+        ContextMutablePtr original_context;
+    };
+    std::vector<RecursiveQueryNodeAndOriginalContext> recursive_query_nodes_and_original_contexts;
 
     size_t recursive_step = 0;
     size_t read_rows_during_recursive_step = 0;
