@@ -46,6 +46,7 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -1036,6 +1037,39 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     return result;
 }
 
+std::optional<String> IcebergMetadata::partitionKey(ContextPtr context) const
+{
+    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(context);
+    if (!actual_data_snapshot)
+        return std::nullopt;
+    return getPartitionKey(context, actual_table_state_snapshot);
+}
+
+std::optional<String> IcebergMetadata::sortingKey(ContextPtr context) const
+{
+    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(context);
+    if (!actual_data_snapshot)
+        return std::nullopt;
+    auto metadata_object = getMetadataJSONObject(
+        actual_table_state_snapshot.metadata_file_path,
+        object_storage,
+        persistent_components.metadata_cache,
+        context,
+        log,
+        persistent_components.metadata_compression_method,
+        persistent_components.table_uuid);
+    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+    const auto & ch_schema = *persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id);
+    auto display = getSortingKeyDisplayStringFromMetadata(metadata_object, ch_schema);
+    if (display)
+        return display;
+    auto key = getSortingKey(context, actual_table_state_snapshot);
+    if (!key.expression_list_ast)
+        return std::nullopt;
+    return format({context, *key.expression_list_ast});
+}
+
+
 ObjectIterator IcebergMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
@@ -1277,6 +1311,23 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
         iceberg_table_state = std::make_shared<TableStateSnapshot>(actual_table_state_snapshot);
     }
     return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
+}
+
+std::optional<String> IcebergMetadata::getPartitionKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
+{
+    auto metadata_object = getMetadataJSONObject(
+        actual_table_state_snapshot.metadata_file_path,
+        object_storage,
+        persistent_components.metadata_cache,
+        local_context,
+        log,
+        persistent_components.metadata_compression_method,
+        persistent_components.table_uuid);
+    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+    return getPartitionKeyStringFromMetadata(
+        metadata_object,
+        *persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id),
+        local_context);
 }
 
 KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
