@@ -488,20 +488,27 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     if (readonly)
         throwReadonlyCannotInsert(new_entity->getType(), new_entity->getName());
 
-    /// Find name collision before modifying anything, so we can delete the old file after successful write.
+    /// Capture pre-existing state before any mutation, so the rollback path can restore it.
+    /// `replace_if_exists` may simultaneously displace:
+    ///   * an entity at the same `id` (possibly with a different name) — `old_entity_at_id`;
+    ///   * an entity at the same name but a different `id` — `old_entity_at_name`.
+    /// `memory_storage` may hold these as `EntityOnDisk` placeholders without the actual definition;
+    /// materialize them so the rollback path can rewrite `<id>.sql` with the correct contents.
+    AccessEntityPtr old_entity_at_id;
     std::optional<UUID> name_collision_id;
-    AccessEntityPtr old_entity;
+    AccessEntityPtr old_entity_at_name;
     if (replace_if_exists && write_on_disk)
     {
+        old_entity_at_id = memory_storage.read(id, /* throw_if_not_exists= */ false);
+        if (old_entity_at_id && isNotLoadedFromDisk(old_entity_at_id))
+            old_entity_at_id = readAccessEntityFromDisk(id);
+
         name_collision_id = memory_storage.find(new_entity->getType(), new_entity->getName());
-        /// Save the old entity so we can restore it if the disk write fails.
-        if (name_collision_id.has_value())
+        if (name_collision_id.has_value() && *name_collision_id != id)
         {
-            old_entity = memory_storage.read(*name_collision_id, /* throw_if_not_exists= */ false);
-            /// `memory_storage` may hold a placeholder (`EntityOnDisk`) that doesn't contain the actual definition.
-            /// Materialize it from disk so the rollback path can restore the file contents on a same-UUID replace.
-            if (old_entity && isNotLoadedFromDisk(old_entity))
-                old_entity = readAccessEntityFromDisk(*name_collision_id);
+            old_entity_at_name = memory_storage.read(*name_collision_id, /* throw_if_not_exists= */ false);
+            if (old_entity_at_name && isNotLoadedFromDisk(old_entity_at_name))
+                old_entity_at_name = readAccessEntityFromDisk(*name_collision_id);
         }
     }
 
@@ -523,20 +530,24 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             /// If we fail to write the .sql file or schedule list update, roll back the memory insert
             /// to prevent an inconsistency where the entity is in the list but has no file on disk.
             memory_storage.remove(id, /* throw_if_not_exists= */ false);
-            /// Restore the old entity that was replaced (if any).
-            if (old_entity && name_collision_id.has_value())
-                memory_storage.insert(*name_collision_id, old_entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
+
+            /// Restore the entity at the same UUID (different or same name).
+            if (old_entity_at_id)
+                memory_storage.insert(id, old_entity_at_id, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
+
+            /// Restore the entity that was displaced by the new name (different UUID).
+            if (old_entity_at_name && name_collision_id.has_value())
+                memory_storage.insert(*name_collision_id, old_entity_at_name, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
 
             auto new_file_path = getEntityFilePath(directory_path, id);
-            if (old_entity && name_collision_id.has_value() && *name_collision_id == id)
+            if (old_entity_at_id)
             {
-                /// Same UUID is reused (e.g. a backup restore with `kReplace`): the file at this path
-                /// is the previous entity's file, possibly already overwritten by a successful
-                /// `writeEntityFile` before `scheduleWriteLists` threw. Restore the old contents
-                /// instead of deleting the file.
+                /// `<id>.sql` belonged to the pre-existing entity at this UUID and may have been
+                /// overwritten by a successful `writeEntityFile` before `scheduleWriteLists` threw.
+                /// Restore the old contents instead of deleting the file.
                 try
                 {
-                    writeEntityFile(new_file_path, *old_entity);
+                    writeEntityFile(new_file_path, *old_entity_at_id);
                 }
                 catch (...)
                 {
@@ -545,8 +556,8 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             }
             else
             {
-                /// Different UUID: the new file (if any) is orphaned, the old file at a different
-                /// path is untouched. Best-effort delete; don't mask the original exception on failure.
+                /// No pre-existing entity at this UUID: the new file (if any) is orphaned.
+                /// Best-effort delete; don't mask the original exception on failure.
                 std::error_code ec;
                 std::filesystem::remove(new_file_path, ec);
                 if (ec)
