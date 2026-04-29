@@ -7,7 +7,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --use_skip_indexes_on_data_read 1 --query_plan_remove_unused_columns 1"
+MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT \
+    --enable_analyzer 1 \
+    --use_skip_indexes_on_data_read 1 \
+    --query_plan_remove_unused_columns 1 \
+    --query_plan_optimize_prewhere 1 \
+    --optimize_move_to_prewhere 1 \
+    --query_plan_direct_read_from_text_index 1 \
+    --query_plan_text_index_add_hint 1 \
+    --local_filesystem_read_method pread \
+    --compile_expressions 0 \
+    --fsync_metadata 0"
 
 $MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS tab;
@@ -167,7 +177,7 @@ function run()
     $MY_CLICKHOUSE_CLIENT --query "
         SELECT trim(explain) FROM
         (
-            EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1
+            EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1, query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1
         )
         WHERE explain LIKE '%INPUT%\_\_text_index%' OR explain ILIKE '%name: inv_idx%'
     "
