@@ -3,6 +3,7 @@
 #if USE_AVRO
 
 #include <cstddef>
+#include <future>
 #include <memory>
 #include <optional>
 #include <Formats/FormatFilterInfo.h>
@@ -23,6 +24,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
 
 #include <IO/CompressedReadBufferWrapper.h>
@@ -60,6 +62,7 @@ extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
 extern const Event IcebergMinMaxNonPrunedDeleteFiles;
 extern const Event IcebergMinMaxPrunedDeleteFiles;
+extern const Event IcebergManifestFilesParallelFetchMicroseconds;
 };
 
 
@@ -73,6 +76,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsUInt64 iceberg_metadata_files_parallel_loading_threads;
 };
 
 
@@ -150,11 +154,88 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
 
 }
 
+void SingleThreadIcebergKeysIterator::initParallelPrefetch()
+{
+    if (!data_snapshot)
+        return;
+
+    const size_t n = data_snapshot->manifest_list_entries.size();
+    if (n == 0)
+        return;
+
+    ThreadPool & pool = getIOThreadPool().get();
+    auto thread_group = CurrentThread::getGroup();
+
+    /// Reserve to avoid reallocation: std::future is move-only, and vector reallocation
+    /// with non-noexcept move + no copy would cause a compile error on some STL versions.
+    prefetch_entries.reserve(n);
+
+    /// Submit one getManifestFile task per matching manifest, in manifest_list order.
+    /// CacheBase::getOrSet has singleflight protection — concurrent callers for the same
+    /// key serialize on a per-key token mutex, so we don't cause N duplicate S3 GETs.
+    for (size_t i = 0; i < n; ++i)
+    {
+        const auto & entry = data_snapshot->manifest_list_entries[i];
+        if (entry.content_type != manifest_file_content_type)
+            continue;
+
+        auto promise = std::make_shared<std::promise<Iceberg::ManifestFileCacheableInfo>>();
+        prefetch_entries.push_back({i, promise->get_future()});
+
+        /// Capture all data by value. object_storage, local_context and the shared_ptrs
+        /// inside persistent_components are all reference-counted, so the lambda keeps
+        /// them alive even if SingleThreadIcebergKeysIterator is destroyed while a task
+        /// is still running.
+        pool.scheduleOrThrowOnError(
+            [promise_cap = std::move(promise),
+             object_storage_cap = this->object_storage,
+             persistent_components_cap = this->persistent_components,
+             local_context_cap = this->local_context,
+             log_cap = this->log,
+             filename = entry.manifest_file_path,
+             bytes_size = entry.manifest_file_byte_size,
+             thread_group_cap = thread_group]() mutable
+            {
+                DB::ThreadGroupSwitcher switcher(thread_group_cap, DB::ThreadName::ICEBERG_MANIFEST_FETCH);
+                try
+                {
+                    auto result = Iceberg::getManifestFile(
+                        object_storage_cap,
+                        persistent_components_cap,
+                        local_context_cap,
+                        log_cap,
+                        filename,
+                        bytes_size);
+                    promise_cap->set_value(std::move(result));
+                }
+                catch (...)
+                {
+                    promise_cap->set_exception(std::current_exception());
+                }
+            });
+    }
+
+    LOG_DEBUG(
+        log,
+        "Submitted {} parallel manifest file fetch tasks ({} total entries, thread_count={})",
+        prefetch_entries.size(),
+        n,
+        parallel_loading_threads);
+}
+
 std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
 {
     if (!data_snapshot)
     {
         return std::nullopt;
+    }
+
+    /// Lazy initialization of parallel prefetch on the first next() call.
+    if (!prefetch_initialized)
+    {
+        prefetch_initialized = true;
+        if (parallel_loading_threads > 1)
+            initParallelPrefetch();
     }
 
     while (true)
@@ -170,23 +251,26 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             current_manifest_file_iterator = nullptr;
         }
 
-        /// Find the next manifest file with matching content type.
-        while (manifest_file_index < data_snapshot->manifest_list_entries.size())
+        if (parallel_loading_threads > 1)
         {
-            const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_file_index++];
-            if (manifest_list_entry.content_type != manifest_file_content_type)
-                continue;
+            /// Parallel path: consume pre-fetched futures in manifest_list_entry order.
+            if (prefetch_consume_pos >= prefetch_entries.size())
+                return std::nullopt;
 
-            auto manifest_file_cacheable_part = Iceberg::getManifestFile(
-                object_storage,
-                persistent_components,
-                local_context,
-                log,
-                manifest_list_entry.manifest_file_path,
-                manifest_list_entry.manifest_file_byte_size);
+            auto & [manifest_idx, fut] = prefetch_entries[prefetch_consume_pos++];
+            const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_idx];
+
+            /// Block until the prefetch task delivers this manifest (or rethrows on error).
+            /// ProfileEvent accumulates the total wall-clock wait across all futures; on a
+            /// warm cache this is near-zero, on a cold cache it reflects parallelism savings.
+            ManifestFileCacheableInfo cacheable_part = [&]
+            {
+                ProfileEventTimeIncrement<Microseconds> wait_watch(ProfileEvents::IcebergManifestFilesParallelFetchMicroseconds);
+                return fut.get();
+            }();
 
             current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
-                manifest_file_cacheable_part.deserializer,
+                cacheable_part.deserializer,
                 manifest_list_entry.manifest_file_path,
                 persistent_components.format_version,
                 persistent_components.path_resolver,
@@ -196,11 +280,41 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
                 local_context,
                 filter_dag,
                 table_snapshot->schema_id);
-            break;
         }
+        else
+        {
+            /// Serial path: original one-at-a-time behavior (setting=1 safety valve).
+            while (manifest_file_index < data_snapshot->manifest_list_entries.size())
+            {
+                const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_file_index++];
+                if (manifest_list_entry.content_type != manifest_file_content_type)
+                    continue;
 
-        if (!current_manifest_file_iterator)
-            return std::nullopt;
+                auto manifest_file_cacheable_part = Iceberg::getManifestFile(
+                    object_storage,
+                    persistent_components,
+                    local_context,
+                    log,
+                    manifest_list_entry.manifest_file_path,
+                    manifest_list_entry.manifest_file_byte_size);
+
+                current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
+                    manifest_file_cacheable_part.deserializer,
+                    manifest_list_entry.manifest_file_path,
+                    persistent_components.format_version,
+                    persistent_components.path_resolver,
+                    *persistent_components.schema_processor,
+                    manifest_list_entry.added_sequence_number,
+                    manifest_list_entry.added_snapshot_id,
+                    local_context,
+                    filter_dag,
+                    table_snapshot->schema_id);
+                break;
+            }
+
+            if (!current_manifest_file_iterator)
+                return std::nullopt;
+        }
     }
 }
 
@@ -235,7 +349,28 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     , persistent_components(persistent_components_)
     , log(getLogger("IcebergIterator"))
     , manifest_file_content_type(manifest_file_content_type_)
+    , parallel_loading_threads(
+          local_context_ ? local_context_->getSettingsRef()[Setting::iceberg_metadata_files_parallel_loading_threads].value : 1)
 {
+}
+
+SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
+{
+    /// Wait for any in-flight prefetch tasks that were not yet consumed by next().
+    /// The lambda captures shared_ptrs by value so the objects remain alive, but we
+    /// must wait to prevent the thread-pool thread from writing to a promise whose
+    /// shared state we no longer observe.
+    for (size_t i = prefetch_consume_pos; i < prefetch_entries.size(); ++i)
+    {
+        if (prefetch_entries[i].future.valid())
+        {
+            try
+            {
+                prefetch_entries[i].future.wait();
+            }
+            catch (...) {} // NOLINT: intentional swallow in destructor
+        }
+    }
 }
 
 IcebergIterator::IcebergIterator(
@@ -271,6 +406,10 @@ IcebergIterator::IcebergIterator(
     , producer_task(std::nullopt)
     , callback(std::move(callback_))
 {
+    /// Drain the delete manifests. With parallel_loading_threads > 1, the first call to
+    /// deletes_iterator.next() triggers initParallelPrefetch() which fans out all delete
+    /// manifest fetches to the IO thread pool simultaneously. Subsequent next() calls
+    /// consume the pre-fetched futures in order, so the serial drain loop below is fast.
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
     {

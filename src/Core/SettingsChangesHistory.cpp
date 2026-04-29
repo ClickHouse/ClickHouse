@@ -296,6 +296,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"iceberg_metadata_files_parallel_loading_threads", 1, 8, "New setting: number of threads to fetch Iceberg manifest files in parallel during query planning."},
             {"output_format_json_quote_64bit_integers", true, false, "Disable quoting of the 64 bit integers in JSON by default"},
             {"show_data_lake_catalogs_in_system_tables", true, true, "New setting"},
             {"optimize_rewrite_regexp_functions", false, true, "A new setting"},

@@ -18,6 +18,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 
 #include <optional>
+#include <future>
 #include <base/defines.h>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -47,7 +48,11 @@ public:
 
     std::optional<DB::Iceberg::ProcessedManifestFileEntryPtr> next();
 
+    ~SingleThreadIcebergKeysIterator();
+
 private:
+    void initParallelPrefetch();
+
     ObjectStoragePtr object_storage;
     std::shared_ptr<const ActionsDAG> filter_dag;
     ContextPtr local_context;
@@ -56,10 +61,23 @@ private:
     PersistentTableComponents persistent_components;
     LoggerPtr log;
 
+    /// Serial iteration state (used when parallel_loading_threads == 1)
     size_t manifest_file_index = 0;
     Iceberg::ManifestIteratorPtr current_manifest_file_iterator;
 
     const Iceberg::ManifestFileContentType manifest_file_content_type;
+
+    /// Parallel prefetch state (used when parallel_loading_threads > 1)
+    UInt64 parallel_loading_threads = 1;
+
+    struct PrefetchEntry
+    {
+        size_t manifest_list_index;
+        std::future<Iceberg::ManifestFileCacheableInfo> future;
+    };
+    std::vector<PrefetchEntry> prefetch_entries;
+    size_t prefetch_consume_pos = 0;
+    bool prefetch_initialized = false;
 };
 
 }
