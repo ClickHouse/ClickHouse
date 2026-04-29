@@ -511,6 +511,10 @@ static const char * get_param(int argc, char * const argv[], const char * name)
 
 int main(int argc, char* argv[])
 {
+    /// musl defines `stdout` and `stderr` as recursive macros `(stdout)` / `(stderr)`,
+    /// which trigger `-Wdisabled-macro-expansion` when used as function arguments.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     if (argc == 1)
     {
         usage(stdout, argv[0]);
@@ -557,6 +561,7 @@ int main(int argc, char* argv[])
         usage(stderr, argv[0]);
         return 1;
     }
+#pragma clang diagnostic pop
 
     struct stat info_out;
     if (stat(argv[start_of_files], &info_out) != -1 || errno != ENOENT)
