@@ -17,3 +17,5 @@ test_explain_grant_u1	\N	SELECT		system	\N	\N	1	0
 no side effect
 0
 on cluster rejected
+1
+1

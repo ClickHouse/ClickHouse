@@ -674,7 +674,7 @@ EXPLAIN REVOKE <revoke-statement>
 
 **Limitations**
 
-- Role grants of the form `GRANT some_role TO user` do not add any role-related rows to the output. Role memberships are stored separately from access rights, so the only rows returned for the grantee are the direct privilege grants the grantee already has — those remain in the post-state and continue to appear. Use [`system.role_grants`](/operations/system-tables/role-grants) to introspect role memberships.
+- Role grants of the form `GRANT some_role TO user` do not add any role-related rows to the output. Role memberships are stored separately from access rights, so the only rows returned for the grantee are the direct privilege grants the grantee already has — those remain in the post-state and continue to appear. Use [`system.role_grants`](/operations/system-tables/role_grants) to introspect role memberships.
 - `ON CLUSTER` is not supported — explanation is local-only.
 
 **Example**
