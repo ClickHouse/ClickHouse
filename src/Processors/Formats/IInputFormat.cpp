@@ -5,7 +5,6 @@
 #include <Common/Exception.h>
 #include <IO/VarInt.h>
 #include <Interpreters/Context_fwd.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
