@@ -435,11 +435,14 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         }
     }
 
-    /// Wake up a free thread to run the new job. Threads share a single CV, so this
-    /// is robust against lost wake-ups: even if a thread is between jobs (not yet
-    /// pushed onto the idle stack), the predicate `!jobs.empty()` will guarantee
-    /// it picks up the queued job once it acquires the lock.
-    new_job_or_shutdown.notify_one();
+    /// Wake up free threads. `notify_all` ensures the LIFO-selected thread (whose
+    /// `idle_wakeup_flag` was just set above) is reached regardless of which waiter
+    /// the kernel picks first. Without it, `notify_one` could land on a non-selected
+    /// thread that races to consume the job before the LIFO-selected one is reached,
+    /// erasing the cache-locality benefit of LIFO scheduling under contention. It also
+    /// gives excess idle threads a chance to observe `threads.size() > limit` and
+    /// exit, freeing their per-thread allocator caches - the point of LIFO.
+    new_job_or_shutdown.notify_all();
 
     ProfileEvents::increment(std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
@@ -770,9 +773,16 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// the most recently idle thread first via `idle_wakeup_flag`, concentrating
             /// work on fewer OS threads. This improves CPU cache locality and reduces
             /// memory fragmentation from allocator per-thread caches (e.g. jemalloc tcache).
-            /// The shared CV ensures wake-ups are not lost: even if a thread is between
-            /// jobs (not yet on the idle stack), the predicate `!jobs.empty()` will
-            /// guarantee it picks up the queued job once it acquires the lock.
+            ///
+            /// `scheduleImpl` uses `notify_all` so every idle thread re-evaluates the
+            /// predicate. The LIFO-flagged thread is guaranteed to be among them.
+            /// `!jobs.empty()` is kept in the predicate as a safety net: if a wakeup
+            /// reaches a non-flagged thread first, it can still consume the queued job
+            /// rather than going back to sleep with work pending. The strict-LIFO
+            /// version of this predicate (without `!jobs.empty()`) was found to
+            /// deadlock the `SchedulerWorkloadResourceManager.DropNotEmptyQueueLong`
+            /// unit test under contention, so we keep the soft tradeoff: the
+            /// concentration is a *bias*, not a hard rule.
             while (parent_pool.jobs.empty()
                 && !parent_pool.shutdown
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
