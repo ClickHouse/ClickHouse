@@ -33,8 +33,37 @@ ColumnPtr FuzzQuerySource::createColumn()
     auto fuzz_base = query;
     size_t row_num = 0;
 
+    /// Bound retries per row so the loop cannot spin forever:
+    /// - The current `if (config.max_query_length > 500)` guard always resets when the
+    ///   cap is large, so the loop never produces a row.
+    /// - With a tighter `if (fuzzed_text.size() > config.max_query_length)` check the loop
+    ///   can also spin if the fuzzer keeps producing oversized variants (e.g. a small cap).
+    /// In either case, fall back to emitting the original (unfuzzed) query so the source
+    /// always makes progress.
+    constexpr size_t max_attempts_per_row = 100;
+    size_t attempts_for_current_row = 0;
+
     while (row_num < block_size)
     {
+        if (isCancelled())
+            break;
+
+        if (attempts_for_current_row >= max_attempts_per_row)
+        {
+            auto fallback_text = query->formatForErrorMessage();
+            IColumn::Offset next_offset = offset + fallback_text.size();
+            data_to.resize(next_offset);
+            std::copy(fallback_text.begin(), fallback_text.end(), &data_to[offset]);
+            offsets_to[row_num] = next_offset;
+            offset = next_offset;
+            fuzz_base = query;
+            ++row_num;
+            attempts_for_current_row = 0;
+            continue;
+        }
+
+        ++attempts_for_current_row;
+
         ASTPtr new_query = fuzz_base->clone();
 
         auto base_before_fuzz = fuzz_base->formatForErrorMessage();
@@ -61,6 +90,25 @@ ColumnPtr FuzzQuerySource::createColumn()
         offset = next_offset;
         fuzz_base = new_query;
         ++row_num;
+        attempts_for_current_row = 0;
+    }
+
+    /// `generate()` returns a chunk with `block_size` rows, so the column must have exactly
+    /// `block_size` offsets. If we exited early due to cancellation, fill the remaining rows
+    /// with the unfuzzed query so the chunk size invariant holds; the cancelled pipeline
+    /// will discard the chunk anyway.
+    if (row_num < block_size)
+    {
+        auto fallback_text = query->formatForErrorMessage();
+        while (row_num < block_size)
+        {
+            IColumn::Offset next_offset = offset + fallback_text.size();
+            data_to.resize(next_offset);
+            std::copy(fallback_text.begin(), fallback_text.end(), &data_to[offset]);
+            offsets_to[row_num] = next_offset;
+            offset = next_offset;
+            ++row_num;
+        }
     }
 
     return column;
