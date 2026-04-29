@@ -1,0 +1,225 @@
+Hybrid creation requires allow_experimental_hybrid_table
+Check Hybrid engine is registered
+Hybrid
+Ensure no leftovers before validation checks
+Expect error when Hybrid has no arguments
+Expect error when Hybrid has a single literal argument
+Expect error when Hybrid arguments are literals only
+Expect error when first argument is a table function of the wrong subtype (can not construct Distributed from file)
+Expect error when first argument is not a table function (scalar expression)
+Expect error when first argument is a table function of the wrong subtype (can not construct Distributed from url)
+Expect error when predicate references a missing column
+Missing column + schema inference
+Create Hybrid table with remote() and constant predicate (explicit column list)
+CREATE TABLE default.test_tiered_distributed\n(\n    `dummy` UInt8\n)\nENGINE = Hybrid(remote(\'localhost:9000\'), 1)
+dummy	UInt8					
+0
+Row 1:
+──────
+database:           default
+name:               test_tiered_distributed
+engine:             Hybrid
+create_table_query: CREATE TABLE default.test_tiered_distributed (`dummy` UInt8) ENGINE = Hybrid(remote('localhost:9000'), 1)
+engine_full:        Hybrid(remote('localhost:9000'), 1)
+Create Hybrid table with remote table function and predicate (inference)
+CREATE TABLE default.test_tiered_distributed_numbers_range\n(\n    `number` UInt64\n)\nENGINE = Hybrid(remote(\'localhost:9000\', \'system.numbers\'), number < 5)
+0
+1
+2
+3
+4
+Create Hybrid table with two remote segments as table
+CREATE TABLE default.test_tiered_distributed_numbers_dual\n(\n    `number` UInt64\n)\nENGINE = Hybrid(remote(\'localhost:9000\', \'system.numbers\'), number < 5, remote(\'localhost:9000\', system.numbers), (number >= 10) AND (number <= 15))\nCOMMENT \'Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.\'
+0
+1
+2
+3
+4
+10
+11
+12
+13
+14
+15
+0
+1
+2
+3
+4
+10
+11
+12
+13
+14
+15
+Create Hybrid table combining remote function and local table
+0
+1
+2
+3
+4
+10
+11
+12
+13
+14
+15
+Verify Hybrid skips segment with always false predicate on the first segment
+10
+11
+12
+13
+14
+15
+Verify Hybrid skips segment with always false predicate on the second segment
+0
+1
+2
+Hybrid raises when a segment is missing a column used by the base schema
+Prepare local MergeTree table for multi-segment tests
+Populate local table with sample data
+Create Hybrid table with three segment pairs
+Count rows across all segments
+6
+Count rows from segments with id > 4
+1
+Count rows where value > 200
+3
+Count rows named Alice
+1
+Select rows ordered by value descending (id > 2)
+4	David	300.2
+5	Eve	250.1
+3	Charlie	150.7
+Limit results ordered by id
+0	Invalid	2022-01-01 10:00:00	0.5
+1	Alice	2022-01-01 10:00:00	100.5
+2	Bob	2022-01-02 11:00:00	200.3
+Explain plan for filter on value
+Union (Hybrid)
+  ReadFromRemote (Read from remote replica)
+  ReadFromRemote (Read from remote replica)
+  ReadFromRemote (Read from remote replica)
+Union (Hybrid)
+  ReadFromRemote (Read from remote replica)
+  ReadFromRemote (Read from remote replica)
+  ReadFromRemote (Read from remote replica)
+Union (Hybrid)
+  ReadFromRemote (Read from remote replica)
+  Expression ((Projection + Before ORDER BY))
+    Expression (WHERE)
+      ReadFromMergeTree (default.test_tiered_local_data)
+  Expression ((Projection + Before ORDER BY))
+    Expression (WHERE)
+      ReadFromMergeTree (default.test_tiered_local_data)
+Union (Hybrid)
+  ReadFromRemote (Read from remote replica)
+  Expression ((Project names + Projection))
+    Expression ((WHERE + Change column names to column identifiers))
+      ReadFromMergeTree (default.test_tiered_local_data)
+  Expression ((Project names + Projection))
+    Expression ((WHERE + Change column names to column identifiers))
+      ReadFromMergeTree (default.test_tiered_local_data)
+Aggregate values across name when filtering by event_time
+David	1	300.2
+Eve	1	250.1
+Bob	1	200.3
+Charlie	1	150.7
+Verify additional_table_filters works consistently (legacy analyser)
+2	Bob	200.3
+Verify additional_table_filters works consistently (new analyser)
+2	Bob	200.3
+Clean up Hybrid table with three segment pairs
+Clean up local helper table
+Drop predicate filtering fixtures if they exist
+Create local tables representing before/after watermark partitions
+Create second local table with different value type
+Insert rows before watermark into both tables
+Insert rows after watermark into both tables
+Create Hybrid table with analyzer disabled during reads
+Insert row via Hybrid table (should go to first segment)
+Verify that inserted row landed in first table
+17	John	2025-09-25	400
+Verify that second table did not receive the inserted row
+0
+Read predicate-filtered data with analyzer disabled and no localhost preference
+14	David	2025-09-05	400
+15	Eve	2025-09-10	500
+16	Frank	2025-09-15	600
+17	John	2025-09-25	400
+21	Alice	2025-08-15	100
+22	Bob	2025-08-20	200
+23	Charlie	2025-08-25	300
+Read predicate-filtered data with analyzer enabled and no localhost preference
+14	David	2025-09-05	400
+15	Eve	2025-09-10	500
+16	Frank	2025-09-15	600
+17	John	2025-09-25	400
+21	Alice	2025-08-15	100
+22	Bob	2025-08-20	200
+23	Charlie	2025-08-25	300
+Read predicate-filtered data with analyzer disabled and prefer localhost replica
+14	David	2025-09-05	400
+15	Eve	2025-09-10	500
+16	Frank	2025-09-15	600
+17	John	2025-09-25	400
+21	Alice	2025-08-15	100
+22	Bob	2025-08-20	200
+23	Charlie	2025-08-25	300
+Read predicate-filtered data with analyzer enabled and prefer localhost replica
+14	David	2025-09-05	400
+15	Eve	2025-09-10	500
+16	Frank	2025-09-15	600
+17	John	2025-09-25	400
+21	Alice	2025-08-15	100
+22	Bob	2025-08-20	200
+23	Charlie	2025-08-25	300
+Check if the subqueries were recorded in query_log (hybrid_table_auto_cast_columns = 0)
+Row 1:
+──────
+type:              QueryFinish
+is_initial_query2: 1
+tbl:               ['_table_function.remote','db.test_tiered_watermark']
+qry:               SELECT * FROM test_tiered_watermark ORDER BY id DESC SETTINGS enable_analyzer = 1,  hybrid_table_auto_cast_columns = 0, prefer_localhost_replica = 0, log_queries=1, serialize_query_plan=0, log_comment = 'test_tiered_watermark1', max_threads=1 FORMAT Null;
+log_comment:       test_tiered_watermark1
+
+Row 2:
+──────
+type:              QueryFinish
+is_initial_query2: 0
+tbl:               ['db.test_tiered_watermark_after']
+qry:               SELECT `__table1`.`id` AS `id`, `__table1`.`name` AS `name`, `__table1`.`date` AS `date`, `__table1`.`value` AS `value` FROM `db`.`test_tiered_watermark_after` AS `__table1` WHERE `__table1`.`date` >= '2025-09-01' ORDER BY `__table1`.`id` DESC
+log_comment:       test_tiered_watermark1
+
+Row 3:
+──────
+type:              QueryFinish
+is_initial_query2: 0
+tbl:               ['db.test_tiered_watermark_before']
+qry:               SELECT `__table1`.`id` AS `id`, `__table1`.`name` AS `name`, `__table1`.`date` AS `date`, `__table1`.`value` AS `value` FROM `db`.`test_tiered_watermark_before` AS `__table1` WHERE `__table1`.`date` < '2025-09-01' ORDER BY `__table1`.`id` DESC
+log_comment:       test_tiered_watermark1
+Check if the subqueries were recorded in query_log (hybrid_table_auto_cast_columns = 1)
+Row 1:
+──────
+type:              QueryFinish
+is_initial_query2: 1
+tbl:               ['_table_function.remote','db.test_tiered_watermark']
+qry:               SELECT * FROM test_tiered_watermark ORDER BY id DESC SETTINGS enable_analyzer = 1, hybrid_table_auto_cast_columns = 1, prefer_localhost_replica = 0, log_queries=1, serialize_query_plan=0, log_comment = 'test_tiered_watermark2', max_threads=1 FORMAT Null;
+log_comment:       test_tiered_watermark2
+
+Row 2:
+──────
+type:              QueryFinish
+is_initial_query2: 0
+tbl:               ['db.test_tiered_watermark_after']
+qry:               SELECT _CAST(`__table1`.`id`, 'UInt32') AS `id`, _CAST(`__table1`.`name`, 'String') AS `name`, `__table1`.`date` AS `date`, _CAST(`__table1`.`value`, 'UInt32') AS `value` FROM `db`.`test_tiered_watermark_after` AS `__table1` WHERE `__table1`.`date` >= '2025-09-01' ORDER BY _CAST(`__table1`.`id`, 'UInt32') AS `id` DESC
+log_comment:       test_tiered_watermark2
+
+Row 3:
+──────
+type:              QueryFinish
+is_initial_query2: 0
+tbl:               ['db.test_tiered_watermark_before']
+qry:               SELECT _CAST(`__table1`.`id`, 'UInt32') AS `id`, _CAST(`__table1`.`name`, 'String') AS `name`, `__table1`.`date` AS `date`, _CAST(`__table1`.`value`, 'UInt32') AS `value` FROM `db`.`test_tiered_watermark_before` AS `__table1` WHERE `__table1`.`date` < '2025-09-01' ORDER BY _CAST(`__table1`.`id`, 'UInt32') DESC
+log_comment:       test_tiered_watermark2
+Clean up predicate filtering tables
