@@ -4,6 +4,7 @@
 42
 "just a string"
 null
+\N
 true
 {\n"a": 1\n}
 {\n "a": 1,\n "b": 2\n}

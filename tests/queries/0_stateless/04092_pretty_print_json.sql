@@ -6,7 +6,7 @@ SELECT prettyPrintJSON('[1,2,3]');
 SELECT prettyPrintJSON('42');
 SELECT prettyPrintJSON('"just a string"');
 SELECT prettyPrintJSON('null');
-SELECT prettyPrintJSON(NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT prettyPrintJSON(NULL);
 SELECT prettyPrintJSON('true');
 SELECT prettyPrintJSON('{"a":1}', 0);
 SELECT prettyPrintJSON('{"a":1,"b":2}', 1);
