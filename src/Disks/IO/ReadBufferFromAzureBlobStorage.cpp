@@ -11,6 +11,8 @@
 #include <Common/Throttler.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/ProfileEvents.h>
+#include <Common/HistogramMetrics.h>
+#include <Common/Stopwatch.h>
 #include <IO/SeekableReadBuffer.h>
 
 
@@ -22,6 +24,12 @@ namespace ProfileEvents
     extern const Event AzureGetObject;
     extern const Event DiskAzureGetObject;
     extern const Event ReadBufferFromAzureInitMicroseconds;
+}
+
+namespace HistogramMetrics
+{
+    extern Metric & AzureReadRequestDuration;
+    extern Metric & AzureReadRequestBytes;
 }
 
 namespace DB
@@ -64,6 +72,21 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
         data_ptr = tmp_buffer.data();
         data_capacity = tmp_buffer_size;
     }
+}
+
+ReadBufferFromAzureBlobStorage::~ReadBufferFromAzureBlobStorage()
+{
+    observeDownloadMetrics();
+}
+
+void ReadBufferFromAzureBlobStorage::observeDownloadMetrics()
+{
+    if (download_metrics_observed)
+        return;
+    download_metrics_observed = true;
+
+    HistogramMetrics::AzureReadRequestDuration.observe(static_cast<double>(download_watch.elapsedMicroseconds()));
+    HistogramMetrics::AzureReadRequestBytes.observe(static_cast<double>(download_bytes_read));
 }
 
 void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
@@ -159,6 +182,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         return false;
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureBytes, bytes_read);
+    download_bytes_read += bytes_read;
     BufferBase::set(data_ptr, bytes_read, 0);
 
     offset += bytes_read;
@@ -242,6 +266,11 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
     if (!blob_client)
         blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
+    /// Flush metrics for the previous Download body stream (if any) before starting a new one.
+    /// Reset per-connection bytes counter; the stopwatch will be restarted just before Download below.
+    observeDownloadMetrics();
+    download_bytes_read = 0;
+
     size_t sleep_time_with_backoff_milliseconds = 100;
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureInitMicroseconds);
 
@@ -253,9 +282,11 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
             if (blob_container_client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
 
+            download_watch.restart();
             auto download_response = blob_client->Download(download_options, azure_context);
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
             data_stream = std::move(download_response.Value.BodyStream);
+            download_metrics_observed = false;
             break;
         }
         catch (const Azure::Core::RequestFailedException & e)
@@ -319,6 +350,17 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
     for (size_t i = 0; i < max_single_download_retries && n > 0; ++i)
     {
         size_t bytes_copied = 0;
+        Stopwatch request_watch;
+        bool metrics_observed = false;
+
+        auto observe_request_metrics = [&]()
+        {
+            if (metrics_observed)
+                return;
+            metrics_observed = true;
+            HistogramMetrics::AzureReadRequestDuration.observe(static_cast<double>(request_watch.elapsedMicroseconds()));
+            HistogramMetrics::AzureReadRequestBytes.observe(static_cast<double>(bytes_copied));
+        };
 
         try
         {
@@ -346,6 +388,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
 
+            observe_request_metrics();
+
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
                 throw;
 
@@ -356,6 +400,9 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Read for file {} at attempt {}/{}: {}", path, i + 1, max_single_read_retries, getCurrentExceptionMessage(false));
+
+            observe_request_metrics();
+
             /// It doesn't make sense to retry allocator errors
             if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
                 throw;
@@ -367,6 +414,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             sleep_time_with_backoff_milliseconds *= 2;
         }
 
+        observe_request_metrics();
 
         ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureBytes, bytes_copied);
 
