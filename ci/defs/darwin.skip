@@ -299,7 +299,6 @@
 02045_like_function
 02047_log_family_data_file_sizes
 02050_client_profile_events
-02095_function_get_os_kernel_version
 02096_totals_global_in_bug
 02100_multiple_hosts_command_line_set_ssl
 02101_empty_as_default_and_omitted_fields
