@@ -1,4 +1,3 @@
-OK
 image_path	Nullable(String)					
 caption	Nullable(String)					
 NSFW	Nullable(String)					
@@ -8,6 +7,7 @@ url	Nullable(String)
 key	Nullable(Int64)					
 shard_id	Nullable(Int64)					
 status	Nullable(String)					
+error_message	Nullable(Int32)					
 width	Nullable(Int64)					
 height	Nullable(Int64)					
 exif	Nullable(String)					
