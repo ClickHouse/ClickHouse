@@ -1317,6 +1317,10 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     const auto & keys = distinct.getColumnNames();
     size_t limit = 0;
 
+    /// Propagate `query_has_limit` from `DistinctStep::limit_hint` so that the PK selectivity
+    /// check can let read-in-order finish early for queries like `SELECT DISTINCT k FROM t LIMIT N`.
+    const bool query_has_limit = distinct.getLimitHint() != 0;
+
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
@@ -1342,7 +1346,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!reading->requestReadingInOrder(
             order_info.input_order->used_prefix_of_sorting_key_size,
             order_info.input_order->direction,
-            order_info.input_order->limit))
+            order_info.input_order->limit,
+            query_has_limit))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1359,7 +1364,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
             return {};
 
-        if (!merge->requestReadingInOrder(order_info.input_order))
+        if (!merge->requestReadingInOrder(order_info.input_order, query_has_limit))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
