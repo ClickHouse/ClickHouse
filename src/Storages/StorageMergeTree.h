@@ -96,8 +96,6 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
 
-    bool hasLightweightDeletedMask() const override;
-
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
 

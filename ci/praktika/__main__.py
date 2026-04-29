@@ -1,10 +1,96 @@
 import argparse
+import datetime
+import os
 import sys
+import textwrap
 
 from .html_prepare import Html
+from .settings import Settings
 from .utils import Utils
 from .validator import Validator
 from .yaml_generator import YamlGenerator
+
+
+_WRAP_WIDTH = 160
+_TIMESTAMP_INDENT = len(
+    datetime.datetime(2000, 1, 1).strftime("[%Y-%m-%d %H:%M:%S] ")
+)
+
+
+class _TimestampedStream:
+    """Prepends a [YYYY-MM-DD HH:MM:SS] timestamp to each output line."""
+
+    def __init__(self, stream):
+        self._stream = stream
+        self._at_line_start = True
+
+    def write(self, data):
+        if not data:
+            return
+        parts = data.split("\n")
+        for i, part in enumerate(parts):
+            is_last = i == len(parts) - 1
+            if self._at_line_start and part:
+                ts = datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S] ")
+                self._stream.write(ts + part)
+            elif part:
+                self._stream.write(part)
+            if not is_last:
+                self._stream.write("\n")
+                self._at_line_start = True
+            else:
+                self._at_line_start = not part
+
+    def flush(self):
+        self._stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+class _TeeStream:
+    """Writes to a terminal stream (with line wrapping) and a log file (without wrapping)."""
+
+    def __init__(self, terminal, log, subsequent_indent=0):
+        self._terminal = terminal
+        self._log = log
+        self._subsequent_indent = " " * subsequent_indent
+        self._at_line_start = True
+
+    def write(self, data):
+        if not data:
+            return
+        self._log.write(data)
+        parts = data.split("\n")
+        for i, part in enumerate(parts):
+            is_last = i == len(parts) - 1
+            if self._at_line_start and part:
+                self._terminal.write(
+                    textwrap.fill(
+                        part,
+                        width=_WRAP_WIDTH,
+                        subsequent_indent=self._subsequent_indent,
+                        break_long_words=False,
+                        break_on_hyphens=False,
+                        expand_tabs=False,
+                        replace_whitespace=False,
+                        drop_whitespace=False,
+                    )
+                )
+            elif part:
+                self._terminal.write(part)
+            if not is_last:
+                self._terminal.write("\n")
+                self._at_line_start = True
+            else:
+                self._at_line_start = not part
+
+    def flush(self):
+        self._terminal.flush()
+        self._log.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._terminal, name)
 
 
 def create_parser():
@@ -104,6 +190,12 @@ def create_parser():
         ),
         action="store_true",
         default="",
+    )
+    run_parser.add_argument(
+        "--timestamp",
+        help="Prefix each output line with a [YYYY-MM-DD HH:MM:SS] timestamp",
+        action="store_true",
+        default=False,
     )
     run_parser.add_argument(
         "--workers",
@@ -272,24 +364,44 @@ def main():
         else:
             job, workflow = job_workflow_pairs[0][0], job_workflow_pairs[0][1]
             print(f"Going to run job [{job.name}], workflow [{workflow.name}]")
-            Runner().run(
-                workflow=workflow,
-                job=job,
-                docker=args.docker,
-                local_run=not args.ci,
-                run_hooks=args.ci or args.run_hooks_locally,
-                no_docker=args.no_docker,
-                param=args.param,
-                test=" ".join(args.test),
-                pr=args.pr,
-                branch=args.branch,
-                sha=args.sha,
-                count=args.count,
-                debug=args.debug,
-                path=args.path,
-                path_1=args.path_1,
-                workers=args.workers,
-            )
+            original_stdout = sys.stdout
+            original_stderr = sys.stderr
+            log_file = None
+            try:
+                log_dir = os.path.dirname(Settings.RUN_LOG)
+                if log_dir:
+                    os.makedirs(log_dir, exist_ok=True)
+                log_file = open(Settings.RUN_LOG, "w", buffering=1)
+                tee = _TeeStream(
+                    original_stdout,
+                    log_file,
+                    subsequent_indent=_TIMESTAMP_INDENT if args.timestamp else 0,
+                )
+                sys.stdout = _TimestampedStream(tee) if args.timestamp else tee
+                sys.stderr = sys.stdout
+                Runner().run(
+                    workflow=workflow,
+                    job=job,
+                    docker=args.docker,
+                    local_run=not args.ci,
+                    run_hooks=args.ci or args.run_hooks_locally,
+                    no_docker=args.no_docker,
+                    param=args.param,
+                    test=" ".join(args.test),
+                    pr=args.pr,
+                    branch=args.branch,
+                    sha=args.sha,
+                    count=args.count,
+                    debug=args.debug,
+                    path=args.path,
+                    path_1=args.path_1,
+                    workers=args.workers,
+                )
+            finally:
+                sys.stdout = original_stdout
+                sys.stderr = original_stderr
+                if log_file is not None:
+                    log_file.close()
     else:
         parser.print_help()
         sys.exit(1)

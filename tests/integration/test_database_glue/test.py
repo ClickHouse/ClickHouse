@@ -29,7 +29,7 @@ from pyiceberg.types import (
     DecimalType,
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.mock_servers import start_mock_servers
 
 import boto3
@@ -746,9 +746,10 @@ def test_system_tables(started_cluster):
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 4
 
-    # system.databases
+    # system.databases always shows data lake catalog databases regardless of show_data_lake_catalogs_in_system_tables,
+    # because listing a database name is purely local metadata and never requires calls to an external catalog service.
     assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 1
-    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}'").strip()) == 0
+    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 1
 
     # system.columns
     assert int(node.query(f"SELECT count() FROM system.columns WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 24

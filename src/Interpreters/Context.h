@@ -131,6 +131,7 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 class TransposedMetricLog;
+class HistogramMetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
@@ -138,6 +139,7 @@ class ZooKeeperConnectionLog;
 class AggregatedZooKeeperLog;
 class IcebergMetadataLog;
 class DeltaMetadataLog;
+class PredicateStatisticsLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -747,6 +749,8 @@ public:
         DB_ORDINARY_DEPRECATED,
         DELAY_ACCOUNTING_DISABLED,
         LINUX_FAST_CLOCK_SOURCE_NOT_USED,
+        LINUX_MDRAID_IS_BEING_RESYNCHRONIZED,
+        LINUX_MDRAID_IS_DEGRADED,
         LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
         LINUX_MEMORY_OVERCOMMIT_DISABLED,
@@ -781,6 +785,7 @@ public:
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
     void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
+    void addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
     void removeAllWarnings() const;
@@ -1511,6 +1516,7 @@ public:
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
+    std::shared_ptr<HistogramMetricLog> getHistogramMetricLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
@@ -1530,6 +1536,7 @@ public:
     std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog() const;
     std::shared_ptr<IcebergMetadataLog> getIcebergMetadataLog() const;
     std::shared_ptr<DeltaMetadataLog> getDeltaMetadataLog() const;
+    std::shared_ptr<PredicateStatisticsLog> getPredicateStatisticsLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1868,6 +1875,10 @@ struct HTTPContext : public IHTTPContext
     uint64_t getMaxFieldNameSize() const override;
 
     uint64_t getMaxFieldValueSize() const override;
+
+    uint64_t getMaxRequestHeaderSize() const override;
+
+    Poco::Timespan getHeadersReadTimeout() const override;
 
     Poco::Timespan getReceiveTimeout() const override;
 
