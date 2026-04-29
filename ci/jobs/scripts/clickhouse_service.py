@@ -174,3 +174,17 @@ class ClickHouseService:
                 )
         self._print_server_log()
         raise RuntimeError(f"Server not ready after {attempts * delay}s")
+
+    @staticmethod
+    def collect_cores(directory) -> list:
+        key_path = f"{repo_dir}/ci/defs/public.pem"
+        assert Path(key_path).exists(), f"RSA public key not found: {key_path}"
+        aes_key_path = str(Path(directory) / "aes.key")
+        encrypted = []
+        for core in sorted(Path(directory).glob("core.*"))[:3]:
+            if not core.name.endswith(".zst") and not core.name.endswith(".enc"):
+                zst_path = Utils.compress_zst(core)
+                encrypted.append(Utils.encrypt(str(zst_path), key_path, aes_key_path))
+        if encrypted and Path(f"{aes_key_path}.rsa").exists():
+            encrypted.append(f"{aes_key_path}.rsa")
+        return encrypted
