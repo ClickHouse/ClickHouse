@@ -367,6 +367,7 @@ public:
         const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
         bool parent_has_trailing_settings = false; /// A parent ASTQueryWithOutput will append SETTINGS after this node's output.
         bool has_trailing_output_options = false; /// A parent ASTQueryWithOutput has trailing output options (SETTINGS, FORMAT, INTO OUTFILE).
+        bool disable_from_first_syntax = false; /// Disable FROM-first syntax for SELECTs inside INSERT (to avoid parsing ambiguity).
     };
 
     void format(WriteBuffer & ostr, const FormatSettings & settings) const
