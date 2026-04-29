@@ -78,7 +78,11 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
+    size_t min_token_chars = 0;
+    size_t max_token_chars = std::numeric_limits<size_t>::max();
     ASTPtr preprocessor;
+
+    bool hasTokenCharLimits() const { return min_token_chars > 0 || max_token_chars < std::numeric_limits<size_t>::max(); }
 };
 
 using PostingList = roaring::Roaring;

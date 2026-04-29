@@ -7,6 +7,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -1402,12 +1403,21 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 {
+    const bool has_token_char_limits = params.hasTokenCharLimits();
+
     forEachToken(
         *tokenizer,
         document.data(),
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
+            if (has_token_char_limits)
+            {
+                const size_t chars = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token_start), token_length);
+                if (chars < params.min_token_chars || chars > params.max_token_chars)
+                    return false;
+            }
+
             bool inserted;
             TokenToPostingsBuilderMap::LookupResult it;
 
@@ -1612,6 +1622,8 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
+static const String ARGUMENT_MIN_TOKEN_CHARS = "min_token_chars";
+static const String ARGUMENT_MAX_TOKEN_CHARS = "max_token_chars";
 
 namespace
 {
@@ -1707,11 +1719,16 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
     UInt64 dictionary_block_frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
+    UInt64 min_token_chars = extractFieldOption<UInt64>(options, ARGUMENT_MIN_TOKEN_CHARS).value_or(0);
+    UInt64 max_token_chars = extractFieldOption<UInt64>(options, ARGUMENT_MAX_TOKEN_CHARS)
+        .value_or(std::numeric_limits<size_t>::max());
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
+        min_token_chars,
+        max_token_chars,
         std::move(preprocessor_ast)};
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
@@ -1729,7 +1746,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
-    TokenizerFactory::instance().get(tokenizer_ast);
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
     if (dictionary_block_size == 0)
@@ -1742,6 +1759,21 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
+
+    UInt64 min_token_chars = extractFieldOption<UInt64>(options, ARGUMENT_MIN_TOKEN_CHARS).value_or(0);
+    UInt64 max_token_chars = extractFieldOption<UInt64>(options, ARGUMENT_MAX_TOKEN_CHARS).value_or(0);
+
+    if ((min_token_chars > 0 || max_token_chars > 0)
+        && (tokenizer->getType() == ITokenizer::Type::Ngrams || tokenizer->getType() == ITokenizer::Type::SparseGrams))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Text index arguments '{}' and '{}' are not supported with '{}' tokenizer because token length is fixed by the tokenizer",
+            ARGUMENT_MIN_TOKEN_CHARS, ARGUMENT_MAX_TOKEN_CHARS, tokenizer->getTokenizerName());
+    }
+
+    if (max_token_chars != 0 && min_token_chars > max_token_chars)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' ({}) must not be greater than '{}' ({})",
+            ARGUMENT_MIN_TOKEN_CHARS, min_token_chars, ARGUMENT_MAX_TOKEN_CHARS, max_token_chars);
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
