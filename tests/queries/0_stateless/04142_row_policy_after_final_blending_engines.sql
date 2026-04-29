@@ -89,6 +89,38 @@ DROP ROW POLICY p_sum ON t_sum;
 DROP TABLE t_sum;
 
 
+SELECT '== GraphiteMergeTree ==';
+DROP TABLE IF EXISTS t_graphite;
+DROP ROW POLICY IF EXISTS p_graphite ON t_graphite;
+
+-- Both rows share the same `(Path, Time)` rollup bucket; the `sum` pattern in
+-- the test config rolls `Value` up across all rows in the bucket. A policy on
+-- the non-aggregated `visibility` column would be evaluated against the merged
+-- row, whose `Value` would carry the contribution of the private row.
+CREATE TABLE t_graphite
+(
+    visibility String,
+    Path       String,
+    Time       DateTime('UTC'),
+    Value      Float64,
+    Version    UInt32
+) ENGINE = GraphiteMergeTree('graphite_rollup') ORDER BY (Path, Time);
+
+INSERT INTO t_graphite VALUES ('private', 'sum_test', toDateTime('2026-04-28 00:00:00', 'UTC'), 100.0, 1);
+INSERT INTO t_graphite VALUES ('public',  'sum_test', toDateTime('2026-04-28 00:00:00', 'UTC'),   5.0, 2);
+
+CREATE ROW POLICY p_graphite ON t_graphite USING visibility = 'public' TO ALL;
+
+-- The private row must not contribute to the visible `Value`.
+SELECT '-- apply_row_policy_after_final = 1 --';
+SELECT visibility, Path, Value, Version FROM t_graphite FINAL ORDER BY visibility SETTINGS apply_row_policy_after_final = 1;
+SELECT '-- apply_row_policy_after_final = 0 --';
+SELECT visibility, Path, Value, Version FROM t_graphite FINAL ORDER BY visibility SETTINGS apply_row_policy_after_final = 0;
+
+DROP ROW POLICY p_graphite ON t_graphite;
+DROP TABLE t_graphite;
+
+
 SELECT '== ReplacingMergeTree (deferral still works) ==';
 -- Sanity check: for engines where deferral is safe, the original
 -- soft-delete semantics introduced by `apply_row_policy_after_final` are kept.
