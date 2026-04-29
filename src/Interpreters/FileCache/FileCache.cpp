@@ -118,7 +118,7 @@ namespace
 
 void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state)
 {
-    auto & local_stat = stat_by_kind[kind];
+    auto & local_stat = getStatByKind(kind);
     switch (state)
     {
         case State::Releasable:
@@ -317,7 +317,7 @@ FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::pat
         return origin;
 
     const static std::set<std::string> system_cache_type = {".txt", ".json", ".idx", ".cidx", ".dat"};
-    origin.segment_type = system_cache_type.contains(fs::path(filename).extension()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
+    origin.segment_type = system_cache_type.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
     return origin;
 }
 
@@ -588,7 +588,6 @@ std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size
     size_t end_pos_non_included = offset + size;
     size_t remaining_size = aligned_size;
 
-    FileSegments file_segments;
     const size_t max_size = max_file_segment_size.load();
     while (current_pos < end_pos_non_included)
     {
@@ -1233,12 +1232,10 @@ bool FileCache::doTryReserve(
     try
     {
         auto lock = cache_state_guard.lock();
-        main_priority_iterator->check(lock);
         main_eviction_info->releaseHoldSpace(lock);
         if (query_eviction_info)
             query_eviction_info->releaseHoldSpace(lock);
 
-        main_priority_iterator->check(lock);
         eviction_candidates.afterEvictState(lock);
         main_priority_iterator->incrementSize(size, lock);
 
