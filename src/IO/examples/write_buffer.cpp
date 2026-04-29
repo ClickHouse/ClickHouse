@@ -8,7 +8,7 @@
 #include <IO/WriteBufferFromOStream.h>
 
 
-int main(int, char **)
+int mainEntryExampleWriteBuffer(int, char **)
 {
     try
     {
