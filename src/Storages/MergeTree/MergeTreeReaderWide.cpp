@@ -407,17 +407,21 @@ size_t MergeTreeReaderWide::readRows(
                     res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
 
                 /// Extract the needed subset from the cached block.
-                /// The cached column may have a different concrete type (e.g., ColumnSparse)
-                /// than what the current serialization settings produce (e.g., plain column),
-                /// because the cache entry was written by a query with different settings.
-                /// Convert to the expected column type to avoid type mismatches in downstream
-                /// operations like insertRangeFrom.
                 const auto & cached_col = cached_columns[pos].second;
                 auto cut_column = cached_col->cut(offset_in_cache, rows_to_serve);
 
-                /// Ensure the cut column is converted to a full (non-sparse, non-const) column.
+                /// `ColumnConst` should never appear in the cache; convert defensively.
                 cut_column = cut_column->convertToFullColumnIfConst();
-                cut_column = cut_column->convertToFullColumnIfSparse();
+
+                /// Do NOT convert `ColumnSparse` to a full column unconditionally.
+                /// The disk-read path returns a `ColumnSparse` for parts with sparse
+                /// serialization, so the cache-hit path must do the same to keep
+                /// downstream behavior consistent. Some aggregate functions
+                /// (for example `groupConcat`) have a sparse fast path
+                /// (`addBatchSparseSinglePlace`) that processes non-defaults first
+                /// and all defaults at the end, while the full path preserves the
+                /// natural row order. If one query in a session gets sparse and
+                /// another gets a full equivalent, results may differ.
 
                 if (!append)
                 {
@@ -425,6 +429,16 @@ size_t MergeTreeReaderWide::readRows(
                 }
                 else
                 {
+                    /// In the append case, `res_columns[pos]` was created by
+                    /// `createColumn(*serializations[pos])` so its type matches the
+                    /// current serialization. If the cached column was written under
+                    /// different settings and has a different concrete type, fall back
+                    /// to a full column so that `insertRangeFrom` is type-compatible.
+                    const bool cut_is_sparse = typeid_cast<const ColumnSparse *>(cut_column.get()) != nullptr;
+                    const bool dst_is_sparse = typeid_cast<const ColumnSparse *>(res_columns[pos].get()) != nullptr;
+                    if (cut_is_sparse && !dst_is_sparse)
+                        cut_column = cut_column->convertToFullColumnIfSparse();
+
                     auto mutable_col = IColumn::mutate(std::move(res_columns[pos]));
                     mutable_col->insertRangeFrom(*cut_column, 0, cut_column->size());
                     res_columns[pos] = std::move(mutable_col);
