@@ -2190,12 +2190,14 @@ try
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
-            config().replace("default", loaded_config, PRIO_DEFAULT, true);
-
-            Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+            /// Validate the new config BEFORE installing it into the global layered config, so a
+            /// failed reload does not leave `config()` partially mutated with unvalidated changes.
+            Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
             /// Same as on initial load: validate the reloaded XML config rather than the layered
             /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
             ServerSettings::checkUnknownSettings(*loaded_config, config_path);
+
+            config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
