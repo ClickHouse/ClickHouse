@@ -42,5 +42,17 @@ EOF
 
 timeout 30 $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE_ASYNC" <&4 2>&1
 
+# Also test with --inline-insert-data — this path has its own stdin check
+# (in `is_inline_insert_data` branch) that must not hang on an empty pipe either.
+QUERIES_FILE_INLINE="${CLICKHOUSE_TMP}/04064_queries_inline_$$.sql"
+cat > "$QUERIES_FILE_INLINE" <<'EOF'
+CREATE TABLE IF NOT EXISTS test_04064_inline (x UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO test_04064_inline VALUES (100), (200), (300);
+SELECT sum(x) FROM test_04064_inline;
+DROP TABLE test_04064_inline;
+EOF
+
+timeout 30 $CLICKHOUSE_CLIENT --inline-insert-data --queries-file="$QUERIES_FILE_INLINE" <&4 2>&1
+
 exec 4>&-
-rm -f "$FIFO" "$QUERIES_FILE" "$QUERIES_FILE_ASYNC"
+rm -f "$FIFO" "$QUERIES_FILE" "$QUERIES_FILE_ASYNC" "$QUERIES_FILE_INLINE"

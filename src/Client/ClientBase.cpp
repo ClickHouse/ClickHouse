@@ -2478,7 +2478,11 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_inline_insert_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+            /// Use non-blocking poll to check stdin — the blocking read in
+            /// `isStdinNotEmptyAndValid` hangs when stdin is an empty pipe (CI, Docker).
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
+                && isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
+                && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
