@@ -27,6 +27,16 @@ node_protocols_custom_handlers = cluster_protocols.add_instance(
     main_configs=["configs/config.d/protocols_custom_handlers.xml"],
 )
 
+# Reload regression: the unknown-key check also runs on `SYSTEM RELOAD CONFIG`,
+# not only at startup. Use a separate cluster that starts with a valid config
+# and then have the test inject / remove a bad config.d file at runtime.
+cluster_reload = ClickHouseCluster(__file__, name="reload")
+node_reload = cluster_reload.add_instance(
+    "node_reload",
+    main_configs=["configs/config.d/static_handler_config_ref.xml"],
+    stay_alive=True,
+)
+
 
 @pytest.fixture(scope="module")
 def start_bad_cluster():
@@ -59,6 +69,13 @@ def start_protocols_cluster():
     cluster_protocols.shutdown()
 
 
+@pytest.fixture(scope="module")
+def start_reload_cluster():
+    cluster_reload.start()
+    yield
+    cluster_reload.shutdown()
+
+
 def test_unknown_config_option_rejected(start_bad_cluster):
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_exception
     assert "some_completely_unknown_option" in caught_exception
@@ -79,3 +96,60 @@ def test_protocols_custom_handlers_accepted(start_protocols_cluster):
     assert (
         node_protocols_custom_handlers.query("SELECT 1").strip() == "1"
     )
+
+
+def test_reload_rejects_unknown_then_accepts_config_ref(start_reload_cluster):
+    # The node started with a valid config; the validator must also run on
+    # `SYSTEM RELOAD CONFIG`, not only at startup.
+    assert node_reload.query("SELECT 1").strip() == "1"
+
+    bad_config_path = "/etc/clickhouse-server/config.d/reload_unknown.xml"
+    bad_config = (
+        "<clickhouse>"
+        "<some_other_unknown_option>1</some_other_unknown_option>"
+        "</clickhouse>"
+    )
+    good_config_path = "/etc/clickhouse-server/config.d/reload_payload.xml"
+    good_config = (
+        "<clickhouse>"
+        "<my_reload_payload>Hello after reload</my_reload_payload>"
+        "<http_handlers>"
+        "<rule>"
+        "<methods>GET</methods>"
+        "<url>/my_reload_response</url>"
+        "<handler>"
+        "<type>static</type>"
+        "<response_content>config://my_reload_payload</response_content>"
+        "</handler>"
+        "</rule>"
+        "<defaults/>"
+        "</http_handlers>"
+        "</clickhouse>"
+    )
+
+    try:
+        # Step 1: write an unknown top-level key into config.d and reload.
+        # `SYSTEM RELOAD CONFIG` must surface `UNKNOWN_ELEMENT_IN_CONFIG`.
+        node_reload.replace_config(bad_config_path, bad_config)
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in node_reload.query_and_get_error(
+            "SYSTEM RELOAD CONFIG"
+        )
+
+        # Step 2: replace the bad file with a valid `config://`-referenced key
+        # and reload again. The validator must accept the new top-level key.
+        node_reload.exec_in_container(
+            ["bash", "-c", f"rm -f {bad_config_path}"]
+        )
+        node_reload.replace_config(good_config_path, good_config)
+        node_reload.query("SYSTEM RELOAD CONFIG")
+        response = node_reload.http_request("my_reload_response", method="GET")
+        assert response.status_code == 200
+        assert response.text == "Hello after reload"
+    finally:
+        node_reload.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {bad_config_path} {good_config_path}",
+            ]
+        )
