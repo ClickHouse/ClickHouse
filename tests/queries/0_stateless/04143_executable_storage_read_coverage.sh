@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Test coverage for StorageExecutable::readImpl() and transformToSingleBlockSources().
 # Uses clickhouse-local with a custom user_scripts_path so no server-side script
-# installation is required.
+# installation is required.  user_scripts_path is a server config option, so it
+# must be passed via --config-file rather than as a bare CLI argument.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,11 +33,19 @@ done
 SCRIPT
 chmod +x "${SCRIPTS_DIR}/uppercase.sh"
 
+# Build a minimal config that sets user_scripts_path for this session.
+CONFIG_FILE="${SCRIPTS_DIR}/local_config.xml"
+cat > "${CONFIG_FILE}" << EOF
+<clickhouse>
+    <user_scripts_path>${SCRIPTS_DIR}/</user_scripts_path>
+</clickhouse>
+EOF
+
 # ---------------------------------------------------------------------------
 # Test 1: Executable with no input query — covers the basic readImpl path.
 # ---------------------------------------------------------------------------
 $CLICKHOUSE_LOCAL \
-    --user_scripts_path="${SCRIPTS_DIR}" \
+    --config-file="${CONFIG_FILE}" \
     --query "
 CREATE TABLE t_exec_basic (id UInt32, val String)
 ENGINE = Executable('gen_rows.sh', 'TSV')
@@ -50,7 +59,7 @@ SELECT * FROM t_exec_basic ORDER BY id;
 #          InterpreterSelectQueryAnalyzer branch inside readImpl.
 # ---------------------------------------------------------------------------
 $CLICKHOUSE_LOCAL \
-    --user_scripts_path="${SCRIPTS_DIR}" \
+    --config-file="${CONFIG_FILE}" \
     --query "
 CREATE TABLE src (id UInt32, val String) ENGINE = Memory;
 INSERT INTO src VALUES (10, 'alpha'), (20, 'beta');
@@ -66,7 +75,7 @@ SELECT * FROM t_exec_input ORDER BY id;
 #          and the is_executable_pool branch.
 # ---------------------------------------------------------------------------
 $CLICKHOUSE_LOCAL \
-    --user_scripts_path="${SCRIPTS_DIR}" \
+    --config-file="${CONFIG_FILE}" \
     --query "
 CREATE TABLE src (id UInt32, val String) ENGINE = Memory;
 INSERT INTO src VALUES (10, 'alpha'), (20, 'beta');

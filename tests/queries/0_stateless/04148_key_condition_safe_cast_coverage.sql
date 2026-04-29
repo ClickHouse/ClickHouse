@@ -17,7 +17,7 @@ DROP TABLE t_float32_key;
 DROP TABLE IF EXISTS t_decimal_key;
 CREATE TABLE t_decimal_key (val Decimal32(2)) ENGINE = MergeTree ORDER BY val;
 INSERT INTO t_decimal_key VALUES (1.50), (2.50), (3.50);
-SELECT val FROM t_decimal_key WHERE val > toDecimal64(2.00, 2) ORDER BY val;
+SELECT val FROM t_decimal_key WHERE val > toDecimal64(2.50, 2) ORDER BY val;
 DROP TABLE t_decimal_key;
 
 DROP TABLE IF EXISTS t_uuid_key;
