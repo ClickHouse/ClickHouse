@@ -13,8 +13,6 @@ ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-# shellcheck disable=SC1091
-source /repo/tests/docker_scripts/utils.lib
 
 install_packages package_folder
 
@@ -53,6 +51,7 @@ configure
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 
 # Start Redpanda (Kafka-compatible broker) so that Kafka engine tests work and
 # do not leave behind broken StorageKafka tables whose background threads cause
@@ -324,5 +323,3 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-collect_core_dumps

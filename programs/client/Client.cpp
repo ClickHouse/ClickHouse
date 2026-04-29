@@ -789,7 +789,10 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
         ("accept-invalid-certificate",
             "Ignore certificate verification errors, equal to config parameters "
-            "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none");
+            "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
+        ("inline-insert-data",
+            "Send INSERT data as is in the query text instead of converting it to blocks in the native format. "
+            "The server will parse the inline data itself, avoiding the round-trip to receive table structure.");
 
     /// Commandline options related to external tables.
 
@@ -915,6 +918,8 @@ void Client::processOptions(
         config().setBool("no-server-client-version-message", true);
     if (options.contains("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
+    if (options.contains("inline-insert-data"))
+        config().setBool("inline-insert-data", true);
     if (options.contains("jwt"))
     {
         if (!options["user"].defaulted())
@@ -1052,6 +1057,10 @@ void Client::processConfig()
     multiline = config().has("multiline");
     print_stack_trace = config().getBool("stacktrace", false);
     default_database = config().getString("database", "");
+    inline_insert_data = config().getBool("inline-insert-data", false);
+
+    if (inline_insert_data)
+        client_context->setSetting("send_table_structure_on_insert_with_inline_data", false);
 
     setDefaultFormatsAndCompressionFromConfiguration();
 }
