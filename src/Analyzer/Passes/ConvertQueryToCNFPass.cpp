@@ -419,12 +419,16 @@ public:
     {}
 
     /// Do not descend into subqueries — constraint graph is scoped to the outer query's table expressions.
-    /// Walking into QUERY/UNION nodes would collect correlated column references from subqueries,
-    /// which could then be incorrectly substituted by SubstituteColumnVisitor, corrupting the
-    /// correlated_columns_list (replacing ColumnNodes with FunctionNodes and causing bad cast crashes).
-    static bool needChildVisit(const VisitQueryTreeNodeType &, const VisitQueryTreeNodeType & child)
+    /// Walking into QUERY/UNION nodes (or descending below one when called directly on it) would
+    /// collect correlated column references from subqueries. Those could later be incorrectly
+    /// substituted by `SubstituteColumnVisitor`, corrupting the `correlated_columns_list`
+    /// (replacing `ColumnNode` instances with `FunctionNode` instances and crashing the planner).
+    static bool needChildVisit(const VisitQueryTreeNodeType & parent, const VisitQueryTreeNodeType & child)
     {
-        auto child_type = child->getNodeType();
+        const auto parent_type = parent->getNodeType();
+        if (parent_type == QueryTreeNodeType::QUERY || parent_type == QueryTreeNodeType::UNION)
+            return false;
+        const auto child_type = child->getNodeType();
         return child_type != QueryTreeNodeType::QUERY
             && child_type != QueryTreeNodeType::UNION;
     }
@@ -454,8 +458,16 @@ public:
         : column_names(column_names_), query_node_to_component(query_node_to_component_)
     {}
 
-    bool needChildVisit(const VisitQueryTreeNodeType & parent, const VisitQueryTreeNodeType &)
+    /// Do not descend into subqueries — column-name collection is scoped to a single query's
+    /// constraint graph. Inner subqueries have their own scope and are processed independently.
+    bool needChildVisit(const VisitQueryTreeNodeType & parent, const VisitQueryTreeNodeType & child)
     {
+        const auto parent_type = parent->getNodeType();
+        if (parent_type == QueryTreeNodeType::QUERY || parent_type == QueryTreeNodeType::UNION)
+            return false;
+        const auto child_type = child->getNodeType();
+        if (child_type == QueryTreeNodeType::QUERY || child_type == QueryTreeNodeType::UNION)
+            return false;
         return !query_node_to_component || !query_node_to_component->contains(parent);
     }
 
@@ -484,12 +496,17 @@ public:
     {}
 
     /// Do not descend into subqueries — constraint-based substitution is scoped to the outer query.
-    /// Without this guard, the visitor walks into QueryNode children (including correlated_columns_list)
-    /// and can replace ColumnNodes with FunctionNodes from the constraint graph, causing bad cast crashes
-    /// in CollectTopLevelColumnIdentifiersVisitor which expects correlated columns to be ColumnNodes.
-    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
+    /// Without this guard, the visitor walks into QueryNode children (including the correlated
+    /// columns list) and can replace `ColumnNode` instances with `FunctionNode` instances from
+    /// the constraint graph. The planner later iterates the correlated columns list expecting
+    /// `ColumnNode`, calls `getColumnSource()` on a `FunctionNode`, and crashes via
+    /// libc++ hardening (`vector[]` out-of-bounds inside `getSourceWeakPointer`).
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
-        auto child_type = child->getNodeType();
+        const auto parent_type = parent->getNodeType();
+        if (parent_type == QueryTreeNodeType::QUERY || parent_type == QueryTreeNodeType::UNION)
+            return false;
+        const auto child_type = child->getNodeType();
         return child_type != QueryTreeNodeType::QUERY
             && child_type != QueryTreeNodeType::UNION;
     }
