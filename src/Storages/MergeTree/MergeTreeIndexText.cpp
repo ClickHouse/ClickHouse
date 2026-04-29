@@ -128,38 +128,11 @@ PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_co
 {
 }
 
-void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr)
-{
-    if (header & RawPostings)
-    {
-        roaring::api::roaring_uint32_iterator_t it;
-        roaring_iterator_init(&postings, &it);
-
-        while (it.has_value)
-        {
-            writeVarUInt(it.current_value, ostr);
-            roaring::api::roaring_uint32_iterator_advance(&it);
-        }
-    }
-    else
-    {
-        size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&postings);
-        writeVarUInt(num_bytes, ostr);
-
-        std::vector<char> memory(num_bytes);
-        roaring::api::roaring_bitmap_portable_serialize(&postings, memory.data());
-        ostr.write(memory.data(), num_bytes);
-    }
-}
-
 void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr)
 {
-    if (info.header & IsCompressed)
-    {
-        auto values = postings.getValues();
-        posting_list_codec->encode(values, posting_list_block_size, info, ostr);
-    }
-    else if (info.header & RawPostings)
+    /// Raw VarUInt postings are the only special case handled here.
+    /// For everything else the configured codec serializes the posting list and fills `info`.
+    if (info.header & RawPostings)
     {
         auto values = postings.getValues();
         for (auto value : values)
@@ -167,23 +140,14 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostin
     }
     else
     {
-        auto bitmap = postings.toPostingList();
-        bitmap.runOptimize();
-        serialize(bitmap.roaring, info.header, ostr);
+        chassert(posting_list_codec);
+        posting_list_codec->encode(postings.getValues(), posting_list_block_size, info, ostr);
     }
 }
 
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
 {
-    if (header & IsCompressed)
-    {
-        chassert(posting_list_codec);
-        chassert(posting_list_codec->getType() != IPostingListCodec::Type::None);
-        auto postings = std::make_shared<PostingList>();
-        posting_list_codec->decode(istr, *postings);
-        return postings;
-    }
-    else if (header & RawPostings)
+    if (header & RawPostings)
     {
         if (cardinality > raw_postings_buffer.size())
             raw_postings_buffer.resize(cardinality);
@@ -195,23 +159,11 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
         postings->addMany(cardinality, raw_postings_buffer.data());
         return postings;
     }
-    else
-    {
-        size_t num_bytes;
-        readVarUInt(num_bytes, istr);
 
-        /// If the posting list is completely in the buffer, avoid copying.
-        if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
-        {
-            auto result = std::make_shared<PostingList>(PostingList::read(istr.position()));
-            istr.position() += num_bytes;
-            return result;
-        }
-
-        deserialization_buffer.resize(num_bytes);
-        istr.readStrict(deserialization_buffer.data(), num_bytes);
-        return std::make_shared<PostingList>(PostingList::read(deserialization_buffer.data()));
-    }
+    chassert(posting_list_codec);
+    auto postings = std::make_shared<PostingList>();
+    posting_list_codec->decode(istr, *postings);
+    return postings;
 }
 
 
@@ -919,68 +871,38 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     info.cardinality = static_cast<UInt32>(postings.size());
     PostingListCodecPtr posting_list_codec = postings_serialization.getPostingListCodec();
 
-    if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
-    {
-        info.header |= IsCompressed;
-    }
-
-    /// Apply posting list compression only to non-embedded,
-    /// non-raw posting lists (these are the big ones).
+    /// Tiny posting lists are embedded into the dictionary block.
+    /// They will be serialized later as raw VarUInts when the dictionary block is written.
     if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
         info.header |= RawPostings;
         info.header |= EmbeddedPostings;
-        info.header &= ~IsCompressed;
         return info;
     }
-    else if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+
+    /// Small posting lists are serialized as raw VarUInts.
+    /// The minimal size of a serialized Roaring Bitmap is around 48 bytes,
+    /// so VarUInt encoding is cheaper for low cardinalities.
+    if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
     {
         info.header |= RawPostings;
-        info.header &= ~IsCompressed;
         info.header |= SingleBlock;
-    }
-    else if (info.cardinality <= params.posting_list_block_size)
-    {
-        info.header |= SingleBlock;
-    }
-
-    /// When posting compression is enabled, the posting list codec is used to compress posting lists.
-    /// The codec splits the posting list into blocks according to the posting_list_block_size setting.
-    if (info.header & IsCompressed)
-    {
-        postings_serialization.serialize(postings, info, params.posting_list_block_size, postings_stream.plain_hashing);
-    }
-    else if (info.header & SingleBlock)
-    {
         info.offsets.emplace_back(postings_stream.plain_hashing.count());
         info.ranges.emplace_back(postings.minimum(), postings.maximum());
         postings_serialization.serialize(postings, info, params.posting_list_block_size, postings_stream.plain_hashing);
-    }
-    else
-    {
-        /// Multi-block path: split the UInt32 array into blocks and create
-        /// a per-block roaring bitmap for serialization. This avoids constructing
-        /// a single large bitmap just to split it via `splitPostings`.
-        auto values = postings.getValues();
-        size_t offset = 0;
-
-        while (offset < values.size())
-        {
-            size_t block_end = std::min(offset + params.posting_list_block_size, values.size());
-            auto block_values = values.subspan(offset, block_end - offset);
-
-            PostingList block_bitmap;
-            block_bitmap.addMany(block_values.size(), block_values.data());
-            block_bitmap.runOptimize();
-
-            info.offsets.emplace_back(postings_stream.plain_hashing.count());
-            info.ranges.emplace_back(block_values.front(), block_values.back());
-            postings_serialization.serialize(block_bitmap.roaring, info.header, postings_stream.plain_hashing);
-
-            offset = block_end;
-        }
+        return info;
     }
 
+    /// All other posting lists are serialized via the configured codec.
+    /// The codec splits the data into segments of `posting_list_block_size` and
+    /// fills `info.offsets` / `info.ranges` for each segment.
+    if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
+        info.header |= IsCompressed;
+
+    if (info.cardinality <= params.posting_list_block_size)
+        info.header |= SingleBlock;
+
+    postings_serialization.serialize(postings, info, params.posting_list_block_size, postings_stream.plain_hashing);
     return info;
 }
 

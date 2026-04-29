@@ -68,9 +68,9 @@ namespace DB
   *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
   *
   * If size of posting list is less than a threshold, it is serialized as raw values encoded as VarUInts.
-  * Otherwise, the format is:
-  * - Number of uncompressed bytes of the posting list (VarUInt).
-  * - A binary serialized Roaring Bitmap (see Roaring::write and Roaring::read)
+  * Otherwise, the posting list is serialized via the configured `IPostingListCodec`. The default
+  * codec (`none`) writes each segment as a Roaring Bitmap with a leading VarUInt size; alternative
+  * codecs (e.g. `bitpacking`) use their own segment format.
   */
 
 class IPostingListCodec;
@@ -141,16 +141,15 @@ struct PostingsSerialization
     };
 
     void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec; }
 
 private:
     PostingListCodecPtr posting_list_codec;
 
-    /// Reusable buffers to avoid repeated heap allocations during deserialization.
+    /// Reusable buffer to avoid repeated heap allocations during deserialization
+    /// of small posting lists stored as raw VarUInts.
     std::vector<UInt32> raw_postings_buffer;
-    std::vector<char> deserialization_buffer;
 };
 
 /// Closed range of rows.

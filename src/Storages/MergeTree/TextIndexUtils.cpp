@@ -373,8 +373,13 @@ void MergeTextIndexesTask::flushDictionaryBlock()
 
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
         {
-            const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
-            postings_serialization.serialize(roaring_bitmap, output_infos[i].header, ostr);
+            /// Embedded postings are tiny (cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+            /// and always carry the `RawPostings` flag, so they are written as raw VarUInts.
+            const auto & embedded = *output_infos[i].embedded_postings;
+            PostingListBuilder builder;
+            builder.values.resize(embedded.cardinality());
+            embedded.toUint32Array(builder.values.data());
+            postings_serialization.serialize(builder, output_infos[i], params.posting_list_block_size, ostr);
         }
     }
 

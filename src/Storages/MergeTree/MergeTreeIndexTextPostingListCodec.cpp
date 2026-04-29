@@ -12,6 +12,53 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void PostingListCodecNone::encode(std::span<const UInt32> row_ids, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const
+{
+    if (row_ids.empty())
+        return;
+
+    size_t offset = 0;
+    while (offset < row_ids.size())
+    {
+        size_t block_end = std::min(offset + posting_list_block_size, row_ids.size());
+        auto block_values = row_ids.subspan(offset, block_end - offset);
+
+        PostingList block_bitmap;
+        block_bitmap.addMany(block_values.size(), block_values.data());
+        block_bitmap.runOptimize();
+
+        info.offsets.emplace_back(out.count());
+        info.ranges.emplace_back(block_values.front(), block_values.back());
+
+        size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&block_bitmap.roaring);
+        writeVarUInt(num_bytes, out);
+
+        std::vector<char> memory(num_bytes);
+        roaring::api::roaring_bitmap_portable_serialize(&block_bitmap.roaring, memory.data());
+        out.write(memory.data(), num_bytes);
+
+        offset = block_end;
+    }
+}
+
+void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings) const
+{
+    size_t num_bytes;
+    readVarUInt(num_bytes, in);
+
+    /// If the posting list is completely in the buffer, avoid copying.
+    if (in.position() && in.position() + num_bytes <= in.buffer().end())
+    {
+        postings = PostingList::read(in.position());
+        in.position() += num_bytes;
+        return;
+    }
+
+    std::vector<char> buffer(num_bytes);
+    in.readStrict(buffer.data(), num_bytes);
+    postings = PostingList::read(buffer.data());
+}
+
 /// Normalize the requested block size to a multiple of BLOCK_SIZE.
 /// We encode/decode posting lists in fixed-size blocks, and the SIMD bit-packing
 /// implementation expects block-aligned sizes for efficient processing.

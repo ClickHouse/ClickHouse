@@ -221,7 +221,12 @@ public:
     void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
-/// A posting list codec that doesn't compress (no-op).
+/// A posting list codec that doesn't compress.
+///
+/// Encoding splits the input into segments of `posting_list_block_size` row ids and
+/// serializes each segment as a Roaring bitmap (`writeVarUInt(num_bytes) + portable bytes`).
+/// Per-segment offsets and ranges are appended to `TokenPostingsInfo` so that callers
+/// can locate individual segments inside the postings file.
 class PostingListCodecNone : public IPostingListCodec
 {
 public:
@@ -229,8 +234,8 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    void encode(std::span<const UInt32>, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
-    void decode(ReadBuffer &, PostingList &) const override {}
+    void encode(std::span<const UInt32> row_ids, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
 }
