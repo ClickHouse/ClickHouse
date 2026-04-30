@@ -148,11 +148,8 @@ FORMAT Null"
 # A loose 10x ratio is enough to catch the regression while tolerating CI noise.
 QUERY_SINGLE_TIMING="${QUERY/t_merge_perf_all/t_merge_perf_0}"
 
-# Warm up: run the full timing query on the single table first so that JIT-compiled code
-# (when compile_aggregate_expressions=1) is cached before the timed runs.  Without this,
-# the Merge-table query pays the JIT compilation cost while the subsequently-run
-# single-table query reuses the cache, creating a systematic bias in the ratio.
-$CLICKHOUSE_CLIENT --max_query_size 1048576 -q "$QUERY_SINGLE_TIMING" >/dev/null || true
+# Warm up the data-side cache with a small query so the timed runs measure planning.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_merge_perf_0 FORMAT Null"
 
 T_START=$(date +%s%N)
 $CLICKHOUSE_CLIENT --max_query_size 1048576 --max_execution_time 10 -q "$QUERY" >/dev/null || { echo "FAIL: query on merge table timed out" >&2; exit 1; }
