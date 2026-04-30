@@ -719,7 +719,23 @@ ProjectionIndexPtr ProjectionIndexS2::create(const ASTProjectionDeclaration & pr
     if (!proj.index)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "ProjectionIndexS2 requires INDEX expression");
 
-    const auto * index_identifier = proj.index->as<ASTIdentifier>();
+    const IAST * index_ast = proj.index;
+
+    if (const auto * index_list = index_ast->as<ASTExpressionList>())
+    {
+        if (index_list->children.size() != 1)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "ProjectionIndexS2 requires exactly one INDEX column");
+        index_ast = index_list->children[0].get();
+    }
+
+    if (const auto * tuple_func = index_ast->as<ASTFunction>(); tuple_func && tuple_func->name == "tuple" && tuple_func->arguments)
+    {
+        if (tuple_func->arguments->children.size() != 1)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "ProjectionIndexS2 requires exactly one INDEX column");
+        index_ast = tuple_func->arguments->children[0].get();
+    }
+
+    const auto * index_identifier = index_ast->as<ASTIdentifier>();
     if (!index_identifier || !index_identifier->isShort())
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
@@ -743,8 +759,11 @@ void ProjectionIndexS2::fillProjectionDescription(
     ProjectionDescription & result,
     const IAST * index_expr,
     const ColumnsDescription & columns,
-    ContextPtr query_context) const
+    const KeyDescription * partition_key,
+    const ContextPtr & query_context) const
 {
+    (void) partition_key;
+
     if (columns.has("_part_index") || columns.has("_part_offset") || columns.has("_parent_part_offset"))
     {
         throw Exception(
@@ -803,8 +822,8 @@ void ProjectionIndexS2::fillProjectionDescription(
     ColumnsDescription projection_columns(result.sample_block.getNamesAndTypesList());
     ASTPtr order_ast = make_intrusive<ASTIdentifier>("cell_id");
 
-    metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_ast, projection_columns, query_context, {});
-    metadata.primary_key = KeyDescription::getKeyFromAST(order_ast, projection_columns, query_context);
+    metadata.sorting_key = KeyDescription::getKeyFromAST(order_ast, projection_columns, {}, query_context, {});
+    metadata.primary_key = KeyDescription::getKeyFromAST(order_ast, projection_columns, {}, query_context);
     metadata.primary_key.definition_ast = nullptr;
 
     NamesAndTypesList metadata_columns;

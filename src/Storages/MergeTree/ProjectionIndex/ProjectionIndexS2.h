@@ -78,7 +78,8 @@ public:
         ProjectionDescription & result,
         const IAST * index_expr,
         const ColumnsDescription & columns,
-        ContextPtr query_context) const override;
+        const KeyDescription * partition_key,
+        const ContextPtr & query_context) const override;
 
     /// Compute the projection block from a source data block. For each row, decodes
     /// the geometry, builds an S2 covering, and emits (cell_id, _parent_part_offset)
