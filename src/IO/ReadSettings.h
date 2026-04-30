@@ -115,6 +115,9 @@ struct ReadSettings
     std::optional<FileCacheOriginInfo> filecache_origin_info;
     bool enable_hdfs_pread = true;
 
+    /// Use ReaderExecutor-based pipeline instead of matryoshka ReadBuffer assembly.
+    bool use_reader_executor = false;
+
     ReadSettings adjustBufferSize(size_t file_size) const;
 
     /// Extract filesystem cache settings into a dedicated struct.

@@ -737,6 +737,8 @@ Possible values:
 )", 0) \
     DECLARE(Bool, enable_hdfs_pread, true, R"(
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
+    DECLARE(Bool, use_reader_executor, false, R"(
+Use `ReaderExecutor`-based read pipeline instead of the matryoshka `ReadBuffer` assembly. Experimental.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 

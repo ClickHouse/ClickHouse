@@ -337,6 +337,7 @@ namespace Setting
     extern const SettingsBool use_page_cache_for_local_disks;
     extern const SettingsBool use_page_cache_for_object_storage;
     extern const SettingsBool use_page_cache_with_distributed_cache;
+    extern const SettingsBool use_reader_executor;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
@@ -7613,6 +7614,7 @@ ReadSettings Context::getReadSettings() const
 
     res.mmap_cache = getMMappedFileCache().get();
     res.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
+    res.use_reader_executor = settings_ref[Setting::use_reader_executor];
 
     return res;
 }
