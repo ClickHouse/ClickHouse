@@ -349,6 +349,31 @@ void MetadataStorageInMemoryTransaction::createDirectory(const std::string & pat
         std::string normalized = path;
         if (!normalized.empty() && normalized.back() != '/')
             normalized += '/';
+
+        /// Match `DiskLocal::createDirectory` semantics (`mkdir`): reject if a file already
+        /// exists at this path, and reject if the parent directory does not exist. Without
+        /// these checks metadata can represent impossible states (file and directory with
+        /// the same name, or orphan nested directories) that later break `moveDirectory`
+        /// or `removeDirectory`.
+        std::string without_trailing_slash = normalized.substr(0, normalized.size() - 1);
+        if (metadata_storage.findFile(without_trailing_slash) != nullptr)
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                "Cannot create directory {}: a file with this name already exists", path);
+
+        /// Find parent prefix: for `a/b/`, parent is `a/`; for `a/`, parent is the implicit
+        /// disk root (always present). Skip the trailing `/` and look for the previous `/`.
+        if (normalized.size() > 1)
+        {
+            auto parent_end = normalized.rfind('/', normalized.size() - 2);
+            if (parent_end != std::string::npos && parent_end > 0)
+            {
+                std::string parent = normalized.substr(0, parent_end + 1);
+                if (!metadata_storage.directories.contains(parent))
+                    throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
+                        "Cannot create directory {}: parent directory does not exist", path);
+            }
+        }
+
         metadata_storage.directories.insert(normalized);
     });
 }
