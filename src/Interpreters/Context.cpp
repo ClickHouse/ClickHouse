@@ -1869,6 +1869,14 @@ void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedM
         shared->addOrUpdateWarningMessage(warning, message);
 }
 
+void Context::addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const
+{
+    if (message)
+        addOrUpdateWarningMessage(warning, *message);
+    else
+        removeWarningMessage(warning);
+}
+
 void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
 {
     std::lock_guard lock(shared->mutex);
