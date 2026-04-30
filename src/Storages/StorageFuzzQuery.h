@@ -68,12 +68,24 @@ public:
 protected:
     Chunk generate() override
     {
+        if (isCancelled())
+            return {};
+
         Columns columns;
         columns.reserve(block_header->columns());
         for (const auto & col : *block_header)
         {
             chassert(col.type->getTypeId() == TypeIndex::String);
-            columns.emplace_back(createColumn());
+            auto column = createColumn();
+
+            /// `createColumn` returns a partial column on cancellation. Discard the
+            /// partial chunk by returning an empty one — the pipeline treats this as
+            /// end-of-stream and stops pulling. This avoids `Chunk` size validation
+            /// failures and gives `KILL QUERY` an immediate response.
+            if (column->size() != block_size)
+                return {};
+
+            columns.emplace_back(std::move(column));
         }
 
         return {std::move(columns), block_size};

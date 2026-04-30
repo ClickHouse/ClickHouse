@@ -93,23 +93,13 @@ ColumnPtr FuzzQuerySource::createColumn()
         attempts_for_current_row = 0;
     }
 
-    /// `generate()` returns a chunk with `block_size` rows, so the column must have exactly
-    /// `block_size` offsets. If we exited early due to cancellation, fill the remaining rows
-    /// with the unfuzzed query so the chunk size invariant holds; the cancelled pipeline
-    /// will discard the chunk anyway.
+    /// On cancellation we may have produced fewer rows than `block_size`. Shrink the
+    /// offsets to the actual count instead of backfilling with the unfuzzed query: the
+    /// backfill would do `O(block_size * query_length)` extra work after `KILL QUERY` /
+    /// `max_execution_time` cancellation, defeating fast cancel response. The caller
+    /// (`generate`) checks `isCancelled` and discards the partial column.
     if (row_num < block_size)
-    {
-        auto fallback_text = query->formatForErrorMessage();
-        while (row_num < block_size)
-        {
-            IColumn::Offset next_offset = offset + fallback_text.size();
-            data_to.resize(next_offset);
-            std::copy(fallback_text.begin(), fallback_text.end(), &data_to[offset]);
-            offsets_to[row_num] = next_offset;
-            offset = next_offset;
-            ++row_num;
-        }
-    }
+        offsets_to.resize(row_num);
 
     return column;
 }
