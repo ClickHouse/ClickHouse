@@ -120,6 +120,7 @@ ReturnType parseDateTimeBestEffortImpl(
     UInt8 second = 0;
 
     bool has_time = false;
+    bool has_fractional = false;
 
     bool has_time_zone_offset = false;
     bool time_zone_offset_negative = false;
@@ -561,6 +562,9 @@ ReturnType parseDateTimeBestEffortImpl(
             {
                 if (!has_time)
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected point symbol");
+                if (has_fractional)
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: duplicate fractional part");
+                has_fractional = true;
 
                 ++in.position();
                 num_digits = readDigits(digits, sizeof(digits), in);
