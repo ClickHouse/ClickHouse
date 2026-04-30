@@ -1,9 +1,9 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <boost/functional/hash.hpp>
 
 #include <Common/callOnce.h>
@@ -60,7 +60,10 @@ struct FileCacheReserveStat
     };
 
     Stat total_stat;
-    std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
+    std::array<Stat, magic_enum::enum_count<FileSegmentKind>()> stat_by_kind{};
+
+    Stat & getStatByKind(FileSegmentKind kind) { return stat_by_kind[static_cast<uint8_t>(kind)]; }
+    const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
 
     enum class State
     {
@@ -75,8 +78,8 @@ struct FileCacheReserveStat
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
         total_stat += other.total_stat;
-        for (const auto & [name, stat_] : other.stat_by_kind)
-            stat_by_kind[name] += stat_;
+        for (size_t i = 0; i < stat_by_kind.size(); ++i)
+            stat_by_kind[i] += other.stat_by_kind[i];
         return *this;
     }
 };
