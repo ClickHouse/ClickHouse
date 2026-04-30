@@ -224,6 +224,12 @@ Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$
 
 Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
+## SYSTEM PRESHUTDOWN {#preshutdown}
+
+<CloudNotSupportedBadge/>
+
+Prepare node for graceful shutdown. Unregister in autodiscovered clusters, stop accepting distributed requests to object storages (s3Cluster, icebergCluster, etc.).
+
 ## SYSTEM INSTRUMENT {#instrument}
 
 Manages instrumentation points using LLVM's XRay feature which is available when ClickHouse is built using `ENABLE_XRAY=1`.

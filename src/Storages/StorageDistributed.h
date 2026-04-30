@@ -50,6 +50,27 @@ class StorageDistributed final : public IStorage, WithContext
     friend class StorageSystemDistributionQueue;
 
 public:
+    /// Structure to hold table function AST, predicate, optional StorageID, and cached physical columns for the segment.
+    /// Cached columns let us detect schema mismatches and enable features like hybrid_table_auto_cast_columns without
+    /// re-fetching remote headers on every query.
+    struct HybridSegment
+    {
+        ASTPtr table_function_ast;
+        ASTPtr predicate_ast;
+        std::optional<StorageID> storage_id; // For table identifiers instead of table functions
+
+        HybridSegment(ASTPtr table_function_ast_, ASTPtr predicate_ast_)
+            : table_function_ast(std::move(table_function_ast_))
+            , predicate_ast(std::move(predicate_ast_))
+        {}
+
+        HybridSegment(ASTPtr table_function_ast_, ASTPtr predicate_ast_, StorageID storage_id_)
+            : table_function_ast(std::move(table_function_ast_))
+            , predicate_ast(std::move(predicate_ast_))
+            , storage_id(std::move(storage_id_))
+        {}
+    };
+
     StorageDistributed(
         const StorageID & id_,
         const ColumnsDescription & columns_,
@@ -70,7 +91,12 @@ public:
 
     ~StorageDistributed() override;
 
-    std::string getName() const override { return "Distributed"; }
+    std::string getName() const override
+    {
+        return (segments.empty() && !base_segment_predicate)
+            ? "Distributed"
+            : "Hybrid";
+    }
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -137,6 +163,20 @@ public:
     void flushClusterNodesAllData(ContextPtr context, const SettingsChanges & settings_changes);
 
     size_t getShardCount() const;
+
+    /// Set optional predicate applied to the base segment
+    void setBaseSegmentPredicate(ASTPtr predicate) { base_segment_predicate = std::move(predicate); }
+
+    /// Set segment definitions for Hybrid engine along with cached schema info
+    void setHybridLayout(std::vector<HybridSegment> segments_);
+    void setCachedColumnsToCast(ColumnsDescription columns);
+
+    /// Getter methods for ClusterProxy::executeQuery
+    StorageID getRemoteStorageID() const { return remote_storage; }
+    ColumnsDescription getColumnsToCast() const;
+    ExpressionActionsPtr getShardingKeyExpression() const { return sharding_key_expr; }
+    const DistributedSettings * getDistributedSettings() const { return distributed_settings.get(); }
+    bool isRemoteFunction() const { return is_remote_function; }
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
@@ -273,6 +313,21 @@ private:
     pcg64 rng;
 
     bool is_remote_function;
+
+    /// Additional filter expression for Hybrid engine
+    ASTPtr base_segment_predicate;
+
+    /// Additional segments for Hybrid engine
+    std::vector<HybridSegment> segments;
+
+    /// Hybrid build the list of columns which need to be casted once during CREATE/ATTACH
+    /// those are columns which type differs from the expected at least on one segment.
+    /// is is used by HybridCastsPass and hybrid_table_auto_cast_columns feature
+    /// without cache that would require reading the headers of the segments before every query
+    /// which may trigger extra DESCRIBE call in case of remote queries.
+    /// Subsequent segment DDL changes are not auto-detected;
+    /// reattach/recreate the Hybrid table to refresh.
+    ColumnsDescription cached_columns_to_cast;
 };
 
 }

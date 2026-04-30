@@ -1,0 +1,13 @@
+hybrid_table_auto_cast_columns = 0, enable_analyzer = 1 (headers mismatch)
+hybrid_table_auto_cast_columns = 0, enable_analyzer = 0 (headers mismatch)
+1
+hybrid_table_auto_cast_columns = 0, enable_analyzer = 1 manual cast
+600
+1
+hybrid_table_auto_cast_columns = 0, enable_analyzer = 0 manual cast
+600
+1
+hybrid_table_auto_cast_columns = 1, enable_analyzer = 1
+600
+1
+hybrid_table_auto_cast_columns = 1, enable_analyzer = 0 (analizer required)

@@ -5,6 +5,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
+#include <Core/Range.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -18,6 +19,8 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Disks/DiskType.h>
 #include <IO/WriteBuffer.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+
 
 namespace DataLake
 {
@@ -30,7 +33,73 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
-}
+};
+
+namespace Iceberg
+{
+struct ColumnInfo;
+};
+
+class DataFileMetaInfo
+{
+public:
+    DataFileMetaInfo() = default;
+
+    // Deserialize from json in distributed requests
+    explicit DataFileMetaInfo(const Poco::JSON::Object::Ptr file_info);
+
+    // Serialize to json in distributed requests
+    Poco::JSON::Object::Ptr toJson() const;
+
+    // subset of Iceberg::ColumnInfo now
+    struct ColumnInfo
+    {
+        std::optional<Int64> rows_count;
+        std::optional<Int64> nulls_count;
+        std::optional<DB::Range> hyperrectangle;
+    };
+
+    // Extract metadata from Iceberg structure.
+    // table_schema_id is the current table schema, used to resolve column names that
+    // appear as keys in the resulting `columns_info` map.
+    // file_schema_id is the schema the data file (and its `value_bounds_`) was written
+    // with — bounds bytes are encoded with that schema's column types, so they must be
+    // deserialized using those types. After schema evolution (e.g. `int` -> `long`)
+    // the two ids differ, and using the table schema's type would misinterpret the
+    // bytes and produce a garbage hyperrectangle.
+    explicit DataFileMetaInfo(
+        const Iceberg::IcebergSchemaProcessor & schema_processor,
+        Int32 table_schema_id,
+        Int32 file_schema_id,
+        const std::unordered_map<Int32, Iceberg::ColumnInfo> & columns_info_,
+        const std::unordered_map<Int32, std::pair<Field, Field>> & value_bounds_);
+
+    void serialize(WriteBuffer & out) const;
+    static DataFileMetaInfo deserialize(ReadBuffer & in);
+
+    bool empty() const { return columns_info.empty(); }
+
+    std::unordered_map<std::string, ColumnInfo> columns_info;
+};
+
+using DataFileMetaInfoPtr = std::shared_ptr<DataFileMetaInfo>;
+
+struct DataFileInfo
+{
+    std::string file_path;
+    std::optional<DataFileMetaInfoPtr> file_meta_info;
+
+    explicit DataFileInfo(const std::string & file_path_)
+        : file_path(file_path_) {}
+
+    explicit DataFileInfo(std::string && file_path_)
+        : file_path(std::move(file_path_)) {}
+
+    bool operator==(const DataFileInfo & rhs) const
+    {
+        return file_path == rhs.file_path;
+    }
+};
 
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
@@ -38,7 +107,6 @@ class StorageObjectStorageConfiguration;
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 struct StorageID;
 struct IObjectIterator;
-struct RelativePathWithMetadata;
 class IObjectStorage;
 struct ObjectInfo;
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;

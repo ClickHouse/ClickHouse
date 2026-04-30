@@ -37,11 +37,14 @@ namespace Setting
     extern const SettingsString object_storage_cluster;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
+    extern const SettingsUInt64 lock_object_storage_task_distribution_ms;
+    extern const SettingsBool allow_experimental_iceberg_read_optimization;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
@@ -538,6 +541,42 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
         pure_storage->setInMemoryMetadata(IStorageCluster::getInMemoryMetadata());
 }
 
+class TaskDistributor : public TaskIterator
+{
+public:
+    TaskDistributor(std::shared_ptr<IObjectIterator> iterator,
+        std::vector<std::string> && ids_of_hosts,
+        bool send_over_whole_archive,
+        uint64_t lock_object_storage_task_distribution_ms,
+        ContextPtr context_,
+        bool iceberg_read_optimization_enabled)
+        : task_distributor(
+            iterator,
+            std::move(ids_of_hosts),
+            send_over_whole_archive,
+            lock_object_storage_task_distribution_ms,
+            iceberg_read_optimization_enabled)
+        , context(context_) {}
+    ~TaskDistributor() override = default;
+    bool supportRerunTask() const override { return true; }
+    void rescheduleTasksFromReplica(size_t number_of_current_replica) override
+    {
+        task_distributor.rescheduleTasksFromReplica(number_of_current_replica);
+    }
+
+    ClusterFunctionReadTaskResponsePtr operator()(size_t number_of_current_replica) const override
+    {
+        auto task = task_distributor.getNextTask(number_of_current_replica);
+        if (task)
+            return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), context);
+        return std::make_shared<ClusterFunctionReadTaskResponse>();
+    }
+
+private:
+    mutable StorageObjectStorageStableTaskDistributor task_distributor;
+    ContextPtr context;
+};
+
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ActionsDAG * filter,
@@ -584,19 +623,24 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         }
     }
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
-        iterator,
-        std::move(ids_of_hosts),
-        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
+    uint64_t lock_object_storage_task_distribution_ms = local_context->getSettingsRef()[Setting::lock_object_storage_task_distribution_ms];
 
-    auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
-        {
-            auto task = task_distributor->getNextTask(number_of_current_replica);
-            if (task)
-                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
-            return std::make_shared<ClusterFunctionReadTaskResponse>();
-        });
+    /// Check value to avoid negative result after conversion in microseconds.
+    /// Poco::Timestamp::TimeDiff is signed int 64.
+    static const uint64_t lock_object_storage_task_distribution_ms_max = 0x0020000000000000ULL;
+    if (lock_object_storage_task_distribution_ms > lock_object_storage_task_distribution_ms_max)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Value lock_object_storage_task_distribution_ms is too big: {}, allowed maximum is {}",
+            lock_object_storage_task_distribution_ms,
+            lock_object_storage_task_distribution_ms_max
+        );
+
+    auto callback = std::make_shared<TaskDistributor>(iterator,
+        std::move(ids_of_hosts),
+        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes],
+        lock_object_storage_task_distribution_ms,
+        local_context,
+        /* iceberg_read_optimization_enabled */local_context->getSettingsRef()[Setting::allow_experimental_iceberg_read_optimization]);
 
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }

@@ -96,8 +96,10 @@ namespace Protocol
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
             TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
             SSHChallenge = 18,              /// Return challenge for SSH signature signing
+
             MAX = SSHChallenge,
 
+            ConnectionLost = 255,           /// Exception that occurred on the client side.
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10

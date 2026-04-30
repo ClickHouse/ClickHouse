@@ -627,6 +627,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RECONNECT_ZOOKEEPER:
         case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
+        case Type::STOP_SWARM_MODE:
+        case Type::START_SWARM_MODE:
             break;
         case Type::UNKNOWN:
         case Type::END:
