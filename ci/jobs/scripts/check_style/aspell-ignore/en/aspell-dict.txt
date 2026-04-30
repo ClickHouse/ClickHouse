@@ -1782,6 +1782,7 @@ aws
 azureBlobStorage
 azureBlobStorageCluster
 backend
+backends
 backoff
 backoffs
 backport
