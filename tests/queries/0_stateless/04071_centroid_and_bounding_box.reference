@@ -96,3 +96,29 @@ centroidCartesian Geometry Polygon
 (2,2)
 centroidCartesian Geometry MultiPolygon
 (3,3)
+centroidSpherical Point
+(2,3)
+centroidSpherical Ring
+4.352734	50.846349
+centroidSpherical Polygon
+4.352734	50.846349
+centroidSpherical LineString
+5	0
+centroidSpherical MultiLineString
+5	0
+centroidSpherical MultiPolygon
+2.992674	2.998309
+centroidSpherical date line crossing LineString
+180	0
+centroidSpherical near North Pole
+0	90
+centroidSpherical Polygon with hole
+5	5.006907
+centroidSpherical square
+2	2.000402
+centroidSpherical Geometry Point
+(2,3)
+centroidSpherical Geometry Polygon
+2	2.000402
+centroidSpherical globe-spanning polygon (triggers adaptive origin)
+135	90

@@ -141,3 +141,43 @@ SELECT centroidCartesian(readWKT('MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)), ((4 
 
 SELECT centroidCartesian(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+SELECT 'centroidSpherical Point';
+SELECT centroidSpherical((2., 3.));
+
+SELECT 'centroidSpherical Ring';
+SELECT round(centroidSpherical([(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]).1, 6), round(centroidSpherical([(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]).2, 6);
+
+SELECT 'centroidSpherical Polygon';
+SELECT round(centroidSpherical([[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]).1, 6), round(centroidSpherical([[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]).2, 6);
+
+SELECT 'centroidSpherical LineString';
+SELECT round(centroidSpherical(CAST([(0., 0.), (10., 0.)], 'LineString')).1, 6), round(centroidSpherical(CAST([(0., 0.), (10., 0.)], 'LineString')).2, 6);
+
+SELECT 'centroidSpherical MultiLineString';
+SELECT round(centroidSpherical(CAST([[(0., 0.), (5., 0.)], [(5., 0.), (10., 0.)]], 'MultiLineString')).1, 6), round(centroidSpherical(CAST([[(0., 0.), (5., 0.)], [(5., 0.), (10., 0.)]], 'MultiLineString')).2, 6);
+
+SELECT 'centroidSpherical MultiPolygon';
+SELECT round(centroidSpherical([[[(0., 0.), (0., 2.), (2., 2.), (2., 0.), (0., 0.)]], [[(4., 4.), (4., 6.), (6., 6.), (6., 4.), (4., 4.)]]]).1, 6), round(centroidSpherical([[[(0., 0.), (0., 2.), (2., 2.), (2., 0.), (0., 0.)]], [[(4., 4.), (4., 6.), (6., 6.), (6., 4.), (4., 4.)]]]).2, 6);
+
+SELECT 'centroidSpherical date line crossing LineString';
+SELECT round(centroidSpherical(CAST([(179., 0.), (-179., 0.)], 'LineString')).1, 6), round(centroidSpherical(CAST([(179., 0.), (-179., 0.)], 'LineString')).2, 6);
+
+SELECT 'centroidSpherical near North Pole';
+SELECT round(centroidSpherical([(0., 89.), (120., 89.), (240., 89.), (0., 89.)]).1, 6), round(centroidSpherical([(0., 89.), (120., 89.), (240., 89.), (0., 89.)]).2, 6);
+
+SELECT 'centroidSpherical Polygon with hole';
+SELECT round(centroidSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3., 3.), (3., 7.), (7., 7.), (7., 3.), (3., 3.)]]).1, 6), round(centroidSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3., 3.), (3., 7.), (7., 7.), (7., 3.), (3., 3.)]]).2, 6);
+
+SELECT 'centroidSpherical square';
+SELECT round(centroidSpherical([(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]).1, 6), round(centroidSpherical([(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]).2, 6);
+
+SELECT 'centroidSpherical Geometry Point';
+SELECT centroidSpherical(readWKT('POINT(2 3)'));
+SELECT 'centroidSpherical Geometry Polygon';
+SELECT round(centroidSpherical(readWKT('POLYGON((0 0, 0 4, 4 4, 4 0, 0 0))')).1, 6), round(centroidSpherical(readWKT('POLYGON((0 0, 0 4, 4 4, 4 0, 0 0))')).2, 6);
+
+SELECT 'centroidSpherical globe-spanning polygon (triggers adaptive origin)';
+SELECT round(centroidSpherical([(0., 0.), (90., 0.), (180., 0.), (-90., 0.), (0., 0.)]).1, 6), round(centroidSpherical([(0., 0.), (90., 0.), (180., 0.), (-90., 0.), (0., 0.)]).2, 6);
+
+SELECT centroidSpherical(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
