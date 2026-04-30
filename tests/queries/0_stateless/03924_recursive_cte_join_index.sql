@@ -136,7 +136,28 @@ WITH RECURSIVE rec AS
 )
 SELECT id FROM rec ORDER BY id;
 
+-- Same alias `x` referring to the same physical table across two recursive
+-- branches, but with different join columns. `additional_table_filters` is
+-- global across branches (keyed by alias), so emitting a combined filter
+-- (`col_a IN (...) AND col_b IN (...)`) for `x` would over-constrain both
+-- branches. The optimization must skip filter generation for `x` and let the
+-- recursive step run with unfiltered scans, producing correct results.
+DROP TABLE IF EXISTS pairs;
+CREATE TABLE pairs (col_a UInt64, col_b UInt64, val UInt64) ENGINE = MergeTree ORDER BY col_a;
+INSERT INTO pairs VALUES (0, 100, 1) (1, 200, 2) (100, 0, 3);
+
+WITH RECURSIVE rec_two_branch AS
+(
+    SELECT CAST(0 AS UInt64) AS id
+  UNION ALL
+    SELECT x.val AS id FROM pairs AS x INNER JOIN rec_two_branch AS r ON x.col_a = r.id
+  UNION ALL
+    SELECT x.val AS id FROM pairs AS x INNER JOIN rec_two_branch AS r ON x.col_b = r.id
+)
+SELECT id FROM rec_two_branch ORDER BY id;
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;
 DROP TABLE t_b;
+DROP TABLE pairs;

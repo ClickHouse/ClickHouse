@@ -37,6 +37,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
     extern const SettingsUInt64 recursive_cte_max_in_filter_cardinality;
 }
@@ -87,6 +88,12 @@ struct JoinKeyInfo
     /// filter is keyed by alias so each occurrence of the same physical table
     /// in the join tree receives only the filter derived from its own join keys.
     String real_table_alias;
+    /// Index of the recursive `UNION` branch this key was extracted from
+    /// (0 for non-union recursive queries). `additional_table_filters` is keyed
+    /// by alias/table name with no branch dimension, so when the same key is
+    /// seen in multiple branches the generated filter must be dropped — see
+    /// the `branches` check in `buildAdditionalTableFiltersForRecursiveStep`.
+    size_t branch_index = 0;
 };
 
 /// Check if a query tree node pointer matches one of the CTE table nodes.
@@ -103,6 +110,7 @@ bool isCTETableNode(const IQueryTreeNode * node, const std::vector<TableNode *> 
 void extractEquiJoinKeys(
     const QueryTreeNodePtr & expression,
     const std::vector<TableNode *> & recursive_table_nodes,
+    size_t branch_index,
     std::vector<JoinKeyInfo> & result)
 {
     const auto * function_node = expression->as<FunctionNode>();
@@ -112,7 +120,7 @@ void extractEquiJoinKeys(
     if (function_node->getFunctionName() == "and")
     {
         for (const auto & arg : function_node->getArguments().getNodes())
-            extractEquiJoinKeys(arg, recursive_table_nodes, result);
+            extractEquiJoinKeys(arg, recursive_table_nodes, branch_index, result);
         return;
     }
 
@@ -156,6 +164,7 @@ void extractEquiJoinKeys(
         cte_column->getColumnName(),
         real_table_node->getStorageID(),
         real_table_node->getOriginalAlias(),
+        branch_index,
     });
 }
 
@@ -163,6 +172,7 @@ void extractEquiJoinKeys(
 void findJoinKeysInQueryNode(
     const QueryNode & query_node,
     const std::vector<TableNode *> & recursive_table_nodes,
+    size_t branch_index,
     std::vector<JoinKeyInfo> & result)
 {
     std::vector<IQueryTreeNode *> nodes_to_visit;
@@ -181,7 +191,7 @@ void findJoinKeysInQueryNode(
             && join_node->hasJoinExpression()
             && join_node->isOnJoinExpression())
         {
-            extractEquiJoinKeys(join_node->getJoinExpression(), recursive_table_nodes, result);
+            extractEquiJoinKeys(join_node->getJoinExpression(), recursive_table_nodes, branch_index, result);
         }
 
         nodes_to_visit.push_back(join_node->getLeftTableExpression().get());
@@ -192,7 +202,9 @@ void findJoinKeysInQueryNode(
 /// Walk the join tree of the recursive query to find equi-join keys
 /// between the CTE table and real tables. Only handles INNER JOINs with ON
 /// expressions. When the recursive query has more than two branches, its root
-/// is a UnionNode and each branch must be inspected independently.
+/// is a UnionNode and each branch must be inspected independently. Each
+/// extracted key is tagged with the `UNION`-branch index it came from so the
+/// filter builder can detect cross-branch collisions.
 std::vector<JoinKeyInfo> findJoinKeysWithCTETable(
     const QueryTreeNodePtr & recursive_query,
     const std::vector<TableNode *> & recursive_table_nodes)
@@ -201,14 +213,16 @@ std::vector<JoinKeyInfo> findJoinKeysWithCTETable(
 
     if (const auto * query_node = recursive_query->as<QueryNode>())
     {
-        findJoinKeysInQueryNode(*query_node, recursive_table_nodes, result);
+        findJoinKeysInQueryNode(*query_node, recursive_table_nodes, 0, result);
     }
     else if (const auto * union_node = recursive_query->as<UnionNode>())
     {
+        size_t branch_index = 0;
         for (const auto & subquery : union_node->getQueries().getNodes())
         {
             if (const auto * sub_query_node = subquery->as<QueryNode>())
-                findJoinKeysInQueryNode(*sub_query_node, recursive_table_nodes, result);
+                findJoinKeysInQueryNode(*sub_query_node, recursive_table_nodes, branch_index, result);
+            ++branch_index;
         }
     }
 
@@ -304,7 +318,8 @@ Map buildAdditionalTableFiltersForRecursiveStep(
     const StoragePtr & working_table_storage,
     const ContextPtr & context,
     const Map & original_additional_table_filters,
-    size_t max_in_filter_cardinality)
+    size_t max_in_filter_cardinality,
+    size_t max_filter_size)
 {
     if (max_in_filter_cardinality == 0)
         return original_additional_table_filters;
@@ -322,6 +337,12 @@ Map buildAdditionalTableFiltersForRecursiveStep(
     {
         std::vector<String> parts;
         StorageID storage_id = StorageID::createEmpty();
+        /// Recursive `UNION` branches that contributed join keys for this group.
+        /// `additional_table_filters` is global across branches, so when more
+        /// than one branch contributes — even with the same `StorageID` — we
+        /// cannot express branch-local predicates and must drop the filter to
+        /// avoid over-constraining results.
+        std::set<size_t> branches;
         /// Set when the same key (e.g. alias) is used for join keys belonging
         /// to different physical tables — typically when the recursive query
         /// is a UNION whose branches reuse the same alias for different
@@ -364,6 +385,7 @@ Map buildAdditionalTableFiltersForRecursiveStep(
         if (entry.parts.empty())
             entry.storage_id = key_info.real_table_storage_id;
         entry.parts.push_back(std::move(filter_expr));
+        entry.branches.insert(key_info.branch_index);
         if (key.is_alias)
             alias_keys.insert(key.value);
     }
@@ -403,6 +425,13 @@ Map buildAdditionalTableFiltersForRecursiveStep(
         if (entry.ambiguous || entry.parts.empty())
             continue;
 
+        /// Cross-branch occurrence of the same key cannot be expressed via
+        /// `additional_table_filters` (which is global across branches), so
+        /// drop the CTE-derived filter — user filters for the same key are
+        /// still preserved below.
+        if (entry.branches.size() > 1)
+            continue;
+
         String combined_filter;
         for (size_t i = 0; i < entry.parts.size(); ++i)
         {
@@ -410,6 +439,16 @@ Map buildAdditionalTableFiltersForRecursiveStep(
                 combined_filter += " AND ";
             combined_filter += entry.parts[i];
         }
+
+        /// `PlannerJoinTree::buildAdditionalFiltersIfNeeded` re-parses each
+        /// filter expression with `parseQuery` under the user's
+        /// `max_query_size`. With long join key strings or many distinct
+        /// values, the serialized filter can exceed that limit and break
+        /// recursive evaluation. Drop the CTE-derived filter when its size
+        /// exceeds the budget; the user filter for the same group, if any,
+        /// is still preserved by the loop below.
+        if (combined_filter.size() > max_filter_size)
+            continue;
 
         /// Combine with user-specified filter for the same table, if any.
         auto [user_idx, user_filter] = find_user_filter(group_key, entry.storage_id);
@@ -607,12 +646,15 @@ private:
         {
             const auto max_in_filter_cardinality
                 = recursive_subquery_settings[Setting::recursive_cte_max_in_filter_cardinality].value;
+            const auto max_filter_size
+                = recursive_subquery_settings[Setting::max_query_size].value;
 
             auto filters = buildAdditionalTableFiltersForRecursiveStep(
                 recursive_query, cached_join_keys, recursive_table_nodes,
                 working_temporary_table_storage, interpreter_context,
                 original_additional_table_filters,
-                max_in_filter_cardinality);
+                max_in_filter_cardinality,
+                max_filter_size);
 
             /// Disable parallel replicas for recursive CTE step queries. When parallel replicas
             /// is enabled, JOINs are rewritten to GLOBAL JOINs and the right-side subquery is
