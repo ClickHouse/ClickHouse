@@ -1,6 +1,9 @@
 -- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel
 -- no-parallel: SYSTEM CLEAR MARK CACHE is used.
 
+-- this test checks query_log ProfileEvents counters incompatible with ReaderExecutor
+SET use_reader_executor = 0;
+
 DROP TABLE IF EXISTS t_lightweight_mut_5;
 
 SET apply_mutations_on_fly = 1;

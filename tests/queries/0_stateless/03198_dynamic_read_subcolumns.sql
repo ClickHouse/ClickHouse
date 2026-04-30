@@ -2,6 +2,9 @@
 -- no-parallel: Running `DROP MARK CACHE` can have a big impact on other concurrent tests
 -- Tag no-object-storage: this test relies on the number of opened files in MergeTree that can differ in object storages
 
+-- this test checks I/O counters (FileOpen) incompatible with ReaderExecutor
+SET use_reader_executor = 0;
+
 SET allow_experimental_dynamic_type = 1;
 SET allow_calculating_subcolumns_sizes_for_merge_tree_reading = 0;
 DROP TABLE IF EXISTS test_dynamic;

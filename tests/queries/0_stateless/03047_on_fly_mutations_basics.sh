@@ -11,6 +11,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -n --query "
 DROP TABLE IF EXISTS t_lightweight_mut_1;
 
+-- this test checks query_log ProfileEvents counters (FileOpen) incompatible with ReaderExecutor
+SET use_reader_executor = 0;
+
 SET apply_mutations_on_fly = 1;
 
 CREATE TABLE t_lightweight_mut_1 (id UInt64, v String, s String)

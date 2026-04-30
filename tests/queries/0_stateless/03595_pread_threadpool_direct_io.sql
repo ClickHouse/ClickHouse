@@ -1,5 +1,8 @@
 -- Tags: no-parallel-replicas, no-object-storage
 
+-- this test checks OSReadBytes per-thread counters incompatible with ReaderExecutor
+SET use_reader_executor = 0;
+
 set min_bytes_to_use_direct_io = 0;
 
 drop table if exists 03595_data;

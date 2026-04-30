@@ -1,6 +1,9 @@
 -- Tags: no-parallel, no-random-settings, no-object-storage
 -- add_minmax_index_for_numeric_columns=0: More opened files
 
+-- this test checks I/O counters (FileOpen) incompatible with ReaderExecutor
+SET use_reader_executor = 0;
+
 -- Does additional index analysis round that the test doesn't expect
 set automatic_parallel_replicas_mode=0, enable_parallel_replicas=0;
 

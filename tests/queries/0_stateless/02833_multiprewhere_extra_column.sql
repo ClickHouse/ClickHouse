@@ -1,6 +1,9 @@
 -- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-object-storage
 -- add_minmax_index_for_numeric_columns=0: More files opened
 
+-- this test checks I/O counters (FileOpen) incompatible with ReaderExecutor
+SET use_reader_executor = 0;
+
 drop table if exists t_multi_prewhere;
 drop row policy if exists policy_02834 on t_multi_prewhere;
 
