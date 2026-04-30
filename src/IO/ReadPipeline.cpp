@@ -155,7 +155,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     /// Experimental: ReaderExecutor-based path for local files.
     if (settings.use_reader_executor
         && std::holds_alternative<LocalFileSource>(source->source)
-        && !gather && decryption_stages.empty())
+        && !gather)
     {
         const auto & local_src = std::get<LocalFileSource>(source->source);
         LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for local file, {} objects, path={}",
@@ -167,14 +167,17 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             std::vector<std::shared_ptr<ICacheProvider>>{},
             ReaderExecutor::DEFAULT_WINDOW_SIZE,
             /*min_bytes_for_seek=*/0);
+#if USE_SSL
+        for (const auto & dec : decryption_stages)
+            executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);
+#endif
         return std::make_unique<PipelineReadBuffer>(std::move(executor));
     }
 
     /// Experimental: ReaderExecutor-based path for object storage (S3, Azure, etc.).
     /// Handles gather via OffsetMap — multiple blobs become one logical file.
     if (settings.use_reader_executor
-        && std::holds_alternative<ObjectStorageSource>(source->source)
-        && decryption_stages.empty())
+        && std::holds_alternative<ObjectStorageSource>(source->source))
     {
         const auto & obj_src = std::get<ObjectStorageSource>(source->source);
         LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for object storage, {} objects, gather={}",
@@ -184,6 +187,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             obj_source,
             source->objects,
             std::vector<std::shared_ptr<ICacheProvider>>{});
+#if USE_SSL
+        for (const auto & dec : decryption_stages)
+            executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);
+#endif
         return std::make_unique<PipelineReadBuffer>(std::move(executor));
     }
 

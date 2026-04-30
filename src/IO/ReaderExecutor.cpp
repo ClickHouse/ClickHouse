@@ -1,8 +1,16 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/PrefetchThreadPool.h>
 
+#include "config.h"
+
+#if USE_SSL
+#include <IO/FileEncryptionCommon.h>
+#include <IO/ReadBufferFromMemory.h>
+#endif
+
 #include <Common/logger_useful.h>
 #include <algorithm>
+#include <cstring>
 
 namespace DB
 {
@@ -28,8 +36,6 @@ std::vector<Range> ReaderExecutor::mergeRanges(const std::vector<Range> & ranges
     if (ranges.empty() || min_gap == 0)
         return ranges;
 
-    /// Ranges should already be sorted by offset (they come from cache lookups
-    /// that walk the window left to right), but sort just in case.
     std::vector<Range> sorted = ranges;
     std::sort(sorted.begin(), sorted.end(),
         [](const Range & a, const Range & b) { return a.offset < b.offset; });
@@ -44,7 +50,6 @@ std::vector<Range> ReaderExecutor::mergeRanges(const std::vector<Range> & ranges
 
         if (gap <= min_gap)
         {
-            /// Merge: extend prev to cover sorted[i]
             size_t new_end = std::max(prev.end(), sorted[i].end());
             prev.size = new_end - prev.offset;
         }
@@ -67,12 +72,12 @@ void ReaderExecutor::maybeTriggerPrefetch()
     if (!prefetch_pool || prefetch_valid)
         return;
 
-    size_t total = offset_map.totalSize();
-    if (position >= total)
+    size_t logical_size = totalSize();
+    if (position >= logical_size)
         return;
 
-    size_t next_size = std::min(window_size, total - position);
-    Range next_window{position, next_size};
+    size_t next_size = std::min(window_size, logical_size - position);
+    Range next_window{position + data_start_offset, next_size};
 
     LOG_TRACE(log, "Prefetch: submitting [{}, {})", next_window.offset, next_window.end());
 
@@ -95,16 +100,105 @@ void ReaderExecutor::discardPrefetch()
     }
 }
 
+#if USE_SSL
+void ReaderExecutor::addDecryptionLayer(String path, size_t buffer_size, KeyFinderFunc key_finder)
+{
+    decryption_layers.push_back(DecryptionLayer{
+        .path = std::move(path),
+        .buffer_size = buffer_size,
+        .key_finder = std::move(key_finder),
+        .key = {},
+    });
+    data_start_offset = decryption_layers.size() * FileEncryption::Header::kSize;
+    LOG_DEBUG(log, "Added decryption layer, data_start_offset={}", data_start_offset);
+}
+
+void ReaderExecutor::initDecryption()
+{
+    if (decryption_initialized || decryption_layers.empty())
+        return;
+
+    LOG_DEBUG(log, "initDecryption: reading {} headers ({} bytes)",
+        decryption_layers.size(), data_start_offset);
+
+    /// Read all headers in one call through the cache chain.
+    Rope header_rope = readWindow(Range{0, data_start_offset});
+    chassert(header_rope.totalBytes() == data_start_offset);
+
+    /// Parse each header sequentially from the rope.
+    size_t offset = 0;
+    for (auto & layer : decryption_layers)
+    {
+        Rope one_header = header_rope.slice(Range{offset, FileEncryption::Header::kSize});
+        chassert(one_header.totalBytes() == FileEncryption::Header::kSize);
+
+        /// Header is 64 bytes — fits in a single node after slice.
+        const auto & nodes = one_header.getNodes();
+        chassert(nodes.size() == 1);
+        ReadBufferFromMemory rb(nodes[0].data(), nodes[0].size);
+
+        FileEncryption::Header header;
+        header.read(rb);
+        layer.key = layer.key_finder(header.key_fingerprint, layer.path);
+        decryption_headers.push_back(std::move(header));
+        offset += FileEncryption::Header::kSize;
+
+        LOG_DEBUG(log, "initDecryption: parsed header for {}, algorithm={}",
+            layer.path, static_cast<int>(decryption_headers.back().algorithm));
+    }
+
+    decryption_initialized = true;
+}
+
+Rope ReaderExecutor::decryptRope(Rope rope, size_t logical_offset)
+{
+    if (decryption_layers.empty())
+        return rope;
+
+    /// Collect all bytes into a contiguous buffer for decryption.
+    size_t total = rope.totalBytes();
+    auto decrypted_buf = std::make_shared<OwnedRopeBuffer>(total);
+
+    size_t pos = 0;
+    for (const auto & node : rope.getNodes())
+    {
+        std::memcpy(decrypted_buf->data() + pos, node.data(), node.size);
+        pos += node.size;
+    }
+
+    /// Apply each decryption layer.
+    for (size_t i = 0; i < decryption_layers.size(); ++i)
+    {
+        FileEncryption::Encryptor encryptor(
+            decryption_headers[i].algorithm,
+            decryption_layers[i].key,
+            decryption_headers[i].init_vector);
+        encryptor.setOffset(logical_offset);
+        encryptor.decrypt(decrypted_buf->data(), total, decrypted_buf->data());
+    }
+
+    Rope result;
+    result.append(RopeNode{std::move(decrypted_buf), 0, total, logical_offset});
+    return result;
+}
+#endif
+
 Rope ReaderExecutor::readNextWindow()
 {
-    size_t total = offset_map.totalSize();
-    if (position >= total)
+#if USE_SSL
+    /// Initialize decryption headers on first call.
+    initDecryption();
+#endif
+
+    size_t logical_size = totalSize();
+    if (position >= logical_size)
     {
         LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
         return {};
     }
 
     Rope rope;
+    [[maybe_unused]] size_t logical_pos = position;
 
     if (prefetch_valid && prefetch_future.valid())
     {
@@ -114,10 +208,11 @@ Rope ReaderExecutor::readNextWindow()
     }
     else
     {
-        size_t win_size = std::min(window_size, total - position);
-        Range window{position, win_size};
-        LOG_TRACE(log, "readNextWindow: synchronous read [{}, {})", window.offset, window.end());
-        rope = readWindow(window);
+        size_t win_size = std::min(window_size, logical_size - position);
+        Range physical_window{position + data_start_offset, win_size};
+        LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
+            physical_window.offset, physical_window.end(), position, position + win_size);
+        rope = readWindow(physical_window);
     }
 
     position += rope.range().size;
@@ -126,7 +221,12 @@ Rope ReaderExecutor::readNextWindow()
 
     maybeTriggerPrefetch();
 
+#if USE_SSL
+    /// Decrypt if needed.
+    return decryptRope(std::move(rope), logical_pos);
+#else
     return rope;
+#endif
 }
 
 void ReaderExecutor::seek(size_t new_position)
@@ -181,7 +281,6 @@ Rope ReaderExecutor::readWindow(Range window)
                 still_missing.push_back(miss);
             }
 
-            /// Keep handle alive if it had misses — we'll call put later.
             if (!status.miss_ranges.empty())
                 miss_handles.push_back(std::move(handle));
         }

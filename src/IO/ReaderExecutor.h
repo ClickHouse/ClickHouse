@@ -6,9 +6,16 @@
 #include <IO/ISourceReader.h>
 
 #include <Common/Logger.h>
+#include <base/types.h>
+#include <functional>
 #include <future>
 #include <memory>
 #include <vector>
+
+#include "config.h"
+#if USE_SSL
+#include <IO/FileEncryptionCommon.h>
+#endif
 
 namespace DB
 {
@@ -37,8 +44,18 @@ public:
 
     void setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
 
+#if USE_SSL
+    using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
+
+    /// Add a decryption layer. Can be called multiple times for layered encryption.
+    /// Headers are read lazily on the first readNextWindow call.
+    void addDecryptionLayer(String path, size_t buffer_size, KeyFinderFunc key_finder);
+#endif
+
     size_t getPosition() const { return position; }
-    size_t totalSize() const { return offset_map.totalSize(); }
+
+    /// Logical file size (physical size minus encryption headers).
+    size_t totalSize() const { return offset_map.totalSize() - data_start_offset; }
 
     /// Merge close-together ranges to reduce source request count.
     /// Ranges separated by less than min_gap are combined.
@@ -51,6 +68,14 @@ private:
     void maybeTriggerPrefetch();
     void discardPrefetch();
 
+#if USE_SSL
+    /// Read encryption headers from physical offset 0, resolve keys.
+    void initDecryption();
+
+    /// Decrypt rope data in-place. Returns a new rope with decrypted content.
+    Rope decryptRope(Rope rope, size_t logical_offset);
+#endif
+
     std::shared_ptr<ISourceReader> source;
     OffsetMap offset_map;
     std::vector<std::shared_ptr<ICacheProvider>> caches;
@@ -62,6 +87,23 @@ private:
     std::future<Rope> prefetch_future;
     Range prefetch_range;      /// range the in-flight prefetch covers
     bool prefetch_valid = false;
+
+#if USE_SSL
+    /// Decryption
+    struct DecryptionLayer
+    {
+        String path;
+        size_t buffer_size;
+        KeyFinderFunc key_finder;
+        /// Populated by initDecryption
+        String key;
+    };
+
+    std::vector<DecryptionLayer> decryption_layers;
+    std::vector<FileEncryption::Header> decryption_headers;
+    bool decryption_initialized = false;
+#endif
+    size_t data_start_offset = 0;  /// N * Header::kSize (0 when no encryption)
 
     LoggerPtr log = getLogger("ReaderExecutor");
 };
