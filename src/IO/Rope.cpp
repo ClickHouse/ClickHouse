@@ -45,6 +45,13 @@ void Rope::append(Rope && other)
     other.nodes.clear();
 }
 
+RopeNode Rope::popFront()
+{
+    RopeNode node = std::move(nodes.front());
+    nodes.erase(nodes.begin());
+    return node;
+}
+
 Rope Rope::slice(Range req) const
 {
     Rope result;

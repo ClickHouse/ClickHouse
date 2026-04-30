@@ -172,3 +172,51 @@ TEST(Rope, TotalBytes)
 
     EXPECT_EQ(rope.totalBytes(), 250);
 }
+
+TEST(Rope, PopFront)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(300);
+    std::memset(buf->data(), 'A', 100);
+    std::memset(buf->data() + 100, 'B', 100);
+    std::memset(buf->data() + 200, 'C', 100);
+
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    rope.append(RopeNode{buf, 100, 100, 100});
+    rope.append(RopeNode{buf, 200, 100, 200});
+
+    auto node1 = rope.popFront();
+    EXPECT_EQ(node1.logical_offset, 0);
+    EXPECT_EQ(node1.size, 100);
+    EXPECT_EQ(node1.data()[0], 'A');
+    EXPECT_EQ(rope.getNodes().size(), 2);
+
+    auto node2 = rope.popFront();
+    EXPECT_EQ(node2.logical_offset, 100);
+    EXPECT_EQ(node2.data()[0], 'B');
+    EXPECT_EQ(rope.getNodes().size(), 1);
+
+    auto node3 = rope.popFront();
+    EXPECT_EQ(node3.logical_offset, 200);
+    EXPECT_EQ(node3.data()[0], 'C');
+    EXPECT_TRUE(rope.empty());
+}
+
+TEST(Rope, PopFrontReleasesBuffer)
+{
+    std::weak_ptr<RopeBuffer> weak;
+    {
+        auto buf = std::make_shared<OwnedRopeBuffer>(64);
+        weak = buf;
+
+        Rope rope;
+        rope.append(RopeNode{buf, 0, 64, 0});
+        buf.reset(); /// only rope holds the ref now
+
+        auto node = rope.popFront();
+        /// node holds the last ref
+        EXPECT_FALSE(weak.expired());
+    }
+    /// node destroyed, buffer freed
+    EXPECT_TRUE(weak.expired());
+}

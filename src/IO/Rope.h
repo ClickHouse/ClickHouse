@@ -70,6 +70,9 @@ public:
     void append(RopeNode node);
     void append(Rope && other);
     Rope slice(Range req) const;
+    /// Remove and return the first node.
+    RopeNode popFront();
+
     const std::vector<RopeNode> & getNodes() const { return nodes; }
     bool empty() const { return nodes.empty(); }
     size_t totalBytes() const;
