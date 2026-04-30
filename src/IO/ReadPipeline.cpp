@@ -1,6 +1,7 @@
 #include <IO/ReadPipeline.h>
 
 #include <IO/LocalSourceReader.h>
+#include <IO/ObjectStorageSourceReader.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/ReaderExecutor.h>
 
@@ -162,6 +163,24 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         auto local_source = std::make_shared<LocalSourceReader>();
         auto executor = std::make_unique<ReaderExecutor>(
             local_source,
+            source->objects,
+            std::vector<std::shared_ptr<ICacheProvider>>{},
+            settings.remote_fs_buffer_size > 0 ? settings.remote_fs_buffer_size : 1048576);
+        return std::make_unique<PipelineReadBuffer>(std::move(executor));
+    }
+
+    /// Experimental: ReaderExecutor-based path for object storage (S3, Azure, etc.).
+    /// Handles gather via OffsetMap — multiple blobs become one logical file.
+    if (settings.use_reader_executor
+        && std::holds_alternative<ObjectStorageSource>(source->source)
+        && decryption_stages.empty())
+    {
+        const auto & obj_src = std::get<ObjectStorageSource>(source->source);
+        LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for object storage, {} objects, gather={}",
+            source->objects.size(), gather);
+        auto obj_source = std::make_shared<ObjectStorageSourceReader>(obj_src.storage, settings);
+        auto executor = std::make_unique<ReaderExecutor>(
+            obj_source,
             source->objects,
             std::vector<std::shared_ptr<ICacheProvider>>{},
             settings.remote_fs_buffer_size > 0 ? settings.remote_fs_buffer_size : 1048576);
