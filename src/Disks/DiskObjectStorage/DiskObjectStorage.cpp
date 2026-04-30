@@ -787,8 +787,11 @@ void DiskObjectStorage::prepareRead(
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
         && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
         && storage->supportsCache()
-        && read_settings.enable_filesystem_cache
-        && (!use_distributed_cache || read_settings.distributed_cache_settings.prefer_bigger_buffer_size);
+        && read_settings.enable_filesystem_cache;
+#if ENABLE_DISTRIBUTED_CACHE
+    if (use_distributed_cache && !read_settings.distributed_cache_settings.prefer_bigger_buffer_size)
+        prefer_bigger_buffer_size = false;
+#endif
 
     if (prefer_bigger_buffer_size)
         read_settings.remote_fs_buffer_size = std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size);
