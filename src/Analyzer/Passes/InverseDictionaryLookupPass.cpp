@@ -96,8 +96,6 @@ ConstantListCheckResult
 checkConstantList(const Field & default_value, const ConstantNode * constant_node, const DataTypePtr & dict_attr_type)
 {
     ConstantListCheckResult result;
-    const auto & default_value_str = fieldToString(default_value);
-
     const auto & constant_field = constant_node->getValue();
 
     auto check_element = [&](const Field & element)
