@@ -140,6 +140,36 @@ def test_local_path_traversal_rejected(path):
         )
 
 
+def test_local_symlink_escape_rejected():
+    """An in-root symlink pointing outside the disk root must not be followed.
+
+    Lexical normalization alone (`..` rejection) does not catch this case: the
+    symlink target is resolved by the local filesystem at I/O time, so a path
+    like `escape_link/passwd` would otherwise read `/etc/passwd` even though
+    every component looks valid.
+    """
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "ln -snf /etc /test_user_files_disk1/escape_link",
+        ]
+    )
+    try:
+        with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|outside"):
+            node_local.query(
+                "SELECT * FROM file('escape_link/passwd', 'CSV', 'x String')"
+            )
+        with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|outside"):
+            node_local.query(
+                "SELECT * FROM file('/test_user_files_disk1/escape_link/passwd', 'CSV', 'x String')"
+            )
+    finally:
+        node_local.exec_in_container(
+            ["bash", "-c", "rm -f /test_user_files_disk1/escape_link"]
+        )
+
+
 def test_local_insert_into_file():
     """Test that writing files uses the first disk by default."""
     node_local.query(

@@ -375,6 +375,33 @@ String normalizeDiskRelativePath(const String & input)
     return result;
 }
 
+/// After lexical normalization, returns whether a disk-relative path stays
+/// inside the disk root once symlinks are resolved. This is the symlink-aware
+/// counterpart to `normalizeDiskRelativePath`: the lexical pass blocks `..`
+/// segments, but cannot detect an in-root symlink (e.g. `<disk_root>/link -> /etc`)
+/// being used as `link/passwd` to escape the disk root.
+///
+/// For object-storage disks there is no symlink concept in the user-visible
+/// namespace, so the check trivially passes.
+bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path)
+{
+    if (disk->getDataSourceDescription().type != DataSourceType::Local)
+        return true;
+
+    const String disk_root = getDiskPathWithSlash(disk);
+    return pathStartsWith(disk_root + relative_path, disk_root);
+}
+
+/// Same containment check but throws when the path would escape. Use when the
+/// disk is already known to be the one that should serve the request.
+void validateDiskRelativePathBoundary(const DiskPtr & disk, const String & relative_path)
+{
+    if (!isDiskRelativePathInsideRoot(disk, relative_path))
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+            "Path `{}` resolves outside user files disk root `{}` after symlink resolution",
+            relative_path, getDiskPathWithSlash(disk));
+}
+
 /// Splits an absolute path into (disk, disk-relative-path) by matching the
 /// configured disk path prefix. Returns {nullptr, ""} if no disk matches.
 ///
@@ -406,6 +433,11 @@ bool userFilesPathExists(const String & absolute_path, const Disks & disks)
 {
     auto [disk, relative] = splitUserFilesAbsolutePath(absolute_path, disks);
     if (!disk)
+        return false;
+    /// Treat symlink escape as "not present" rather than throwing here: this is an
+    /// existence probe, and the contained read/write paths will reject the access
+    /// explicitly via `validateDiskRelativePathBoundary`.
+    if (!isDiskRelativePathInsideRoot(disk, relative))
         return false;
     return disk->existsFile(relative) || disk->existsDirectory(relative);
 }
@@ -634,7 +666,15 @@ Strings getPathsListOnDisk(
 
             const String disk_prefix = getDiskPathWithSlash(disk);
             for (const auto & rel : relative_matches)
+            {
+                /// Defense in depth: a matched entry may still be an in-root symlink
+                /// pointing outside (e.g. admin-owned `link -> /etc` matched by the
+                /// regex). Drop such entries; surfacing them would expose files
+                /// outside the disk root.
+                if (!isDiskRelativePathInsideRoot(disk, rel))
+                    continue;
                 absolute_paths.push_back(disk_prefix + rel);
+            }
         }
 
         return absolute_paths;
@@ -646,6 +686,10 @@ Strings getPathsListOnDisk(
     {
         for (const auto & disk : disks)
         {
+            /// Skip disks where the relative path would escape via an in-root symlink.
+            /// Other disks may still serve the same relative path safely.
+            if (!isDiskRelativePathInsideRoot(disk, relative_pattern))
+                continue;
             if (disk->existsFile(relative_pattern) || disk->existsDirectory(relative_pattern))
             {
                 target_disk = disk;
@@ -656,6 +700,10 @@ Strings getPathsListOnDisk(
         if (!target_disk)
             target_disk = disks.front();
     }
+    /// At this point the user explicitly addressed `target_disk` (either via an
+    /// absolute path or as the only viable read/write target); reject if it would
+    /// escape through a symlink.
+    validateDiskRelativePathBoundary(target_disk, relative_pattern);
 
     const String disk_prefix = getDiskPathWithSlash(target_disk);
     if (target_disk->existsDirectory(relative_pattern))
@@ -666,6 +714,9 @@ Strings getPathsListOnDisk(
             const String entry_rel = relative_pattern.empty()
                 ? String(it->name())
                 : (relative_pattern + "/" + it->name());
+            /// Skip entries that resolve outside the disk root via a symlink.
+            if (!isDiskRelativePathInsideRoot(target_disk, entry_rel))
+                continue;
             if (target_disk->existsFile(entry_rel))
             {
                 total_bytes_to_read += target_disk->getFileSize(entry_rel);
@@ -1921,6 +1972,9 @@ Chunk StorageFileSource::generate()
                     auto [disk, relative_path] = splitUserFilesAbsolutePath(current_path, storage->user_files_volume->getDisks());
                     if (!disk)
                         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", current_path);
+                    /// Defense in depth: refuse to read through an in-root symlink that
+                    /// would escape the disk root.
+                    validateDiskRelativePathBoundary(disk, relative_path);
 
                     current_file_size = disk->getFileSize(relative_path);
                     current_file_last_modified = disk->getLastModified(relative_path);
@@ -2640,6 +2694,8 @@ SinkToStoragePtr StorageFile::write(
             if (!disk)
                 throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                     "Path `{}` is not inside any user files disk", path);
+            /// Refuse writes that would escape the disk root through a symlink.
+            validateDiskRelativePathBoundary(disk, relative);
             write_disk = disk;
             write_relative_path = relative;
         }

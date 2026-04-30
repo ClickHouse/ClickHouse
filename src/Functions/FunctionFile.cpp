@@ -155,6 +155,19 @@ public:
                 return normalized;
             };
 
+            /// Symlink-aware containment check. The lexical pass above blocks `..`,
+            /// but cannot detect an in-root symlink (e.g. `<disk_root>/link -> /etc`)
+            /// being used as `link/passwd` to escape the disk root. Object-storage
+            /// disks have no symlink concept in the user-visible namespace, so the
+            /// check trivially passes for them.
+            auto path_is_inside_disk_root = [&disk_path_with_slash](const DiskPtr & d, const String & rel) -> bool
+            {
+                if (d->getDataSourceDescription().type != DataSourceType::Local)
+                    return true;
+                const String disk_root = disk_path_with_slash(d);
+                return pathStartsWith(disk_root + rel, disk_root);
+            };
+
             for (size_t row = 0; row < input_rows_count; ++row)
             {
                 std::string_view filename = column_src->getDataAt(row);
@@ -186,12 +199,20 @@ public:
                             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                                 "Absolute path '{}' is not inside any user files disk", String(filename));
                         relative_path = normalize_relative(file_path_str.substr(best_prefix_size));
+                        if (!path_is_inside_disk_root(found_disk, relative_path))
+                            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                                "Path `{}` resolves outside user files disk root after symlink resolution",
+                                String(filename));
                     }
                     else
                     {
                         relative_path = normalize_relative(file_path_str);
                         for (const auto & disk : disks)
                         {
+                            /// Skip disks where the path would escape via an in-root symlink;
+                            /// other disks may still serve the same relative path safely.
+                            if (!path_is_inside_disk_root(disk, relative_path))
+                                continue;
                             if (disk->existsFile(relative_path))
                             {
                                 found_disk = disk;
