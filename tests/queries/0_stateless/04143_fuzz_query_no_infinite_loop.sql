@@ -22,3 +22,7 @@ SELECT count() AS rows_returned FROM (
 SELECT count() AS rows_returned, max(length(query)) > 0 AS non_empty FROM (
     SELECT query FROM fuzzQuery('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10', 1, 42) LIMIT 5
 );
+
+-- `max_query_length = 0` is pathological: every non-empty fuzzed AST exceeds the cap.
+-- Reject it at configuration time rather than degrading to a no-op fuzzer.
+SELECT * FROM fuzzQuery('SELECT 1', 0, 42) LIMIT 1; -- { serverError BAD_ARGUMENTS }

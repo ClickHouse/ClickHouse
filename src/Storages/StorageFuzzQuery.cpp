@@ -33,13 +33,11 @@ ColumnPtr FuzzQuerySource::createColumn()
     auto fuzz_base = query;
     size_t row_num = 0;
 
-    /// Bound retries per row so the loop cannot spin forever:
-    /// - The current `if (config.max_query_length > 500)` guard always resets when the
-    ///   cap is large, so the loop never produces a row.
-    /// - With a tighter `if (fuzzed_text.size() > config.max_query_length)` check the loop
-    ///   can also spin if the fuzzer keeps producing oversized variants (e.g. a small cap).
-    /// In either case, fall back to emitting the original (unfuzzed) query so the source
-    /// always makes progress.
+    /// Bound retries per row so the loop cannot spin forever. Even with the precise
+    /// `if (fuzzed_text.size() > config.max_query_length)` check below the loop can spin
+    /// if the fuzzer keeps producing oversized variants (e.g. a small cap like 1, where
+    /// every non-trivial mutation overflows). Fall back to emitting the original
+    /// (unfuzzed) query so the source always makes progress.
     constexpr size_t max_attempts_per_row = 100;
     size_t attempts_for_current_row = 0;
 
@@ -73,8 +71,13 @@ ColumnPtr FuzzQuerySource::createColumn()
         if (base_before_fuzz == fuzzed_text)
             continue;
 
-        /// AST is too long, will start from the original query.
-        if (config.max_query_length > 500)
+        /// Fuzzed AST exceeds the configured cap. Reset to the original query and try
+        /// again. The previous lazy guard `config.max_query_length > 500` always reset
+        /// when the cap was large, regardless of the actual fuzzed size — so the loop
+        /// never produced a row (the original hang). This precise check resets only when
+        /// the fuzzed text really exceeds the cap, avoiding `O(max_attempts_per_row *
+        /// block_size)` wasted fuzz/format work for the common `cap > 500` case.
+        if (fuzzed_text.size() > config.max_query_length)
         {
             fuzz_base = query;
             continue;
@@ -189,6 +192,13 @@ StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine
         if (!literal.value.isNull())
             configuration.random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
     }
+
+    /// `max_query_length == 0` is pathological: every non-empty fuzzed AST exceeds the
+    /// cap, the loop in `FuzzQuerySource::createColumn` resets and only ever falls back
+    /// to the unfuzzed query (after `max_attempts_per_row` retries per row). Reject it
+    /// up front rather than degrading to a no-op fuzzer.
+    if (configuration.max_query_length == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "FuzzQuery `max_query_length` must be greater than 0");
 
     return configuration;
 }
