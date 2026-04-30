@@ -488,10 +488,14 @@ void StorageMergeTree::drop()
 {
     /// `DROP TABLE` is allowed even when the table is read-only — only the local metadata
     /// is removed; `dropAllData` itself skips file cleanup for static storage disks.
-    /// Under `leader_election`, the shared data on object storage is owned by the leader,
-    /// so a follower's drop must skip `dropAllData` to avoid touching the leader's data.
-    /// Capture leader status before `shutdown` stops the election thread.
-    bool skip_data_cleanup = leader_election_ptr && !leader_election_ptr->isLeader();
+    /// Under `leader_election`, data on the shared object storage is owned by whichever
+    /// node currently holds the lease. We skip `dropAllData` unconditionally in that case
+    /// because (a) a follower must not touch the leader's data, and (b) checking leader
+    /// status here is a TOCTOU race — leadership can change during `shutdown(true)` so
+    /// even a current leader may execute `dropAllData` while no longer holding the lease.
+    /// This matches the `ReplicatedMergeTree` model: `DROP TABLE` removes local metadata
+    /// only, and shared data must be cleaned up out-of-band by the operator.
+    bool skip_data_cleanup = leader_election_ptr != nullptr;
     shutdown(true);
     if (!skip_data_cleanup)
         dropAllData();
