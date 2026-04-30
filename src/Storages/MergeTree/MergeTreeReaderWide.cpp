@@ -202,19 +202,24 @@ size_t MergeTreeReaderWide::readRows(
         bool serving_from_cache = false;
         std::vector<std::pair<ColumnsCacheKey, ColumnPtr>> cached_columns;
 
+        /// Compute the row range we're trying to read.
+        /// When rows_offset > 0, the first rows_offset rows are skipped, so the actual
+        /// data starts at row_begin + rows_offset.
+        const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+        const size_t mark_row_begin = index_granularity.getMarkStartingRow(from_mark);
+        const size_t row_begin = mark_row_begin + rows_offset;
+        const size_t row_end_max = (current_task_last_mark < index_granularity.getMarksCount())
+            ? index_granularity.getMarkStartingRow(current_task_last_mark)
+            : data_part_info_for_read->getRowCount();
+        const size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
+
+        /// When `serving_from_cache` is true, these hold the row range of the cached blocks
+        /// and are guaranteed to be valid (they refer to a non-dropped column's cache key).
+        size_t cached_row_begin = 0;
+        size_t cached_row_end = 0;
+
         if (cache_enabled && settings.enable_columns_cache_reads)
         {
-            /// Compute the row range we're trying to read.
-            /// When rows_offset > 0, the first rows_offset rows are skipped, so the actual
-            /// data starts at row_begin + rows_offset.
-            const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
-            size_t mark_row_begin = index_granularity.getMarkStartingRow(from_mark);
-            size_t row_begin = mark_row_begin + rows_offset;
-            size_t row_end_max = (current_task_last_mark < index_granularity.getMarksCount())
-                ? index_granularity.getMarkStartingRow(current_task_last_mark)
-                : data_part_info_for_read->getRowCount();
-            size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
-
             LOG_TEST(log, "Checking cache: row_begin={}, row_end_query={}, max_rows_to_read={}",
                 row_begin, row_end_query, max_rows_to_read);
 
@@ -303,6 +308,8 @@ size_t MergeTreeReaderWide::readRows(
                     if (row_end_query >= row_end_max)
                     {
                         serving_from_cache = true;
+                        cached_row_begin = cached_row_begin_0;
+                        cached_row_end = cached_row_end_0;
                         LOG_TEST(log, "Serving from cache: all columns have consistent cached blocks");
                     }
                     else
@@ -324,30 +331,15 @@ size_t MergeTreeReaderWide::readRows(
                 ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses);
         }
 
+        /// Calculate offset within the cached block and how many rows to extract.
+        /// These are only meaningful when `serving_from_cache` is true.
+        const size_t offset_in_cache = serving_from_cache ? (row_begin - cached_row_begin) : 0;
+        const size_t rows_to_serve = serving_from_cache
+            ? std::min(row_end_query - row_begin, cached_row_end - row_begin)
+            : 0;
+
         if (serving_from_cache)
         {
-            /// Serve from cached columns
-            /// The cached block may be larger than what we need, so calculate the subset to extract
-            const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
-            size_t mark_row_begin = index_granularity.getMarkStartingRow(from_mark);
-            size_t row_begin = mark_row_begin + rows_offset;
-            size_t row_end_max = (current_task_last_mark < index_granularity.getMarksCount())
-                ? index_granularity.getMarkStartingRow(current_task_last_mark)
-                : data_part_info_for_read->getRowCount();
-            size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
-
-            /// Find the first non-dropped column for the reference row range.
-            size_t ref_col_v = 0;
-            while (ref_col_v < num_columns && isColumnDroppedByPendingMutation(ref_col_v))
-                ++ref_col_v;
-
-            const auto & cached_row_begin = cached_columns[ref_col_v].first.row_begin;
-            const auto & cached_row_end = cached_columns[ref_col_v].first.row_end;
-
-            /// Calculate offset within the cached block and how many rows to extract
-            size_t offset_in_cache = row_begin - cached_row_begin;
-            size_t rows_to_serve = std::min(row_end_query - row_begin, cached_row_end - row_begin);
-
             /// Validate all cached columns have sufficient data before modifying res_columns.
             /// The cache key's row range may not match the actual column size
             /// if columns had different row counts when cached.
@@ -373,25 +365,6 @@ size_t MergeTreeReaderWide::readRows(
         if (serving_from_cache)
         {
             /// All cached columns validated - serve from cache
-            const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
-            size_t mark_row_begin = index_granularity.getMarkStartingRow(from_mark);
-            size_t row_begin = mark_row_begin + rows_offset;
-            size_t row_end_max = (current_task_last_mark < index_granularity.getMarksCount())
-                ? index_granularity.getMarkStartingRow(current_task_last_mark)
-                : data_part_info_for_read->getRowCount();
-            size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
-
-            /// Find the first non-dropped column for the reference row range.
-            size_t ref_col = 0;
-            while (ref_col < num_columns && isColumnDroppedByPendingMutation(ref_col))
-                ++ref_col;
-
-            const auto & cached_row_begin = cached_columns[ref_col].first.row_begin;
-            const auto & cached_row_end = cached_columns[ref_col].first.row_end;
-
-            size_t offset_in_cache = row_begin - cached_row_begin;
-            size_t rows_to_serve = std::min(row_end_query - row_begin, cached_row_end - row_begin);
-
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
                 /// Column was dropped by a pending mutation. Don't serve stale data from cache.
@@ -461,9 +434,8 @@ size_t MergeTreeReaderWide::readRows(
             /// with in-progress reads (which would corrupt cached data via assumeMutable).
             if (!continue_reading && cache_possible && settings.enable_columns_cache_writes)
             {
-                const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
                 cache_write_pending = true;
-                cache_row_begin = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
+                cache_row_begin = row_begin;
                 cache_task_last_mark = current_task_last_mark;
                 cache_column_sizes_at_task_start.resize(num_columns);
             }
@@ -528,8 +500,7 @@ size_t MergeTreeReaderWide::readRows(
             /// We cache only when the full task range has been read (all continuation reads are done).
             if (cache_write_pending && read_rows > 0)
             {
-                const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
-                size_t row_end_max = (cache_task_last_mark < index_granularity.getMarksCount())
+                size_t cache_row_end_max = (cache_task_last_mark < index_granularity.getMarksCount())
                     ? index_granularity.getMarkStartingRow(cache_task_last_mark)
                     : data_part_info_for_read->getRowCount();
 
@@ -546,7 +517,7 @@ size_t MergeTreeReaderWide::readRows(
                     }
                 }
 
-                if (cache_row_begin + total_rows_for_task >= row_end_max)
+                if (cache_row_begin + total_rows_for_task >= cache_row_end_max)
                 {
                     /// All continuation reads are done - cache the full task range.
                     size_t row_end = cache_row_begin + total_rows_for_task;
