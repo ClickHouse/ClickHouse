@@ -77,15 +77,15 @@ void ReaderExecutor::maybeTriggerPrefetch()
         return;
 
     size_t next_size = std::min(window_size, logical_size - position);
-    Range next_window{position + data_start_offset, next_size};
+    Range next_physical_window{position + data_start_offset, next_size};
 
-    LOG_TRACE(log, "Prefetch: submitting [{}, {})", next_window.offset, next_window.end());
+    LOG_TRACE(log, "Prefetch: submitting physical [{}, {})", next_physical_window.offset, next_physical_window.end());
 
-    prefetch_future = prefetch_pool->submit([this, next_window]()
+    prefetch_future = prefetch_pool->submit([this, next_physical_window]()
     {
-        return readWindow(next_window);
+        return readPhysicalWindow(next_physical_window);
     });
-    prefetch_range = next_window;
+    prefetch_range = next_physical_window;
     prefetch_valid = true;
 }
 
@@ -122,7 +122,7 @@ void ReaderExecutor::initDecryption()
         decryption_layers.size(), data_start_offset);
 
     /// Read all headers in one call through the cache chain.
-    Rope header_rope = readWindow(Range{0, data_start_offset});
+    Rope header_rope = readPhysicalWindow(Range{0, data_start_offset});
     chassert(header_rope.totalBytes() == data_start_offset);
 
     /// Parse each header sequentially from the rope.
@@ -155,14 +155,17 @@ Rope ReaderExecutor::decryptRope(Rope rope, size_t logical_offset)
     if (decryption_layers.empty())
         return rope;
 
-    /// Collect all bytes into a contiguous buffer for decryption.
+    /// Copy into an owned buffer before decrypting.
+    /// Rope nodes may reference shared memory (e.g. page cache cells),
+    /// so in-place decryption is not safe in general.
+    /// TODO: optimize — decrypt in-place for OwnedRopeBuffer nodes.
     size_t total = rope.totalBytes();
-    auto decrypted_buf = std::make_shared<OwnedRopeBuffer>(total);
+    auto buf = std::make_shared<OwnedRopeBuffer>(total);
 
     size_t pos = 0;
     for (const auto & node : rope.getNodes())
     {
-        std::memcpy(decrypted_buf->data() + pos, node.data(), node.size);
+        std::memcpy(buf->data() + pos, node.data(), node.size);
         pos += node.size;
     }
 
@@ -174,11 +177,11 @@ Rope ReaderExecutor::decryptRope(Rope rope, size_t logical_offset)
             decryption_layers[i].key,
             decryption_headers[i].init_vector);
         encryptor.setOffset(logical_offset);
-        encryptor.decrypt(decrypted_buf->data(), total, decrypted_buf->data());
+        encryptor.decrypt(buf->data(), total, buf->data());
     }
 
     Rope result;
-    result.append(RopeNode{std::move(decrypted_buf), 0, total, logical_offset});
+    result.append(RopeNode{std::move(buf), 0, total, logical_offset});
     return result;
 }
 #endif
@@ -212,7 +215,7 @@ Rope ReaderExecutor::readNextWindow()
         Range physical_window{position + data_start_offset, win_size};
         LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
             physical_window.offset, physical_window.end(), position, position + win_size);
-        rope = readWindow(physical_window);
+        rope = readPhysicalWindow(physical_window);
     }
 
     position += rope.range().size;
@@ -247,12 +250,12 @@ void ReaderExecutor::seek(size_t new_position)
     position = new_position;
 }
 
-Rope ReaderExecutor::readWindow(Range window)
+Rope ReaderExecutor::readPhysicalWindow(Range physical_window)
 {
-    LOG_TRACE(log, "readWindow [{}, {})", window.offset, window.end());
+    LOG_TRACE(log, "readPhysicalWindow [{}, {})", physical_window.offset, physical_window.end());
 
     Rope result;
-    std::vector<Range> remaining = {window};
+    std::vector<Range> remaining = {physical_window};
 
     /// Handles with misses — kept alive for put after source fetch.
     std::vector<std::unique_ptr<ICacheHandle>> miss_handles;
@@ -269,7 +272,7 @@ Rope ReaderExecutor::readWindow(Range window)
 
             for (const auto & hit : status.hit_ranges)
             {
-                LOG_TRACE(log, "readWindow: cache {} hit [{}, {})", cache->name(), hit.offset, hit.end());
+                LOG_TRACE(log, "readPhysicalWindow: cache {} hit [{}, {})", cache->name(), hit.offset, hit.end());
                 auto slice = handle->get(hit);
                 for (const auto & node : slice.getNodes())
                     result.append(RopeNode{node.buffer, node.buffer_offset, node.size, node.logical_offset});
@@ -277,7 +280,7 @@ Rope ReaderExecutor::readWindow(Range window)
 
             for (const auto & miss : status.miss_ranges)
             {
-                LOG_TRACE(log, "readWindow: cache {} miss [{}, {})", cache->name(), miss.offset, miss.end());
+                LOG_TRACE(log, "readPhysicalWindow: cache {} miss [{}, {})", cache->name(), miss.offset, miss.end());
                 still_missing.push_back(miss);
             }
 
@@ -294,7 +297,7 @@ Rope ReaderExecutor::readWindow(Range window)
     auto fetch_ranges = mergeRanges(remaining, min_bytes_for_seek);
 
     if (fetch_ranges.size() < remaining.size())
-        LOG_TRACE(log, "readWindow: merged {} miss ranges into {} fetch ranges (min_gap={})",
+        LOG_TRACE(log, "readPhysicalWindow: merged {} miss ranges into {} fetch ranges (min_gap={})",
             remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
 
     /// Fetch from source
@@ -305,7 +308,7 @@ Rope ReaderExecutor::readWindow(Range window)
 
         for (const auto & pr : physical_ranges)
         {
-            LOG_TRACE(log, "readWindow: source read object={}, offset={}, size={}",
+            LOG_TRACE(log, "readPhysicalWindow: source read object={}, offset={}, size={}",
                 pr.object.remote_path, pr.object_offset, pr.size);
             auto buf = std::make_shared<OwnedRopeBuffer>(pr.size);
             size_t bytes_read = source->read(pr.object, pr.object_offset, pr.size, buf->data());
@@ -333,8 +336,8 @@ Rope ReaderExecutor::readWindow(Range window)
         [](const RopeNode & a, const RopeNode & b)
         { return a.logical_offset < b.logical_offset; });
 
-    /// Trim to the originally requested window.
-    return result.slice(window);
+    /// Trim to the originally requested physical window.
+    return result.slice(physical_window);
 }
 
 }

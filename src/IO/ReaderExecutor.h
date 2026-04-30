@@ -62,8 +62,8 @@ public:
     static std::vector<Range> mergeRanges(const std::vector<Range> & ranges, size_t min_gap);
 
 private:
-    /// Read a specific range through the cache chain and source.
-    Rope readWindow(Range window);
+    /// Read a specific physical range through the cache chain and source.
+    Rope readPhysicalWindow(Range physical_window);
 
     void maybeTriggerPrefetch();
     void discardPrefetch();
