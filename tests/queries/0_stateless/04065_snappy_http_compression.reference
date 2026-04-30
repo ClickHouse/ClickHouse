@@ -2,3 +2,4 @@
 OK: snappy framing stream identifier found
 99
 OK: malformed snappy request rejected
+OK: oversized snappy chunk header rejected

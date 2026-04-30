@@ -135,6 +135,18 @@ bool SnappyFramedReadBuffer::nextImpl()
 
             /// Read checksum (4 bytes) + compressed payload.
             size_t payload_size = chunk_data_size - 4;
+
+            /// Reject oversized compressed payloads before allocating, so attacker-controlled
+            /// chunk header lengths cannot force large per-request memory spikes prior to the
+            /// later uncompressed-length / CRC / decode checks. The maximum valid compressed
+            /// payload size for a chunk is bounded by `snappy::MaxCompressedLength` of the
+            /// snappy framing format's per-chunk uncompressed limit.
+            const size_t max_compressed_payload_size = snappy::MaxCompressedLength(MAX_UNCOMPRESSED_CHUNK_SIZE);
+            if (payload_size > max_compressed_payload_size)
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Snappy compressed chunk payload size {} exceeds the framing format limit of {}{}",
+                    payload_size, max_compressed_payload_size, getExceptionEntryWithFileName(*in));
+
             String chunk_buf(chunk_data_size, '\0');
             readExact(chunk_buf.data(), chunk_data_size, /*allow_partial_eof=*/false);
 

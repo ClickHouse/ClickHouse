@@ -50,3 +50,19 @@ else
     echo "FAIL: malformed snappy request was not rejected" >&2
     exit 1
 fi
+
+# Verify that an oversized compressed-chunk header is rejected before the server
+# allocates a multi-megabyte buffer for the chunk payload. Send the stream
+# identifier followed by a compressed-chunk header with the maximum 24-bit
+# length (`00 ff ff ff` = 16,777,215) and ensure the server rejects it with a
+# framing-limit error rather than reading a ~16 MB payload first.
+if printf '\xff\x06\x00\x00\x73\x4e\x61\x50\x70\x59\x00\xff\xff\xff' | ${CLICKHOUSE_CURL} -sS --data-binary @- \
+        -H 'Content-Encoding: snappy' \
+        "${CLICKHOUSE_URL}" 2>&1 \
+    | grep -qE 'exceeds the framing format limit|SNAPPY_UNCOMPRESS_FAILED'
+then
+    echo "OK: oversized snappy chunk header rejected"
+else
+    echo "FAIL: oversized snappy chunk header was not rejected" >&2
+    exit 1
+fi
