@@ -92,7 +92,7 @@ public:
             return result;
         auto arr = obj.getArray("children");
         if (!arr)
-            return result;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'children' is not a JSON array during AST JSON deserialization");
         result.reserve(arr->size());
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
