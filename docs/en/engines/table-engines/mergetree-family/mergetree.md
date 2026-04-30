@@ -9,6 +9,7 @@ doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # MergeTree table engine
@@ -1205,6 +1206,56 @@ When using `use_environment_credentials` for S3 authentication, the environment 
 :::
 
 It is possible to set up non-replicated MergeTree tables with a one-writer, many-readers scenario on shared storage. This is provided by the automatic refresh of the parts list, which can be set up on readers. Note that this requires shared filesystem metadata across replicas (or `table_disk = true` with a table-local disk). See [refresh_parts_interval and table_disk](/operations/storing-data.md/#refresh-parts-interval-and-table-disk).
+
+### Leader election for non-replicated MergeTree on shared object storage {#leader-election-on-shared-storage}
+
+<BetaBadge/>
+
+Multiple ClickHouse instances sharing a single non-replicated `MergeTree` table on object storage can elect a single leader using the [`leader_election`](/operations/settings/merge-tree-settings.md/#leader_election) setting. Only the leader accepts inserts, merges, mutations, and DDL; the other instances act as read-only followers and will take over automatically when the current leader becomes unavailable. This enables active/standby failover without requiring `ClickHouse Keeper`.
+
+Coordination is implemented using conditional writes (`If-Match` / `If-None-Match`) on a small lease file in the object storage bucket. No external coordination service is needed, and the conditional-write protocol prevents split-brain regardless of clock skew.
+
+Requirements and constraints:
+
+- Supported backends: `S3` and `Azure` (the only object storages that currently expose conditional writes in ClickHouse).
+- Shared storage: every participating instance must read and write the same bucket and prefix; each instance must have an independent local metadata directory (e.g. via `table_disk = true`, or unique `metadata_path`s per node).
+- Clock synchronization: keep node clocks within `leader_election_session_timeout` of each other (for example, via `NTP`). Excessive skew does not cause split-brain — the conditional-write protocol still prevents two writers — but it can cause unnecessary leadership churn.
+
+Behavior on the leader vs. on followers:
+
+- Leader: inserts, `INSERT`-driven merges, mutations, `DROP`/`DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, `OPTIMIZE`, and `ALTER` all run normally. Background merges, mutations, moves, and cleanup are active.
+- Follower: writes and DDL fail with `TABLE_IS_READ_ONLY`. `SELECT` is allowed. Background write tasks are stopped. `DROP TABLE` is allowed and removes only local metadata, leaving the shared data intact for the leader.
+
+Example: enabling leader election on an S3-backed table.
+
+```sql
+CREATE TABLE t
+(
+    id UInt64,
+    value String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS
+    storage_policy = 's3_policy',
+    leader_election = 1,
+    leader_election_heartbeat_interval = 10,
+    leader_election_session_timeout = 30;
+```
+
+The same `CREATE TABLE` statement is issued on every participating instance (with the matching `UUID`/`storage_policy` so they point to the same bucket prefix). After startup, exactly one instance becomes the leader and accepts writes; the others become read-only and watch the lease.
+
+Related settings:
+
+- [`leader_election`](/operations/settings/merge-tree-settings.md/#leader_election) — enable leader election for this table.
+- [`leader_election_heartbeat_interval`](/operations/settings/merge-tree-settings.md/#leader_election_heartbeat_interval) — how often the leader renews its lease.
+- [`leader_election_session_timeout`](/operations/settings/merge-tree-settings.md/#leader_election_session_timeout) — when followers consider the lease expired and try to take over. Must be at least `3 * leader_election_heartbeat_interval`.
+
+These settings are immutable after table creation: `ALTER TABLE ... MODIFY SETTING leader_election = ...` is rejected.
+
+:::note
+The `leader_election` setting is in beta and is intended for shared object-storage deployments only. For multi-writer replication with full conflict resolution, use `ReplicatedMergeTree`.
+:::
 
 :::note cache configuration
 ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/operations/storing-data.md/#using-local-cache) if you are using one of those versions.
