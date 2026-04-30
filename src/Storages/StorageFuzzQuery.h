@@ -2,6 +2,7 @@
 
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/StorageConfiguration.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Common/randomSeed.h>
 #include <Common/QueryFuzzer.h>
 #include <Processors/ISource.h>
@@ -42,7 +43,16 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    static StorageFuzzQuery::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
+    /// `mode` controls whether the contract validation in `getConfiguration` is enforced.
+    /// On `CREATE` / `SECONDARY_CREATE` we reject impossible configurations (e.g.
+    /// `max_query_length` smaller than the formatted base query). On `ATTACH` and
+    /// stronger we skip those checks so existing tables with previously-tolerated
+    /// configurations keep loading after an upgrade — required by the ClickHouse
+    /// backward-compatibility rule that new validation must not break existing objects.
+    static StorageFuzzQuery::Configuration getConfiguration(
+        ASTs & engine_args,
+        ContextPtr local_context,
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
 
 private:
     const Configuration config;

@@ -161,7 +161,8 @@ Pipe StorageFuzzQuery::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(
+    ASTs & engine_args, ContextPtr local_context, LoadingStrictnessLevel mode)
 {
     StorageFuzzQuery::Configuration configuration{};
 
@@ -193,20 +194,28 @@ StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine
             configuration.random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
     }
 
-    /// `max_query_length == 0` is pathological: every non-empty fuzzed AST exceeds the
-    /// cap, the loop in `FuzzQuerySource::createColumn` resets and only ever falls back
-    /// to the unfuzzed query (after `max_attempts_per_row` retries per row). Reject it
-    /// up front rather than degrading to a no-op fuzzer.
-    if (configuration.max_query_length == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "FuzzQuery `max_query_length` must be greater than 0");
-
-    /// `max_query_length` is the documented maximum output length. If the formatted base
-    /// query already exceeds the cap, no fuzzed variant can possibly fit either: the loop
-    /// in `FuzzQuerySource::createColumn` would exhaust its retries and fall back to the
-    /// unfuzzed query, silently emitting oversized rows that violate the contract. Reject
-    /// the impossible configuration up front so callers see a clear error at table /
-    /// table-function construction time instead of an out-of-spec result at scan time.
+    /// Strict contract validation only on fresh creation. Skipped on `ATTACH` and stronger
+    /// (server startup, restore) so existing tables with previously-tolerated configurations
+    /// keep loading after an upgrade — required by the ClickHouse backward-compatibility
+    /// rule that new validation must not break existing objects. The `FuzzQuerySource`
+    /// loop already handles every degenerate runtime case (oversized base, oversized fuzzed
+    /// text, `max_query_length == 0`) by capping retries and falling back to the unfuzzed
+    /// query, so the runtime cannot hang even when an attached table has a stale config.
+    if (mode < LoadingStrictnessLevel::ATTACH)
     {
+        /// `max_query_length == 0` is pathological: every non-empty fuzzed AST exceeds the
+        /// cap, the loop in `FuzzQuerySource::createColumn` resets and only ever falls back
+        /// to the unfuzzed query (after `max_attempts_per_row` retries per row). Reject it
+        /// up front rather than degrading to a no-op fuzzer.
+        if (configuration.max_query_length == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "FuzzQuery `max_query_length` must be greater than 0");
+
+        /// `max_query_length` is the documented maximum output length. If the formatted base
+        /// query already exceeds the cap, no fuzzed variant can possibly fit either: the loop
+        /// in `FuzzQuerySource::createColumn` would exhaust its retries and fall back to the
+        /// unfuzzed query, silently emitting oversized rows that violate the contract. Reject
+        /// the impossible configuration up front so callers see a clear error at table /
+        /// table-function construction time instead of an out-of-spec result at scan time.
         const char * begin = configuration.query.data();
         const char * end = begin + configuration.query.size();
 
@@ -235,7 +244,8 @@ void registerStorageFuzzQuery(StorageFactory & factory)
             if (engine_args.empty())
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage FuzzQuery must have arguments.");
 
-            StorageFuzzQuery::Configuration configuration = StorageFuzzQuery::getConfiguration(engine_args, args.getLocalContext());
+            StorageFuzzQuery::Configuration configuration
+                = StorageFuzzQuery::getConfiguration(engine_args, args.getLocalContext(), args.mode);
 
             for (const auto& col : args.columns)
                 if (col.type->getTypeId() != TypeIndex::String)
