@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-replicated-database, no-flaky-check
+# Tags: no-fasttest, no-random-settings, no-replicated-database, no-flaky-check, no-random-detach
 # no-fasttest: TPC-DS tables use web disk (S3) which is not available in fasttest.
 # no-random-settings: random session_timezone, query_plan_join_swap_table, etc. change query results.
 # no-replicated-database: the `tpcds` database is not created in DatabaseReplicated mode.
