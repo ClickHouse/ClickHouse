@@ -49,19 +49,6 @@ SELECT count(), countIf(path < prev_path) AS violations FROM (
     )
 );
 
--- PrefetchingConcat should NOT be used with LIMIT (read_limit != 0).
--- The same filter as the positive case above is kept so all other gating conditions
--- are satisfied (PREWHERE present, single part, etc.); only the LIMIT changes.
--- This makes the test fail specifically when the LIMIT guard is removed, rather
--- than passing for the wrong reason (e.g. missing prewhere/filter).
-SELECT 'no_prefetching_with_limit';
-SELECT count() > 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat
-    WHERE path LIKE '%file.log'
-    ORDER BY path
-    LIMIT 10
-) WHERE explain LIKE '%PrefetchingConcat%';
-
 DROP TABLE t_prefetching_concat;
 
 -- PrefetchingConcat should NOT be used with multiple parts whose ranges

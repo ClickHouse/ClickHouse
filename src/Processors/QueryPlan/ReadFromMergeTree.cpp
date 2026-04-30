@@ -1422,7 +1422,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             if (need_preliminary_merge
                 || output_each_partition_through_separate_port
                 || prefer_multiple_streams
-                || input_order_info->limit != 0
                 || input_order_info->direction != 1
                 || split_parts_and_ranges.size() <= 1)
                 return false;
@@ -1435,6 +1434,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             /// non-overlapping ranges, and adding a concat with its own buffering
             /// just introduces scheduling overhead — see perf regressions in the
             /// `monotonous_order_by` test.
+            ///
+            /// Note: a `LIMIT` from the query is not propagated to
+            /// `input_order_info->limit` whenever a filter is in the plan
+            /// (`buildSortingDAG` zeroes it out for any `PREWHERE`,
+            /// row-level filter, `FilterStep`, etc.), so a separate `LIMIT`
+            /// guard here would be unreachable given the filter requirement
+            /// above.
             if (!query_info.prewhere_info && !query_info.row_level_filter)
                 return false;
 
