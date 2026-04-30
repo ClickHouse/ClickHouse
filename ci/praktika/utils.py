@@ -790,6 +790,15 @@ class Utils:
                 )
         return path_out
 
+    @staticmethod
+    def fix_ownership_after_docker(path, docker_image: str) -> None:
+        uid = os.getuid()
+        gid = os.getgid()
+        Shell.run(
+            f"docker run --rm --user root --volume {path}:{path} {docker_image} chown -R {uid}:{gid} {path}",
+            verbose=True,
+        )
+
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
         if not Path(f"{aes_key_path}.rsa").exists():
