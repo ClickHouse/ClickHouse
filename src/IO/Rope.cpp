@@ -45,9 +45,9 @@ void Rope::append(Rope && other)
     other.nodes.clear();
 }
 
-RopeSlice Rope::slice(Range req) const
+Rope Rope::slice(Range req) const
 {
-    RopeSlice result;
+    Rope result;
     for (const auto & node : nodes)
     {
         size_t node_start = node.logical_offset;
@@ -71,17 +71,7 @@ RopeSlice Rope::slice(Range req) const
     return result;
 }
 
-Range RopeSlice::range() const
-{
-    if (nodes.empty())
-        return {0, 0};
-    size_t start = nodes.front().logical_offset;
-    const auto & last = nodes.back();
-    size_t end = last.logical_offset + last.size;
-    return {start, end - start};
-}
-
-size_t RopeSlice::totalBytes() const
+size_t Rope::totalBytes() const
 {
     size_t total = 0;
     for (const auto & node : nodes)

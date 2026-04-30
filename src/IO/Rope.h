@@ -60,36 +60,22 @@ struct RopeNode
     Range range() const { return {logical_offset, size}; }
 };
 
-class RopeSlice;
-
-/// Contiguous sequence of RopeNodes covering a logical range.
+/// Sequence of RopeNodes covering a logical range.
+/// Nodes are refcounted via shared_ptr — slicing is metadata-only,
+/// the backing buffers stay alive as long as any Rope references them.
 class Rope
 {
 public:
     Range range() const;
     void append(RopeNode node);
     void append(Rope && other);
-    RopeSlice slice(Range req) const;
-    const std::vector<RopeNode> & getNodes() const { return nodes; }
-    bool empty() const { return nodes.empty(); }
-
-private:
-    std::vector<RopeNode> nodes;
-};
-
-/// Lightweight view into a Rope. Holds shared_ptr refs to buffers.
-class RopeSlice
-{
-public:
-    RopeSlice() = default;
-    Range range() const;
+    Rope slice(Range req) const;
     const std::vector<RopeNode> & getNodes() const { return nodes; }
     bool empty() const { return nodes.empty(); }
     size_t totalBytes() const;
 
 private:
     std::vector<RopeNode> nodes;
-    friend class Rope;
 };
 
 }

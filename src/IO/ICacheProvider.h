@@ -35,13 +35,13 @@ public:
     virtual CacheLookupResult status() const = 0;
 
     /// Read cached data as a rope slice. Range must be within hit_ranges.
-    virtual RopeSlice get(Range range) = 0;
+    virtual Rope get(Range range) = 0;
 
     /// Provide data for a miss range. Range must be within miss_ranges.
     /// Cache may copy (disk cache) or take ownership (page cache).
     /// First writer wins. Returns true if this writer won.
     /// On success, the miss range becomes a hit range.
-    virtual bool put(Range range, RopeSlice data) = 0;
+    virtual bool put(Range range, Rope data) = 0;
 };
 
 /// Cache provider interface. ReadPipeline configures the chain.

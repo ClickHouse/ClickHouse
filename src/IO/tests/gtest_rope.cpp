@@ -147,10 +147,10 @@ TEST(Rope, EmptyRope)
     EXPECT_EQ(rope.range().size, 0);
 }
 
-TEST(RopeSlice, KeepsBufferAlive)
+TEST(Rope, SliceKeepsBufferAlive)
 {
     std::weak_ptr<RopeBuffer> weak;
-    RopeSlice slice;
+    Rope slice;
     {
         auto buf = std::make_shared<OwnedRopeBuffer>(64);
         weak = buf;
@@ -160,4 +160,15 @@ TEST(RopeSlice, KeepsBufferAlive)
         slice = rope.slice(Range{0, 64});
     }
     EXPECT_FALSE(weak.expired());
+}
+
+TEST(Rope, TotalBytes)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(300);
+
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    rope.append(RopeNode{buf, 100, 150, 100});
+
+    EXPECT_EQ(rope.totalBytes(), 250);
 }
