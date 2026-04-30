@@ -116,7 +116,7 @@ TEST(Rope, SliceMiddle)
     EXPECT_EQ(slice.range().size, 200);
     EXPECT_EQ(slice.totalBytes(), 200);
 
-    auto & nodes = slice.getNodes();
+    const auto & nodes = slice.getNodes();
     EXPECT_EQ(nodes[0].logical_offset, 50);
     EXPECT_EQ(nodes[0].size, 50);
     EXPECT_EQ(nodes[0].buffer_offset, 50);

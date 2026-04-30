@@ -55,7 +55,7 @@ struct RopeNode
     size_t size = 0;
     size_t logical_offset = 0;
 
-    char * data() { return buffer->data() + buffer_offset; }
+    char * data() { return buffer->data() + buffer_offset; } // NOLINT(readability-make-member-function-const)
     const char * data() const { return buffer->data() + buffer_offset; }
     Range range() const { return {logical_offset, size}; }
 };
