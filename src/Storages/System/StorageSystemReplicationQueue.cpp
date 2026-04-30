@@ -10,13 +10,22 @@
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/SelectiveReplication/KeeperAssignment.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 replication_factor;
+}
 
 
 ColumnsDescription StorageSystemReplicationQueue::getColumnsDescription()
@@ -60,6 +69,12 @@ ColumnsDescription StorageSystemReplicationQueue::getColumnsDescription()
         { "postpone_reason",         std::make_shared<DataTypeString>(), "The reason why the task was postponed."},
         { "last_postpone_time",      std::make_shared<DataTypeDateTime>(), "Date and time when the task was last postponed."},
         { "merge_type",              std::make_shared<DataTypeString>(), "Type of the current merge. Empty if it's a mutation."},
+        { "selective_partition_id", std::make_shared<DataTypeString>(),
+            "Partition ID for selective replication lookup. Empty if not applicable."},
+        { "selective_assigned_replicas", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Replicas assigned to this partition. Empty array if not applicable."},
+        { "selective_is_assigned",    std::make_shared<DataTypeUInt8>(),
+            "Whether this entry's partition is assigned to the current replica. Always 1 if selective replication is disabled."},
     };
 }
 
@@ -74,6 +89,7 @@ Block StorageSystemReplicationQueue::getFilterSampleBlock() const
 
 void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemReplicationQueue::fillData");
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
@@ -140,7 +156,32 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
         String database = (*col_database_to_filter)[i].safeGet<String>();
         String table = (*col_table_to_filter)[i].safeGet<String>();
 
-        dynamic_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getQueue(queue, replica_name);
+        auto & storage = dynamic_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]);
+        storage.getQueue(queue, replica_name);
+
+        /// Selective replication: read assignment map from Keeper.
+        auto keeper_assign = storage.getReplicaAssignment();
+        std::unordered_map<String, KeeperReplicaAssignment::CachedEntry> assignment_map;
+        UInt64 rf = 0;
+        if (keeper_assign)
+        {
+            const auto settings = storage.getSettings();
+            rf = (*settings)[MergeTreeSetting::replication_factor];
+            if (rf > 0)
+            {
+                try
+                {
+                    auto zk = context->getDefaultOrAuxiliaryZooKeeper(storage.getZooKeeperName());
+                    assignment_map = keeper_assign->getAssignments(zk, {}, /*force_refresh=*/true);
+                }
+                catch (const Coordination::Exception &)
+                {
+                    keeper_assign = nullptr;
+                }
+            }
+            else
+                keeper_assign = nullptr;
+        }
 
         for (size_t j = 0, queue_size = queue.size(); j < queue_size; ++j)
         {
@@ -177,6 +218,49 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
                 res_columns[col_num++]->insert(toString(entry.merge_type));
             else
                 res_columns[col_num++]->insertDefault();
+
+            /// Selective replication columns.
+            if (keeper_assign && rf > 0)
+            {
+                String partition_id = entry.getPartitionId(storage.format_version);
+
+                res_columns[col_num++]->insert(partition_id);
+
+                if (!partition_id.empty())
+                {
+                    auto it = assignment_map.find(partition_id);
+                    if (it != assignment_map.end())
+                    {
+                        const auto & assigned_replicas = it->second.replicas;
+                        Array replicas_array;
+                        replicas_array.reserve(assigned_replicas.size());
+                        for (const auto & r : assigned_replicas)
+                            replicas_array.push_back(r);
+                        res_columns[col_num++]->insert(replicas_array);
+
+                        bool is_assigned = std::find(
+                            assigned_replicas.begin(), assigned_replicas.end(),
+                            replica_name) != assigned_replicas.end();
+                        res_columns[col_num++]->insert(UInt8(is_assigned));
+                    }
+                    else
+                    {
+                        res_columns[col_num++]->insert(Array());
+                        res_columns[col_num++]->insert(UInt8(1));
+                    }
+                }
+                else
+                {
+                    res_columns[col_num++]->insert(Array());
+                    res_columns[col_num++]->insert(UInt8(1));
+                }
+            }
+            else
+            {
+                res_columns[col_num++]->insertDefault();
+                res_columns[col_num++]->insert(Array());
+                res_columns[col_num++]->insert(UInt8(1));
+            }
         }
     }
 }

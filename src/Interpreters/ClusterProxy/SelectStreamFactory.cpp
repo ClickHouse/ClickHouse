@@ -123,6 +123,7 @@ void SelectStreamFactory::createForShard(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
+    bool use_parallel_replicas_custom_key,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
     createForShardImpl(
@@ -136,6 +137,7 @@ void SelectStreamFactory::createForShard(
         remote_shards,
         shard_count,
         parallel_replicas_enabled,
+        use_parallel_replicas_custom_key,
         std::move(shard_filter_generator));
 }
 
@@ -150,6 +152,7 @@ void SelectStreamFactory::createForShardImpl(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
+    bool use_parallel_replicas_custom_key,
     AdditionalShardFilterGenerator shard_filter_generator) const
 {
     auto emplace_local_stream = [&]()
@@ -194,6 +197,8 @@ void SelectStreamFactory::createForShardImpl(
             .shard_info = shard_info,
             .lazy = lazy,
             .shard_filter_generator = std::move(shard_filter_generator),
+            .parallel_replicas_enabled = parallel_replicas_enabled,
+            .use_parallel_replicas_custom_key = use_parallel_replicas_custom_key,
         });
     };
 
@@ -208,7 +213,8 @@ void SelectStreamFactory::createForShardImpl(
     // prefer_localhost_replica is not effective in case of parallel replicas
     // (1) prefer_localhost_replica is about choosing one replica on a shard
     // (2) parallel replica coordinator has own logic to choose replicas to read from
-    if (settings[Setting::prefer_localhost_replica] && shard_info.isLocal() && !parallel_replicas_enabled)
+    if (settings[Setting::prefer_localhost_replica] && shard_info.isLocal()
+        && !parallel_replicas_enabled && !use_parallel_replicas_custom_key)
     {
         StoragePtr main_table_storage;
 
@@ -310,6 +316,7 @@ void SelectStreamFactory::createForShard(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
+    bool use_parallel_replicas_custom_key,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
     /// Convert grouping function specializations (e.g. groupingForGroupingSets -> grouping)
@@ -330,6 +337,7 @@ void SelectStreamFactory::createForShard(
         remote_shards,
         shard_count,
         parallel_replicas_enabled,
+        use_parallel_replicas_custom_key,
         std::move(shard_filter_generator));
 }
 

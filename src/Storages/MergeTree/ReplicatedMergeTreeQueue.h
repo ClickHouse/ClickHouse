@@ -386,6 +386,11 @@ public:
       */
     std::pair<int32_t, int32_t> pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback = {}, PullLogsReason reason = OTHER);
 
+    /// Check if a log entry should be skipped for selective replication.
+    /// Returns true if the entry is partition-specific and this replica is not assigned to the partition.
+    /// Uses cached assignment when available, falling back to a direct Keeper read.
+    bool shouldSkipForSelectiveReplication(const ReplicatedMergeTreeLogEntryData & entry) const;
+
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
     int32_t updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback = {});

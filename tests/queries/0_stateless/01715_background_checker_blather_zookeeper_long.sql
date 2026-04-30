@@ -6,11 +6,13 @@ DROP TABLE IF EXISTS i20203_2 SYNC;
 
 CREATE TABLE i20203_1 (a Int8)
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/01715_background_checker_i20203', 'r1')
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS replication_factor=0;
 
 CREATE TABLE i20203_2 (a Int8)
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/01715_background_checker_i20203', 'r2')
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS replication_factor=0;
 
 DETACH TABLE i20203_2;
 INSERT INTO i20203_1 VALUES (2);

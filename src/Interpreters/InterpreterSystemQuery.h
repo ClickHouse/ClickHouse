@@ -79,6 +79,10 @@ private:
 
     void syncTransactionLog();
 
+    void startSelectiveRebalance(ASTSystemQuery & query);
+    void syncSelectiveMigrations(ASTSystemQuery & query);
+    void migratePartitionToReplica(ASTSystemQuery & query);
+
     void restoreReplica();
 
     void restoreDatabaseReplica(ASTSystemQuery & query);

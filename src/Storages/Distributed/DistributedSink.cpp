@@ -4,11 +4,8 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/RemoteQueryCommon.h>
 #include <Disks/StoragePolicy.h>
-
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTInsertQuery.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -92,47 +89,11 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
-static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)
-{
-    if (blocksHaveEqualStructure(header, block))
-        return block;
-
-    LOG_WARNING(log,
-        "Structure does not match (remote: {}, local: {}), implicit conversion will be done.",
-        header.dumpStructure(), block.dumpStructure());
-
-    auto converting_dag = ActionsDAG::makeConvertingActions(
-        block.cloneEmpty().getColumnsWithTypeAndName(),
-        header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        nullptr);
-
-    auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
-    Block converted = block;
-    converting_actions->execute(converted);
-
-    return converted;
-}
-
-
 static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, LoggerPtr log)
 {
     Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
         executor.push(adopted_block);
-}
-
-
-static ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Names & column_names)
-{
-    auto query = make_intrusive<ASTInsertQuery>();
-    query->table_id = StorageID(database, table);
-    auto columns = make_intrusive<ASTExpressionList>();
-    query->columns = columns;
-    query->children.push_back(columns);
-    for (const auto & column_name : column_names)
-        columns->children.push_back(make_intrusive<ASTIdentifier>(column_name));
-    return query;
 }
 
 

@@ -507,6 +507,10 @@
     M(MergeTreeSnapshotCommitThreads, "Number of threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \
+    \
+    M(OptimizeForwardingThreads, "Number of threads in selective replication OPTIMIZE forwarding pool.") \
+    M(OptimizeForwardingThreadsActive, "Number of threads actively forwarding OPTIMIZE requests.") \
+    M(OptimizeForwardingThreadsScheduled, "Number of scheduled but not yet running OPTIMIZE forwarding jobs.") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS

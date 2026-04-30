@@ -43,6 +43,8 @@
 
 #include <Core/Settings.h>
 
+#include <Interpreters/StorageID.h>
+
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -56,6 +58,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_estimated_execution_time;
@@ -563,6 +566,50 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
     return additional_result_filter_ast;
+}
+
+bool additionalTableFilterMatches(
+    const String & table,
+    const StorageID & storage_id,
+    const String & table_expression_alias,
+    const ContextPtr & context)
+{
+    return table == table_expression_alias
+        || (table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
+        || table == storage_id.getFullNameNotQuoted();
+}
+
+ASTPtr parseAdditionalTableFilterAST(
+    const StorageID & storage_id,
+    const String & table_expression_alias,
+    const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    const auto & additional_filters = settings[Setting::additional_table_filters].value;
+    if (additional_filters.empty())
+        return {};
+
+    for (const auto & additional_filter : additional_filters)
+    {
+        const auto & tuple = additional_filter.safeGet<Tuple>();
+        const auto & table = tuple.at(0).safeGet<String>();
+        const auto & filter = tuple.at(1).safeGet<String>();
+
+        if (additionalTableFilterMatches(table, storage_id, table_expression_alias, context))
+        {
+            ParserExpression parser;
+            return parseQuery(
+                parser,
+                filter.data(),
+                filter.data() + filter.size(),
+                "additional filter",
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
+        }
+    }
+
+    return {};
 }
 
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)

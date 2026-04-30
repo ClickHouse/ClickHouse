@@ -12,7 +12,8 @@ CREATE TABLE join_inner_table
     time Int64
 )
 ENGINE=ReplicatedMergeTree('/clickhouse/tables/{database}/join_inner_table', 'r1')
-ORDER BY (id, number, key);
+ORDER BY (id, number, key)
+SETTINGS replication_factor = 0;
 
 INSERT INTO join_inner_table
 SELECT
@@ -116,7 +117,8 @@ CREATE TABLE join_outer_table
     time Int64
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/join_outer_table', 'r1')
-ORDER BY (id, time, key);
+ORDER BY (id, time, key)
+SETTINGS replication_factor = 0;
 
 INSERT INTO join_outer_table
 SELECT

@@ -1180,6 +1180,20 @@ def auto_statistics_generator():
     return gen
 
 
+def replication_factor_generator():
+    def gen():
+        r = random.random()
+        if r < 0.3:
+            return ""
+        elif r < 0.5:
+            return 1
+        elif r < 0.8:
+            return 2
+        else:
+            return 3
+    return gen
+
+
 def randomize_external_sort_group_by():
     """Returns a dict of 4 settings for external sort/group by.
     The Bytes-vs-Ratio choice is made per call (not per process),
@@ -1576,6 +1590,7 @@ class MergeTreeSettingsRandomizer:
         "map_buckets_strategy": lambda: random.choice(["constant", "sqrt", "linear"]),
         "map_buckets_min_avg_size": lambda: random.randint(1, 1000),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
+        "replication_factor": replication_factor_generator(),
     }
 
     @staticmethod

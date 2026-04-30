@@ -4643,7 +4643,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if ((!current_value || *current_value != new_value)
                 && MergeTreeSettings::isReadonlySetting(setting_name))
             {
-                throw Exception(ErrorCodes::READONLY_SETTING, "Setting '{}' is readonly for storage '{}'", setting_name, getName());
+                String extra_hint;
+                if (setting_name == "replication_factor")
+                    extra_hint = ". This setting is immutable and set at table creation time. To change it, create a new table with the desired replication_factor.";
+                throw Exception(ErrorCodes::READONLY_SETTING, "Setting '{}' is readonly for storage '{}'{}", setting_name, getName(), extra_hint);
             }
 
             if (!current_value && MergeTreeSettings::isPartFormatSetting(setting_name))

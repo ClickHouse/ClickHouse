@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
+#include <Storages/MergeTree/SelectiveReplication/KeeperAssignment.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
@@ -47,6 +48,8 @@
 
 namespace DB
 {
+
+namespace SelectiveReplication { class InsertForwarder; }
 
 /** The engine that uses the merge tree (see MergeTreeData) and is replicated through ZooKeeper.
   *
@@ -94,6 +97,9 @@ namespace DB
 
 class ZooKeeperWithFaultInjection;
 using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
+
+class KeeperReplicaAssignment;
+namespace SelectiveReplication { class Router; class OptimizeForwarder; class MigrationMonitor; }
 
 class StorageReplicatedMergeTree final : public MergeTreeData
 {
@@ -150,9 +156,33 @@ public:
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
+    /// Replica assignment (nullptr means full replication mode, non-null when `replication_factor > 0`)
+    std::shared_ptr<KeeperReplicaAssignment> getReplicaAssignment() const { return replica_assignment; }
+
+    /// True when selective replication is enabled (replication_factor > 0).
+    /// Equivalent to `replica_assignment != nullptr`; avoids repeated settings reads.
+    bool isSelectiveReplicationEnabled() const { return replica_assignment != nullptr; }
+
+    /// Trigger one cycle of the partition migration monitor immediately (for SYSTEM START SELECTIVE REBALANCE).
+    void triggerSelectiveRebalance();
+
+    /// Block until all active partition migrations complete, or timeout_ms elapses.
+    /// Returns true if all migrations finished, false on timeout.
+    bool waitForSelectiveMigrationsComplete(UInt64 timeout_ms);
+
     bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
+
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
+
+    /// Override to return WithMergeableState when selective replication routing is active,
+    /// so the Planner knows to use MergingAggregated instead of Aggregating at the top level.
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr query_context,
+        QueryProcessingStage::Enum to_stage,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -368,6 +398,12 @@ public:
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
 
+protected:
+    StorageSnapshotPtr createStorageSnapshot(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr query_context,
+        bool without_data) const override;
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -384,6 +420,11 @@ private:
     friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreeAttachThread;
     friend class ReplicatedMergeTreeMergeStrategyPicker;
+    friend class PartitionMigrationCoordinator;
+    friend class SelectiveReplication::Router;
+    friend class SelectiveReplication::OptimizeForwarder;
+    friend class SelectiveReplication::MigrationMonitor;
+    friend class SelectiveReplication::InsertForwarder;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
     friend class ReplicatedMergeTreeQueue;
@@ -462,6 +503,15 @@ private:
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;
 
+    /// Replica assignment (nullptr means full replication mode, non-null when `replication_factor > 0`)
+    std::shared_ptr<KeeperReplicaAssignment> replica_assignment;
+
+    /// Selective replication SELECT router (nullptr when SR is disabled).
+    std::unique_ptr<SelectiveReplication::Router> selective_router;
+    std::unique_ptr<SelectiveReplication::OptimizeForwarder> selective_optimizer;
+    std::unique_ptr<SelectiveReplication::MigrationMonitor> selective_migration_monitor;
+    std::unique_ptr<SelectiveReplication::InsertForwarder> selective_insert_forwarder;
+
     DataPartsExchange::Fetcher fetcher;
 
     /// When activated, replica is initialized and startup() method could exit
@@ -503,6 +553,9 @@ private:
 
     /// A task that marks finished mutations as done.
     BackgroundSchedulePoolTaskHolder mutations_finalizing_task;
+
+    /// A task that monitors partition migrations (selective replication).
+    BackgroundSchedulePoolTaskHolder migration_monitor_task;
 
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
@@ -912,6 +965,11 @@ private:
     void dropPart(const String & part_name, bool detach, ContextPtr query_context) override;
 
     // Partition helpers
+    /// Selective replication: ensure partition assignment exists in ZK before writing data.
+    /// Throws LOGICAL_ERROR if allocation fails. Returns true if selective replication is active.
+    bool ensurePartitionAssignment(const zkutil::ZooKeeperPtr & zookeeper, const String & partition_id, const String & operation_name);
+    /// Batch version: ensure assignments for multiple partition IDs.
+    void ensurePartitionAssignments(const zkutil::ZooKeeperPtr & zookeeper, const std::vector<String> & partition_ids, const String & operation_name);
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context) override;
     PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;

@@ -3122,6 +3122,11 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
 
     for (const auto & change : all_changed)
     {
+        /// replication_factor only applies to ReplicatedMergeTree engines.
+        if (change.name == "replication_factor"
+            && !ast_create.storage->engine->name.contains("Replicated"))
+            continue;
+
         if (!storage_settings.changes.tryGet(change.name))
         {
             storage_settings.changes.emplace_back(change.name, change.value);

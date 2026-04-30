@@ -527,6 +527,26 @@ Cancels `SYSTEM STOP PULLING REPLICATION LOG`.
 SYSTEM START PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
+### SYSTEM START SELECTIVE REBALANCE {#start-selective-rebalance}
+
+Triggers one cycle of the partition migration monitor for a `ReplicatedMergeTree` table
+with selective replication (`replication_factor > 0`). Detects imbalance and starts new
+migrations if needed. Returns immediately (asynchronous).
+
+```sql
+SYSTEM START SELECTIVE REBALANCE [ON CLUSTER cluster_name] [db.]table_name
+```
+
+### SYSTEM SYNC SELECTIVE MIGRATIONS {#sync-selective-migrations}
+
+Waits until all active partition migrations (in `CLONE` or `SWITCH` state) complete for a
+`ReplicatedMergeTree` table with selective replication. Times out after `receive_timeout`
+seconds.
+
+```sql
+SYSTEM SYNC SELECTIVE MIGRATIONS [ON CLUSTER cluster_name] [db.]table_name
+```
+
 ### SYSTEM SYNC REPLICA {#sync-replica}
 
 Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster, but no more than `receive_timeout` seconds.

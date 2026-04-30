@@ -2,7 +2,8 @@ DROP TABLE IF EXISTS src;
 
 CREATE TABLE src (a UInt64, b UInt64)
     ENGINE=ReplicatedMergeTree('/clickhouse/tables/{database}/03008_deduplication_remote_insert_select/src', '{replica}')
-    ORDER BY tuple();
+    ORDER BY tuple()
+;
 
 INSERT INTO src SELECT number % 10 as a, number as b FROM numbers(100);
 

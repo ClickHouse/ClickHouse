@@ -593,4 +593,16 @@ String ReplicatedMergeTreeLogEntryData::getDescriptionForLogs(MergeTreeDataForma
     return description;
 }
 
+String ReplicatedMergeTreeLogEntryData::getPartitionId(MergeTreeDataFormatVersion format_version) const
+{
+    if (type == REPLACE_RANGE && replace_range_entry)
+        return MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version).getPartitionId();
+    if (!new_part_name.empty())
+        return MergeTreePartInfo::fromPartName(new_part_name, format_version).getPartitionId();
+    if (type == MERGE_PARTS && !source_parts.empty())
+        return MergeTreePartInfo::fromPartName(source_parts.front(), format_version).getPartitionId();
+    /// Global entries (ALTER_METADATA, SYNC_PINNED_PART_UUIDS, etc.) have no partition scope.
+    return {};
+}
+
 }

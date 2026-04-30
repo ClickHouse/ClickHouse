@@ -16,7 +16,8 @@ CREATE TABLE combinator_argMin_table_r1
     )
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_03128/combinator_argMin_table', 'r1')
-ORDER BY (id);
+ORDER BY (id)
+SETTINGS replication_factor = 0;
 
 INSERT INTO combinator_argMin_table_r1
     SELECT
@@ -50,7 +51,8 @@ CREATE TABLE combinator_argMin_table_r2
         )
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_03128/combinator_argMin_table', 'r2')
-ORDER BY (id);
+ORDER BY (id)
+SETTINGS replication_factor = 0;
 
 SYSTEM SYNC REPLICA combinator_argMin_table_r2;
 

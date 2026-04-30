@@ -105,6 +105,22 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
+/// Return true if an `additional_table_filters` entry for `table` applies to
+/// `table_expression_alias` or `storage_id`.
+bool additionalTableFilterMatches(
+    const String & table,
+    const StorageID & storage_id,
+    const String & table_expression_alias,
+    const ContextPtr & context);
+
+/// Parse the `additional_table_filters` setting and return the filter AST for `table_expression_alias`
+/// or `storage_id`, whichever the setting entry matches. Returns nullptr if no entry matches.
+/// The matching rules mirror those used by the Planner when applying `additional_table_filters`.
+ASTPtr parseAdditionalTableFilterAST(
+    const StorageID & storage_id,
+    const String & table_expression_alias,
+    const ContextPtr & context);
+
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 

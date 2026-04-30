@@ -1170,7 +1170,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-
+            {"replication_factor", 0, 0, "Selective replication: number of replicas per partition"},
+            {"max_concurrent_partition_migrations", 4, 4, "Selective replication: max concurrent partition migrations"},
+            {"migration_timeout_seconds", 3600, 3600, "Selective replication: migration timeout"},
+            {"migration_coordinator_timeout", 60, 60, "Selective replication: coordinator task timeout"},
+            {"enable_auto_rebalance", true, true, "Selective replication: enable automatic rebalance by the migration monitor"},
+            {"selective_replication_assignment_cache_ttl_seconds", 60, 60, "Selective replication: cache TTL for partition-to-replica assignments"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {

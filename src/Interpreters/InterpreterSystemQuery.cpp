@@ -62,6 +62,8 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/SelectiveReplication/MigrationCoordinator.h>
+#include <Storages/MergeTree/SelectiveReplication/KeeperAssignment.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
 #include <Common/CoverageCollection.h>
@@ -897,6 +899,15 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::SYNC_DATABASE_REPLICA:
             syncReplicatedDatabase(query);
+            break;
+        case Type::START_SELECTIVE_REBALANCE:
+            startSelectiveRebalance(query);
+            break;
+        case Type::SYNC_SELECTIVE_MIGRATIONS:
+            syncSelectiveMigrations(query);
+            break;
+        case Type::MIGRATE_PARTITION:
+            migratePartitionToReplica(query);
             break;
         case Type::REPLICA_UNREADY:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
@@ -2162,6 +2173,140 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 }
 
 
+void InterpreterSystemQuery::startSelectiveRebalance(ASTSystemQuery &)
+{
+    getContext()->checkAccess(AccessType::SYSTEM_START_SELECTIVE_REBALANCE, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+    if (!replicated)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SYSTEM START SELECTIVE REBALANCE is only supported for ReplicatedMergeTree tables");
+    replicated->triggerSelectiveRebalance();
+}
+
+void InterpreterSystemQuery::syncSelectiveMigrations(ASTSystemQuery &)
+{
+    getContext()->checkAccess(AccessType::SYSTEM_SYNC_SELECTIVE_MIGRATIONS, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+    if (!replicated)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SYSTEM SYNC SELECTIVE MIGRATIONS is only supported for ReplicatedMergeTree tables");
+    auto timeout_ms = static_cast<UInt64>(
+        getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds());
+    if (!replicated->waitForSelectiveMigrationsComplete(timeout_ms))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+            "SYSTEM SYNC SELECTIVE MIGRATIONS {}: timed out waiting for migrations. "
+            "See the 'receive_timeout' setting", table_id.getFullTableName());
+}
+
+void InterpreterSystemQuery::migratePartitionToReplica(ASTSystemQuery & query)
+{
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::migratePartitionToReplica");
+    getContext()->checkAccess(AccessType::SYSTEM_MIGRATE_PARTITION, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+    if (!replicated)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SYSTEM MIGRATE PARTITION is only supported for ReplicatedMergeTree tables");
+
+    /// 1. Table must have selective replication enabled (replication_factor > 0).
+    if (!replicated->getReplicaAssignment())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SYSTEM MIGRATE PARTITION is only supported for tables with selective replication "
+            "(replication_factor > 0)");
+
+    const String & partition_id = query.partition_id;
+    const String & target_replica = query.target_replica;
+
+    auto zk = getContext()->getDefaultOrAuxiliaryZooKeeper(replicated->getZooKeeperName());
+    String zk_path = replicated->getZooKeeperPath();
+
+    /// 2. partition_id must have an existing assignment in Keeper.
+    String assignment_path = fs::path(zk_path) / "selective" / "assignments" / partition_id;
+    String assignment_data;
+    if (!zk->tryGet(assignment_path, assignment_data))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Partition '{}' does not have a selective replication assignment in Keeper", partition_id);
+
+    Strings assigned_replicas = KeeperReplicaAssignment::parseAssignment(assignment_data);
+
+    /// 3. target_replica must be an active replica.
+    String is_active_path = fs::path(zk_path) / "replicas" / target_replica / "is_active";
+    if (!zk->exists(is_active_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Replica '{}' is not an active replica", target_replica);
+
+    /// 4. target_replica must not already be in the current partition's assignment.
+    /// If it is, return success immediately (no-op, already assigned).
+    for (const auto & r : assigned_replicas)
+    {
+        if (KeeperReplicaAssignment::stripCloningSuffix(r) == target_replica)
+            return;
+    }
+
+    /// 5. There must be no active migration for this partition.
+    String migrations_path = fs::path(zk_path) / "selective" / SelectiveReplication::MIGRATIONS_SUBPATH;
+    auto active_migrations = PartitionMigrationCoordinator::getActiveMigrationPartitions(zk, migrations_path);
+    if (active_migrations.contains(partition_id))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Partition '{}' already has an active migration (CLONE or SWITCH state)", partition_id);
+
+    /// Source replica selection: pick the replica with the highest partition count (most loaded).
+    /// Ties broken by alphabetical order (deterministic).
+    auto keeper_assign = replicated->getReplicaAssignment();
+    auto all_assignments = keeper_assign->getAssignments(zk, {}, /*force_refresh=*/true);
+
+    /// Count partitions per active replica.
+    String replicas_path = fs::path(zk_path) / "replicas";
+    Strings all_replicas;
+    zk->tryGetChildren(replicas_path, all_replicas);
+
+    std::unordered_map<String, size_t> load;
+    for (const auto & r : all_replicas)
+        if (zk->exists(replicas_path + "/" + r + "/is_active"))
+            load[r] = 0;
+
+    for (const auto & [pid, entry] : all_assignments)
+    {
+        for (const auto & r : entry.replicas)
+        {
+            String clean = KeeperReplicaAssignment::stripCloningSuffix(r);
+            if (load.contains(clean))
+                load[clean]++;
+        }
+    }
+
+    /// Find the source replica: highest load among currently assigned replicas.
+    String source_replica;
+    size_t max_load = 0;
+    for (const auto & r : assigned_replicas)
+    {
+        String clean = KeeperReplicaAssignment::stripCloningSuffix(r);
+        if (load.contains(clean))
+        {
+            if (load[clean] > max_load || (load[clean] == max_load && (source_replica.empty() || clean < source_replica)))
+            {
+                max_load = load[clean];
+                source_replica = clean;
+            }
+        }
+    }
+
+    if (source_replica.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Could not determine source replica for partition '{}'", partition_id);
+
+    /// Start migration using existing infrastructure.
+    PartitionMigrationCoordinator coordinator(*replicated);
+    String migration_id = coordinator.startClone(zk, partition_id, source_replica, target_replica);
+    if (migration_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SYSTEM MIGRATE PARTITION: partition '{}' has no active parts on replica '{}', nothing to migrate",
+            partition_id, source_replica);
+}
+
+
 void InterpreterSystemQuery::syncTransactionLog()
 {
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
@@ -2456,6 +2601,21 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
             else
                 required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::START_SELECTIVE_REBALANCE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_START_SELECTIVE_REBALANCE, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::SYNC_SELECTIVE_MIGRATIONS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_SELECTIVE_MIGRATIONS, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::MIGRATE_PARTITION:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_MIGRATE_PARTITION, query.getDatabase(), query.getTable());
             break;
         }
         case Type::REFRESH_VIEW:

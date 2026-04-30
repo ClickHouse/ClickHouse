@@ -143,6 +143,9 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        START_SELECTIVE_REBALANCE,
+        SYNC_SELECTIVE_MIGRATIONS,
+        MIGRATE_PARTITION,
         END
     };
 
@@ -164,6 +167,8 @@ public:
     String target_model;
     String target_function;
     String replica;
+    String target_replica;
+    String partition_id;
     String shard;
     String zk_name;
     String full_replica_zk_path;

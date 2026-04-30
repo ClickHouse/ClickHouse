@@ -188,6 +188,24 @@ static String formattedAST(const ASTPtr & ast, bool enable_analyzer)
     return buf.str();
 }
 
+/// Merge a filter AST into the WHERE clause of a SELECT query using AND.
+static void applyFilterToQuery(ASTPtr & query, ASTPtr filter)
+{
+    if (!filter)
+        return;
+    auto & select_query = query->as<ASTSelectQuery &>();
+    auto where_expression = select_query.where();
+    if (where_expression)
+    {
+        auto combined = makeASTFunction("and", where_expression, std::move(filter));
+        select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(combined));
+    }
+    else
+    {
+        select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(filter));
+    }
+}
+
 ReadFromRemote::ReadFromRemote(
     ClusterProxy::SelectStreamFactory::Shards shards_,
     SharedHeader header_,
@@ -682,6 +700,65 @@ void ReadFromRemote::addLazyPipe(
     addConvertingActions(pipes.back(), *out_header, context);
 }
 
+/// Selective replication: create a RemoteQueryExecutor pipe with a per-shard partition filter.
+static void addSelectiveReplicationPipe(
+    Pipes & pipes,
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const SharedHeader & out_header,
+    size_t parallel_marshalling_threads,
+    ContextMutablePtr context,
+    const ThrottlerPtr & throttler,
+    Scalars & scalars,
+    const Tables & external_tables,
+    QueryProcessingStage::Enum stage,
+    const StorageID & main_table,
+    const ASTPtr & table_func_ptr,
+    size_t total_shards,
+    bool add_agg_info,
+    bool add_totals,
+    bool add_extremes,
+    bool async_read,
+    bool async_query_sending,
+    bool parallel_replicas_disabled,
+    UnavailableShardTrackerPtr & unavailable_shard_tracker,
+    LoggerPtr log)
+{
+    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
+
+    auto query_with_filter = shard.query->clone();
+    auto shard_filter = shard.shard_filter_generator(shard.shard_info.shard_num);
+    chassert(shard_filter);
+    applyFilterToQuery(query_with_filter, shard_filter);
+    const String query_string = formattedAST(query_with_filter, enable_analyzer);
+    LOG_DEBUG(log, "Selective replication: shard {} query: {}", shard.shard_info.shard_num, query_string);
+
+    auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+        shard.shard_info.pool,
+        query_string,
+        shard.header,
+        context,
+        throttler,
+        scalars,
+        external_tables,
+        stage,
+        nullptr /* query_plan - use SQL string with filter */);
+    remote_query_executor->setLogger(log);
+    remote_query_executor->setDistributedFanout(total_shards);
+    remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
+
+    if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
+        remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+    else
+        remote_query_executor->setPoolMode(PoolMode::GET_MANY);
+
+    if (!table_func_ptr)
+        remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
+
+    pipes.emplace_back(
+        createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
+    addConvertingActions(pipes.back(), *out_header, context);
+}
+
 void ReadFromRemote::addPipe(
     Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
 {
@@ -721,22 +798,30 @@ void ReadFromRemote::addPipe(
 
     bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
 
+    /// Selective replication: inject a per-shard constant partition filter into the query SQL.
+    /// Both selective replication and parallel-replicas-custom-key use `shard_filter_generator`,
+    /// but only selective replication sets `query_tree` without `parallel_replicas_enabled`
+    /// or `use_parallel_replicas_custom_key`.
+    if (shard.shard_filter_generator && shard.query_tree
+        && !shard.parallel_replicas_enabled && !shard.use_parallel_replicas_custom_key)
+    {
+        addSelectiveReplicationPipe(
+            pipes, shard, out_header, parallel_marshalling_threads,
+            context, throttler, scalars, external_tables, stage, main_table,
+            table_func_ptr, shards.size(), add_agg_info, add_totals, add_extremes,
+            async_read, async_query_sending, parallel_replicas_disabled,
+            unavailable_shard_tracker, log);
+        return;
+    }
+
     /// parallel replicas custom key case
     if (shard.shard_filter_generator)
     {
         for (size_t i = 0; i < shard.shard_info.per_replica_pools.size(); ++i)
         {
             auto query = shard.query->clone();
-            auto & select_query = getSelectQuery(query);
             auto shard_filter = shard.shard_filter_generator(i + 1);
-            if (shard_filter)
-            {
-                auto where_expression = select_query.where();
-                if (where_expression)
-                    shard_filter = makeASTFunction("and", where_expression, shard_filter);
-
-                select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
-            }
+            applyFilterToQuery(query, shard_filter);
 
             const String query_string = formattedAST(query, enable_analyzer);
 
