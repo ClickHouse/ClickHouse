@@ -147,7 +147,7 @@ public:
             block_start = std::max(block_start, range.offset);
             Range block_range{block_start, block_end - block_start};
 
-            if (storage.count(b))
+            if (storage.contains(b))
                 result.hit_ranges.push_back(block_range);
             else
                 result.miss_ranges.push_back(block_range);
@@ -171,7 +171,7 @@ public:
     bool put(Range range, Rope data) override
     {
         size_t block = range.offset / block_size;
-        if (storage.count(block))
+        if (storage.contains(block))
             return false;
 
         String content;
@@ -200,7 +200,7 @@ public:
 
     String name() const override { return "MockCache"; }
 
-    bool hasBlock(size_t block_index) const { return storage.count(block_index) > 0; }
+    bool hasBlock(size_t block_index) const { return storage.contains(block_index) > 0; }
 
 private:
     std::unordered_map<size_t, String> storage;
