@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
@@ -43,7 +44,8 @@ size_t LocalSourceReader::read(
         if (res < 0)
         {
             int err = errno;
-            ::close(fd);
+            if (0 != ::close(fd))
+                LOG_WARNING(log, "Cannot close file {}: {}", object.remote_path, errnoToString());
             throw Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
                 "Cannot pread from {}: {}", object.remote_path, errnoToString(err));
         }
@@ -52,7 +54,10 @@ size_t LocalSourceReader::read(
         total_read += res;
     }
 
-    ::close(fd);
+    if (0 != ::close(fd))
+        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE,
+            "Cannot close file {}: {}", object.remote_path, errnoToString());
+
     LOG_TRACE(log, "read: file={}, got {} bytes", object.remote_path, total_read);
     return total_read;
 }
