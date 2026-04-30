@@ -94,13 +94,19 @@ if [[ "$IN_PROGRESS" != "0" ]]; then
     echo "still in progress: $IN_PROGRESS"
 fi
 
-# Detect the original regression: the LOGICAL_ERROR exception. Backups may
-# legitimately fail under concurrent DROP, but they must never fail with a
-# LOGICAL_ERROR. This is what the chassert previously caught.
+# Detect the original regression. Pre-fix, the bug manifests in two ways:
+#   * In debug builds, the `chassert(max_log_ptr == new_max_log_ptr)` fires
+#     and surfaces as a `LOGICAL_ERROR` exception in the backup error.
+#   * In release builds, the chassert is a no-op and the loop silently retries
+#     until `max_retries` is exhausted, then throws
+#     `Cannot get consistent metadata snapshot`.
+# The fix replaces both with a distinct `Log pointer moved backwards`
+# exception, so neither pre-fix symptom can appear.
 $CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.backups
     WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
-      AND error LIKE '%LOGICAL_ERROR%'
+      AND (error LIKE '%LOGICAL_ERROR%'
+           OR error LIKE '%Cannot get consistent metadata snapshot%')
 "
 
 # Clean up backup state.
