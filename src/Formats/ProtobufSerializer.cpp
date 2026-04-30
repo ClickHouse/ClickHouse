@@ -78,8 +78,18 @@ namespace
     /// Used in ProtobufSerializer where columns are passed for mutation during deserialization,
     /// but the caller retains a reference for lifetime management, making the use_count > 1.
     /// The caller guarantees mutability by contract.
+    ///
+    /// In debug/sanitizer builds we still assert that no extra owners (beyond the caller's
+    /// retained reference and our `col` parameter) hold the column, so unexpected sharing
+    /// is still flagged by the diagnostics added in this PR.
     IColumn & borrowColumnRef(const ColumnPtr & col)
     {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        /// `use_count` here counts the caller's retained reference plus our `col` parameter.
+        /// Anything strictly greater than 2 means another owner is concurrently observing
+        /// the column, which must not happen during destructive deserialization.
+        chassert(col->use_count() <= 2);
+#endif
         return const_cast<IColumn &>(*col);
     }
 
