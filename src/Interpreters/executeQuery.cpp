@@ -1641,28 +1641,6 @@ static BlockIO executeQueryImpl(
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
 
-            bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
-            bool has_transaction = context->getCurrentTransaction() || settings[Setting::implicit_transaction];
-            if (!internal && is_initial_query && !has_transaction)
-            {
-                bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
-                auto reattach_probability = std::clamp(
-                    static_cast<double>(settings[Setting::reattach_tables_before_query_execution_probability]),
-                    0.0, 1.0);
-
-                if (!need_reattach_tables && reattach_probability > 0.0)
-                {
-                    std::bernoulli_distribution distribution(reattach_probability);
-                    need_reattach_tables |= distribution(thread_local_rng);
-                }
-
-                if (need_reattach_tables)
-                {
-                    LOG_DEBUG(getLogger("executeQuery"), "Will DETACH and ATTACH back tables used in query");
-                    reattachTablesUsedInQuery(out_ast, context);
-                }
-            }
-
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             if (settings[Setting::enforce_strict_identifier_format])
@@ -1701,6 +1679,32 @@ static BlockIO executeQueryImpl(
 
             /// Check the limits.
             checkASTSizeLimits(*out_ast, settings);
+
+            /// Reattach tables only after AST validations pass, so queries that fail
+            /// validation do not produce DETACH/ATTACH side effects.
+            /// Skip EXPLAIN: it should not mutate server state.
+            bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+            bool has_transaction = context->getCurrentTransaction() || settings[Setting::implicit_transaction];
+            bool is_explain = out_ast->as<ASTExplainQuery>() != nullptr;
+            if (!internal && is_initial_query && !has_transaction && !is_explain)
+            {
+                bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
+                auto reattach_probability = std::clamp(
+                    static_cast<double>(settings[Setting::reattach_tables_before_query_execution_probability]),
+                    0.0, 1.0);
+
+                if (!need_reattach_tables && reattach_probability > 0.0)
+                {
+                    std::bernoulli_distribution distribution(reattach_probability);
+                    need_reattach_tables |= distribution(thread_local_rng);
+                }
+
+                if (need_reattach_tables)
+                {
+                    LOG_DEBUG(getLogger("executeQuery"), "Will DETACH and ATTACH back tables used in query");
+                    reattachTablesUsedInQuery(out_ast, context);
+                }
+            }
         }
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
