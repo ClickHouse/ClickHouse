@@ -343,14 +343,9 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     set(DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -gdwarf-aranges")
 endif ()
 
-# Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
-option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
-
-if (DISABLE_OMIT_FRAME_POINTER)
-    set (CMAKE_CXX_FLAGS_ADD "${CMAKE_CXX_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
-    set (CMAKE_C_FLAGS_ADD "${CMAKE_C_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
-    set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
-endif()
+set (CMAKE_CXX_FLAGS_ADD "${CMAKE_CXX_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
+set (CMAKE_C_FLAGS_ADD "${CMAKE_C_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
+set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
 
 # Before you start hating your debugger because it refuses to show variables ('<optimized out>'), try building with -DDEBUG_O_LEVEL="0"
 # https://stackoverflow.com/questions/63386189/whats-the-difference-between-a-compilers-o0-option-and-og-option/63386263#63386263
