@@ -93,7 +93,7 @@ EOF
 # ReadTaskRequest packets to the initiator, which had no task_iterator for url().
 #
 # Note: parallel_replicas_for_non_replicated_merge_tree=1 is required so that
-# parallel replicas actually distributes the MergeTree scan; without it the
+# parallel replicas actually distribute the MergeTree scan; without it the
 # query runs locally on the initiator and the bug never manifests.
 #
 # Note: parallel_replicas_for_cluster_engines=0 is required so that the url()
