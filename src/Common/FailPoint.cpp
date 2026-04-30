@@ -70,6 +70,7 @@ static struct InitFiu
     REGULAR(cache_filesystem_failure) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
+    ONCE(distributed_cache_simulate_stale_connection) \
     REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \
@@ -170,7 +171,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
-    REGULAR(wide_part_writer_fail_in_add_streams)
+    REGULAR(wide_part_writer_fail_in_add_streams) \
+    REGULAR(compact_part_writer_fail_in_add_streams) \
+    REGULAR(query_metric_log_delay_collect)
 
 namespace FailPoints
 {
