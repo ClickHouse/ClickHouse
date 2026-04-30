@@ -430,3 +430,237 @@ ORDER BY
 Nullable attribute NOT IN - result (missing key 99 → NULL, filtered out)
 4	d
 5	R
+IPv4 equality with default value
+3	c
+IPv4 equality with non-default value
+1	a
+IPv4 IN with default value in list - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip4 NOT IN _CAST(0, \'UInt32\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv4 IN with default value - result
+3	c
+99	missing_key
+IPv4 IN with default value among others - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip4 NOT IN _CAST((0, 167772161), \'Tuple(UInt32, UInt32)\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv4 IN with default value among others - result
+1	a
+3	c
+99	missing_key
+IPv4 IN without default value - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip4 IN _CAST((167772161, 167772162), \'Tuple(UInt32, UInt32)\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv4 IN without default value - result
+1	a
+2	b
+IPv4 NOT IN with default value - plan (should NOT have OR clause)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip4 NOT IN _CAST(0, \'UInt32\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv4 NOT IN with default value - result
+1	a
+2	b
+4	d
+IPv6 IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip6 NOT IN _CAST(\'::\', \'IPv6\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv6 IN with default value - result
+3	c
+99	missing_key
+IPv6 IN without default value - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip6 IN _CAST((\'2001:db8::1\', \'2001:db8::2\'), \'Tuple(IPv6, IPv6)\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+IPv6 IN without default value - result
+1	a
+2	b
+Date IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.d NOT IN _CAST(\'1970-01-01\', \'Date\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+Date IN with default value - result
+3	c
+99	missing_key
+Date IN without default value - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.d IN _CAST((\'2024-01-15\', \'2024-03-20\'), \'Tuple(Date, Date)\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+Date IN without default value - result
+1	a
+2	b
+DateTime IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.dt NOT IN _CAST(\'1970-01-01 00:00:00\', \'DateTime(\\\'UTC\\\')\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+DateTime IN with default value - result
+3	c
+99	missing_key
+DateTime IN without default value - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.dt IN _CAST((\'2024-01-15 10:30:00\', \'2025-06-01 12:00:00\'), \'Tuple(DateTime(\\\'UTC\\\'), DateTime(\\\'UTC\\\'))\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+DateTime IN without default value - result
+1	a
+4	d
+UUID IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.uid NOT IN _CAST(\'00000000-0000-0000-0000-000000000000\', \'UUID\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+UUID IN with default value - result
+3	c
+99	missing_key
+UUID IN without default value - plan
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE __table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.uid IN _CAST((\'550e8400-e29b-41d4-a716-446655440000\', \'6ba7b810-9dad-11d1-80b4-00c04fd430c8\'), \'Tuple(UUID, UUID)\')
+)
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+UUID IN without default value - result
+1	a
+2	b
+dictGet IPv4 equality
+1	a
+dictGet IPv4 IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.ip4 NOT IN _CAST(\'0.0.0.0\', \'IPv4\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGet IPv4 IN with default value - result
+3	c
+99	missing_key
+dictGet UUID equality
+1	a
+dictGet UUID IN with default value - plan (should have negated IN)
+SELECT
+    __table1.id AS id,
+    __table1.payload AS payload
+FROM default.t_special AS __table1
+WHERE not(__table1.id IN (
+    SELECT __table1.id AS id
+    FROM dictionary(\'dict_special\') AS __table1
+    WHERE __table1.uid NOT IN _CAST(\'00000000-0000-0000-0000-000000000000\', \'UUID\')
+))
+ORDER BY
+    __table1.id ASC,
+    __table1.payload ASC
+dictGet UUID IN with default value - result
+3	c
+99	missing_key

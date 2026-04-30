@@ -543,6 +543,306 @@ ORDER BY color_id, payload;
 DROP DICTIONARY colors_nullable;
 DROP TABLE ref_colors_nullable;
 
+-- Test special types: IPv4, IPv6, Date, DateTime, UUID
+-- These types have non-trivial Field representations and the optimizer must correctly
+-- detect whether the dictionary's default value appears in the IN list.
+
+DROP TABLE IF EXISTS ref_special;
+CREATE TABLE ref_special
+(
+    id UInt64,
+    ip4 IPv4,
+    ip6 IPv6,
+    d   Date,
+    dt  DateTime('UTC'),
+    uid UUID
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO ref_special VALUES
+    (1, '10.0.0.1',              '2001:db8::1',       '2024-01-15', '2024-01-15 10:30:00', '550e8400-e29b-41d4-a716-446655440000'),
+    (2, '10.0.0.2',              '2001:db8::2',       '2024-03-20', '2024-03-20 08:00:00', '6ba7b810-9dad-11d1-80b4-00c04fd430c8'),
+    (3, '0.0.0.0',               '::',                '1970-01-01', '1970-01-01 00:00:00', '00000000-0000-0000-0000-000000000000'),
+    (4, '192.168.1.1',           'fe80::1',           '2025-06-01', '2025-06-01 12:00:00', '12345678-1234-5678-1234-567812345678');
+
+DROP DICTIONARY IF EXISTS dict_special;
+CREATE DICTIONARY dict_special
+(
+    id  UInt64,
+    ip4 IPv4,
+    ip6 IPv6,
+    d   Date,
+    dt  DateTime('UTC'),
+    uid UUID
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'ref_special'))
+LAYOUT(HASHED())
+LIFETIME(0);
+
+DROP TABLE IF EXISTS t_special;
+CREATE TABLE t_special
+(
+    id UInt64,
+    payload String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_special VALUES
+    (1, 'a'),
+    (2, 'b'),
+    (3, 'c'),
+    (4, 'd'),
+    (99, 'missing_key');
+
+-- ---------------------------------------------------------------
+-- IPv4 tests
+-- ---------------------------------------------------------------
+
+-- IPv4 default value is 0.0.0.0
+SELECT 'IPv4 equality with default value';
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv4('dict_special', 'ip4', id) = IPv4StringToNum('0.0.0.0')
+ORDER BY id, payload;
+
+SELECT 'IPv4 equality with non-default value';
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv4('dict_special', 'ip4', id) = IPv4StringToNum('10.0.0.1')
+ORDER BY id, payload;
+
+SELECT 'IPv4 IN with default value in list - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv4('dict_special', 'ip4', id) IN (IPv4StringToNum('0.0.0.0'))
+ORDER BY id, payload;
+
+-- Missing key 99 should match because default (0.0.0.0) is in the list
+SELECT 'IPv4 IN with default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv4('dict_special', 'ip4', id) IN (IPv4StringToNum('0.0.0.0'))
+ORDER BY id, payload;
+
+SELECT 'IPv4 IN with default value among others - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv4('dict_special', 'ip4', id) IN (IPv4StringToNum('0.0.0.0'), IPv4StringToNum('10.0.0.1'))
+ORDER BY id, payload;
+
+SELECT 'IPv4 IN with default value among others - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv4('dict_special', 'ip4', id) IN (IPv4StringToNum('0.0.0.0'), IPv4StringToNum('10.0.0.1'))
+ORDER BY id, payload;
+
+SELECT 'IPv4 IN without default value - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv4('dict_special', 'ip4', id) IN (IPv4StringToNum('10.0.0.1'), IPv4StringToNum('10.0.0.2'))
+ORDER BY id, payload;
+
+SELECT 'IPv4 IN without default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv4('dict_special', 'ip4', id) IN (IPv4StringToNum('10.0.0.1'), IPv4StringToNum('10.0.0.2'))
+ORDER BY id, payload;
+
+SELECT 'IPv4 NOT IN with default value - plan (should NOT have OR clause)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv4('dict_special', 'ip4', id) NOT IN (IPv4StringToNum('0.0.0.0'))
+ORDER BY id, payload;
+
+SELECT 'IPv4 NOT IN with default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv4('dict_special', 'ip4', id) NOT IN (IPv4StringToNum('0.0.0.0'))
+ORDER BY id, payload;
+
+-- ---------------------------------------------------------------
+-- IPv6 tests (use toIPv6, not IPv6StringToNum which returns FixedString(16))
+-- ---------------------------------------------------------------
+
+-- IPv6 default value is ::
+SELECT 'IPv6 IN with default value - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv6('dict_special', 'ip6', id) IN (toIPv6('::'))
+ORDER BY id, payload;
+
+SELECT 'IPv6 IN with default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv6('dict_special', 'ip6', id) IN (toIPv6('::'))
+ORDER BY id, payload;
+
+SELECT 'IPv6 IN without default value - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv6('dict_special', 'ip6', id) IN (toIPv6('2001:db8::1'), toIPv6('2001:db8::2'))
+ORDER BY id, payload;
+
+SELECT 'IPv6 IN without default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetIPv6('dict_special', 'ip6', id) IN (toIPv6('2001:db8::1'), toIPv6('2001:db8::2'))
+ORDER BY id, payload;
+
+-- ---------------------------------------------------------------
+-- Date tests
+-- ---------------------------------------------------------------
+
+-- Date default value is 1970-01-01
+SELECT 'Date IN with default value - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetDate('dict_special', 'd', id) IN (toDate('1970-01-01'))
+ORDER BY id, payload;
+
+SELECT 'Date IN with default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetDate('dict_special', 'd', id) IN (toDate('1970-01-01'))
+ORDER BY id, payload;
+
+SELECT 'Date IN without default value - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetDate('dict_special', 'd', id) IN (toDate('2024-01-15'), toDate('2024-03-20'))
+ORDER BY id, payload;
+
+SELECT 'Date IN without default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetDate('dict_special', 'd', id) IN (toDate('2024-01-15'), toDate('2024-03-20'))
+ORDER BY id, payload;
+
+-- ---------------------------------------------------------------
+-- DateTime tests
+-- ---------------------------------------------------------------
+
+-- DateTime default value is 1970-01-01 00:00:00
+SELECT 'DateTime IN with default value - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetDateTime('dict_special', 'dt', id) IN (toDateTime('1970-01-01 00:00:00', 'UTC'))
+ORDER BY id, payload;
+
+SELECT 'DateTime IN with default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetDateTime('dict_special', 'dt', id) IN (toDateTime('1970-01-01 00:00:00', 'UTC'))
+ORDER BY id, payload;
+
+SELECT 'DateTime IN without default value - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetDateTime('dict_special', 'dt', id) IN (toDateTime('2024-01-15 10:30:00', 'UTC'), toDateTime('2025-06-01 12:00:00', 'UTC'))
+ORDER BY id, payload;
+
+SELECT 'DateTime IN without default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetDateTime('dict_special', 'dt', id) IN (toDateTime('2024-01-15 10:30:00', 'UTC'), toDateTime('2025-06-01 12:00:00', 'UTC'))
+ORDER BY id, payload;
+
+-- ---------------------------------------------------------------
+-- UUID tests
+-- ---------------------------------------------------------------
+
+-- UUID default value is 00000000-0000-0000-0000-000000000000
+SELECT 'UUID IN with default value - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetUUID('dict_special', 'uid', id) IN (toUUID('00000000-0000-0000-0000-000000000000'))
+ORDER BY id, payload;
+
+SELECT 'UUID IN with default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetUUID('dict_special', 'uid', id) IN (toUUID('00000000-0000-0000-0000-000000000000'))
+ORDER BY id, payload;
+
+SELECT 'UUID IN without default value - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGetUUID('dict_special', 'uid', id) IN (toUUID('550e8400-e29b-41d4-a716-446655440000'), toUUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8'))
+ORDER BY id, payload;
+
+SELECT 'UUID IN without default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGetUUID('dict_special', 'uid', id) IN (toUUID('550e8400-e29b-41d4-a716-446655440000'), toUUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8'))
+ORDER BY id, payload;
+
+-- ---------------------------------------------------------------
+-- dictGet (generic form) with IPv4 attribute
+-- ---------------------------------------------------------------
+
+-- dictGet without type suffix should also work correctly
+SELECT 'dictGet IPv4 equality';
+SELECT id, payload
+FROM t_special
+WHERE dictGet('dict_special', 'ip4', id) = toIPv4('10.0.0.1')
+ORDER BY id, payload;
+
+SELECT 'dictGet IPv4 IN with default value - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGet('dict_special', 'ip4', id) IN (toIPv4('0.0.0.0'))
+ORDER BY id, payload;
+
+SELECT 'dictGet IPv4 IN with default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGet('dict_special', 'ip4', id) IN (toIPv4('0.0.0.0'))
+ORDER BY id, payload;
+
+-- ---------------------------------------------------------------
+-- dictGet (generic form) with UUID attribute
+-- ---------------------------------------------------------------
+
+SELECT 'dictGet UUID equality';
+SELECT id, payload
+FROM t_special
+WHERE dictGet('dict_special', 'uid', id) = toUUID('550e8400-e29b-41d4-a716-446655440000')
+ORDER BY id, payload;
+
+SELECT 'dictGet UUID IN with default value - plan (should have negated IN)';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT id, payload
+FROM t_special
+WHERE dictGet('dict_special', 'uid', id) IN (toUUID('00000000-0000-0000-0000-000000000000'))
+ORDER BY id, payload;
+
+SELECT 'dictGet UUID IN with default value - result';
+SELECT id, payload
+FROM t_special
+WHERE dictGet('dict_special', 'uid', id) IN (toUUID('00000000-0000-0000-0000-000000000000'))
+ORDER BY id, payload;
+
+-- Cleanup special types
+DROP DICTIONARY dict_special;
+DROP TABLE t_special;
+DROP TABLE ref_special;
+
 DROP DICTIONARY colors;
 DROP DICTIONARY dict_prices;
 DROP TABLE t;
