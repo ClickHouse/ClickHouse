@@ -3287,7 +3287,17 @@ public:
             {
                 auto constant = (*left.column)[0];
                 if (accurateEquals(constant, Field(0)))
-                    return {true, true, false, false}; // 0 / 0 is undefined, thus it's not always monotonic
+                {
+                    /// `0 / x` is 0 for any `x` != 0, but undefined at `x` = 0
+                    /// (`NaN`/`Inf` for `divide`, division-by-zero exception for `intDiv`).
+                    /// The function is constant (and therefore monotonic) only when the range
+                    /// strictly excludes 0. Otherwise the chain is non-monotonic and the
+                    /// `MergeTreeSetIndex` binary search invariant (begin <= end) can be violated.
+                    if ((accurateLess(left_point, Field(0)) && accurateLess(right_point, Field(0)))
+                        || (accurateLess(Field(0), left_point) && accurateLess(Field(0), right_point)))
+                        return {true, true, false, false};
+                    return {false, true, false, false};
+                }
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
                 if (accurateLess(left_point, Field(0))
