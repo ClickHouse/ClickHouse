@@ -95,13 +95,19 @@ EOF
 # Note: parallel_replicas_for_non_replicated_merge_tree=1 is required so that
 # parallel replicas actually distributes the MergeTree scan; without it the
 # query runs locally on the initiator and the bug never manifests.
+#
+# Note: parallel_replicas_for_cluster_engines=0 is required so that the url()
+# in the IN subquery is shipped to replicas as a plain url() (not auto-converted
+# to urlCluster() on the initiator). Only then does the secondary query call
+# TableFunctionURL::getStorage where the buggy distributed_processing=true
+# branch existed.
 echo "--- parallel replicas with url in subquery ---"
 $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-SET parallel_replicas_for_cluster_engines = 1;
+SET parallel_replicas_for_cluster_engines = 0;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 
 SELECT count() FROM ${TABLE_NAME}
