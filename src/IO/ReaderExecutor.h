@@ -5,11 +5,14 @@
 #include <IO/ICacheProvider.h>
 #include <IO/ISourceReader.h>
 
+#include <future>
 #include <memory>
 #include <vector>
 
 namespace DB
 {
+
+class PrefetchThreadPool;
 
 class ReaderExecutor
 {
@@ -27,6 +30,8 @@ public:
     /// Seek to a new position. Discards any prefetched data.
     void seek(size_t new_position);
 
+    void setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
+
     size_t getPosition() const { return position; }
     size_t totalSize() const { return offset_map.totalSize(); }
 
@@ -34,11 +39,18 @@ private:
     /// Read a specific range through the cache chain and source.
     Rope readWindow(Range window);
 
+    void maybeTriggerPrefetch();
+    void discardPrefetch();
+
     std::shared_ptr<ISourceReader> source;
     OffsetMap offset_map;
     std::vector<std::shared_ptr<ICacheProvider>> caches;
     size_t window_size;
     size_t position = 0;
+
+    std::shared_ptr<PrefetchThreadPool> prefetch_pool;
+    std::future<Rope> prefetch_future;
+    bool prefetch_valid = false;
 };
 
 }

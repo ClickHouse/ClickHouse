@@ -4,6 +4,8 @@
 #include <memory>
 #include <vector>
 
+class MemoryTracker;
+
 namespace DB
 {
 
@@ -13,8 +15,6 @@ struct Range
     size_t size = 0;
     size_t end() const { return offset + size; }
 };
-
-class MemoryTracker;
 
 /// Abstract backing memory for a rope node.
 class RopeBuffer

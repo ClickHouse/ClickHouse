@@ -1,6 +1,7 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/ISourceReader.h>
 #include <IO/ICacheProvider.h>
+#include <IO/PrefetchThreadPool.h>
 #include <IO/Rope.h>
 
 #include <gtest/gtest.h>
@@ -261,4 +262,57 @@ TEST(ReaderExecutor, CacheHitSkipsSource)
 
     /// Should have gotten 'S' from cache, not 'Z' from alt_source
     EXPECT_EQ(rope.getNodes()[0].data()[0], 'S');
+}
+
+TEST(ReaderExecutor, PrefetchTriggersOnReadNextWindow)
+{
+    String content(3000, 'P');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 3000);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+
+    ReaderExecutor executor(source, objects, {}, 1000);
+    executor.setPrefetchPool(pool);
+
+    auto rope1 = executor.readNextWindow();
+    EXPECT_EQ(rope1.range().size, 1000);
+
+    auto rope2 = executor.readNextWindow();
+    EXPECT_EQ(rope2.range().offset, 1000);
+    EXPECT_EQ(rope2.range().size, 1000);
+
+    auto rope3 = executor.readNextWindow();
+    EXPECT_EQ(rope3.range().offset, 2000);
+    EXPECT_EQ(rope3.range().size, 1000);
+
+    auto rope4 = executor.readNextWindow();
+    EXPECT_TRUE(rope4.empty());
+}
+
+TEST(ReaderExecutor, SeekDiscardsPrefetch)
+{
+    String content(2000, 'Q');
+    content[1500] = 'Z';
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 2000);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+
+    ReaderExecutor executor(source, objects, {}, 500);
+    executor.setPrefetchPool(pool);
+
+    auto rope1 = executor.readNextWindow();
+    EXPECT_EQ(rope1.range().offset, 0);
+
+    executor.seek(1500);
+    auto rope2 = executor.readNextWindow();
+    EXPECT_EQ(rope2.range().offset, 1500);
+    EXPECT_EQ(rope2.getNodes()[0].data()[0], 'Z');
 }

@@ -1,4 +1,5 @@
 #include <IO/ReaderExecutor.h>
+#include <IO/PrefetchThreadPool.h>
 
 #include <algorithm>
 
@@ -17,22 +18,70 @@ ReaderExecutor::ReaderExecutor(
     offset_map.build(objects);
 }
 
+void ReaderExecutor::setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool)
+{
+    prefetch_pool = std::move(pool);
+}
+
+void ReaderExecutor::maybeTriggerPrefetch()
+{
+    if (!prefetch_pool || prefetch_valid)
+        return;
+
+    size_t total = offset_map.totalSize();
+    if (position >= total)
+        return;
+
+    size_t next_size = std::min(window_size, total - position);
+    Range next_window{position, next_size};
+
+    prefetch_future = prefetch_pool->submit([this, next_window]()
+    {
+        return readWindow(next_window);
+    });
+    prefetch_valid = true;
+}
+
+void ReaderExecutor::discardPrefetch()
+{
+    if (prefetch_valid)
+    {
+        if (prefetch_future.valid())
+            std::ignore = prefetch_future.get();
+        prefetch_valid = false;
+    }
+}
+
 Rope ReaderExecutor::readNextWindow()
 {
     size_t total = offset_map.totalSize();
     if (position >= total)
         return {};
 
-    size_t win_size = std::min(window_size, total - position);
-    Range window{position, win_size};
+    Rope rope;
 
-    auto rope = readWindow(window);
-    position += win_size;
+    if (prefetch_valid && prefetch_future.valid())
+    {
+        rope = prefetch_future.get();
+        prefetch_valid = false;
+    }
+    else
+    {
+        size_t win_size = std::min(window_size, total - position);
+        Range window{position, win_size};
+        rope = readWindow(window);
+    }
+
+    position += rope.range().size;
+
+    maybeTriggerPrefetch();
+
     return rope;
 }
 
 void ReaderExecutor::seek(size_t new_position)
 {
+    discardPrefetch();
     position = new_position;
 }
 
