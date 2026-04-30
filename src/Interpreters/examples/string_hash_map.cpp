@@ -10,6 +10,7 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 /**
 
@@ -17,7 +18,6 @@
 #include <fstream>
 #include <random>
 #include <pcg_random.hpp>
-#include <Examples/clickhouse_examples.h>
 
 using namespace std;
 
