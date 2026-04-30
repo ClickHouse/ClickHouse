@@ -205,11 +205,10 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 {
     try
     {
-        if (!hash_joins[0]->data->twoLevelMapIsUsed())
+        if (!build_phase_finished || !hash_joins[0]->data->twoLevelMapIsUsed())
             return;
 
-        if (build_phase_finished)
-            updateStatistics(hash_joins, stats_collecting_params);
+        updateStatistics(hash_joins, stats_collecting_params);
 
         for (size_t i = 0; i < slots; ++i)
         {
@@ -558,7 +557,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
         key_columns.push_back(key_col_no_lc.get());
     }
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+    extractNestedColumnsAndNullMap(key_columns, null_map);
 
     auto calculate_selector = [&](auto & maps)
     {
@@ -689,6 +688,16 @@ UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode
         hash.update(name);
 
     return hash.get64();
+}
+
+BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
+{
+    chassert(slot_idx < hash_joins.size());
+    auto & hash_join = hash_joins[slot_idx];
+    std::lock_guard lock(hash_join->mutex);
+    if (!hash_join->data || !hash_join->data->getJoinedData())
+        return {};
+    return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
 }
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
