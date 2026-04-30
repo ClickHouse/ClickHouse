@@ -164,7 +164,11 @@ Rope ReaderExecutor::readWindow(Range window)
         [](const RopeNode & a, const RopeNode & b)
         { return a.logical_offset < b.logical_offset; });
 
-    return result;
+    /// Trim to the originally requested window.
+    /// Cache miss ranges may be wider (segment-aligned), so the rope
+    /// can contain extra bytes at the start/end that the caller didn't ask for.
+    /// Cache already received the full range via put; return only what was requested.
+    return result.slice(window);
 }
 
 }
