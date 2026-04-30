@@ -1,5 +1,6 @@
 #include <Common/OOMCanary.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/StackTrace.h>
