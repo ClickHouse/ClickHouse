@@ -54,5 +54,20 @@ EOF
 
 timeout 30 $CLICKHOUSE_CLIENT --inline-insert-data --queries-file="$QUERIES_FILE_INLINE" <&4 2>&1
 
+# Also test the `-q` / `--query` entrypoint with the same open-empty-pipe stdin.
+# The parser/entrypoint differs from `--queries-file`, so cover it explicitly to
+# guard against regressions in either CLI mode.
+QUERY_Q="CREATE TABLE IF NOT EXISTS test_04064_q (x UInt32) ENGINE = MergeTree ORDER BY x; INSERT INTO test_04064_q VALUES (1000), (2000), (3000); SELECT sum(x) FROM test_04064_q; DROP TABLE test_04064_q;"
+
+timeout 30 $CLICKHOUSE_CLIENT -q "$QUERY_Q" <&4 2>&1
+
+QUERY_Q_ASYNC="CREATE TABLE IF NOT EXISTS test_04064_q_async (x UInt32) ENGINE = MergeTree ORDER BY x; SET async_insert = 1; SET wait_for_async_insert = 1; INSERT INTO test_04064_q_async VALUES (10000), (20000), (30000); SELECT sum(x) FROM test_04064_q_async; DROP TABLE test_04064_q_async;"
+
+timeout 30 $CLICKHOUSE_CLIENT -q "$QUERY_Q_ASYNC" <&4 2>&1
+
+QUERY_Q_INLINE="CREATE TABLE IF NOT EXISTS test_04064_q_inline (x UInt32) ENGINE = MergeTree ORDER BY x; INSERT INTO test_04064_q_inline VALUES (100000), (200000), (300000); SELECT sum(x) FROM test_04064_q_inline; DROP TABLE test_04064_q_inline;"
+
+timeout 30 $CLICKHOUSE_CLIENT --inline-insert-data -q "$QUERY_Q_INLINE" <&4 2>&1
+
 exec 4>&-
 rm -f "$FIFO" "$QUERIES_FILE" "$QUERIES_FILE_ASYNC" "$QUERIES_FILE_INLINE"
