@@ -71,11 +71,13 @@ EvictionInfo::EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info)
 std::string EvictionInfo::toString() const
 {
     WriteBufferFromOwnString wb;
-    for (auto it = begin(); it != end(); ++it)
+    bool first = true;
+    for (const auto & [queue_id, info] : *this)
     {
-        if (it != begin())
+        if (!first)
             wb << ", ";
-        wb << "[queue id " << it->first << ", " << it->second->toString() << "]";
+        first = false;
+        wb << "[queue id " << queue_id << ", " << info->toString() << "]";
     }
     return wb.str();
 }
@@ -113,7 +115,7 @@ void EvictionInfo::addImpl(
 {
     size_to_evict += info->size_to_evict;
     elements_to_evict += info->elements_to_evict;
-    auto [it, inserted] = emplace(queue_id, std::move(info));
+    auto [it, inserted] = try_emplace(queue_id, std::move(info));
     if (!inserted)
     {
         if (!merge_if_exists)

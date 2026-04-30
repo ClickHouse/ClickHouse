@@ -228,6 +228,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
+    extern const ServerSettingsUInt64 disk_connections_rcvbuf;
+    extern const ServerSettingsUInt64 disk_connections_sndbuf;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -240,6 +242,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 http_connections_store_limit;
     extern const ServerSettingsUInt64 http_connections_hard_limit;
     extern const ServerSettingsUInt64 http_connections_warn_limit;
+    extern const ServerSettingsUInt64 http_connections_rcvbuf;
+    extern const ServerSettingsUInt64 http_connections_sndbuf;
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
     extern const ServerSettingsDouble index_mark_cache_size_ratio;
@@ -338,6 +342,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 storage_connections_store_limit;
     extern const ServerSettingsUInt64 storage_connections_hard_limit;
     extern const ServerSettingsUInt64 storage_connections_warn_limit;
+    extern const ServerSettingsUInt64 storage_connections_rcvbuf;
+    extern const ServerSettingsUInt64 storage_connections_sndbuf;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsString temporary_data_in_cache;
@@ -895,6 +901,62 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             Context::WarningType::ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
             PreformattedMessage::create(
                 "Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: {}", String(data_path)));
+
+    try
+    {
+        /// Check if any mdraid arrays are currently being checked, repaired, or degraded.
+        /// Resynchronization can significantly degrade disk I/O performance.
+        /// A degraded array means one or more disks are missing or faulty.
+        fs::path sys_block("/sys/block");
+        if (fs::exists(sys_block))
+        {
+            std::optional<PreformattedMessage> resync_warning;
+            std::optional<PreformattedMessage> degraded_warning;
+
+            for (const auto & entry : fs::directory_iterator(sys_block))
+            {
+                const auto name = entry.path().filename().string();
+                if (!name.starts_with("md"))
+                    continue;
+
+                auto sync_action_path = entry.path() / "md" / "sync_action";
+                if (fs::exists(sync_action_path))
+                {
+                    String sync_action = readLine(sync_action_path.string());
+                    if (sync_action != "idle")
+                    {
+                        resync_warning = PreformattedMessage::create(
+                            "Linux mdraid array {} is currently performing `{}`. Disk I/O performance can be degraded. Check {}",
+                            name, sync_action, sync_action_path.string());
+                    }
+                }
+
+                auto array_state_path = entry.path() / "md" / "array_state";
+                if (fs::exists(array_state_path))
+                {
+                    static const std::unordered_set<String> normal_states = {"active", "active-idle", "clean", "write-pending", "readonly", "read-auto"};
+                    String array_state = readLine(array_state_path.string());
+                    if (!normal_states.contains(array_state))
+                    {
+                        degraded_warning = PreformattedMessage::create(
+                            "Linux mdraid array {} has state `{}`. Check {}",
+                            name, array_state, array_state_path.string());
+                    }
+                }
+
+                if (resync_warning && degraded_warning)
+                    break;
+            }
+
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_MDRAID_IS_BEING_RESYNCHRONIZED, resync_warning);
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_MDRAID_IS_DEGRADED, degraded_warning);
+        }
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
 #endif
 
     try
@@ -2166,6 +2228,11 @@ try
     {
         DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
 
+        /// Prime the local host name / addresses cache before the updater starts,
+        /// so that the first DNSCacheUpdater tick on a healthy server does not
+        /// see an empty cache and spuriously report "IPs of host name X have been changed".
+        DNSResolver::instance().updateHostNameAndAddresses();
+
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(
             global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
@@ -2501,6 +2568,20 @@ try
                     new_server_settings[ServerSetting::http_connections_warn_limit],
                     new_server_settings[ServerSetting::http_connections_store_limit],
                     new_server_settings[ServerSetting::http_connections_hard_limit],
+                });
+
+            HTTPConnectionPools::instance().setSocketBufferSizes(
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::disk_connections_rcvbuf],
+                    new_server_settings[ServerSetting::disk_connections_sndbuf],
+                },
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::storage_connections_rcvbuf],
+                    new_server_settings[ServerSetting::storage_connections_sndbuf],
+                },
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::http_connections_rcvbuf],
+                    new_server_settings[ServerSetting::http_connections_sndbuf],
                 });
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
