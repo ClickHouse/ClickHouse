@@ -152,11 +152,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source has no stored objects");
 
     /// Experimental: ReaderExecutor-based path for local files.
-    /// Fall through to the normal path when mmap is requested — the executor uses pread.
     if (settings.use_reader_executor
         && std::holds_alternative<LocalFileSource>(source->source)
-        && !gather && decryption_stages.empty()
-        && settings.local_fs_method != LocalFSReadMethod::mmap)
+        && !gather && decryption_stages.empty())
     {
         const auto & local_src = std::get<LocalFileSource>(source->source);
         LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for local file, {} objects, path={}",
