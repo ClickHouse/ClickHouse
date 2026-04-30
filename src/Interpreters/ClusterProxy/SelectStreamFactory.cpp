@@ -59,7 +59,8 @@ ASTPtr rewriteSelectQuery(
     const ASTPtr & query,
     const std::string & remote_database,
     const std::string & remote_table,
-    ASTPtr table_function_ptr)
+    ASTPtr table_function_ptr,
+    ASTPtr additional_filter)
 {
     auto modified_query_ast = query->clone();
 
@@ -72,8 +73,33 @@ ASTPtr rewriteSelectQuery(
 
     if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
+        // Apply additional filter if provided
+        if (additional_filter)
+        {
+            if (select_query.where())
+            {
+                /// WHERE <old> AND <filter>
+                select_query.setExpression(
+                    ASTSelectQuery::Expression::WHERE,
+                    makeASTFunction("and", select_query.where(), additional_filter->clone()));
+            }
+            else
+            {
+                /// No WHERE – simply set it
+                select_query.setExpression(
+                    ASTSelectQuery::Expression::WHERE, additional_filter->clone());
+            }
+        }
+
         if (table_function_ptr)
-            select_query.addTableFunction(table_function_ptr);
+        {
+            select_query.addTableFunction(table_function_ptr->clone());
+
+            // Reset semantic table information for all column identifiers to prevent
+            // RestoreQualifiedNamesVisitor from adding wrong table names
+            ResetSemanticTableVisitor::Data data;
+            ResetSemanticTableVisitor(data).visit(modified_query_ast);
+        }
         else
             select_query.replaceDatabaseAndTable(remote_database, remote_table);
 
@@ -85,6 +111,7 @@ ASTPtr rewriteSelectQuery(
             data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
             data.remote_table.database = remote_database;
             data.remote_table.table = remote_table;
+
             RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
         }
     }

@@ -262,6 +262,7 @@ namespace CurrentMetrics
     extern const Metric IndexUncompressedCacheCells;
     extern const Metric ZooKeeperSessionExpired;
     extern const Metric ZooKeeperConnectionLossStartedTimestampSeconds;
+    extern const Metric IsSwarmModeEnabled;
 }
 
 
@@ -696,6 +697,7 @@ struct ContextSharedPart : boost::noncopyable
     std::map<String, UInt16> server_ports;
 
     std::atomic<bool> shutdown_called = false;
+    std::atomic<bool> swarm_mode_enabled = true;
 
     Stopwatch uptime_watch TSA_GUARDED_BY(mutex);
 
@@ -867,6 +869,8 @@ struct ContextSharedPart : boost::noncopyable
       */
     void shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
+        swarm_mode_enabled = false;
+        CurrentMetrics::set(CurrentMetrics::IsSwarmModeEnabled, 0);
         bool is_shutdown_called = shutdown_called.exchange(true);
         if (is_shutdown_called)
             return;
@@ -5568,7 +5572,6 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
     throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
 }
 
-
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
     std::shared_ptr<Cluster> res = nullptr;
@@ -5587,6 +5590,21 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
     return res;
 }
 
+void Context::unregisterInAutodiscoveryClusters()
+{
+    std::lock_guard lock(shared->clusters_mutex);
+    if (!shared->cluster_discovery)
+        return;
+    shared->cluster_discovery->unregisterAll();
+}
+
+void Context::registerInAutodiscoveryClusters()
+{
+    std::lock_guard lock(shared->clusters_mutex);
+    if (!shared->cluster_discovery)
+        return;
+    shared->cluster_discovery->registerAll();
+}
 
 void Context::reloadClusterConfig() const
 {
@@ -6566,12 +6584,35 @@ void Context::stopServers(const ServerType & server_type) const
     shared->stop_servers_callback(server_type);
 }
 
-
 void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     shared->shutdown();
 }
 
+bool Context::stopSwarmMode()
+{
+    bool expected_is_enabled = true;
+    bool is_stopped_now = shared->swarm_mode_enabled.compare_exchange_strong(expected_is_enabled, false);
+    if (is_stopped_now)
+        CurrentMetrics::set(CurrentMetrics::IsSwarmModeEnabled, 0);
+    // return true if stop successful
+    return is_stopped_now;
+}
+
+bool Context::startSwarmMode()
+{
+    bool expected_is_enabled = false;
+    bool is_started_now = shared->swarm_mode_enabled.compare_exchange_strong(expected_is_enabled, true);
+    if (is_started_now)
+        CurrentMetrics::set(CurrentMetrics::IsSwarmModeEnabled, 1);
+    // return true if start successful
+    return is_started_now;
+}
+
+bool Context::isSwarmModeEnabled() const
+{
+    return shared->swarm_mode_enabled;
+}
 
 Context::ApplicationType Context::getApplicationType() const
 {

@@ -3,10 +3,13 @@ import logging
 import os
 import shutil
 import uuid
+import threading
+import time
 from email.errors import HeaderParseError
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
@@ -21,6 +24,22 @@ S3_DATA = [
     "data/clickhouse/part123.csv",
     "data/database/part2.csv",
     "data/database/partition675.csv",
+    "data/graceful/part0.csv",
+    "data/graceful/part1.csv",
+    "data/graceful/part2.csv",
+    "data/graceful/part3.csv",
+    "data/graceful/part4.csv",
+    "data/graceful/part5.csv",
+    "data/graceful/part6.csv",
+    "data/graceful/part7.csv",
+    "data/graceful/part8.csv",
+    "data/graceful/part9.csv",
+    "data/graceful/partA.csv",
+    "data/graceful/partB.csv",
+    "data/graceful/partC.csv",
+    "data/graceful/partD.csv",
+    "data/graceful/partE.csv",
+    "data/graceful/partF.csv",
 ]
 
 
@@ -76,6 +95,7 @@ def started_cluster():
             macros={"replica": "node1", "shard": "shard1"},
             with_minio=True,
             with_zookeeper=True,
+            stay_alive=True,
         )
         cluster.add_instance(
             "s0_0_1",
@@ -83,6 +103,7 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             macros={"replica": "replica2", "shard": "shard1"},
             with_zookeeper=True,
+            stay_alive=True,
         )
         cluster.add_instance(
             "s0_1_0",
@@ -90,6 +111,7 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             macros={"replica": "replica1", "shard": "shard2"},
             with_zookeeper=True,
+            stay_alive=True,
         )
 
         logging.info("Starting cluster...")
@@ -862,3 +884,63 @@ def test_joins(started_cluster):
     )
     res = list(map(str.split, result8.splitlines()))
     assert len(res) == 25
+
+
+def test_graceful_shutdown(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    node_to_shutdown = started_cluster.instances["s0_1_0"]
+
+    expected = TSV("64\tBar\t8\n56\tFoo\t8\n")
+
+    num_lock = threading.Lock()
+    errors = 0
+
+    def query_cycle():
+        nonlocal errors
+        try:
+            i = 0
+            while i < 10:
+                i += 1
+                # Query time 3-4 seconds
+                # Processing single object 1-2 seconds
+                result = node.query(f"""
+                    SELECT sum(value),name,sum(sleep(1)+1) as sleep FROM s3Cluster(
+                        'cluster_simple',
+                        'http://minio1:9001/root/data/graceful/*', 'minio', '{minio_secret_key}', 'CSV',
+                        'value UInt32, name String')
+                    GROUP BY name
+                    ORDER BY name
+                    SETTINGS max_threads=2
+                    """)
+                with num_lock:
+                    if TSV(result) != expected:
+                        errors += 1
+                    if errors >= 1:
+                        break
+        except QueryRuntimeException:
+            with num_lock:
+                errors += 1
+
+    threads = []
+
+    for _ in range(10):
+        thread = threading.Thread(target=query_cycle)
+        thread.start()
+        threads.append(thread)
+        time.sleep(0.2)
+
+    time.sleep(3)
+
+    node_to_shutdown.query("SYSTEM STOP SWARM MODE")
+
+    # enough time to complete processing of objects, started before "SYSTEM STOP SWARM MODE"
+    time.sleep(3)
+
+    node_to_shutdown.stop_clickhouse(kill=True)
+
+    for thread in threads:
+        thread.join()
+
+    node_to_shutdown.start_clickhouse()
+
+    assert errors == 0

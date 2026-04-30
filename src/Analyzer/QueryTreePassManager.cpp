@@ -55,6 +55,7 @@
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
+#include <Analyzer/Passes/HybridCastsPass.h>
 #include <Analyzer/Utils.h>
 
 namespace DB
@@ -334,6 +335,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
 
     manager.addPass(std::make_unique<DisableParallelReplicasPass>());
+
+    manager.addPass(std::make_unique<HybridCastsPass>());
 }
 
 }
