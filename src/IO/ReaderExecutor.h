@@ -5,6 +5,7 @@
 #include <IO/ICacheProvider.h>
 #include <IO/ISourceReader.h>
 
+#include <Common/Logger.h>
 #include <future>
 #include <memory>
 #include <vector>
@@ -52,6 +53,8 @@ private:
     std::future<Rope> prefetch_future;
     Range prefetch_range;      /// range the in-flight prefetch covers
     bool prefetch_valid = false;
+
+    LoggerPtr log = getLogger("ReaderExecutor");
 };
 
 }

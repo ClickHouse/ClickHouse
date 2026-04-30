@@ -20,6 +20,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/Utils.h>
@@ -155,6 +156,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         && std::holds_alternative<LocalFileSource>(source->source)
         && !gather && decryption_stages.empty())
     {
+        const auto & local_src = std::get<LocalFileSource>(source->source);
+        LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for local file, {} objects, path={}",
+            source->objects.size(), local_src.path);
         auto local_source = std::make_shared<LocalSourceReader>();
         auto executor = std::make_unique<ReaderExecutor>(
             local_source,

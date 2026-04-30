@@ -1,5 +1,6 @@
 #include <IO/LocalSourceReader.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 
 #include <fcntl.h>
@@ -20,6 +21,8 @@ size_t LocalSourceReader::read(
     size_t offset, size_t size,
     char * buffer)
 {
+    LOG_TRACE(log, "read: file={}, offset={}, size={}", object.remote_path, offset, size);
+
     int fd = ::open(object.remote_path.c_str(), O_RDONLY);
     if (fd < 0)
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
@@ -42,6 +45,7 @@ size_t LocalSourceReader::read(
     }
 
     ::close(fd);
+    LOG_TRACE(log, "read: file={}, got {} bytes", object.remote_path, total_read);
     return total_read;
 }
 

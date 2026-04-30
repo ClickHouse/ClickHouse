@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ISourceReader.h>
+#include <Common/Logger.h>
 
 namespace DB
 {
@@ -15,6 +16,9 @@ public:
         char * buffer) override;
 
     String name() const override { return "LocalSourceReader"; }
+
+private:
+    LoggerPtr log = getLogger("LocalSourceReader");
 };
 
 }

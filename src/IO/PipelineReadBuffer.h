@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/Rope.h>
 
+#include <Common/Logger.h>
 #include <memory>
 
 namespace DB
@@ -30,6 +31,7 @@ private:
     RopeNode current_node;
     bool has_current_node = false;
     size_t read_position = 0;  /// logical offset past the last served node
+    LoggerPtr log = getLogger("PipelineReadBuffer");
 };
 
 }

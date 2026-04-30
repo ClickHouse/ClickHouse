@@ -1,6 +1,7 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/PrefetchThreadPool.h>
 
+#include <Common/logger_useful.h>
 #include <algorithm>
 
 namespace DB
@@ -16,6 +17,8 @@ ReaderExecutor::ReaderExecutor(
     , window_size(window_size_)
 {
     offset_map.build(objects);
+    LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, {} caches",
+        objects.size(), offset_map.totalSize(), window_size, caches.size());
 }
 
 void ReaderExecutor::setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool)
@@ -35,6 +38,8 @@ void ReaderExecutor::maybeTriggerPrefetch()
     size_t next_size = std::min(window_size, total - position);
     Range next_window{position, next_size};
 
+    LOG_TRACE(log, "Prefetch: submitting [{}, {})", next_window.offset, next_window.end());
+
     prefetch_future = prefetch_pool->submit([this, next_window]()
     {
         return readWindow(next_window);
@@ -47,6 +52,7 @@ void ReaderExecutor::discardPrefetch()
 {
     if (prefetch_valid)
     {
+        LOG_TRACE(log, "Prefetch: discarding [{}, {})", prefetch_range.offset, prefetch_range.end());
         if (prefetch_future.valid())
             std::ignore = prefetch_future.get();
         prefetch_valid = false;
@@ -57,12 +63,16 @@ Rope ReaderExecutor::readNextWindow()
 {
     size_t total = offset_map.totalSize();
     if (position >= total)
+    {
+        LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
         return {};
+    }
 
     Rope rope;
 
     if (prefetch_valid && prefetch_future.valid())
     {
+        LOG_TRACE(log, "readNextWindow: using prefetched [{}, {})", prefetch_range.offset, prefetch_range.end());
         rope = prefetch_future.get();
         prefetch_valid = false;
     }
@@ -70,10 +80,13 @@ Rope ReaderExecutor::readNextWindow()
     {
         size_t win_size = std::min(window_size, total - position);
         Range window{position, win_size};
+        LOG_TRACE(log, "readNextWindow: synchronous read [{}, {})", window.offset, window.end());
         rope = readWindow(window);
     }
 
     position += rope.range().size;
+    LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
+        rope.range().size, rope.getNodes().size(), position);
 
     maybeTriggerPrefetch();
 
@@ -82,12 +95,14 @@ Rope ReaderExecutor::readNextWindow()
 
 void ReaderExecutor::seek(size_t new_position)
 {
-    /// If the target is within the prefetched range, keep the prefetch.
-    /// readNextWindow will return it, and PipelineReadBuffer trims to the right offset.
+    LOG_DEBUG(log, "seek to {}, current position={}", new_position, position);
+
     if (prefetch_valid
         && new_position >= prefetch_range.offset
         && new_position < prefetch_range.end())
     {
+        LOG_TRACE(log, "seek: target within prefetch [{}, {}), keeping prefetch",
+            prefetch_range.offset, prefetch_range.end());
         position = prefetch_range.offset;
         return;
     }
@@ -98,9 +113,9 @@ void ReaderExecutor::seek(size_t new_position)
 
 Rope ReaderExecutor::readWindow(Range window)
 {
-    Rope result;
+    LOG_TRACE(log, "readWindow [{}, {})", window.offset, window.end());
 
-    /// Collect remaining ranges that need fetching.
+    Rope result;
     std::vector<Range> remaining = {window};
 
     /// Walk the cache chain
@@ -115,13 +130,17 @@ Rope ReaderExecutor::readWindow(Range window)
 
             for (const auto & hit : status.hit_ranges)
             {
+                LOG_TRACE(log, "readWindow: cache {} hit [{}, {})", cache->name(), hit.offset, hit.end());
                 auto slice = handle->get(hit);
                 for (const auto & node : slice.getNodes())
                     result.append(RopeNode{node.buffer, node.buffer_offset, node.size, node.logical_offset});
             }
 
             for (const auto & miss : status.miss_ranges)
+            {
+                LOG_TRACE(log, "readWindow: cache {} miss [{}, {})", cache->name(), miss.offset, miss.end());
                 still_missing.push_back(miss);
+            }
         }
 
         remaining = std::move(still_missing);
@@ -137,6 +156,8 @@ Rope ReaderExecutor::readWindow(Range window)
 
         for (const auto & pr : physical_ranges)
         {
+            LOG_TRACE(log, "readWindow: source read object={}, offset={}, size={}",
+                pr.object.remote_path, pr.object_offset, pr.size);
             auto buf = std::make_shared<OwnedRopeBuffer>(pr.size);
             size_t bytes_read = source->read(pr.object, pr.object_offset, pr.size, buf->data());
 
@@ -165,9 +186,6 @@ Rope ReaderExecutor::readWindow(Range window)
         { return a.logical_offset < b.logical_offset; });
 
     /// Trim to the originally requested window.
-    /// Cache miss ranges may be wider (segment-aligned), so the rope
-    /// can contain extra bytes at the start/end that the caller didn't ask for.
-    /// Cache already received the full range via put; return only what was requested.
     return result.slice(window);
 }
 
