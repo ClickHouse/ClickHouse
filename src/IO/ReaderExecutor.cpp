@@ -11,14 +11,50 @@ ReaderExecutor::ReaderExecutor(
     std::shared_ptr<ISourceReader> source_,
     const StoredObjects & objects,
     std::vector<std::shared_ptr<ICacheProvider>> caches_,
-    size_t window_size_)
+    size_t window_size_,
+    size_t min_bytes_for_seek_)
     : source(std::move(source_))
     , caches(std::move(caches_))
     , window_size(window_size_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
 {
     offset_map.build(objects);
-    LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, {} caches",
-        objects.size(), offset_map.totalSize(), window_size, caches.size());
+    LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, {} caches",
+        objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, caches.size());
+}
+
+std::vector<Range> ReaderExecutor::mergeRanges(const std::vector<Range> & ranges, size_t min_gap)
+{
+    if (ranges.empty() || min_gap == 0)
+        return ranges;
+
+    /// Ranges should already be sorted by offset (they come from cache lookups
+    /// that walk the window left to right), but sort just in case.
+    std::vector<Range> sorted = ranges;
+    std::sort(sorted.begin(), sorted.end(),
+        [](const Range & a, const Range & b) { return a.offset < b.offset; });
+
+    std::vector<Range> merged;
+    merged.push_back(sorted[0]);
+
+    for (size_t i = 1; i < sorted.size(); ++i)
+    {
+        auto & prev = merged.back();
+        size_t gap = sorted[i].offset - prev.end();
+
+        if (gap <= min_gap)
+        {
+            /// Merge: extend prev to cover sorted[i]
+            size_t new_end = std::max(prev.end(), sorted[i].end());
+            prev.size = new_end - prev.offset;
+        }
+        else
+        {
+            merged.push_back(sorted[i]);
+        }
+    }
+
+    return merged;
 }
 
 void ReaderExecutor::setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool)
@@ -148,8 +184,17 @@ Rope ReaderExecutor::readWindow(Range window)
             break;
     }
 
-    /// Fetch remaining from source
-    for (const auto & miss_range : remaining)
+    /// Merge close-together ranges to reduce source request count.
+    /// E.g. scattered page cache hits can leave many small gaps that are
+    /// cheaper to read in one request than to issue separate HTTP GETs.
+    auto fetch_ranges = mergeRanges(remaining, min_bytes_for_seek);
+
+    if (fetch_ranges.size() < remaining.size())
+        LOG_TRACE(log, "readWindow: merged {} miss ranges into {} fetch ranges (min_gap={})",
+            remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
+
+    /// Fetch from source
+    for (const auto & miss_range : fetch_ranges)
     {
         auto physical_ranges = offset_map.map(miss_range);
         size_t logical_pos = miss_range.offset;

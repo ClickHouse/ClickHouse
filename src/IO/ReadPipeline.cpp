@@ -165,7 +165,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             local_source,
             source->objects,
             std::vector<std::shared_ptr<ICacheProvider>>{},
-            settings.remote_fs_buffer_size > 0 ? settings.remote_fs_buffer_size : 1048576);
+            ReaderExecutor::DEFAULT_WINDOW_SIZE,
+            /*min_bytes_for_seek=*/0);
         return std::make_unique<PipelineReadBuffer>(std::move(executor));
     }
 
@@ -182,8 +183,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         auto executor = std::make_unique<ReaderExecutor>(
             obj_source,
             source->objects,
-            std::vector<std::shared_ptr<ICacheProvider>>{},
-            settings.remote_fs_buffer_size > 0 ? settings.remote_fs_buffer_size : 1048576);
+            std::vector<std::shared_ptr<ICacheProvider>>{});
         return std::make_unique<PipelineReadBuffer>(std::move(executor));
     }
 

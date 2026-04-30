@@ -316,3 +316,55 @@ TEST(ReaderExecutor, SeekDiscardsPrefetch)
     EXPECT_EQ(rope2.range().offset, 1500);
     EXPECT_EQ(rope2.getNodes()[0].data()[0], 'Z');
 }
+
+TEST(ReaderExecutor, MergeRangesNoGap)
+{
+    /// Adjacent ranges — should merge into one
+    std::vector<Range> ranges = {{0, 100}, {100, 100}, {200, 100}};
+    auto merged = ReaderExecutor::mergeRanges(ranges, 50);
+    ASSERT_EQ(merged.size(), 1);
+    EXPECT_EQ(merged[0].offset, 0);
+    EXPECT_EQ(merged[0].size, 300);
+}
+
+TEST(ReaderExecutor, MergeRangesSmallGap)
+{
+    /// Small gap (10 bytes) < min_gap (100) — merge
+    std::vector<Range> ranges = {{0, 100}, {110, 100}};
+    auto merged = ReaderExecutor::mergeRanges(ranges, 100);
+    ASSERT_EQ(merged.size(), 1);
+    EXPECT_EQ(merged[0].offset, 0);
+    EXPECT_EQ(merged[0].size, 210);
+}
+
+TEST(ReaderExecutor, MergeRangesLargeGap)
+{
+    /// Large gap (500 bytes) > min_gap (100) — don't merge
+    std::vector<Range> ranges = {{0, 100}, {600, 100}};
+    auto merged = ReaderExecutor::mergeRanges(ranges, 100);
+    ASSERT_EQ(merged.size(), 2);
+    EXPECT_EQ(merged[0].offset, 0);
+    EXPECT_EQ(merged[0].size, 100);
+    EXPECT_EQ(merged[1].offset, 600);
+    EXPECT_EQ(merged[1].size, 100);
+}
+
+TEST(ReaderExecutor, MergeRangesMixed)
+{
+    /// Three ranges: first two close, third far away
+    std::vector<Range> ranges = {{0, 100}, {120, 100}, {1000, 100}};
+    auto merged = ReaderExecutor::mergeRanges(ranges, 50);
+    ASSERT_EQ(merged.size(), 2);
+    EXPECT_EQ(merged[0].offset, 0);
+    EXPECT_EQ(merged[0].size, 220);
+    EXPECT_EQ(merged[1].offset, 1000);
+    EXPECT_EQ(merged[1].size, 100);
+}
+
+TEST(ReaderExecutor, MergeRangesZeroMinGap)
+{
+    /// min_gap=0 — no merging
+    std::vector<Range> ranges = {{0, 100}, {100, 100}};
+    auto merged = ReaderExecutor::mergeRanges(ranges, 0);
+    ASSERT_EQ(merged.size(), 2);
+}
