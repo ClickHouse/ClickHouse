@@ -378,21 +378,36 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
 
     /// Validate Origin header to prevent cross-site WebSocket hijacking.
     /// Browsers always send the Origin header on WebSocket upgrades.
-    /// We enforce same-origin: the Origin must match the Host header.
+    /// We enforce same-origin: the Origin must match the request in both
+    /// scheme (`http`/`https`) and host/port. Comparing only host would allow
+    /// a less-trusted page served over `http` on the same host to open a
+    /// WebSocket against `https`, weakening CSWSH protection.
     String origin = request.get("Origin", "");
     if (!origin.empty())
     {
         String host = request.getHost();
-        /// Extract host from Origin URL (e.g. "https://example.com:8443" -> "example.com:8443")
-        size_t origin_host_start = origin.find("://");
-        String origin_host = (origin_host_start != String::npos) ? origin.substr(origin_host_start + 3) : origin;
+        /// Split Origin into scheme and host (e.g. "https://example.com:8443" -> "https", "example.com:8443").
+        size_t origin_scheme_end = origin.find("://");
+        String origin_scheme;
+        String origin_host;
+        if (origin_scheme_end != String::npos)
+        {
+            origin_scheme = origin.substr(0, origin_scheme_end);
+            origin_host = origin.substr(origin_scheme_end + 3);
+        }
+        else
+        {
+            origin_host = origin;
+        }
         /// Remove trailing slash if present
         if (!origin_host.empty() && origin_host.back() == '/')
             origin_host.pop_back();
 
-        if (origin_host != host)
+        const String request_scheme = request.isSecure() ? "https" : "http";
+
+        if (origin_host != host || origin_scheme != request_scheme)
         {
-            LOG_WARNING(log, "WebSocket Origin mismatch: origin={}, host={}", origin, host);
+            LOG_WARNING(log, "WebSocket Origin mismatch: origin={}, host={}, scheme={}", origin, host, request_scheme);
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
             *response.send() << "Origin not allowed.\n";
             return;
