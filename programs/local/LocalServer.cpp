@@ -634,10 +634,12 @@ void LocalServer::cleanup()
 
         /// Wait for active connections to drain (up to 5 seconds),
         /// mirroring the shutdown sequence in Server.cpp.
-        {
-            constexpr size_t shutdown_wait_seconds = 5;
-            waitServersToFinish(servers, servers_lock, shutdown_wait_seconds);
-        }
+        constexpr size_t shutdown_wait_seconds = 5;
+        size_t current_connections = waitServersToFinish(servers, servers_lock, shutdown_wait_seconds);
+
+        if (current_connections)
+            LOG_WARNING(&logger(), "Closed connections. But {} remain. "
+                "Shutdown will block until they complete.", current_connections);
 
         /// Join the server thread pool to avoid use-after-free of destroyed context in handlers.
         if (server_pool)
