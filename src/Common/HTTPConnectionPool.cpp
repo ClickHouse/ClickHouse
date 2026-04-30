@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 
 #include <queue>
+#include <unordered_set>
 #include <unordered_map>
 
 #include "config.h"
@@ -814,37 +815,62 @@ private:
 
     ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
-        auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-        connection->setKeepAlive(true);
+        /// When DNS returns several addresses for a host (e.g. an IPv4 and an IPv6 record),
+        /// try the next one if the first fails with a network error. Without this, a single
+        /// broken address (a typical case is a host advertising AAAA on a network without
+        /// IPv6 routing) makes the request fail even though a working address is known.
+        /// Bounded by the number of distinct addresses we have actually tried.
+        static constexpr size_t max_connect_attempts = 4;
 
-        if (!proxy_configuration.isEmpty())
+        auto resolver = HostResolversPool::instance().getResolver(host);
+        std::unordered_set<String> tried_addresses;
+        std::exception_ptr last_net_error;
+
+        for (size_t attempt = 0; attempt < max_connect_attempts; ++attempt)
         {
-            connection->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_configuration));
+            auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+            connection->setKeepAlive(true);
+
+            if (!proxy_configuration.isEmpty())
+            {
+                connection->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_configuration));
+            }
+
+            auto address = resolver->resolve();
+            if (!tried_addresses.insert(*address).second)
+                break;
+            connection->setResolvedHost(*address);
+
+            try
+            {
+                setTimeouts(*connection, timeouts);
+
+                auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
+                connection->doConnect(connect_time);
+
+                applySocketBufferSizes(*connection, group->getSocketBufferSizes());
+
+                ProfileEvents::increment(getMetrics().created);
+                return connection;
+            }
+            catch (const Poco::Net::NetException &)
+            {
+                address.setFail();
+                ProfileEvents::increment(getMetrics().errors);
+                (*connection).reset();
+                last_net_error = std::current_exception();
+            }
+            catch (...)
+            {
+                address.setFail();
+                ProfileEvents::increment(getMetrics().errors);
+                (*connection).reset();
+                throw;
+            }
         }
 
-        auto address = HostResolversPool::instance().getResolver(host)->resolve();
-        connection->setResolvedHost(*address);
-
-        try
-        {
-            setTimeouts(*connection, timeouts);
-
-            auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
-            connection->doConnect(connect_time);
-
-            applySocketBufferSizes(*connection, group->getSocketBufferSizes());
-        }
-        catch (...)
-        {
-            address.setFail();
-            ProfileEvents::increment(getMetrics().errors);
-            (*connection).reset();
-            throw;
-        }
-
-        ProfileEvents::increment(getMetrics().created);
-
-        return connection;
+        chassert(last_net_error);
+        std::rethrow_exception(last_net_error);
     }
 
     void atConnectionDestroy(PooledConnection & connection) noexcept
