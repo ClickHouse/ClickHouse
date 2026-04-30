@@ -95,18 +95,57 @@ void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const Sto
     );
 }
 
+<<<<<<< HEAD
 RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
 {
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+=======
+class FileTaskIterator : public TaskIterator
+{
+public:
+    FileTaskIterator(const Strings & files,
+        std::optional<StorageFile::ArchiveInfo> archive_info,
+        const ActionsDAG::Node * predicate,
+        const NamesAndTypesList & virtual_columns,
+        const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
+        const ContextPtr & context,
+        bool distributed_processing = false)
+        : iterator(files
+            , archive_info
+            , predicate
+            , virtual_columns
+            , hive_partition_columns_to_read_from_file_path
+            , context
+            , distributed_processing) {}
+
+    ~FileTaskIterator() override = default;
+
+    ClusterFunctionReadTaskResponsePtr operator()(size_t /* number_of_current_replica */) const override
+>>>>>>> 8c8b170f4cc (Merge pull request #1687 from Altinity/feature/antalya-26.3/pr-1414-1)
     {
-        auto file = iter->next();
+        auto file = iterator.next();
         if (file.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(file));
-    };
-    auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
+    }
+
+private:
+    mutable StorageFileSource::FilesIterator iterator;
+};
+
+RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
+    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr) const
+{
+    auto callback = std::make_shared<FileTaskIterator>(
+        paths,
+        std::nullopt,
+        predicate,
+        getVirtualsList(),
+        hive_partition_columns_to_read_from_file_path,
+        context
+    );
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

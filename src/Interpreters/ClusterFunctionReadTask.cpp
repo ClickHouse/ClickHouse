@@ -41,8 +41,16 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     }
 #endif
 
-    const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
-    path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
+    file_meta_info = object->relative_path_with_metadata.file_meta_info;
+
+    if (object->relative_path_with_metadata.getCommand().isValid())
+        path = object->relative_path_with_metadata.getCommand().toString();
+    else
+    {
+        const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
+        path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
+    }
+
     file_bucket_info = object->file_bucket_info;
 }
 
@@ -74,6 +82,8 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     }
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
+    if (file_meta_info.has_value())
+        object->relative_path_with_metadata.file_meta_info = file_meta_info;
 
     return object;
 }

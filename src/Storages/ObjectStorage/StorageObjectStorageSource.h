@@ -94,6 +94,12 @@ protected:
     size_t total_files_read = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
 
+    struct ConstColumnWithValue
+    {
+        NameAndTypePair name_and_type;
+        Field value;
+    };
+
     struct ReaderHolder : private boost::noncopyable
     {
     public:
@@ -102,7 +108,8 @@ protected:
             std::unique_ptr<ReadBuffer> read_buf_,
             std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
-            std::unique_ptr<PullingPipelineExecutor> reader_);
+            std::unique_ptr<PullingPipelineExecutor> reader_,
+            std::map<size_t, ConstColumnWithValue> && constant_columns_with_values_);
 
         ReaderHolder() = default;
         ReaderHolder(ReaderHolder && other) noexcept { *this = std::move(other); }
@@ -121,6 +128,9 @@ protected:
         std::shared_ptr<ISource> source;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
+
+    public:
+        std::map<size_t, ConstColumnWithValue> constant_columns_with_values;
     };
 
     ReaderHolder reader;
@@ -261,7 +271,7 @@ private:
     const ObjectStoragePtr object_storage;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
-    const std::vector<String> keys;
+    const Strings keys;
     std::atomic<size_t> index = 0;
     const bool ignore_non_existent_files;
     const bool skip_object_metadata;

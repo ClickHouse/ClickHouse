@@ -138,20 +138,50 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
     }
 }
 
+<<<<<<< HEAD
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
         uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
+=======
+class UrlTaskIterator : public TaskIterator
+{
+public:
+    UrlTaskIterator(const String & uri,
+        size_t max_addresses,
+        const ActionsDAG::Node * predicate,
+        const NamesAndTypesList & virtual_columns,
+        const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
+        const ContextPtr & context)
+        : iterator(uri, max_addresses, predicate, virtual_columns, hive_partition_columns_to_read_from_file_path, context) {}
+>>>>>>> 8c8b170f4cc (Merge pull request #1687 from Altinity/feature/antalya-26.3/pr-1414-1)
 
-    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    ~UrlTaskIterator() override = default;
+
+    ClusterFunctionReadTaskResponsePtr operator()(size_t /* number_of_current_replica */) const override
     {
-        auto url = iter->next();
+        auto url = iterator.next();
         if (url.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
-    };
-    auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
+    }
+
+private:
+    mutable StorageURLSource::DisclosedGlobIterator iterator;
+};
+
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
+    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr) const
+{
+    auto callback = std::make_shared<UrlTaskIterator>(
+        uri,
+        context->getSettingsRef()[Setting::glob_expansion_max_elements],
+        predicate,
+        getVirtualsList(),
+        hive_partition_columns_to_read_from_file_path,
+        context
+    );
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 
