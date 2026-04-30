@@ -20,17 +20,19 @@ function thread_alter()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ERROR=$($CLICKHOUSE_CLIENT --query "
-            ALTER TABLE alter_table ADD COLUMN $1 String DEFAULT '0';
-            ALTER TABLE alter_table MODIFY COLUMN $1 UInt64;
-            ALTER TABLE alter_table DROP COLUMN $1;" 2>&1 | tr '\n' ' ' || true)
+        for STMT in \
+            "ALTER TABLE alter_table ADD COLUMN IF NOT EXISTS $1 String DEFAULT '0'" \
+            "ALTER TABLE alter_table MODIFY COLUMN IF EXISTS $1 UInt64" \
+            "ALTER TABLE alter_table DROP COLUMN IF EXISTS $1"
+        do
+            ERROR=$($CLICKHOUSE_CLIENT --query "$STMT" 2>&1 | tr '\n' ' ' || true)
 
-        if [[ -n "${ERROR}" \
-            && ! "${ERROR}" =~ "You can retry this error" \
-            && ! "${ERROR}" =~ "DUPLICATE_COLUMN" ]]
-        then
-            echo "${ERROR}"
-        fi
+            if [[ -n "${ERROR}" \
+                && ! "${ERROR}" =~ "You can retry this error" ]]
+            then
+                echo "${ERROR}"
+            fi
+        done
     done
 }
 
