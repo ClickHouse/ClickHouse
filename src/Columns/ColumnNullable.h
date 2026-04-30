@@ -41,7 +41,17 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnNullable>, ColumnNullable>;
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & null_map_)
     {
-        return ColumnNullable::create(nested_column_->assumeMutable(), null_map_->assumeMutable());
+        /// The caller is allowed to keep its own immutable reference (per the comment above), so the
+        /// underlying columns may be shared. `assumeMutable` here would `chassert(use_count() == 1)`
+        /// and abort. Mirror the logic of `COW::shallowMutate`: clone when the column is shared,
+        /// fall back to `assumeMutable` when the caller already passed in a uniquely-owned reference.
+        auto take_unique = [](const ColumnPtr & ptr) -> MutableColumnPtr
+        {
+            if (ptr->use_count() > 1)
+                return ptr->clone();
+            return ptr->assumeMutable();
+        };
+        return ColumnNullable::create(take_unique(nested_column_), take_unique(null_map_));
     }
 
     template <typename ... Args>
