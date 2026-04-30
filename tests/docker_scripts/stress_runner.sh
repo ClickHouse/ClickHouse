@@ -51,7 +51,6 @@ configure
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 
 # Start Redpanda (Kafka-compatible broker) so that Kafka engine tests work and
 # do not leave behind broken StorageKafka tables whose background threads cause
