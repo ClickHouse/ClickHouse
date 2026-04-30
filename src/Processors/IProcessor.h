@@ -362,6 +362,7 @@ public:
     virtual bool spillOnSize(size_t /*bytes*/) { return false; }
 
 protected:
+    /// May be called in parallel with work().
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
