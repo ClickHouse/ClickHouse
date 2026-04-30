@@ -17,10 +17,13 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_SOCKET;
     extern const int CANNOT_OPEN_FILE;
     extern const int SOCKET_TIMEOUT;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
 }
 
 RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
-    RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_)
+    RemoteQueryExecutor & executor_,
+    bool suspend_when_query_sent_,
+    bool read_packet_type_separately_)
     : AsyncTaskExecutor(std::make_unique<Task>(*this))
     , executor(executor_)
     , suspend_when_query_sent(suspend_when_query_sent_)
@@ -55,19 +58,42 @@ void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, Sus
     if (read_context.executor.needToSkipUnavailableShard())
         return;
 
-    while (true)
+    try
     {
-        read_context.has_read_packet_part = PacketPart::None;
-
-        if (read_context.read_packet_type_separately)
+        while (true)
         {
-            read_context.packet.type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
-            read_context.has_read_packet_part = PacketPart::Type;
+            read_context.has_read_packet_part = PacketPart::None;
+
+            if (read_context.read_packet_type_separately)
+            {
+                read_context.packet.type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
+                read_context.has_read_packet_part = PacketPart::Type;
+                suspend_callback();
+            }
+            read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
+            read_context.has_read_packet_part = PacketPart::Body;
+            if (read_context.packet.type == Protocol::Server::Data && read_context.packet.block.rows() > 0)
+                read_context.has_data_packets = true;
+
             suspend_callback();
         }
-        read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
-        read_context.has_read_packet_part = PacketPart::Body;
-        suspend_callback();
+    }
+    catch (const Exception & e)
+    {
+        /// If cluster node unxepectedly shutted down (kill/segfault/power off/etc.) socket just closes.
+        /// If initiator did not process any data packets before, this fact can be ignored.
+        /// Unprocessed tasks will be executed on other nodes.
+        if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            && !read_context.has_data_packets.load()
+            && read_context.executor.skipUnavailableShards())
+        {
+            read_context.packet.type = Protocol::Server::ConnectionLost;
+            read_context.packet.exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(true), getCurrentExceptionCode());
+            read_context.has_read_packet_part = PacketPart::Body;
+            suspend_callback();
+        }
+        else
+            throw;
     }
 }
 

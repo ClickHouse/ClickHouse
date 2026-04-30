@@ -34,7 +34,22 @@ class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
-using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+};
+
+class TaskIterator
+{
+public:
+    virtual ~TaskIterator() = default;
+    virtual bool supportRerunTask() const { return false; }
+    virtual void rescheduleTasksFromReplica(size_t /* number_of_current_replica */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method rescheduleTasksFromReplica is not implemented");
+    }
+    virtual ClusterFunctionReadTaskResponsePtr operator()(size_t number_of_current_replica) const = 0;
+};
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
@@ -223,6 +238,8 @@ public:
 
     IConnections & getConnections() { return *connections; }
 
+    bool skipUnavailableShards() const;
+
     bool needToSkipUnavailableShard();
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
@@ -328,6 +345,8 @@ private:
     GetPriorityForLoadBalancing::Func priority_func;
 
     const bool read_packet_type_separately = false;
+
+    std::unordered_set<size_t> replica_has_processed_data;
 
     /// Send all scalars to remote servers
     void sendScalars();

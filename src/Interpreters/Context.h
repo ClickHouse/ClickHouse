@@ -1476,6 +1476,8 @@ public:
     size_t getClustersVersion() const;
 
     void startClusterDiscovery();
+    void registerInAutodiscoveryClusters();
+    void unregisterInAutodiscoveryClusters();
 
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
@@ -1594,6 +1596,15 @@ public:
     void stopServers(const ServerType & server_type) const;
 
     void shutdown();
+
+    /// Stop some works to allow graceful shutdown later.
+    /// Returns true if stop successful.
+    bool stopSwarmMode();
+    /// Resume some works if we change our mind.
+    /// Returns true if start successful.
+    bool startSwarmMode();
+    /// Return current swarm mode state.
+    bool isSwarmModeEnabled() const;
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }

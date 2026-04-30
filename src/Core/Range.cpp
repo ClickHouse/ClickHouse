@@ -2,12 +2,20 @@
 #include <Core/Range.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/Base64.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+};
+
 
 FieldRef::FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
     : Field((*(*columns_)[column_idx_].column)[row_idx_]), columns(columns_), row_idx(row_idx_), column_idx(column_idx_)
@@ -151,6 +159,13 @@ bool Range::isInfinite() const
     return left.isNegativeInfinity() && right.isPositiveInfinity();
 }
 
+/// [x, x]
+bool Range::isPoint() const
+{
+    return fullBounded() && left_included && right_included && equals(left, right)
+        && !left.isNegativeInfinity() && !left.isPositiveInfinity();
+}
+
 bool Range::intersectsRange(const Range & r) const
 {
     /// r to the left of me.
@@ -274,6 +289,32 @@ bool Range::nearByWith(const Range & r) const
         return true;
 
     return false;
+}
+
+String Range::serialize(bool base64) const
+{
+    WriteBufferFromOwnString str;
+
+    str << left_included << right_included;
+    writeFieldBinary(left, str);
+    writeFieldBinary(right, str);
+
+    if (base64)
+        return base64Encode(str.str());
+    else
+        return str.str();
+}
+
+void Range::deserialize(const String & range, bool base64)
+{
+    if (range.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Empty range dump");
+
+    ReadBufferFromOwnString str(base64 ? base64Decode(range) : range);
+
+    str >> left_included >> right_included;
+    left = readFieldBinary(str);
+    right = readFieldBinary(str);
 }
 
 Range intersect(const Range & a, const Range & b)
