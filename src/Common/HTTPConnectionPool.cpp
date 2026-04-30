@@ -819,7 +819,9 @@ private:
         /// try the next one if the first fails with a network error. Without this, a single
         /// broken address (a typical case is a host advertising AAAA on a network without
         /// IPv6 routing) makes the request fail even though a working address is known.
-        /// Bounded by the number of distinct addresses we have actually tried.
+        /// Bounded by the total attempt budget; duplicate addresses returned by the resolver
+        /// (possible when failure rebalancing reintroduces a previously failed address) are
+        /// skipped without consuming a connect attempt against the network.
         static constexpr size_t max_connect_attempts = 4;
 
         auto resolver = HostResolversPool::instance().getResolver(host);
@@ -838,7 +840,7 @@ private:
 
             auto address = resolver->resolve();
             if (!tried_addresses.insert(*address).second)
-                break;
+                continue;
             connection->setResolvedHost(*address);
 
             try
