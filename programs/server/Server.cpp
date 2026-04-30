@@ -2228,6 +2228,11 @@ try
     {
         DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
 
+        /// Prime the local host name / addresses cache before the updater starts,
+        /// so that the first DNSCacheUpdater tick on a healthy server does not
+        /// see an empty cache and spuriously report "IPs of host name X have been changed".
+        DNSResolver::instance().updateHostNameAndAddresses();
+
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(
             global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
