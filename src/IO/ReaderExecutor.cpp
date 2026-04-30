@@ -39,6 +39,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
     {
         return readWindow(next_window);
     });
+    prefetch_range = next_window;
     prefetch_valid = true;
 }
 
@@ -81,6 +82,16 @@ Rope ReaderExecutor::readNextWindow()
 
 void ReaderExecutor::seek(size_t new_position)
 {
+    /// If the target is within the prefetched range, keep the prefetch.
+    /// readNextWindow will return it, and PipelineReadBuffer trims to the right offset.
+    if (prefetch_valid
+        && new_position >= prefetch_range.offset
+        && new_position < prefetch_range.end())
+    {
+        position = prefetch_range.offset;
+        return;
+    }
+
     discardPrefetch();
     position = new_position;
 }

@@ -50,6 +50,7 @@ private:
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     std::future<Rope> prefetch_future;
+    Range prefetch_range;      /// range the in-flight prefetch covers
     bool prefetch_valid = false;
 };
 
