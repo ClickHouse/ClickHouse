@@ -1508,6 +1508,18 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     When true, the OOM canary is automatically relaunched after it is killed by the OOM killer
     and the response sequence completes.
     )", 0) \
+    DECLARE(UInt64, oom_canary_max_rapid_relaunches, 10, R"(
+    Maximum number of consecutive OOM canary relaunches that can happen before automatic relaunch
+    is disabled to avoid thrashing under sustained memory pressure.
+    Applies only when `oom_canary_relaunch` is true.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_initial_backoff_sec, 1, R"(
+    Initial backoff delay in seconds between consecutive OOM canary relaunches.
+    The delay doubles on each relaunch up to `oom_canary_max_backoff_sec`.
+    )", 0) \
+    DECLARE(UInt64, oom_canary_max_backoff_sec, 60, R"(
+    Maximum backoff delay in seconds between consecutive OOM canary relaunches.
+    )", 0) \
     DECLARE(Bool, remap_executable, false, R"(
     Setting to reallocate memory for machine code ("text") using huge pages.
 

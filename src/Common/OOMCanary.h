@@ -36,6 +36,10 @@ public:
         bool enable = false;
         size_t size_bytes = 100 * 1024 * 1024; /// 100 MB
         bool relaunch = true;
+        /// Relaunch backoff policy (applies only when `relaunch` is true).
+        uint64_t max_rapid_relaunches = 10;
+        uint64_t initial_backoff_sec = 1;
+        uint64_t max_backoff_sec = 60;
     };
 
     explicit OOMCanary(ContextMutablePtr context_);
@@ -99,6 +103,9 @@ private:
     std::atomic<bool> running{false};
     std::atomic<bool> shutdown_requested{false};
     bool relaunch_enabled = false;
+    uint64_t max_rapid_relaunches = 10;
+    uint64_t initial_backoff_sec = 1;
+    uint64_t max_backoff_sec = 60;
     size_t canary_size_bytes = 0;
     std::optional<std::string> cgroup_memory_events_path;
     OOMKillCounters oom_kill_counters_before_spawn;

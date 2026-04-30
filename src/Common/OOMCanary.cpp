@@ -134,6 +134,9 @@ void OOMCanary::start(const Config & config)
 
     relaunch_enabled = config.relaunch;
     canary_size_bytes = config.size_bytes;
+    max_rapid_relaunches = config.max_rapid_relaunches;
+    initial_backoff_sec = config.initial_backoff_sec;
+    max_backoff_sec = config.max_backoff_sec;
     shutdown_requested.store(false, std::memory_order_relaxed);
     cgroup_memory_events_path = getCgroupMemoryEventsPath();
     if (!cgroup_memory_events_path)
@@ -371,11 +374,8 @@ void OOMCanary::monitorThread()
 {
     LOG_INFO(log, "OOM canary monitor thread started, watching pid {}", canary_pid.load(std::memory_order_relaxed));
 
-    static constexpr int max_rapid_relaunches = 10;
-    static constexpr int initial_backoff_sec = 1;
-    static constexpr int max_backoff_sec = 60;
-    int rapid_relaunch_count = 0;
-    int backoff_sec = initial_backoff_sec;
+    uint64_t rapid_relaunch_count = 0;
+    uint64_t backoff_sec = initial_backoff_sec;
 
     /// Do not put `shutdown_requested` in the loop condition. During relaunch
     /// a new child can be published just before `stop` kills it; the monitor
@@ -488,7 +488,7 @@ void OOMCanary::monitorThread()
                 /// Sleep with shutdown check.
                 /// Use `nanosleep` instead of `sleep` because `sleep` is trapped
                 /// by `base/harmful/harmful.c` in debug builds.
-                for (int elapsed = 0; elapsed < backoff_sec && !shutdown_requested.load(std::memory_order_acquire); ++elapsed)
+                for (uint64_t elapsed = 0; elapsed < backoff_sec && !shutdown_requested.load(std::memory_order_acquire); ++elapsed)
                 {
                     struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
                     ::nanosleep(&ts, nullptr);

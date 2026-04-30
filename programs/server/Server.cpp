@@ -410,6 +410,9 @@ namespace ServerSetting
     extern const ServerSettingsBool oom_canary_enable;
     extern const ServerSettingsUInt64 oom_canary_size;
     extern const ServerSettingsBool oom_canary_relaunch;
+    extern const ServerSettingsUInt64 oom_canary_max_rapid_relaunches;
+    extern const ServerSettingsUInt64 oom_canary_initial_backoff_sec;
+    extern const ServerSettingsUInt64 oom_canary_max_backoff_sec;
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
@@ -1785,6 +1788,9 @@ try
         && server_settings[ServerSetting::oom_canary_enable];
     canary_config.size_bytes = server_settings[ServerSetting::oom_canary_size];
     canary_config.relaunch = server_settings[ServerSetting::oom_canary_relaunch];
+    canary_config.max_rapid_relaunches = server_settings[ServerSetting::oom_canary_max_rapid_relaunches];
+    canary_config.initial_backoff_sec = server_settings[ServerSetting::oom_canary_initial_backoff_sec];
+    canary_config.max_backoff_sec = server_settings[ServerSetting::oom_canary_max_backoff_sec];
 
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
 
