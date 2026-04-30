@@ -200,6 +200,27 @@ StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine
     if (configuration.max_query_length == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "FuzzQuery `max_query_length` must be greater than 0");
 
+    /// `max_query_length` is the documented maximum output length. If the formatted base
+    /// query already exceeds the cap, no fuzzed variant can possibly fit either: the loop
+    /// in `FuzzQuerySource::createColumn` would exhaust its retries and fall back to the
+    /// unfuzzed query, silently emitting oversized rows that violate the contract. Reject
+    /// the impossible configuration up front so callers see a clear error at table /
+    /// table-function construction time instead of an out-of-spec result at scan time.
+    {
+        const char * begin = configuration.query.data();
+        const char * end = begin + configuration.query.size();
+
+        ParserQuery parser(end, false);
+        auto base_ast = parseQuery(parser, begin, end, "FuzzQuery base query", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+        const size_t base_formatted_size = base_ast->formatForErrorMessage().size();
+        if (base_formatted_size > configuration.max_query_length)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "FuzzQuery `max_query_length` ({}) is smaller than the formatted base query length ({}); "
+                "fuzzer cannot produce any rows that satisfy the cap",
+                configuration.max_query_length, base_formatted_size);
+    }
+
     return configuration;
 }
 

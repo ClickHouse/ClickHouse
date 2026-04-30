@@ -17,11 +17,11 @@ SELECT count() AS rows_returned FROM (
     SELECT * FROM fuzzQuery('SELECT 1', 501, 42) LIMIT 5
 );
 
--- Tiny cap below the unmutated query's formatted length: every fuzzed variant exceeds
--- the cap, so the source must fall back to the unfuzzed base query rather than spinning.
-SELECT count() AS rows_returned, max(length(query)) > 0 AS non_empty FROM (
-    SELECT query FROM fuzzQuery('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10', 1, 42) LIMIT 5
-);
+-- Tiny cap below the unmutated base query's formatted length: no fuzzed variant can
+-- possibly satisfy the cap. Falling back to the unfuzzed query would emit oversized
+-- rows and silently violate the documented `max_query_length` contract; reject the
+-- impossible configuration up front instead.
+SELECT * FROM fuzzQuery('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10', 1, 42) LIMIT 5; -- { serverError BAD_ARGUMENTS }
 
 -- `max_query_length = 0` is pathological: every non-empty fuzzed AST exceeds the cap.
 -- Reject it at configuration time rather than degrading to a no-op fuzzer.
