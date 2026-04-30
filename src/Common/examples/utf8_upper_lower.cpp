@@ -1,5 +1,6 @@
 #include <iostream>
 #include <unicode/unistr.h>
+#include <Examples/clickhouse_examples.h>
 
 [[maybe_unused]] static std::string utf8_to_lower(const std::string & input)
 {

@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
 #include <pdqsort.h>
+#include <Examples/clickhouse_examples.h>
 
 /// Example:
 /// for i in {6,8} {11..26}; do echo $i; for j in {1..10}; do ./radix_sort $i 65536 1000; done; echo; done

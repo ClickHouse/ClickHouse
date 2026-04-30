@@ -17,6 +17,7 @@
 #include <fstream>
 #include <random>
 #include <pcg_random.hpp>
+#include <Examples/clickhouse_examples.h>
 
 using namespace std;
 

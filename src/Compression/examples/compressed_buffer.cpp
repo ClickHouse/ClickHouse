@@ -8,6 +8,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleCompressedBuffer(int, char **)

@@ -10,6 +10,7 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 /// NOTE: see string_hash_map.cpp for usage example
 

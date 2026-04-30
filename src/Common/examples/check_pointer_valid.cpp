@@ -2,6 +2,7 @@
 #include <csignal>
 #include <cstring>
 #include <iostream>
+#include <Examples/clickhouse_examples.h>
 
 
 /// This example demonstrates how is it possible to check if a pointer to memory is readable using a signal handler.

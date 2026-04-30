@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 using namespace DB;
 

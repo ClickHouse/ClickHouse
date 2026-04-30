@@ -8,6 +8,7 @@
 #include <iostream>
 #include <memory>
 #include <base/find_symbols.h>
+#include <Examples/clickhouse_examples.h>
 
 
 using namespace Coordination;

@@ -14,6 +14,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
+#include <Examples/clickhouse_examples.h>
 
 template <typename Key, typename Map>
 void NO_INLINE test(const Key * data, size_t size, const std::string & name, std::function<void(Map &)> init = {})

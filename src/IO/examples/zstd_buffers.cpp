@@ -12,6 +12,7 @@
 #include <iostream>
 
 #include <zstd.h>
+#include <Examples/clickhouse_examples.h>
 
 namespace DB::ErrorCodes
 {

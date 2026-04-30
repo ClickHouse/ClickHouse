@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <base/types.h>
+#include <Examples/clickhouse_examples.h>
 
 static int readAndPrint(DB::ReadBuffer & in)
 {
