@@ -143,7 +143,7 @@ protected:
             /// produce `(INSERT ...)` which cannot be parsed back.
             /// `EXPLAIN GRANT` / `EXPLAIN REVOKE` similarly cannot be wrapped — `ParserGrantQuery`
             /// has no notion of `( ... )` wrapping, and the inner GRANT/REVOKE never consumes
-            /// trailing SETTINGS itself, so the wrap is unnecessary as well as unparseable.
+            /// trailing SETTINGS itself, so the wrap is unnecessary as well as unparsable.
             bool need_parens = frame.has_trailing_output_options
                 && !dynamic_cast<const ASTQueryWithOutput *>(query.get())
                 && query->getQueryKind() != QueryKind::Insert
