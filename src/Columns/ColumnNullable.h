@@ -47,9 +47,9 @@ public:
         /// fall back to `assumeMutable` when the caller already passed in a uniquely-owned reference.
         auto take_unique = [](const ColumnPtr & ptr) -> MutableColumnPtr
         {
-            if (ptr->use_count() > 1)
-                return ptr->clone();
-            return ptr->assumeMutable();
+            if (ptr->use_count() == 1)
+                return ptr->assumeMutable();
+            return IColumn::mutate(ptr);
         };
         return ColumnNullable::create(take_unique(nested_column_), take_unique(null_map_));
     }
