@@ -84,15 +84,14 @@ class ClickHouseService:
         ]
         print(f"Starting ClickHouse server: {shlex.join(argv)}")
         self._log_fd = open(f"{self.log_dir}/clickhouse-server.log", "w")
-        self._proc = subprocess.Popen(
-            argv,
-            stderr=subprocess.STDOUT,
-            stdout=self._log_fd,
-            start_new_session=True,
-            cwd=self.run_path,
-        )
-
         try:
+            self._proc = subprocess.Popen(
+                argv,
+                stderr=subprocess.STDOUT,
+                stdout=self._log_fd,
+                start_new_session=True,
+                cwd=self.run_path,
+            )
             self._wait_ready()
         except Exception as e:
             self.__exit__(None, None, None)
