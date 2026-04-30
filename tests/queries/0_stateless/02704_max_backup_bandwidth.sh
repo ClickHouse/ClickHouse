@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# ReaderExecutor bypasses ReadBufferFromFileDescriptor counters and bandwidth throttle
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --use_reader_executor=0"
+
 $CLICKHOUSE_CLIENT -m -q "
     drop table if exists data;
     create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9;
