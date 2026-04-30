@@ -82,7 +82,13 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     /// from OFFSET.  Otherwise, the formatted "... SAMPLE r OFFSET n ..." is
     /// ambiguous: the parser would consume OFFSET as the SAMPLE offset instead
     /// of a query-level OFFSET.
-    bool format_from_first = sampleSize() && limitOffset() && !limitLength();
+    /// Note: FROM-first syntax is disabled for SELECTs inside INSERT to avoid
+    /// parsing ambiguity with INSERT ... FROM INFILE syntax.
+    bool format_from_first = sampleSize() && limitOffset() && !limitLength() && !frame.disable_from_first_syntax;
+
+    /// Reset the flag so that nested subqueries in the FROM clause can make their own decision
+    /// about FROM-first formatting (they might need it for SAMPLE + standalone OFFSET).
+    frame.disable_from_first_syntax = false;
 
     if (format_from_first && tables())
     {
