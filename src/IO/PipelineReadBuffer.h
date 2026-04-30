@@ -29,6 +29,7 @@ private:
     Rope current_rope;
     RopeNode current_node;
     bool has_current_node = false;
+    size_t read_position = 0;  /// logical offset past the last served node
 };
 
 }
