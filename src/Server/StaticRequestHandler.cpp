@@ -14,6 +14,7 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 
 #include <memory>
 #include <unordered_map>
@@ -33,6 +34,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 struct ResponseOutput
@@ -122,11 +124,20 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
             file_name = file_name.substr(1);
 
         const auto user_files_paths = server.context()->getUserFilesPaths();
-        /// Try each user_files_path and use the first one where the file exists.
+        /// `file_name` comes from the handler config, but `weakly_canonical(... / file_name)`
+        /// silently follows `..` segments and can resolve to paths outside `user_files`.
+        /// Without an explicit boundary check, `file://../etc/passwd` would expose arbitrary
+        /// server-side files. Resolve under each `user_files_path` and require containment
+        /// before accepting the candidate.
         String file_path;
+        bool any_contained_candidate = false;
         for (const auto & ufp : user_files_paths)
         {
-            fs::path candidate = fs::weakly_canonical(fs::canonical(fs::path(ufp)) / file_name);
+            const auto root = fs::canonical(fs::path(ufp));
+            fs::path candidate = fs::weakly_canonical(root / file_name);
+            if (!pathStartsWith(candidate.string(), root.string()))
+                continue;
+            any_contained_candidate = true;
             if (fs::exists(candidate))
             {
                 file_path = candidate.string();
@@ -134,10 +145,13 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
             }
         }
         if (file_path.empty())
-            file_path = fs::weakly_canonical(fs::canonical(fs::path(user_files_paths.front())) / file_name);
-
-        if (!fs::exists(file_path))
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid file name {} for static HTTPHandler. ", file_path);
+        {
+            if (!any_contained_candidate)
+                throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                    "File `{}` for static HTTPHandler is not inside any user files path", file_name);
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
+                "Invalid file name {} for static HTTPHandler. ", file_name);
+        }
 
         ReadBufferFromFile in(file_path);
         copyData(in, out);
