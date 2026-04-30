@@ -7,6 +7,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 repo_dir = Utils.cwd()
@@ -14,11 +15,13 @@ temp_dir = f"{repo_dir}/ci/tmp"
 
 
 class ClickHouseService:
+    RESULT_NAME = "Start ClickHouse"
     def __init__(
         self,
         ch_config_dir: str = f"{temp_dir}/etc/clickhouse-server",
         ch_var_lib_dir: str = f"{temp_dir}/var/lib/clickhouse",
         run_path: str = f"{temp_dir}/run",
+        results: list = None,
     ):
         self.ch_config_dir = ch_config_dir
         self.ch_var_lib_dir = ch_var_lib_dir
@@ -27,6 +30,7 @@ class ClickHouseService:
         self.pid_file = f"{ch_config_dir}/clickhouse-server.pid"
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.user_files_path = f"{run_path}/user_files"
+        self._results = results
         self._proc = None
         self._log_fd = None
 
@@ -90,9 +94,17 @@ class ClickHouseService:
 
         try:
             self._wait_ready()
-        except Exception:
+        except Exception as e:
             self.__exit__(None, None, None)
+            if self._results is not None:
+                self._results.append(
+                    Result(name=self.RESULT_NAME, status=Result.Status.FAIL, info=str(e))
+                )
             raise
+        if self._results is not None:
+            self._results.append(
+                Result(name=self.RESULT_NAME, status=Result.Status.OK)
+            )
         return self
 
     def __exit__(self, *_):

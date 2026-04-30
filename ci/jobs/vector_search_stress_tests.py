@@ -11,12 +11,32 @@ import traceback
 import clickhouse_connect
 import numpy as np
 
-from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.jobs.clickbench import install_clickbench_config
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
+temp_dir = f"{Utils.cwd()}/ci/tmp"
+
+
+def install_vector_search_config():
+    config_dir = f"{temp_dir}/etc/clickhouse-server"
+    config_d = f"{config_dir}/config.d"
+    os.makedirs(config_d, exist_ok=True)
+    # Large values are set, ClickHouse will auto downsize
+    c1 = """<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>0.95</max_server_memory_usage_to_ram_ratio>
+    <cache_size_to_ram_max_ratio>0.95</cache_size_to_ram_max_ratio>
+    <vector_similarity_index_cache_size>214748364800</vector_similarity_index_cache_size>
+    <max_build_vector_similarity_index_thread_pool_size>48</max_build_vector_similarity_index_thread_pool_size>
+    <vector_similarity_index_cache_size_ratio>0.99</vector_similarity_index_cache_size_ratio>
+</clickhouse>
+"""
+    with open(f"{config_d}/vector_search.xml", "w") as config_file:
+        config_file.write(c1)
+    return True
+
 
 TABLE = "table"
 S3_URLS = "s3urls"
@@ -769,11 +789,9 @@ def run_single_test(test_name, dataset, test_params):
     return result
 
 
-def install_and_start_clickhouse():
+def install_clickhouse():
     res = True
     results = []
-    ch = ClickHouseProc()
-    info = Info()
 
     if Utils.is_arm():
         latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
@@ -798,29 +816,9 @@ def install_and_start_clickhouse():
         print(step_name)
 
         def install():
-            # implement required ch configuration
-            return (
-                ch.install_clickbench_config() and ch.install_vector_search_config()
-            )  # reuses config used for clickbench job, it's more or less default ch configuration
+            return install_clickbench_config() and install_vector_search_config()
 
         results.append(Result.from_commands_run(name=step_name, command=[install]))
-        res = results[-1].is_ok()
-
-    if res:
-        step_name = "Start ClickHouse"
-        print(step_name)
-
-        def start():
-            return ch.start_light()
-
-        results.append(
-            Result.from_commands_run(
-                name=step_name,
-                command=[
-                    start,  # command could be python callable or bash command as a string
-                ],
-            )
-        )
 
     return results
 
@@ -846,19 +844,25 @@ TESTS_TO_RUN = [
 
 
 def main():
-    test_results = []
+    test_results = install_clickhouse()
 
-    test_results = install_and_start_clickhouse()
-
-    if test_results is None or not test_results[-1].is_ok():
+    if not test_results[-1].is_ok():
+        Result.create_from(
+            results=test_results, files=[], info="Check index build time & recall"
+        ).complete_job()
         return
 
-    for test in TESTS_TO_RUN:
-        test_results.append(
-            Result.from_commands_run(
-                name=test[0], command=lambda: run_single_test(test[0], test[1], test[2])
-            )
-        )
+    try:
+        with ClickHouseService(results=test_results) as service:
+            for test in TESTS_TO_RUN:
+                test_results.append(
+                    Result.from_commands_run(
+                        name=test[0],
+                        command=lambda: run_single_test(test[0], test[1], test[2]),
+                    )
+                )
+    except Exception:
+        pass
 
     Result.create_from(
         results=test_results, files=[], info="Check index build time & recall"

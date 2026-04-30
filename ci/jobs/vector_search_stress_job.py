@@ -1,17 +1,17 @@
-from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.jobs.clickbench import install_clickbench_config
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.s3 import S3
 from ci.praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
+temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 
 def main():
     res = True
     results = []  # array of job's sub results - see CI report
     stop_watch = Utils.Stopwatch()
-    ch = ClickHouseProc()
     info = Info()
 
     # bash wrappers examples
@@ -44,76 +44,54 @@ def main():
         def install():
             # implement required ch configuration
             return (
-                ch.install_clickbench_config()
+                install_clickbench_config()
             )  # reuses config used for clickbench job, it's more or less default ch configuration
 
         results.append(Result.from_commands_run(name=step_name, command=[install]))
         res = results[-1].is_ok()
 
     if res:
-        step_name = "Start ClickHouse"
-        print(step_name)
+        try:
+            with ClickHouseService(results=results) as service:
+                step_name = "Load the data"
+                print(step_name)
 
-        def start():
-            return ch.start_light()
+                def do():
+                    res = S3.copy_file_from_s3(
+                        s3_path="clickhouse-datasets/hits/partitions/hits_v1.tar",
+                        local_path=temp_dir,
+                    )
+                    return res
 
-        results.append(
-            Result.from_commands_run(
-                name=step_name,
-                command=[
-                    start,  # command could be python callable or bash command as a string
-                ],
-            )
-        )
-        res = results[-1].is_ok()
+                results.append(
+                    Result.from_commands_run(
+                        name=step_name,
+                        command=[do],
+                        with_info=True,
+                    )
+                )
+                res = results[-1].is_ok()
 
-    if res:
-        step_name = "Load the data"
-        print(step_name)
-
-        def do():
-            res = S3.copy_file_from_s3(
-                s3_path="clickhouse-datasets/hits/partitions/hits_v1.tar",
-                local_path=temp_dir,
-            )
-            return res
-
-        results.append(
-            Result.from_commands_run(
-                name=step_name,
-                command=[
-                    do,
-                ],
-                with_info=True,  # command output will be present in CI report
-            )
-        )
-        res = results[-1].is_ok()
-
-    if res:
-        step_name = "Tests"
-        print(step_name)
-        test_results = []  # Test's subresult - see CI report
-        test_results.append(
-            Result.from_commands_run(
-                name="select 1",
-                command=f"{temp_dir}/clickhouse-client --query 'select 1'",
-            )
-        )  # success if exit code is 0
-        test_results.append(Result(name="test 2", status=Result.Status.OK))
-
-        results.append(
-            Result.create_from(
-                name=step_name, results=test_results
-            )  # generates "Tests" subresult from array of test_results
-        )  # append to job's subresults
-        res = results[-1].is_ok()
+                if res:
+                    step_name = "Tests"
+                    print(step_name)
+                    test_results = []
+                    test_results.append(
+                        Result.from_commands_run(
+                            name="select 1",
+                            command=f"{temp_dir}/clickhouse-client --query 'select 1'",
+                        )
+                    )
+                    test_results.append(Result(name="test 2", status=Result.Status.OK))
+                    results.append(Result.create_from(name=step_name, results=test_results))
+        except Exception:
+            pass
 
     Result.create_from(
-        results=results,  # job status success or failure will be generated in accordance with subtask results in this array
-        # status=Result.Status.FAIL, # or set status here
+        results=results,
         stopwatch=stop_watch,
-        files=[],  # files you need to store after the job completes
-        info="write result info here",  # will be shown in the report
+        files=[],
+        info="write result info here",
     ).complete_job()
 
 
