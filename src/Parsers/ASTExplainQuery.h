@@ -141,10 +141,15 @@ protected:
             /// through the frame and is handled by each query's own `formatQueryImpl`.
             /// INSERT queries also don't need wrapping: wrapping INSERT in parens would
             /// produce `(INSERT ...)` which cannot be parsed back.
+            /// `EXPLAIN GRANT` / `EXPLAIN REVOKE` similarly cannot be wrapped — `ParserGrantQuery`
+            /// has no notion of `( ... )` wrapping, and the inner GRANT/REVOKE never consumes
+            /// trailing SETTINGS itself, so the wrap is unnecessary as well as unparseable.
             bool need_parens = frame.has_trailing_output_options
                 && !dynamic_cast<const ASTQueryWithOutput *>(query.get())
                 && query->getQueryKind() != QueryKind::Insert
-                && query->getQueryKind() != QueryKind::AsyncInsertFlush;
+                && query->getQueryKind() != QueryKind::AsyncInsertFlush
+                && query->getQueryKind() != QueryKind::Grant
+                && query->getQueryKind() != QueryKind::Revoke;
             if (need_parens)
                 ostr << "(";
             query->format(ostr, settings, state, frame);
