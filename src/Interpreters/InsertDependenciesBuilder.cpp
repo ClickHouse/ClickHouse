@@ -1,6 +1,7 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
+#include <Common/MemoryTracker.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Processors/ResizeProcessor.h>
@@ -135,6 +136,19 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_RECURSION;
+}
+
+namespace
+{
+/// Cap `min_insert_block_size_bytes` by a fraction of the server-wide memory hard limit so
+/// squashing does not accumulate more data than the host can hold. Shared between direct
+/// INSERT and materialized-view pipelines so the cap is applied symmetrically.
+size_t capMinBlockSizeBytesForMemoryLimit(size_t value)
+{
+    if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+        return std::min<size_t>(value, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
+    return value;
+}
 }
 
 
@@ -702,7 +716,7 @@ private:
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
             settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes],
+            capMinBlockSizeBytesForMemoryLimit(settings[Setting::min_insert_block_size_bytes]),
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits)
@@ -849,7 +863,7 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
                     std::make_shared<PlanSquashingTransform>(
                         output_header,
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                        table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+                        table_prefers_large_blocks ? capMinBlockSizeBytesForMemoryLimit(settings[Setting::min_insert_block_size_bytes]) : 0ULL,
                         settings[Setting::max_insert_block_size],
                         settings[Setting::max_insert_block_size_bytes],
                         squash_with_strict_limits));
