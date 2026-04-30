@@ -773,12 +773,22 @@ void DiskObjectStorage::prepareRead(
     auto global_context = Context::getGlobalContextInstance();
     auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
+    /// Distributed cache — computed early because prefer_bigger_buffer_size needs to know.
+#if ENABLE_DISTRIBUTED_CACHE
+    bool use_distributed_cache = enable_distributed_cache
+        && DistributedCache::canUseDistributedCacheForRead(
+            read_settings, *storage);
+#else
+    bool use_distributed_cache = false;
+#endif
+
     /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
     /// Must be done before setSource, which stores read_settings in the pipeline.
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
         && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
         && storage->supportsCache()
-        && read_settings.enable_filesystem_cache;
+        && read_settings.enable_filesystem_cache
+        && (!use_distributed_cache || read_settings.distributed_cache_settings.prefer_bigger_buffer_size);
 
     if (prefer_bigger_buffer_size)
         read_settings.remote_fs_buffer_size = std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size);
@@ -790,16 +800,8 @@ void DiskObjectStorage::prepareRead(
     /// CachedObjectStorage::prepareRead adds needDiskCache automatically.
     storage->prepareRead(storage, storage_objects, read_settings, read_hint, pipeline);
 
-    /// Distributed cache.
-#if ENABLE_DISTRIBUTED_CACHE
-    bool use_distributed_cache = enable_distributed_cache
-        && DistributedCache::canUseDistributedCacheForRead(
-            read_settings, *storage);
     if (use_distributed_cache)
         pipeline.needDistributedCache();
-#else
-    bool use_distributed_cache = false;
-#endif
 
     /// Memory cache (page cache).
     const bool file_cache_enabled = storage->supportsCache() && read_settings.enable_filesystem_cache;

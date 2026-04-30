@@ -445,15 +445,21 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ReadPipeline: distributed cache requires ObjectStorageSource");
 
+            if (disk_cache && disk_cache->cache)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ReadPipeline: disk cache + distributed cache without gather is not supported. "
+                    "Use needGather() to enable the gather path which handles both stages");
+
             /// Fallback: read directly from object storage (same as non-DC path).
             /// use_external_buffer=false because DC calls set() on the fallback with its
             /// own internal_buffer which may be empty in external buffer mode.
             auto fallback_creator = [storage = dc_obj_source->storage,
+                                     read_hint = dc_obj_source->read_hint,
                                      captured_object = source->objects.at(0),
                                      captured_settings = settings]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                return storage->readObject(captured_object, captured_settings, {},
+                return storage->readObject(captured_object, captured_settings, read_hint,
                     /* use_external_buffer */ false, /* restrict_seek */ false);
             };
 

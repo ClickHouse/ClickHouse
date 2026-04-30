@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Compression/CachedCompressedReadBuffer.h>
-#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadPipeline.h>
 
 #include <base/getThreadId.h>
@@ -88,9 +87,6 @@ void MergeTreeReaderStream::init()
             estimated_sum_mark_range_bytes,
             pipeline);
 
-        if (!pipeline.hasSource())
-            return std::make_unique<ReadBufferFromEmptyFile>();
-
         return pipeline.build();
     };
 
@@ -120,9 +116,6 @@ void MergeTreeReaderStream::init()
                     read_settings,
                     estimated_sum_mark_range_bytes,
                     pipeline);
-
-                if (!pipeline.hasSource())
-                    return std::make_unique<ReadBufferFromEmptyFile>();
 
                 return pipeline.build();
             },
