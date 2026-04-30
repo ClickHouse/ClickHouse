@@ -12,6 +12,7 @@
 #include <Analyzer/Utils.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Functions/FunctionsExternalDictionaries.h>
 
@@ -91,16 +92,23 @@ struct ConstantListCheckResult
     bool has_null{};
 };
 
-ConstantListCheckResult checkConstantList(const Field & default_value, const ConstantNode * constant_node)
+ConstantListCheckResult
+checkConstantList(const Field & default_value, const ConstantNode * constant_node, const DataTypePtr & dict_attr_type)
 {
     ConstantListCheckResult result;
-    const Field & constant_field = constant_node->getValue();
+    const auto & default_value_str = fieldToString(default_value);
+
+    const auto & constant_field = constant_node->getValue();
 
     auto check_element = [&](const Field & element)
     {
         if (element.isNull())
+        {
             result.has_null = true;
-        else if (element == default_value)
+            return;
+        }
+        Field converted = tryConvertFieldToType(element, *dict_attr_type);
+        if (!converted.isNull() && converted == default_value)
             result.has_default_value = true;
     };
 
@@ -407,7 +415,7 @@ private:
         {
             const auto * constant_node = constant_arg->as<ConstantNode>();
             if (constant_node)
-                check_result = checkConstantList(default_value, constant_node);
+                check_result = checkConstantList(default_value, constant_node, dict_attr_col_type);
         }
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
