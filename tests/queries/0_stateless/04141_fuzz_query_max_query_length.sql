@@ -1,4 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-stress
+-- ^ no-stress: the Stress test wraps every query with the AST fuzzer, which mutates the
+--   `fuzzQuery(...)` arguments (e.g. `max_query_length` literal), making
+--   `FuzzQuerySource::createColumn` unable to produce a row within the cap and looping.
 
 -- Regression test for the `fuzzQuery` `max_query_length` cap (#101354).
 -- The previous check `if (config.max_query_length > 500)` did not compare against the
