@@ -474,7 +474,7 @@ public:
         {
             va_list backup_ap;
             va_copy(backup_ap, ap);
-            std::array<char, 1024> stack; // NOLINT(cppcoreguidelines-init-variables) - written by `vsnprintf` before read
+            std::array<char, 1024> stack; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - written by `vsnprintf` before read
             if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
             {
                 va_end(backup_ap);
