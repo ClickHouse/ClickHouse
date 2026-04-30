@@ -1,11 +1,17 @@
 #include <IO/LocalSourceReader.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 
 #include <fcntl.h>
 #include <unistd.h>
 #include <cerrno>
+
+namespace ProfileEvents
+{
+    extern const Event FileOpen;
+}
 
 namespace DB
 {
@@ -27,6 +33,8 @@ size_t LocalSourceReader::read(
     if (fd < 0)
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
             "Cannot open file {}: {}", object.remote_path, errnoToString());
+
+    ProfileEvents::increment(ProfileEvents::FileOpen);
 
     size_t total_read = 0;
     while (total_read < size)
