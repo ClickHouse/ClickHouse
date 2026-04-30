@@ -4545,7 +4545,7 @@ Notice the `WHERE` clause is rewritten in CNF, but the result set is the identic
 Possible values: true, false
 )", 0) \
     DECLARE(Bool, optimize_or_like_chain, true, R"(
-Optimize multiple OR LIKE/ILIKE/match into multiSearchAny (for substring patterns) or match with combined regexp (for other patterns). With the new analyzer, the original expressions are preserved in indexHint() to allow index analysis; the old analyzer (enable_analyzer = 0) does not preserve indexHint(), so MergeTree index analysis cannot use the original LIKE chain after the rewrite.
+Optimize multiple OR LIKE/ILIKE/match into multiSearchAny (for substring patterns) or match with combined regexp (for other patterns). With the new analyzer, the original expressions are preserved in indexHint() to allow index analysis; the old analyzer (enable_analyzer = 0) does not preserve indexHint(), so MergeTree index analysis cannot use the original LIKE chain after the rewrite. The old analyzer entry point is additionally gated by the hyperscan-related settings allow_hyperscan, max_hyperscan_regexp_length and max_hyperscan_regexp_total_length, even though the rewrite no longer depends on hyperscan; disabling those settings therefore disables this optimization in the old analyzer.
 )", 0) \
     DECLARE(Bool, optimize_arithmetic_operations_in_aggregate_functions, true, R"(
 Move arithmetic operations out of aggregation functions
