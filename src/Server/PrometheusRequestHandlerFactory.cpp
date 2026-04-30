@@ -435,6 +435,13 @@ void addPrometheusProtocolsToHTTPDefaults(
     if (!config.has("prometheus"))
         return;
 
+    /// When `<prometheus><keeper_metrics_only>true</keeper_metrics_only>` is set, the
+    /// dedicated Prometheus listener is intentionally narrowed to keeper-related scrape
+    /// metrics (`KeeperPrometheusHandler`). Do not expand the request surface by also
+    /// auto-mounting `remote_write`/`remote_read`/Query API on the main `<http_port>`.
+    if (config.getBool("prometheus.keeper_metrics_only", false))
+        return;
+
     /// An empty value for `<http_path_prefix>` is the explicit opt-out for the auto-mount.
     /// The normalization step below would also collapse `/` to empty (root mount), but root
     /// mount is a valid configuration we want to honor, so we have to distinguish "user did

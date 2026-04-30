@@ -1,0 +1,11 @@
+<clickhouse>
+    <!--
+        `<prometheus><keeper_metrics_only>true</keeper_metrics_only>` limits the dedicated
+        Prometheus listener to keeper-related metrics. The HTTP-port auto-mount for
+        remote_write / remote_read / Query API must be skipped in this mode so the URL
+        space is not unexpectedly opened on `<http_port>`.
+    -->
+    <prometheus>
+        <keeper_metrics_only>true</keeper_metrics_only>
+    </prometheus>
+</clickhouse>

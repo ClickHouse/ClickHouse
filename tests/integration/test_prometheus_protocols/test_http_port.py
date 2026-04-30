@@ -19,6 +19,9 @@ Covers:
   than as regex wildcards (regression coverage for the route-filter escaping fix).
 - Root mount (`<http_path_prefix>/</http_path_prefix>`) routes URLs with a single leading
   slash (regression coverage for the `^//<db>/<table>/...` regex bug).
+- `<prometheus><keeper_metrics_only>true</keeper_metrics_only>` skips the HTTP-port
+  auto-mount entirely (keeper-only scrape surface must not gain `remote_write`/read/Query API
+  routes on `<http_port>`).
 """
 
 import http
@@ -96,6 +99,15 @@ node_root_prefix = cluster.add_instance(
 node_no_stacktrace = cluster.add_instance(
     "node_no_stacktrace",
     main_configs=["configs/prometheus_http_port_no_stacktrace.xml"],
+    user_configs=["configs/allow_experimental_time_series_table.xml"],
+)
+
+# Node 8: `<prometheus><keeper_metrics_only>true</keeper_metrics_only>` — the HTTP-port
+# auto-mount for dynamic Prometheus protocols must be suppressed (same intent as the
+# dedicated listener using KeeperPrometheusHandler only).
+node_keeper_metrics_only = cluster.add_instance(
+    "node_keeper_metrics_only",
+    main_configs=["configs/prometheus_http_port_keeper_metrics_only.xml"],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
 )
 
@@ -497,6 +509,19 @@ def test_http_handlers_auto_mount_opted_out():
     response = get_response_to_remote_write(
         node_http_handlers.ip_address, HTTP_PORT,
         f"{DEFAULT_PREFIX}/default/ts_explicit/write", payload,
+    )
+    assert response.status_code == http.HTTPStatus.NOT_FOUND
+
+
+def test_keeper_metrics_only_skips_http_auto_mount():
+    """`<prometheus><keeper_metrics_only>true</keeper_metrics_only>` must not register the
+    default `/time-series/<db>/<table>/...` routes on the main HTTP port."""
+    payload = convert_time_series_to_protobuf(
+        [({"__name__": "keeper_only_negative"}, {1700006300: 1.0})]
+    )
+    response = get_response_to_remote_write(
+        node_keeper_metrics_only.ip_address, HTTP_PORT,
+        f"{DEFAULT_PREFIX}/default/ts_keeper_only/write", payload,
     )
     assert response.status_code == http.HTTPStatus.NOT_FOUND
 

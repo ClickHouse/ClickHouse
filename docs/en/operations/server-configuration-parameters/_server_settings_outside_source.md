@@ -1319,6 +1319,11 @@ Settings:
   `prometheus_remote_write`, `prometheus_remote_read`, and `prometheus_query_api`. The legacy
   `<type>prometheus</type>` handler in `<http_handlers>` is unchanged and still serves the
   expose-metrics protocol on its configured URL.
+
+  When `keeper_metrics_only` is `true`, the dedicated Prometheus listener is limited to
+  keeper-related scrape metrics, and the HTTP-port auto-mount described above is **not**
+  registered (so `remote_write`/`remote_read`/Query API URLs on `<http_port>` are not opened
+  in that mode).
 - `metrics` – Expose metrics from the [system.metrics](/operations/system-tables/metrics) table.
 - `events` – Expose metrics from the [system.events](/operations/system-tables/events) table.
 - `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.
