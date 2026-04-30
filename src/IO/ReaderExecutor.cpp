@@ -154,6 +154,9 @@ Rope ReaderExecutor::readWindow(Range window)
     Rope result;
     std::vector<Range> remaining = {window};
 
+    /// Handles with misses — kept alive for put after source fetch.
+    std::vector<std::unique_ptr<ICacheHandle>> miss_handles;
+
     /// Walk the cache chain
     for (auto & cache : caches)
     {
@@ -177,6 +180,10 @@ Rope ReaderExecutor::readWindow(Range window)
                 LOG_TRACE(log, "readWindow: cache {} miss [{}, {})", cache->name(), miss.offset, miss.end());
                 still_missing.push_back(miss);
             }
+
+            /// Keep handle alive if it had misses — we'll call put later.
+            if (!status.miss_ranges.empty())
+                miss_handles.push_back(std::move(handle));
         }
 
         remaining = std::move(still_missing);
@@ -185,8 +192,6 @@ Rope ReaderExecutor::readWindow(Range window)
     }
 
     /// Merge close-together ranges to reduce source request count.
-    /// E.g. scattered page cache hits can leave many small gaps that are
-    /// cheaper to read in one request than to issue separate HTTP GETs.
     auto fetch_ranges = mergeRanges(remaining, min_bytes_for_seek);
 
     if (fetch_ranges.size() < remaining.size())
@@ -209,18 +214,17 @@ Rope ReaderExecutor::readWindow(Range window)
             result.append(RopeNode{std::move(buf), 0, bytes_read, logical_pos});
             logical_pos += bytes_read;
         }
+    }
 
-        /// Fill caches bottom-up with fetched data
-        for (auto it = caches.rbegin(); it != caches.rend(); ++it)
+    /// Fill caches with fetched data using the saved handles.
+    for (auto & handle : miss_handles)
+    {
+        auto status = handle->status();
+        for (const auto & miss : status.miss_ranges)
         {
-            auto handle = (*it)->lookup(CacheKey{}, miss_range);
-            auto status = handle->status();
-            for (const auto & miss : status.miss_ranges)
-            {
-                auto slice = result.slice(miss);
-                if (!slice.empty())
-                    handle->put(miss, std::move(slice));
-            }
+            auto slice = result.slice(miss);
+            if (!slice.empty())
+                handle->put(miss, std::move(slice));
         }
     }
 
