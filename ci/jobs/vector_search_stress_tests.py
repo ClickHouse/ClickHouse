@@ -790,7 +790,6 @@ def run_single_test(test_name, dataset, test_params):
 
 
 def install_clickhouse():
-    res = True
     results = []
 
     if Utils.is_arm():
@@ -800,26 +799,21 @@ def install_clickhouse():
     else:
         assert False, f"Unknown processor architecture"
 
-    if True:
-        step_name = "Download ClickHouse"
-        logger(step_name)
-        commands = [
+    results.append(r := Result.from_commands_run(
+        name="Download ClickHouse",
+        command=[
             f"wget -nv -P {temp_dir} {latest_ch_master_url}",
             f"chmod +x {temp_dir}/clickhouse",
             f"{temp_dir}/clickhouse --version",
-        ]
-        results.append(Result.from_commands_run(name=step_name, command=commands))
-        res = results[-1].is_ok()
+        ],
+    ))
+    if not r.is_ok():
+        return results
 
-    if res:
-        step_name = "Install ClickHouse"
-        print(step_name)
+    def install():
+        return install_clickbench_config() and install_vector_search_config()
 
-        def install():
-            return install_clickbench_config() and install_vector_search_config()
-
-        results.append(Result.from_commands_run(name=step_name, command=[install]))
-
+    results.append(Result.from_commands_run(name="Install ClickHouse", command=[install]))
     return results
 
 

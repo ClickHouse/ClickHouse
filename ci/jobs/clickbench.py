@@ -25,80 +25,72 @@ profiles:
 
 
 def main():
-    res = True
     results = []
     stop_watch = Utils.Stopwatch()
     ch = ClickHouseProc(ch_config_dir=f"{temp_dir}/etc/clickhouse-server")
     info = Info()
 
-    if res:
-        print("Install ClickHouse")
-
+    try:
         def install():
-            res = install_clickbench_config()
+            if not install_clickbench_config():
+                return False
             if info.is_local_run:
-                return res
-            return res and ch.create_log_export_config()
+                return True
+            return ch.create_log_export_config()
 
-        results.append(
-            Result.from_commands_run(name="Install ClickHouse", command=install)
-        )
-        res = results[-1].is_ok()
+        results.append(r := Result.from_commands_run(name="Install ClickHouse", command=install))
+        r.raise_if_failed()
 
-    if res:
-        try:
-            with ClickHouseService(results=results) as service:
-                if not info.is_local_run:
-                    if not ch.start_log_exports(check_start_time=stop_watch.start_time):
-                        print("WARNING: Failed to start log export")
+        with ClickHouseService(results=results) as service:
+            if not info.is_local_run:
+                if not ch.start_log_exports(check_start_time=stop_watch.start_time):
+                    print("WARNING: Failed to start log export")
 
-                print("Load the data")
-                results.append(
-                    Result.from_commands_run(
-                        name="Load the data",
-                        command="clickhouse-client --time < ./ci/jobs/scripts/clickbench/create.sql",
-                    )
+            results.append(
+                r := Result.from_commands_run(
+                    name="Load the data",
+                    command="clickhouse-client --time < ./ci/jobs/scripts/clickbench/create.sql",
                 )
-                res = results[-1].is_ok()
+            )
+            r.raise_if_failed()
 
-                if res:
-                    print("Queries")
-                    stop_watch_ = Utils.Stopwatch()
-                    TRIES = 3
-                    QUERY_NUM = 1
+            print("Queries")
+            stop_watch_ = Utils.Stopwatch()
+            TRIES = 3
+            QUERY_NUM = 1
 
-                    with open(
-                        "./ci/jobs/scripts/clickbench/queries.sql", "r"
-                    ) as queries_file:
-                        query_results = []
-                        for query in queries_file:
-                            query = query.strip()
-                            timing = []
+            with open(
+                "./ci/jobs/scripts/clickbench/queries.sql", "r"
+            ) as queries_file:
+                query_results = []
+                for query in queries_file:
+                    query = query.strip()
+                    timing = []
 
-                            for i in range(1, TRIES + 1):
-                                query_id = f"q{QUERY_NUM}-{i}"
-                                res, out, time_err = Shell.get_res_stdout_stderr(
-                                    f'clickhouse-client --query_id {query_id} --time --format Null --query "{query}" --progress 0',
-                                    verbose=True,
-                                )
-                                timing.append(time_err)
-                                query_results.append(
-                                    Result(
-                                        name=f"{QUERY_NUM}_{i}",
-                                        status=Result.Status.OK,
-                                        duration=float(time_err),
-                                    )
-                                )
-                            print(timing)
-                            QUERY_NUM += 1
-
-                    results.append(
-                        Result.create_from(
-                            name="Queries", results=query_results, stopwatch=stop_watch_
+                    for i in range(1, TRIES + 1):
+                        query_id = f"q{QUERY_NUM}-{i}"
+                        res, out, time_err = Shell.get_res_stdout_stderr(
+                            f'clickhouse-client --query_id {query_id} --time --format Null --query "{query}" --progress 0',
+                            verbose=True,
                         )
-                    )
-        except Exception:
-            pass
+                        timing.append(time_err)
+                        query_results.append(
+                            Result(
+                                name=f"{QUERY_NUM}_{i}",
+                                status=Result.Status.OK,
+                                duration=float(time_err),
+                            )
+                        )
+                    print(timing)
+                    QUERY_NUM += 1
+
+            results.append(
+                Result.create_from(
+                    name="Queries", results=query_results, stopwatch=stop_watch_
+                )
+            )
+    except Exception:
+        pass
 
     # stop log replication
     Shell.check(

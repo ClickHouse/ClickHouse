@@ -9,7 +9,6 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 
 def main():
-    res = True
     results = []  # array of job's sub results - see CI report
     stop_watch = Utils.Stopwatch()
     info = Info()
@@ -26,59 +25,46 @@ def main():
     else:
         assert False, f"Unknown processor architecture"
 
-    if res and not info.is_local_run:
-        step_name = "Download ClickHouse"
-        print(step_name)
-        commands = [
-            f"wget -nv -P {temp_dir} {latest_ch_master_url}",
-            f"chmod +x {temp_dir}/clickhouse",
-            f"{temp_dir}/clickhouse --version",
-        ]
-        results.append(Result.from_commands_run(name=step_name, command=commands))
-        res = results[-1].is_ok()
+    try:
+        if not info.is_local_run:
+            results.append(r := Result.from_commands_run(
+                name="Download ClickHouse",
+                command=[
+                    f"wget -nv -P {temp_dir} {latest_ch_master_url}",
+                    f"chmod +x {temp_dir}/clickhouse",
+                    f"{temp_dir}/clickhouse --version",
+                ],
+            ))
+            r.raise_if_failed()
 
-    if res:
-        step_name = "Install ClickHouse"
-        print(step_name)
-        results.append(Result.from_commands_run(name=step_name, command=[install_clickbench_config]))
-        res = results[-1].is_ok()
+        results.append(r := Result.from_commands_run(name="Install ClickHouse", command=[install_clickbench_config]))
+        r.raise_if_failed()
 
-    if res:
-        try:
-            with ClickHouseService(results=results) as service:
-                step_name = "Load the data"
-                print(step_name)
-
-                def do():
-                    res = S3.copy_file_from_s3(
+        with ClickHouseService(results=results) as service:
+            results.append(
+                r := Result.from_commands_run(
+                    name="Load the data",
+                    command=[lambda: S3.copy_file_from_s3(
                         s3_path="clickhouse-datasets/hits/partitions/hits_v1.tar",
                         local_path=temp_dir,
-                    )
-                    return res
-
-                results.append(
-                    Result.from_commands_run(
-                        name=step_name,
-                        command=[do],
-                        with_info=True,
-                    )
+                    )],
+                    with_info=True,
                 )
-                res = results[-1].is_ok()
+            )
+            r.raise_if_failed()
 
-                if res:
-                    step_name = "Tests"
-                    print(step_name)
-                    test_results = []
-                    test_results.append(
-                        Result.from_commands_run(
-                            name="select 1",
-                            command=f"{temp_dir}/clickhouse-client --query 'select 1'",
-                        )
-                    )
-                    test_results.append(Result(name="test 2", status=Result.Status.OK))
-                    results.append(Result.create_from(name=step_name, results=test_results))
-        except Exception:
-            pass
+            print("Tests")
+            test_results = []
+            test_results.append(
+                Result.from_commands_run(
+                    name="select 1",
+                    command=f"{temp_dir}/clickhouse-client --query 'select 1'",
+                )
+            )
+            test_results.append(Result(name="test 2", status=Result.Status.OK))
+            results.append(Result.create_from(name="Tests", results=test_results))
+    except Exception:
+        pass
 
     Result.create_from(
         results=results,

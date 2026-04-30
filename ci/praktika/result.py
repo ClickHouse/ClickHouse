@@ -238,6 +238,10 @@ class Result(MetaClasses.Serializable):
             Result.Status.XFAIL,
         )
 
+    def raise_if_failed(self):
+        if not self.is_ok():
+            raise RuntimeError(f"[{self.name}] failed: {self.info}")
+
     def is_success(self):
         return self.status in (Result.Status.OK, Result.Status.XFAIL)
 

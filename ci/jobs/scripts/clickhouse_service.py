@@ -107,6 +107,9 @@ class ClickHouseService:
         return self
 
     def __exit__(self, *_):
+        if self._log_fd is not None:
+            self._log_fd.close()
+            self._log_fd = None
         if self._proc is None:
             return
         try:
@@ -122,9 +125,6 @@ class ClickHouseService:
             except ProcessLookupError:
                 pass
             self._proc.wait()
-        if self._log_fd is not None:
-            self._log_fd.close()
-            self._log_fd = None
 
     @staticmethod
     def _download_binary() -> None:
