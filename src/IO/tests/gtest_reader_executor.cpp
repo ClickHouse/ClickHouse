@@ -1,8 +1,10 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/ISourceReader.h>
+#include <IO/ICacheProvider.h>
 #include <IO/Rope.h>
 
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <cstring>
 #include <unordered_map>
 
@@ -120,4 +122,143 @@ TEST(ReaderExecutor, Seek)
     EXPECT_EQ(rope.range().offset, 500);
     EXPECT_EQ(rope.range().size, 100);
     EXPECT_EQ(rope.getNodes()[0].data()[0], 'Z');
+}
+
+namespace
+{
+
+/// Mock cache that stores data in memory, organized by blocks.
+class MockCacheHandle : public ICacheHandle
+{
+public:
+    MockCacheHandle(
+        Range range,
+        std::unordered_map<size_t, String> & storage_,
+        size_t block_size_)
+        : storage(storage_), block_size(block_size_)
+    {
+        size_t start_block = range.offset / block_size;
+        size_t end_block = (range.end() + block_size - 1) / block_size;
+
+        for (size_t b = start_block; b < end_block; ++b)
+        {
+            size_t block_start = b * block_size;
+            size_t block_end = std::min(block_start + block_size, range.end());
+            block_start = std::max(block_start, range.offset);
+            Range block_range{block_start, block_end - block_start};
+
+            if (storage.count(b))
+                result.hit_ranges.push_back(block_range);
+            else
+                result.miss_ranges.push_back(block_range);
+        }
+    }
+
+    CacheLookupResult status() const override { return result; }
+
+    Rope get(Range range) override
+    {
+        size_t block = range.offset / block_size;
+        const auto & data = storage.at(block);
+        auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
+        std::memcpy(buf->data(), data.data(), data.size());
+
+        Rope rope;
+        rope.append(RopeNode{buf, 0, data.size(), block * block_size});
+        return rope.slice(range);
+    }
+
+    bool put(Range range, Rope data) override
+    {
+        size_t block = range.offset / block_size;
+        if (storage.count(block))
+            return false;
+
+        String content;
+        for (const auto & node : data.getNodes())
+            content.append(node.data(), node.size);
+        storage[block] = std::move(content);
+        return true;
+    }
+
+private:
+    std::unordered_map<size_t, String> & storage;
+    size_t block_size;
+    CacheLookupResult result;
+};
+
+class MockCacheProvider : public ICacheProvider
+{
+public:
+    explicit MockCacheProvider(size_t block_size_)
+        : block_size(block_size_) {}
+
+    std::unique_ptr<ICacheHandle> lookup(CacheKey, Range range) override
+    {
+        return std::make_unique<MockCacheHandle>(range, storage, block_size);
+    }
+
+    String name() const override { return "MockCache"; }
+
+    bool hasBlock(size_t block_index) const { return storage.count(block_index) > 0; }
+
+private:
+    std::unordered_map<size_t, String> storage;
+    size_t block_size;
+};
+
+}
+
+TEST(ReaderExecutor, CacheMissPopulatesCache)
+{
+    String content(1024, 'C');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 1024);
+
+    auto cache = std::make_shared<MockCacheProvider>(512);
+
+    ReaderExecutor executor(source, objects, {cache}, 512);
+
+    /// First read: miss, fetches from source, populates cache
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().size, 512);
+    EXPECT_TRUE(cache->hasBlock(0));
+
+    /// Second read
+    auto rope2 = executor.readNextWindow();
+    EXPECT_EQ(rope2.range().size, 512);
+    EXPECT_TRUE(cache->hasBlock(1));
+}
+
+TEST(ReaderExecutor, CacheHitSkipsSource)
+{
+    String source_content(512, 'S');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", source_content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 512);
+
+    auto cache = std::make_shared<MockCacheProvider>(512);
+
+    /// Warm up cache
+    {
+        ReaderExecutor warmup(source, objects, {cache}, 512);
+        warmup.readNextWindow();
+    }
+
+    /// Replace source with different content
+    String alt_content(512, 'Z');
+    auto alt_source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", alt_content}});
+
+    ReaderExecutor executor(alt_source, objects, {cache}, 512);
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().size, 512);
+
+    /// Should have gotten 'S' from cache, not 'Z' from alt_source
+    EXPECT_EQ(rope.getNodes()[0].data()[0], 'S');
 }
