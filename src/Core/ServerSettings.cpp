@@ -2009,16 +2009,21 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     std::unordered_set<String> referenced_keys;
 
     /// (a) Handler sections referenced by `<protocols>...<handlers>NAME</handlers>...</protocols>`.
+    /// Only HTTP protocol endpoints actually consult `handlers` (see `create_factory` in `Server.cpp`),
+    /// so gate the allowlist on `type == "http"` to keep typos in non-HTTP protocols rejected.
     if (config.has("protocols"))
     {
         Poco::Util::AbstractConfiguration::Keys protocols;
         config.keys("protocols", protocols);
         for (const auto & proto : protocols)
         {
-            String key = "protocols." + proto + ".handlers";
-            if (config.has(key))
+            String type_key = "protocols." + proto + ".type";
+            if (!config.has(type_key) || config.getString(type_key) != "http")
+                continue;
+            String handlers_key = "protocols." + proto + ".handlers";
+            if (config.has(handlers_key))
             {
-                String handler_section = config.getString(key);
+                String handler_section = config.getString(handlers_key);
                 if (!handler_section.empty())
                     referenced_keys.insert(handler_section);
             }
