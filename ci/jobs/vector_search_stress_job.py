@@ -40,14 +40,7 @@ def main():
     if res:
         step_name = "Install ClickHouse"
         print(step_name)
-
-        def install():
-            # implement required ch configuration
-            return (
-                install_clickbench_config()
-            )  # reuses config used for clickbench job, it's more or less default ch configuration
-
-        results.append(Result.from_commands_run(name=step_name, command=[install]))
+        results.append(Result.from_commands_run(name=step_name, command=[install_clickbench_config]))
         res = results[-1].is_ok()
 
     if res:
