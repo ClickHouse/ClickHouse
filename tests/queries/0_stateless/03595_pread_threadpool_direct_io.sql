@@ -1,5 +1,6 @@
--- Tags: no-parallel-replicas, no-object-storage, no-random-detach
+-- Tags: no-parallel-replicas, no-object-storage, no-random-detach, no-darwin
 -- no-random-detach: test checks profile events
+-- no-darwin: min_bytes_to_use_direct_io relies on O_DIRECT, which is not supported on macOS.
 
 set min_bytes_to_use_direct_io = 0;
 
