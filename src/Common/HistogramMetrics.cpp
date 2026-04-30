@@ -73,6 +73,16 @@ namespace HistogramMetrics
         "Bytes read per S3 read request connection.",
         {4096, 65536, 262144, 1048576, 4194304, 8388608, 16777216, 33554432, 67108864, 268435456});
 
+    Metric & AzureReadRequestDuration = Factory::instance().registerMetric(
+        "azure_read_request_duration_microseconds",
+        "Duration of Azure Blob Storage read request connections, from request initiation to connection close, in microseconds.",
+        {1000, 10000, 50000, 200000, 500000, 1000000, 2000000, 5000000, 10000000, 60000000});
+
+    Metric & AzureReadRequestBytes = Factory::instance().registerMetric(
+        "azure_read_request_bytes",
+        "Bytes read per Azure Blob Storage read request connection.",
+        {4096, 65536, 262144, 1048576, 4194304, 8388608, 16777216, 33554432, 67108864, 268435456});
+
     MetricFamily & KeeperResponseTime = Factory::instance().registerMetric(
         "keeper_response_time_ms",
         "The response time of Keeper, in milliseconds",

@@ -6,6 +6,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/MultiVersion.h>
+#include <Common/Stopwatch.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
@@ -30,6 +31,8 @@ public:
         bool use_external_buffer_ = false,
         bool restricted_seek_ = false,
         size_t read_until_position_ = 0);
+
+    ~ReadBufferFromAzureBlobStorage() override;
 
     off_t seek(off_t off, int whence) override;
 
@@ -85,6 +88,14 @@ private:
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;
+
+    /// Tracks the lifetime of one Azure Download() body stream:
+    /// duration from request initiation to stream replacement / buffer destruction,
+    /// and total bytes consumed. Observed into HistogramMetrics::AzureReadRequest{Duration,Bytes}.
+    Stopwatch download_watch;
+    size_t download_bytes_read = 0;
+    bool download_metrics_observed = true;
+    void observeDownloadMetrics();
 
     LoggerPtr log = getLogger("ReadBufferFromAzureBlobStorage");
     /// No-way to make metadata non-mutable, because readBig method is const.
