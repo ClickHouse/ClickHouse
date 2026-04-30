@@ -822,9 +822,13 @@ void RemoteQueryExecutor::finish()
       * - received all packets before EndOfStream;
       * - received exception from one replica;
       * - received an unknown packet from one replica;
+      * - the executor was already cancelled (e.g. by `cancel`) — draining is not safe
+      *   here because the caller asked for a fast cancel; only `PartialResult` callers
+      *   that explicitly want to drain progress should hit `finish` first, which they do
+      *   in `RemoteSource::onCancel` before any `cancel` has set `was_cancelled`;
       * then you do not need to read anything.
       */
-    if (!isQueryPending() || hasThrownException())
+    if (!isQueryPending() || hasThrownException() || was_cancelled)
         return;
 
     /// To make sure finish is only called once
