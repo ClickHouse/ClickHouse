@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
+#include <base/safeExit.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
@@ -638,8 +639,14 @@ void LocalServer::cleanup()
         size_t current_connections = waitServersToFinish(servers, servers_lock, shutdown_wait_seconds);
 
         if (current_connections)
-            LOG_WARNING(&logger(), "Closed connections. But {} remain. "
-                "Shutdown will block until they complete.", current_connections);
+        {
+            /// There is no better way to force connections to close in Poco. If we tried
+            /// `server_pool->joinAll`, connection handlers would keep the threads busy and
+            /// shutdown would be unbounded. Mirror `Server::main`: log and force-exit.
+            LOG_WARNING(&logger(), "Closed connections. But {} remain.", current_connections);
+            LOG_WARNING(&logger(), "Will shutdown forcefully.");
+            safeExit(0);
+        }
 
         /// Join the server thread pool to avoid use-after-free of destroyed context in handlers.
         if (server_pool)
