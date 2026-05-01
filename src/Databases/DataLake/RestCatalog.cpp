@@ -163,7 +163,9 @@ RestCatalog::RestCatalog(
     {
         auth_header = parseAuthHeader(auth_header_);
     }
-    config = loadConfig();
+    Poco::URI::QueryParameters config_params = {{"warehouse", warehouse}};
+    auto config_buf = RestCatalog::createReadBuffer(CONFIG_ENDPOINT, config_params, /* headers */ {});
+    config = parseCatalogConfigResponse(std::move(config_buf));
 }
 
 RestCatalog::RestCatalog(
@@ -188,7 +190,11 @@ RestCatalog::Config RestCatalog::loadConfig()
 {
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
     auto buf = createReadBuffer(CONFIG_ENDPOINT, params, /* headers */ {});
+    return parseCatalogConfigResponse(std::move(buf));
+}
 
+RestCatalog::Config RestCatalog::parseCatalogConfigResponse(DB::ReadWriteBufferFromHTTPPtr buf) const
+{
     std::string json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 

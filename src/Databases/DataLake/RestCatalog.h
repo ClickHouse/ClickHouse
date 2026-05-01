@@ -167,6 +167,11 @@ protected:
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 
     AccessToken retrieveAccessToken() const;
+
+private:
+    /// Parses JSON from `/v1/config` response. Used by `loadConfig` and by the public `RestCatalog` ctor
+    /// (which must not call virtual `createReadBuffer` during construction — see `clang-analyzer-optin.cplusplus.VirtualCall`).
+    Config parseCatalogConfigResponse(DB::ReadWriteBufferFromHTTPPtr buf) const;
 };
 
 class OneLakeCatalog : public RestCatalog
