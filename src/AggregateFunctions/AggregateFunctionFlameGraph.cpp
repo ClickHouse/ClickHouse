@@ -53,9 +53,11 @@ struct AggregateFunctionFlameGraphTree
 
     static ListNode * createChild(TreeNode * parent, UInt64 ptr, Arena * arena)
     {
-
-        ListNode * list_node = reinterpret_cast<ListNode *>(arena->alloc(sizeof(ListNode)));
-        TreeNode * tree_node = reinterpret_cast<TreeNode *>(arena->alloc(sizeof(TreeNode)));
+        /// Aligned allocation is required: the arena is also used to intern
+        /// arbitrary-sized strings for Array(String) traces, which can leave
+        /// the bump pointer at an offset that is not aligned for these structs.
+        ListNode * list_node = arena->alloc<ListNode>();
+        TreeNode * tree_node = arena->alloc<TreeNode>();
 
         list_node->child = tree_node;
         list_node->next = nullptr;
