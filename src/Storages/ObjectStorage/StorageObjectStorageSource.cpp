@@ -723,6 +723,37 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             return format_filter_info;
         }();
 
+        /// When PREWHERE / row-level filter is stripped from `format_filter_info` (i.e. the
+        /// actual file format doesn't support PREWHERE), the format reader will not produce
+        /// the input columns of those filters in its output: `read_from_format_info.format_header`
+        /// was already adjusted by `updateFormatPrewhereInfo` to reflect the post-PREWHERE
+        /// schema, so the format reader treats columns referenced only by PREWHERE as
+        /// "consumed" and does not emit them. We need them in the block so the fallback
+        /// FilterTransforms below can evaluate `c0 > 10` etc. Re-add any missing input
+        /// columns of the stripped DAGs to the reader's sample header.
+        ///
+        /// Skip this for the schema-changed path (Iceberg column-id rename / data lake schema
+        /// evolution): there the file-side schema is different from the query-side schema and
+        /// the DAG input names don't necessarily match file columns. The mapper handles the
+        /// renaming downstream. (Note: the schema-changed path with stripped PREWHERE is
+        /// currently rare in practice — the same column-renaming Iceberg cases that need the
+        /// mapper typically also use Parquet, where PREWHERE is supported and not stripped.)
+        if (!schema_changed)
+        {
+            auto add_filter_inputs = [&](const ActionsDAG & dag)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                {
+                    if (!initial_header.has(required.name))
+                        initial_header.insert({required.type, required.name});
+                }
+            };
+            if (stripped_row_level_filter)
+                add_filter_inputs(stripped_row_level_filter->actions);
+            if (stripped_prewhere_info)
+                add_filter_inputs(stripped_prewhere_info->prewhere_actions);
+        }
+
         chassert(object_info->getObjectMetadata().has_value());
 
         LOG_DEBUG(
@@ -785,27 +816,29 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
-        /// Apply PREWHERE filter as a regular FilterTransform when the file format
-        /// doesn't support PREWHERE. For mixed-format data lake tables (e.g. Iceberg
-        /// with Parquet + ORC files), table-level PREWHERE support may not match the
-        /// individual file's format. We strip prewhere_info from FormatFilterInfo above
-        /// and apply it here as a post-read filter instead.
-        if (stripped_prewhere_info)
-        {
-            auto prewhere_actions = std::make_shared<ExpressionActions>(stripped_prewhere_info->prewhere_actions.clone());
-            builder.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<FilterTransform>(
-                    header, prewhere_actions,
-                    stripped_prewhere_info->prewhere_column_name,
-                    stripped_prewhere_info->remove_prewhere_column);
-            });
-        }
+        /// Apply row-level security filter and PREWHERE as fallback FilterTransforms
+        /// when the file format doesn't support PREWHERE. For mixed-format data lake
+        /// tables (e.g. Iceberg with Parquet + ORC files), table-level PREWHERE support
+        /// may not match the individual file's format. We strip row_level_filter and
+        /// prewhere_info from FormatFilterInfo above and apply them here as post-read
+        /// filters instead.
+        ///
+        /// Order matters: row-level filter first, PREWHERE second. This matches the
+        /// canonical filter pipeline used everywhere else in the engine:
+        ///   - `SourceStepWithFilter::applyPrewhereActions`
+        ///   - `MergeTreeSelectProcessor::getPrewhereActions`
+        ///   - `Parquet::Reader::initializePrewhere`
+        /// PREWHERE actions drop their input columns from the block via `updateHeader`
+        /// (the DAG outputs the synthetic filter column plus only what is needed
+        /// downstream). If PREWHERE ran first, a row-policy expression that references
+        /// the same input column (a common case: row policy on `c0`, query
+        /// `SELECT c1 FROM t PREWHERE c0 > N`) could not be evaluated. Applying the
+        /// row-level filter first preserves the input columns for the policy and then
+        /// lets PREWHERE drop them as the planner intended.
 
-        /// Apply row-level security filter as a regular FilterTransform when the file
-        /// format doesn't support PREWHERE. The query planner puts row policies into
-        /// row_level_filter when storage->supportsPrewhere() (PlannerJoinTree.cpp:1012),
-        /// but individual files in mixed-format tables may not support it at format level.
+        /// The query planner puts row policies into `row_level_filter` when
+        /// `storage->supportsPrewhere()` (`PlannerJoinTree.cpp:1012`), but individual
+        /// files in mixed-format tables may not support it at format level.
         if (stripped_row_level_filter)
         {
             auto row_level_actions = std::make_shared<ExpressionActions>(stripped_row_level_filter->actions.clone());
@@ -815,6 +848,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     header, row_level_actions,
                     stripped_row_level_filter->column_name,
                     stripped_row_level_filter->do_remove_column);
+            });
+        }
+
+        if (stripped_prewhere_info)
+        {
+            auto prewhere_actions = std::make_shared<ExpressionActions>(stripped_prewhere_info->prewhere_actions.clone());
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(
+                    header, prewhere_actions,
+                    stripped_prewhere_info->prewhere_column_name,
+                    stripped_prewhere_info->remove_prewhere_column);
             });
         }
 
