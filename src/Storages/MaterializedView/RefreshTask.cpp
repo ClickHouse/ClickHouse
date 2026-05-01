@@ -518,16 +518,35 @@ void RefreshTask::refreshTask()
             {
                 if (coordination.root_znode.last_attempt_replica == coordination.replica_name)
                 {
-                    LOG_ERROR(log, "Znode {} indicates that this replica is running a refresh, but it isn't. Likely a bug.", coordination.path + "/running");
-#ifdef DEBUG_OR_SANITIZER_BUILD
-                    abortOnFailedAssertion("Unexpected refresh lock in keeper");
-#else
+                    /// The `/running` znode is ephemeral and tagged with this replica's name in
+                    /// its data, but this `RefreshTask` instance is not actually executing a
+                    /// refresh. The znode is therefore a leftover from a previous lifetime and
+                    /// must be cleaned up.
+                    ///
+                    /// Known ways this state arises (none of them are bugs in this task):
+                    ///  1. The server (or this `clickhouse` process) was killed while a refresh
+                    ///     was in progress, and restarted within the Keeper session timeout.
+                    ///     The new process gets a new Keeper session, but Keeper has not yet
+                    ///     expired the old session, so the ephemeral `/running` znode created
+                    ///     by the old session is still observable. This is the dominant cause
+                    ///     in stress tests with `RandomQueryKiller`.
+                    ///  2. The table was DETACHed while a refresh was in progress and Keeper
+                    ///     was unreachable during shutdown, so the in-flight cleanup path
+                    ///     (`updateCoordinationState(running=false)`) could not remove the
+                    ///     znode. After ATTACH, the new `RefreshTask` reads the lingering
+                    ///     znode.
+                    ///
+                    /// Recover by removing the stale `/running` znode (only if it carries our
+                    /// replica name — `removeRunningZnodeIfMine` checks that) and rescheduling
+                    /// a Keeper re-read on the next iteration.
+                    LOG_WARNING(log, "Znode {} indicates that this replica is running a refresh, but it isn't. "
+                        "Most likely a leftover from a previous server lifetime; recovering.",
+                        coordination.path + "/running");
                     coordination.running_znode_exists = false;
                     if (coordination.coordinated)
                         removeRunningZnodeIfMine(zookeeper);
                     schedule_keeper_retry();
                     break;
-#endif
                 }
                 else
                 {

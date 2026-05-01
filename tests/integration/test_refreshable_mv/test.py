@@ -673,3 +673,118 @@ def test_system_view_refreshes_on_not_running_replica(started_cluster):
             pass
         for node in nodes:
             node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_refresh_recovers_from_stale_running_znode(started_cluster):
+    """Regression test for the `Unexpected refresh lock in keeper` LOGICAL_ERROR
+    that fires from `RefreshTask::refreshTask` when the coordination `/running`
+    znode was left behind by a previous server lifetime.
+
+    A previous keeper session of this replica may leave the ephemeral `/running`
+    znode visible to a new session for up to the keeper session timeout (most
+    commonly observed in stress runs that kill and restart the server, but also
+    reproducible after DETACH+ATTACH if keeper was unreachable during shutdown).
+    The new `RefreshTask` then sees `running_znode_exists = true` together with
+    `last_attempt_replica == replica_name` and used to abort under
+    `DEBUG_OR_SANITIZER_BUILD`. The fix removes the abort and unconditionally
+    runs the recovery path that already existed in release builds: clear the
+    stale local flag, remove the leftover znode if it carries our replica name,
+    and reschedule a Keeper re-read.
+
+    This test plants the leftover znode directly via Kazoo (a separate Keeper
+    session, the same way an old session's leftover would look from the new
+    session's point of view) and verifies that the next refresh completes
+    instead of crashing.
+    """
+    global test_idx
+    test_idx += 1
+    db_path = f"/test/re_stale_running_{test_idx}"
+    db_name = "re"
+    table_name = "rmv_stale_running"
+
+    try:
+        for node in nodes:
+            node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+            node.query(
+                f"CREATE DATABASE {db_name} ENGINE = Replicated('{db_path}', 'shard1', '{{replica}}')"
+            )
+
+        # Create a coordinated RMV with a long refresh interval so the only
+        # refresh attempts are the ones we explicitly trigger via SYSTEM REFRESH VIEW.
+        node1.query(
+            f"CREATE MATERIALIZED VIEW {db_name}.{table_name} REFRESH EVERY 100 YEAR (x Int64) "
+            "ENGINE ReplicatedMergeTree ORDER BY x AS SELECT number*10 AS x FROM numbers(2)"
+        )
+        for node in nodes:
+            node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+
+        # Pause refreshes on node2 so the coordination election is deterministic
+        # and `last_attempt_replica` is set to '1' (node1) in the root znode.
+        node2.query(f"SYSTEM STOP VIEW {db_name}.{table_name}")
+
+        # Trigger a refresh and wait for completion. After this, the root znode
+        # has `last_attempt_replica = '1'` written by node1.
+        node1.query(f"SYSTEM REFRESH VIEW {db_name}.{table_name}")
+        node1.query(f"SYSTEM WAIT VIEW {db_name}.{table_name}")
+
+        # Build the coordination path: default_replica_path defaults to
+        # /clickhouse/tables/{uuid}/{shard}, and the test cluster macro is shard='shard1'.
+        uuid = node1.query(
+            f"SELECT uuid FROM system.tables WHERE database = '{db_name}' AND name = '{table_name}'"
+        ).strip()
+        coordination_path = f"/clickhouse/tables/{uuid}/shard1"
+        running_znode_path = f"{coordination_path}/running"
+
+        # Wait for node1's refresh task to release `/running` after the previous
+        # refresh completed; we must plant our stale lock into a clean state.
+        zk_client = cluster.get_kazoo_client("zoo1")
+        deadline = time.monotonic() + 15
+        while zk_client.exists(running_znode_path) is not None:
+            if time.monotonic() > deadline:
+                raise AssertionError(
+                    f"`/running` znode at {running_znode_path} did not disappear after WAIT VIEW"
+                )
+            time.sleep(0.1)
+
+        # Plant a stale `/running` znode that mimics what a previous lifetime of
+        # node1 would have left behind. The data ('1') matches node1's replica name.
+        zk_client.create(running_znode_path, b"1", ephemeral=False, makepath=False)
+        assert zk_client.exists(running_znode_path) is not None
+
+        # Trigger another refresh on node1. Without the fix, refreshTask would
+        # see running_znode_exists=true + last_attempt_replica='1' and abort with
+        # `Logical error: 'Unexpected refresh lock in keeper'` under DEBUG/ASan/MSan/TSan.
+        # With the fix, refreshTask logs a warning, removes the stale znode, and
+        # reschedules; the refresh completes within a few seconds.
+        node1.query(f"SYSTEM REFRESH VIEW {db_name}.{table_name}")
+        # WAIT VIEW will block until the refresh is no longer Running/Scheduling/etc.
+        # The recovery path schedules a 5s retry, after which the refresh proceeds
+        # normally — well within the default WAIT VIEW timeout.
+        node1.query(f"SYSTEM WAIT VIEW {db_name}.{table_name}")
+
+        # Verify the server is alive and the refresh succeeded (no abort).
+        assert (
+            node1.query(
+                f"SELECT last_refresh_replica = '1' AND exception = '' "
+                f"FROM system.view_refreshes "
+                f"WHERE database = '{db_name}' AND view = '{table_name}'"
+            ).strip()
+            == "1"
+        )
+
+        # The recovery path should have removed the stale znode. (A new ephemeral
+        # `/running` may appear briefly during the next refresh; that one carries
+        # the same data but a different ephemeralOwner. We just verify the planted
+        # one no longer holds the path: i.e. the path is now either gone or has
+        # been re-created with a different stat ctime than our planted version.)
+        # Easiest assertion: the fresh refresh would have already removed the
+        # leftover and either re-created and re-removed `/running`, so by now the
+        # path should not be present.
+        assert zk_client.exists(running_znode_path) is None
+    finally:
+        try:
+            node2.query(f"SYSTEM START VIEW {db_name}.{table_name}")
+        except Exception:
+            pass
+        for node in nodes:
+            node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
