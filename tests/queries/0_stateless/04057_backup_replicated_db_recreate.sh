@@ -17,7 +17,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB="db_$CLICKHOUSE_DATABASE"
 ZK_PATH="/clickhouse/databases/$DB"
 
-TIMEOUT=30
+TIMEOUT=60
 
 function create_and_populate()
 {
@@ -47,7 +47,11 @@ function do_backups()
 create_and_populate
 
 # Start backup workers in the background. They submit `BACKUP ... ASYNC`
-# requests in a tight loop; the backups run concurrently on the server.
+# requests in a tight loop; the backups run concurrently on the server. More
+# workers widen the chance of catching the narrow race between reading
+# `max_log_ptr` and entering the snapshot loop.
+do_backups &
+do_backups &
 do_backups &
 do_backups &
 
