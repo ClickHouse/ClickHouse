@@ -392,6 +392,16 @@ void MetadataStorageInMemoryTransaction::createDirectoryRecursive(const std::str
                 continue;
             }
             accumulated += component.string() + "/";
+
+            /// Match `DiskLocal::createDirectories` semantics: refuse to traverse a path component
+            /// that already exists as a file. Without this check, `createDirectoryRecursive("a/b")`
+            /// would silently insert directory entries even when a file `a` already exists,
+            /// fabricating an impossible state where a path is both a file and a directory prefix.
+            std::string without_trailing_slash = accumulated.substr(0, accumulated.size() - 1);
+            if (metadata_storage.findFile(without_trailing_slash) != nullptr)
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                    "Cannot create directory {}: a file exists at intermediate path {}", path, without_trailing_slash);
+
             metadata_storage.directories.insert(accumulated);
         }
     });
