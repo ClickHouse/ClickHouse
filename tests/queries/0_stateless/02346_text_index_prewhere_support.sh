@@ -16,6 +16,7 @@ MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT \
     --query_plan_direct_read_from_text_index 1 \
     --query_plan_text_index_add_hint 1 \
     --local_filesystem_read_method pread \
+    --min_bytes_to_use_direct_io 0 \
     --compile_expressions 0 \
     --fsync_metadata 0"
 
