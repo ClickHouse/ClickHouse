@@ -70,20 +70,19 @@ function check_rows_read_http_xml()
     echo "XML HTTP OK"
 }
 
-status=0
-
-# Verify rows_read > 0 for each format via clickhouse-client
+# Verify rows_read > 0 for each format via clickhouse-client.
+# Each helper echoes either `<fmt> OK` or `<fmt> FAIL: rows_read=...`; the
+# `.reference` file expects all `OK`, so any `FAIL` line is caught cleanly
+# by the reference diff with the offending format visible in the report.
 for fmt in JSON JSONCompact JSONColumnsWithMetadata; do
-    check_rows_read_client_json "$fmt" || status=1
+    check_rows_read_client_json "$fmt"
 done
-check_rows_read_client_xml || status=1
+check_rows_read_client_xml
 
 # Same via HTTP
 for fmt in JSON JSONCompact JSONColumnsWithMetadata; do
-    check_rows_read_http_json "$fmt" || status=1
+    check_rows_read_http_json "$fmt"
 done
-check_rows_read_http_xml || status=1
+check_rows_read_http_xml
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS ${TABLE_NAME}"
-
-exit $status
