@@ -43,6 +43,8 @@ public:
 
     void prefetchBeginOfRange(Priority priority) override;
 
+    void updateAllMarkRanges(const MarkRanges & ranges) override;
+
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
     /// Return map (column to read) -> (list of all streams required to read this column).

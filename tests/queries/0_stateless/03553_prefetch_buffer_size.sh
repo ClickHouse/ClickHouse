@@ -3,6 +3,8 @@
 # - no-random-settings -- prefetch became non deterministic
 # - no-fasttest -- requires S3
 # - no-parallel-replicas -- query can be executed on another node
+# TODO(RRM): RemoteFSPrefetchedBytes/Reads are 0 because RRM bypasses the standard
+# prefetch path.  Restore expected values once RRM reports its own prefetch events.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

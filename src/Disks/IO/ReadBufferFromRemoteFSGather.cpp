@@ -1,4 +1,5 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Storages/MergeTree/RemoteReadingManager.h>
 #include <Common/CurrentThread.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
@@ -43,7 +44,13 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object, size_t start_offset)
 {
     current_object = object;
-    auto buf = read_buffer_creator(/* restricted_seek */true, object);
+
+    ReadSettings patched = settings;
+    patched.remote_read_buffer_restrict_seek = true;
+    if (patched.read_scope)
+        patched.read_scope = patched.read_scope->adjustForObject(start_offset, object.bytes_size);
+
+    auto buf = read_buffer_creator(patched, object);
 
     if (read_until_position > start_offset && read_until_position < start_offset + object.bytes_size)
         buf->setReadUntilPosition(read_until_position - start_offset);

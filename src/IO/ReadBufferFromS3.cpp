@@ -504,47 +504,57 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
 }
 
-Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const
+Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendGetObjectRequest(
+    const S3::Client & client,
+    const String & bucket_,
+    const String & key_,
+    const String & version_id_,
+    size_t attempt,
+    size_t range_begin,
+    std::optional<size_t> range_end_incl,
+    const ReadSettings & read_settings_)
 {
     S3::GetObjectRequest req;
-    req.SetBucket(bucket);
-    req.SetKey(key);
-    if (!version_id.empty())
-        req.SetVersionId(version_id);
+    req.SetBucket(bucket_);
+    req.SetKey(key_);
+    if (!version_id_.empty())
+        req.SetVersionId(version_id_);
 
     S3::setClickhouseAttemptNumber(req, attempt);
 
     if (range_end_incl)
     {
         req.SetRange(fmt::format("bytes={}-{}", range_begin, *range_end_incl));
-        LOG_TEST(
-            log, "Read S3 object. Bucket: {}, Key: {}, Version: {}, Range: {}-{}",
-            bucket, key, version_id.empty() ? "Latest" : version_id, range_begin, *range_end_incl);
     }
     else if (range_begin)
     {
         req.SetRange(fmt::format("bytes={}-", range_begin));
-        LOG_TEST(
-            log, "Read S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}",
-            bucket, key, version_id.empty() ? "Latest" : version_id, range_begin);
     }
 
     ProfileEvents::increment(ProfileEvents::S3GetObject);
-    if (client_ptr->isClientForDisk())
+    if (client.isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
 
-    // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
-    CurrentThread::IOSchedulingScope io_scope(read_settings.io_scheduling);
-    CurrentThread::ReadThrottlingScope read_throttling_scope(read_settings.remote_throttler);
-    Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
+    CurrentThread::IOSchedulingScope io_scope(read_settings_.io_scheduling);
+    CurrentThread::ReadThrottlingScope read_throttling_scope(read_settings_.remote_throttler);
+    Aws::S3::Model::GetObjectOutcome outcome = client.GetObject(req);
 
     if (outcome.IsSuccess())
         return outcome.GetResultWithOwnership();
 
     const auto & error = outcome.GetError();
     throw S3Exception(error.GetMessage(), error.GetErrorType());
+}
+
+Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const
+{
+    LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Version: {}, Range: {}-{}",
+        bucket, key, version_id.empty() ? "Latest" : version_id,
+        range_begin, range_end_incl ? std::to_string(*range_end_incl) : "");
+
+    return sendGetObjectRequest(*client_ptr, bucket, key, version_id, attempt, range_begin, range_end_incl, read_settings);
 }
 
 ObjectMetadata ReadBufferFromS3::getObjectMetadataFromTheLastRequest() const

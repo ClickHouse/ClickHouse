@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
 #include <Core/Defines.h>
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
@@ -16,6 +17,8 @@ namespace DB
 class MMappedFileCache;
 class PageCache;
 class Context;
+struct ReadScope;
+using ReadScopePtr = std::shared_ptr<const ReadScope>;
 
 struct ReadSettings
 {
@@ -93,6 +96,11 @@ struct ReadSettings
     DistributedCacheSettings distributed_cache_settings;
     std::optional<FileCacheOriginInfo> filecache_origin_info;
     bool enable_hdfs_pread = true;
+
+    /// When set by RemoteReadingManager, object storage implementations
+    /// call back into RRM to create the bottom-level read buffer
+    /// instead of creating ReadBufferFromS3 (or similar) directly.
+    ReadScopePtr read_scope;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
     ReadSettings withNestedBuffer(bool seekable = false) const;

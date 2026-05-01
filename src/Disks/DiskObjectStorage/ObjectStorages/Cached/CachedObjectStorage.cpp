@@ -67,9 +67,15 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
             auto global_context = Context::getGlobalContextInstance();
             auto modified_read_settings = read_settings.withNestedBuffer();
 
-            auto read_buffer_creator = [this, object, read_settings, read_hint]()
+            auto read_buffer_creator = [this, object, read_settings, read_hint](const ReadSettings & caller_settings)
             {
-                return object_storage->readObject(object, patchSettings(read_settings), read_hint);
+                /// Use the original read_settings as base to preserve buffer
+                /// allocation semantics (use_external_buffer, buffer sizes).
+                /// Only overlay read_scope from the caller — it carries cache
+                /// pre-padding info needed by the RRM prefetch path.
+                auto patched = patchSettings(read_settings);
+                patched.read_scope = caller_settings.read_scope;
+                return object_storage->readObject(object, patched, read_hint);
             };
 
             return std::make_unique<CachedOnDiskReadBufferFromFile>(

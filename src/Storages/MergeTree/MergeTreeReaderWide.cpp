@@ -77,6 +77,13 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
+void MergeTreeReaderWide::updateAllMarkRanges(const MarkRanges & ranges)
+{
+    IMergeTreeReader::updateAllMarkRanges(ranges);
+    for (auto & [_, stream] : streams)
+        stream->resetForNewRanges(ranges);
+}
+
 void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();

@@ -92,6 +92,19 @@ public:
 
     std::optional<size_t> getRemoteFileSize() const override;
 
+    /// Open an S3 HTTP connection for the given byte range and return the raw result.
+    /// Can be used independently of a ReadBufferFromS3 instance — e.g. by RRM
+    /// to open a connection and extract the socket FD for async reading.
+    static Aws::S3::Model::GetObjectResult sendGetObjectRequest(
+        const S3::Client & client,
+        const String & bucket,
+        const String & key,
+        const String & version_id,
+        size_t attempt,
+        size_t range_begin,
+        std::optional<size_t> range_end_incl,
+        const ReadSettings & read_settings);
+
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 

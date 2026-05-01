@@ -786,21 +786,27 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 #if ENABLE_DISTRIBUTED_CACHE
     use_distributed_cache = enable_distributed_cache && DistributedCache::canUseDistributedCacheForRead(read_settings, *object_storages->takePointingTo(cluster->getLocalLocation()));
 #endif
-    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+    /// When RRM manages prefetch, disable AsynchronousBoundedReadBuffer
+    /// to avoid double-prefetching from the same S3 object.
+    const bool use_async_buffer = !read_settings.read_scope
+        && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     const bool file_cache_enabled = object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache() && read_settings.enable_filesystem_cache;
+    /// When RRM manages prefetch, disable in-memory page cache — RRM already
+    /// holds the data in memory and the page cache would attempt to read
+    /// beyond the prefetched range boundaries.
     const bool use_page_cache =
-        read_settings.page_cache
+        !read_settings.read_scope
+        && read_settings.page_cache
         && (use_distributed_cache ? read_settings.use_page_cache_with_distributed_cache
                                   : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
 
     const bool use_external_buffer_for_gather = use_async_buffer || use_page_cache || use_distributed_cache;
 
     auto read_buffer_creator =
-        [this, read_settings, read_hint]
-        (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
+        [this, read_hint]
+        (const ReadSettings & object_read_settings, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        read_settings.remote_read_buffer_restrict_seek = restricted_seek;
-        return object_storages->takePointingTo(cluster->getLocalLocation())->readObject(object_, read_settings, read_hint);
+        return object_storages->takePointingTo(cluster->getLocalLocation())->readObject(object_, object_read_settings, read_hint);
     };
 
     /// Avoid cache fragmentation by choosing a bigger buffer size.

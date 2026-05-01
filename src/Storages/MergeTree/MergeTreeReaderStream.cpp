@@ -1,9 +1,11 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/RemoteReadingManager.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <utility>
 #include <filesystem>
@@ -48,6 +50,17 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 
 MergeTreeReaderStream::~MergeTreeReaderStream() = default;
 
+void MergeTreeReaderStream::resetForNewRanges(const MarkRanges & new_ranges)
+{
+    all_mark_ranges = new_ranges;
+    initialized = false;
+    last_right_offset.reset();
+    data_buffer = nullptr;
+    plain_file_buffer = nullptr;
+    compressed_data_buffer = nullptr;
+    read_buffer_holder.reset();
+}
+
 void MergeTreeReaderStream::loadMarks()
 {
     if (!marks_getter)
@@ -77,13 +90,83 @@ void MergeTreeReaderStream::init()
     if (!read_settings.local_fs_buffer_size || !read_settings.remote_fs_buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
+    auto & rrm = RemoteReadingManager::instance();
+    const String file_name = path_prefix + data_file_extension;
+
+    /// Build per-granule compressed file byte ranges for RRM.
+    /// marks_getter is loaded by estimateMarkRangeBytes above.
+    std::vector<ReadScope::ByteRange> reading_ranges;
+    if (marks_getter)
+    {
+        size_t total_granules = 0;
+        for (const auto & range : all_mark_ranges)
+            total_granules += range.end - range.begin;
+        reading_ranges.reserve(total_granules);
+
+        for (const auto & range : all_mark_ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                size_t begin = marks_getter->getMark(mark, 0).offset_in_compressed_file;
+                size_t end = (mark + 1 < range.end)
+                    ? marks_getter->getMark(mark + 1, 0).offset_in_compressed_file
+                    : getRightOffset(range.end);
+                reading_ranges.push_back({begin, end});
+
+                if (mark + 1 >= range.end)
+                {
+                    LOG_DEBUG(getLogger("MergeTreeReaderStream"),
+                        "reading_ranges: last granule mark={} begin={} end={} (getRightOffset({})={})"
+                        " mark0_col0=[{},{}] num_cols={}",
+                        mark, begin, end, range.end, getRightOffset(range.end),
+                        marks_getter->getMark(mark, 0).offset_in_compressed_file,
+                        marks_getter->getMark(mark, 0).offset_in_decompressed_block,
+                        marks_loader->getNumColumns());
+                }
+            }
+        }
+
+        /// Some serializations (e.g. LowCardinality) store prefix data
+        /// before the first granule.  `deserializeBinaryBulkStatePrefix`
+        /// reads this prefix regardless of which marks are requested.
+        /// Prepend [0, prefix_end) so the scope covers it.
+        ///
+        /// For regular .bin files, mark 0 has a non-zero offset when
+        /// prefix data (e.g. shared dictionary) is stored before it,
+        /// so [0, mark0_offset) covers exactly the prefix.
+        ///
+        /// For .dict.bin files, mark 0 is at offset 0 — the prefix
+        /// lives inside the first compressed block.  Find the block
+        /// boundary by scanning for the first mark with a different
+        /// `offset_in_compressed_file`.
+        size_t mark0_offset = marks_getter->getMark(0, 0).offset_in_compressed_file;
+        size_t prefix_end = mark0_offset;
+        if (mark0_offset == 0 && marks_count > 1)
+        {
+            for (size_t m = 1; m < marks_count; ++m)
+            {
+                size_t off = marks_getter->getMark(m, 0).offset_in_compressed_file;
+                if (off != 0)
+                {
+                    prefix_end = off;
+                    break;
+                }
+            }
+        }
+        reading_ranges.insert(reading_ranges.begin(), {0, prefix_end});
+    }
+
+    auto scope = ReadScope::create(
+        data_part_storage->getRelativePath(), all_mark_ranges, settings.read_phase, std::move(reading_ranges));
+
+    LOG_DEBUG(getLogger("MergeTreeReaderStream"),
+        "init: file={} file_size={} marks_count={} scope=[{}]",
+        file_name, file_size, marks_count, scope->toString());
+
     /// Initialize the objects that shall be used to perform read operations.
     if (!settings.is_compressed)
     {
-        auto buffer = data_part_storage->readFile(
-            path_prefix + data_file_extension,
-            read_settings,
-            estimated_sum_mark_range_bytes);
+        auto buffer = rrm.createReadBuffer(scope, *data_part_storage, file_name, read_settings, estimated_sum_mark_range_bytes);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -95,14 +178,12 @@ void MergeTreeReaderStream::init()
     else if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
-            [this, estimated_sum_mark_range_bytes, read_settings]()
+            std::string(fs::path(data_part_storage->getFullPath()) / file_name),
+            [this, scope, estimated_sum_mark_range_bytes, read_settings]()
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
-                return data_part_storage->readFile(
-                    path_prefix + data_file_extension,
-                    read_settings,
-                    estimated_sum_mark_range_bytes);
+                return RemoteReadingManager::instance().createReadBuffer(
+                    scope, *data_part_storage, path_prefix + data_file_extension, read_settings, estimated_sum_mark_range_bytes);
             },
             uncompressed_cache,
             settings.allow_different_codecs);
@@ -120,10 +201,8 @@ void MergeTreeReaderStream::init()
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            data_part_storage->readFile(
-                path_prefix + data_file_extension,
-                read_settings,
-                estimated_sum_mark_range_bytes), settings.allow_different_codecs);
+            rrm.createReadBuffer(scope, *data_part_storage, file_name, read_settings, estimated_sum_mark_range_bytes),
+            settings.allow_different_codecs);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -145,6 +224,11 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
     loadMarks();
 
     const auto & mark = marks_getter->getMark(row_index, column_position);
+
+    LOG_DEBUG(getLogger("MergeTreeReaderStream"),
+        "seekToMarkAndColumn: file={} row={} col={} offset_compressed={} offset_decompressed={}",
+        path_prefix + data_file_extension, row_index, column_position,
+        mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
 
     try
     {

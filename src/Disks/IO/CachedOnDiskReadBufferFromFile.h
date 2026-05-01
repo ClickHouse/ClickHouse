@@ -24,7 +24,9 @@ namespace DB
 class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
-    using ImplementationBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>()>;
+    /// Factory that creates the underlying object-storage read buffer.
+    /// Receives ReadSettings so the caller can patch read_scope with cache_pre_padding_bytes.
+    using ImplementationBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(const ReadSettings &)>;
 
     CachedOnDiskReadBufferFromFile(
         const String & source_file_path_,
@@ -112,6 +114,11 @@ public:
         /// Query read settings.
         const ReadSettings settings;
 
+        /// ReadScope adjusted for the current cache batch.
+        /// Populated after nextFileSegmentsBatch() with cache_pre_padding_bytes
+        /// computed from MISSING segments in the batch.
+        ReadScopePtr adjusted_read_scope;
+
         /// Non-included range end offset.
         size_t read_until_position = 0;
         /// List of file segments which we need to read
@@ -119,6 +126,10 @@ public:
         FileSegmentsHolderPtr file_segments;
 
         void reset();
+
+        /// Walk current batch segments, compute cache_pre_padding_bytes
+        /// by intersecting MISSING segment ranges with reading_ranges from read_scope.
+        void computeAdjustedReadScope();
     };
 
 private:

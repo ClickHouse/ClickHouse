@@ -1,0 +1,45 @@
+=== data correctness ===
+wide, no prewhere:
+1000	499500	4500	999000
+wide, explicit prewhere:
+400	201000	402000
+compact, no prewhere:
+1000	499500	4500	999000
+compact, explicit prewhere:
+400	201000	402000
+wide, read in order with prewhere:
+400	201000	402000
+--- wide, no prewhere ---
+a.bin	Rest
+b.bin	Rest
+c.bin	Rest
+--- wide, explicit prewhere on b ---
+a.bin	Rest
+b.bin	Prewhere
+c.bin	Rest
+--- wide, auto prewhere on b ---
+a.bin	Rest
+b.bin	Prewhere
+c.bin	Rest
+--- compact, no prewhere ---
+data.bin	Rest
+--- compact, explicit prewhere on b ---
+data.bin	Prewhere
+data.bin	Rest
+--- wide, read in order with prewhere ---
+a.bin	Rest
+b.bin	Prewhere
+c.bin	Rest
+=== ReadBufferFromRRM prefetch ===
+--- wide, no prewhere ---
+1
+--- wide, explicit prewhere on b ---
+1
+--- wide, auto prewhere on b ---
+1
+--- compact, no prewhere ---
+1
+--- compact, explicit prewhere on b ---
+1
+--- wide, read in order with prewhere ---
+1

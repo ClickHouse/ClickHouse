@@ -2,6 +2,8 @@
 -- - no-fasttest -- requires S3
 -- - no-random-settings -- more deterministic prefetch
 -- - no-parallel-replicas -- other replicas may do prefetch
+-- TODO(RRM): `RemoteFSPrefetches` is 0 for wide parts because RRM bypasses the
+-- standard prefetch path.  Restore expected counts once RRM reports its own events.
 
 -- Disable multibuffer, there is a separate test
 SET merge_tree_compact_parts_min_granules_to_multibuffer_read = 129;
