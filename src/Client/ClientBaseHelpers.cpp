@@ -533,7 +533,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 }
 
-String highlighted(const String & query, const Context & context)
+String highlighted(const String & query, const Context & context, bool rainbow_parentheses)
 {
     const size_t num_code_points = countCodePointsWithSeqLength(query, query.data() + query.size());
 
