@@ -9,12 +9,14 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -183,6 +185,34 @@ void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPt
             "Disk name `{}` is a custom disk that is used in other table. "
             "That disk could not be used by a reference by other tables. The custom disk should be fully specified with a disk function.",
             disk_name);
+}
+
+void DiskFromAST::convertCustomDiskField(Field & value, ContextPtr context, bool attach)
+{
+    CustomType custom;
+    ASTPtr value_as_custom_ast = nullptr;
+    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+
+    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
+    {
+        auto disk_name = createCustomDisk(value_as_custom_ast, context, attach);
+        LOG_DEBUG(getLogger("DiskFromAST"), "Created custom disk {}", disk_name);
+        value = disk_name;
+    }
+    else
+    {
+        ensureDiskIsNotCustom(value.safeGet<String>(), context);
+    }
+}
+
+void DiskFromAST::convertCustomDiskSettings(SettingsChanges & changes, ContextPtr context, bool attach)
+{
+    for (auto & change : changes)
+    {
+        if (change.name == "disk")
+            convertCustomDiskField(change.value, context, attach);
+    }
 }
 
 }

@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
@@ -4627,7 +4628,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     if (old_metadata.hasSettingsChanges())
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
-        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
+        /// Take a non-const copy so we can convert any inline `disk = disk(...)` setting (a parser-
+        /// produced `CustomType` `Field`) into a registered disk name string. Without this every
+        /// subsequent `safeGet<String>`, `MergeTreeSettings::checkCanSet` and `applyChanges` call
+        /// in this block would throw `Bad get: has CustomType, requested String` (issue #63019)
+        /// when the table was created with `SETTINGS disk = disk(...)`.
+        SettingsChanges new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        DiskFromAST::convertCustomDiskSettings(new_changes, local_context, /* attach */ false);
+
         local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
@@ -4814,7 +4823,15 @@ void MergeTreeData::changeSettings(
     {
         bool has_storage_policy_changed = false;
 
-        const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
+        /// Take a non-const copy so an inline `disk = disk(...)` setting (a `CustomType` `Field`
+        /// produced by the parser) is converted to a registered disk name string before any
+        /// `safeGet<String>` or `applyChanges` call. This mirrors the pre-processing done by
+        /// `MergeTreeSettingsImpl::loadFromQuery` on the `CREATE TABLE ... SETTINGS disk = disk(...)`
+        /// path; without it, every ALTER that re-applies the table's settings would throw
+        /// `Bad get: has CustomType, requested String` (issue #63019).
+        SettingsChanges new_changes = new_settings->as<const ASTSetQuery &>().changes;
+        DiskFromAST::convertCustomDiskSettings(new_changes, getContext(), /* attach */ false);
+
         StoragePolicyPtr new_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
@@ -8935,7 +8952,11 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     auto settings = getDefaultSettings();
     if (metadata.settings_changes)
     {
-        const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        /// Take a non-const copy so any inline `disk = disk(...)` setting can be normalised to a
+        /// registered disk name string before `applyChanges` reaches `SettingFieldString::operator=`
+        /// (issue #63019).
+        SettingsChanges changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        DiskFromAST::convertCustomDiskSettings(changes, getContext(), /* attach */ false);
         settings->applyChanges(changes);
     }
 

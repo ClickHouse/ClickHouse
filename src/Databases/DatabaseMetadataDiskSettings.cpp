@@ -2,8 +2,6 @@
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Disks/DiskFromAST.h>
-#include <Parsers/isDiskFunction.h>
-#include <Parsers/FieldFromAST.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context.h>
 #include <Core/BaseSettings.h>
@@ -47,20 +45,7 @@ void DatabaseMetadataDiskSettingsImpl::loadFromQuery(ASTStorage & storage_def, C
         return;
     }
 
-    ASTPtr value_as_custom_ast = nullptr;
-    CustomType custom;
-    if (value->tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
-        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-
-    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
-    {
-        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_attach);
-        *value = disk_name;
-    }
-    else
-    {
-        DiskFromAST::ensureDiskIsNotCustom(value->safeGet<String>(), context);
-    }
+    DiskFromAST::convertCustomDiskField(*value, context, is_attach);
     [[maybe_unused]] auto disk = context->getDisk(value->safeGet<String>());
     chassert(disk);
 
