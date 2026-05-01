@@ -165,6 +165,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     if (!endpointOverride.empty())
     {
         static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
+        static const RE2 s3express_region_pattern(R"(^s3express(?:-[a-z0-9\-]+)?(?:\.dualstack)?\.([a-z0-9\-]+)\.amazonaws\.)");
         Poco::URI uri(endpointOverride);
         if (uri.getScheme() == "http")
             scheme = Aws::Http::Scheme::HTTP;
@@ -172,7 +173,9 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
         if (force_region.empty())
         {
             String matched_region;
-            if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
+            if (
+                re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region)
+                || re2::RE2::PartialMatch(uri.getHost(), s3express_region_pattern, &matched_region))
             {
                 boost::algorithm::to_lower(matched_region);
                 region = matched_region;
