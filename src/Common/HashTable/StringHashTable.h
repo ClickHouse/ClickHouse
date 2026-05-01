@@ -137,7 +137,7 @@ struct StringHashTableEmpty
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]{}; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw storage for placement new, only written when has_zero becomes true
 
 public:
     bool hasZero() const { return has_zero; }
