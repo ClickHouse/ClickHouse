@@ -1,7 +1,9 @@
--- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- Test that read-in-order optimization is rejected when primary key selectivity is poor.
 -- When the WHERE clause cannot use the primary key (e.g., LIKE '%...'),
 -- the optimizer should not apply read-in-order because it kills parallelism.
+-- Each query disables parallel replicas at the query level rather than relying on a tag,
+-- to keep coverage across other configurations while still pinning behavior of the check.
 
 DROP TABLE IF EXISTS t_read_in_order_pk;
 
@@ -40,7 +42,7 @@ SELECT count() FROM (
     SELECT * FROM t_read_in_order_pk
     WHERE path LIKE '%file.log'
     ORDER BY path
-    SETTINGS read_in_order_max_primary_key_ratio = 0.5
+    SETTINGS enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5
 );
 
 -- Setting `read_in_order_max_primary_key_ratio` = 1.0 should disable the rejection.
