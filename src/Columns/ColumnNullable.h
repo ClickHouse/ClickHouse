@@ -41,17 +41,21 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnNullable>, ColumnNullable>;
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & null_map_)
     {
-        /// The caller is allowed to keep its own immutable reference (per the comment above), so the
+        /// Per the doc comment above, the caller may keep its own immutable references — the
         /// underlying columns may be shared. `assumeMutable` here would `chassert(use_count() == 1)`
-        /// and abort. Mirror the logic of `COW::shallowMutate`: clone when the column is shared,
-        /// fall back to `assumeMutable` when the caller already passed in a uniquely-owned reference.
-        auto take_unique = [](const ColumnPtr & ptr) -> MutableColumnPtr
-        {
-            if (ptr->use_count() == 1)
-                return ptr->assumeMutable();
-            return IColumn::mutate(ptr);
-        };
-        return ColumnNullable::create(take_unique(nested_column_), take_unique(null_map_));
+        /// and abort, while `IColumn::mutate` would deep-clone and break invariants of composite
+        /// types like `LowCardinality(Nullable(...))`: inside `ColumnUnique::forEachMutableSubcolumn`,
+        /// after deep-cloning `column_holder`, the recursive call recreates `nested_column_nullable`
+        /// via `ColumnNullable::create(column_holder, nested_null_mask)`. With the cloning variant
+        /// of this overload, `nested_null_mask` (which still aliases the original `ColumnUnique`)
+        /// would be deep-cloned into the new `ColumnNullable`, so subsequent `updateNullMask`
+        /// resizes on `nested_null_mask` no longer propagate to `nested_column_nullable.null_map`.
+        /// Bypass the assertion via const_cast `+ getPtr` — equivalent to the old `assumeMutable`
+        /// fast path. The result is returned as `Ptr` (immutable), and any mutation must go through
+        /// `IColumn::mutate`, which deep-clones shared sub-columns at the proper time.
+        return ColumnNullable::create(
+            const_cast<IColumn *>(nested_column_.get())->getPtr(),
+            const_cast<IColumn *>(null_map_.get())->getPtr());
     }
 
     template <typename ... Args>
