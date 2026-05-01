@@ -945,21 +945,21 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             else
                 return false;
 
-            ASTPtr params_ast;
-            while (ParserLiteral{}.parse(pos, params_ast, expected))
+            ASTPtr arg_ast;
+            while (ParserLiteral{}.parse(pos, arg_ast, expected))
             {
-                const auto & value = params_ast->as<ASTLiteral &>().value;
+                const auto & value = arg_ast->as<ASTLiteral &>().value;
                 if (value.getType() == Field::Types::String)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<String>());
+                    res->instrumentation_arguments.emplace_back(value.safeGet<String>());
                 else if (value.getType() == Field::Types::Int64)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<Int64>());
+                    res->instrumentation_arguments.emplace_back(value.safeGet<Int64>());
                 else if (value.getType() == Field::Types::UInt64)
-                    res->instrumentation_parameters.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
+                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
                 else if (value.getType() == Field::Types::Float64)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<Float64>());
+                    res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
             }
 
-            if (res->instrumentation_parameters.empty())
+            if (res->instrumentation_arguments.empty())
                 return false;
 
             break;
