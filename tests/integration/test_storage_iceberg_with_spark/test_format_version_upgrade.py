@@ -134,6 +134,50 @@ def test_format_version_upgrade_v1_to_v2(started_cluster_iceberg_with_spark, sto
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_after_external_upgrade(started_cluster_iceberg_with_spark, storage_type):
+    """`EXECUTE remove_orphan_files` must consult the latest metadata for its v2 gate.
+
+    A previous release used the cached `format_version` from `PersistentTableComponents`,
+    which is captured when the table is opened. After an external v1 -> v2 upgrade between
+    queries, the cached value remained `1` and `remove_orphan_files` was rejected with
+    `requires Iceberg format version >= 2, but this table uses format version 1`. The fix
+    re-reads the latest metadata file at command time.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    table_name = f"test_fmt_orphan_after_upgrade_{get_uuid_str()}"
+
+    create_iceberg_table(
+        storage_type, instance, table_name,
+        started_cluster_iceberg_with_spark, "(x Int)", format_version=1,
+    )
+
+    instance.query(
+        f"INSERT INTO {table_name} VALUES (1), (2), (3);",
+        settings=ICEBERG_SETTINGS,
+    )
+
+    # Open the table on the read path so PersistentTableComponents is populated
+    # with the v1 format version (the value the bug captures and never refreshes).
+    assert instance.query(f"SELECT sum(x) FROM {table_name}").strip() == "6"
+
+    # Simulate an external tool (e.g. Spark) upgrading the format version v1 -> v2.
+    meta, prev_path = _read_iceberg_metadata(instance, table_name)
+    assert meta["format-version"] == 1
+    meta["format-version"] = 2
+    _write_iceberg_metadata(instance, table_name, meta, prev_path)
+
+    # `remove_orphan_files` must read the latest metadata for its v2 gate. Without the
+    # fix this throws because the cached `format_version` is still 1.
+    now_ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    instance.query(
+        f"ALTER TABLE {table_name} EXECUTE remove_orphan_files(older_than = '{now_ts}', dry_run = 1);",
+        settings={**ICEBERG_SETTINGS, "allow_iceberg_remove_orphan_files": 1},
+    )
+
+    instance.query(f"DROP TABLE {table_name}")
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_format_version_avro_metadata_fallback(
     started_cluster_iceberg_with_spark, storage_type, format_version, tmp_path
