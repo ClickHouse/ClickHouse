@@ -53,6 +53,7 @@
             --border-color: #CCC;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --button-color: var(--altinity-accent);
+            --button-text-color: #000;
             --text-color: #000;
             --text-color-active: #000;
             --button-active-color: var(--altinity-accent);
@@ -435,6 +436,7 @@
             padding: 0.25rem 0.65rem;
             cursor: pointer;
             position: relative;
+            font-size: 100%;
         }
 
         .copy-balloon
@@ -477,6 +479,7 @@
             padding: 0.25rem 0.65rem;
             cursor: pointer;
             position: relative;
+            font-size: 100%;
         }
 
         #download
@@ -692,19 +695,19 @@
                 <button type="submit" class="shadow" id="run">Run</button>
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
                 <query-progress id="query-progress"></query-progress>
-                <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
+                <button type="button" id="copy-div" class="shadow" title="Copy raw result to clipboard" aria-label="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                     </svg>
-                </div>
-                <div id="download-div" class="shadow">
+                </button>
+                <button type="button" id="download-div" class="shadow" title="Download query result" aria-label="Download query result">
                     <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
-                </div>
+                </button>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
         </form>
@@ -2554,7 +2557,8 @@ let in_flight = false;
 
 // Favicon changes to gray while a query is running, to indicate progress on the browser tab.
 const favicon_default = document.querySelector('link[rel="icon"]').href;
-const favicon_running = 'data:image/svg+xml;base64,' + btoa(atob(favicon_default.split(',')[1]).replace('#ff0', '#bbb'));
+const favicon_svg = atob(favicon_default.split(',')[1]);
+const favicon_running = 'data:image/svg+xml;base64,' + btoa(favicon_svg.replace(/#(?:ff0|199DCF)/i, '#bbb'));
 
 function setFavicon(href) { document.querySelector('link[rel="icon"]').href = href; }
 
