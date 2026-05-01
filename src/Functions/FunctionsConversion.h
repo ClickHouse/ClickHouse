@@ -476,7 +476,11 @@ struct ToTimeTransform64
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
 
-        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
+        /// Clamp in unsigned domain to avoid wrong saturation when from > INT64_MAX is converted to signed time_t.
+        if constexpr (std::is_unsigned_v<FromType>)
+            return static_cast<ToType>(std::min<UInt64>(from, static_cast<UInt64>(MAX_TIME_TIMESTAMP)));
+        else
+            return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
     }
 };
 
@@ -534,7 +538,11 @@ struct ToDateTime64TransformUnsigned
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
         }
         else
-            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(std::min<time_t>(from, MAX_DATETIME64_TIMESTAMP), 0, scale_multiplier);
+        {
+            /// Clamp in unsigned domain to avoid wrong saturation when from > INT64_MAX is converted to signed time_t.
+            auto clamped = static_cast<time_t>(std::min<UInt64>(from, static_cast<UInt64>(MAX_DATETIME64_TIMESTAMP)));
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
+        }
     }
 };
 
