@@ -26,7 +26,7 @@ size_t ObjectStorageSourceReader::read(
     /// Prefer readBigAt for stateless range reads (S3, Azure support this).
     if (buf->supportsReadAt())
     {
-        size_t bytes_read = buf->readBigAt(buffer, size, offset, /*progress_callback=*/{});
+        size_t bytes_read = buf->readBigAt(buffer, size, offset, {});
         LOG_TRACE(log, "read: readBigAt got {} bytes from {}", bytes_read, object.remote_path);
         return bytes_read;
     }

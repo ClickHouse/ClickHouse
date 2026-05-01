@@ -311,6 +311,9 @@ std::optional<size_t> ReadBufferFromAzureBlobStorage::getRemoteFileSize() const
 
 size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const
 {
+    if (!blob_client)
+        blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
+
     size_t initial_n = n;
     size_t sleep_time_with_backoff_milliseconds = 100;
 

@@ -64,7 +64,7 @@ private:
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
-    BlobClientPtr blob_client;
+    mutable BlobClientPtr blob_client;
 
     const String path;
     size_t max_single_read_retries;
