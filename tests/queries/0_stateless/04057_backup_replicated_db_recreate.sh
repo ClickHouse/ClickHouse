@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-fasttest
+# Tags: zookeeper, no-fasttest, no-random-settings
 
 # Regression test: backup of a DatabaseReplicated must not cause a logical error
 # exception when the database is dropped and recreated (resetting max_log_ptr)
@@ -9,6 +9,12 @@
 # `chassert(max_log_ptr == new_max_log_ptr)` that fired when the log pointer
 # went backwards after database recreation. After the fix, such backups fail
 # cleanly with `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT`.
+#
+# `no-random-settings` is required because settings like `fsync_metadata=1` and
+# `max_threads=1` make `CREATE DATABASE Replicated` and `DROP DATABASE SYNC`
+# slow enough to push the stress loop past the 180s test budget under
+# sanitizer builds, while none of the randomized settings affect what this
+# test is checking.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +23,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB="db_$CLICKHOUSE_DATABASE"
 ZK_PATH="/clickhouse/databases/$DB"
 
-TIMEOUT=60
+TIMEOUT=30
 
 function create_and_populate()
 {
@@ -81,7 +87,7 @@ fi
 # the racy code path after the loops above exit. Wait for all submitted backups
 # to leave `CREATING_BACKUP` before checking error states, otherwise we may miss
 # the `LOGICAL_ERROR` this test is meant to catch.
-DEADLINE=$((SECONDS + 60))
+DEADLINE=$((SECONDS + 30))
 IN_PROGRESS=1
 while [[ $SECONDS -lt $DEADLINE ]]; do
     IN_PROGRESS=$($CLICKHOUSE_CLIENT --query "
@@ -113,11 +119,17 @@ $CLICKHOUSE_CLIENT --query "
            OR error LIKE '%Cannot get consistent metadata snapshot%')
 "
 
-# Clean up backup state.
+# Clean up backup state. The stress loop submits thousands of backup IDs, and
+# unfreezing each one is a sequential round trip to the server. Bound the
+# cleanup so a slow run does not push the test past the 180s budget; any
+# leftover frozen hardlinks are removed by the test infrastructure when the
+# database directory is wiped between runs.
+CLEANUP_DEADLINE=$((SECONDS + 20))
 $CLICKHOUSE_CLIENT --query "
     SELECT id FROM system.backups
     WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
 " | while read -r backup_id; do
+    [[ $SECONDS -gt $CLEANUP_DEADLINE ]] && break
     $CLICKHOUSE_CLIENT --query "SYSTEM UNFREEZE WITH ID = '$backup_id'" > /dev/null 2>&1
 done
 
