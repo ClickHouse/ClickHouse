@@ -139,10 +139,14 @@ ActionsDAG analyzeExpressionToActionsDAG(
     /// nodes as deterministic constants.  The sets have been evaluated and are now
     /// fixed values, so assertDeterministic() should not reject them (e.g. when
     /// used in partition key expressions like PARTITION BY exists((SELECT 1))).
+    /// Identify set columns by their data type (`DataTypeSet`), not by name prefix
+    /// alone — a user may legally have a column named `__set_x`, and we must not
+    /// flip its `is_deterministic_constant` flag based on the name.
     for (const auto & node : actions.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN
-            && node.result_name.starts_with("__set_")
+            && node.result_type
+            && node.result_type->getTypeId() == TypeIndex::Set
             && !node.is_deterministic_constant)
         {
             const_cast<ActionsDAG::Node &>(node).is_deterministic_constant = true;
@@ -250,7 +254,7 @@ ActionsDAG analyzeExpressionToActionsDAG(
         {
             if (node.type == ActionsDAG::ActionType::COLUMN
                 && node.column && isColumnConst(*node.column)
-                && !node.result_name.starts_with("__set_"))
+                && (!node.result_type || node.result_type->getTypeId() != TypeIndex::Set))
             {
                 const auto & constant = assert_cast<const ColumnConst &>(*node.column);
                 const_cast<ActionsDAG::Node &>(node).result_name
