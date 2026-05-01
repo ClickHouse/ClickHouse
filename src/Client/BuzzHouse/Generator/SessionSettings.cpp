@@ -63,33 +63,9 @@ String settingCombinations(RandomGenerator & rg, DB::Strings && choices)
     return "'" + res + "'";
 }
 
-String generateNextCodecString(RandomGenerator & rg)
+static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choices)
 {
     String res;
-    DB::Strings choices;
-
-    if (rg.nextBool())
-    {
-        /// Pick just one
-        choices.emplace_back(rg.pickRandomly(codecs));
-    }
-    else
-    {
-        /// Pick a combination of some or none
-        std::vector<uint32_t> ids;
-        const uint32_t ncodecs = rg.randomInt<uint32_t>(1, std::min(UINT32_C(4), static_cast<uint32_t>(codecs.size())));
-
-        for (size_t i = 0; i < ncodecs; i++)
-        {
-            ids.emplace_back(i);
-        }
-        std::shuffle(ids.begin(), ids.end(), rg.generator);
-        for (uint32_t i = 0; i < ncodecs; i++)
-        {
-            choices.emplace_back(codecs[ids[i]]);
-        }
-    }
-
     for (size_t i = 0; i < choices.size(); i++)
     {
         if (i != 0)
@@ -131,6 +107,114 @@ String generateNextCodecString(RandomGenerator & rg)
         }
     }
     return res;
+}
+
+static DB::Strings pickCodecSubset(RandomGenerator & rg, const DB::Strings & pool)
+{
+    DB::Strings choices;
+    if (rg.nextBool())
+    {
+        choices.emplace_back(rg.pickRandomly(pool));
+    }
+    else
+    {
+        std::vector<uint32_t> ids;
+        const uint32_t ncodecs = rg.randomInt<uint32_t>(1, std::min(UINT32_C(4), static_cast<uint32_t>(pool.size())));
+
+        for (size_t i = 0; i < pool.size(); i++)
+        {
+            ids.emplace_back(static_cast<uint32_t>(i));
+        }
+        std::shuffle(ids.begin(), ids.end(), rg.generator);
+        for (uint32_t i = 0; i < ncodecs; i++)
+        {
+            choices.emplace_back(pool[ids[i]]);
+        }
+    }
+    return choices;
+}
+
+String generateNextCodecString(RandomGenerator & rg)
+{
+    return formatCodecChoices(rg, pickCodecSubset(rg, codecs));
+}
+
+/// Unwraps `Nullable` and `LowCardinality` wrappers, returning the concrete leaf type.
+static const SQLType * leafType(const SQLType * tp)
+{
+    while (tp)
+    {
+        const SQLTypeClass tc = tp->getTypeClass();
+        if (tc == SQLTypeClass::NULLABLE)
+        {
+            tp = static_cast<const Nullable *>(tp)->subtype.get();
+        }
+        else if (tc == SQLTypeClass::LOWCARDINALITY)
+        {
+            tp = static_cast<const LowCardinality *>(tp)->subtype.get();
+        }
+        else
+        {
+            break;
+        }
+    }
+    return tp;
+}
+
+/// General-purpose compression codecs: work on any column type.
+static const DB::Strings kGeneralCodecs = {"LZ4", "LZ4HC", "ZSTD", "NONE", "AES_128_GCM_SIV", "AES_256_GCM_SIV"};
+
+String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
+{
+    /// Build the codec pool based on the leaf type class.
+    const SQLType * leaf = leafType(tp);
+    DB::Strings pool = kGeneralCodecs;
+
+    switch (leaf->getTypeClass())
+    {
+        case SQLTypeClass::BOOL:
+            /// Bool is stored as UInt8 (8-bit integer): all narrow-int codecs apply.
+            pool.insert(pool.end(), {"Delta", "DoubleDelta", "T64", "GCD"});
+            break;
+        case SQLTypeClass::INT:
+            /// DoubleDelta and T64 support integers up to 64 bits; GCD supports all integer widths.
+            pool.emplace_back("Delta");
+            pool.emplace_back("GCD");
+            if (static_cast<const IntType *>(leaf)->size <= 64)
+            {
+                pool.emplace_back("DoubleDelta");
+                pool.emplace_back("T64");
+            }
+            break;
+        case SQLTypeClass::FLOAT:
+            pool.emplace_back("Delta");
+            if (static_cast<const FloatType *>(leaf)->size >= 32)
+            {
+                /// Gorilla, FPC, ALP support Float32 and Float64 but not BFloat16.
+                pool.insert(pool.end(), {"Gorilla", "FPC", "ALP"});
+            }
+            break;
+        case SQLTypeClass::DATE:
+            pool.insert(pool.end(), {"Delta", "DoubleDelta", "T64"});
+            break;
+        case SQLTypeClass::DATETIME:
+            pool.emplace_back("Delta");
+            if (!static_cast<const DateTimeType *>(leaf)->extended)
+            {
+                /// DateTime (32-bit) supports DoubleDelta and T64; DateTime64 does not.
+                pool.emplace_back("DoubleDelta");
+                pool.emplace_back("T64");
+            }
+            break;
+        case SQLTypeClass::DECIMAL:
+            /// Delta works for Decimal32/64; for wider precisions it may fail but is rare enough.
+            pool.emplace_back("Delta");
+            break;
+        default:
+            /// Other types just support general-purpose codecs
+            break;
+    }
+    return formatCodecChoices(rg, pickCodecSubset(rg, pool));
 }
 
 String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc)
@@ -336,6 +420,11 @@ std::unordered_map<String, CHSetting> performanceSettings
             [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"greedy", "dpsize"}); },
             {"'greedy'", "'dpsize'"},
             false)},
+       {"query_plan_optimize_join_order_randomize",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 64)); },
+            {"0", "1", "2", "4", "16", "64"},
+            false)},
        {"query_plan_optimize_lazy_materialization", trueOrFalseSetting},
        {"query_plan_optimize_prewhere", trueOrFalseSetting},
        {"query_plan_push_down_limit", trueOrFalseSetting},
@@ -437,6 +526,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          false)},
     {"analyze_index_with_space_filling_curves", trueOrFalseSetting},
     {"analyzer_compatibility_join_using_top_level_identifier", trueOrFalseSetting},
+    {"analyzer_inline_views", trueOrFalseSetting},
     {"apply_deleted_mask", trueOrFalseSettingNoOracle},
     {"apply_mutations_on_fly", trueOrFalseSettingNoOracle},
     {"apply_patch_parts", trueOrFalseSetting},
@@ -1279,6 +1369,12 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 1, 100)); }, {}, false)},
     {"text_index_hint_max_selectivity", probRangeSetting},
+    {"text_index_like_max_postings_to_read",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 500)); }, {}, false)},
+    {"text_index_like_min_pattern_length",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 20)); }, {}, false)},
     {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", trueOrFalseSettingNoOracle},
     {"throw_if_no_data_to_insert", trueOrFalseSettingNoOracle},
     {"throw_on_error_from_cache_on_write_operations", trueOrFalseSettingNoOracle},
@@ -1334,6 +1430,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_statistics_cache", trueOrFalseSettingNoOracle},
     {"use_strict_insert_block_limits", trueOrFalseSettingNoOracle},
     {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
+    {"use_text_index_like_evaluation_by_dictionary_scan", trueOrFalseSetting},
     {"use_text_index_tokens_cache", trueOrFalseSetting},
     {"use_text_index_header_cache", trueOrFalseSetting},
     {"use_text_index_postings_cache", trueOrFalseSetting},
