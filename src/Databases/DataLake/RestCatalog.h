@@ -127,8 +127,8 @@ protected:
 
     virtual DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const std::string & endpoint,
-        const Poco::URI::QueryParameters & params = {},
-        const DB::HTTPHeaderEntries & headers = {}) const;
+        const Poco::URI::QueryParameters & params,
+        const DB::HTTPHeaderEntries & headers) const;
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
 
@@ -161,8 +161,8 @@ protected:
     virtual void sendRequest(
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
-        const String & method = Poco::Net::HTTPRequest::HTTP_POST,
-        bool ignore_result = false) const;
+        const String & method,
+        bool ignore_result) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 

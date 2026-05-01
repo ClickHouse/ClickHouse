@@ -187,7 +187,7 @@ RestCatalog::RestCatalog(
 RestCatalog::Config RestCatalog::loadConfig()
 {
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
-    auto buf = createReadBuffer(CONFIG_ENDPOINT, params);
+    auto buf = createReadBuffer(CONFIG_ENDPOINT, params, /* headers */ {});
 
     std::string json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -681,7 +681,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
 
     try
     {
-        auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
+        auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params, /* headers */ {});
         auto namespaces = parseNamespaces(*buf, base_namespace);
         LOG_DEBUG(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
         return namespaces;
@@ -767,7 +767,7 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
-    auto buf = createReadBuffer(config.prefix / endpoint);
+    auto buf = createReadBuffer(config.prefix / endpoint, /* params */ {}, /* headers */ {});
     return parseTables(*buf, base_namespace, limit);
 }
 
@@ -1000,7 +1000,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     try
     {
-        sendRequest(endpoint, request_body);
+        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (...)
     {
@@ -1038,7 +1038,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     try
     {
-        sendRequest(endpoint, request_body);
+        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -1103,7 +1103,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
-        sendRequest(endpoint, request_body);
+        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException &)
     {

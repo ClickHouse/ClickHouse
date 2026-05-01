@@ -49,14 +49,14 @@ protected:
     /// access to the final URL, method, and request body for canonicalisation.
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const std::string & endpoint,
-        const Poco::URI::QueryParameters & params = {},
-        const DB::HTTPHeaderEntries & headers = {}) const override;
+        const Poco::URI::QueryParameters & params,
+        const DB::HTTPHeaderEntries & headers) const override;
 
     void sendRequest(
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
-        const String & method = Poco::Net::HTTPRequest::HTTP_POST,
-        bool ignore_result = false) const override;
+        const String & method,
+        bool ignore_result) const override;
 
 private:
     const String region;
