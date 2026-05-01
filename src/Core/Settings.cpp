@@ -6995,6 +6995,10 @@ See also:
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \
+    DECLARE(Bool, enable_blob_storage_log_for_read_operations, false, R"(
+Write information about blob storage read operations to system.blob_storage_log table.
+Requires `enable_blob_storage_log` to be enabled as well.
+)", 0) \
     DECLARE(UInt64, predicate_statistics_sample_rate, 0, R"(
 Collect predicate selectivity statistics into `system.predicate_statistics_log`. When set to N > 0, approximately 1/N of queries are sampled (by the query ID). 0 means disabled.
 )", 0) \
