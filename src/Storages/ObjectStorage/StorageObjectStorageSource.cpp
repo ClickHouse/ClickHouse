@@ -671,7 +671,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             && (object_info->getFileFormat().value_or(configuration->format) == "Parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
-            const std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
+            std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
+            if (object_info->isArchive())
+                object_with_metadata->relative_path = object_info->getPath();
             input_format = FormatFactory::instance().getInputWithMetadata(
                 object_info->getFileFormat().value_or(configuration->format),
                 *read_buf,
