@@ -352,11 +352,16 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// `BAD_TYPE_OF_FIELD` in `FieldVisitorAccurateLess`.
     auto is_dynamic_like_output = [](const OutputColumnInfo & output_info)
     {
+        /// Unwrap `LowCardinality` / `Nullable` wrappers in any order until we reach the leaf,
+        /// so that types like `Nullable(LowCardinality(...))` or deeper nestings are also recognized.
         DataTypePtr output_type = output_info.output_type;
-        if (output_type->lowCardinality())
-            output_type = assert_cast<const DataTypeLowCardinality &>(*output_type).getDictionaryType();
-        if (output_type->isNullable())
-            output_type = assert_cast<const DataTypeNullable &>(*output_type).getNestedType();
+        while (output_type->lowCardinality() || output_type->isNullable())
+        {
+            if (output_type->lowCardinality())
+                output_type = assert_cast<const DataTypeLowCardinality &>(*output_type).getDictionaryType();
+            else
+                output_type = assert_cast<const DataTypeNullable &>(*output_type).getNestedType();
+        }
         return isDynamic(*output_type) || isObject(*output_type) || isVariant(*output_type);
     };
 
