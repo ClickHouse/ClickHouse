@@ -101,6 +101,12 @@ EOF
 # to urlCluster() on the initiator). Only then does the secondary query call
 # TableFunctionURL::getStorage where the buggy distributed_processing=true
 # branch existed.
+#
+# Note: parallel_replicas_local_plan=0 is required so that the initiator does
+# not run a local plan that finishes first and cancels the remote replicas
+# before they get to evaluate url(). Without this the secondary queries are
+# cancelled with QUERY_WAS_CANCELLED_BY_CLIENT before the buggy code path is
+# reached and the bug never surfaces on the master baseline binary.
 echo "--- parallel replicas with url in subquery ---"
 $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer = 1;
@@ -109,6 +115,7 @@ SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_cluster_engines = 0;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
+SET parallel_replicas_local_plan = 0;
 
 SELECT count() FROM ${TABLE_NAME}
 WHERE x IN (SELECT toUInt32(x) FROM url('http://localhost:8123/?query=SELECT+1', 'TSV', 'x UInt8'));
