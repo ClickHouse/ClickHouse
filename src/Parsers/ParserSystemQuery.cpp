@@ -983,7 +983,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             if (res->instrumentation_arguments.empty())
             {
-                expected.add(pos, "at least one argument (string literal)");
+                expected.add(pos, "at least one argument (string, integer, or float literal)");
                 return false;
             }
 
