@@ -8,13 +8,11 @@
 #include <Core/Names.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IASTHash.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Common/SettingsChanges.h>
 #include <Common/randomSeed.h>
 
 
@@ -22,6 +20,7 @@ namespace DB
 {
 
 class ASTExpressionList;
+class ASTFunction;
 class ASTOrderByElement;
 class ASTCreateQuery;
 class ASTInsertQuery;
@@ -31,7 +30,10 @@ class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
 class ASTSetQuery;
 struct ASTTableExpression;
+struct ASTTableJoin;
 struct ASTWindowDefinition;
+
+class SettingsChanges;
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -230,6 +232,7 @@ private:
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
+    void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);

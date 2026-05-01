@@ -51,7 +51,7 @@ std::string IFileCachePriority::Entry::toString(const std::string & prefix) cons
 
 void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
 {
-    if (getSize(lock) > max_size || getElementsCount(lock) > max_elements)
+    if ((max_size != 0 && getSize(lock) > max_size) || (max_elements != 0 && getElementsCount(lock) > max_elements))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache limits violated. "
                         "{}", getStateInfoForLog(lock));

@@ -13,8 +13,12 @@
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <optional>
+
 #include <mongocxx/instance.hpp>
 #include <mongocxx/client.hpp>
+
+extern "C" void mongoc_cleanup(void);
 
 namespace DB
 {
@@ -35,9 +39,25 @@ public:
         static MongoDBInstanceHolder instance;
         return instance;
     }
+
+    ~MongoDBInstanceHolder()
+    {
+        /// Destroy the `mongocxx::instance` first so that its internal `~impl` runs
+        /// (nullifies the log handler, etc.) while the C driver globals are still alive.
+        inst.reset();
+
+        /// The mongocxx driver deliberately skips calling `mongoc_cleanup` under ASan
+        /// to avoid issues with dynamically loaded libraries becoming unloaded.
+        /// In ClickHouse all libraries (including OpenSSL) are statically linked,
+        /// so that concern does not apply. Calling `mongoc_cleanup` explicitly prevents
+        /// LeakSanitizer from reporting global allocations (handshake data, etc.)
+        /// made by libmongoc as memory leaks.
+        /// This is safe because `mongoc_cleanup` is idempotent (`bson_once`-guarded).
+        mongoc_cleanup();
+    }
 private:
     MongoDBInstanceHolder() = default;
-    mongocxx::instance inst;
+    std::optional<mongocxx::instance> inst{std::in_place};
 };
 
 struct MongoDBConfiguration

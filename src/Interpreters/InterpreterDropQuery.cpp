@@ -520,6 +520,12 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
+
+                    /// Skip tables that don't support truncation (e.g. views)
+                    /// when doing TRUNCATE ALL TABLES.
+                    if (truncate && query.has_tables && !table_ptr->supportsTruncate())
+                        continue;
+
                     StorageID storage_id = table_ptr->getStorageID();
                     tables_to_drop.push_back({storage_id, table_ptr->isDictionary()});
                     /// If the database doesn't support table UUIDs, we might call
@@ -663,6 +669,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
+
+            /// Skip tables that don't support truncation (e.g. views).
+            if (!table_ptr->supportsTruncate())
+                continue;
+
             const auto & storage_id = table_ptr->getStorageID();
             const auto & tname = storage_id.table_name;
 

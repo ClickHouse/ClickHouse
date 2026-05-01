@@ -571,17 +571,23 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
-            for job in workflow.jobs:
-                if _is_praktika_job(job.name):
-                    continue
-                for hook in workflow.workflow_filter_hooks:
-                    should_skip, reason = hook(job.name)
-                    if should_skip:
-                        print(
-                            f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
-                        )
-                        workflow_config.set_job_as_filtered(job.name, reason)
+            pr_labels = Info().pr_labels
+            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+                print(
+                    f"NOTE: Workflow filter hooks bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
+                )
+            else:
+                for job in workflow.jobs:
+                    if _is_praktika_job(job.name):
                         continue
+                    for hook in workflow.workflow_filter_hooks:
+                        should_skip, reason = hook(job.name)
+                        if should_skip:
+                            print(
+                                f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
+                            )
+                            workflow_config.set_job_as_filtered(job.name, reason)
+                            continue
             status = Result.Status.OK
             workflow_config.dump()
             info = ""
@@ -600,6 +606,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         print("Filter not affected jobs")
 
         def check_affected_jobs():
+            pr_labels = Info().pr_labels
+            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+                print(
+                    f"NOTE: Job filtering by changed files is bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
+                )
+                return
+
             changed_files = Info().get_changed_files()
             if changed_files is None:
                 print(
@@ -630,7 +643,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         stop_watch = Utils.Stopwatch()
         info = ""
         try:
-            workflow_config = CacheRunnerHooks.configure(workflow)
+            pr_labels = Info().pr_labels
+            skip_lookup = Settings.CI_FORCE_ALL_LABEL in pr_labels
+            workflow_config = CacheRunnerHooks.configure(workflow, skip_lookup=skip_lookup)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True
         except Exception as e:

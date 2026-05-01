@@ -258,7 +258,6 @@ def main():
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
-                -DUSE_SYSTEM_COMPILER_RT=1 \
                 -B {build_dir_normalized}",
                 workdir=repo_path_normalized,
             )

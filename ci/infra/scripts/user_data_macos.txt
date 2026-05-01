@@ -17,9 +17,6 @@ if [ "$EUID" -eq 0 ]; then
   export USER="ec2-user"
 fi
 
-export RUNNER_VERSION=2.331.0
-export RUNNER_HOME="${HOME}/actions-runner"
-
 runner_arch() {
   case $(uname -m) in
     x86_64 )
@@ -37,6 +34,8 @@ cloudwatch_arch() {
       echo arm64;;
   esac
 }
+
+export RUNNER_HOME="${HOME}/actions-runner"
 
 # Check if already installed - if success marker exists, skip to cloud-init
 if [ -f /tmp/clickhouse-ci-macos-runner.success ]; then
@@ -110,6 +109,7 @@ else
     -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 
   # Download and install GitHub Actions runner
+  export RUNNER_VERSION=$(curl -fsSL "https://api.github.com/repos/actions/runner/releases/latest" | jq -r '.tag_name | ltrimstr("v")')
   echo "Installing GitHub Actions runner..."
   rm -rf "$RUNNER_HOME"  # if it's a reinstall
   mkdir -p "$RUNNER_HOME" && cd "$RUNNER_HOME"
@@ -124,20 +124,7 @@ else
   # Note: installdependencies.sh is Linux-only, macOS dependencies are handled via Homebrew above
 
   echo "GitHub Actions runner installed at: $RUNNER_HOME"
-  echo ""
-  echo "To configure the runner, run:"
-  echo "  cd $RUNNER_HOME"
-  echo "  ./config.sh --url https://github.com/YOUR_ORG/YOUR_REPO --token YOUR_TOKEN"
-  echo ""
-  echo "To run the runner:"
-  echo "  cd $RUNNER_HOME"
-  echo "  ./run.sh"
-  echo ""
-  echo "To install as a service:"
-  echo "  cd $RUNNER_HOME"
-  echo "  ./svc.sh install"
-  echo "  ./svc.sh start"
-  echo ""
+  echo "See https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/adding-self-hosted-runners for configuration instructions."
 
   # Create a success marker
   touch /tmp/clickhouse-ci-macos-runner.success
@@ -147,5 +134,5 @@ fi
 # Download and execute cloud-init script
 INIT_ENVIRONMENT=${INIT_ENVIRONMENT:-macos}
 aws s3 cp "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
-rm -rf /Users/ec2-user/actions-runner/_work
+rm -rf "$RUNNER_HOME/_work"
 sudo -u ec2-user -i bash -c "/Users/ec2-user/venv/bin/python /tmp/runner-init.py --environment \"$INIT_ENVIRONMENT\""

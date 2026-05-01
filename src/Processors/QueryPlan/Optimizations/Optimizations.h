@@ -207,16 +207,12 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
-    bool allow_implicit_projections,
-    bool is_parallel_replicas_initiator_with_projection_support,
-    size_t max_step_description_length);
+    const QueryPlanOptimizationSettings & optimization_settings);
 
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & optimization_settings,
-    bool is_parallel_replicas_initiator_with_projection_support,
-    size_t max_step_description_length);
+    const QueryPlanOptimizationSettings & optimization_settings);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 

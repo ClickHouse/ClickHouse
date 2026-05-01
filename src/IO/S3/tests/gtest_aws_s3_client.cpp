@@ -329,6 +329,53 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
         /*is_s3express_bucket=*/true);
 }
 
+TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
+{
+    DB::RemoteHostFilter remote_host_filter;
+    unsigned int s3_max_redirects = 100;
+    unsigned int s3_retry_attempts = 0;
+    bool s3_slow_all_threads_after_network_error = true;
+    bool s3_slow_all_threads_after_retryable_error = true;
+    bool enable_s3_requests_logging = false;
+    DB::S3::URI uri("https://test-perf-bucket--eun1-az1--x-s3.s3express-eun1-az1.eu-north-1.amazonaws.com/test.csv");
+
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        /*force_region=*/"",
+        remote_host_filter,
+        s3_max_redirects,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
+        s3_slow_all_threads_after_network_error,
+        s3_slow_all_threads_after_retryable_error,
+        enable_s3_requests_logging,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        "https");
+
+    client_configuration.endpointOverride = uri.endpoint;
+
+    DB::HTTPHeaderEntries headers;
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = DB::S3::isS3ExpressEndpoint(uri.endpoint),
+    };
+
+    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        /*access_key_id=*/"ACCESS_KEY_ID",
+        /*secret_access_key=*/"SECRET_ACCESS_KEY",
+        /*server_side_encryption_customer_key_base64=*/"",
+        {},
+        headers,
+        DB::S3::CredentialsConfiguration{});
+
+    ASSERT_TRUE(client);
+    EXPECT_EQ(client->getRegion(), "eu-north-1");
+}
+
 namespace
 {
 

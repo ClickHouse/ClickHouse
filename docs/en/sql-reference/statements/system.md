@@ -399,6 +399,8 @@ SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]me
 
 ### SYSTEM STOP TTL MERGES {#stop-ttl-merges}
 
+<CloudNotSupportedBadge/>
+
 Provides possibility to stop background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist or table has not MergeTree engine. Returns error when database does not exist:
 
@@ -407,6 +409,8 @@ SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_n
 ```
 
 ### SYSTEM START TTL MERGES {#start-ttl-merges}
+
+<CloudNotSupportedBadge/>
 
 Provides possibility to start background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist. Returns error when database does not exist:

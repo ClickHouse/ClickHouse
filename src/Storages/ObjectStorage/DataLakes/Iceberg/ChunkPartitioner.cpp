@@ -3,7 +3,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -106,7 +105,7 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
         }
         arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
         auto result
-            = functions[transform_ind]->build(arguments)->execute(arguments, std::make_shared<DataTypeString>(), chunk.getNumRows(), false);
+            = functions[transform_ind]->build(arguments)->execute(arguments, result_data_types[transform_ind], chunk.getNumRows(), false);
         functions_columns.push_back(result);
         raw_columns.push_back(result.get());
         for (size_t i = 0; i < chunk.getNumRows(); ++i)
