@@ -7,7 +7,6 @@
 #include <Interpreters/IJoin.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Interpreters/TableJoin.h>
 #include <atomic>
@@ -63,6 +62,13 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
+
+    /// Number of internal hash join slots.
+    size_t getNumSlots() const { return slots; }
+
+    /// Extract all stored blocks from a specific slot.
+    /// The slot's HashJoin data is reset afterwards.
+    BlocksList releaseSlotBlocks(size_t slot_idx);
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;

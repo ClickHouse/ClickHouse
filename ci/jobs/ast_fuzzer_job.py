@@ -7,6 +7,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
@@ -20,14 +21,25 @@ IMAGE_NAME = "clickhouse/fuzzer"
 MAX_INLINE_REPRODUCE_COMMANDS = 20
 
 cwd = Utils.cwd()
+WORKSPACE_PATH = Path(cwd) / "ci/tmp/workspace"
+
+# Paths of artifacts produced by the fuzzer runner script.
+# Exported so tests can pre-seed them without duplicating the paths.
+JOB_ARTIFACTS = (
+    WORKSPACE_PATH / "server.log",
+    WORKSPACE_PATH / "fuzzer.log",
+    WORKSPACE_PATH / "stderr.log",
+    WORKSPACE_PATH / "dmesg.log",
+    WORKSPACE_PATH / "fatal.log",
+)
 
 
 def get_run_command(
-    workspace_path: Path,
     image: DockerImage,
     buzzhouse: bool,
     targeted_queries_file: Path | None = None,
     compatibility_setting: str | None = None,
+    enable_server_fuzzer: bool = False,
 ) -> str:
     from ci.jobs.ci_utils import is_extended_run
 
@@ -36,6 +48,8 @@ def get_run_command(
         f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
         f"-e FUZZ_TIME_LIMIT='{minutes}m'",
     ]
+    if enable_server_fuzzer:
+        envs.append("-e SERVER_FUZZER_ENABLED=1")
     if targeted_queries_file:
         container_queries_file = f"/workspace/{targeted_queries_file.name}"
         envs.append(f"-e TARGETED_QUERIES_FILE='{container_queries_file}'")
@@ -50,7 +64,7 @@ def get_run_command(
         "--privileged "
         "--network=host "
         "--tmpfs /tmp/clickhouse:mode=1777 "
-        f"--volume={workspace_path}:/workspace "
+        f"--volume={WORKSPACE_PATH}:/workspace "
         f"--volume={cwd}:/repo "
         f"{env_str} "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE --workdir /repo "
@@ -59,7 +73,7 @@ def get_run_command(
     )
 
 
-def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[str], Result]:
+def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
     targeter = Targeting(info=info)
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
 
@@ -83,7 +97,7 @@ def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[st
     except Exception as e:
         logging.warning("[targeted-fuzzer] Step 3 — failed to fetch coverage-relevant tests: %s", e)
         relevant_tests = []
-        relevant_tests_result = Result(name="tests found by coverage", status=Result.StatusExtended.OK, info=f"Skipped: {e}")
+        relevant_tests_result = Result(name="tests found by coverage", status=Result.Status.OK, info=f"Skipped: {e}")
     logging.info("[targeted-fuzzer] Step 3 — coverage-relevant tests (%d)", len(relevant_tests))
 
     # Merge all three sets preserving priority order (changed first)
@@ -121,7 +135,7 @@ def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[st
                 targeted_queries.append(query_path)
 
     if targeted_queries:
-        targeted_queries_file = workspace_path / "ci-targeted-queries.txt"
+        targeted_queries_file = WORKSPACE_PATH / "ci-targeted-queries.txt"
         with open(targeted_queries_file, "w", encoding="utf-8") as f:
             f.write("\n".join(targeted_queries))
         logging.info(
@@ -140,24 +154,21 @@ def run_fuzz_job(check_name: str):
     is_targeted = "targeted" in check_name.lower()
     buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
-    temp_dir = Path(f"{cwd}/ci/tmp/")
-    clickhouse_binary = temp_dir / "clickhouse"
+    clickhouse_binary = Path(cwd) / "ci/tmp/clickhouse"
     assert clickhouse_binary.exists(), "ClickHouse binary not found"
     clickhouse_binary.chmod(clickhouse_binary.stat().st_mode | 0o111)
 
     docker_image = DockerImage.get_docker_image(IMAGE_NAME).pull_image()
 
-    workspace_path = temp_dir / "workspace"
-    workspace_path.mkdir(parents=True, exist_ok=True)
+    WORKSPACE_PATH.mkdir(parents=True, exist_ok=True)
 
     info = Info()
+    job_name = info.job_name
     extra_results = []
     targeted_queries_file: Path | None = None
 
     if is_targeted and not buzzhouse:
-        targeted_queries, relevant_tests_result = _collect_targeted_queries(
-            workspace_path=workspace_path, info=info
-        )
+        targeted_queries, relevant_tests_result = _collect_targeted_queries(info=info)
         extra_results.append(relevant_tests_result)
         if not targeted_queries:
             Result.create_from(
@@ -165,7 +176,7 @@ def run_fuzz_job(check_name: str):
                 info="No relevant tests found for targeted AST fuzzer",
                 results=extra_results,
             ).complete_job()
-        targeted_queries_file = workspace_path / "ci-targeted-queries.txt"
+        targeted_queries_file = WORKSPACE_PATH / "ci-targeted-queries.txt"
 
     is_old_compatibility = "old_compatibility" in check_name.lower()
     compatibility_setting: str | None = None
@@ -187,17 +198,17 @@ def run_fuzz_job(check_name: str):
             logging.info("AST fuzzer compatibility setting is not set")
 
     run_command = get_run_command(
-        workspace_path,
         docker_image,
         buzzhouse,
         targeted_queries_file=targeted_queries_file,
         compatibility_setting=compatibility_setting,
+        enable_server_fuzzer="serverfuzz" in job_name,
     )
     logging.info("Going to run %s", run_command)
 
     is_sanitized = "san" in info.job_name
 
-    changed_files_path = workspace_path / "ci-changed-files.txt"
+    changed_files_path = WORKSPACE_PATH / "ci-changed-files.txt"
     with open(changed_files_path, "w") as f:
         changed_files = info.get_changed_files()
         if changed_files is None:
@@ -214,53 +225,19 @@ def run_fuzz_job(check_name: str):
 
     # Fix file ownership after running docker as root
     logging.info("Fuzzer: Fixing file ownership after running docker as root")
-    uid = os.getuid()
-    gid = os.getgid()
-    chown_cmd = f"docker run --rm --user root --volume {cwd}:/repo --workdir=/repo {docker_image} chown -R {uid}:{gid} /repo"
-    Shell.check(chown_cmd, verbose=True)
+    Utils.fix_ownership_after_docker(cwd, docker_image)
 
-    fuzzer_log = workspace_path / "fuzzer.log"
-    dmesg_log = workspace_path / "dmesg.log"
-    fatal_log = workspace_path / "fatal.log"
-    server_log = workspace_path / "server.log"
-    stderr_log = workspace_path / "stderr.log"
+    server_log, fuzzer_log, stderr_log, dmesg_log, fatal_log = JOB_ARTIFACTS
+    paths = list(JOB_ARTIFACTS)
 
-    # Encrypt core dump if present (same as functional tests)
-    core_zst = workspace_path / "core.zst"
-    core_zst_enc = workspace_path / "core.zst.enc"
-    aes_key = temp_dir / "aes.key"
-    aes_key_rsa = temp_dir / "aes.key.rsa"
-    paths = []
-
-    if core_zst.exists():
-        try:
-            Utils.encrypt(str(core_zst), f"{cwd}/ci/defs/public.pem", str(aes_key))
-        except Exception as e:
-            logging.warning("Failed to encrypt core dump: %s", e)
-        if not core_zst_enc.exists():
-            logging.warning(
-                "Core dump encryption did not produce expected artifact: %s",
-                core_zst_enc,
-            )
-        else:
-            paths = [core_zst_enc, aes_key_rsa]
-
-    paths.extend([
-        workspace_path / "dmesg.log",
-        fatal_log,
-        stderr_log,
-        server_log,
-        fuzzer_log,
-        dmesg_log,
-    ])
     if buzzhouse:
-        paths.extend([workspace_path / "fuzzerout.sql", workspace_path / "fuzz.json"])
+        paths.extend([WORKSPACE_PATH / "fuzzerout.sql", WORKSPACE_PATH / "fuzz.json"])
 
     server_died = False
     server_exit_code = 0
     fuzzer_exit_code = 0
     try:
-        with open(workspace_path / "status.tsv", "r", encoding="utf-8") as status_f:
+        with open(WORKSPACE_PATH / "status.tsv", "r", encoding="utf-8") as status_f:
             server_died, server_exit_code, fuzzer_exit_code = (
                 status_f.readline().rstrip("\n").split("\t")
             )
@@ -272,7 +249,7 @@ def run_fuzz_job(check_name: str):
         Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
 
     # parse runner script exit status
-    status = Result.Status.FAILED
+    status = Result.Status.FAIL
     info = []
     is_failed = True
     if server_died:
@@ -281,7 +258,7 @@ def run_fuzz_job(check_name: str):
     elif fuzzer_exit_code in (0, 137, 143):
         # normal exit with timeout or OOM kill
         is_failed = False
-        status = Result.Status.SUCCESS
+        status = Result.Status.OK
         if fuzzer_exit_code == 0:
             info.append("Fuzzer exited with success")
         elif fuzzer_exit_code == 137:
@@ -321,7 +298,7 @@ def run_fuzz_job(check_name: str):
             if sanitizer_oom:
                 print("Sanitizer OOM")
                 info.append("WARNING: Sanitizer OOM - test considered passed")
-                status = Result.Status.SUCCESS
+                status = Result.Status.OK
                 is_failed = False
         else:
             # Check for OOM in dmesg for non-sanitized builds
@@ -342,7 +319,7 @@ def run_fuzz_job(check_name: str):
             server_log=str(server_log),
             stderr_log=str(stderr_log),
             fuzzer_log=str(
-                workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log
+                WORKSPACE_PATH / "fuzzerout.sql" if buzzhouse else fuzzer_log
             ),
         )
         parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
@@ -352,7 +329,7 @@ def run_fuzz_job(check_name: str):
                 Result(
                     name=parsed_name,
                     info=parsed_info,
-                    status=Result.StatusExtended.FAIL,
+                    status=Result.Status.FAIL,
                     files=files,
                 )
             )
@@ -365,7 +342,8 @@ def run_fuzz_job(check_name: str):
 
     if is_failed:
         # generate fatal log
-        Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}")
+        Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}")
+        result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)

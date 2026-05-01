@@ -344,7 +344,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         }
 
         auto max_threads = settings[Setting::max_threads];
-        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads);
+        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* is_sql_union = */ true);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
@@ -404,25 +404,6 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
 {
     for (auto & interpreter : nested_interpreters)
         interpreter->ignoreWithTotals();
-}
-
-void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
-{
-    for (const auto & interpreter : nested_interpreters)
-    {
-        if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))
-        {
-            auto filter = select_interpreter->getRowPolicyFilter();
-            if (filter)
-            {
-                for (const auto & row_policy : filter->policies)
-                {
-                    auto name = row_policy->getFullName().toString();
-                    elem.used_row_policies.emplace(std::move(name));
-                }
-            }
-        }
-    }
 }
 
 void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory)
