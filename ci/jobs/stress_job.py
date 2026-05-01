@@ -2,11 +2,11 @@ import csv
 import logging
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
 
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika.info import Info
@@ -94,6 +94,7 @@ def get_run_command(
     result_path: Path,
     repo_tests_path: Path,
     server_log_path: Path,
+    cores_path: Path,
     additional_envs: List[str],
     image: DockerImage,
     upgrade_check: bool,
@@ -116,7 +117,9 @@ def get_run_command(
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}/..:/repo "
-        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} {run_script}"
+        f"--volume={server_log_path}:/var/log/clickhouse-server "
+        f"--volume={cores_path}:/cores "
+        f"{env_str} {image} {run_script}"
     )
 
     return cmd
@@ -182,6 +185,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
+    cores_path = temp_path / "cores"
+    cores_path.mkdir(parents=True, exist_ok=True)
+
     additional_envs = get_additional_envs(info, check_name)
 
     run_command = get_run_command(
@@ -189,6 +195,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         result_path,
         repo_tests_path,
         server_log_path,
+        cores_path,
         additional_envs,
         docker_image,
         upgrade_check,
@@ -197,7 +204,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     exit_code = Shell.run(run_command)
 
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    Utils.fix_ownership_after_docker(temp_path, docker_image)
+
+    core_files = ClickHouseService.collect_cores(cores_path)
 
     is_oom = False
 
@@ -263,7 +272,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 Result.create_from(
                     name="Unknown error",
                     info="no server logs found",
-                    status=Result.Status.FAILED,
+                    status=Result.Status.FAIL,
                 )
             )
         else:
@@ -301,7 +310,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     Result.create_from(
                         name=name,
                         info=description,
-                        status=Result.StatusExtended.FAIL,
+                        status=Result.Status.FAIL,
                         files=files,
                     )
                 )
@@ -310,7 +319,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     Result.create_from(
                         name="Parse failure error",
                         info="All log parsing attempts failed",
-                        status=Result.Status.FAILED,
+                        status=Result.Status.FAIL,
                     )
                 )
 
@@ -319,7 +328,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             Result.create_from(
                 name="Server died",
                 info="Server died and no specific error was extracted",
-                status=Result.Status.FAILED,
+                status=Result.Status.FAIL,
             )
         )
 
@@ -328,18 +337,18 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             Result.create_from(
                 name="Check failed",
                 info=f"Check failed with exit code {exit_code}",
-                status=Result.Status.FAILED,
+                status=Result.Status.FAIL,
             )
         )
 
     all_results = failed_results + [r for r in test_results if r.is_ok()]
     r = Result.create_from(
         results=all_results,
-        status=Result.Status.SUCCESS if not failed_results else "",
+        status=Result.Status.OK if not failed_results else "",
         stopwatch=stopwatch,
     )
     if not r.is_ok() and is_oom:
-        r.set_status(Result.Status.SUCCESS)
+        r.set_status(Result.Status.OK)
         r.set_info("OOM error (allowed in stress tests)")
 
     if r.is_ok() and exit_code != 0 and not is_oom:
@@ -347,7 +356,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             f"Unknown error: Test script failed with exit code {exit_code}"
         )
 
-    r.set_files(additional_logs).complete_job()
+    r.set_files(additional_logs).set_files(core_files).complete_job()
 
 
 if __name__ == "__main__":
