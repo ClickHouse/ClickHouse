@@ -196,15 +196,16 @@ std::shared_ptr<TSystemLog> createSystemLog(
         /// STORAGE POLICY expr is retained for backward compatible.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");
         String settings = config.getString(config_prefix + ".settings", "");
-        if (!storage_policy.empty() || !settings.empty())
-        {
-            log_settings.engine += " SETTINGS";
-            /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
-            if (!storage_policy.empty())
-                log_settings.engine += " storage_policy = " + quoteString(storage_policy);
-            if (!settings.empty())
-                log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
-        }
+
+        /// System log tables (especially `metric_log`) have many numeric columns,
+        /// and the implicit min-max index per column noticeably slows ingestion
+        /// without helping typical log queries (which scan by `event_time`/`event_date`).
+        /// Disable the implicit index by default; user-supplied `settings` may still re-enable it.
+        log_settings.engine += " SETTINGS add_minmax_index_for_numeric_columns = 0";
+        if (!storage_policy.empty())
+            log_settings.engine += ", storage_policy = " + quoteString(storage_policy);
+        if (!settings.empty())
+            log_settings.engine += ", " + settings;
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
