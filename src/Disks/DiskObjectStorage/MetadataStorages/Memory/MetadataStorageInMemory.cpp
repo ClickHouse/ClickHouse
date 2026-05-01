@@ -540,6 +540,21 @@ void MetadataStorageInMemoryTransaction::moveDirectory(const std::string & path_
             throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
                 "Source directory does not exist: {}", path_from);
 
+        /// Match `DiskLocal::moveDirectory` semantics (`rename`): reject moves whose destination
+        /// already exists as a file or as a directory. Without this check, the loop below would
+        /// silently merge source entries into the existing destination tree (overwriting any
+        /// conflicting files), which diverges from `MetadataStorageFromDisk` and can hide bugs
+        /// that depend on rename atomicity.
+        std::string path_to_no_slash = prefix_to.substr(0, prefix_to.size() - 1);
+        if (metadata_storage.findFile(path_to_no_slash) != nullptr)
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                "Cannot move directory {} to {}: a file already exists at destination",
+                path_from, path_to);
+        if (metadata_storage.directories.contains(prefix_to))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                "Cannot move directory {} to {}: destination directory already exists",
+                path_from, path_to);
+
         /// Move files
         std::vector<std::pair<std::string, MetadataStorageInMemory::FileEntry>> to_move;
         for (auto it = metadata_storage.files.begin(); it != metadata_storage.files.end();)
@@ -556,21 +571,7 @@ void MetadataStorageInMemoryTransaction::moveDirectory(const std::string & path_
             }
         }
         for (auto & [new_path, entry] : to_move)
-        {
-            auto it_existing = metadata_storage.files.find(new_path);
-            if (it_existing != metadata_storage.files.end())
-            {
-                auto & old_group = it_existing->second.blob_group;
-                old_group->ref_count -= 1;
-                if (old_group->ref_count == 0)
-                {
-                    for (const auto & obj : old_group->objects)
-                        objects_to_remove.push_back(obj);
-                }
-                metadata_storage.files.erase(it_existing);
-            }
             metadata_storage.files[new_path] = std::move(entry);
-        }
 
         /// Move directories
         std::vector<std::string> dirs_to_add;
