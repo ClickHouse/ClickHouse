@@ -18,7 +18,11 @@ import helpers.kafka.common as k
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml", "configs/named_collection.xml"],
+    main_configs=[
+        "configs/kafka.xml",
+        "configs/named_collection.xml",
+        "configs/dead_letter_queue.xml",
+    ],
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,  # For Replicated Table
@@ -3931,6 +3935,79 @@ def test_kafka2_commit_on_select_semantics(kafka_cluster):
     assert len(TSV(result2).lines) == 5
 
     instance.query(f"DROP TABLE test.{kafka_table_rollback} SYNC")
+
+
+def test_kafka2_dead_letter_queue_commit_on_select(kafka_cluster):
+    """Test that with kafka_handle_error_mode='dead_letter_queue' and kafka_commit_on_select=1,
+    a malformed message is committed (advances the offset) on direct SELECT and is not re-read
+    by subsequent direct SELECT queries. Without the zero-row commit fix, the bad message would
+    be re-consumed forever and re-inserted into system.dead_letter_queue on every SELECT."""
+
+    suffix = k.random_string(6)
+    topic = f"test_dlq_commit_{suffix}"
+    kafka_table = f"kafka_dlq_{suffix}"
+
+    # Produce a single bad message first so the next SELECT sees only an unparseable
+    # message (zero-row path that exercises the offset commit fix in pollConsumer).
+    k.kafka_produce(kafka_cluster, topic, ["this is not valid json"])
+
+    instance.query(
+        k.generate_new_create_table_query(
+            kafka_table,
+            "key UInt64, value UInt64",
+            topic_list=topic,
+            consumer_group=f"cg_dlq_commit_{suffix}",
+            settings={
+                "kafka_commit_on_select": 1,
+                "kafka_handle_error_mode": "dead_letter_queue",
+            },
+        )
+    )
+
+    # Drain the bad message via direct SELECT until it lands in the dead-letter queue.
+    retries = 50
+    dlq_count = 0
+    while retries > 0:
+        zero_rows = instance.query(f"SELECT key, value FROM test.{kafka_table}")
+        assert zero_rows == "", f"Bad message produced rows: {zero_rows!r}"
+        instance.query("SYSTEM FLUSH LOGS dead_letter_queue")
+        dlq_count = int(
+            instance.query(
+                f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic}'"
+            ).strip()
+        )
+        if dlq_count >= 1:
+            break
+        retries -= 1
+        time.sleep(0.5)
+    assert dlq_count == 1
+
+    # Now produce good messages and ensure the bad-message offset has actually been
+    # committed: only the new good messages should be read, not the bad one again.
+    good_messages = [json.dumps({"key": i, "value": i}) for i in range(4)]
+    k.kafka_produce(kafka_cluster, topic, good_messages)
+
+    rows = ""
+    retries = 50
+    while retries > 0:
+        rows += instance.query(f"SELECT key, value FROM test.{kafka_table}")
+        if len(TSV(rows).lines) >= 4:
+            break
+        retries -= 1
+        time.sleep(0.5)
+    assert len(TSV(rows).lines) == 4
+
+    # Without the fix, every SELECT would re-process the bad message and add another
+    # row to the dead-letter queue. Verify that did not happen.
+    instance.query("SYSTEM FLUSH LOGS dead_letter_queue")
+    dlq_count_after = int(
+        instance.query(
+            f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic}'"
+        ).strip()
+    )
+    assert dlq_count_after == 1
+
+    instance.query(f"DROP TABLE test.{kafka_table} SYNC")
 
 
 if __name__ == "__main__":
