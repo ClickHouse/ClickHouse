@@ -93,6 +93,7 @@ struct ReadSettings
     DistributedCacheSettings distributed_cache_settings;
     std::optional<FileCacheOriginInfo> filecache_origin_info;
     bool enable_hdfs_pread = true;
+    bool enable_blob_storage_log_for_read_operations = false;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
     ReadSettings withNestedBuffer(bool seekable = false) const;
