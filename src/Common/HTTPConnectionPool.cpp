@@ -35,6 +35,7 @@
 
 #if USE_SSL
 #include <Poco/Net/HTTPSClientSession.h>
+#include <Poco/Net/SSLException.h>
 #endif
 
 
@@ -836,7 +837,15 @@ private:
         {
             auto address = resolver->resolve();
             if (!tried_addresses.insert(*address).second)
+            {
+                /// We already attempted this address in an earlier iteration of this loop.
+                /// Mark it as failed so the `Entry` destructor does not record a spurious
+                /// `setSuccess` for an address we did not actually connect to: that would
+                /// reset `consecutive_fail_count` and undermine the resolver's pessimization.
+                /// Calling `setFail` is idempotent for an already-failed record.
+                address.setFail();
                 continue;
+            }
 
             ++connect_attempts;
 
@@ -862,6 +871,18 @@ private:
                 ProfileEvents::increment(getMetrics().created);
                 return connection;
             }
+#if USE_SSL
+            catch (const Poco::Net::SSLException &)
+            {
+                /// `SSLException` derives from `NetException` in Poco, but TLS/certificate
+                /// failures are not per-address routing problems and would be reproduced on
+                /// any other resolved address. Propagate immediately without `setFail`, which
+                /// would otherwise pessimize a healthy address based on a config-level error.
+                ProfileEvents::increment(getMetrics().errors);
+                (*connection).reset();
+                throw;
+            }
+#endif
             catch (const Poco::Net::NetException &)
             {
                 address.setFail();
