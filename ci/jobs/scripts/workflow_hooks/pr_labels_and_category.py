@@ -74,6 +74,7 @@ class Labels:
     SUBMODULE_CHANGED = "submodule changed"
 
     CI_BUILD = "ci-build"
+    CI_FORCE_ALL = "ci-force-all"
 
     CI_PERFORMANCE = "ci-performance"
 
