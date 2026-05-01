@@ -365,7 +365,7 @@ void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActions
     }
 }
 
-void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns, const Names & columns)
+void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns, const Names & columns, const IColumnPermutation * perm_ptr = nullptr)
 {
     for (const auto & column_name : columns)
     {
@@ -380,9 +380,11 @@ void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns,
         else if (column_name == BlockOffsetColumn::name)
         {
             auto mutable_column = BlockOffsetColumn::type->createColumn();
-            auto & col_data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
-            col_data.resize(block.rows());
-            std::iota(col_data.begin(), col_data.end(), UInt64(0));
+            auto & data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
+            data.resize_exact(block.rows());
+            for (size_t i = 0; i < block.rows(); ++i)
+                data[perm_ptr ? (*perm_ptr)[i] : i] = i;
+
             block.insert(ColumnWithTypeAndName{std::move(mutable_column), BlockOffsetColumn::type, column_name});
             block_columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
         }
@@ -946,6 +948,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
+        materializeVirtualColumns(block, columns, projection.required_columns, perm_ptr);
+
         Block projection_block;
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
