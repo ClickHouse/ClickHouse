@@ -61,7 +61,7 @@ While static-key providers accept any of `HS256`, `RS256`, or `ES256`, JWKS-base
 | Roles | `clickhouse:roles` | A JSON array of role names to assign, e.g. `["analyst", "reader"]`. |
 The default claim names can be remapped to custom claim names if your identity provider uses different naming conventions.
 
-### Example token payload {#example-token-payload}
+### Example token header and payload {#example-token-header-and-payload}
 
 ```json
 {
@@ -213,7 +213,7 @@ When a query is forwarded to another shard or replica, the JWT token is included
 
 ## Troubleshooting {#troubleshooting}
 
-- **No access rights granted:** The referenced role or user may lack the required grants. Ensure the the roles referenced in the `clickhouse:roles` exist and include the appropriate grants.
+- **No access rights granted:** The referenced role or user may lack the required grants. Ensure the roles referenced in the `clickhouse:roles` exist and include the appropriate grants.
 - **Token rejected:** Verify that `iss`, `aud`, and the signing algorithm in your token match what the JWT provider expects. If JWKS is used, ensure the token's `kid` matches a key in the provider's key set.
 - **User disappears between queries:** Ephemeral users are removed after token expiry. Use a client that supports token refresh (e.g., `--login` mode) for long-running sessions.
 - **`CREATE USER ... IDENTIFIED WITH jwt` fails:** This is expected. JWT users cannot be created via DDL. They are managed entirely by the token lifecycle.
