@@ -982,6 +982,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
             if (res->instrumentation_arguments.empty())
+            {
+                expected.add(pos, "at least one parameter (string literal)");
                 return false;
             }
 
