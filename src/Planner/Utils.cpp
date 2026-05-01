@@ -246,42 +246,27 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
 
     /// Avoid `MULTIPLE_EXPRESSIONS_FOR_ALIAS` errors on the receiving replica's
     /// analyzer. See https://github.com/ClickHouse/ClickHouse/issues/74324.
+    ///
+    /// The analyzer's expansion of an alias reference (e.g. `PREWHERE cond`)
+    /// preserves the alias on the expanded body, while the matching projection
+    /// column may not carry the same inner aliases. Keeping aliases on
+    /// constraint clauses leaks an extra binding of the same name with a
+    /// different body into the receiver's scope.
+    ///
+    /// We do NOT touch the projection list. The projection's aliases are the
+    /// user-visible column names; the receiving replica resolves columns of the
+    /// source stream by these aliases. Stripping a projection alias breaks
+    /// position-by-name lookup and causes `THERE_IS_NO_COLUMN` errors. Genuine
+    /// duplicate-alias conflicts in the projection (e.g. `__table1.a AS a,
+    /// __table2.a AS a` in a self-join) are handled elsewhere — usually by the
+    /// analyzer assigning distinct user-visible aliases such as `tl.a` for the
+    /// joined side, or via `joined_subquery_requires_alias`.
     if (auto * select_query = ast->as<ASTSelectQuery>())
     {
-        /// 1. Strip aliases from constraint clauses (PREWHERE/WHERE/HAVING/QUALIFY).
-        ///    The analyzer's expansion of an alias reference (e.g. `PREWHERE cond`)
-        ///    preserves the alias on the expanded body, while the matching projection
-        ///    column may not carry the same inner aliases. Keeping aliases on
-        ///    constraint clauses leaks an extra binding of the same name with a
-        ///    different body into the receiver's scope.
         stripAliasesFromConstraintExpression(select_query->prewhere());
         stripAliasesFromConstraintExpression(select_query->where());
         stripAliasesFromConstraintExpression(select_query->having());
         stripAliasesFromConstraintExpression(select_query->qualify());
-
-        /// 2. Drop duplicate aliases in the projection list. When `SELECT *` expands
-        ///    across joined tables with overlapping column names, multiple projection
-        ///    columns can share an alias (e.g. `__table1.date AS date,
-        ///    __table3.date AS date`). The remote replica's analyzer rejects this as
-        ///    `MULTIPLE_EXPRESSIONS_FOR_ALIAS`. Strip the alias from later
-        ///    occurrences — only the position-aligned data matters across replicas;
-        ///    the user-visible column names come from the coordinator's projection
-        ///    metadata, not from the AST sent to the receiver.
-        if (auto projection_ast = select_query->select())
-        {
-            std::unordered_set<String> seen_aliases;
-            for (auto & child : projection_ast->children)
-            {
-                auto * with_alias = dynamic_cast<ASTWithAlias *>(child.get());
-                if (!with_alias)
-                    continue;
-                const auto & alias = with_alias->alias;
-                if (alias.empty())
-                    continue;
-                if (!seen_aliases.insert(alias).second)
-                    with_alias->setAlias(String());
-            }
-        }
     }
 
     return ast;
