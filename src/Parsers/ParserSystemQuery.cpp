@@ -16,6 +16,8 @@
 
 #include <base/EnumReflection.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -976,7 +978,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 else if (value.getType() == Field::Types::Int64)
                     res->instrumentation_arguments.emplace_back(value.safeGet<Int64>());
                 else if (value.getType() == Field::Types::UInt64)
-                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
+                {
+                    UInt64 uint_value = value.safeGet<UInt64>();
+                    if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                    {
+                        expected.add(pos, "integer literal not exceeding Int64 maximum");
+                        return false;
+                    }
+                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(uint_value));
+                }
                 else if (value.getType() == Field::Types::Float64)
                     res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
                 else
