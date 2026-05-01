@@ -1050,6 +1050,7 @@ void Client::processConfig()
     pager = config().getString("pager", "");
     enable_highlight = config().getBool("highlight", true);
     multiline = config().has("multiline");
+    rainbow_parentheses = config().getBool("rainbow_parentheses", true);
     print_stack_trace = config().getBool("stacktrace", false);
     default_database = config().getString("database", "");
 
