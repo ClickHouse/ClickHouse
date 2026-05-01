@@ -132,12 +132,12 @@ struct StringHashTableHash
 };
 
 template <typename Cell>
-struct StringHashTableEmpty
+struct StringHashTableEmpty // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `zero_value_storage` is raw storage for placement new, only written when `has_zero` becomes true
 {
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw storage for placement new, only written when has_zero becomes true
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
 
 public:
     bool hasZero() const { return has_zero; }
