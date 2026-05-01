@@ -979,6 +979,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     res->instrumentation_arguments.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
                 else if (value.getType() == Field::Types::Float64)
                     res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
+                else
+                {
+                    expected.add(pos, "string, integer, or float literal argument");
+                    return false;
+                }
             }
 
             if (res->instrumentation_arguments.empty())
