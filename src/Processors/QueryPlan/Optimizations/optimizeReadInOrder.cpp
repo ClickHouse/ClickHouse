@@ -1204,6 +1204,15 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
 
+    /// `AggregatingStep` doesn't carry SQL-level `LIMIT` information here: a top-level
+    /// `LIMIT N` after `GROUP BY` lives in a separate `LimitStep` above the aggregation,
+    /// not in `AggregatingStep::params`, and `optimizeAggregationInOrder` is invoked per
+    /// node without parent context. Pass `query_has_limit = false` explicitly so the
+    /// PK-selectivity check uses its conservative default; this matches behavior before
+    /// the flag was introduced and keeps every `requestReadingInOrder` call site explicit
+    /// about the value it intends.
+    constexpr bool query_has_limit = false;
+
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
         /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
@@ -1221,7 +1230,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit);
+                order_info.input_order->limit,
+                query_has_limit);
             if (!can_read)
                 return {};
         }
@@ -1239,7 +1249,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order);
+            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_has_limit);
             if (!can_read)
                 return {};
         }
