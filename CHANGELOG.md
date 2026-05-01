@@ -17,7 +17,7 @@
 
 # 2026 Changelog
 
-### <a id="264"></a> ClickHouse release 26.4, 2026-04-30. [Presentation](https://presentations.clickhouse.com/2026-release-26.4/), Video: TODO
+### <a id="264"></a> ClickHouse release 26.4, 2026-04-30. [Presentation](https://presentations.clickhouse.com/2026-release-26.4/), [Video](https://www.youtube.com/watch?v=9lSVy7k2EoI)
 
 #### Backward Incompatible Change
 * The `IN` operator now uses exact value semantics for `Bool` type: only `0` and `1` values in the set match `Bool` values. Previously, numeric values greater than `255` in the `IN` set were incorrectly clamped to true when compared against `Bool`, so `SELECT CAST(1, 'Bool') IN (256)` returned 1. Now it correctly returns `0`. Closes [#92980](https://github.com/ClickHouse/ClickHouse/issues/92980). [#93115](https://github.com/ClickHouse/ClickHouse/pull/93115) ([Ashrith Bandla](https://github.com/ashrithb)).
