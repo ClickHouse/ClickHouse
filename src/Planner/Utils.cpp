@@ -246,27 +246,60 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
 
     /// Avoid `MULTIPLE_EXPRESSIONS_FOR_ALIAS` errors on the receiving replica's
     /// analyzer. See https://github.com/ClickHouse/ClickHouse/issues/74324.
-    ///
-    /// The analyzer's expansion of an alias reference (e.g. `PREWHERE cond`)
-    /// preserves the alias on the expanded body, while the matching projection
-    /// column may not carry the same inner aliases. Keeping aliases on
-    /// constraint clauses leaks an extra binding of the same name with a
-    /// different body into the receiver's scope.
-    ///
-    /// We do NOT touch the projection list. The projection's aliases are the
-    /// user-visible column names; the receiving replica resolves columns of the
-    /// source stream by these aliases. Stripping a projection alias breaks
-    /// position-by-name lookup and causes `THERE_IS_NO_COLUMN` errors. Genuine
-    /// duplicate-alias conflicts in the projection (e.g. `__table1.a AS a,
-    /// __table2.a AS a` in a self-join) are handled elsewhere — usually by the
-    /// analyzer assigning distinct user-visible aliases such as `tl.a` for the
-    /// joined side, or via `joined_subquery_requires_alias`.
     if (auto * select_query = ast->as<ASTSelectQuery>())
     {
+        /// 1. Strip aliases from constraint clauses (`PREWHERE` / `WHERE` /
+        ///    `HAVING` / `QUALIFY`).
+        ///
+        ///    The analyzer's expansion of an alias reference (e.g. `PREWHERE cond`
+        ///    where `cond` is a projection alias) preserves the alias on the
+        ///    expanded body, while the matching projection column may not carry
+        ///    the same inner aliases. Keeping aliases on constraint clauses
+        ///    leaks an extra binding of the same alias with a different body
+        ///    into the receiver's scope.
         stripAliasesFromConstraintExpression(select_query->prewhere());
         stripAliasesFromConstraintExpression(select_query->where());
         stripAliasesFromConstraintExpression(select_query->having());
         stripAliasesFromConstraintExpression(select_query->qualify());
+
+        /// 2. Strip duplicate projection aliases ONLY when the duplicate has a
+        ///    different body from a previous occurrence with the same alias.
+        ///
+        ///    `SELECT *` over joined subqueries with overlapping column names and
+        ///    `joined_subquery_requires_alias = 0` produces projections like
+        ///    `__table1.name AS name, __table3.name AS name` — the same alias
+        ///    bound to different bodies. The remote replica's analyzer rejects
+        ///    this. Stripping the alias on the later occurrence is safe because
+        ///    the user-visible column names come from the coordinator's
+        ///    projection metadata, not the AST sent to the receiver.
+        ///
+        ///    Same-alias-same-body duplicates (e.g. three identical
+        ///    `__table1.v AS v` projections produced by `SELECT td.v, td.k, td.v,
+        ///    tl.v, tl.k, td.v` over a JOIN) are kept intact: stripping their
+        ///    aliases would rename them to `__table1.v` and break position-by-name
+        ///    lookup of the source stream on the receiver, which manifests as
+        ///    `THERE_IS_NO_COLUMN`.
+        if (auto projection_ast = select_query->select())
+        {
+            std::unordered_map<String, IASTHash> alias_to_first_body_hash;
+            for (auto & child : projection_ast->children)
+            {
+                auto * with_alias = dynamic_cast<ASTWithAlias *>(child.get());
+                if (!with_alias)
+                    continue;
+                const auto & alias = with_alias->alias;
+                if (alias.empty())
+                    continue;
+
+                /// `getTreeHash(ignore_aliases=true)` ignores aliases at every
+                /// level of the subtree, so it is a body-only hash regardless of
+                /// what alias is currently set on this node.
+                const auto body_hash = child->getTreeHash(/*ignore_aliases=*/true);
+                auto [it, inserted] = alias_to_first_body_hash.emplace(alias, body_hash);
+                if (!inserted && it->second != body_hash)
+                    with_alias->setAlias(String());
+            }
+        }
     }
 
     return ast;
