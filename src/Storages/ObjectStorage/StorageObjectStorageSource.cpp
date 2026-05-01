@@ -729,15 +729,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// was already adjusted by `updateFormatPrewhereInfo` to reflect the post-PREWHERE
         /// schema, so the format reader treats columns referenced only by PREWHERE as
         /// "consumed" and does not emit them. We need them in the block so the fallback
-        /// FilterTransforms below can evaluate `c0 > 10` etc. Re-add any missing input
-        /// columns of the stripped DAGs to the reader's sample header.
+        /// `FilterTransform`s further down can evaluate `c0 > 10` etc. Re-add any missing
+        /// input columns of the stripped DAGs to the reader's sample header.
         ///
-        /// Skip this for the schema-changed path (Iceberg column-id rename / data lake schema
-        /// evolution): there the file-side schema is different from the query-side schema and
-        /// the DAG input names don't necessarily match file columns. The mapper handles the
-        /// renaming downstream. (Note: the schema-changed path with stripped PREWHERE is
-        /// currently rare in practice — the same column-renaming Iceberg cases that need the
-        /// mapper typically also use Parquet, where PREWHERE is supported and not stripped.)
+        /// Skip this for the schema-changed path: there `initial_header` was set above to
+        /// the FULL underlying file schema (`sample_header` from `getInitialSchemaByPath`),
+        /// so all file-side columns — including the file-side counterparts of the filter
+        /// input columns — are already present and emitted by the reader. The schema
+        /// transform that runs below then renames/casts them to query-side names BEFORE
+        /// the fallback `FilterTransform`s run, so policies and `PREWHERE` evaluate
+        /// against the same names the query planner produced.
         if (!schema_changed)
         {
             auto add_filter_inputs = [&](const ActionsDAG & dag)
@@ -816,26 +817,90 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
-        /// Apply row-level security filter and PREWHERE as fallback FilterTransforms
-        /// when the file format doesn't support PREWHERE. For mixed-format data lake
-        /// tables (e.g. Iceberg with Parquet + ORC files), table-level PREWHERE support
-        /// may not match the individual file's format. We strip row_level_filter and
-        /// prewhere_info from FormatFilterInfo above and apply them here as post-read
+        if (object_info->data_lake_metadata
+            && object_info->data_lake_metadata->excluded_rows
+            && object_info->data_lake_metadata->excluded_rows->size() > 0)
+        {
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
+            });
+        }
+
+        std::optional<ActionsDAG> schema_transform;
+        if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
+        {
+            schema_transform = object_info->data_lake_metadata->schema_transform->clone();
+            /// Preserve filter-input columns through the data lake schema transform. The
+            /// fallback `FilterTransform`s below evaluate against query-side names, so
+            /// the schema_transform must continue to output any column referenced by
+            /// `stripped_row_level_filter` / `stripped_prewhere_info`, not just those
+            /// in `requested_columns` (which is post-`PREWHERE` and excludes filter
+            /// inputs). For non-stripped (Parquet) reads the filter columns aren't
+            /// referenced after the format reader so this is a no-op.
+            ///
+            /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
+            /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
+            /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
+            Names needed_names = read_from_format_info.requested_columns.getNames();
+            auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                    needed_names.push_back(required.name);
+            };
+            if (stripped_row_level_filter)
+                add_filter_required_names(stripped_row_level_filter->actions);
+            if (stripped_prewhere_info)
+                add_filter_required_names(stripped_prewhere_info->prewhere_actions);
+            schema_transform->removeUnusedActions(needed_names);
+        }
+        if (!schema_transform)
+        {
+            auto transform = configuration->getSchemaTransformer(context_, object_info);
+            if (transform)
+                schema_transform = transform->clone();
+        }
+
+        if (schema_transform.has_value())
+        {
+            auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(schema_transform.value()));
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
+            });
+        }
+
+        /// Apply row-level security filter and `PREWHERE` as fallback `FilterTransform`s
+        /// when the file format doesn't support `PREWHERE`. For mixed-format data lake
+        /// tables (e.g. Iceberg with Parquet + ORC files), table-level `PREWHERE` support
+        /// may not match the individual file's format. We strip `row_level_filter` and
+        /// `prewhere_info` from `FormatFilterInfo` above and apply them here as post-read
         /// filters instead.
         ///
-        /// Order matters: row-level filter first, PREWHERE second. This matches the
-        /// canonical filter pipeline used everywhere else in the engine:
+        /// These transforms run AFTER the schema_transform `ExpressionTransform` above so
+        /// that the block they see uses query-side column names. The data lake schema
+        /// transform handles Iceberg / Delta column renames, type evolution, and
+        /// constant-default columns added by schema evolution; running the filters
+        /// downstream of it means policy and `PREWHERE` expressions evaluate against
+        /// the exact names produced by the query planner. (Running them upstream would
+        /// fail with `NOT_FOUND_COLUMN_IN_BLOCK` in the schema-changed path because the
+        /// reader emits file-side names, while filter expressions reference query-side
+        /// names.)
+        ///
+        /// Order between the two filters matters: row-level filter first, `PREWHERE`
+        /// second. This mirrors the canonical filter pipeline used everywhere else in
+        /// the engine:
         ///   - `SourceStepWithFilter::applyPrewhereActions`
         ///   - `MergeTreeSelectProcessor::getPrewhereActions`
         ///   - `Parquet::Reader::initializePrewhere`
-        /// PREWHERE actions drop their input columns from the block via `updateHeader`
+        /// `PREWHERE` actions drop their input columns from the block via `updateHeader`
         /// (the DAG outputs the synthetic filter column plus only what is needed
-        /// downstream). If PREWHERE ran first, a row-policy expression that references
+        /// downstream). If `PREWHERE` ran first, a row-policy expression that references
         /// the same input column (a common case: row policy on `c0`, query
         /// `SELECT c1 FROM t PREWHERE c0 > N`) could not be evaluated. Applying the
         /// row-level filter first preserves the input columns for the policy and then
-        /// lets PREWHERE drop them as the planner intended.
-
+        /// lets `PREWHERE` drop them as the planner intended.
+        ///
         /// The query planner puts row policies into `row_level_filter` when
         /// `storage->supportsPrewhere()` (`PlannerJoinTree.cpp:1012`), but individual
         /// files in mixed-format tables may not support it at format level.
@@ -860,41 +925,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     header, prewhere_actions,
                     stripped_prewhere_info->prewhere_column_name,
                     stripped_prewhere_info->remove_prewhere_column);
-            });
-        }
-
-        if (object_info->data_lake_metadata
-            && object_info->data_lake_metadata->excluded_rows
-            && object_info->data_lake_metadata->excluded_rows->size() > 0)
-        {
-            builder.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
-            });
-        }
-
-        std::optional<ActionsDAG> schema_transform;
-        if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
-        {
-            schema_transform = object_info->data_lake_metadata->schema_transform->clone();
-            /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
-            /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
-            /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
-            schema_transform->removeUnusedActions(read_from_format_info.requested_columns.getNames());
-        }
-        if (!schema_transform)
-        {
-            auto transform = configuration->getSchemaTransformer(context_, object_info);
-            if (transform)
-                schema_transform = transform->clone();
-        }
-
-        if (schema_transform.has_value())
-        {
-            auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(schema_transform.value()));
-            builder.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
             });
         }
 
