@@ -1,9 +1,11 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
+#include <atomic>
 #include <filesystem>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/copyData.h>
@@ -65,17 +67,116 @@ ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_setting
     return IObjectStorage::patchSettings(modified_settings);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
-    const StoredObject & object,
-    const ReadSettings & read_settings,
-    std::optional<size_t> read_hint) const
-{
-    LOG_TEST(log, "Read object: {}", object.remote_path);
-    return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
-}
-
 namespace
 {
+
+/// Wrapper around a read buffer that adds blob storage logging in the destructor.
+///
+/// Local reads (and HDFS) have no discrete "API call" boundary like S3 `GetObject` or
+/// Azure `Download`, so we aggregate `elapsed_microseconds` and `bytes_read` across all
+/// `nextImpl`/`readBigAt` calls and emit a single `Read` event per buffer lifetime.
+/// S3 and Azure log each request/attempt separately as time-to-first-byte instead.
+class ReadBufferFromFileWithLogging final : public ReadBufferFromFileDecorator
+{
+public:
+    ReadBufferFromFileWithLogging(
+        std::unique_ptr<ReadBufferFromFileBase> impl_,
+        const String & file_path_,
+        const String & bucket_,
+        BlobStorageLogWriterPtr blob_log_)
+        : ReadBufferFromFileDecorator(std::move(impl_))
+        , file_path(file_path_)
+        , bucket(bucket_)
+        , blob_log(std::move(blob_log_))
+    {
+    }
+
+    ~ReadBufferFromFileWithLogging() override
+    {
+        /// The destructor is implicitly `noexcept`. `addEvent` is potentially throwing
+        /// (e.g. allocations inside `SystemLogQueue::push`), so wrap it in `try/catch`
+        /// to avoid `std::terminate` if it throws during stack unwinding.
+        if (blob_log && read_attempted && !read_failed)
+        {
+            try
+            {
+                blob_log->addEvent(
+                    BlobStorageLogElement::EventType::Read,
+                    /* bucket */ bucket,
+                    /* remote_path */ file_path,
+                    /* local_path */ {},
+                    /* data_size */ bytes_read,
+                    elapsed_microseconds,
+                    /* error_code */ 0,
+                    /* error_message */ {});
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+
+    std::string getFileName() const override { return file_path; }
+
+    bool supportsReadAt() override { return impl->supportsReadAt(); }
+
+    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override
+    {
+        Stopwatch watch;
+        read_attempted = true;
+        try
+        {
+            size_t result = impl->readBigAt(to, n, offset, progress_callback);
+            elapsed_microseconds += watch.elapsedMicroseconds();
+            bytes_read += result;
+            return result;
+        }
+        catch (...)
+        {
+            read_failed = true;
+            throw;
+        }
+    }
+
+    /// Forward methods that the base ReadBufferFromFileDecorator does not delegate.
+    /// These are used when our wrapper is plugged into ReadBufferFromRemoteFSGather
+    /// or AsynchronousBoundedReadBuffer (e.g. for the local_blob_storage disk type).
+    size_t getFileOffsetOfBufferEnd() const override { return impl->getFileOffsetOfBufferEnd(); }
+    void setReadUntilPosition(size_t position) override { impl->setReadUntilPosition(position); }
+    void setReadUntilEnd() override { impl->setReadUntilEnd(); }
+    bool supportsRightBoundedReads() const override { return impl->supportsRightBoundedReads(); }
+    bool isSeekCheap() override { return impl->isSeekCheap(); }
+    bool isContentCached(size_t offset, size_t size) override { return impl->isContentCached(offset, size); }
+
+private:
+    bool nextImpl() override
+    {
+        Stopwatch next_watch;
+        read_attempted = true;
+        try
+        {
+            bool result = ReadBufferFromFileDecorator::nextImpl();
+            elapsed_microseconds += next_watch.elapsedMicroseconds();
+            if (result)
+                bytes_read += working_buffer.size();
+            return result;
+        }
+        catch (...)
+        {
+            read_failed = true;
+            throw;
+        }
+    }
+
+    const String file_path;
+    const String bucket;
+    BlobStorageLogWriterPtr blob_log;
+    mutable std::atomic<size_t> elapsed_microseconds = 0;
+    mutable std::atomic<size_t> bytes_read = 0;
+    mutable std::atomic<bool> read_attempted = false;
+    mutable std::atomic<bool> read_failed = false;
+};
 
 /// Wrapper around WriteBufferFromFile that adds blob storage logging on finalize.
 /// Inherits from WriteBufferFromFileDecorator to follow the established pattern.
@@ -120,6 +221,28 @@ private:
     BlobStorageLogWriterPtr blob_log;
 };
 
+}
+
+std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    std::optional<size_t> read_hint) const
+{
+    LOG_TEST(log, "Read object: {}", object.remote_path);
+    auto buf = createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
+
+    if (read_settings.enable_blob_storage_log_for_read_operations)
+    {
+        auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
+        if (blob_storage_log)
+        {
+            blob_storage_log->local_path = object.local_path;
+            return std::make_unique<ReadBufferFromFileWithLogging>(
+                std::move(buf), object.remote_path, settings.key_prefix, std::move(blob_storage_log));
+        }
+    }
+
+    return buf;
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT

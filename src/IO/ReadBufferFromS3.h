@@ -17,6 +17,10 @@
 
 namespace DB
 {
+
+class BlobStorageLogWriter;
+using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
+
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
@@ -56,7 +60,8 @@ public:
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false,
         std::optional<size_t> file_size = std::nullopt,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;}
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;},
+        BlobStorageLogWriterPtr blob_storage_log_ = {}
         );
 
     ~ReadBufferFromS3() override = default;
@@ -117,6 +122,8 @@ private:
     bool read_all_range_successfully = false;
 
     const S3CredentialsRefreshCallback credentials_refresh_callback;
+
+    mutable BlobStorageLogWriterPtr blob_storage_log;
 };
 
 }

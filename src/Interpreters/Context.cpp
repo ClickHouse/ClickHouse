@@ -282,6 +282,7 @@ namespace Setting
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
     extern const SettingsBool enable_filesystem_read_prefetches_log;
     extern const SettingsBool enable_blob_storage_log;
+    extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
@@ -7663,6 +7664,7 @@ ReadSettings Context::getReadSettings() const
 
     res.mmap_cache = getMMappedFileCache().get();
     res.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
+    res.enable_blob_storage_log_for_read_operations = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
     return res;
 }

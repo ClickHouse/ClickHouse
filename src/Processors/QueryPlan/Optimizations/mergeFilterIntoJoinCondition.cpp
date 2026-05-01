@@ -179,7 +179,10 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
 
             /// We can't push equality condition into JOIN if types are not equal.
             if (!lhs->result_type->equals(*rhs->result_type))
+            {
+                rejected_conjuncts.push_back(conjunct);
                 continue;
+            }
 
             /// We need to check if arguments are coming from different sides of JOIN
             auto lhs_side = getExpressionSide(lhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
