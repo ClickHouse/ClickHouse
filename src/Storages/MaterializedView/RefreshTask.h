@@ -38,7 +38,97 @@ enum class RefreshState
 class RefreshTask : public std::enable_shared_from_this<RefreshTask>
 {
 public:
-    struct Info;
+    /// Just for observability.
+    struct Info
+    {
+        StorageID view_id = StorageID::createEmpty();
+        RefreshState state;
+        std::chrono::system_clock::time_point next_refresh_time;
+        CoordinationZnode znode;
+        String replica_name;
+        bool refresh_running;
+        ProgressValues progress;
+        std::optional<String> unexpected_error; // refreshing is stopped because of unexpected error
+    };
+
+    /// Information about the state of views that this view `DEPENDS ON`.
+    struct DependencyState
+    {
+        StorageID table {};
+        std::chrono::sys_time<std::chrono::nanoseconds> refresh_end_time {};
+
+        /// The below fields are not serialized in CoordinationZnode.
+
+        String last_refresh_replica;
+    };
+
+    using AllDependencyStates = std::vector<DependencyState>;
+
+    /// Information stored in zookeeper for making sure each refresh is executed by only one replica.
+    /// If coordination is disabled, this is just stored in memory and not written to zookeeper.
+    struct CoordinationZnode
+    {
+        /// "Official" time of the latest successful refresh, i.e. time according to schedule rather than wall clock,
+        /// and without randomization. E.g. for REFRESH EVERY 1 DAY this timestamp is always the first second of a
+        /// calendar day. 0 if no successful refresh happened yet.
+        /// (We store last rather than next timeslot because it behaves better when ALTER MODIFY REFRESH reduces refresh period.)
+        std::chrono::sys_seconds last_completed_timeslot;
+
+        /// Time when the latest successful refresh started.
+        std::chrono::sys_seconds last_success_time;
+        std::chrono::milliseconds last_success_duration{0};
+        /// Note that this may not match the DB if a refresh managed to EXCHANGE tables, then failed to write to keeper.
+        /// That can only happen if last_attempt_succeeded = false.
+        UUID last_success_table_uuid;
+
+        /// Information about the last started attempt. (I.e. current attempt if a refresh is running, previous attempt if not running.)
+        std::chrono::sys_seconds last_attempt_time; // when the attempt started or ended
+        std::string last_attempt_replica;
+        std::string last_attempt_error;
+        bool last_attempt_succeeded = false;
+        /// If an attempt is in progress, this contains error from the previous attempt.
+        /// Useful if we keep retrying and failing, and each attempt takes a while - we want to see an error message
+        /// without having to catch the brief time window between attempts.
+        std::string previous_attempt_error;
+
+        /// Incremented when a refresh attempt starts. Set to 0 when refresh succeeds or when we skip a timeslot.
+        /// Used for exponential backoff on errors.
+        Int64 attempt_number = 0;
+
+        /// Random number in [-1e9, 1e9], for RANDOMIZE FOR. Re-rolled after every refresh attempt.
+        /// (Why write it to keeper instead of letting each replica toss its own coin? Because then refresh would happen earlier
+        /// on average, on the replica that generated the shortest delay. We could use nonuniform distribution to complensate, but this is easier.)
+        Int64 randomness = 0;
+
+
+        asdwqe assign these 3;
+        /// A guess at whether a refresh is running on some replica.
+        /// Set to true when starting refresh, to false when finishing refresh.
+        /// Normally accompanied by an ephemeral znode `running`, owned by the replica that's refreshing.
+        /// If the refreshing replica crashes, other replicas notice that the ephemeral znode
+        /// disappeared and set refresh_running to false after a timeout.
+        /// If the refreshing replica loses connection to zookeeper and reconnects quickly enough,
+        /// it re-creates the `running` znode while refresh_running is still true.
+        bool refresh_running = false;
+
+        /// When last successful refresh finished.
+        std::chrono::sys_time<std::chrono::nanoseconds> last_success_end_time {};
+
+        /// If this view `DEPENDS ON` another view, we should refresh whenever the other view
+        /// completes a refresh. This field contains the dependency's last_success_end_time at
+        /// the start of out last successful refresh.
+        /// If it's less than that table's current last_success_end_time, we should start a refresh.
+        /// We don't currently support multiple dependencies, but this is a list anyway.
+        AllDependencyStates dependencies;
+
+        /// Znode version. Not serialized.
+        int32_t version = -1;
+
+        void randomize(); // assigns `randomness`
+
+        String toString() const;
+        void parse(const String & data);
+    };
 
     /// Never call it manually, public for shared_ptr construction only
     RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup);
@@ -96,14 +186,7 @@ public:
     /// Returns false if `deadline` was reached before the work completed. Used by server shutdown.
     bool tryJoinBackgroundTask(std::chrono::steady_clock::time_point deadline);
 
-    struct DependencyRefreshInfo
-    {
-        std::chrono::sys_seconds next_refresh_timeslot;
-        String last_refresh_replica;
-    };
-
-    /// Used information needed for views that depend on this one.
-    DependencyRefreshInfo getDependencyInfo() const;
+    DependencyState getInfoForDependentViews() const;
 
     /// Called when refresh scheduling needs to be reconsidered, e.g. after a refresh happens in
     /// any task that this task depends on.
@@ -120,62 +203,6 @@ public:
     ///  * If the target table is replicated, and another replica did a refresh, do an equivalent of
     ///    SYSTEM SYNC REPLICA before first read from this table, to make sure we see the data.
     std::tuple<StoragePtr, TableLockHolder> getAndLockTargetTable(const StorageID & storage_id, const ContextPtr & context);
-
-    struct CoordinationZnode
-    {
-        /// "Official" time of the latest successful refresh, i.e. time according to schedule rather than wall clock,
-        /// and without randomization. E.g. for REFRESH EVERY 1 DAY this timestamp is always the first second of a
-        /// calendar day. 0 if no successful refresh happened yet.
-        /// (We store last rather than next timeslot because it behaves better when ALTER MODIFY REFRESH reduces refresh period.)
-        std::chrono::sys_seconds last_completed_timeslot;
-
-        /// Time when the latest successful refresh started.
-        std::chrono::sys_seconds last_success_time;
-        std::chrono::milliseconds last_success_duration{0};
-        /// Note that this may not match the DB if a refresh managed to EXCHANGE tables, then failed to write to keeper.
-        /// That can only happen if last_attempt_succeeded = false.
-        UUID last_success_table_uuid;
-
-        /// Information about the last started attempt. (I.e. current attempt if a refresh is running, previous attempt if not running.)
-        std::chrono::sys_seconds last_attempt_time; // when the attempt started or ended
-        std::string last_attempt_replica;
-        std::string last_attempt_error;
-        bool last_attempt_succeeded = false;
-        /// If an attempt is in progress, this contains error from the previous attempt.
-        /// Useful if we keep retrying and failing, and each attempt takes a while - we want to see an error message
-        /// without having to catch the brief time window between attempts.
-        std::string previous_attempt_error;
-
-        /// Incremented when a refresh attempt starts. Set to 0 when refresh succeeds or when we skip a timeslot.
-        /// Used for exponential backoff on errors.
-        Int64 attempt_number = 0;
-
-        /// Random number in [-1e9, 1e9], for RANDOMIZE FOR. Re-rolled after every refresh attempt.
-        /// (Why write it to keeper instead of letting each replica toss its own coin? Because then refresh would happen earlier
-        /// on average, on the replica that generated the shortest delay. We could use nonuniform distribution to complensate, but this is easier.)
-        Int64 randomness = 0;
-
-        /// Znode version. Not serialized.
-        int32_t version = -1;
-
-        void randomize(); // assigns `randomness`
-
-        String toString() const;
-        void parse(const String & data);
-    };
-
-    /// Just for observability.
-    struct Info
-    {
-        StorageID view_id = StorageID::createEmpty();
-        RefreshState state;
-        std::chrono::system_clock::time_point next_refresh_time;
-        CoordinationZnode znode;
-        String replica_name;
-        bool refresh_running;
-        ProgressValues progress;
-        std::optional<String> unexpected_error; // refreshing is stopped because of unexpected error
-    };
 
 private:
     struct CoordinationState
@@ -201,6 +228,11 @@ private:
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
+
+        /// Time when we first saw that `root_znode.refresh_running && !running_znode_exists`.
+        /// If far enough in the past, the replica that started the refresh has probably crashed,
+        /// and we should update the znode to say refresh_running = false.
+        std::optional<std::chrono::sys_time<std::chrono::nanoseconds>> running_znode_lost_since {};
 
         /// Whether we use Keeper to coordinate refresh across replicas. If false, we don't write to Keeper,
         /// but we still use the same in-memory structs (CoordinationZnode etc), as if it's coordinated (with one replica).
@@ -234,6 +266,8 @@ private:
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
         bool out_of_schedule_refresh_requested = false;
 
+        asdqwe;
+
         bool should_recalculate_dependencies = true;
 
         /// Timestamp representing the progress of refreshable views we depend on. We're allowed to do
@@ -252,7 +286,7 @@ private:
     StorageMaterializedView * view;
 
     /// Protects all fields below.
-    /// Never locked for blocking operations (e.g. creating or dropping the internal table).
+    /// Never locked for blocking operations (e.g. creating the internal table or reading from zookeeper).
     /// Can't be locked while holding `executor_mutex`.
     mutable std::mutex mutex;
 
@@ -293,8 +327,13 @@ private:
     /// Mutex must be unlocked. Called only from refresh_task. Doesn't throw.
     std::optional<UUID> executeRefreshUnlocked(bool append, int32_t root_znode_version, std::chrono::system_clock::time_point start_time, const Stopwatch & stopwatch, const String & log_comment, String & out_error_message);
 
-    /// Assigns dependencies_satisfied_until.
-    void updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock);
+    /// Look up the IStorage-s for views we depend on and collect their states.
+    AllDependencyStates getDependencyStates();
+
+    /// If 0, we can refresh right away.
+    /// If max(), we should wait for notify() (usually triggered by dependency refresh), then check again.
+    /// Otherwise, wait for this amount of time, then check again.
+    std::chrono::milliseconds shouldWaitForDependencies(const AllDependencyStates & seen_states, const AllDependencyStates & new_states);
 
     std::tuple<std::chrono::system_clock::time_point, std::chrono::sys_seconds, CoordinationZnode>
     determineNextRefreshTime(std::chrono::sys_seconds now);
@@ -302,6 +341,8 @@ private:
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
     bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
     void removeRunningZnodeIfMine(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
+
+    asdqwe;
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);

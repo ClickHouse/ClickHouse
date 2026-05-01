@@ -321,7 +321,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
 RefreshTask::Info RefreshTask::getInfo() const
 {
     std::lock_guard guard(mutex);
-    return Info {.view_id = set_handle.getID(), .state = state, .next_refresh_time = next_refresh_time, .znode = coordination.root_znode, .replica_name = coordination.replica_name, .refresh_running = coordination.running_znode_exists, .progress = execution.progress.getValues(), .unexpected_error = scheduling.unexpected_error};
+    return Info {.view_id = set_handle.getID(), .state = state, .next_refresh_time = next_refresh_time, .znode = coordination.root_znode, .replica_name = coordination.replica_name, .refresh_running = coordination.root_znode.refresh_running, .progress = execution.progress.getValues(), .unexpected_error = scheduling.unexpected_error};
 }
 
 void RefreshTask::start()
@@ -403,7 +403,7 @@ void RefreshTask::wait()
     {
         if (!view)
             throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
-        if (!coordination.running_znode_exists && !coordination.root_znode.last_attempt_succeeded && coordination.root_znode.last_attempt_time.time_since_epoch().count() != 0)
+        if (!coordination.root_znode.refresh_running && !coordination.root_znode.last_attempt_succeeded && coordination.root_znode.last_attempt_time.time_since_epoch().count() != 0)
             throw Exception(ErrorCodes::REFRESH_FAILED,
                 "Refresh failed{}: {}", coordination.coordinated ? " (on replica " + coordination.root_znode.last_attempt_replica + ")" : "",
                 coordination.root_znode.last_attempt_error.empty() ? "Replica went away" : coordination.root_znode.last_attempt_error);
@@ -420,6 +420,7 @@ void RefreshTask::wait()
 
     if (coordination.coordinated && !refresh_append)
     {
+        asdqwe reuse;
         /// Wait until we see the table produced by the latest refresh.
         while (true)
         {
@@ -458,13 +459,17 @@ bool RefreshTask::tryJoinBackgroundTask(std::chrono::steady_clock::time_point de
         });
 }
 
-RefreshTask::DependencyRefreshInfo RefreshTask::getDependencyInfo() const
+RefreshTask::DependencyState RefreshTask::getInfoForDependentViews() const
 {
     std::lock_guard guard(mutex);
-    DependencyRefreshInfo info;
-    info.next_refresh_timeslot = refresh_schedule.advance(coordination.root_znode.last_completed_timeslot);
-    info.last_refresh_replica = coordination.root_znode.last_attempt_replica;
-    return info;
+    return DependencyState {
+        .refresh_end_time = coordination.root_znode.last_success_end_time,
+        /// This is not quite correct: if another refresh attempt started since last_success_end_time,
+        /// it's the new attempt's replica instead of refresh_end_time's replica.
+        /// But it's not used for anything important, so doesn't seem worth adding a field to
+        /// CoordinationZnode for it; we should probably delete the prefer_dependency_replica feature instead.
+        .last_refresh_replica = coordination.root_znode.last_attempt_replica,
+    };
 }
 
 void RefreshTask::notify()
@@ -505,6 +510,7 @@ void RefreshTask::refreshTask()
             setState(RefreshState::Scheduling, lock);
             execution.interrupt_execution.store(false);
 
+            asdqwe;
             updateDependenciesIfNeeded(lock);
 
             std::shared_ptr<zkutil::ZooKeeper> zookeeper;
@@ -513,11 +519,14 @@ void RefreshTask::refreshTask()
             readZnodesIfNeeded(zookeeper, lock);
             chassert(lock.owns_lock());
 
+            asdqwe abandon refresh if needed, including immediately in the case `coordination.root_znode.last_attempt_replica == coordination.replica_name && !coordination.running_znode_exists`, start timer to give up on refresh;
+
             /// Check if another replica is already running a refresh.
-            if (coordination.running_znode_exists)
+            if (coordination.root_znode.refresh_running)
             {
                 if (coordination.root_znode.last_attempt_replica == coordination.replica_name)
                 {
+                    asdqwe move this into giveUpOnCrashedReplicaIfNeeded;
                     LOG_ERROR(log, "Znode {} indicates that this replica is running a refresh, but it isn't. Likely a bug.", coordination.path + "/running");
 #ifdef DEBUG_OR_SANITIZER_BUILD
                     abortOnFailedAssertion("Unexpected refresh lock in keeper");
@@ -995,13 +1004,13 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     /// Set watches. (This is a lot of code, is there a better way?)
     if (!coordination.watches->root_watch_active.load())
     {
-        coordination.watches->root_watch_active.store(true);
         zookeeper->existsWatch(coordination.path, nullptr, refresh_task_watch_callback);
+        coordination.watches->root_watch_active.store(true);
     }
     if (!coordination.watches->children_watch_active.load())
     {
-        coordination.watches->children_watch_active.store(true);
         zookeeper->getChildrenWatch(coordination.path, nullptr, refresh_task_watch_callback);
+        coordination.watches->children_watch_active.store(true);
     }
 
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
@@ -1221,6 +1230,7 @@ String RefreshTask::CoordinationZnode::toString() const
         << "previous_attempt_error: " << escape << previous_attempt_error << "\n"
         << "attempt_number: " << attempt_number << "\n"
         << "randomness: " << randomness << "\n";
+    asdqwe new fields;
     return out.str();
 }
 
@@ -1247,6 +1257,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data)
     last_success_time = std::chrono::sys_seconds(std::chrono::seconds(last_success_time_int));
     last_success_duration = std::chrono::milliseconds(last_success_duration_int);
     last_attempt_time = std::chrono::sys_seconds(std::chrono::seconds(last_attempt_time_int));
+    asdqwe new fields (optional);
 }
 
 }
