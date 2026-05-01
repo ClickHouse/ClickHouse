@@ -277,12 +277,18 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
     auto parts = r.readStringArray("name_parts");
     if (!parts.empty())
     {
+        for (const auto & part : parts)
+            if (part.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty element in 'name_parts' array for ASTTableIdentifier");
         name_parts = std::move(parts);
         resetFullName();
     }
     else
     {
-        setShortName(r.getString("name"));
+        String name = r.getString("name");
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTTableIdentifier");
+        setShortName(name);
     }
     if (r.has("uuid"))
     {
