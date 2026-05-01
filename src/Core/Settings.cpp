@@ -5796,6 +5796,12 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
     DECLARE(SetOperationMode, except_default_mode, SetOperationMode::ALL, R"(
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 )", 0) \
+    DECLARE(UInt64, max_streams_for_union_step, 0, R"(
+Limits the number of simultaneously active data streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`, because `UNION DISTINCT` is implemented via a `UNION ALL` step followed by a `DISTINCT` step). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied.
+)", 0) \
+    DECLARE(Float, max_streams_for_union_step_to_max_threads_ratio, 8, R"(
+This ratio multiplied by `max_threads` determines a limit on simultaneously active streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`). The actual limit is the minimum of this computed value and `max_streams_for_union_step` (either one being 0 means it is ignored). For example, with `max_threads = 8` and this ratio set to 1, at most 8 streams will be active. Set to 0 to disable this ratio-based limit.
+)", 0) \
     DECLARE(Bool, optimize_aggregators_of_group_by_keys, true, R"(
 Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section
 )", 0) \
@@ -6988,6 +6994,10 @@ See also:
 )", 0) \
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
+)", 0) \
+    DECLARE(Bool, enable_blob_storage_log_for_read_operations, false, R"(
+Write information about blob storage read operations to system.blob_storage_log table.
+Requires `enable_blob_storage_log` to be enabled as well.
 )", 0) \
     DECLARE(UInt64, predicate_statistics_sample_rate, 0, R"(
 Collect predicate selectivity statistics into `system.predicate_statistics_log`. When set to N > 0, approximately 1/N of queries are sampled (by the query ID). 0 means disabled.

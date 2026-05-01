@@ -14,6 +14,18 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 
+class SensitiveFormatter(logging.Formatter):
+    @staticmethod
+    def _filter(s):
+        return re.sub(
+            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
+        )
+
+    def format(self, record):
+        original = logging.Formatter.format(self, record)
+        return self._filter(original)
+
+
 def read_test_results(results_path: Path, with_raw_logs: bool = True):
     results = []
     with open(results_path, "r", encoding="utf-8") as descriptor:
@@ -50,6 +62,13 @@ def get_additional_envs(info, check_name: str) -> List[str]:
     from ci.jobs.ci_utils import is_extended_run
 
     result = []
+    if not info.is_local_run:
+        azure_connection_string = Shell.get_output(
+            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+            verbose=True,
+            strict=True,
+        )
+        result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
@@ -143,6 +162,9 @@ def process_results(
 def run_stress_test(upgrade_check: bool = False) -> None:
     info = Info()
     logging.basicConfig(level=logging.INFO)
+    for handler in logging.root.handlers:
+        # pylint: disable=protected-access
+        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Utils.Stopwatch()
     temp_path = Path(Utils.cwd()) / "ci/tmp"
