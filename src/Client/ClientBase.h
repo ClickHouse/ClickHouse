@@ -321,7 +321,7 @@ protected:
     Int32 suggestion_limit;
     bool enable_highlight = true;
     bool multiline = false;
-    bool rainbow_parentheses = false;
+    bool rainbow_parentheses = true;
 
     std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
