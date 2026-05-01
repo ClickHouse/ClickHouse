@@ -1,5 +1,10 @@
 #pragma once
 
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_index/member.hpp>
+#include <boost/multi_index/tag.hpp>
+
 #include "config.h"
 
 #if USE_ARROWFLIGHT
@@ -254,10 +259,42 @@ private:
     /// `tickets_by_expiration_time` and `poll_descriptors_by_expiration_time` are sorted by `expiration_time` so `std::set` is used.
     std::set<std::pair<Timestamp, String>> tickets_by_expiration_time TSA_GUARDED_BY(mutex);
     std::set<std::pair<Timestamp, String>> poll_descriptors_by_expiration_time TSA_GUARDED_BY(mutex);
-    std::unordered_map<String, std::shared_ptr<PreparedStatementInfo>> prepared_statements TSA_GUARDED_BY(mutex);
-    std::unordered_map<String, std::unordered_set<String>> session_to_prepared_statements TSA_GUARDED_BY(mutex);
-    std::unordered_map<String, String> prepared_statement_to_session TSA_GUARDED_BY(mutex);
-    std::unordered_map<String, std::unordered_set<String>> user_to_prepared_statements TSA_GUARDED_BY(mutex);
+
+    struct PreparedStatementEntry
+    {
+        String handle;
+        String session_id;
+        String username;
+
+        std::shared_ptr<PreparedStatementInfo> info;
+    };
+
+    struct PreparedStatementByHandle {};
+    struct PreparedStatementBySessionId {};
+    struct PreparedStatementByUsername {};
+
+    using PrepareStatementsContainer = boost::multi_index_container<
+        PreparedStatementEntry,
+        boost::multi_index::indexed_by<
+            // index by handle
+            boost::multi_index::hashed_unique<
+                boost::multi_index::tag<PreparedStatementByHandle>,
+                boost::multi_index::member<PreparedStatementEntry, String, &PreparedStatementEntry::handle>>,
+            // index by session_id, non unique
+            boost::multi_index::hashed_non_unique<
+                boost::multi_index::tag<PreparedStatementBySessionId>,
+                boost::multi_index::member<PreparedStatementEntry, String, &PreparedStatementEntry::session_id>>,
+            // index by user, non unique
+            boost::multi_index::hashed_non_unique<
+                boost::multi_index::tag<PreparedStatementByUsername>,
+                boost::multi_index::member<PreparedStatementEntry, String, &PreparedStatementEntry::username>>>>;
+
+    PrepareStatementsContainer prep_statements TSA_GUARDED_BY(mutex);
+
+    PrepareStatementsContainer::index<PreparedStatementByHandle>::type & prep_statements_by_handle TSA_GUARDED_BY(mutex);
+    PrepareStatementsContainer::index<PreparedStatementBySessionId>::type & prep_statements_by_session_id TSA_GUARDED_BY(mutex);
+    PrepareStatementsContainer::index<PreparedStatementByUsername>::type & prep_statements_by_username TSA_GUARDED_BY(mutex);
+
     std::optional<Timestamp> next_expiration_time TSA_GUARDED_BY(mutex);
     mutable std::condition_variable next_expiration_time_updated;
     bool stop_waiting_next_expiration_time TSA_GUARDED_BY(mutex) = false;

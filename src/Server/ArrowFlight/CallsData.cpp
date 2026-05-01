@@ -29,6 +29,9 @@ CallsData::CallsData(std::optional<Duration> tickets_lifetime_, std::optional<Du
     , poll_descriptors_lifetime(poll_descriptors_lifetime_)
     , max_prepared_statements_per_user(max_prepared_statements_per_user_)
     , log(log_)
+    , prep_statements_by_handle(prep_statements.get<PreparedStatementByHandle>())
+    , prep_statements_by_session_id(prep_statements.get<PreparedStatementBySessionId>())
+    , prep_statements_by_username(prep_statements.get<PreparedStatementByUsername>())
 {
 }
 
@@ -546,44 +549,37 @@ arrow::Result<String> CallsData::createPreparedStatement(PreparedStatementInfo i
     std::lock_guard lock{mutex};
     if (max_prepared_statements_per_user > 0)
     {
-        auto & user_handles = user_to_prepared_statements[shared_info->username];
-        if (user_handles.size() >= max_prepared_statements_per_user)
+        if (prep_statements_by_username.count(shared_info->username) >= max_prepared_statements_per_user)
             return arrow::Status::CapacityError(
                 "Too many prepared statements for user ", shared_info->username,
                 " (limit: ", std::to_string(max_prepared_statements_per_user), ")");
-        user_handles.insert(handle);
     }
-    prepared_statements.emplace(handle, std::move(shared_info));
-    if (!session_id.empty())
-    {
-        session_to_prepared_statements[session_id].insert(handle);
-        prepared_statement_to_session[handle] = session_id;
-    }
+    prep_statements_by_handle.emplace(
+        PreparedStatementEntry{.handle = handle, .session_id = session_id, .username = shared_info->username, .info = shared_info});
     return handle;
 }
 
 arrow::Result<PreparedStatementInfo> CallsData::getPreparedStatement(const String & handle, const String & username) const
 {
     std::lock_guard lock{mutex};
-    auto it = prepared_statements.find(handle);
-    if (it == prepared_statements.end())
+    auto it = prep_statements_by_handle.find(handle);
+    if (it == prep_statements_by_handle.end())
         return arrow::Status::KeyError("Prepared statement handle not found");
-    if (it->second->username != username)
+    if (it->username != username)
         return arrow::Status::KeyError("Prepared statement handle not found");
-    return *it->second;
+    return *it->info;
 }
 
 arrow::Status CallsData::bindParameters(const String & handle, const String & username, std::shared_ptr<arrow::RecordBatch> params)
 {
     std::lock_guard lock{mutex};
-    auto it = prepared_statements.find(handle);
-    if (it == prepared_statements.end())
+    auto it = prep_statements_by_handle.find(handle);
+    if (it == prep_statements_by_handle.end())
         return arrow::Status::KeyError("Prepared statement handle not found");
-    if (it->second->username != username)
+    if (it->username != username)
         return arrow::Status::KeyError("Prepared statement handle not found");
 
-    const auto & ps_info = it->second;
-    size_t num_params = ps_info->numParams();
+    size_t num_params = it->info->numParams();
 
     if (params && params->num_rows() > 1)
         return arrow::Status::NotImplemented("Multiple parameter sets are not supported (got ", params->num_rows(), " rows)");
@@ -593,65 +589,22 @@ arrow::Status CallsData::bindParameters(const String & handle, const String & us
             "Parameter count mismatch: query has ", num_params,
             " '?' placeholders but ", params->num_columns(), " columns were bound");
 
-    it->second->bound_parameters = std::move(params);
+    it->info->bound_parameters = std::move(params);
     return arrow::Status::OK();
 }
 
 void CallsData::closePreparedStatement(const String & handle, const String & username)
 {
     std::lock_guard lock{mutex};
-    auto it = prepared_statements.find(handle);
-    if (it == prepared_statements.end())
-        return;
-    if (it->second->username != username)
-        return;
-    auto ps_username = it->second->username;
-    prepared_statements.erase(it);
-    auto user_it = user_to_prepared_statements.find(ps_username);
-    if (user_it != user_to_prepared_statements.end())
-    {
-        user_it->second.erase(handle);
-        if (user_it->second.empty())
-            user_to_prepared_statements.erase(user_it);
-    }
-    auto session_it = prepared_statement_to_session.find(handle);
-    if (session_it != prepared_statement_to_session.end())
-    {
-        auto s_it = session_to_prepared_statements.find(session_it->second);
-        if (s_it != session_to_prepared_statements.end())
-        {
-            s_it->second.erase(handle);
-            if (s_it->second.empty())
-                session_to_prepared_statements.erase(s_it);
-        }
-        prepared_statement_to_session.erase(session_it);
-    }
+    if (auto it = prep_statements_by_handle.find(handle); it != prep_statements_by_handle.end() && it->username == username)
+        prep_statements_by_handle.erase(handle);
 }
 
 void CallsData::closeSessionPreparedStatements(const String & session_id)
 {
     std::lock_guard lock{mutex};
-    auto it = session_to_prepared_statements.find(session_id);
-    if (it == session_to_prepared_statements.end())
-        return;
-    for (const auto & handle : it->second)
-    {
-        LOG_DEBUG(log, "Closing prepared statement {} (session {} closed)", handle, session_id);
-        auto ps_it = prepared_statements.find(handle);
-        if (ps_it != prepared_statements.end())
-        {
-            auto user_it = user_to_prepared_statements.find(ps_it->second->username);
-            if (user_it != user_to_prepared_statements.end())
-            {
-                user_it->second.erase(handle);
-                if (user_it->second.empty())
-                    user_to_prepared_statements.erase(user_it);
-            }
-            prepared_statements.erase(ps_it);
-        }
-        prepared_statement_to_session.erase(handle);
-    }
-    session_to_prepared_statements.erase(it);
+    LOG_DEBUG(log, "Closing prepared statements for session {}", session_id);
+    prep_statements_by_session_id.erase(session_id);
 }
 
 std::optional<Timestamp> CallsData::calculateTicketExpirationTime(Timestamp current_time) const
