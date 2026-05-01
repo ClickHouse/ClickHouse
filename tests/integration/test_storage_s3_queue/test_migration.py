@@ -94,7 +94,10 @@ def test_migration(started_cluster, setting_prefix, buckets_num):
 
     for node in [node1, node2]:
         if "24.5" not in node.query("select version()").strip():
-            node.restart_with_original_version()
+            # Clear data dir: the latest binary may have written system log tables
+            # with settings (like `add_minmax_index_for_numeric_columns`) that 24.5
+            # doesn't recognize, which would prevent 24.5 from loading them.
+            node.restart_with_original_version(clear_data_dir=True)
 
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
