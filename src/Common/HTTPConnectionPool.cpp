@@ -819,17 +819,27 @@ private:
         /// try the next one if the first fails with a network error. Without this, a single
         /// broken address (a typical case is a host advertising AAAA on a network without
         /// IPv6 routing) makes the request fail even though a working address is known.
-        /// Bounded by the total attempt budget; duplicate addresses returned by the resolver
-        /// (possible when failure rebalancing reintroduces a previously failed address) are
-        /// skipped without consuming a connect attempt against the network.
+        /// `max_connect_attempts` bounds the number of real network connect attempts.
+        /// Duplicate addresses returned by the resolver (possible when failure rebalancing
+        /// reintroduces a previously failed address) are skipped without consuming a connect
+        /// attempt; `max_resolve_iterations` is a separate safety cap on the surrounding loop
+        /// so duplicates cannot starve real attempts and cannot cause an unbounded loop.
         static constexpr size_t max_connect_attempts = 4;
+        static constexpr size_t max_resolve_iterations = 16;
 
         auto resolver = HostResolversPool::instance().getResolver(host);
         std::unordered_set<String> tried_addresses;
         std::exception_ptr last_net_error;
+        size_t connect_attempts = 0;
 
-        for (size_t attempt = 0; attempt < max_connect_attempts; ++attempt)
+        for (size_t i = 0; i < max_resolve_iterations && connect_attempts < max_connect_attempts; ++i)
         {
+            auto address = resolver->resolve();
+            if (!tried_addresses.insert(*address).second)
+                continue;
+
+            ++connect_attempts;
+
             auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
             connection->setKeepAlive(true);
 
@@ -838,9 +848,6 @@ private:
                 connection->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_configuration));
             }
 
-            auto address = resolver->resolve();
-            if (!tried_addresses.insert(*address).second)
-                continue;
             connection->setResolvedHost(*address);
 
             try
