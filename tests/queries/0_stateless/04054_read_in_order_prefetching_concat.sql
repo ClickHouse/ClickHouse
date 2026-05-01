@@ -58,11 +58,44 @@ SELECT count() > 0 FROM (
     SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
+-- Per-part splitting must keep the total number of read streams bounded by `max_threads`.
+-- We sum the `× N` multipliers on `MergeTreeSelect` lines from `EXPLAIN PIPELINE`.
+SELECT 'multi_part_streams_within_cap';
+SELECT sum(streams) <= 6 FROM (
+    SELECT
+        if(match(explain, 'MergeTreeSelect.*× (\\d+)'),
+           toUInt32(extract(explain, 'MergeTreeSelect.*× (\\d+)')),
+           1) AS streams
+    FROM (
+        EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_multi
+        WHERE value LIKE '%5%'
+        ORDER BY key
+        SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1
+    )
+    WHERE explain LIKE '%MergeTreeSelect%'
+);
+
 -- Correctness: output must be sorted across partitions.
 SELECT 'multi_part_correctness';
 SELECT countIf(key < prev_key) FROM (
     SELECT key, lagInFrame(key, 1, 0) OVER (ORDER BY key) AS prev_key
     FROM t_prefetching_concat_multi WHERE value LIKE '%5%' ORDER BY key SETTINGS max_threads = 6, optimize_read_in_order = 1
+) WHERE prev_key != 0;
+
+-- Multi-part reverse `ORDER BY key DESC`: per-part `PrefetchingConcat` is enabled
+-- and must reverse the pipe order so that the merge produces correctly descending output.
+SELECT 'reverse_prefetching_multi_part';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_multi
+    WHERE value LIKE '%5%'
+    ORDER BY key DESC
+    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1
+) WHERE explain LIKE '%PrefetchingConcat%';
+
+SELECT 'reverse_multi_part_correctness';
+SELECT countIf(key > prev_key) FROM (
+    SELECT key, lagInFrame(key, 1, 0) OVER (ORDER BY key DESC) AS prev_key
+    FROM t_prefetching_concat_multi WHERE value LIKE '%5%' ORDER BY key DESC SETTINGS max_threads = 6, optimize_read_in_order = 1
 ) WHERE prev_key != 0;
 
 DROP TABLE t_prefetching_concat_multi;
