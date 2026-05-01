@@ -81,6 +81,7 @@ struct FunctionDocumentation
         Unknown,
 
         /// Regular functions
+        AI,
         Arithmetic,
         Array,
         Bit,

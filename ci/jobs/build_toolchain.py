@@ -202,6 +202,8 @@ def main():
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=OFF"
             f" -DLLVM_ENABLE_ZSTD=OFF"
+            f' -DCMAKE_C_FLAGS="-mllvm -vp-counters-per-site=8"'
+            f' -DCMAKE_CXX_FLAGS="-mllvm -vp-counters-per-site=8"'
             f" -DCMAKE_INSTALL_PREFIX={STAGE1_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
             f" -B {STAGE1_BUILD_DIR}"
@@ -313,7 +315,7 @@ def main():
                     " (link failures with instrumented compiler are expected)."
                     " Profraw files from compilation steps should still be available."
                 )
-                build_result.status = Result.Status.SUCCESS
+                build_result.status = Result.Status.OK
                 build_result.info = "Build failed at link step (expected); profraw files collected"
             results.append(build_result)
 

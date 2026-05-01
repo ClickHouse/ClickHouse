@@ -73,6 +73,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
+    extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
 }
 
@@ -690,7 +691,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (const auto & column : columns_desc)
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized && available_columns_set.contains(column.name))
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                && available_columns_set.contains(column.name)
+                && column.default_desc.expression)
             {
                 auto query = column.default_desc.expression->clone();
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
@@ -860,8 +863,12 @@ void MutationsInterpreter::prepare(bool dry_run)
                 auto type_literal = make_intrusive<ASTLiteral>(type->getName());
                 ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command);
 
-                /// And new check validateNestedArraySizes for Nested subcolumns
-                if (isArray(type) && !Nested::splitName(column_name).second.empty())
+                /// And new check validateNestedArraySizes for Nested subcolumns.
+                /// When share_nested_offsets is disabled, sibling Array columns are independent
+                /// and their sizes don't need to match.
+                bool skip_nested_validation = source.getMergeTreeData()
+                    && !(*source.getMergeTreeData()->getSettings())[MergeTreeSetting::share_nested_offsets];
+                if (!skip_nested_validation && isArray(type) && !Nested::splitName(column_name).second.empty())
                 {
                     boost::intrusive_ptr<ASTFunction> function = nullptr;
 
@@ -901,7 +908,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 for (const auto & column : columns_desc)
                 {
                     if (column.default_desc.kind == ColumnDefaultKind::Materialized
-                        && affected_materialized.contains(column.name))
+                        && affected_materialized.contains(column.name)
+                        && column.default_desc.expression)
                     {
                         auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
@@ -1209,7 +1217,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & column : columns_desc)
             {
                 if (column.default_desc.kind != ColumnDefaultKind::Materialized
-                    || !available_columns_set.contains(column.name))
+                    || !available_columns_set.contains(column.name)
+                    || !column.default_desc.expression)
                     continue;
 
                 auto query = column.default_desc.expression->clone();
@@ -1343,7 +1352,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         stages.emplace_back(context);
         for (const auto & column : columns_desc)
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                && column.default_desc.expression)
             {
                 auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 

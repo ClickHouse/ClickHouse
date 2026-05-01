@@ -26,6 +26,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -77,6 +78,11 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace
@@ -1212,7 +1218,14 @@ bool AlterCommand::isDropOrRename() const
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!isRequireMutationStage(metadata, context))
+    {
+        /// Even though this command doesn't require a mutation, we still need to apply it
+        /// to the metadata so that subsequent commands see the updated state. For example,
+        /// ADD COLUMN followed by RENAME COLUMN needs the new column to be visible.
+        if (!ignore)
+            apply(metadata, context);
         return {};
+    }
 
     MutationCommand result;
 
@@ -1401,7 +1414,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
 
@@ -1415,7 +1428,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
-        bool has_column = columns.has(command.column_name) || columns.hasNested(command.column_name);
+        bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!has_column && command.if_exists)
@@ -1460,6 +1473,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     const auto metadata = table->getInMemoryMetadataPtr(context, false);
     const auto virtuals = metadata->virtuals;
 
+    bool share_nested = true;
+    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
@@ -1480,7 +1497,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
-            if (all_columns.has(column_name) || all_columns.hasNested(column_name))
+            if (all_columns.has(column_name) || (share_nested && all_columns.hasNested(column_name)))
             {
                 if (!command.if_not_exists)
                     throw Exception(ErrorCodes::DUPLICATE_COLUMN,
@@ -1631,7 +1648,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) || all_columns.hasNested(command.column_name))
+            if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
@@ -1648,7 +1665,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                 auto expression = buildQueryTree(default_expression->clone(), execution_context);
                                 QueryAnalyzer analyzer(true);
                                 analyzer.resolve(expression, fake_table_expression, execution_context);
-                                GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+                                GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
                                 auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
                                 collectSourceColumns(expression, planner_context);
                                 if (const auto * table_expression = planner_context->getTableExpressionDataOrNull(fake_table_expression))
@@ -1730,7 +1747,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// TODO Implement nested rename
             if (all_columns.hasNested(command.column_name))
             {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename whole Nested struct");
+                bool skip = false;
+                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                    skip = !(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+                if (!skip)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename whole Nested struct");
             }
 
             if (!all_columns.has(command.column_name))
@@ -1767,6 +1788,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             String to_nested_table_name = Nested::extractTableName(command.rename_to);
             bool from_nested = from_nested_table_name != command.column_name;
             bool to_nested = to_nested_table_name != command.rename_to;
+
+            /// When share_nested_offsets is disabled, dotted-name columns are independent
+            /// and not part of a Nested group, so they can be freely renamed.
+            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            {
+                if (!(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets])
+                {
+                    from_nested = false;
+                    to_nested = false;
+                }
+            }
 
             if (from_nested && to_nested)
             {
@@ -1875,6 +1907,17 @@ static MutationCommand createMaterializeTTLCommand()
 
 MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
 {
+    /// Save a copy of the original metadata before applying commands.
+    /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
+    /// making it impossible to detect TTL changes afterwards.
+    const StorageInMemoryMetadata original_metadata = metadata;
+
+    /// Remove implicit statistics before applying commands to the metadata copy.
+    /// This is needed because `getMutationCommands` may be called before `removeImplicitStatistics`
+    /// in the ALTER flow (e.g. in StorageMergeTree::alter), and applying ADD_STATISTICS
+    /// to metadata that already contains auto-added statistics would throw a duplicate error.
+    removeImplicitStatistics(metadata.columns);
+
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
@@ -1892,7 +1935,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     {
         for (const auto & alter_cmd : *this)
         {
-            if (alter_cmd.isTTLAlter(metadata))
+            if (alter_cmd.isTTLAlter(original_metadata))
             {
                 result.push_back(createMaterializeTTLCommand());
                 break;
