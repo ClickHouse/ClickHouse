@@ -167,8 +167,9 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     {
         String move_dest_type_str = r.getString("move_destination_type");
         auto move_dest_opt = magic_enum::enum_cast<DataDestinationType>(move_dest_type_str);
-        if (move_dest_opt)
-            move_destination_type = *move_dest_opt;
+        if (!move_dest_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown move_destination_type: '{}'", move_dest_type_str);
+        move_destination_type = *move_dest_opt;
     }
 
     move_destination_name = r.getString("move_destination_name");
