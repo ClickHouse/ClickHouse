@@ -431,7 +431,7 @@ void ArrowFlightServer::start()
 
     arrow::flight::FlightServerOptions options(location);
     options.auth_handler = std::make_unique<arrow::flight::NoOpAuthHandler>();
-    options.middleware.emplace_back(AUTHORIZATION_MIDDLEWARE_NAME, std::make_shared<AuthMiddlewareFactory>(server, calls_data.get()));
+    options.middleware.emplace_back(AUTHORIZATION_MIDDLEWARE_NAME, std::make_shared<AuthMiddlewareFactory>(server, *calls_data));
 
     if (use_tls)
     {

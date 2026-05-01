@@ -23,7 +23,7 @@ class AuthMiddleware : public arrow::flight::ServerMiddleware
 {
 public:
     explicit AuthMiddleware(std::shared_ptr<Session> session_, const std::string & token_, const std::string & username_,
-                            ArrowFlight::CallsData * calls_data_ = nullptr,
+                            ArrowFlight::CallsData & calls_data_,
                             const std::string & session_id_ = "", bool session_close_ = false)
         : session(session_)
         , token(token_)
@@ -52,7 +52,7 @@ private:
     std::shared_ptr<Session> session;
     std::string token;
     std::string username;
-    ArrowFlight::CallsData * calls_data;
+    ArrowFlight::CallsData & calls_data;
     const std::string session_id;
     const bool session_close;
 };
@@ -87,7 +87,7 @@ class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
     };
 
 public:
-    explicit AuthMiddlewareFactory(IServer & server_, ArrowFlight::CallsData * calls_data_ = nullptr)
+    explicit AuthMiddlewareFactory(IServer & server_, ArrowFlight::CallsData & calls_data_)
         : server(server_)
         , token_storage(server_.config())
         , calls_data(calls_data_)
@@ -101,7 +101,7 @@ public:
     private:
         IServer & server;
         TokenStorage token_storage;
-        ArrowFlight::CallsData * calls_data;
+        ArrowFlight::CallsData & calls_data;
 };
 
 }

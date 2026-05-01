@@ -33,8 +33,7 @@ void AuthMiddleware::CallCompleted(const arrow::Status & /*status*/)
     {
         if (session_close)
         {
-            if (calls_data)
-                calls_data->closeSessionPreparedStatements(session_id);
+            calls_data.closeSessionPreparedStatements(session_id);
             session->closeSession(session_id);
         }
         else
