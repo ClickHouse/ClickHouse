@@ -490,7 +490,7 @@ void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPoi
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing arguments for log instrumentation");
 
     if (args.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one argument for instrumentation, but got {}", args.size());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one argument for log instrumentation, but got {}", args.size());
 
     const auto & arg = args[0];
 
