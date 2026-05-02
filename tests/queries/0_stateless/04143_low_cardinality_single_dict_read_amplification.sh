@@ -96,12 +96,12 @@ CREATE TABLE lc_multi_dict
     filter UInt8
 )
 ENGINE = MergeTree
-PRIMARY KEY (id, stack)
+ORDER BY id
 SETTINGS index_granularity = 32, min_bytes_for_wide_part = 0;
 
 INSERT INTO lc_multi_dict
     SELECT
-        rand64(),
+        number,
         -- 80000 unique entries do not fit into a single dictionary.
         arrayMap(i -> repeat('8 bytes|', 16) || toString(number % 80000), range(20)),
         -- multiple long dicts for a, single short dict for b
@@ -110,9 +110,7 @@ INSERT INTO lc_multi_dict
         ['long long looooong value for cc' || toString(number % 80000)],
         ['short for dd' || toString(number % 80)],
         if(intDiv(number, 32) % 2 = 0, 1, 0)
-    FROM numbers(128 * 1024);
-
-OPTIMIZE TABLE lc_multi_dict FINAL;
+    FROM numbers(32 * 1024);
 "
 
 $CLICKHOUSE_CLIENT -q "
