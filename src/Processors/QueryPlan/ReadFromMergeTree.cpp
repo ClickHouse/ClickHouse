@@ -2849,7 +2849,8 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// read-in-order kills parallelism: each part is read by a single stream instead of many.
     /// In such cases, full parallel reading with sorting is much faster.
     /// Skip this check for parallel replicas to avoid coordination mismatches,
-    /// for small tables where parallelism gain is negligible,
+    /// when only one part is selected (there is no inter-part parallelism to lose anyway, and
+    /// this is the typical projection case where the projection itself supplies the order),
     /// and when the query has a LIMIT that can let read-in-order finish early
     /// (with virtual row optimization, parts can be skipped entirely).
     if (read_limit == 0 && !query_has_limit && !is_parallel_reading_from_replicas)
@@ -2857,7 +2858,8 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         const double max_ratio = context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio];
         const auto & analysis_result = getAnalysisResult();
         const size_t effective_streams = output_streams_limit ? output_streams_limit : requested_num_streams;
-        if (analysis_result.total_marks_pk > effective_streams
+        if (analysis_result.selected_parts > 1
+            && analysis_result.total_marks_pk > effective_streams
             && static_cast<double>(analysis_result.selected_marks_pk)
                 > static_cast<double>(analysis_result.total_marks_pk) * max_ratio)
         {

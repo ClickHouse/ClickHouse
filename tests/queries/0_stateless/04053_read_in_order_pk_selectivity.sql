@@ -9,10 +9,18 @@ DROP TABLE IF EXISTS t_read_in_order_pk;
 
 -- Use a small index_granularity to produce enough marks for the check to trigger
 -- (the check requires total_marks > requested_num_streams).
+-- Insert in multiple parts so there is real inter-part parallelism to lose:
+-- the PK-selectivity guard intentionally only fires when more than one part is selected.
 CREATE TABLE t_read_in_order_pk (path String, value UInt64)
 ENGINE = MergeTree ORDER BY path
-SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0
-AS SELECT concat('path/', toString(number % 1000), '/file.log'), number FROM numbers(100000);
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+SYSTEM STOP MERGES t_read_in_order_pk;
+
+INSERT INTO t_read_in_order_pk SELECT concat('path/', toString(number % 1000), '/file.log'), number FROM numbers(0, 25000);
+INSERT INTO t_read_in_order_pk SELECT concat('path/', toString(number % 1000), '/file.log'), number FROM numbers(25000, 25000);
+INSERT INTO t_read_in_order_pk SELECT concat('path/', toString(number % 1000), '/file.log'), number FROM numbers(50000, 25000);
+INSERT INTO t_read_in_order_pk SELECT concat('path/', toString(number % 1000), '/file.log'), number FROM numbers(75000, 25000);
 
 SET max_threads = 4;
 
