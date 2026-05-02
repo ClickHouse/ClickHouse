@@ -1969,18 +1969,20 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
         }
         else if (max_log_ptr > new_max_log_ptr)
         {
-            /// `max_log_ptr` moved backwards. This can only happen when the entire
-            /// Keeper subtree was removed by `DROP DATABASE` and then a new
-            /// `Replicated` database was created at the same Keeper path: that
-            /// new database starts with `max_log_ptr = 0`, which is below
-            /// whatever pointer this snapshot iteration had previously observed.
-            /// The backup operation still holds a reference to the old
-            /// `DatabaseReplicated` in-memory object from before the drop, but
-            /// the metadata it now reads from Keeper belongs to a different,
-            /// unrelated database. Fail rather than silently substitute it.
+            /// `max_log_ptr` should never move backwards under normal operation. The
+            /// only way to observe this is if the entire Keeper subtree was removed
+            /// by `DROP DATABASE` and a new `Replicated` database was created at the
+            /// same Keeper path: that new database starts with `max_log_ptr = 0`,
+            /// below whatever pointer this snapshot iteration had previously
+            /// observed. The backup operation still holds a reference to the old
+            /// `DatabaseReplicated` in-memory object, but the metadata it would now
+            /// read from Keeper belongs to a different, unrelated database. Refuse
+            /// to back up the dropped database rather than silently substituting
+            /// the new one.
             throw Exception(
                 ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
-                "Log pointer moved backwards from {} to {}: the database was dropped and a new one was created at the same Keeper path",
+                "Cannot back up Replicated database: it was dropped and a new database was created at the same Keeper path during backup "
+                "(log pointer moved from {} to {})",
                 max_log_ptr, new_max_log_ptr);
         }
         else
