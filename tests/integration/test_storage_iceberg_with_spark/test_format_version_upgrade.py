@@ -178,6 +178,72 @@ def test_remove_orphan_files_after_external_upgrade(started_cluster_iceberg_with
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
+def test_format_version_upgrade_concurrent_reads(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """Concurrent reads remain correct while another session upgrades the format version.
+
+    `PersistentTableComponents` is shared across queries, so the previous design risked
+    cross-query mis-parsing if its cached `format_version` was mutated mid-flight. The fix
+    derives the parsing version from each manifest's own Avro `format-version` metadata,
+    so concurrent readers no longer depend on shared mutable state. This test exercises
+    that path: one writer upgrades the metadata file from v1 to v2 while many readers
+    loop continuously, and every read must return the expected sum without exception.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    table_name = f"test_fmt_upgrade_concurrent_{get_uuid_str()}"
+
+    create_iceberg_table(
+        storage_type, instance, table_name,
+        started_cluster_iceberg_with_spark, "(x Int)", format_version=1,
+    )
+
+    instance.query(
+        f"INSERT INTO {table_name} VALUES (1), (2), (3);",
+        settings=ICEBERG_SETTINGS,
+    )
+
+    expected_sum = "6"
+    assert instance.query(f"SELECT sum(x) FROM {table_name}").strip() == expected_sum
+
+    stop = {"flag": False}
+
+    def reader_loop():
+        iterations = 0
+        while not stop["flag"]:
+            result = instance.query(f"SELECT sum(x) FROM {table_name}").strip()
+            assert result == expected_sum, f"Reader saw {result!r}, expected {expected_sum!r}"
+            iterations += 1
+        return iterations
+
+    num_readers = 4
+    with ThreadPoolExecutor(max_workers=num_readers + 1) as executor:
+        reader_futures = [executor.submit(reader_loop) for _ in range(num_readers)]
+
+        # Let readers warm up against the v1 metadata, then flip to v2 from another thread.
+        time.sleep(0.5)
+        meta, prev_path = _read_iceberg_metadata(instance, table_name)
+        assert meta["format-version"] == 1
+        meta["format-version"] = 2
+        _write_iceberg_metadata(instance, table_name, meta, prev_path)
+
+        # Keep readers running long enough to interleave with the upgraded metadata.
+        time.sleep(1.5)
+        stop["flag"] = True
+
+        for fut in as_completed(reader_futures):
+            iterations = fut.result()
+            assert iterations > 0, "Reader thread completed without running any query"
+
+    # Final read after all readers stop must also see the upgraded metadata correctly.
+    assert instance.query(f"SELECT sum(x) FROM {table_name}").strip() == expected_sum
+
+    instance.query(f"DROP TABLE {table_name}")
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_format_version_avro_metadata_fallback(
     started_cluster_iceberg_with_spark, storage_type, format_version, tmp_path
