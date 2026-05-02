@@ -787,8 +787,8 @@ class GH:
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
             def escape_pipes(text):
-                """Escape pipe characters for markdown tables"""
-                return str(text).replace("|", "\\|")
+                """Escape special markdown characters for table cells"""
+                return str(text).replace("|", "\\|").replace("#", "\\#")
 
             if self.status == Result.Status.OK:
                 symbol = "✅"  # Green check mark
@@ -835,11 +835,10 @@ class GH:
                         for sub_failed_result in failed_result.failed_results:
                             body += "|{}|{}|{}|{}|{}|\n".format(
                                 "",
-                                # Logical erros might have | that break comment formatting
                                 escape_pipes(sub_failed_result.name),
                                 sub_failed_result.status,
-                                sub_failed_result.info or "",
-                                sub_failed_result.comment or "",
+                                escape_pipes(sub_failed_result.info or ""),
+                                escape_pipes(sub_failed_result.comment or ""),
                             )
             return body
 
