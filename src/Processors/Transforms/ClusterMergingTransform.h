@@ -39,6 +39,9 @@ private:
     /// 2D path: uniform grid with cell side d/sqrt(2), adjacency graph over
     /// cells + union-find to discover connected components.
     Chunk generate2D();
+    /// String path: byte-level Levenshtein distance, naive O(N^2) pairwise
+    /// comparison + union-find. Distance d is interpreted as integer max edits.
+    Chunk generateString();
 
     Chunks consumed_chunks;
     bool generated = false;

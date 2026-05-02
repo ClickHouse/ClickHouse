@@ -5,6 +5,8 @@
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <Common/levenshteinDistance.h>
+#include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -12,6 +14,7 @@
 #include <cmath>
 #include <cstring>
 #include <numeric>
+#include <span>
 #include <unordered_map>
 
 namespace DB
@@ -116,6 +119,15 @@ Chunk ClusterMergingTransform::generate()
 
     if (dimensions == 2)
         return generate2D();
+
+    /// 1D: dispatch by cluster-key column type. String / FixedString → Levenshtein,
+    /// numeric → existing bucket-based path.
+    const auto & header = input.getHeader();
+    size_t cluster_key_pos = header.getPositionByName(cluster_key_names[0]);
+    const auto & col_type = header.getByPosition(cluster_key_pos).type;
+    if (isStringOrFixedString(col_type))
+        return generateString();
+
     return generate1D();
 }
 
@@ -652,6 +664,143 @@ Chunk ClusterMergingTransform::generate2D()
             continue;
         for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
             result_columns[col_idx]->insertFrom(*merged_columns[col_idx], cells[ci].leader_row_index);
+    }
+
+    Chunk result(std::move(result_columns), result_rows);
+    finalizeChunk(result, aggregates_mask);
+    return result;
+}
+
+Chunk ClusterMergingTransform::generateString()
+{
+    /// Concatenate all chunks into a single block.
+    const auto & header = input.getHeader();
+    size_t num_columns = header.columns();
+
+    MutableColumns merged_columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        merged_columns[i] = header.getByPosition(i).column->cloneEmpty();
+
+    size_t total_rows = 0;
+    for (auto & chunk : consumed_chunks)
+    {
+        auto chunk_columns = chunk.detachColumns();
+        for (size_t i = 0; i < num_columns; ++i)
+            merged_columns[i]->insertRangeFrom(*chunk_columns[i], 0, chunk_columns[i]->size());
+        total_rows += chunk_columns[0]->size();
+    }
+    consumed_chunks.clear();
+
+    if (total_rows == 0)
+        return {};
+
+    size_t cluster_key_pos = header.getPositionByName(cluster_key_names[0]);
+    const IColumn & key_col = *merged_columns[cluster_key_pos];
+
+    std::vector<size_t> non_cluster_key_positions;
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        if (!aggregates_mask[i] && i != cluster_key_pos)
+            non_cluster_key_positions.push_back(i);
+    }
+
+    /// Distance is interpreted as the integer maximum edit distance.
+    /// Negative is clamped to zero.
+    const size_t max_edits = (cluster_distance < 0) ? 0 : static_cast<size_t>(cluster_distance);
+
+    /// d == 0: only exact-match merging — already done by the upstream `Aggregator`.
+    /// Trivial path: copy input rows to output unchanged.
+    if (max_edits == 0)
+    {
+        MutableColumns result_columns(num_columns);
+        for (size_t i = 0; i < num_columns; ++i)
+            result_columns[i] = merged_columns[i]->cloneEmpty();
+        for (size_t i = 0; i < total_rows; ++i)
+            for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
+                result_columns[col_idx]->insertFrom(*merged_columns[col_idx], i);
+        Chunk result(std::move(result_columns), total_rows);
+        finalizeChunk(result, aggregates_mask);
+        return result;
+    }
+
+    /// Cache string views to avoid repeated `getDataAt()` calls.
+    std::vector<std::string_view> strings;
+    strings.reserve(total_rows);
+    for (size_t i = 0; i < total_rows; ++i)
+        strings.emplace_back(key_col.getDataAt(i));
+
+    DisjointSetUnion dsu(total_rows);
+
+    /// Naive O(N^2) pairwise comparison with two cheap fast-paths:
+    ///  1. Length filter: |len(a) - len(b)| > d  ⇒  edit distance > d.
+    ///  2. Same-component skip: if `find(i) == find(j)` already, no need to check.
+    /// Distance is byte-level Levenshtein (UTF-8 strings are treated as raw bytes).
+    for (size_t i = 0; i < total_rows; ++i)
+    {
+        const auto & si = strings[i];
+        for (size_t j = i + 1; j < total_rows; ++j)
+        {
+            const auto & sj = strings[j];
+
+            /// Length filter.
+            const size_t len_diff = (si.size() > sj.size()) ? (si.size() - sj.size()) : (sj.size() - si.size());
+            if (len_diff > max_edits)
+                continue;
+
+            /// Non-cluster keys must match exactly.
+            bool same_non_cluster = true;
+            for (size_t pos : non_cluster_key_positions)
+            {
+                if (merged_columns[pos]->compareAt(i, j, *merged_columns[pos], 1) != 0)
+                {
+                    same_non_cluster = false;
+                    break;
+                }
+            }
+            if (!same_non_cluster)
+                continue;
+
+            /// Already in the same component: skip the expensive distance call.
+            if (dsu.find(i) == dsu.find(j))
+                continue;
+
+            const size_t dist = levenshteinDistance<char>(
+                std::span<const char>(si.data(), si.size()),
+                std::span<const char>(sj.data(), sj.size()));
+            if (dist <= max_edits)
+                dsu.unite(i, j);
+        }
+    }
+
+    /// Merge aggregate states by component root.
+    std::vector<bool> is_root(total_rows, false);
+    for (size_t i = 0; i < total_rows; ++i)
+        if (dsu.find(i) == i)
+            is_root[i] = true;
+
+    for (size_t i = 0; i < total_rows; ++i)
+    {
+        size_t root = dsu.find(i);
+        if (root == i)
+            continue;
+        mergeAggregateStates(merged_columns, aggregates_mask, root, i);
+    }
+
+    size_t result_rows = 0;
+    for (bool r : is_root)
+        if (r)
+            ++result_rows;
+
+    MutableColumns result_columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        result_columns[i] = merged_columns[i]->cloneEmpty();
+
+    for (size_t i = 0; i < total_rows; ++i)
+    {
+        if (!is_root[i])
+            continue;
+        for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
+            result_columns[col_idx]->insertFrom(*merged_columns[col_idx], i);
     }
 
     Chunk result(std::move(result_columns), result_rows);

@@ -1,0 +1,37 @@
+--- Basic: two close strings, d=1 ---
+apples	3
+banana	1
+--- Chain: a -> ab -> abc, d=1 ---
+1	3
+--- No merge: gap > d ---
+apple	1
+orange	1
+--- d=0 behaves like plain GROUP BY ---
+bar	1
+foo	2
+--- Single character substitutions, d=1 ---
+2
+--- Empty string + non-empty ---
+1
+--- Single row ---
+only	1
+--- With non-cluster key: clusters do not cross categories ---
+a	foo2	2
+b	foo	1
+b	bar	1
+--- Multiple aggregates ---
+2	4	16
+--- Large d collapses everything in same non-cluster group ---
+1
+--- FixedString key ---
+abc	2
+xyz	1
+--- Insertions and deletions, d=2 ---
+2
+--- Transposition costs 2 edits (insert + delete), not 1 ---
+2
+1
+--- Length filter: 1 vs 5-char string, d=2 → no merge ---
+2
+--- EXPLAIN PIPELINE shows ClusterMergingTransform ---
+1
