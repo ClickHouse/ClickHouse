@@ -1351,6 +1351,11 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             order_info.input_order->limit))
             return {};
 
+        /// Distinct-in-order's pre-distinct stage runs `DistinctSortedStreamTransform`
+        /// per stream, so it benefits from multiple parallel input streams.
+        /// Disable per-part `PrefetchingConcat`, which would collapse them into one per part.
+        reading->setPreferMultipleStreams();
+
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
