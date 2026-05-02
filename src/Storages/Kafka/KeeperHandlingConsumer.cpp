@@ -131,12 +131,24 @@ bool KeeperHandlingConsumer::needsNewKeeper() const
 
 void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> & keeper_)
 {
-    keeper = keeper_;
+    /// Drop the lock holders BEFORE replacing the `keeper` shared_ptr.
+    ///
+    /// `LockedTopicPartitionInfo::lock` is a `zkutil::EphemeralNodeHolder`, which stores
+    /// a raw `ZooKeeper &` reference captured at construction time (see `EphemeralNodeHolder`
+    /// in `Common/ZooKeeper/ZooKeeper.h`). Its destructor calls `zookeeper.expired()` and
+    /// possibly `zookeeper.tryRemove()`. If we assigned `keeper = keeper_` first and our
+    /// `keeper` was the last shared owner of the previous session, that assignment would
+    /// synchronously destroy the old `ZooKeeper`, and the subsequent `permanent_locks.clear()`
+    /// / `tmp_locks.clear()` would then access a dangling reference -> use-after-free.
+    ///
+    /// `StorageKafka2::partialShutdown()` already documents and applies the same ordering for
+    /// `replica_is_active_node`; this mirrors that fix for the per-consumer lock holders.
     {
         std::lock_guard lock(topic_partition_locks_mutex);
         permanent_locks.clear();
         tmp_locks.clear();
     }
+    keeper = keeper_;
     tmp_locks_quota = 0;
     assigned_topic_partitions.clear();
     topic_partition_index_to_consume_from = 0;
