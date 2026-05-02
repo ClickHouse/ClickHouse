@@ -1117,6 +1117,34 @@ public:
                 return mergeElement();
             }
 
+            // ORDER BY combinator
+            ParserKeyword order_by_kw(Keyword::ORDER_BY);
+            if (order_by_kw.ignore(pos, expected))
+            {
+                if (has_order_by)
+                    return false;
+                has_order_by = true;
+
+                if (!isCurrentElementEmpty() || !elements.empty())
+                    if (!mergeElement())
+                        return false;
+
+                ParserOrderByExpressionList order_parser;
+                if (!order_parser.parse(pos, order_by_columns, expected))
+                    return false;
+
+                // Optional LIMIT N after ORDER BY
+                ParserKeyword limit_kw(Keyword::LIMIT);
+                if (limit_kw.ignore(pos, expected))
+                {
+                    ASTPtr limit_ast;
+                    ParserUnsignedInteger limit_parser;
+                    if (!limit_parser.parse(pos, limit_ast, expected))
+                        return false;
+                    order_by_limit = limit_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+                }
+            }
+
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             {
                 action = Action::OPERATOR;
@@ -1211,6 +1239,14 @@ public:
                 function_node->children.push_back(function_node->parameters);
             }
 
+            if (has_order_by)
+            {
+                function_node->order_by_combinator = true;
+                function_node->order_by_combinator_columns = std::move(order_by_columns);
+                function_node->children.push_back(function_node->order_by_combinator_columns);
+                function_node->order_by_combinator_limit = order_by_limit;
+            }
+
             ParserKeyword filter(Keyword::FILTER);
             ParserKeyword over(Keyword::OVER);
             ParserKeyword respect_nulls(Keyword::RESPECT_NULLS);
@@ -1258,12 +1294,15 @@ public:
 private:
     bool has_all = false;
     bool has_distinct = false;
+    bool has_order_by = false;
 
     const char * contents_begin;
     const char * contents_end;
 
     String function_name;
     ASTPtr parameters;
+    ASTPtr order_by_columns;
+    std::optional<UInt64> order_by_limit;
 
     bool allow_function_parameters;
     bool is_compound_name;
