@@ -1,0 +1,14 @@
+indexOf with const non-NULL array, Nullable column
+0	1
+1	2
+2	0
+\N	0
+countEqual with const non-NULL array, Nullable column
+0	2
+1	3
+2	0
+\N	0
+indexOf with Nullable(String)
+x	1	2
+y	2	1
+\N	0	0
