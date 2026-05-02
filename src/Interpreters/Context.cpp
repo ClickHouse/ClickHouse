@@ -17,6 +17,7 @@
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
@@ -281,6 +282,7 @@ namespace Setting
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
     extern const SettingsBool enable_filesystem_read_prefetches_log;
     extern const SettingsBool enable_blob_storage_log;
+    extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
@@ -680,6 +682,12 @@ struct ContextSharedPart : boost::noncopyable
     OrdinaryBackgroundExecutorPtr moves_executor TSA_GUARDED_BY(background_executors_mutex);
     OrdinaryBackgroundExecutorPtr fetch_executor TSA_GUARDED_BY(background_executors_mutex);
     OrdinaryBackgroundExecutorPtr common_executor TSA_GUARDED_BY(background_executors_mutex);
+
+    /// Set to true when the low-memory auto-tuning heuristic lowered background_pool_size
+    /// at server startup. Used by MergeTreeSettings::sanityCheck to allow default thresholds
+    /// (e.g. number_of_free_entries_in_pool_to_execute_mutation) to stay above the lowered
+    /// max_tasks_count without failing table creation.
+    bool background_pool_auto_lowered TSA_GUARDED_BY(mutex) = false;
 
     RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
     HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
@@ -1810,6 +1818,14 @@ void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedM
     bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message.text, suppress_re);
     if (!is_supressed)
         shared->addOrUpdateWarningMessage(warning, message);
+}
+
+void Context::addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const
+{
+    if (message)
+        addOrUpdateWarningMessage(warning, *message);
+    else
+        removeWarningMessage(warning);
 }
 
 void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
@@ -7376,7 +7392,44 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     const ServerSettings & server_settings = shared->server_settings;
     size_t background_pool_size = server_settings[ServerSetting::background_pool_size];
     auto background_merges_mutations_concurrency_ratio = server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
+
+    /// On low-memory systems, limit concurrent merges to avoid OOM.
+    /// Each merge can use 40-80 MiB; with the default pool_size=16 and ratio=2,
+    /// 32 concurrent merges would need 1.3-2.6 GiB just for merge buffers.
+    /// Only apply this cap when the user hasn't explicitly configured `background_pool_size`.
+    bool background_pool_auto_lowered = false;
+    size_t available_memory = getMemoryAmount();
+    if (available_memory > 0 && available_memory < (4ul << 30)
+        && !server_settings[ServerSetting::background_pool_size].changed)
+    {
+        size_t max_pool = std::max<size_t>(1, available_memory / (1ul << 30)); /// 1 per GiB
+        if (background_pool_size > max_pool)
+        {
+            LOG_INFO(getLogger("Context"),
+                "Lowered background_pool_size from {} to {} because the system has limited RAM ({})",
+                background_pool_size, max_pool, formatReadableSizeWithBinarySuffix(available_memory));
+            background_pool_size = max_pool;
+            /// Clamp the concurrency ratio to at most 1 to avoid increasing it beyond what the user configured.
+            if (!server_settings[ServerSetting::background_merges_mutations_concurrency_ratio].changed)
+                background_merges_mutations_concurrency_ratio = std::min(static_cast<float>(background_merges_mutations_concurrency_ratio), 1.0f);
+            background_pool_auto_lowered = true;
+            /// Update shared settings so the MergeTree sanity check sees the lowered values.
+            /// Writes to shared->server_settings must be synchronized with other readers via shared->mutex.
+            {
+                std::lock_guard shared_lock(shared->mutex);
+                shared->server_settings.set("background_pool_size", max_pool);
+                shared->server_settings.set("background_merges_mutations_concurrency_ratio", static_cast<double>(background_merges_mutations_concurrency_ratio));
+                shared->background_pool_auto_lowered = true;
+            }
+        }
+    }
     size_t background_pool_max_tasks_count = static_cast<size_t>(static_cast<double>(background_pool_size) * background_merges_mutations_concurrency_ratio);
+    /// After auto-lowering, a small `background_pool_size` combined with a user-configured
+    /// fractional `background_merges_mutations_concurrency_ratio` (e.g. `1 * 0.5 = 0`) can
+    /// produce zero task count, which fails the `MergeTreeBackgroundExecutor` startup check.
+    /// Clamp to at least 1 in the auto-lowered path so the server can still start.
+    if (background_pool_auto_lowered && background_pool_max_tasks_count == 0)
+        background_pool_max_tasks_count = 1;
     String background_merges_mutations_scheduling_policy = server_settings[ServerSetting::background_merges_mutations_scheduling_policy];
     size_t background_move_pool_size = server_settings[ServerSetting::background_move_pool_size];
     size_t background_fetches_pool_size = server_settings[ServerSetting::background_fetches_pool_size];
@@ -7448,6 +7501,12 @@ bool Context::areBackgroundExecutorsInitialized() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->are_background_executors_initialized;
+}
+
+bool Context::wasBackgroundPoolAutoLowered() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->background_pool_auto_lowered;
 }
 
 MergeMutateBackgroundExecutorPtr Context::getMergeMutateExecutor() const
@@ -7605,6 +7664,7 @@ ReadSettings Context::getReadSettings() const
 
     res.mmap_cache = getMMappedFileCache().get();
     res.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
+    res.enable_blob_storage_log_for_read_operations = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
     return res;
 }
