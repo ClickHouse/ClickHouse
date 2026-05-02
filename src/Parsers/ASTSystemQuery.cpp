@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -638,6 +639,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
 void ASTSystemQuery::writeJSON(WriteBuffer & out) const
 {
+#if USE_XRAY
+    if (type == Type::INSTRUMENT_ADD || type == Type::INSTRUMENT_REMOVE)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
+#endif
     JSONObjectWriter w(out, "SystemQuery");
     w.writeInt("query_type", static_cast<Int64>(type));
     w.writeString("query_type_name", typeToString(type));
@@ -784,6 +789,10 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     if (!query_type_opt || static_cast<Int64>(*query_type_opt) != query_type_value)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM query_type: {}", query_type_value);
     type = *query_type_opt;
+#if USE_XRAY
+    if (type == Type::INSTRUMENT_ADD || type == Type::INSTRUMENT_REMOVE)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
+#endif
     database = r.readChild("database");
     if (database)
         children.push_back(database);
@@ -875,26 +884,24 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         if (srv_obj->has("exclude_types"))
         {
             auto arr = srv_obj->getArray("exclude_types");
-            if (arr)
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type.exclude_types' is not a JSON array");
+            for (unsigned int i = 0; i < arr->size(); ++i)
             {
-                for (unsigned int i = 0; i < arr->size(); ++i)
-                {
-                    Int64 v = arr->getElement<Poco::Int64>(i);
-                    auto opt = magic_enum::enum_cast<ServerType::Type>(static_cast<std::underlying_type_t<ServerType::Type>>(v));
-                    if (!opt || static_cast<Int64>(*opt) != v)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.exclude_types[{}]: {}", i, v);
-                    server_type.exclude_types.insert(*opt);
-                }
+                Int64 v = arr->getElement<Poco::Int64>(i);
+                auto opt = magic_enum::enum_cast<ServerType::Type>(static_cast<std::underlying_type_t<ServerType::Type>>(v));
+                if (!opt || static_cast<Int64>(*opt) != v)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.exclude_types[{}]: {}", i, v);
+                server_type.exclude_types.insert(*opt);
             }
         }
         if (srv_obj->has("exclude_custom_names"))
         {
             auto arr = srv_obj->getArray("exclude_custom_names");
-            if (arr)
-            {
-                for (unsigned int i = 0; i < arr->size(); ++i)
-                    server_type.exclude_custom_names.insert(arr->getElement<String>(i));
-            }
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type.exclude_custom_names' is not a JSON array");
+            for (unsigned int i = 0; i < arr->size(); ++i)
+                server_type.exclude_custom_names.insert(arr->getElement<String>(i));
         }
     }
     cluster = r.getString("cluster");

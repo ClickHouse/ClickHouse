@@ -246,6 +246,7 @@ RT_show_tables_like	SHOW TABLES LIKE \'%test%\'
 RT_show_databases	SHOW DATABASES
 RT_show_columns	SHOW COLUMNS FROM t
 RT_kill	KILL QUERY WHERE query_id = \'abc\' ASYNC
+RT_kill_on_cluster	KILL QUERY ON CLUSTER my_cluster WHERE query_id = \'abc\' ASYNC
 RT_optimize	OPTIMIZE TABLE t FINAL
 RT_optimize_dedup	OPTIMIZE TABLE t FINAL DEDUPLICATE
 RT_use	USE mydb

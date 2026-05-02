@@ -1476,6 +1476,7 @@ SELECT 'RT_show_columns' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW COLUMN
 
 -- KILL QUERY
 SELECT 'RT_kill' AS t, formatQueryFromJSON(parseQueryToJSON('KILL QUERY WHERE query_id = \'abc\''));
+SELECT 'RT_kill_on_cluster' AS t, formatQueryFromJSON(parseQueryToJSON('KILL QUERY ON CLUSTER my_cluster WHERE query_id = \'abc\''));
 
 -- OPTIMIZE
 SELECT 'RT_optimize' AS t, formatQueryFromJSON(parseQueryToJSON('OPTIMIZE TABLE t FINAL'));

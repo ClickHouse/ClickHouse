@@ -2,9 +2,16 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
+#include <Common/Exception.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 String ASTKillQueryQuery::getID(char delim) const
 {
@@ -51,17 +58,24 @@ void ASTKillQueryQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("sync", true);
     if (test)
         w.writeBool("test", true);
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
 }
 
 void ASTKillQueryQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    type = static_cast<Type>(r.getInt("kill_type"));
+    Int64 type_value = r.getInt("kill_type");
+    auto type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(type_value));
+    if (!type_opt || static_cast<Int64>(*type_opt) != type_value)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown KILL kill_type: {}", type_value);
+    type = *type_opt;
     where_expression = r.readChild("where_expression");
     if (where_expression)
         children.push_back(where_expression);
     sync = r.getBool("sync");
     test = r.getBool("test");
+    cluster = r.getString("cluster");
 }
 
 }
