@@ -34,7 +34,7 @@ namespace
 
 /// Check whether the top-level constraint expression is a bare subquery
 /// (e.g. `CHECK (SELECT 1)`).  Bare subqueries are rejected because they
-/// don't make sense as boolean constraint expressions.
+/// do not make sense as boolean constraint expressions.
 /// Subqueries inside function calls like `IN (SELECT ...)` are allowed —
 /// they are handled as "not-ready sets" built at insert time.
 bool isBareSubquery(const ASTPtr & ast)
