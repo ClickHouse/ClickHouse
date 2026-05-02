@@ -1,6 +1,7 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
@@ -28,6 +29,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_distinct_in_order;
 }
 
@@ -151,7 +153,11 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
     }
 
     const Settings & settings = context->getSettingsRef();
-    auto step = std::make_unique<IntersectOrExceptStep>(std::move(headers), final_operator, settings[Setting::max_threads]);
+    auto step = std::make_unique<IntersectOrExceptStep>(
+        std::move(headers),
+        final_operator,
+        getMaxThreadsForAvailableMemory(
+            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]));
     query_plan.unitePlans(std::move(step), std::move(plans));
 
     const auto & query = query_ptr->as<ASTSelectIntersectExceptQuery &>();
