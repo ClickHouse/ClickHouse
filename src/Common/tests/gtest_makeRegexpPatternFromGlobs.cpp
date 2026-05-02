@@ -62,6 +62,10 @@ TEST(Common, makeRegexpPatternFromGlobs)
     EXPECT_EQ(makeRegexpPatternFromGlobs("***/file.txt"), "[^/]*[^{}]*[^{}]*/file\\.txt");
     EXPECT_EQ(makeRegexpPatternFromGlobs("a***/b"), "a[^/]*[^{}]*[^{}]*/b");
 
+    /// `**/` after `*?` must still be recognized as globstar (the `?` is not part of a star run).
+    EXPECT_EQ(makeRegexpPatternFromGlobs("*?**/file.txt"), "[^/]*[^/]([^/]*/)*file\\.txt");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("?**/file.txt"), "[^/]([^/]*/)*file\\.txt");
+
     /// Verify that `**/` patterns actually match expected paths
     {
         re2::RE2 re(makeRegexpPatternFromGlobs("data/**/part1.tsv"));
