@@ -2445,11 +2445,31 @@ public:
             /// (e.g. `s3_plain`) will throw `NOT_IMPLEMENTED` from `writeFile`, which is the
             /// correct, visible failure mode (instead of silently overwriting existing data).
             const bool truncate = (flags & O_TRUNC) != 0;
-            const WriteMode mode = (!truncate && user_files_disk->existsFile(user_files_disk_relative_path))
-                ? WriteMode::Append
-                : WriteMode::Rewrite;
-            do_not_write_prefix = (mode == WriteMode::Append)
-                && user_files_disk->getFileSize(user_files_disk_relative_path) != 0;
+            UInt64 existing_size = 0;
+            WriteMode mode = WriteMode::Rewrite;
+            if (!truncate)
+            {
+                /// Resolve append-mode and the existing-prefix flag from a single
+                /// existence check + size lookup, swallowing concurrent removal: the
+                /// `existsFile`/`getFileSize` pair is not atomic, and a removal between
+                /// the two would otherwise turn into a spurious insert failure. Treat
+                /// any such race as "file is not there now", which is the correct
+                /// semantics for choosing `Rewrite` and re-emitting the format prefix.
+                try
+                {
+                    if (user_files_disk->existsFile(user_files_disk_relative_path))
+                    {
+                        existing_size = user_files_disk->getFileSize(user_files_disk_relative_path);
+                        mode = WriteMode::Append;
+                    }
+                }
+                catch (...)
+                {
+                    existing_size = 0;
+                    mode = WriteMode::Rewrite;
+                }
+            }
+            do_not_write_prefix = (mode == WriteMode::Append) && existing_size != 0;
             naked_buffer = user_files_disk->writeFile(
                 user_files_disk_relative_path, DBMS_DEFAULT_BUFFER_SIZE, mode);
         }
