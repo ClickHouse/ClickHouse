@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
 }
@@ -179,6 +180,17 @@ KeyDescription KeyDescription::getKeyFromAST(
         /// In sample block we use just key columns
         result.sample_block = analyzeExpressionToActions(expr, all_columns, context, true)->getSampleBlock();
     }
+
+    /// Reject wildcards / column matchers in key expressions: the Analyzer expands
+    /// `*` or `COLUMNS(...)` into multiple columns, which would desync `column_names`
+    /// (one per AST child) from `sample_block` (one per resolved output) and crash
+    /// downstream code that indexes both arrays in lockstep.
+    if (result.sample_block.columns() != result.column_names.size())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Key expression cannot contain wildcards or column matchers; "
+            "got {} resolved column(s) for {} key element(s)",
+            result.sample_block.columns(), result.column_names.size());
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
     {
