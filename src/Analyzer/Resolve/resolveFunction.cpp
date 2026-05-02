@@ -366,18 +366,21 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         /// Do not evaluate the scalar subquery in only_analyze mode (EXPLAIN).
         /// Keep the rewritten subquery to preserve semantics.
         node = std::move(new_unique_argument);
-        return {"__unique"};
+        return {"unique"};
     }
 
     evaluateScalarSubqueryIfNeeded(new_unique_argument, scope, false);
     const auto * const_node = new_unique_argument->as<ConstantNode>();
     auto res_col = ColumnUInt8::create();
+    /// `count() = uniqExact(*)` over an empty (or fully-null-filtered) subquery yields TRUE,
+    /// so the constant is always non-NULL in practice. The fallback below defends against a
+    /// bug where evaluateScalarSubqueryIfNeeded fails to produce a constant.
     if (const_node && !const_node->getColumn()->isNullAt(0))
         res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->getUInt(0)));
     else
-        res_col->getData().push_back(UInt8(1)); /// empty subquery is vacuously unique
+        res_col->getData().push_back(UInt8(1));
     ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
-    auto result_const_node = std::make_shared<ConstantNode>(std::move(const_value));
+    auto result_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
     auto res = result_const_node->getValueStringRepresentation();
     node = std::move(result_const_node);
     return {std::move(res)};
