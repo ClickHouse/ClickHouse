@@ -417,6 +417,9 @@ if not args.use_existing_tables:
 # Inline settings override file settings.
 file_settings = load_settings_file(root, xml_dir)
 inline_settings = root.findall("settings/*")
+# Track per-connection settings that the server didn't recognize, so we can
+# still raise on settings that ALL servers reject (likely typos).
+dropped_per_connection = []
 for conn_index, c in enumerate(all_connections):
     for key, value in file_settings.items():
         c.settings[key] = str(value)
@@ -425,7 +428,42 @@ for conn_index, c in enumerate(all_connections):
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
     # the test, which is wrong.
-    c.execute("select 1")
+    #
+    # In `master_head` comparisons one of the two servers is master HEAD,
+    # which may not yet know about settings introduced by this PR. Drop only
+    # those specific unknown settings on that connection and retry, so a
+    # single new setting doesn't block the whole comparison. After every
+    # connection has been probed, settings that were dropped on ALL servers
+    # are reported as a hard error - that's the typo case.
+    dropped = set()
+    while True:
+        try:
+            c.execute("select 1")
+            break
+        except clickhouse_driver.errors.ServerException as e:
+            m = re.search(r"Unknown setting '?([A-Za-z_][A-Za-z0-9_]*)'?", str(e))
+            if m is None:
+                raise
+            unknown_setting = m.group(1)
+            if unknown_setting not in c.settings:
+                raise
+            print(
+                f"perf-warn\tserver #{conn_index} doesn't know setting "
+                f"'{unknown_setting}', dropping from this connection"
+            )
+            del c.settings[unknown_setting]
+            dropped.add(unknown_setting)
+    dropped_per_connection.append(dropped)
+
+# A setting rejected by every server is almost certainly a typo, not a
+# version skew, so fail loudly to preserve the original safety property.
+if len(dropped_per_connection) > 1:
+    rejected_everywhere = set.intersection(*dropped_per_connection)
+    if rejected_everywhere:
+        raise RuntimeError(
+            "Settings unknown to all servers (likely a typo): "
+            f"{sorted(rejected_everywhere)}"
+        )
 
 reportStageEnd("settings")
 
