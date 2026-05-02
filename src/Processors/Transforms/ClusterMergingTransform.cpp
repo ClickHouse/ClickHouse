@@ -731,44 +731,128 @@ Chunk ClusterMergingTransform::generateString()
 
     DisjointSetUnion dsu(total_rows);
 
-    /// Naive O(N^2) pairwise comparison with two cheap fast-paths:
-    ///  1. Length filter: |len(a) - len(b)| > d  ⇒  edit distance > d.
-    ///  2. Same-component skip: if `find(i) == find(j)` already, no need to check.
-    /// Distance is byte-level Levenshtein (UTF-8 strings are treated as raw bytes).
-    for (size_t i = 0; i < total_rows; ++i)
+    /// Verify a pair (i, j): length filter → non-cluster keys → same-component
+    /// skip → exact byte-level Levenshtein. Unites in DSU on match.
+    auto verify_pair = [&](size_t i, size_t j) -> void
     {
         const auto & si = strings[i];
-        for (size_t j = i + 1; j < total_rows; ++j)
+        const auto & sj = strings[j];
+
+        const size_t len_diff = (si.size() > sj.size()) ? (si.size() - sj.size()) : (sj.size() - si.size());
+        if (len_diff > max_edits)
+            return;
+
+        for (size_t pos : non_cluster_key_positions)
         {
-            const auto & sj = strings[j];
+            if (merged_columns[pos]->compareAt(i, j, *merged_columns[pos], 1) != 0)
+                return;
+        }
 
-            /// Length filter.
-            const size_t len_diff = (si.size() > sj.size()) ? (si.size() - sj.size()) : (sj.size() - si.size());
-            if (len_diff > max_edits)
-                continue;
+        if (dsu.find(i) == dsu.find(j))
+            return;
 
-            /// Non-cluster keys must match exactly.
-            bool same_non_cluster = true;
-            for (size_t pos : non_cluster_key_positions)
+        const size_t dist = levenshteinDistance<char>(
+            std::span<const char>(si.data(), si.size()),
+            std::span<const char>(sj.data(), sj.size()));
+        if (dist <= max_edits)
+            dsu.unite(i, j);
+    };
+
+    /// Q-gram filter: for two strings within edit distance d, the number of
+    /// shared q-grams is at least `max(|a|, |b|) - q + 1 - q*d` (Ukkonen, 1992).
+    /// We build an inverted index `qgram → [row_ids]` and walk it per row.
+    /// q = 3 is a literature standard. Threshold: below 10k rows the naive
+    /// O(N^2) loop with the length filter is faster than building the index.
+
+    constexpr size_t Q = 3;
+    constexpr size_t QGRAM_THRESHOLD = 10000;
+
+    if (total_rows < QGRAM_THRESHOLD)
+    {
+        /// Naive O(N^2) pairwise sweep. UTF-8 strings are treated as raw bytes.
+        for (size_t i = 0; i < total_rows; ++i)
+            for (size_t j = i + 1; j < total_rows; ++j)
+                verify_pair(i, j);
+    }
+    else
+    {
+        /// Pack 3 bytes into a UInt32 — fits the whole 24-bit q-gram space.
+        auto pack_qgram = [](const char * p) -> UInt32
+        {
+            return (static_cast<UInt32>(static_cast<uint8_t>(p[0])) << 16)
+                 | (static_cast<UInt32>(static_cast<uint8_t>(p[1])) << 8)
+                 |  static_cast<UInt32>(static_cast<uint8_t>(p[2]));
+        };
+
+        /// Build inverted index over rows of length ≥ Q. Each q-gram occurrence
+        /// adds the row id to the posting list (multiset semantics, required for
+        /// the Ukkonen bound to hold).
+        std::unordered_map<UInt32, std::vector<size_t>> index;
+        std::vector<size_t> short_rows;
+        for (size_t i = 0; i < total_rows; ++i)
+        {
+            const auto & s = strings[i];
+            if (s.size() < Q)
             {
-                if (merged_columns[pos]->compareAt(i, j, *merged_columns[pos], 1) != 0)
+                short_rows.push_back(i);
+                continue;
+            }
+            const size_t qgrams = s.size() - Q + 1;
+            for (size_t k = 0; k < qgrams; ++k)
+                index[pack_qgram(s.data() + k)].push_back(i);
+        }
+
+        /// Reusable counter buffer: counter[j] = matched q-grams between current i and row j.
+        /// Tracked through `dirty` to keep clearing O(touched) instead of O(total_rows).
+        std::vector<size_t> counter(total_rows, 0);
+        std::vector<size_t> dirty;
+
+        for (size_t i = 0; i < total_rows; ++i)
+        {
+            const auto & si = strings[i];
+
+            /// Short strings (no q-grams) bypass the index: pairwise verify with all j > i.
+            if (si.size() < Q)
+            {
+                for (size_t j = i + 1; j < total_rows; ++j)
+                    verify_pair(i, j);
+                continue;
+            }
+
+            /// Long string i: collect candidates from inverted index.
+            const size_t qgrams_i = si.size() - Q + 1;
+            for (size_t k = 0; k < qgrams_i; ++k)
+            {
+                auto it = index.find(pack_qgram(si.data() + k));
+                if (it == index.end())
+                    continue;
+                for (size_t j : it->second)
                 {
-                    same_non_cluster = false;
-                    break;
+                    if (j <= i)
+                        continue;
+                    if (counter[j] == 0)
+                        dirty.push_back(j);
+                    ++counter[j];
                 }
             }
-            if (!same_non_cluster)
-                continue;
 
-            /// Already in the same component: skip the expensive distance call.
-            if (dsu.find(i) == dsu.find(j))
-                continue;
+            /// Apply Ukkonen lower bound per pair, then verify.
+            for (size_t j : dirty)
+            {
+                const auto & sj = strings[j];
+                const size_t qgrams_j = sj.size() - Q + 1;
+                const size_t max_qg = std::max(qgrams_i, qgrams_j);
+                const size_t threshold = (max_qg > Q * max_edits) ? (max_qg - Q * max_edits) : 0;
+                if (counter[j] >= threshold)
+                    verify_pair(i, j);
+                counter[j] = 0;
+            }
+            dirty.clear();
 
-            const size_t dist = levenshteinDistance<char>(
-                std::span<const char>(si.data(), si.size()),
-                std::span<const char>(sj.data(), sj.size()));
-            if (dist <= max_edits)
-                dsu.unite(i, j);
+            /// Pair long i with all short rows j > i (they're not in the index).
+            for (size_t j : short_rows)
+                if (j > i)
+                    verify_pair(i, j);
         }
     }
 
