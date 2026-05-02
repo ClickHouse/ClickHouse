@@ -4574,6 +4574,7 @@ void StorageReplicatedMergeTree::mutationsFinalizingTask()
 
 void StorageReplicatedMergeTree::exportMergeTreePartitionUpdatingTask()
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::exportMergeTreePartitionUpdatingTask");
     try
     {
         export_merge_tree_partition_manifest_updater->poll();
@@ -4598,6 +4599,7 @@ void StorageReplicatedMergeTree::exportMergeTreePartitionUpdatingTask()
 
 void StorageReplicatedMergeTree::selectPartsToExport()
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::selectPartsToExport");
     try
     {
         if (parts_mover.moves_blocker.isCancelled())
@@ -4619,6 +4621,7 @@ void StorageReplicatedMergeTree::selectPartsToExport()
 
 void StorageReplicatedMergeTree::exportMergeTreePartitionStatusHandlingTask()
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::exportMergeTreePartitionStatusHandlingTask");
     try
     {
         export_merge_tree_partition_manifest_updater->handleStatusChanges();
@@ -8281,6 +8284,7 @@ void StorageReplicatedMergeTree::fetchPartition(
 
 void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand & command, ContextPtr query_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::exportPartitionToTable");
     if (!query_context->getServerSettings()[ServerSetting::allow_experimental_export_merge_tree_partition])
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
