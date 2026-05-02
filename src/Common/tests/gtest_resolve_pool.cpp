@@ -271,6 +271,26 @@ TEST_F(ResolvePoolTest, CanFail)
     }
 }
 
+TEST_F(ResolvePoolTest, SetUnusedHasNoSideEffects)
+{
+    auto resolver = make_resolver();
+
+    /// `setUnused` is for the case where the caller selected an address via `resolve` but never
+    /// actually attempted a connection (e.g. the address duplicated one tried earlier in the same
+    /// scope). It must suppress the destructor's `setSuccess` callback without recording a
+    /// failure to the pool, otherwise duplicate hits would inflate `HostResolverFailed` and
+    /// trigger spurious DNS refreshes.
+    {
+        auto addr = resolver->resolve();
+        addr.setUnused();
+    }
+
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.failed]);
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
+    /// Only the initial resolve happened, no extra DNS refresh from `setUnused`.
+    ASSERT_EQ(addresses.size(), DB::CurrentThread::getProfileEvents()[metrics.discovered]);
+}
+
 TEST_F(ResolvePoolTest, CanFailAndHeal)
 {
     auto resolver = make_resolver();

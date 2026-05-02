@@ -839,11 +839,14 @@ private:
             if (!tried_addresses.insert(*address).second)
             {
                 /// We already attempted this address in an earlier iteration of this loop.
-                /// Mark it as failed so the `Entry` destructor does not record a spurious
-                /// `setSuccess` for an address we did not actually connect to: that would
+                /// Suppress the `Entry` destructor's `setSuccess` callback so we do not record
+                /// a spurious success for an address we did not actually connect to: that would
                 /// reset `consecutive_fail_count` and undermine the resolver's pessimization.
-                /// Calling `setFail` is idempotent for an already-failed record.
-                address.setFail();
+                /// Use `setUnused` rather than `setFail` here so we do not also bump
+                /// `HostResolverFailed` and trigger a DNS refresh on every duplicate hit -
+                /// no real network attempt happened, so neither success nor failure should
+                /// be reported to the pool.
+                address.setUnused();
                 continue;
             }
 

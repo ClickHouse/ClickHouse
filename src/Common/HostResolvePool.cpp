@@ -79,15 +79,20 @@ HostResolver::~HostResolver()
 
 void HostResolver::Entry::setFail()
 {
-    fail = true;
+    skip_success_callback = true;
 
     if (auto lock = pool.lock())
         lock->setFail(address);
 }
 
+void HostResolver::Entry::setUnused()
+{
+    skip_success_callback = true;
+}
+
 HostResolver::Entry::~Entry()
 {
-    if (!fail)
+    if (!skip_success_callback)
     {
         if (auto lock = pool.lock())
             lock->setSuccess(address);

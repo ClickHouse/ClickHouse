@@ -83,7 +83,13 @@ public:
         const String & operator*() & { return resolved_host; }
         const String & operator*() const & { return resolved_host; }
 
+        /// Mark the address as failed in the pool. Also suppresses the destructor's success callback.
         void setFail();
+        /// Suppress the destructor's success callback without reporting a failure to the pool.
+        /// Use when the address was selected via `resolve` but never actually attempted (for
+        /// example because it duplicates another address tried earlier in the same scope), so
+        /// neither success nor failure should be recorded against this address.
+        void setUnused();
         ~Entry();
 
     private:
@@ -99,7 +105,9 @@ public:
         const Poco::Net::IPAddress address;
         const String resolved_host;
 
-        bool fail = false;
+        /// When true, the destructor will not call `pool->setSuccess`. Set by both `setFail`
+        /// (which additionally calls `pool->setFail`) and `setUnused` (no pool-level side effect).
+        bool skip_success_callback = false;
     };
 
     /// can throw NetException(ErrorCodes::DNS_ERROR, ...), Exception(ErrorCodes::BAD_ARGUMENTS, ...)
