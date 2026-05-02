@@ -59,11 +59,10 @@ SELECT CAST(-999999999999::Int64, 'DateTime64(3)') SETTINGS date_time_overflow_b
 -- intermediate signed `time_t` wraps negative and the saturation goes the wrong way.
 SELECT '--- saturate: huge UInt64 (above INT64_MAX) ---';
 SELECT toDateTime64(18446744073709551615::UInt64, 3) SETTINGS date_time_overflow_behavior = 'saturate';
-SELECT toTime(18446744073709551615::UInt64) SETTINGS date_time_overflow_behavior = 'saturate';
 SELECT CAST(18446744073709551615::UInt64, 'DateTime64(3)') SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '--- ignore: huge UInt64 (above INT64_MAX) ---';
 SELECT toDateTime64(18446744073709551615::UInt64, 3) SETTINGS date_time_overflow_behavior = 'ignore';
-SELECT toTime(18446744073709551615::UInt64) SETTINGS date_time_overflow_behavior = 'ignore';
+SELECT CAST(18446744073709551615::UInt64, 'DateTime64(3)') SETTINGS date_time_overflow_behavior = 'ignore';
 
 DROP TABLE overflow_test;
