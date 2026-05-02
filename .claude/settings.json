@@ -8,7 +8,10 @@
       "Bash(gh pr checks:*)",
       "Bash(gh pr diff:*)",
       "Bash(gh search:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(node .claude/tools/fetch_ci_report.js *)",
+      "Bash(gh run view *)",
+      "Bash(grep *)"
     ]
   }
 }
