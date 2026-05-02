@@ -129,11 +129,21 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         /// Without an explicit boundary check, `file://../etc/passwd` would expose arbitrary
         /// server-side files. Resolve under each `user_files_path` and require containment
         /// before accepting the candidate.
+        ///
+        /// `user_files_paths` may include disk roots from `user_files_policy`, including
+        /// non-local disks (e.g. `s3_plain`) whose `getPath()` is a virtual marker, not a
+        /// real local directory. `fs::canonical` would throw on those. Skip any root that
+        /// cannot be canonicalized rather than failing the whole handler — `file://` is a
+        /// local filesystem feature and is satisfied by any local root that contains the
+        /// resolved candidate.
         String file_path;
         bool any_contained_candidate = false;
         for (const auto & ufp : user_files_paths)
         {
-            const auto root = fs::canonical(fs::path(ufp));
+            std::error_code ec;
+            const auto root = fs::canonical(fs::path(ufp), ec);
+            if (ec)
+                continue;
             fs::path candidate = fs::weakly_canonical(root / file_name);
             if (!pathStartsWith(candidate.string(), root.string()))
                 continue;
