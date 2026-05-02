@@ -58,6 +58,21 @@ public:
         return arguments;
     }
 
+    /** How many of the given combined-function arguments belong to the nested function?
+      *
+      * For most combinators this equals arguments.size(): all arguments are passed to the nested function
+      * (possibly after type transformation in transformArguments).
+      *
+      * For combinators that consume some trailing arguments themselves (such as OrderBy, where the last
+      * arguments are sort keys, not nested-function arguments), this returns the count of nested arguments,
+      * computed from the parameters. The factory is responsible for slicing the arguments list before
+      * calling transformArguments.
+      */
+    virtual size_t getNumberOfNestedArguments(const DataTypes & arguments, const Array & /*parameters*/) const
+    {
+        return arguments.size();
+    }
+
     /** From the parameters for combined function,
       *  get the parameters for nested function.
       * If arguments are not suitable for combined function, throw an exception.
