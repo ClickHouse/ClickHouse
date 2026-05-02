@@ -88,6 +88,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
+    extern const MergeTreeSettingsBool optimize_row_order_if_no_order_by;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
@@ -715,10 +716,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if ((*data_settings)[MergeTreeSetting::optimize_row_order]
+    if (((*data_settings)[MergeTreeSetting::optimize_row_order] || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by] &&!metadata_snapshot->hasSortingKey()))
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
+        LOG_INFO(log, "We are Optimizing");
         RowOrderOptimizer::optimize(block, sort_description, perm);
         perm_ptr = &perm;
     }
@@ -1057,10 +1059,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if ((*data_settings)[MergeTreeSetting::optimize_row_order]
+    if (((*data_settings)[MergeTreeSetting::optimize_row_order] || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by] &&!metadata_snapshot->hasSortingKey()))
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
+        LOG_INFO(log, "We are Optimizing in projection");
         RowOrderOptimizer::optimize(block, sort_description, perm);
         perm_ptr = &perm;
     }
