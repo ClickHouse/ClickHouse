@@ -518,6 +518,17 @@ def main():
                 print(f"Failed to create clang++ symlink: {e}")
                 bolt_ok = False
 
+        # Disk usage snapshot before BOLT cmake configuration.
+        # This helps diagnose disk exhaustion failures: clang-21.inst writes a
+        # BOLT profile file for every cmake compiler-feature test, which can
+        # consume several GB before the real build starts.
+        if bolt_ok:
+            print("=== Disk usage before BOLT cmake configuration ===")
+            Shell.check("du / 2>/dev/null | sort -rn | head -100 || true")
+            print("=== df -h ===")
+            Shell.check("df -h || true")
+            print("=== End disk usage snapshot ===")
+
         # Step 3: Configure ClickHouse build with BOLT-instrumented clang
         if bolt_ok:
             cmake_cmd = (
