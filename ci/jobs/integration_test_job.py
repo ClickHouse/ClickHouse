@@ -692,6 +692,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         changed_test_modules.append(
                             file.removeprefix("tests/integration/")
                         )
+                if not changed_test_modules and Labels.CI_FORCE_ALL in info.pr_labels:
+                    print(
+                        f"NOTE: No changed test modules found, but '{Labels.CI_FORCE_ALL}' label forces run - using sanity test"
+                    )
+                    changed_test_modules = ["test_accept_invalid_certificate/test.py"]
 
     if is_bugfix_validation:
         if Utils.is_arm():
