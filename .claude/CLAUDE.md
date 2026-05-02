@@ -1,5 +1,3 @@
-When creating or updating a PR description, use the `clickhouse-pr-description` skill.
-
 When working with a branch, do not use rebase or amend - add new commits instead.
 
 Do not commit to the master branch. Create a new branch for every task.
