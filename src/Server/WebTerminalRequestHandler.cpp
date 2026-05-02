@@ -288,14 +288,19 @@ int extractJSONIntValue(const String & json, const char * key, int max_value)
     ++pos;
     while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t'))
         ++pos;
-    unsigned value = 0;
+    /// Accumulate into UInt64 with an explicit overflow guard so that arbitrarily long
+    /// digit sequences in untrusted input cannot cause signed integer overflow (UB).
+    UInt64 value = 0;
+    UInt64 max_unsigned = static_cast<UInt64>(max_value);
     while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9')
     {
-        value = value * 10 + static_cast<unsigned>(json[pos] - '0');
-        if (value > static_cast<unsigned>(max_value))
+        if (value > max_unsigned)
             return max_value;
+        value = value * 10 + static_cast<UInt64>(json[pos] - '0');
         ++pos;
     }
+    if (value > max_unsigned)
+        return max_value;
     return static_cast<int>(value);
 }
 
