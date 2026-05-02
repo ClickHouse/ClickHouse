@@ -219,9 +219,14 @@ bool SnappyFramedReadBuffer::nextImpl()
 
         if (chunk_type >= 0x80)
         {
-            /// Skippable chunks (0x80–0xfe): skip the payload.
-            String skip_buf(chunk_data_size, '\0');
-            readExact(skip_buf.data(), chunk_data_size, /*allow_partial_eof=*/false);
+            /// Skippable chunks (0x80–0xfe): skip the payload without materializing
+            /// it, so an attacker-controlled 24-bit `chunk_data_size` (up to 16 MB)
+            /// in untrusted HTTP input cannot force large per-frame allocations.
+            size_t skipped = in->tryIgnore(chunk_data_size);
+            if (skipped != chunk_data_size)
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Truncated snappy stream: skippable chunk expected {} bytes but got {}{}",
+                    chunk_data_size, skipped, getExceptionEntryWithFileName(*in));
             continue;
         }
 
