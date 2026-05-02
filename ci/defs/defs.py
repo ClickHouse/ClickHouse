@@ -364,22 +364,26 @@ class JobNames:
     BUZZHOUSE = "BuzzHouse"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
-    # Old monolithic names kept for backward compatibility with cached/historical CI runs.
-    # The current architecture splits each test type by arch and adds a final aggregator.
+    # Legacy monolithic names — kept for backward compatibility with cached
+    # historical CI runs. The current architecture parametrizes each test type
+    # by architecture (amd64 / aarch64) so that arch-specific bug fixes can
+    # validate on at least one architecture; the final pass/fail decision is
+    # made by the `new_tests_check.py` workflow post-hook (which OR's the
+    # per-arch job statuses).
     BUGFIX_VALIDATE_IT = "Bugfix validation (integration tests)"
     BUGFIX_VALIDATE_FT = "Bugfix validation (functional tests)"
-    # Per-arch bugfix validation: each runs the test on master HEAD and on the PR,
-    # naturally exits with OK status after capturing the outcome, and emits a result
-    # artifact. The validation result (whether the bug was reproduced) lives in the
-    # JSON artifact rather than in the job's GitHub status — see
-    # `ci/jobs/bugfix_validation_aggregate.py` for how the four artifacts are combined.
+    # Per-arch bugfix validation jobs. Each runs the new/modified test on
+    # master HEAD and on the PR, and reports its natural pass/fail status:
+    #   * OK  — bug reproduced on master HEAD AND fixed on PR (validated)
+    #   * FAIL — bug NOT reproduced on master HEAD on this arch
+    # Per-arch jobs are configured with `allow_failure=True` so an individual
+    # FAIL does NOT block PR merge. The merge-blocking decision is made by the
+    # `new_tests_check.py` post-hook, which OR's the per-arch statuses — the
+    # bug is considered validated as long as AT LEAST ONE arch passed.
     BUGFIX_VALIDATE_FT_AMD = "Bugfix validation (functional tests, amd64)"
     BUGFIX_VALIDATE_FT_ARM = "Bugfix validation (functional tests, aarch64)"
     BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
     BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
-    # Final aggregator: depends on all four per-arch checks; SUCCESS iff at least
-    # one of them validated the bug (test failed on master HEAD AND passed on PR).
-    BUGFIX_VALIDATE_FINAL = "Bugfix validation (final)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
@@ -433,15 +437,6 @@ class ArtifactNames:
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
     FAST_TEST = "FAST_TEST"
-
-    # Bugfix-validation result artifacts (small JSON files emitted by per-arch
-    # bugfix-validation jobs). Each file describes whether the per-arch run
-    # validated the bug (test failed on master HEAD AND passed on PR).
-    # Consumed by the `Bugfix validation (final)` aggregator job.
-    BUGFIX_VALIDATE_FT_AMD_RESULT = "BUGFIX_VALIDATE_FT_AMD_RESULT"
-    BUGFIX_VALIDATE_FT_ARM_RESULT = "BUGFIX_VALIDATE_FT_ARM_RESULT"
-    BUGFIX_VALIDATE_IT_AMD_RESULT = "BUGFIX_VALIDATE_IT_AMD_RESULT"
-    BUGFIX_VALIDATE_IT_ARM_RESULT = "BUGFIX_VALIDATE_IT_ARM_RESULT"
 
     UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
@@ -643,19 +638,4 @@ class ArtifactConfigs:
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
-    )
-    # Per-arch bugfix validation result artifacts. Each per-arch job writes a
-    # small JSON file describing whether the bug was validated on that arch.
-    # The aggregator job `Bugfix validation (final)` consumes these.
-    bugfix_validate_results = Artifact.Config(
-        name="...",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/bugfix_validate_result.json",
-    ).parametrize(
-        names=[
-            ArtifactNames.BUGFIX_VALIDATE_FT_AMD_RESULT,
-            ArtifactNames.BUGFIX_VALIDATE_FT_ARM_RESULT,
-            ArtifactNames.BUGFIX_VALIDATE_IT_AMD_RESULT,
-            ArtifactNames.BUGFIX_VALIDATE_IT_ARM_RESULT,
-        ]
     )

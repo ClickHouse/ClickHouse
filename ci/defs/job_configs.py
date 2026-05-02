@@ -548,27 +548,24 @@ class JobConfigs:
     # Per-arch Bugfix Validation Check (functional tests).
     #
     # Each variant (amd64, aarch64) runs the new/modified test on master HEAD
-    # and on the PR. The check is considered to "validate the bug" only when
-    # the test FAILS on master HEAD AND PASSES on the PR for that arch.
+    # and on the PR. A variant validates the bug when the test FAILS on master
+    # HEAD AND PASSES on the PR for that arch — the runner inverts the test
+    # statuses (XFAIL) and reports OK when at least one inversion happened,
+    # FAIL otherwise. See `ci/jobs/functional_tests.py` for the inversion
+    # logic.
     #
-    # Per-arch jobs report a NATURAL success status: the job succeeds as long
-    # as it runs the test and captures the outcome. Whether the bug was
-    # validated is a piece of *data* (recorded in a small JSON artifact),
-    # not a piece of *status*. The `Bugfix validation (final)` aggregator job
-    # consumes the four per-arch JSON artifacts and decides the merge-blocking
-    # status: SUCCESS iff at least one arch validated the bug.
+    # Each per-arch job has `allow_failure=True` so an individual FAIL does
+    # NOT block PR merge: it's expected that a variant fails when the bug is
+    # arch-specific and doesn't reproduce on the "other" arch. The merge-
+    # blocking decision is centralized in the `new_tests_check.py` workflow
+    # post-hook (see `ci/jobs/scripts/workflow_hooks/new_tests_check.py`),
+    # which OR's the per-arch job statuses: validation passes as long as
+    # AT LEAST ONE per-arch job reported OK.
     #
     # Rationale: some bug fixes are architecture-specific (e.g. SSE2/AVX-only
-    # on x86, NEON-only on aarch64). With a single per-arch check, those PRs
-    # would always fail Bugfix validation on the "wrong" arch. Splitting into
-    # per-arch sub-checks plus a final aggregator allows architecture-specific
-    # fixes to pass when validated on at least one arch.
-    #
-    # Note: the per-arch jobs deliberately do NOT use `force_success=True` —
-    # they exit naturally with status OK after capturing the result, so a
-    # genuine infrastructure failure (server crash, sanitizer report, docker
-    # timeout) still propagates as a real failure rather than being silently
-    # masked.
+    # on x86, NEON-only on aarch64). With the previous monolithic single-arch
+    # check, those PRs would fail Bugfix validation on the "wrong" arch.
+    # Splitting per-arch + aggregating in the post-hook fixes that.
     bugfix_validation_ft_pr_jobs = Job.Config(
         name=JobNames.BUGFIX_VALIDATE,
         runs_on=None,  # set per ParamSet
@@ -585,16 +582,14 @@ class JobConfigs:
             ],
         ),
         result_name_for_cidb="Tests",
-    ).parametrize(
+    ).set_allow_failure(True).parametrize(
         Job.ParamSet(
             parameter="functional tests, amd64",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            provides=[ArtifactNames.BUGFIX_VALIDATE_FT_AMD_RESULT],
         ),
         Job.ParamSet(
             parameter="functional tests, aarch64",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            provides=[ArtifactNames.BUGFIX_VALIDATE_FT_ARM_RESULT],
         ),
     )
     lightweight_functional_tests_job = Job.Config(
@@ -772,48 +767,24 @@ class JobConfigs:
     )
     # Per-arch Bugfix Validation Check (integration tests). See the rationale
     # comment above for `bugfix_validation_ft_pr_jobs`. Each per-arch variant
-    # naturally exits with status OK after capturing the outcome and writes
-    # its result to a JSON artifact; the `Bugfix validation (final)`
-    # aggregator decides the merge-blocking status. As with the FT variant,
-    # `force_success=True` is deliberately NOT used — genuine infrastructure
-    # failures still propagate.
+    # has `allow_failure=True` so its FAIL doesn't block PR merge directly;
+    # the `new_tests_check.py` workflow post-hook centralizes the merge
+    # decision by OR'ing the per-arch statuses.
     bugfix_validation_it_jobs = (
         common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE)
         .set_command(
             "python3 ./ci/jobs/integration_test_job.py --options BugfixValidation"
         )
+        .set_allow_failure(True)
     )
     bugfix_validation_it_jobs = bugfix_validation_it_jobs.parametrize(
         Job.ParamSet(
             parameter="integration tests, amd64",
             runs_on=RunnerLabels.AMD_SMALL_MEM,
-            provides=[ArtifactNames.BUGFIX_VALIDATE_IT_AMD_RESULT],
         ),
         Job.ParamSet(
             parameter="integration tests, aarch64",
             runs_on=RunnerLabels.ARM_SMALL_MEM,
-            provides=[ArtifactNames.BUGFIX_VALIDATE_IT_ARM_RESULT],
-        ),
-    )
-    # Final aggregator: depends on all four per-arch bugfix-validation result
-    # artifacts. Reads each JSON, returns SUCCESS iff at least one arch
-    # reported `validated == true` (i.e. the test failed on master HEAD AND
-    # passed on the PR on that arch). FAILURE otherwise. This is the only
-    # bugfix-validation check that blocks PR merge.
-    bugfix_validation_final_job = Job.Config(
-        name=JobNames.BUGFIX_VALIDATE_FINAL,
-        runs_on=RunnerLabels.AMD_SMALL,
-        command="python3 ./ci/jobs/bugfix_validation_aggregate.py",
-        requires=[
-            ArtifactNames.BUGFIX_VALIDATE_FT_AMD_RESULT,
-            ArtifactNames.BUGFIX_VALIDATE_FT_ARM_RESULT,
-            ArtifactNames.BUGFIX_VALIDATE_IT_AMD_RESULT,
-            ArtifactNames.BUGFIX_VALIDATE_IT_ARM_RESULT,
-        ],
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/bugfix_validation_aggregate.py",
-            ],
         ),
     )
     _fuzzer_command = (

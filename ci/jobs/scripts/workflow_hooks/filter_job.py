@@ -219,10 +219,6 @@ def should_skip_job(job_name):
             f.endswith("jobs/integration_test_job.py") for f in changed_files
         ):
             skip = False
-        elif job_name == JobNames.BUGFIX_VALIDATE_FINAL and any(
-            f.endswith("jobs/bugfix_validation_aggregate.py") for f in changed_files
-        ):
-            skip = False
 
         if skip:
             return True, "Skipped, not a bug-fix PR"
@@ -258,13 +254,10 @@ def should_skip_job(job_name):
     #
     # NOTE: this must cover both the legacy monolithic job names
     # (`BUGFIX_VALIDATE_FT` / `BUGFIX_VALIDATE_IT`) and the per-arch
-    # variants introduced for the per-arch + final-aggregator design.
-    # Otherwise, on a Bug-Fix PR that only touches integration tests, the
-    # per-arch functional-test jobs would run anyway, find nothing to
-    # validate against, and emit `validated=false` even though they
-    # shouldn't have been running. The `Bugfix validation (final)` aggregator
-    # job is intentionally NOT skipped here — it always runs on bug-fix PRs
-    # because it summarizes whichever per-arch variants did run.
+    # variants. Otherwise, on a Bug-Fix PR that only touches integration
+    # tests, the per-arch functional-test jobs would run anyway, find
+    # nothing to validate against, and report FAIL even though they
+    # shouldn't have been running.
     if (
         " Bug Fix" in _info_cache.pr_body
         and job_name in (

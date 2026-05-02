@@ -760,125 +760,24 @@ def main():
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []
 
-    # Bugfix validation: invert the result status (only for actual bugfix PRs
-    # without infrastructure errors) and always write the JSON artifact (for
-    # both bugfix and non-bugfix PRs, so the artifact-upload step succeeds).
-    if is_bugfix_validation and test_result:
-        is_bugfix_pr = (
-            Labels.PR_BUGFIX in info.pr_labels
-            or Labels.PR_CRITICAL_BUGFIX in info.pr_labels
-        )
-
-        # Detect infrastructure errors so we don't mask them via
-        # `set_success()`. Two error sources are covered:
-        #   * `test_result.is_error()` — `FTResultsProcessor` set the
-        #     overall status to ERROR (e.g. test runner terminated
-        #     unexpectedly because the server failed to start, Docker pull
-        #     timed out, sanitizer assert during startup).
-        #   * Any individual sub-result with ERROR status — server died on
-        #     a specific test, or test-output parse failure.
-        # These are real infra failures, not test failures, and must not be
-        # silenced by the per-arch success-overwrite below. The aggregator
-        # will see `skipped=true` in the JSON and exclude this arch from
-        # the validation decision; the other arch can still validate.
-        has_error = test_result.is_error() or any(
-            r.is_error() for r in test_result.results
-        )
-
+    # invert result status for bugfix validation
+    if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         has_failure = False
-
-        if is_bugfix_pr and not has_error:
-            for r in test_result.results:
-                r.set_label(Result.Label.XFAIL)
-                if r.status == Result.Status.FAIL:
-                    r.status = Result.Status.OK
-                    has_failure = True
-                elif r.status == Result.Status.OK:
-                    r.status = Result.Status.FAIL
-
-            # Per-arch bugfix-validation contract:
-            # The job's *status* reflects "did the test run and produce a
-            # result?" — NOT "was the bug validated?". The validation outcome
-            # is data (recorded in the JSON artifact below) that the `Bugfix
-            # validation (final)` aggregator consumes to decide the
-            # merge-blocking status.
-            #
-            # We deliberately exit with the natural OK status here (no
-            # `force_success=True` flag is used at the job level) so that
-            # real infrastructure errors (server crash, sanitizer assert)
-            # still propagate as failures (handled by the
-            # `elif is_bugfix_pr and has_error:` branch below — we still
-            # write the JSON but mark it `skipped=true` so the aggregator
-            # excludes this arch from the validation decision).
-            if has_failure:
-                test_result.set_info(
-                    "Bug reproduced on master HEAD; PR validates the fix on this arch"
-                )
-            else:
-                print("Failed to reproduce the bug on this arch")
-                test_result.set_info(
-                    "Failed to reproduce the bug on this arch; "
-                    "see Bugfix validation (final) aggregator for the merge-blocking decision"
-                )
+        for r in test_result.results:
+            r.set_label(Result.Label.XFAIL)
+            if r.status == Result.Status.FAIL:
+                r.status = Result.Status.OK
+                has_failure = True
+            elif r.status == Result.Status.OK:
+                r.status = Result.Status.FAIL
+        if not has_failure:
+            print("Failed to reproduce the bug")
+            test_result.set_failed().set_info("Failed to reproduce the bug")
+        else:
+            # For bugfix validation, the expected behavior is:
+            # - At least one test must fail (bug reproduced)
+            # - The overall Tests result is treated as success in that case
             test_result.set_success()
-        elif is_bugfix_pr and has_error:
-            # Real infrastructure error during bugfix validation. Don't mask
-            # via `set_success()` — let it propagate as a job failure. We
-            # still write the JSON below (skipped=true) so the artifact
-            # upload doesn't fail and the aggregator can see this arch
-            # was unable to validate.
-            print(
-                "WARN: Bugfix validation arch had infrastructure error; "
-                "recording skipped=true in JSON; aggregator will treat this "
-                "arch as SKIPPED (validated=false)"
-            )
-        # else: non-bugfix PR running this job because the test runner script
-        # was modified in this PR. The sanity test (`00001_select_1`) ran;
-        # the natural test_result is sufficient.
-
-        # Always write the JSON artifact when this is a bugfix-validation
-        # job. The praktika runner declares this artifact in `provides=[...]`,
-        # so the file MUST exist for artifact upload to succeed — even on
-        # non-bugfix PRs and even when the bugfix-validation arch hit an
-        # infrastructure error. For non-bugfix PRs and infra-error cases the
-        # JSON records that fact, and the `Bugfix validation (final)`
-        # aggregator treats `is_bugfix_pr=false` or `skipped=true` as
-        # "nothing to validate on this arch".
-        result_path = Path(temp_dir) / "bugfix_validate_result.json"
-        try:
-            arch = "aarch64" if Utils.is_arm() else "amd64"
-            if not is_bugfix_pr:
-                info_msg = (
-                    f"Not a bugfix PR ({arch}); job ran sanity test only "
-                    "because the bugfix-validation runner was modified in "
-                    "this PR"
-                )
-                skipped = True
-            elif has_error:
-                info_msg = (
-                    f"Skipped on {arch} due to infrastructure error during "
-                    "bugfix validation"
-                )
-                skipped = True
-            elif has_failure:
-                info_msg = f"Bug reproduced on master HEAD ({arch}) and fixed on PR"
-                skipped = False
-            else:
-                info_msg = f"Failed to reproduce the bug on master HEAD ({arch})"
-                skipped = False
-            payload = {
-                "validated": bool(has_failure) and is_bugfix_pr and not has_error,
-                "info": info_msg,
-                "arch": arch,
-                "kind": "functional tests",
-                "is_bugfix_pr": is_bugfix_pr,
-                "skipped": skipped,
-            }
-            with result_path.open("w") as f:
-                json.dump(payload, f)
-            print(f"Wrote bugfix-validation result to {result_path}: {payload}")
-        except OSError as e:
-            print(f"WARN: failed to write {result_path}: {e}")
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
@@ -912,6 +811,16 @@ def main():
     if is_llvm_coverage and test_result:
         # do not block pipeline on amd_llvm_coverage job failures
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+        force_ok_exit = True
+    if is_bugfix_validation:
+        # Per-arch bugfix-validation jobs are advisory: their pass/fail status
+        # records "did the bug reproduce on this arch?", not whether the PR
+        # should be blocked. Setting `do_not_block_pipeline_on_failure=True`
+        # prevents downstream jobs from being dropped when this job reports
+        # FAIL. The PR-merge-blocking decision lives in the
+        # `new_tests_check.py` workflow post-hook, which OR's the per-arch
+        # bugfix-validation job statuses.
+        print("NOTE: Bugfix validation job - do not block pipeline - exit with 0")
         force_ok_exit = True
 
     if test_result:

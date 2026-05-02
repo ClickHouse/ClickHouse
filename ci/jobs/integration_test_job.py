@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 import re
 import subprocess
@@ -1034,18 +1033,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
             R.set_success()
             has_error = False
 
-    # If all non-OK results are infrastructure errors, do not treat as a real
-    # failure. Skip this clearing in bugfix-validation mode — there, we want
-    # infra-only runs to keep `has_error = True` so the bugfix-validation block
-    # below treats this arch as SKIPPED (not as `validated=true` via the
-    # FAIL→OK inversion path). See clickhouse-gh[bot] inline review on PR
-    # #103541 (2026-04-27): without this gate, an infra-only run on a Bug Fix
-    # PR would clear `has_error`, then the inversion would turn the infra
-    # `FAIL` results into `OK`, set `has_failure=True`, and emit a JSON with
-    # `validated=true, skipped=false`. The aggregator would then incorrectly
-    # report "bug reproduced on master and fixed on PR" for an arch that
-    # actually failed to run the test at all.
-    if has_error and not is_bugfix_validation:
+    # If all non-OK results are infrastructure errors, do not treat as a real failure
+    if has_error:
         non_ok = [r for r in test_results if not r.is_ok()]
         if non_ok and all(r.has_label(Result.Label.INFRA) for r in non_ok):
             print(
@@ -1057,114 +1046,37 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    # Bugfix validation: invert the result status (only for actual bugfix PRs
-    # without infrastructure errors) and always write the JSON artifact (for
-    # both bugfix and non-bugfix PRs, so the artifact-upload step succeeds).
-    if is_bugfix_validation:
-        is_bugfix_pr = (
-            Labels.PR_BUGFIX in info.pr_labels
-            or Labels.PR_CRITICAL_BUGFIX in info.pr_labels
-        )
-        if is_bugfix_pr:
-            assert (
-                is_llvm_coverage is False
-            ), "Bugfix validation with LLVM coverage is not supported"
-
+    if is_bugfix_validation and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
+        assert (
+            is_llvm_coverage is False
+        ), "Bugfix validation with LLVM coverage is not supported"
         has_failure = False
-
-        if is_bugfix_pr and not has_error:
-            for r in R.results:
-                # invert statuses
-                r.set_label(Result.Label.XFAIL)
-                if r.status == Result.Status.FAIL:
-                    r.status = Result.Status.OK
-                    has_failure = True
-                elif r.status == Result.Status.OK:
-                    r.status = Result.Status.FAIL
-
-            # Per-arch bugfix-validation contract: the job's *status* reflects
-            # "did the test run and produce a result?" — NOT "was the bug
-            # validated?". The validation outcome is data (recorded in the
-            # JSON artifact below) that the `Bugfix validation (final)`
-            # aggregator consumes to decide the merge-blocking status.
-            #
-            # We deliberately set the natural OK status here (no
-            # `force_success=True` flag at the job level) so genuine
-            # infrastructure failures still propagate as failures (handled
-            # by the `if has_error:` branch below — we still write the JSON
-            # but mark it `skipped=true` so the aggregator excludes this
-            # arch from the validation decision).
-            if has_failure:
-                R.set_info(
-                    "Bug reproduced on master HEAD; PR validates the fix on this arch"
-                )
-            else:
-                print("Failed to reproduce the bug on this arch")
-                R.set_info(
-                    "Failed to reproduce the bug on this arch; "
-                    "see Bugfix validation (final) aggregator for the merge-blocking decision"
-                )
+        for r in R.results:
+            # invert statuses
+            r.set_label(Result.Label.XFAIL)
+            if r.status == Result.Status.FAIL:
+                r.status = Result.Status.OK
+                has_failure = True
+            elif r.status == Result.Status.OK:
+                r.status = Result.Status.FAIL
+        if not has_failure:
+            print("Failed to reproduce the bug")
+            R.set_failed()
+            R.set_info("Failed to reproduce the bug")
+        else:
             R.set_success()
-        elif is_bugfix_pr and has_error:
-            # Real infrastructure error during bugfix validation. Don't mask
-            # via `set_success()` — let it propagate as a job failure. We
-            # still write the JSON below (skipped=true) so the artifact
-            # upload doesn't fail and the aggregator can see this arch
-            # was unable to validate.
-            print(
-                "WARN: Bugfix validation arch had infrastructure error; "
-                "recording skipped=true in JSON; aggregator will treat this "
-                "arch as SKIPPED (validated=false)"
-            )
-        # else: non-bugfix PR running this job because the test runner script
-        # was modified in this PR. The sanity test (`00001_select_1`) ran;
-        # we keep the natural test_result.
-
-        # Always write the JSON artifact when this is a bugfix-validation
-        # job. The praktika runner declares this artifact in `provides=[...]`,
-        # so the file MUST exist for artifact upload to succeed — even on
-        # non-bugfix PRs and even when the bugfix-validation arch hit an
-        # infrastructure error. For non-bugfix PRs and infra-error cases the
-        # JSON records that fact, and the aggregator treats
-        # `is_bugfix_pr=false` or `skipped=true` as "nothing to validate on
-        # this arch".
-        result_path = Path(temp_path) / "bugfix_validate_result.json"
-        try:
-            arch = "aarch64" if Utils.is_arm() else "amd64"
-            if not is_bugfix_pr:
-                info_msg = (
-                    f"Not a bugfix PR ({arch}); job ran sanity test only "
-                    "because the bugfix-validation runner was modified in "
-                    "this PR"
-                )
-                skipped = True
-            elif has_error:
-                info_msg = (
-                    f"Skipped on {arch} due to infrastructure error during "
-                    "bugfix validation"
-                )
-                skipped = True
-            elif has_failure:
-                info_msg = f"Bug reproduced on master HEAD ({arch}) and fixed on PR"
-                skipped = False
-            else:
-                info_msg = f"Failed to reproduce the bug on master HEAD ({arch})"
-                skipped = False
-            payload = {
-                "validated": bool(has_failure) and is_bugfix_pr and not has_error,
-                "info": info_msg,
-                "arch": arch,
-                "kind": "integration tests",
-                "is_bugfix_pr": is_bugfix_pr,
-                "skipped": skipped,
-            }
-            with result_path.open("w") as f:
-                json.dump(payload, f)
-            print(f"Wrote bugfix-validation result to {result_path}: {payload}")
-        except OSError as e:
-            print(f"WARN: failed to write {result_path}: {e}")
 
     force_ok_exit = False
+    if is_bugfix_validation:
+        # Per-arch bugfix-validation jobs are advisory: their pass/fail status
+        # records "did the bug reproduce on this arch?", not whether the PR
+        # should be blocked. Setting `do_not_block_pipeline_on_failure=True`
+        # prevents downstream jobs from being dropped when this job reports
+        # FAIL. The PR-merge-blocking decision lives in the
+        # `new_tests_check.py` workflow post-hook, which OR's the per-arch
+        # bugfix-validation job statuses.
+        print("NOTE: Bugfix validation job - do not block pipeline - exit with 0")
+        force_ok_exit = True
     if is_llvm_coverage and llvm_profdata_cmd:
         print("Collecting and merging LLVM coverage files...")
 

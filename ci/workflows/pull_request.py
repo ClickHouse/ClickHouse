@@ -77,12 +77,12 @@ workflow = Workflow.Config(
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         # Per-arch Bugfix Validation Checks (functional + integration tests on
-        # both amd64 and aarch64). Each per-arch variant always reports
-        # SUCCESS and writes its outcome to a JSON artifact; the final
-        # aggregator below combines them and decides PR-blocking status.
+        # both amd64 and aarch64). Each per-arch variant has
+        # `allow_failure=True` so an individual FAIL doesn't block PR merge —
+        # the aggregate decision (validate iff at least one arch passed) lives
+        # in the `new_tests_check.py` workflow post-hook below.
         *JobConfigs.bugfix_validation_ft_pr_jobs,
         *JobConfigs.bugfix_validation_it_jobs,
-        JobConfigs.bugfix_validation_final_job,
         *[
             j.set_run_after(
                 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
@@ -172,7 +172,6 @@ workflow = Workflow.Config(
         ArtifactConfigs.llvm_coverage_info_file,
         ArtifactConfigs.toolchain_pgo_bolt_amd,
         ArtifactConfigs.toolchain_pgo_bolt_arm,
-        *ArtifactConfigs.bugfix_validate_results,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
