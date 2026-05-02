@@ -18,6 +18,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/TransactionLog.h>
@@ -27,6 +28,7 @@
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -147,23 +149,42 @@ String getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storag
 
 }
 
-
 void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
 {
-    auto metadata_snapshot = part.getMetadataSnapshot();
+    const auto metadata_snapshot = part.getMetadataSnapshot();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
+    const auto & part_info = part.isProjectionPart() ? part.getParentPart()->info : part.info;
+    const auto data_settings = part.storage.getSettings();
 
-    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-    auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
-    size_t minmax_idx_size = minmax_column_types.size();
+    const auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key, data_settings);
+    const auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key, data_settings);
 
-    hyperrectangle.reserve(minmax_idx_size);
     FormatSettings format_settings;
-    for (size_t i = 0; i < minmax_idx_size; ++i)
+    for (const auto [column_name, column_type] : std::views::zip(minmax_column_names, minmax_column_types))
     {
-        String file_name = "minmax_" + getFileColumnName(minmax_column_names[i], part.checksums) + ".idx";
-        auto file = part.readFile(file_name);
-        auto serialization = minmax_column_types[i]->getDefaultSerialization();
+        /// Some virtual columns may be incorrectly written to disk for 0-level parts
+        /// because they were materialized before commit of the part. We need to recalculate them during reading.
+        if (!part_info.isPatch() && part_info.getBlocksCount() == 1)
+        {
+            if (column_name == BlockNumberColumn::name)
+            {
+                Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, part);
+                hyperrectangle.emplace_back(block_number, true, block_number, true);
+                continue;
+            }
+        }
+
+        const String file_name = "minmax_" + getFileColumnName(column_name, part.checksums) + ".idx";
+
+        /// Treat missing columns as universe range so they don't prune; the file gets created on the next merge or mutation.
+        auto file = part.readFileIfExists(file_name);
+        if (!file)
+        {
+            hyperrectangle.emplace_back(Range::createWholeUniverse());
+            continue;
+        }
+
+        auto serialization = column_type->getDefaultSerialization();
 
         Field min_val;
         serialization->deserializeBinary(min_val, *file, format_settings);
@@ -185,9 +206,8 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums, const MergeTreeSettingsPtr & storage_settings) const
 {
     const auto & partition_key = metadata_snapshot->getPartitionKey();
-    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-    auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
-
+    const auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key, storage_settings);
+    const auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key, storage_settings);
     return store(minmax_column_names, minmax_column_types, part_storage, out_checksums, storage_settings);
 }
 
@@ -281,13 +301,13 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
 void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage)
 {
-    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
+    const auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
     const auto & partition_key = metadata_snapshot->getPartitionKey();
-    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-    size_t minmax_idx_size = minmax_column_names.size();
-    for (size_t i = 0; i < minmax_idx_size; ++i)
+    const auto data_settings = data.getSettings();
+    const auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key, data_settings);
+    for (const auto & name : minmax_column_names)
     {
-        String file_name = "minmax_" + getFileColumnName(minmax_column_names[i], data.getSettings(), data_part_storage) + ".idx";
+        String file_name = "minmax_" + getFileColumnName(name, data_settings, data_part_storage) + ".idx";
         files.push_back(file_name);
     }
 }
@@ -2350,7 +2370,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             if (!isEmpty() && !parent_part)
             {
-                for (const String & col_name : MergeTreeData::getMinMaxColumnsNames(partition_key))
+                for (const String & col_name : partition_key.expression->getRequiredColumns())
                 {
                     if (!checksums.files.contains("minmax_" + escapeForFileName(col_name) + ".idx"))
                         /// check hash one more time
@@ -2414,7 +2434,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             if (!parent_part)
             {
-                for (const String & col_name : MergeTreeData::getMinMaxColumnsNames(partition_key))
+                for (const String & col_name : partition_key.expression->getRequiredColumns())
                     try
                     {
                         check_file_not_empty("minmax_" + escapeForFileName(col_name) + ".idx");

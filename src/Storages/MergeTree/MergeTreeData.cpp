@@ -225,6 +225,7 @@ namespace Setting
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool use_skip_indexes;
 }
 
 namespace MergeTreeSetting
@@ -1246,27 +1247,47 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 
 }
 
-ExpressionActionsPtr MergeTreeData::getMinMaxExpr(const KeyDescription & partition_key, const ExpressionActionsSettings & settings)
+ExpressionActionsPtr MergeTreeData::getMinMaxExpr(
+    const KeyDescription & partition_key,
+    const MergeTreeSettingsPtr & data_settings,
+    const ExpressionActionsSettings & expr_settings)
 {
-    NamesAndTypesList partition_key_columns;
-    if (!partition_key.column_names.empty())
-        partition_key_columns = partition_key.expression->getRequiredColumnsWithTypes();
+    NamesAndTypesList minmax_columns;
 
-    return std::make_shared<ExpressionActions>(ActionsDAG(partition_key_columns), settings);
+    const auto names = getMinMaxColumnsNames(partition_key, data_settings);
+    const auto types = getMinMaxColumnsTypes(partition_key, data_settings);
+    for (const auto [name, type] : std::views::zip(names, types))
+        minmax_columns.emplace_back(name, type);
+
+    return std::make_shared<ExpressionActions>(ActionsDAG(minmax_columns), expr_settings);
 }
 
-Names MergeTreeData::getMinMaxColumnsNames(const KeyDescription & partition_key)
+Names MergeTreeData::getMinMaxColumnsNames(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings)
 {
+    Names names;
+
     if (!partition_key.column_names.empty())
-        return partition_key.expression->getRequiredColumns();
-    return {};
+        names = partition_key.expression->getRequiredColumns();
+    if ((*data_settings)[MergeTreeSetting::enable_block_number_column])
+        names.push_back(BlockNumberColumn::name);
+    if ((*data_settings)[MergeTreeSetting::enable_block_offset_column])
+        names.push_back(BlockOffsetColumn::name);
+
+    return names;
 }
 
-DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_key)
+DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings)
 {
+    DataTypes types;
+
     if (!partition_key.column_names.empty())
-        return partition_key.expression->getRequiredColumnsWithTypes().getTypes();
-    return {};
+        types = partition_key.expression->getRequiredColumnsWithTypes().getTypes();
+    if ((*data_settings)[MergeTreeSetting::enable_block_number_column])
+        types.push_back(BlockNumberColumn::type);
+    if ((*data_settings)[MergeTreeSetting::enable_block_offset_column])
+        types.push_back(BlockOffsetColumn::type);
+
+    return types;
 }
 
 ExpressionActionsPtr
@@ -1289,7 +1310,7 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition", allow_nullable_key);
 
     /// Add all columns used in the partition key to the min-max index.
-    DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
+    DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key, getSettings());
 
     /// Try to find the date column in columns used by the partition key (a common case).
     /// If there are no - DateTime or DateTime64 would also suffice.
@@ -8592,7 +8613,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
         if (column_name == name)
             return true;
 
-    for (const auto & name : getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()))
+    for (const auto & name : getMinMaxColumnsNames(metadata_snapshot->getPartitionKey(), getSettings()))
         if (column_name == name)
             return true;
 
@@ -8663,25 +8684,34 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     DataTypes minmax_columns_types;
     if (filter_dag)
     {
-        if (metadata_snapshot->hasPartitionKey())
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        const auto data_settings = getSettings();
+
+        if (auto minmax_columns_names = getMinMaxColumnsNames(partition_key, data_settings); !minmax_columns_names.empty())
         {
-            const auto & partition_key = metadata_snapshot->getPartitionKey();
-            auto minmax_columns_names = getMinMaxColumnsNames(partition_key);
-            minmax_columns_types = getMinMaxColumnsTypes(partition_key);
+            minmax_columns_types = getMinMaxColumnsTypes(partition_key, data_settings);
 
             ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
-            bool skip_partition_analysis = !query_context->getSettingsRef()[Setting::use_partition_pruning];
+            const auto & query_settings = query_context->getSettingsRef();
+
             minmax_idx_condition.emplace(
                 inverted_dag, query_context, minmax_columns_names,
-                getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)),
+                getMinMaxExpr(partition_key, data_settings, ExpressionActionsSettings(query_context)),
                 /* single_point_ = */ false,
-                /* skip_analysis_ = */ skip_partition_analysis);
+                /* skip_analysis_ = */ !query_settings[Setting::use_partition_pruning] && !query_settings[Setting::use_skip_indexes]);
+        }
+
+        if (metadata_snapshot->hasPartitionKey())
+        {
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            const auto & query_settings = query_context->getSettingsRef();
+
             partition_pruner.emplace(
                 metadata_snapshot,
                 inverted_dag,
                 query_context,
                 false /* strict */,
-                skip_partition_analysis);
+                !query_settings[Setting::use_partition_pruning]);
         }
 
         const auto * predicate = filter_dag->getOutputs().at(0);
@@ -10600,7 +10630,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+    minmax_idx->update(block, getMinMaxColumnsNames(metadata_snapshot->getPartitionKey(), getSettings()));
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     VolumePtr volume = getStoragePolicy()->getVolume(0);

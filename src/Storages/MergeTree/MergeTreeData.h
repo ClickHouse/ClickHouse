@@ -1250,12 +1250,14 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
-    /// Get partition key expression on required columns
-    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key, const ExpressionActionsSettings & settings);
-    /// Get column names required for partition key
-    static Names getMinMaxColumnsNames(const KeyDescription & partition_key);
-    /// Get column types required for partition key
-    static DataTypes getMinMaxColumnsTypes(const KeyDescription & partition_key);
+    /// Get expression on columns for which part-level min-max index will be calculated.
+    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key,
+                                              const MergeTreeSettingsPtr & data_settings,
+                                              const ExpressionActionsSettings & expr_settings);
+    /// Get the list of column names required by the part-level min-max index.
+    static Names getMinMaxColumnsNames(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
+    /// Get the list of column types required by the part-level min-max index.
+    static DataTypes getMinMaxColumnsTypes(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
