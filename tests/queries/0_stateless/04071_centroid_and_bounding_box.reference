@@ -122,3 +122,9 @@ centroidSpherical Geometry Polygon
 2	2.000402
 centroidSpherical globe-spanning polygon (triggers adaptive origin)
 135	90
+centroidCartesian empty polygon (degenerate)
+(0,0)
+centroidCartesian single-point linestring (degenerate)
+(3,7)
+centroidSpherical empty polygon (degenerate)
+0	0

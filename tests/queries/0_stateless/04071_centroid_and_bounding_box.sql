@@ -181,3 +181,12 @@ SELECT round(centroidSpherical([(0., 0.), (90., 0.), (180., 0.), (-90., 0.), (0.
 
 SELECT centroidSpherical(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+SELECT 'centroidCartesian empty polygon (degenerate)';
+SELECT centroidCartesian([[(0., 0.), (0., 0.), (0., 0.), (0., 0.)]]);
+
+SELECT 'centroidCartesian single-point linestring (degenerate)';
+SELECT centroidCartesian(CAST([(3., 7.)], 'LineString'));
+
+SELECT 'centroidSpherical empty polygon (degenerate)';
+SELECT round(centroidSpherical([[(0., 0.), (0., 0.), (0., 0.), (0., 0.)]]).1, 6), round(centroidSpherical([[(0., 0.), (0., 0.), (0., 0.), (0., 0.)]]).2, 6);
+

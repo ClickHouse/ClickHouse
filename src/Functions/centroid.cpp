@@ -47,10 +47,13 @@ SphericalPoint toSphericalPoint(const S2Point & p)
     return SphericalPoint{ll.lng().degrees(), ll.lat().degrees()};
 }
 
+/// Norm2 below this means the S2Point is degenerate (cancellation or zero-area input).
+static constexpr double S2_ZERO_NORM2_THRESHOLD = 1e-60;
+
 /// Normalize an S2Point centroid and convert to SphericalPoint, with fallback for degenerate inputs.
 SphericalPoint normalizeAndProject(const S2Point & centroid, const SphericalPoint & fallback)
 {
-    if (centroid.Norm2() < 1e-60)
+    if (centroid.Norm2() < S2_ZERO_NORM2_THRESHOLD)
         return fallback;
     return toSphericalPoint(centroid.Normalize());
 }
@@ -254,9 +257,7 @@ public:
                         }
                         else
                         {
-                            Point centroid{};
-                            boost::geometry::centroid(geometries[i], centroid);
-                            serializer.add(centroid);
+                            serializer.add(computeCartesianCentroid(geometries[i]));
                         }
                     }
                 });
@@ -266,12 +267,21 @@ public:
     }
 
 private:
+    /// Compute Cartesian centroid with fallback for degenerate geometries
+    /// (empty, zero-area) where boost::geometry::centroid throws centroid_exception.
     template <typename Geom>
-    static void computeCentroid(const Geom & geom, PointSerializer<Point> & serializer)
+    static Point computeCartesianCentroid(const Geom & geom)
     {
         Point centroid{};
-        boost::geometry::centroid(geom, centroid);
-        serializer.add(centroid);
+        try
+        {
+            boost::geometry::centroid(geom, centroid);
+        }
+        catch (const boost::geometry::centroid_exception &)
+        {
+            centroid = Point{0, 0};
+        }
+        return centroid;
     }
 
     static void processField(const Field & field, GeometryColumnType type, PointSerializer<Point> & serializer)
@@ -328,27 +338,27 @@ private:
                 }
                 case GeometryColumnType::Linestring: {
                     LineString<Point> linestring = getLineStringFromField<Point>(field);
-                    computeCentroid(linestring, serializer);
+                    serializer.add(computeCartesianCentroid(linestring));
                     break;
                 }
                 case GeometryColumnType::Ring: {
                     Ring<Point> ring = getRingFromField<Point>(field);
-                    computeCentroid(ring, serializer);
+                    serializer.add(computeCartesianCentroid(ring));
                     break;
                 }
                 case GeometryColumnType::Polygon: {
                     Polygon<Point> polygon = getPolygonFromField<Point>(field);
-                    computeCentroid(polygon, serializer);
+                    serializer.add(computeCartesianCentroid(polygon));
                     break;
                 }
                 case GeometryColumnType::MultiLinestring: {
                     MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
-                    computeCentroid(multilinestring, serializer);
+                    serializer.add(computeCartesianCentroid(multilinestring));
                     break;
                 }
                 case GeometryColumnType::MultiPolygon: {
                     MultiPolygon<Point> multipolygon = getMultiPolygonFromField<Point>(field);
-                    computeCentroid(multipolygon, serializer);
+                    serializer.add(computeCartesianCentroid(multipolygon));
                     break;
                 }
                 case GeometryColumnType::Null: {
