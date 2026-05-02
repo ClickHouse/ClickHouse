@@ -30,14 +30,14 @@ namespace
 {
 
 /// Convert a range of SphericalPoints (lon, lat in degrees) to S2Points.
+/// Reuses the caller-owned buffer to avoid per-call heap allocations.
 template <typename Container>
-std::vector<S2Point> toS2Points(const Container & vertices)
+void toS2Points(const Container & vertices, std::vector<S2Point> & out)
 {
-    std::vector<S2Point> points;
-    points.reserve(vertices.size());
+    out.clear();
+    out.reserve(vertices.size());
     for (const auto & p : vertices)
-        points.push_back(S2LatLng::FromDegrees(p.template get<1>(), p.template get<0>()).ToPoint());
-    return points;
+        out.push_back(S2LatLng::FromDegrees(p.template get<1>(), p.template get<0>()).ToPoint());
 }
 
 /// Convert an S2Point back to SphericalPoint (lon, lat in degrees).
@@ -72,20 +72,20 @@ size_t loopVertexCount(const Ring<SphericalPoint> & ring)
 /// Compute the true centroid × area for a ring using S2::GetCentroid,
 /// with sign forced toward vertex average (handles CW/CCW ambiguity
 /// so that polygon hole subtraction works correctly).
-S2Point computeRingCentroidS2(const Ring<SphericalPoint> & ring)
+S2Point computeRingCentroidS2(const Ring<SphericalPoint> & ring, std::vector<S2Point> & scratch)
 {
     if (ring.size() < 3)
         return S2Point(0, 0, 0);
 
-    auto points = toS2Points(ring);
+    toS2Points(ring, scratch);
     size_t n = loopVertexCount(ring);
 
-    S2Point centroid = S2::GetCentroid(S2PointLoopSpan(points.data(), n));
+    S2Point centroid = S2::GetCentroid(S2PointLoopSpan(scratch.data(), n));
 
     /// Compute vertex average for sign correction.
     S2Point avg(0, 0, 0);
     for (size_t i = 0; i < n; ++i)
-        avg += points[i];
+        avg += scratch[i];
 
     if (centroid.DotProd(avg) < 0)
         centroid = -centroid;
@@ -93,56 +93,56 @@ S2Point computeRingCentroidS2(const Ring<SphericalPoint> & ring)
     return centroid;
 }
 
-SphericalPoint computeRingSphericalCentroid(const Ring<SphericalPoint> & ring)
+SphericalPoint computeRingSphericalCentroid(const Ring<SphericalPoint> & ring, std::vector<S2Point> & scratch)
 {
-    S2Point centroid = computeRingCentroidS2(ring);
+    S2Point centroid = computeRingCentroidS2(ring, scratch);
     return normalizeAndProject(centroid, ring.empty() ? SphericalPoint{0, 0} : ring.front());
 }
 
-SphericalPoint computePolygonSphericalCentroid(const Polygon<SphericalPoint> & polygon)
+SphericalPoint computePolygonSphericalCentroid(const Polygon<SphericalPoint> & polygon, std::vector<S2Point> & scratch)
 {
     S2Point centroid(0, 0, 0);
 
     const auto & outer = polygon.outer();
     if (!outer.empty())
-        centroid += computeRingCentroidS2(outer);
+        centroid += computeRingCentroidS2(outer, scratch);
 
     for (const auto & inner : polygon.inners())
     {
         if (!inner.empty())
-            centroid -= computeRingCentroidS2(inner);
+            centroid -= computeRingCentroidS2(inner, scratch);
     }
 
     SphericalPoint fallback = polygon.outer().empty() ? SphericalPoint{0, 0} : polygon.outer().front();
     return normalizeAndProject(centroid, fallback);
 }
 
-SphericalPoint computeMultiPolygonSphericalCentroid(const MultiPolygon<SphericalPoint> & multipolygon)
+SphericalPoint computeMultiPolygonSphericalCentroid(const MultiPolygon<SphericalPoint> & multipolygon, std::vector<S2Point> & scratch)
 {
     S2Point centroid(0, 0, 0);
 
     for (const auto & polygon : multipolygon)
     {
-        centroid += computeRingCentroidS2(polygon.outer());
+        centroid += computeRingCentroidS2(polygon.outer(), scratch);
         for (const auto & inner : polygon.inners())
-            centroid -= computeRingCentroidS2(inner);
+            centroid -= computeRingCentroidS2(inner, scratch);
     }
 
     return normalizeAndProject(centroid, SphericalPoint{0, 0});
 }
 
-SphericalPoint computeLineStringSphericalCentroid(const LineString<SphericalPoint> & linestring)
+SphericalPoint computeLineStringSphericalCentroid(const LineString<SphericalPoint> & linestring, std::vector<S2Point> & scratch)
 {
     if (linestring.size() < 2)
         return linestring.empty() ? SphericalPoint{0, 0} : linestring.front();
 
-    auto points = toS2Points(linestring);
-    S2Point centroid = S2::GetCentroid(S2PointSpan(points));
+    toS2Points(linestring, scratch);
+    S2Point centroid = S2::GetCentroid(S2PointSpan(scratch));
 
     return normalizeAndProject(centroid, SphericalPoint{0, 0});
 }
 
-SphericalPoint computeMultiLineStringSphericalCentroid(const MultiLineString<SphericalPoint> & multilinestring)
+SphericalPoint computeMultiLineStringSphericalCentroid(const MultiLineString<SphericalPoint> & multilinestring, std::vector<S2Point> & scratch)
 {
     S2Point centroid(0, 0, 0);
 
@@ -150,8 +150,8 @@ SphericalPoint computeMultiLineStringSphericalCentroid(const MultiLineString<Sph
     {
         if (linestring.size() < 2)
             continue;
-        auto points = toS2Points(linestring);
-        centroid += S2::GetCentroid(S2PointSpan(points));
+        toS2Points(linestring, scratch);
+        centroid += S2::GetCentroid(S2PointSpan(scratch));
     }
 
     return normalizeAndProject(centroid, SphericalPoint{0, 0});
@@ -159,18 +159,18 @@ SphericalPoint computeMultiLineStringSphericalCentroid(const MultiLineString<Sph
 
 /// Dispatch to the appropriate centroid function based on geometry type.
 template <typename Geometry>
-SphericalPoint computeGeometrySphericalCentroid(const Geometry & geom)
+SphericalPoint computeGeometrySphericalCentroid(const Geometry & geom, std::vector<S2Point> & scratch)
 {
     if constexpr (std::is_same_v<Geometry, Ring<SphericalPoint>>)
-        return computeRingSphericalCentroid(geom);
+        return computeRingSphericalCentroid(geom, scratch);
     else if constexpr (std::is_same_v<Geometry, Polygon<SphericalPoint>>)
-        return computePolygonSphericalCentroid(geom);
+        return computePolygonSphericalCentroid(geom, scratch);
     else if constexpr (std::is_same_v<Geometry, MultiPolygon<SphericalPoint>>)
-        return computeMultiPolygonSphericalCentroid(geom);
+        return computeMultiPolygonSphericalCentroid(geom, scratch);
     else if constexpr (std::is_same_v<Geometry, LineString<SphericalPoint>>)
-        return computeLineStringSphericalCentroid(geom);
+        return computeLineStringSphericalCentroid(geom, scratch);
     else if constexpr (std::is_same_v<Geometry, MultiLineString<SphericalPoint>>)
-        return computeMultiLineStringSphericalCentroid(geom);
+        return computeMultiLineStringSphericalCentroid(geom, scratch);
     else
     {
         /// Fallback for Point or unsupported types
@@ -227,13 +227,28 @@ public:
         {
             Field field;
             const auto & descriptors = column_variant->getLocalDiscriminators();
-            for (size_t i = 0; i < input_rows_count; ++i)
+            if constexpr (std::is_same_v<Point, SphericalPoint>)
             {
-                column_variant->get(i, field);
-                auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
-                if (!type)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
-                processField(field, *type, serializer);
+                std::vector<S2Point> scratch;
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    column_variant->get(i, field);
+                    auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
+                    if (!type)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
+                    processField(field, *type, serializer, scratch);
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    column_variant->get(i, field);
+                    auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
+                    if (!type)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
+                    processField(field, *type, serializer);
+                }
             }
         }
         else
@@ -247,17 +262,19 @@ public:
 
                     auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
-                    for (size_t i = 0; i < input_rows_count; ++i)
+                    if constexpr (std::is_same_v<Point, SphericalPoint>)
                     {
-                        if constexpr (std::is_same_v<Point, SphericalPoint>)
+                        std::vector<S2Point> scratch;
+                        for (size_t i = 0; i < input_rows_count; ++i)
                         {
-                            Point centroid = computeGeometrySphericalCentroid(geometries[i]);
+                            Point centroid = computeGeometrySphericalCentroid(geometries[i], scratch);
                             serializer.add(centroid);
                         }
-                        else
-                        {
+                    }
+                    else
+                    {
+                        for (size_t i = 0; i < input_rows_count; ++i)
                             serializer.add(computeCartesianCentroid(geometries[i]));
-                        }
                     }
                 });
         }
@@ -283,87 +300,84 @@ private:
         return centroid;
     }
 
-    static void processField(const Field & field, GeometryColumnType type, PointSerializer<Point> & serializer)
+    static void processField(const Field & field, GeometryColumnType type, PointSerializer<Point> & serializer, std::vector<S2Point> & scratch)
     {
-        if constexpr (std::is_same_v<Point, SphericalPoint>)
+        switch (type)
         {
-            switch (type)
-            {
-                case GeometryColumnType::Point: {
-                    Point point = getPointFromField<Point>(field);
-                    serializer.add(point);
-                    break;
-                }
-                case GeometryColumnType::Linestring: {
-                    LineString<Point> linestring = getLineStringFromField<Point>(field);
-                    serializer.add(computeLineStringSphericalCentroid(linestring));
-                    break;
-                }
-                case GeometryColumnType::Ring: {
-                    Ring<Point> ring = getRingFromField<Point>(field);
-                    serializer.add(computeRingSphericalCentroid(ring));
-                    break;
-                }
-                case GeometryColumnType::Polygon: {
-                    Polygon<Point> polygon = getPolygonFromField<Point>(field);
-                    serializer.add(computePolygonSphericalCentroid(polygon));
-                    break;
-                }
-                case GeometryColumnType::MultiLinestring: {
-                    MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
-                    serializer.add(computeMultiLineStringSphericalCentroid(multilinestring));
-                    break;
-                }
-                case GeometryColumnType::MultiPolygon: {
-                    MultiPolygon<Point> multipolygon = getMultiPolygonFromField<Point>(field);
-                    serializer.add(computeMultiPolygonSphericalCentroid(multipolygon));
-                    break;
-                }
-                case GeometryColumnType::Null: {
-                    serializer.add(Point{0, 0});
-                    break;
-                }
+            case GeometryColumnType::Point: {
+                Point point = getPointFromField<Point>(field);
+                serializer.add(point);
+                break;
+            }
+            case GeometryColumnType::Linestring: {
+                LineString<Point> linestring = getLineStringFromField<Point>(field);
+                serializer.add(computeLineStringSphericalCentroid(linestring, scratch));
+                break;
+            }
+            case GeometryColumnType::Ring: {
+                Ring<Point> ring = getRingFromField<Point>(field);
+                serializer.add(computeRingSphericalCentroid(ring, scratch));
+                break;
+            }
+            case GeometryColumnType::Polygon: {
+                Polygon<Point> polygon = getPolygonFromField<Point>(field);
+                serializer.add(computePolygonSphericalCentroid(polygon, scratch));
+                break;
+            }
+            case GeometryColumnType::MultiLinestring: {
+                MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
+                serializer.add(computeMultiLineStringSphericalCentroid(multilinestring, scratch));
+                break;
+            }
+            case GeometryColumnType::MultiPolygon: {
+                MultiPolygon<Point> multipolygon = getMultiPolygonFromField<Point>(field);
+                serializer.add(computeMultiPolygonSphericalCentroid(multipolygon, scratch));
+                break;
+            }
+            case GeometryColumnType::Null: {
+                serializer.add(Point{0, 0});
+                break;
             }
         }
-        else
+    }
+
+    static void processField(const Field & field, GeometryColumnType type, PointSerializer<Point> & serializer)
+    {
+        switch (type)
         {
-            switch (type)
-            {
-                case GeometryColumnType::Point: {
-                    /// Centroid of a point is the point itself.
-                    Point point = getPointFromField<Point>(field);
-                    serializer.add(point);
-                    break;
-                }
-                case GeometryColumnType::Linestring: {
-                    LineString<Point> linestring = getLineStringFromField<Point>(field);
-                    serializer.add(computeCartesianCentroid(linestring));
-                    break;
-                }
-                case GeometryColumnType::Ring: {
-                    Ring<Point> ring = getRingFromField<Point>(field);
-                    serializer.add(computeCartesianCentroid(ring));
-                    break;
-                }
-                case GeometryColumnType::Polygon: {
-                    Polygon<Point> polygon = getPolygonFromField<Point>(field);
-                    serializer.add(computeCartesianCentroid(polygon));
-                    break;
-                }
-                case GeometryColumnType::MultiLinestring: {
-                    MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
-                    serializer.add(computeCartesianCentroid(multilinestring));
-                    break;
-                }
-                case GeometryColumnType::MultiPolygon: {
-                    MultiPolygon<Point> multipolygon = getMultiPolygonFromField<Point>(field);
-                    serializer.add(computeCartesianCentroid(multipolygon));
-                    break;
-                }
-                case GeometryColumnType::Null: {
-                    serializer.add(Point{0, 0});
-                    break;
-                }
+            case GeometryColumnType::Point: {
+                Point point = getPointFromField<Point>(field);
+                serializer.add(point);
+                break;
+            }
+            case GeometryColumnType::Linestring: {
+                LineString<Point> linestring = getLineStringFromField<Point>(field);
+                serializer.add(computeCartesianCentroid(linestring));
+                break;
+            }
+            case GeometryColumnType::Ring: {
+                Ring<Point> ring = getRingFromField<Point>(field);
+                serializer.add(computeCartesianCentroid(ring));
+                break;
+            }
+            case GeometryColumnType::Polygon: {
+                Polygon<Point> polygon = getPolygonFromField<Point>(field);
+                serializer.add(computeCartesianCentroid(polygon));
+                break;
+            }
+            case GeometryColumnType::MultiLinestring: {
+                MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
+                serializer.add(computeCartesianCentroid(multilinestring));
+                break;
+            }
+            case GeometryColumnType::MultiPolygon: {
+                MultiPolygon<Point> multipolygon = getMultiPolygonFromField<Point>(field);
+                serializer.add(computeCartesianCentroid(multipolygon));
+                break;
+            }
+            case GeometryColumnType::Null: {
+                serializer.add(Point{0, 0});
+                break;
             }
         }
     }
@@ -372,13 +386,13 @@ private:
 struct CartesianTraits
 {
     using PointType = CartesianPoint;
-    static constexpr const char * name = "centroidCartesian";
+    static constexpr auto name = "centroidCartesian";
 };
 
 struct SphericalTraits
 {
     using PointType = SphericalPoint;
-    static constexpr const char * name = "centroidSpherical";
+    static constexpr auto name = "centroidSpherical";
 };
 
 }
