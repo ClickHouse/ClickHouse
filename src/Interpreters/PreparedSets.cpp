@@ -383,7 +383,15 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
 
-    set_and_key->set->fillSetElements();
+    /// `buildOrderedSetInplace` may be called more than once on the same `FutureSetFromSubquery`
+    /// (different call sites: `KeyCondition`, MergeTree skip indexes, `ConditionSelectivityEstimator`,
+    /// etc.). With the cloned-source path above, `source` is preserved on silent in-place failure,
+    /// so a subsequent call would re-enter this code. `Set::fillSetElements` appends empty columns
+    /// to `set_elements` without clearing, so calling it twice would leave `set_elements.size() > keys_size`
+    /// and trip the `LOGICAL_ERROR` check in `Set::appendSetElements`. Match the pattern in
+    /// `FutureSetFromTuple::buildOrderedSetInplace` and only fill once.
+    if (!set_and_key->set->hasExplicitSetElements())
+        set_and_key->set->fillSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
