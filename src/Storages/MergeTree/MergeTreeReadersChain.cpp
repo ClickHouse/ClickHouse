@@ -301,6 +301,9 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
 
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
 {
+    /// If result_header is empty (e.g., due to lazy materialization), use the patch reader's header instead
+    const Block & header_to_use = result_header.empty() && !patch_readers.empty() ? patch_readers[0]->getHeader() : result_header;
+
     for (size_t i = 0; i < patches_results.size(); ++i)
     {
         auto & patch_results = patches_results[i];
@@ -312,7 +315,7 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
         }
 
         const auto * last_read_patch = patch_results.empty() ? nullptr : patch_results.back().get();
-        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, result_header, last_read_patch);
+        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, header_to_use, last_read_patch);
         patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
     }
 }
