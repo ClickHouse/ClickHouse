@@ -62,6 +62,19 @@ namespace
         return path;
     }
 
+    std::string ensureTrailingSlashInPath(std::string url)
+    {
+        Poco::URI uri(url, false);
+        uri.setPath(ensureTrailingSlash(uri.getPath()));
+        return uri.toString();
+    }
+
+    std::string getPathPrefixForMatching(const std::string & url)
+    {
+        const Poco::URI uri(url, false);
+        return ensureTrailingSlash(uri.getPath());
+    }
+
     std::string stripLeadingSlash(std::string path)
     {
         while (path.starts_with("/"))
@@ -165,11 +178,11 @@ std::optional<StoredObjects> MetadataStorageFromIndexPages::getStorageObjectsIfE
 
 std::string MetadataStorageFromIndexPages::makeListingURL(const std::string & path) const
 {
-    auto normalized_path = ensureTrailingSlash(stripLeadingSlash(path));
+    Poco::URI path_uri(ensureTrailingSlashInPath(stripLeadingSlash(path)), false);
     auto listing_uri = base_uri;
-    listing_uri.setPath(ensureTrailingSlash(base_uri.getPath()) + normalized_path);
-    listing_uri.setQuery({});
-    listing_uri.setFragment({});
+    listing_uri.setPath(ensureTrailingSlash(base_uri.getPath()) + stripLeadingSlash(path_uri.getPath()));
+    listing_uri.setQuery(path_uri.getRawQuery());
+    listing_uri.setFragment(path_uri.getFragment());
     return listing_uri.toString();
 }
 
@@ -312,12 +325,13 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
 
 bool MetadataStorageFromIndexPages::tryListDirectory(const std::string & path, std::vector<std::string> & result) const
 {
-    const auto normalized_path = ensureTrailingSlash(stripLeadingSlash(path));
+    const auto normalized_path = ensureTrailingSlashInPath(stripLeadingSlash(path));
+    const auto path_prefix = getPathPrefixForMatching(normalized_path);
     const auto listing_url = makeListingURL(normalized_path);
     try
     {
         auto body = readIndexPage(listing_url);
-        result = extractURLs(body, listing_url, normalized_path);
+        result = extractURLs(body, listing_url, path_prefix);
         return true;
     }
     catch (const HTTPException & e)

@@ -24,6 +24,7 @@ DATA_PARTS = {
     "/data/order/b/part1.tsv": "20\n",
     "/data/duplicates/part1.tsv": "9\n",
     "/data/query_override/part1.tsv": "6\n",
+    "/data/query_directory/subdir/part1.tsv": "11\n",
     "/data/headers/2025/part1.tsv": "7\n",
     "/data/headers/2025/part2.tsv": "8\n",
     "/data/mixed_headers/part1.tsv": "1\n",
@@ -112,6 +113,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/order/b/",
             "/data/duplicates/",
             "/data/query_override/",
+            "/data/query_directory/",
+            "/data/query_directory/subdir/",
             "/data/headers/",
             "/data/headers/2025/",
             "/data/mixed_headers/",
@@ -192,6 +195,18 @@ class RequestHandler(BaseHTTPRequestHandler):
             body = "<a href=\"part1.tsv?download=1\">part1.tsv?download=1</a>\n"
             self._send_html(body)
             return
+        if path == "/data/query_directory/":
+            body = "<a href=\"subdir/?token=abc\">subdir/?token=abc</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/query_directory/subdir/":
+            if parsed.query != "token=abc":
+                self.send_response(404)
+                self.end_headers()
+                return
+            body = "<a href=\"part1.tsv?token=abc\">part1.tsv?token=abc</a>\n"
+            self._send_html(body)
+            return
         if path == "/data/glob/":
             body = (
                 "<a href=\"parta.tsv\">parta.tsv</a>\n"
@@ -238,6 +253,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
             if path == "/data/query_override/part1.tsv" and parsed.query != "download=1":
+                self.send_response(404)
+                self.end_headers()
+                return
+            if path == "/data/query_directory/subdir/part1.tsv" and parsed.query != "token=abc":
                 self.send_response(404)
                 self.end_headers()
                 return
