@@ -29,9 +29,13 @@ SETTINGS snappy_mode = 'framed';
 
 # Reading framed-snappy under default `snappy_mode='basic'` must fail with a
 # decode error, not silently accept the wrong wire format.
-${CLICKHOUSE_CLIENT} -q "
+if ${CLICKHOUSE_CLIENT} -q "
 SELECT x FROM file('${FRAMED_FILE}', 'TSV', 'x UInt32', 'snappy')
 ORDER BY x;
-" 2>&1 | grep -qE "SNAPPY_UNCOMPRESS_FAILED|Cannot read all data" \
-    && echo "OK: framed payload rejected by basic reader" \
-    || echo "FAIL: framed payload was not rejected by basic reader"
+" 2>&1 | grep -qE "SNAPPY_UNCOMPRESS_FAILED|Cannot read all data"
+then
+    echo "OK: framed payload rejected by basic reader"
+else
+    echo "FAIL: framed payload was not rejected by basic reader" >&2
+    exit 1
+fi
