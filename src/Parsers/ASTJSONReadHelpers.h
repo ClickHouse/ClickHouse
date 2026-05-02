@@ -136,6 +136,8 @@ public:
     }
 
     /// Read a JSON array of strings.
+    /// Each element must be a JSON string; otherwise a BAD_ARGUMENTS exception is thrown
+    /// (Poco's `getElement<String>` would otherwise silently stringify numbers, bools, etc.).
     std::vector<String> readStringArray(const char * key) const
     {
         std::vector<String> result;
@@ -145,7 +147,13 @@ public:
         if (!arr)
             return result;
         for (unsigned int i = 0; i < arr->size(); ++i)
-            result.push_back(arr->getElement<String>(i));
+        {
+            auto var = arr->get(i);
+            if (!var.isString())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Element at index {} of JSON array '{}' is not a string during AST JSON deserialization", i, key);
+            result.push_back(var.extract<String>());
+        }
         return result;
     }
 
