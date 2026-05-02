@@ -542,6 +542,20 @@ def main():
                 bolt_ok = False
                 print("BOLT profile collection cmake failed. Continuing with PGO-only.")
 
+        # Remove BOLT profile files written during cmake configuration.
+        # Each cmake compiler-feature test invokes clang-21.inst, which writes a
+        # profile file. With hundreds of tests this adds several GB of files from
+        # trivial one-liner programs that don't represent real clang hot paths.
+        # Delete them before Step 4 to avoid disk exhaustion during the real build.
+        if bolt_ok:
+            cmake_profiles = glob.glob(f"{BOLT_PROFILES_DIR}/prof.*")
+            for f in cmake_profiles:
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+            print(f"Removed {len(cmake_profiles)} cmake-phase BOLT profile files")
+
         # Step 4: Time-limited build to collect BOLT profiles
         # Each compilation unit writes ~15 MB fdata file. With -j4 and a 20 minute
         # timeout, we expect ~300 compilations producing ~4.5 GB of profiles,
