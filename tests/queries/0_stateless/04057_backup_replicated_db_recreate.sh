@@ -23,16 +23,28 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB="db_$CLICKHOUSE_DATABASE"
 ZK_PATH="/clickhouse/databases/$DB"
 
-TIMEOUT=30
+TIMEOUT=45
+
+# A non-trivial number of tables widens the race window inside
+# `getConsistentMetadataSnapshotImpl`: every iteration of its retry loop calls
+# `tryGet` over one Keeper path per table, so more tables means a longer
+# wall-clock iteration during which a concurrent `DROP`+recreate can land
+# between reading `snapshot_version` and reading `max_log_ptr`. With a single
+# table the iteration completes in a few milliseconds, which made the
+# pre-fix `Log pointer moved backwards` symptom miss most of the time in
+# bugfix validation.
+NUM_TABLES=20
 
 function create_and_populate()
 {
     $CLICKHOUSE_CLIENT --query "
         CREATE DATABASE IF NOT EXISTS $DB ENGINE = Replicated('$ZK_PATH', 's0', 'r0');
     " > /dev/null 2>&1
-    $CLICKHOUSE_CLIENT --query "
-        CREATE TABLE IF NOT EXISTS $DB.t (x UInt64) ENGINE = MergeTree ORDER BY x;
-    " > /dev/null 2>&1
+    local create_tables=""
+    for i in $(seq 1 $NUM_TABLES); do
+        create_tables+="CREATE TABLE IF NOT EXISTS $DB.t_$i (x UInt64) ENGINE = MergeTree ORDER BY x;"
+    done
+    $CLICKHOUSE_CLIENT --query "$create_tables" > /dev/null 2>&1
 }
 
 function do_backups()
@@ -55,7 +67,10 @@ create_and_populate
 # Start backup workers in the background. They submit `BACKUP ... ASYNC`
 # requests in a tight loop; the backups run concurrently on the server. More
 # workers widen the chance of catching the narrow race between reading
-# `max_log_ptr` and entering the snapshot loop.
+# `snapshot_version` and entering the snapshot loop in
+# `getConsistentMetadataSnapshotImpl`.
+do_backups &
+do_backups &
 do_backups &
 do_backups &
 do_backups &
@@ -90,7 +105,7 @@ fi
 # so a backup that is still running after this drain has already passed the
 # racy phase and cannot be hiding a delayed `LOGICAL_ERROR`. The bound exists
 # only to keep the test inside the 180s budget on slow sanitizer builds.
-DEADLINE=$((SECONDS + 60))
+DEADLINE=$((SECONDS + 30))
 while [[ $SECONDS -lt $DEADLINE ]]; do
     IN_PROGRESS=$($CLICKHOUSE_CLIENT --query "
         SELECT count() FROM system.backups
