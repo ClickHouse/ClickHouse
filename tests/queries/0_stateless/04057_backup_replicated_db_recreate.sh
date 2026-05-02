@@ -135,11 +135,17 @@ $CLICKHOUSE_CLIENT --query "
 # cleanup so a slow run does not push the test past the 180s budget; any
 # leftover frozen hardlinks are removed by the test infrastructure when the
 # database directory is wiped between runs.
+#
+# Read all IDs into an array first instead of streaming through a pipe: when
+# the deadline triggers `break` mid-iteration, a piped `clickhouse-client`
+# would still be writing and would surface a `Broken pipe` error on stderr,
+# failing the test on the harness's "having stderror" check.
 CLEANUP_DEADLINE=$((SECONDS + 20))
-$CLICKHOUSE_CLIENT --query "
+mapfile -t BACKUP_IDS < <($CLICKHOUSE_CLIENT --query "
     SELECT id FROM system.backups
     WHERE id LIKE '${CLICKHOUSE_DATABASE}_recreate_%'
-" | while read -r backup_id; do
+")
+for backup_id in "${BACKUP_IDS[@]}"; do
     [[ $SECONDS -gt $CLEANUP_DEADLINE ]] && break
     $CLICKHOUSE_CLIENT --query "SYSTEM UNFREEZE WITH ID = '$backup_id'" > /dev/null 2>&1
 done
