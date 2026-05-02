@@ -214,3 +214,43 @@ TEST(FindNotSymbols, NullCharacter)
     test_find_first_not<'a', 'b', 'c', 'd', 'e', 'f', 'g'>(s, 7u);
     test_find_first_not(s, "abcdefg", 7u);
 }
+
+TEST(FindSymbols, NullByteInHaystack)
+{
+    // Regression test for a bug in the SSE2 runtime-needle path: `mm_is_in_prepare`
+    // zero-initialises the fixed 16-slot needle array, and `mm_is_in_execute` used
+    // to iterate all 16 slots unconditionally. Any NUL byte in the haystack matched
+    // the unused zero-padded slots, making `find_first_symbols` stop on NUL even
+    // when the caller did not include it in the needle set. The fix is to iterate
+    // only the first `num_chars` slots.
+    //
+    // These haystacks contain an embedded NUL and the needle sets (<5 chars) steer
+    // the dispatch into the SSE2 runtime path, where the bug used to live. All
+    // haystacks are >= 16 bytes so the SSE2 16-byte block is actually exercised
+    // (the SIMD loop only runs when `pos + 15 < end`).
+
+    // NUL at position 4, findable 'z' at position 10. Size 16 bytes to exercise the SIMD block.
+    const std::string h_nul_then_z("abcd\0efghizjklll", 16u);
+    ASSERT_EQ(h_nul_then_z.size(), 16u);
+    // Needle does NOT contain NUL: we must find 'z' at position 10, not NUL at 4.
+    ASSERT_EQ(find_first_symbols(h_nul_then_z, SearchSymbols("xyz")),
+              h_nul_then_z.data() + 10);
+
+    // Same haystack, needle contains nothing present: must return end.
+    ASSERT_EQ(find_first_symbols(h_nul_then_z, SearchSymbols("XYW")),
+              h_nul_then_z.data() + h_nul_then_z.size());
+
+    // Needle DOES contain NUL: must find NUL at position 4.
+    ASSERT_EQ(find_first_symbols(h_nul_then_z, SearchSymbols(std::string("XY\0", 3u))),
+              h_nul_then_z.data() + 4);
+
+    // `find_first_symbols_or_null`: same contract, but returns nullptr when not found.
+    ASSERT_EQ(find_first_symbols_or_null(h_nul_then_z, SearchSymbols("XYW")), nullptr);
+
+    // `find_first_not_symbols`: needle set covers every haystack byte except NUL,
+    // so the first "not-in-set" position must be the NUL at 4 — without the fix,
+    // the SIMD would treat NUL as matching, masking it from the "not" result.
+    const std::string h_aaaa_nul_aaaa("aaaa\0aaaaaaaaaaaa", 17u);
+    ASSERT_EQ(find_first_not_symbols(h_aaaa_nul_aaaa, SearchSymbols("a")),
+              h_aaaa_nul_aaaa.data() + 4);
+}
