@@ -213,7 +213,7 @@ class JobConfigs:
         force_success=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
-            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run*; sudo find /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd -type f -mtime +2 -delete",
+            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
         ],
     ).parametrize(
         Job.ParamSet(
@@ -323,10 +323,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
-            provides=[
-                ArtifactNames.CH_ARM_BINARY,
-                ArtifactNames.PARSER_MEMORY_PROFILER,
-            ],
+            provides=[ArtifactNames.CH_ARM_BINARY],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
