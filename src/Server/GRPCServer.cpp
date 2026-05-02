@@ -951,7 +951,7 @@ namespace
 
         /// Set the current database if specified.
         if (!query_info.database().empty())
-            query_context->setCurrentDatabase(query_info.database());
+            query_context->setCurrentDatabase(query_context->applyDatabaseNamespace(query_info.database()));
 
         /// Apply transport compression for this call.
         if (auto transport_compression = TransportCompression::fromQueryInfo(query_info))

@@ -347,13 +347,24 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextM
 BlockIO InterpreterAlterQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
-    const auto & alter = query_ptr->as<ASTAlterQuery &>();
+    auto & alter = query_ptr->as<ASTAlterQuery &>();
+
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
+        /// Apply database namespace for multi-tenant isolation.
+        /// Only pre-apply for ALTER DATABASE — the database name is used directly
+        /// (not through `resolveStorageID`), so it needs explicit namespacing here.
+        String database = alter.getDatabase();
+        if (!database.empty())
+            alter.setDatabase(getContext()->applyDatabaseNamespace(database));
         return executeToDatabase(alter);
     }
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE)
     {
+        /// For ALTER TABLE, do NOT pre-apply namespace here.
+        /// `executeToTable` calls `tryResolveStorageID` which goes through
+        /// `resolveStorageIDImpl`, and that already applies namespace.
+        /// Pre-applying here would cause double-prefixing.
         return executeToTable(alter);
     }
 

@@ -318,6 +318,13 @@ BlockIO InterpreterSystemQuery::execute()
 {
     auto & query = query_ptr->as<ASTSystemQuery &>();
 
+    /// Apply database namespace for multi-tenant isolation.
+    {
+        String database = query.getDatabase();
+        if (!database.empty())
+            query.setDatabase(getContext()->applyDatabaseNamespace(database));
+    }
+
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
@@ -342,7 +349,14 @@ BlockIO InterpreterSystemQuery::execute()
     }
     else if (query.table)
     {
-        table_id = getContext()->resolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveOrdinary);
+        /// Database name was already namespace-prefixed above (line 312).
+        /// Do NOT use `resolveStorageID` here — it would apply namespace a second time.
+        /// Instead, resolve the database manually: if empty, use current database
+        /// (which is already physical/namespaced); otherwise use the already-namespaced name.
+        String resolved_database = query.getDatabase();
+        if (resolved_database.empty())
+            resolved_database = getContext()->getCurrentDatabase();
+        table_id = StorageID(resolved_database, query.getTable());
     }
 
 

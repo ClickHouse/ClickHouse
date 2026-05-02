@@ -21,6 +21,7 @@ class ASTAuthenticationData;
   *     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...]]
   *     [DEFAULT DATABASE database | NONE]
+  *     [DATABASE NAMESPACE namespace | NONE]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
   *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
   *
@@ -30,6 +31,7 @@ class ASTAuthenticationData;
   *     [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
   *     [DEFAULT DATABASE database | NONE]
+  *     [DATABASE NAMESPACE namespace | NONE]
   *     [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
   *     [DROP SETTINGS variable [,...] ]
   *     [ADD PROFILES 'profile_name' [,...] ]
@@ -68,6 +70,7 @@ public:
     boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
 
     boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
+    boost::intrusive_ptr<ASTDatabaseOrNone> database_namespace;
 
     ASTPtr global_valid_until;
 

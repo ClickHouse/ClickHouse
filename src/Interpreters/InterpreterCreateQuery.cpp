@@ -150,6 +150,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsString database_namespace_separator;
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
@@ -1508,13 +1509,77 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
 namespace
 {
 
+/// Apply database namespace to all entries in a TableNamesSet.
+/// The view/MV SELECT AST stores logical (namespace-stripped) database names,
+/// but dependency graphs must use physical names for correct lookups.
+/// For non-view tables, dependencies (from engine/dict/defaults) already have physical names,
+/// so we skip entries that are already prefixed with the namespace.
+void namespaceDependencySet(TableNamesSet & deps, const ContextPtr & context)
+{
+    String ns = context->getDatabaseNamespace();
+    String separator = context->getDatabaseNamespaceSeparator();
+    if (ns.empty() || separator.empty())
+        return;
+
+    String prefix = ns + separator;
+    auto shared = context->getSharedDatabasesAcrossNamespaces();
+
+    TableNamesSet result;
+    for (auto & dep : deps)
+    {
+        if (!dep.database.empty()
+            && !dep.database.starts_with(prefix)
+            && !Context::isExcludedFromNamespacing(dep.database)
+            && !shared.contains(dep.database))
+        {
+            auto namespaced = dep;
+            namespaced.database = prefix + dep.database;
+            result.emplace(std::move(namespaced));
+        }
+        else
+        {
+            result.emplace(std::move(dep));
+        }
+    }
+    deps = std::move(result);
+}
+
 void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
 
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
-    DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+
+    /// The MV SELECT AST stores logical (namespace-stripped) database names.
+    /// All dependency graphs must use physical names because lookups use physical
+    /// StorageIDs (from table->getStorageID() or DatabaseCatalog).
+    namespaceDependencySet(ref_dependencies.dependencies, context);
+    namespaceDependencySet(loading_dependencies, context);
+
+    TableNamesSet mv_view_deps;
+    if (ref_dependencies.mv_from_dependency)
+    {
+        auto dep = ref_dependencies.mv_from_dependency.value();
+        if (!dep.database_name.empty())
+        {
+            String ns = context->getDatabaseNamespace();
+            String separator = context->getDatabaseNamespaceSeparator();
+            if (!ns.empty() && !separator.empty())
+            {
+                String prefix = ns + separator;
+                if (!dep.database_name.starts_with(prefix)
+                    && !Context::isExcludedFromNamespacing(dep.database_name))
+                {
+                    auto shared = context->getSharedDatabasesAcrossNamespaces();
+                    if (!shared.contains(dep.database_name))
+                        dep.database_name = prefix + dep.database_name;
+                }
+            }
+        }
+        mv_view_deps.emplace(dep.getQualifiedName());
+    }
+    DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies, mv_view_deps);
 }
 
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
@@ -1522,6 +1587,8 @@ void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create,
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, /*can_throw*/true);
+    namespaceDependencySet(ref_dependencies.dependencies, context);
+    namespaceDependencySet(loading_dependencies, context);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies);
 }
 
@@ -1682,7 +1749,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
-        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+
+        /// Use the logical (namespace-stripped) database name for the SELECT AST so that
+        /// unqualified table names resolve to e.g. `testns.t1` rather than `tenant1__testns.t1`.
+        /// This keeps the AST consistent with explicitly-qualified names (which are always
+        /// logical) and avoids double-prefix when the push-path resolveStorageID applies
+        /// the namespace again.
+        String select_default_database = getContext()->stripDatabaseNamespace(current_database);
+        AddDefaultDatabaseVisitor visitor(getContext(), select_default_database);
         visitor.visit(*create.select);
     }
 
@@ -2472,6 +2546,36 @@ BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
+
+    /// Apply database namespace for multi-tenant isolation.
+    {
+        String database = create.getDatabase();
+        if (!database.empty())
+        {
+            /// When namespace feature is active, reject database names containing the separator.
+            /// Only for CREATE DATABASE — CREATE TABLE/VIEW in a pre-existing database whose
+            /// name contains the separator (created before the feature was enabled) must still work.
+            /// Skip for ATTACH queries — they come from internal paths (UNDROP, server restart)
+            /// where names are already physical.
+            bool is_create_database = create.database && !create.table;
+            if (is_create_database && !create.attach)
+                getContext()->validateDatabaseNameNoSeparator(database);
+            create.setDatabase(getContext()->applyDatabaseNamespace(database));
+        }
+
+        /// Also namespace view target databases (e.g., the TO-table of a materialized view).
+        /// Without this, `CREATE MATERIALIZED VIEW db.mv TO db.target ...` would leave
+        /// `target`'s database un-namespaced, causing "Database db does not exist" later
+        /// when `validateMaterializedViewColumnsAndEngine` looks up the target table.
+        if (create.targets)
+        {
+            for (auto & target : create.targets->targets)
+            {
+                if (!target.table_id.database_name.empty())
+                    target.table_id.database_name = getContext()->applyDatabaseNamespace(target.table_id.database_name);
+            }
+        }
+    }
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 

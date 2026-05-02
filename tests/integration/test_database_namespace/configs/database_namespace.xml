@@ -1,0 +1,4 @@
+<clickhouse>
+    <database_namespace_separator>__</database_namespace_separator>
+    <shared_databases_across_namespaces>shared_db</shared_databases_across_namespaces>
+</clickhouse>

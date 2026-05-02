@@ -368,6 +368,7 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    String database_namespace;  /// Database namespace prefix for multi-tenant isolation.
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -1067,6 +1068,53 @@ public:
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
+
+    /// Database namespace for multi-tenant isolation.
+    /// When set (and database_namespace_separator server setting is non-empty),
+    /// database names are transparently prefixed with "{namespace}{separator}".
+    String getDatabaseNamespace() const;
+    void setDatabaseNamespace(const String & ns);
+    /// Prepend namespace prefix to a database name (skip system/default/shared databases).
+    String applyDatabaseNamespace(const String & database_name) const;
+    /// Strip namespace prefix from a physical database name for user-facing display.
+    String stripDatabaseNamespace(const String & physical_database_name) const;
+
+    /// Returns true for databases that are never namespace-prefixed:
+    /// predefined databases (system, INFORMATION_SCHEMA, etc.) and `default`.
+    static bool isExcludedFromNamespacing(std::string_view database_name);
+
+private:
+    /// Pure functions that transform database names using the given namespace and separator.
+    /// Static because they access no instance state — all inputs are passed as parameters.
+    /// `setCurrentDatabase` reads namespace/separator/shared before acquiring the lock;
+    /// `setUser` reads them from the User object while already holding the lock.
+    /// Both patterns are safe because these methods never access instance state.
+    static String applyDatabaseNamespaceImpl(
+        const String & database_name,
+        const String & ns,
+        const String & separator,
+        const std::unordered_set<String> & shared_databases);
+    static String stripDatabaseNamespaceImpl(
+        const String & physical_database_name,
+        const String & ns,
+        const String & separator);
+
+public:
+    /// Returns the database_namespace_separator server setting value.
+    String getDatabaseNamespaceSeparator() const;
+    /// Returns the cached set of shared databases from the `shared_databases_across_namespaces`
+    /// config setting.  The cache is populated at startup and refreshed on config reload.
+    std::unordered_set<String> getSharedDatabasesAcrossNamespaces() const;
+    /// Parse a comma-separated list of database names into an unordered set,
+    /// trimming whitespace around each entry.
+    static std::unordered_set<String> parseSharedDatabasesConfig(const String & value);
+    /// Reload the cached set of shared databases from the given config.
+    /// Called at startup and on `SYSTEM RELOAD CONFIG`.
+    void reloadSharedDatabasesAcrossNamespaces(const Poco::Util::AbstractConfiguration & config);
+    /// Validate that a database name does not contain the namespace separator.
+    /// Only checked when database_namespace_separator is configured.
+    void validateDatabaseNameNoSeparator(const String & database_name) const;
+
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery() const;

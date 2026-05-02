@@ -13,7 +13,8 @@ BlockIO InterpreterUseQuery::execute()
 {
     const String & new_database = query_ptr->as<ASTUseQuery &>().getDatabase();
     getContext()->checkAccess(AccessType::SHOW_DATABASES, new_database);
-    getContext()->getSessionContext()->setCurrentDatabase(new_database);
+    getContext()->getSessionContext()->setCurrentDatabase(
+        getContext()->getSessionContext()->applyDatabaseNamespace(new_database));
     return {};
 }
 

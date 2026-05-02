@@ -1918,6 +1918,8 @@ try
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
+    global_context->reloadSharedDatabasesAcrossNamespaces(config());
+
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
       * Flags may be cleared automatically after being applied by the server.
       * Examples: do repair of local data; clone all replicated tables from replica.
@@ -2323,6 +2325,7 @@ try
             updateLevels(config(), logger());
             global_context->setClustersConfig(loaded_config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+            global_context->reloadSharedDatabasesAcrossNamespaces(config());
             global_context->setExternalAuthenticatorsConfig(config());
 
             global_context->setDashboardsConfig(config());
