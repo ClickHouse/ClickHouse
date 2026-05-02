@@ -9,9 +9,9 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
 #include <s2/s2latlng.h>
+#include <s2/s2loop_measures.h>
 #include <s2/s2point.h>
 #include <s2/s2point_span.h>
-#include <s2/s2loop_measures.h>
 #include <s2/s2polyline_measures.h>
 #pragma clang diagnostic pop
 
@@ -63,8 +63,7 @@ SphericalPoint normalizeAndProject(const S2Point & centroid, const SphericalPoin
 size_t loopVertexCount(const Ring<SphericalPoint> & ring)
 {
     size_t n = ring.size();
-    if (n >= 2
-        && ring.front().template get<0>() == ring.back().template get<0>()
+    if (n >= 2 && ring.front().template get<0>() == ring.back().template get<0>()
         && ring.front().template get<1>() == ring.back().template get<1>())
         --n;
     return n;

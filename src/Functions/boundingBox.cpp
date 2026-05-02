@@ -243,7 +243,7 @@ SELECT boundingBoxSpherical([[(4.346693, 50.858306), (4.367945, 50.852455), (4.3
             R"(
 [(4.338074,50.833264),(4.367945,50.833264),(4.367945,50.858306),(4.338074,50.858306),(4.338074,50.833264)]
         )"},
-            {"Bounding box crossing the date line (note longitude > 180°)",
+           {"Bounding box crossing the date line (note longitude > 180°)",
             R"(
 SELECT boundingBoxSpherical(CAST([(179., 50.), (-179., 50.)], 'LineString'))
         )",
