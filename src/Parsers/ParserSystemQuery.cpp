@@ -390,6 +390,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+                res->coverage_test_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            break;
+        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
@@ -455,6 +462,19 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ false, /* allow_string_literal = */ false))
                 return false;
+            break;
+        }
+
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
+                return false;
+            if (!ParserKeyword{Keyword::PATH}.ignore(pos, expected))
+                return false;
+            ASTPtr path_ast;
+            if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
+                return false;
+            res->queue_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
             break;
         }
 
@@ -879,6 +899,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                         res->instrumentation_point = field.safeGet<UInt64>();
                         break;
                     default:
+                        expected.add(pos, "String or UInt64 literal for instrumentation point");
                         return false;
                 }
             }
@@ -888,7 +909,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 if (Poco::toLower(identifier) == "all")
                     res->instrumentation_point = Instrumentation::All{};
                 else
+                {
+                    expected.add(pos, "ALL");
                     return false;
+                }
+            }
+            else
+            {
+                expected.add(pos, "instrumentation point: subquery, literal, or ALL");
+                return false;
             }
 
             break;
@@ -899,12 +928,18 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (ParserLiteral{}.parse(pos, temporary_identifier, expected))
                 res->instrumentation_function_name = temporary_identifier->as<ASTLiteral &>().value.safeGet<String>();
             else
+            {
+                expected.add(pos, "function name (string literal)");
                 return false;
+            }
 
             if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
                 res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             else
+            {
+                expected.add(pos, "handler name (LOG or PROFILE)");
                 return false;
+            }
 
             if (Poco::toLower(res->instrumentation_handler_name) == "profile")
             {
@@ -920,10 +955,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 else if (Poco::toLower(entry_type) == "exit")
                     res->instrumentation_entry_type = Instrumentation::EntryType::EXIT;
                 else
+                {
+                    expected.add(pos, "entry type (ENTRY or EXIT)");
                     return false;
+                }
             }
             else
+            {
+                expected.add(pos, "entry type (ENTRY or EXIT)");
                 return false;
+            }
+
 
             ASTPtr params_ast;
             while (ParserLiteral{}.parse(pos, params_ast, expected))
@@ -940,7 +982,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
             if (res->instrumentation_parameters.empty())
+            {
+                expected.add(pos, "at least one parameter (string literal)");
                 return false;
+            }
 
             break;
         }

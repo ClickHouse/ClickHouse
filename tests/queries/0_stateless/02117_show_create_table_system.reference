@@ -606,8 +606,8 @@ CREATE TABLE system.parts_columns
     `column_ttl_min` Nullable(DateTime),
     `column_ttl_max` Nullable(DateTime),
     `statistics` Array(String),
-    `estimates.min` Nullable(Float64),
-    `estimates.max` Nullable(Float64),
+    `estimates.min` Nullable(String),
+    `estimates.max` Nullable(String),
     `estimates.cardinality` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
@@ -815,7 +815,8 @@ CREATE TABLE system.quota_limits
     `max_read_bytes` Nullable(UInt64),
     `max_execution_time` Nullable(Float64),
     `max_written_bytes` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64)
+    `max_failed_sequential_authentications` Nullable(UInt64),
+    `max_queries_per_normalized_hash` Nullable(UInt64)
 )
 ENGINE = SystemQuotaLimits
 COMMENT 'Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to specific quota.'
@@ -847,7 +848,9 @@ CREATE TABLE system.quota_usage
     `written_bytes` Nullable(UInt64),
     `max_written_bytes` Nullable(UInt64),
     `failed_sequential_authentications` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64)
+    `max_failed_sequential_authentications` Nullable(UInt64),
+    `queries_per_normalized_hash` Nullable(UInt64),
+    `max_queries_per_normalized_hash` Nullable(UInt64)
 )
 ENGINE = SystemQuotaUsage
 COMMENT 'Contains quota usage by the current user: how much is used and how much is left.'
@@ -856,7 +859,7 @@ CREATE TABLE system.quotas
     `name` String,
     `id` UUID,
     `storage` String,
-    `keys` Array(Enum8('user_name' = 1, 'ip_address' = 2, 'forwarded_ip_address' = 3, 'client_key' = 4)),
+    `keys` Array(Enum8('user_name' = 1, 'ip_address' = 2, 'forwarded_ip_address' = 3, 'client_key' = 4, 'normalized_query_hash' = 7)),
     `durations` Array(UInt32),
     `apply_to_all` UInt8,
     `apply_to_list` Array(String),
@@ -893,7 +896,9 @@ CREATE TABLE system.quotas_usage
     `written_bytes` Nullable(UInt64),
     `max_written_bytes` Nullable(UInt64),
     `failed_sequential_authentications` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64)
+    `max_failed_sequential_authentications` Nullable(UInt64),
+    `queries_per_normalized_hash` Nullable(UInt64),
+    `max_queries_per_normalized_hash` Nullable(UInt64)
 )
 ENGINE = SystemQuotasUsage
 COMMENT 'Contains quota usage by all users.'
@@ -1089,7 +1094,8 @@ CREATE TABLE system.stack_trace
     `thread_name` String,
     `thread_id` UInt64,
     `query_id` String,
-    `trace` Array(UInt64)
+    `trace` Array(UInt64),
+    `untracked_memory` Int64
 )
 ENGINE = SystemStackTrace
 COMMENT 'Allows to obtain an unsymbolized stacktrace from all the threads of the server process.'

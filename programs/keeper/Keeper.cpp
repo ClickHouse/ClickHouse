@@ -63,9 +63,6 @@
 #include <Disks/registerDisks.h>
 
 /// A minimal file used when the keeper is run without installation
-///
-/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to
-/// make a scratch build.
 constexpr unsigned char keeper_resource_embedded_xml[] =
 {
 #embed "keeper_embedded.xml"
@@ -273,6 +270,16 @@ struct KeeperHTTPContext : public IHTTPContext
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
     }
 
+    uint64_t getMaxRequestHeaderSize() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_max_request_header_size", 0);
+    }
+
+    Poco::Timespan getHeadersReadTimeout() const override
+    {
+        return {context->getConfigRef().getInt64("keeper_server.http_headers_read_timeout", 0), 0};
+    }
+
     Poco::Timespan getReceiveTimeout() const override
     {
         return {context->getConfigRef().getInt64("keeper_server.http_receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0};
@@ -450,6 +457,11 @@ try
         listen_hosts.emplace_back("127.0.0.1");
         listen_try = true;
     }
+
+#if USE_SSL
+    CertificateReloader::instance().tryLoad(config());
+    CertificateReloader::instance().tryLoadClient(config());
+#endif
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
     global_context->initializeKeeperDispatcher(/* start_async = */ false);

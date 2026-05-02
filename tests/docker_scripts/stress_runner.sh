@@ -13,8 +13,6 @@ ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-# shellcheck disable=SC1091
-source /repo/tests/docker_scripts/utils.lib
 
 install_packages package_folder
 
@@ -54,6 +52,13 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config 
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
 
+# Start Redpanda (Kafka-compatible broker) so that Kafka engine tests work and
+# do not leave behind broken StorageKafka tables whose background threads cause
+# the server to freeze under sanitizers during the post-stress restart. Fail fast
+# if the broker cannot be started: continuing without it would reintroduce the
+# very failure mode this mitigation is here to prevent.
+bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
+
 start_server || { echo "Failed to start server"; exit 1; }
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start || echo "ERROR: Failed to start log exports"
@@ -61,7 +66,10 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start |
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < /repo/tests/docker_scripts/create.sql
 bash /repo/tests/docker_scripts/create_tpcds.sh
+bash /repo/tests/docker_scripts/create_tpch.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM tpcds"
+clickhouse-client --query "SHOW TABLES FROM tpch"
 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
@@ -87,6 +95,8 @@ start_server || { echo "Failed to start server"; exit 1; }
 clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM tpcds"
+clickhouse-client --query "SHOW TABLES FROM tpch"
 clickhouse-client --query "SHOW TABLES FROM test"
 
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
@@ -205,6 +215,9 @@ clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_u
 
 clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
+# Drop `tpch` before the storage policy switch below. Its tables live on the `default` disk which becomes unavailable under
+# `azure_cache`/`s3_cache`, preventing the server from starting. `tpcds` is not dropped because web disk survives policy changes.
+clickhouse-client --query "DROP DATABASE IF EXISTS tpch SYNC"
 
 clickhouse-client --query "SHOW TABLES FROM test"
 set -e
@@ -216,6 +229,7 @@ stop_server
 export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
 export THREAD_POOL_FAULT_INJECTION=1
+export CLICKHOUSE_FAILPOINTS_INJECTION=1
 configure
 configure_limits
 
@@ -257,7 +271,7 @@ if [ "$cache_policy" = "SLRU" ]; then
 fi
 
 # Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
+if [ $((RANDOM % 2)) -eq 0 ]; then
     sudo echo "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
@@ -285,8 +299,11 @@ unset "${!THREAD_@}"
 # will not allow to load tables asynchronously. Anyway the stress tests was
 # running with fault injection.
 rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
+rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 
-start_server || { echo "Failed to start server"; exit 1; }
+# Use a larger timeout for the post-stress restart: under sanitizers with
+# async_load_databases=false the server may need minutes to load all tables.
+start_server 30 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 
@@ -305,5 +322,3 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-collect_core_dumps

@@ -12,7 +12,7 @@
     return __builtin_return_address(0);
 }
 
-int main(int argc, char ** argv)
+int mainEntryExampleSymbolIndex(int argc, char ** argv)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     using namespace DB;
