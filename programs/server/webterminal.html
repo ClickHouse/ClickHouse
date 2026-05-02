@@ -73,10 +73,12 @@
     var state = 'connecting';
     var inputBuffer = '';
 
-    // Credentials from URL or defaults
+    // Username can be supplied via URL for convenience; the password must never be passed via URL,
+    // because URLs end up in browser history, referrer headers, server access logs, and proxy logs.
+    // The password is collected interactively or, when embedded in an iframe, sent in via postMessage.
     var params = new URLSearchParams(window.location.search);
     var currentUser = params.get('user') || 'default';
-    var currentPassword = params.get('password') || '';
+    var currentPassword = '';
     var userFromURL = params.has('user');
     var inIframe = (window.parent !== window);
     var waitingForCredentials = false;
@@ -337,11 +339,12 @@
 
     // Start
     initTerminal();
-    if (inIframe && !params.has('user') && !params.has('password')) {
+    if (inIframe && !params.has('user')) {
         // When embedded in an iframe, wait for credentials from the parent via postMessage
         waitingForCredentials = true;
     } else {
-        attemptConnect();
+        // Always start by prompting for the password; never auto-connect with a URL-supplied password
+        promptCredentials();
     }
     </script>
 </body>
