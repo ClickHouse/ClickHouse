@@ -59,7 +59,7 @@ For path glob syntax in the URL path (such as `*`, `{a,b}`, `{N..M}`, and `**`),
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
-For `url()` and the URL table engine, ClickHouse can expand wildcards by fetching HTTP index pages (HTML or plaintext) and extracting absolute URLs from the response body. This enables patterns like `/**/` when the server exposes directory listings.
+For `url()` and the URL table engine, ClickHouse can expand wildcards by fetching HTTP index pages (HTML or plaintext) and extracting URLs from the response body. This enables patterns like `/**/` when the server exposes directory listings.
 
 Notes:
 - Relative URLs are resolved against the index page URL.
