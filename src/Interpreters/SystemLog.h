@@ -146,6 +146,10 @@ LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
 #undef FORWARD_DECLARATION
 /// NOLINTEND(bugprone-macro-parentheses)
 
+/// Returns `true` if the configuration contains any system log section
+/// (e.g. `query_log`, `processors_profile_log`).
+bool hasAnySystemLogConfigured(const Poco::Util::AbstractConfiguration & config);
+
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 class SystemLogs
