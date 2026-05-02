@@ -401,7 +401,7 @@ SELECT centroidCartesian([[(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]])
             R"(
 (2,2)
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {26, 5};
     FunctionDocumentation::Category category_cartesian = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_cartesian
         = {description_cartesian,
@@ -431,9 +431,9 @@ which correctly accounts for the curvature of the sphere.
 SELECT centroidSpherical([[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]])
         )",
             R"(
-(4.352579,50.846498)
+(4.352733722119422,50.846349225815466)
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_spherical = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_spherical = {26, 5};
     FunctionDocumentation::Category category_spherical = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_spherical
         = {description_spherical,

@@ -209,7 +209,7 @@ SELECT boundingBoxCartesian([[(0., 0.), (3., 5.), (6., 0.), (0., 0.)]])
             R"(
 [(0,0),(6,0),(6,5),(0,5),(0,0)]
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {26, 5};
     FunctionDocumentation::Category category_cartesian = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_cartesian
         = {description_cartesian,
@@ -250,7 +250,7 @@ SELECT boundingBoxSpherical(CAST([(179., 50.), (-179., 50.)], 'LineString'))
             R"(
 [(179,50),(181,50),(181,50.004297195777966),(179,50.004297195777966),(179,50)]
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_spherical = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_spherical = {26, 5};
     FunctionDocumentation::Category category_spherical = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_spherical
         = {description_spherical,
