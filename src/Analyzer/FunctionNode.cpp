@@ -174,6 +174,11 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
         || nulls_action != rhs_typed.nulls_action)
         return false;
 
+    /// ORDER BY combinator: LIMIT value is part of the function's identity.
+    /// (The sort columns themselves are children, so they're compared automatically by IQueryTreeNode.)
+    if (order_by_limit != rhs_typed.order_by_limit)
+        return false;
+
     /// is_operator is ignored here because it affects only AST formatting
 
     if (!compare_options.compare_types)
@@ -206,6 +211,12 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
 
+    /// ORDER BY combinator: LIMIT value participates in identity.
+    /// (Sort columns are children — they participate via base class hashing.)
+    hash_state.update(order_by_limit.has_value());
+    if (order_by_limit.has_value())
+        hash_state.update(*order_by_limit);
+
     /// is_operator is ignored here because it affects only AST formatting
 
     if (!compare_options.compare_types)
@@ -230,6 +241,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
     result_function->is_operator = is_operator;
+    result_function->order_by_limit = order_by_limit;
 
     return result_function;
 }
@@ -290,6 +302,16 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
             function_ast->window_name = identifier_node->getIdentifier().getFullName();
         else
             function_ast->window_definition = window_node->toAST(new_options);
+    }
+
+    /// ORDER BY combinator (with optional LIMIT N).
+    if (hasOrderByCombinator())
+    {
+        function_ast->order_by_combinator = true;
+        function_ast->order_by_combinator_columns = getOrderByColumnsNode()->toAST(new_options);
+        function_ast->children.push_back(function_ast->order_by_combinator_columns);
+        if (order_by_limit.has_value())
+            function_ast->order_by_combinator_limit = order_by_limit;
     }
 
     return function_ast;

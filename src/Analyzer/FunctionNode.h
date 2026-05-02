@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
@@ -114,6 +115,29 @@ public:
       */
     QueryTreeNodePtr & getWindowNode() { return children[window_child_index]; }
 
+    /** Check whether the function has an ORDER BY combinator clause.
+      * Example: groupArray(x ORDER BY y LIMIT 10) — the ORDER BY clause is stored as a sort list child.
+      */
+    bool hasOrderByCombinator() const { return children[order_by_columns_child_index] != nullptr; }
+
+    /** Get the ORDER BY combinator sort list (a ListNode of SortNode children).
+      * Valid only when hasOrderByCombinator() is true.
+      */
+    const QueryTreeNodePtr & getOrderByColumnsNode() const { return children[order_by_columns_child_index]; }
+
+    /** Get the ORDER BY combinator sort list (mutable).
+      */
+    QueryTreeNodePtr & getOrderByColumnsNode() { return children[order_by_columns_child_index]; }
+
+    /** Get the LIMIT N value of the ORDER BY combinator, if specified.
+      * Example: groupArray(x ORDER BY y LIMIT 10) returns 10.
+      */
+    std::optional<UInt64> getOrderByLimit() const { return order_by_limit; }
+
+    /** Set the LIMIT N value of the ORDER BY combinator.
+      */
+    void setOrderByLimit(std::optional<UInt64> limit) { order_by_limit = limit; }
+
     /** Get ordinary function.
       * If function is not resolved or is resolved as non ordinary function nullptr is returned.
       */
@@ -222,11 +246,15 @@ private:
     bool wrap_with_nullable = false;
     /// Function was parsed as operator. This option is only needed to make AST formatting more consistent.
     bool is_operator = false;
+    /// LIMIT N for ORDER BY combinator: groupArray(x ORDER BY y LIMIT 10).
+    std::optional<UInt64> order_by_limit;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;
     static constexpr size_t window_child_index = 2;
-    static constexpr size_t children_size = window_child_index + 1;
+    static constexpr size_t order_by_columns_child_index = 3;
+    static constexpr size_t children_size = order_by_columns_child_index + 1;
+};
 };
 
 }
