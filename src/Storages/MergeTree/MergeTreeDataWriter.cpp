@@ -720,7 +720,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
-        LOG_INFO(log, "We are Optimizing");
         RowOrderOptimizer::optimize(block, sort_description, perm);
         perm_ptr = &perm;
     }
@@ -1063,7 +1062,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
-        LOG_INFO(log, "We are Optimizing in projection");
         RowOrderOptimizer::optimize(block, sort_description, perm);
         perm_ptr = &perm;
     }
