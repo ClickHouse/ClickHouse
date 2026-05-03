@@ -96,6 +96,21 @@ done
 
 wait
 
+# Fallback: under flaky-check stress, six backup workers in tight submission
+# loops can starve every foreground `DROP DATABASE SYNC` for the entire 45s
+# window, leaving `RECREATE_COUNT == 0`. Once the workers have stopped
+# submitting new backups (`wait` above) the contention drops sharply, but
+# previously-submitted backups are still running on the server. Doing one
+# more drop+recreate cycle here guarantees that `max_log_ptr` moves
+# backwards at least once and gives the still-draining backups a chance
+# to observe it.
+if [[ $RECREATE_COUNT -eq 0 ]]; then
+    if $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1; then
+        RECREATE_COUNT=$((RECREATE_COUNT + 1))
+        create_and_populate
+    fi
+fi
+
 # Verify the test actually exercised the regression path: at least one full
 # DROP+recreate cycle must have completed, otherwise `max_log_ptr` never moved
 # backwards and the regression is untested.
