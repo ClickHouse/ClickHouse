@@ -28,6 +28,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_hyperscan;
     extern const SettingsBool optimize_or_like_chain;
 }
 
@@ -87,6 +88,14 @@ struct PatternInfo
         Array result;
         for (const auto & p : patterns)
             result.push_back(p.substring);
+        return result;
+    }
+
+    Array getRegexps() const
+    {
+        Array result;
+        for (const auto & p : patterns)
+            result.push_back(p.regexp);
         return result;
     }
 
@@ -231,6 +240,7 @@ public:
 
         /// Cache context for later use
         auto context = getContext();
+        const bool allow_hyperscan = context->getSettingsRef()[Setting::allow_hyperscan];
 
         /// `indexHint(A) AND expr` restricts index analysis to ranges satisfying `A`, so wrapping the
         /// optimized chain in `indexHint(<LIKE subset>)` is only safe when every OR branch was a
@@ -275,7 +285,7 @@ public:
 
             if (info.canUseMultiSearchAny())
             {
-                /// Use multiSearchAny or multiSearchAnyCaseInsensitiveUTF8 for pure substring patterns
+                /// Use `multiSearchAny` or `multiSearchAnyCaseInsensitiveUTF8` for pure substring patterns
                 String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitiveUTF8" : "multiSearchAny";
                 match_function = std::make_shared<FunctionNode>(func_name);
                 match_function->getArguments().getNodes().push_back(key);
@@ -283,9 +293,20 @@ public:
                 auto resolver = FunctionFactory::instance().get(func_name, context);
                 match_function->resolveAsFunction(resolver);
             }
+            else if (allow_hyperscan)
+            {
+                /// Use `multiMatchAny` for non-substring patterns. It is significantly faster than
+                /// `match` with alternation because it can leverage Vectorscan/Hyperscan when available
+                /// and falls back to RE2 alternation otherwise.
+                match_function = std::make_shared<FunctionNode>("multiMatchAny");
+                match_function->getArguments().getNodes().push_back(key);
+                match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getRegexps()}));
+                auto resolver = FunctionFactory::instance().get("multiMatchAny", context);
+                match_function->resolveAsFunction(resolver);
+            }
             else
             {
-                /// Use match() with combined regexp pattern using alternation
+                /// Fall back to `match` with combined alternation when Hyperscan is disabled.
                 match_function = std::make_shared<FunctionNode>("match");
                 match_function->getArguments().getNodes().push_back(key);
                 match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getCombinedRegexp()}));

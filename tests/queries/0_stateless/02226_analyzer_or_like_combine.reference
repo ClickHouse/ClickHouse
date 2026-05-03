@@ -64,14 +64,14 @@ QUERY id: 0
           FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 9, nodes: 2
-                FUNCTION id: 10, function_name: match, function_type: ordinary, result_type: UInt8
+                FUNCTION id: 10, function_name: multiMatchAny, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 11, nodes: 2
                       FUNCTION id: 12, function_name: materialize, function_type: ordinary, result_type: String
                         ARGUMENTS
                           LIST id: 13, nodes: 1
                             CONSTANT id: 14, constant_value: \'Привет, World\', constant_value_type: String
-                      CONSTANT id: 15, constant_value: \'(^hell)|((?i)привет)|((?i)^world)\', constant_value_type: String
+                      CONSTANT id: 15, constant_value: Array_[\'^hell\', \'(?i)привет\', \'(?i)^world\'], constant_value_type: Array(String)
                 CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
           FUNCTION id: 17, function_name: indexHint, function_type: ordinary, result_type: UInt8
             ARGUMENTS
@@ -171,14 +171,14 @@ QUERY id: 0
           FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 9, nodes: 2
-                FUNCTION id: 10, function_name: match, function_type: ordinary, result_type: UInt8
+                FUNCTION id: 10, function_name: multiMatchAny, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 11, nodes: 2
                       FUNCTION id: 12, function_name: materialize, function_type: ordinary, result_type: String
                         ARGUMENTS
                           LIST id: 13, nodes: 1
                             CONSTANT id: 14, constant_value: \'Hello World\', constant_value_type: String
-                      CONSTANT id: 15, constant_value: \'(^hello)|(wor.*)\', constant_value_type: String
+                      CONSTANT id: 15, constant_value: Array_[\'^hello\', \'wor.*\'], constant_value_type: Array(String)
                 CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
           FUNCTION id: 17, function_name: indexHint, function_type: ordinary, result_type: UInt8
             ARGUMENTS
@@ -342,14 +342,14 @@ QUERY id: 0
           FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 9, nodes: 2
-                FUNCTION id: 10, function_name: match, function_type: ordinary, result_type: UInt8
+                FUNCTION id: 10, function_name: multiMatchAny, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 11, nodes: 2
                       FUNCTION id: 12, function_name: materialize, function_type: ordinary, result_type: String
                         ARGUMENTS
                           LIST id: 13, nodes: 1
                             CONSTANT id: 14, constant_value: \'Hello World\', constant_value_type: String
-                      CONSTANT id: 15, constant_value: \'(Hello)|((?i)world)\', constant_value_type: String
+                      CONSTANT id: 15, constant_value: Array_[\'Hello\', \'(?i)world\'], constant_value_type: Array(String)
                 CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
           FUNCTION id: 17, function_name: indexHint, function_type: ordinary, result_type: UInt8
             ARGUMENTS

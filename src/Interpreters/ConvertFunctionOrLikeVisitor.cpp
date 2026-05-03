@@ -71,16 +71,11 @@ struct PatternInfo
         return result;
     }
 
-    /// Build a combined regexp pattern using alternation: (pattern1)|(pattern2)|...
-    String getCombinedRegexp() const
+    Array getRegexps() const
     {
-        String result;
+        Array result;
         for (const auto & p : patterns)
-        {
-            if (!result.empty())
-                result += "|";
-            result += "(" + p.regexp + ")";
-        }
+            result.push_back(p.regexp);
         return result;
     }
 };
@@ -185,14 +180,17 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/)
                 ASTPtr match_fn;
                 if (info.canUseMultiSearchAny())
                 {
-                    /// Use multiSearchAny or multiSearchAnyCaseInsensitiveUTF8 for pure substring patterns
+                    /// Use `multiSearchAny` or `multiSearchAnyCaseInsensitiveUTF8` for pure substring patterns.
                     String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitiveUTF8" : "multiSearchAny";
                     match_fn = makeASTFunction(func_name, identifier_ast, make_intrusive<ASTLiteral>(Field{info.getSubstrings()}));
                 }
                 else
                 {
-                    /// Use match() with combined regexp pattern using alternation
-                    match_fn = makeASTFunction("match", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getCombinedRegexp()}));
+                    /// Use `multiMatchAny` for non-substring patterns. The old-analyzer entry point is
+                    /// gated by `allow_hyperscan` in `TreeOptimizer`, so Hyperscan/Vectorscan is always
+                    /// permitted here and `multiMatchAny` is significantly faster than `match` with
+                    /// alternation in RE2.
+                    match_fn = makeASTFunction("multiMatchAny", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getRegexps()}));
                 }
 
                 unique_elems[pos] = std::move(match_fn);
