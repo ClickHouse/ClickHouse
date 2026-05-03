@@ -196,6 +196,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
 
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
+    initialized = true;
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
@@ -211,7 +212,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     Checksums & out_checksums,
     const MergeTreeSettingsPtr & storage_settings) const
 {
-    if (hyperrectangle.empty())
+    if (!initialized)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Attempt to store uninitialized MinMax index for part {}. This is a bug",
@@ -245,7 +246,7 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
     if (block.rows() == 0)
         return;
 
-    if (hyperrectangle.empty())
+    if (!initialized)
         hyperrectangle.reserve(columns_to_update.size());
 
     size_t i = 0;
@@ -259,28 +260,29 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
         else
             column.column->getExtremes(min_value, max_value, 0, column.column->size());
 
-        if (i < hyperrectangle.size())
+        if (!initialized)
+            hyperrectangle.emplace_back(min_value, true, max_value, true);
+        else
         {
             hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, min_value) ? hyperrectangle[i].left : min_value;
             hyperrectangle[i].right = accurateLess(hyperrectangle[i].right, max_value) ? max_value : hyperrectangle[i].right;
         }
-        else
-        {
-            hyperrectangle.emplace_back(min_value, true, max_value, true);
-        }
 
         ++i;
     }
+
+    initialized = true;
 }
 
 void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 {
-    if (other.hyperrectangle.empty())
+    if (!other.initialized)
         return;
 
-    if (hyperrectangle.empty())
+    if (!initialized)
     {
         hyperrectangle = other.hyperrectangle;
+        initialized = true;
     }
     else
     {
@@ -628,7 +630,7 @@ std::string_view IMergeTreeDataPart::stateString(MergeTreeDataPartState state)
 
 std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 {
-    if (storage.minmax_idx_date_column_pos != -1 && !info.isPatch() && !getMinMaxIndex()->hyperrectangle.empty())
+    if (storage.minmax_idx_date_column_pos != -1 && getMinMaxIndex()->initialized && !info.isPatch())
     {
         const auto & hyperrectangle = getMinMaxIndex()->hyperrectangle[storage.minmax_idx_date_column_pos];
         return {
@@ -640,7 +642,7 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 
 std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 {
-    if (storage.minmax_idx_time_column_pos != -1 && !info.isPatch() && !getMinMaxIndex()->hyperrectangle.empty())
+    if (storage.minmax_idx_time_column_pos != -1 && getMinMaxIndex()->initialized && !info.isPatch())
     {
         const auto & hyperrectangle = getMinMaxIndex()->hyperrectangle[storage.minmax_idx_time_column_pos];
 
@@ -1669,8 +1671,10 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
     {
         if (parent_part)
         {
-            /// Projection parts don't have their own minmax on disk; assign an empty one.
-            setMinMaxIndex(std::make_shared<MinMaxIndex>());
+            /// Projection parts don't have minmax_idx, and it's always initialized
+            auto idx = std::make_shared<MinMaxIndex>();
+            idx->initialized = !isEmpty();
+            setMinMaxIndex(std::move(idx));
             return;
         }
 

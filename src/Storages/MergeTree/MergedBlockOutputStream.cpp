@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
@@ -317,7 +318,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 written_files.emplace_back(std::move(file));
             }
 
-            if (const auto & minmax = new_part->getMinMaxIndex(); minmax && !minmax->hyperrectangle.empty())
+            const auto & minmax = new_part->getMinMaxIndex();
+            if (minmax->initialized)
             {
                 auto files = minmax->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
                 for (auto & file : files)
@@ -325,7 +327,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             }
             else if (rows_count)
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not built for new non-empty part {}", new_part->name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
             const auto & source_parts = new_part->getSourcePartsSet();

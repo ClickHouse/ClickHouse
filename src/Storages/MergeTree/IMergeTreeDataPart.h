@@ -357,6 +357,7 @@ public:
     {
         /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
         std::vector<Range> hyperrectangle;
+        bool initialized = false;
 
     public:
         MinMaxIndex() = default;
@@ -364,6 +365,7 @@ public:
         /// For month-based partitioning.
         MinMaxIndex(DayNum min_date, DayNum max_date)
             : hyperrectangle(1, Range(min_date, true, max_date, true))
+            , initialized(true)
         {
         }
 

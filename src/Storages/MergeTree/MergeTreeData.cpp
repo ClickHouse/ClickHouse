@@ -8723,6 +8723,9 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (part->isEmpty())
             continue;
 
+        if (!part->getMinMaxIndex()->initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a non-empty part with uninitialized minmax_idx. It's a bug");
+
         filter_column_data.emplace_back();
 
         if (max_block_numbers_to_read)
