@@ -1343,7 +1343,16 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             dag, keys);
 
         if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
+        {
+            /// The existing in-order read (e.g. set earlier by `SortingStep` optimization)
+            /// already covers the distinct keys, so `DistinctSortedStreamTransform` can
+            /// operate per stream in `pre_distinct` mode. Still call
+            /// `setPreferMultipleStreams` so per-part `PrefetchingConcat` doesn't collapse
+            /// the parallel streams into one per part, which would defeat the parallelism.
+            if (order_info.input_order && reading->getInputOrder())
+                reading->setPreferMultipleStreams();
             return {};
+        }
 
         if (!reading->requestReadingInOrder(
             order_info.input_order->used_prefix_of_sorting_key_size,
