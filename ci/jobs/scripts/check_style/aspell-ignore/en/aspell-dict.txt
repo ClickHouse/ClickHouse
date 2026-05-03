@@ -2676,6 +2676,7 @@ london
 lookahead
 lookups
 loongarch
+loopback
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
