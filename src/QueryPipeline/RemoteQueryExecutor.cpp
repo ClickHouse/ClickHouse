@@ -846,17 +846,26 @@ void RemoteQueryExecutor::finish()
         return;
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
-    /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
-    /// packets that had been sent before the connection is fully finished in order to have final statistics of what
-    /// was executed in the remote queries
-    while (connections->hasActiveConnections() && !finished)
+    /// We do this manually instead of calling `drain` because we want to process `Log`, `ProfileEvents`
+    /// and `Progress` packets that had been sent before the connection is fully finished, in order to have
+    /// final statistics of what was executed in the remote queries.
+    ///
+    /// With `MultiplexedConnections` / `HedgedConnections` (parallel replicas) each replica sends its own
+    /// `EndOfStream` and `receivePacket` returns one packet at a time. Setting `finished = true` after the
+    /// first `EndOfStream` would exit the loop early and discard remaining `Progress` packets from the other
+    /// replicas, which is exactly what causes `rows_read = 0` in JSON/XML statistics on the client side.
+    /// Loop until all replicas have completed (`hasActiveConnections` returns false); the `SCOPE_EXIT` above
+    /// flips `finished` to true once we leave the loop. This mirrors the check in `processPacket` which only
+    /// flips `finished` when `!hasActiveConnections`.
+    while (connections->hasActiveConnections())
     {
         Packet packet = connections->receivePacket();
 
         switch (packet.type)
         {
             case Protocol::Server::EndOfStream:
-                finished = true;
+                /// One replica finished; let `hasActiveConnections` drive loop termination so the remaining
+                /// replicas' trailing `Progress` packets are still processed.
                 break;
 
             case Protocol::Server::Exception:
