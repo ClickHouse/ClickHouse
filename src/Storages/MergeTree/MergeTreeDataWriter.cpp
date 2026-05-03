@@ -1,7 +1,6 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -20,7 +19,6 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ColumnsHashing.h>
@@ -32,7 +30,6 @@
 #include <Common/intExp.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
-#include <Common/assert_cast.h>
 
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
@@ -365,32 +362,6 @@ void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActions
     }
 }
 
-void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns, const Names & columns, const IColumnPermutation * perm_ptr = nullptr)
-{
-    for (const auto & column_name : columns)
-    {
-        if (block.has(column_name))
-            continue;
-
-        if (column_name == BlockNumberColumn::name)
-        {
-            block.insert(ColumnWithTypeAndName{BlockNumberColumn::type->createColumnConst(block.rows(), MergeTreePartInfo::MAX_BLOCK_NUMBER)->convertToFullColumnIfConst(), BlockNumberColumn::type, column_name});
-            block_columns.emplace_back(BlockNumberColumn::name, BlockNumberColumn::type);
-        }
-        else if (column_name == BlockOffsetColumn::name)
-        {
-            auto mutable_column = BlockOffsetColumn::type->createColumn();
-            auto & data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
-            data.resize_exact(block.rows());
-            for (size_t i = 0; i < block.rows(); ++i)
-                data[perm_ptr ? (*perm_ptr)[i] : i] = i;
-
-            block.insert(ColumnWithTypeAndName{std::move(mutable_column), BlockOffsetColumn::type, column_name});
-            block_columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
-        }
-    }
-}
-
 }
 
 void MergeTreeTemporaryPart::cancel()
@@ -643,10 +614,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const auto & global_settings = context->getSettingsRef();
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey(), data_settings);
-    materializeVirtualColumns(block, columns, minmax_columns_names);
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, minmax_columns_names);
+    minmax_idx->update(block, MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings));
 
     const bool optimize_on_insert = !isPatchPartitionId(partition_id)
         && global_settings[Setting::optimize_on_insert]

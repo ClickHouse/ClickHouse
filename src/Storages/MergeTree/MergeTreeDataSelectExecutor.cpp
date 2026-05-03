@@ -620,7 +620,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     DataTypes minmax_columns_types;
 
     if (minmax_idx_condition)
-        minmax_columns_types = MergeTreeData::getMinMaxColumnsTypes(metadata_snapshot->getPartitionKey(), data.getSettings());
+        minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
 
     if (metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
         && (!minmax_idx_condition || minmax_idx_condition->alwaysUnknownOrTrue())

@@ -1254,10 +1254,8 @@ public:
     static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key,
                                               const MergeTreeSettingsPtr & data_settings,
                                               const ExpressionActionsSettings & expr_settings);
-    /// Get the list of column names required by the part-level min-max index.
-    static Names getMinMaxColumnsNames(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
-    /// Get the list of column types required by the part-level min-max index.
-    static DataTypes getMinMaxColumnsTypes(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
+    /// Get the columns covered by the part-level min-max index.
+    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;

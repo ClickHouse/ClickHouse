@@ -1564,7 +1564,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         ctx->out->write(cur_block);
 
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings()));
+            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings()));
 
         if (!ctx->all_gathered_data.statistics.empty())
             ctx->all_gathered_data.statistics.buildIfExists(cur_block);

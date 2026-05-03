@@ -153,27 +153,11 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
 {
     const auto metadata_snapshot = part.getMetadataSnapshot();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
-    const auto & part_info = part.isProjectionPart() ? part.getParentPart()->info : part.info;
     const auto data_settings = part.storage.getSettings();
 
-    const auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key, data_settings);
-    const auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key, data_settings);
-
     FormatSettings format_settings;
-    for (const auto [column_name, column_type] : std::views::zip(minmax_column_names, minmax_column_types))
+    for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(partition_key, data_settings))
     {
-        /// Some virtual columns may be incorrectly written to disk for 0-level parts
-        /// because they were materialized before commit of the part. We need to recalculate them during reading.
-        if (!part_info.isPatch() && part_info.getBlocksCount() == 1)
-        {
-            if (column_name == BlockNumberColumn::name)
-            {
-                Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, part);
-                hyperrectangle.emplace_back(block_number, true, block_number, true);
-                continue;
-            }
-        }
-
         const String file_name = "minmax_" + getFileColumnName(column_name, part.checksums) + ".idx";
 
         /// Treat missing columns as universe range so they don't prune; the file gets created on the next merge or mutation.
@@ -206,14 +190,11 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums, const MergeTreeSettingsPtr & storage_settings) const
 {
     const auto & partition_key = metadata_snapshot->getPartitionKey();
-    const auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key, storage_settings);
-    const auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key, storage_settings);
-    return store(minmax_column_names, minmax_column_types, part_storage, out_checksums, storage_settings);
+    return store(MergeTreeData::getMinMaxColumns(partition_key, storage_settings), part_storage, out_checksums, storage_settings);
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
-    const Names & column_names,
-    const DataTypes & data_types,
+    const NamesAndTypesList & columns_to_write,
     IDataPartStorage & part_storage,
     Checksums & out_checksums,
     const MergeTreeSettingsPtr & storage_settings) const
@@ -226,10 +207,11 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
 
     WrittenFiles written_files;
 
-    for (size_t i = 0; i < column_names.size(); ++i)
+    size_t i = 0;
+    for (const auto & [column_name, column_type] : columns_to_write)
     {
-        String file_name = "minmax_" + getFileColumnName(column_names[i], storage_settings, part_storage) + ".idx";
-        auto serialization = data_types.at(i)->getDefaultSerialization();
+        String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
+        auto serialization = column_type->getDefaultSerialization();
 
         auto out = part_storage.writeFile(file_name, 4096, {});
         HashingWriteBuffer out_hashing(*out);
@@ -240,28 +222,63 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
         out->preFinalize();
         written_files.emplace_back(std::move(out));
+        ++i;
     }
 
     return written_files;
 }
 
-void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & column_names)
+/// Returns the full numeric range of `type` as a (min, max) Field pair if it has well-defined.
+static std::optional<std::pair<Field, Field>> tryGetUniverseRangeForType(const IDataType & type)
+{
+    WhichDataType which(type);
+    if (which.isUInt8())    return {{UInt64(0), UInt64(std::numeric_limits<UInt8>::max())}};
+    if (which.isUInt16())   return {{UInt64(0), UInt64(std::numeric_limits<UInt16>::max())}};
+    if (which.isUInt32())   return {{UInt64(0), UInt64(std::numeric_limits<UInt32>::max())}};
+    if (which.isUInt64())   return {{UInt64(0), UInt64(std::numeric_limits<UInt64>::max())}};
+    if (which.isInt8())     return {{Int64(std::numeric_limits<Int8>::min()), Int64(std::numeric_limits<Int8>::max())}};
+    if (which.isInt16())    return {{Int64(std::numeric_limits<Int16>::min()), Int64(std::numeric_limits<Int16>::max())}};
+    if (which.isInt32())    return {{Int64(std::numeric_limits<Int32>::min()), Int64(std::numeric_limits<Int32>::max())}};
+    if (which.isInt64())    return {{Int64(std::numeric_limits<Int64>::min()), Int64(std::numeric_limits<Int64>::max())}};
+    if (which.isFloat32())  return {{Float64(std::numeric_limits<Float32>::lowest()), Float64(std::numeric_limits<Float32>::max())}};
+    if (which.isFloat64())  return {{Float64(std::numeric_limits<Float64>::lowest()), Float64(std::numeric_limits<Float64>::max())}};
+    if (which.isDate())     return {{UInt64(0), UInt64(std::numeric_limits<UInt16>::max())}};
+    if (which.isDate32())   return {{Int64(std::numeric_limits<Int32>::min()), Int64(std::numeric_limits<Int32>::max())}};
+    if (which.isDateTime()) return {{UInt64(0), UInt64(std::numeric_limits<UInt32>::max())}};
+    return std::nullopt;
+}
+
+void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAndTypesList & columns_to_update)
 {
     if (block.rows() == 0)
         return;
 
     if (!initialized)
-        hyperrectangle.reserve(column_names.size());
+        hyperrectangle.reserve(columns_to_update.size());
 
-    for (size_t i = 0; i < column_names.size(); ++i)
+    size_t i = 0;
+    for (const auto & [column_name, column_type] : columns_to_update)
     {
         FieldRef min_value;
         FieldRef max_value;
-        const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_names[i]);
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
-            column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
-        else
-            column.column->getExtremes(min_value, max_value, 0, column.column->size());
+
+        if (!block.has(column_name))
+        {
+            if (auto universe = tryGetUniverseRangeForType(*column_type))
+            {
+                min_value = FieldRef(std::move(universe->first));
+                max_value = FieldRef(std::move(universe->second));
+            }
+        }
+
+        if (min_value.isNull() || max_value.isNull())
+        {
+            const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_name);
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
+                column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
+            else
+                column.column->getExtremes(min_value, max_value, 0, column.column->size());
+        }
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
@@ -270,6 +287,8 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
             hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, min_value) ? hyperrectangle[i].left : min_value;
             hyperrectangle[i].right = accurateLess(hyperrectangle[i].right, max_value) ? max_value : hyperrectangle[i].right;
         }
+
+        ++i;
     }
 
     initialized = true;
@@ -304,8 +323,7 @@ void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, St
     const auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = data.getSettings();
-    const auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key, data_settings);
-    for (const auto & name : minmax_column_names)
+    for (const auto & [name, type] : MergeTreeData::getMinMaxColumns(partition_key, data_settings))
     {
         String file_name = "minmax_" + getFileColumnName(name, data_settings, data_part_storage) + ".idx";
         files.push_back(file_name);

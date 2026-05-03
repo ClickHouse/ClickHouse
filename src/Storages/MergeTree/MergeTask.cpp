@@ -390,7 +390,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     /// Recalculate the min-max index for partition columns if the merge might reduce rows.
     if (global_ctx->merge_may_reduce_rows)
-        key_columns.insert_range(global_ctx->minmax_idx_columns);
+        key_columns.insert_range(global_ctx->minmax_idx_columns.getNames());
 
     key_columns.insert(global_ctx->deduplicate_by_columns.begin(), global_ctx->deduplicate_by_columns.end());
 
@@ -556,7 +556,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
-    global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings);
+    global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings);
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;

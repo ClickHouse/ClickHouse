@@ -2002,11 +2002,11 @@ void ReadFromMergeTree::buildIndexes(
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         const auto data_settings = data.getSettings();
 
-        if (auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key, data_settings); !minmax_columns_names.empty())
+        if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
         {
             auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, data_settings, ExpressionActionsSettings(query_context));
             indexes->minmax_idx_condition.emplace(
-                filter_dag, query_context, minmax_columns_names, minmax_expression_actions,
+                filter_dag, query_context, minmax_columns.getNames(), minmax_expression_actions,
                 /* single_point_ = */ false,
                 /* skip_analysis_ = */ (skip_partition_pruning_ || !settings[Setting::use_partition_pruning]) && !settings[Setting::use_skip_indexes]);
         }
