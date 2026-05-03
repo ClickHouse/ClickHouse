@@ -344,6 +344,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
 #       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
 #       not masked.
+# `Tuple element name 'null' is reserved` appears because PR #98377 forbade Tuple element name `null` to avoid
+#       ambiguity with the Nullable null-map subcolumn name. Tables created by older release tests with columns
+#       like `Nullable(Tuple(\`null\` UInt32))` cannot be attached after upgrade. Narrowed to the exact reserved
+#       name so other "Tuple element name" diagnostics are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -412,6 +416,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "This engine is deprecated and is not supported in transactions" \
            -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
            -e "e.what() = failed to parse response body" \
+           -e "Tuple element name 'null' is reserved" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
