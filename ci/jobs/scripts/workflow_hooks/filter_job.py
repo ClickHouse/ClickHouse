@@ -249,8 +249,8 @@ def should_skip_job(job_name):
         ):
             return True, "Skipped, no integration tests updates"
 
-    # Skip bug fix validation jobs even for bufgfix prs if no corresponding updates are found.
-    #  ci/jobs/scripts/workflow_hooks/new_tests_check.py hook validates whether at list one type of tests has updates
+    # Skip bug fix validation jobs even for bugfix PRs if no corresponding updates are found.
+    #  ci/jobs/scripts/workflow_hooks/new_tests_check.py hook validates whether at least one type of tests has updates
     #
     # NOTE: this must cover both the legacy monolithic job names
     # (`BUGFIX_VALIDATE_FT` / `BUGFIX_VALIDATE_IT`) and the per-arch

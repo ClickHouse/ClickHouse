@@ -816,11 +816,18 @@ def main():
         # Per-arch bugfix-validation jobs are advisory: their pass/fail status
         # records "did the bug reproduce on this arch?", not whether the PR
         # should be blocked. Setting `do_not_block_pipeline_on_failure=True`
-        # prevents downstream jobs from being dropped when this job reports
-        # FAIL. The PR-merge-blocking decision lives in the
+        # marks the job as non-blocking so downstream jobs are not dropped
+        # when this job reports FAIL. The process itself still exits with
+        # the natural status (`Result.complete_job` calls `sys.exit(1)` on
+        # non-OK results); the non-blocking flag is metadata for the
+        # pipeline scheduler. The PR-merge-blocking decision lives in the
         # `new_tests_check.py` workflow post-hook, which OR's the per-arch
         # bugfix-validation job statuses.
-        print("NOTE: Bugfix validation job - do not block pipeline - exit with 0")
+        print(
+            "NOTE: Bugfix validation job - marking as non-blocking; "
+            "failure here will not block downstream pipeline jobs "
+            "(process exit code still reflects the actual job status)"
+        )
         force_ok_exit = True
 
     if test_result:
