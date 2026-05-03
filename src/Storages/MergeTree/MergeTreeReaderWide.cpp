@@ -528,34 +528,33 @@ size_t MergeTreeReaderWide::readRows(
                     for (size_t pos = 0; pos < num_columns; ++pos)
                     {
                         if (res_columns[pos] && !res_columns[pos]->empty()
-                            && !partially_read_columns.contains(columns_to_read[pos].name))
+                            && !partially_read_columns.contains(columns_to_read[pos].name)
+                            && res_columns[pos]->size() > cache_column_sizes_at_task_start[pos])
                         {
                             size_t rows_to_cache = res_columns[pos]->size() - cache_column_sizes_at_task_start[pos];
-                            if (rows_to_cache > 0)
-                            {
-                                /// Use cut to create an independent copy for the cache.
-                                ColumnPtr column_to_cache = res_columns[pos]->cut(
-                                    cache_column_sizes_at_task_start[pos], rows_to_cache);
 
-                                /// Use per-column row_end based on actual rows in this column,
-                                /// not the shared total_rows_for_task which may be larger if
-                                /// other columns had more rows (e.g. for Nested or complex types).
-                                size_t column_row_end = cache_row_begin + rows_to_cache;
+                            /// Use cut to create an independent copy for the cache.
+                            ColumnPtr column_to_cache = res_columns[pos]->cut(
+                                cache_column_sizes_at_task_start[pos], rows_to_cache);
 
-                                ColumnsCacheKey cache_key{
-                                    data_part_info_for_read->getTableUUID(),
-                                    data_part_info_for_read->getPartName(),
-                                    columns_to_read[pos].name,
-                                    cache_row_begin,
-                                    column_row_end};
+                            /// Use per-column row_end based on actual rows in this column,
+                            /// not the shared total_rows_for_task which may be larger if
+                            /// other columns had more rows (e.g. for Nested or complex types).
+                            size_t column_row_end = cache_row_begin + rows_to_cache;
 
-                                auto entry = std::make_shared<ColumnsCacheEntry>(
-                                    ColumnsCacheEntry{std::move(column_to_cache), rows_to_cache});
-                                columns_cache->set(cache_key, entry);
+                            ColumnsCacheKey cache_key{
+                                data_part_info_for_read->getTableUUID(),
+                                data_part_info_for_read->getPartName(),
+                                columns_to_read[pos].name,
+                                cache_row_begin,
+                                column_row_end};
 
-                                LOG_TEST(log, "Cached column: {}, row_begin={}, row_end={}, rows={}",
-                                    columns_to_read[pos].name, cache_row_begin, column_row_end, rows_to_cache);
-                            }
+                            auto entry = std::make_shared<ColumnsCacheEntry>(
+                                ColumnsCacheEntry{std::move(column_to_cache), rows_to_cache});
+                            columns_cache->set(cache_key, entry);
+
+                            LOG_TEST(log, "Cached column: {}, row_begin={}, row_end={}, rows={}",
+                                columns_to_read[pos].name, cache_row_begin, column_row_end, rows_to_cache);
                         }
                     }
 
