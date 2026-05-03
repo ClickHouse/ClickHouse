@@ -5,6 +5,8 @@
 # - SYSTEM START/STOP LISTEN should work for TCP and HTTP
 # - Various SYSTEM CLEAR CACHE queries should work
 
+set -e
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -17,9 +19,11 @@ $CLICKHOUSE_LOCAL --query "SYSTEM RELOAD CONFIG; -- { serverError UNSUPPORTED_ME
 $CLICKHOUSE_LOCAL --query "SYSTEM STOP LISTEN HTTP;"
 $CLICKHOUSE_LOCAL --query "SYSTEM STOP LISTEN TCP;"
 
-# START LISTEN with port 0 (OS-assigned) should succeed without conflicting with existing servers
-$CLICKHOUSE_LOCAL --http_port 0 --query "SYSTEM START LISTEN HTTP;"
-$CLICKHOUSE_LOCAL --tcp_port 0 --query "SYSTEM START LISTEN TCP;"
+# START LISTEN with port 0 (OS-assigned) should succeed without conflicting with existing servers.
+# Specify a single --listen_host because port 0 with multiple listen_host values is rejected
+# (the registry stores a single port per port_name).
+$CLICKHOUSE_LOCAL --listen_host 127.0.0.1 --http_port 0 --query "SYSTEM START LISTEN HTTP;"
+$CLICKHOUSE_LOCAL --listen_host 127.0.0.1 --tcp_port 0 --query "SYSTEM START LISTEN TCP;"
 
 # Test that a started TCP listener is actually reachable from outside the process.
 # We use port 0 (OS-assigned) to avoid collisions with other tests running in parallel,
@@ -82,14 +86,20 @@ wait "$LOCAL_PID" 2>/dev/null || true
 # SYSTEM START LISTEN with an invalid listen_host must fail, not silently succeed
 $CLICKHOUSE_LOCAL --listen_host 192.0.2.1 --tcp_port 0 --query "SYSTEM START LISTEN TCP; -- { serverError NETWORK_ERROR }"
 
+# Port 0 (OS-assigned) combined with multiple listen_host values is rejected to keep `getServerPort`
+# unambiguous (one stored value per `port_name`). Without an explicit `--listen_host`, the default
+# is to listen on both `::1` and `127.0.0.1`, which is the multi-host case we forbid for port 0.
+$CLICKHOUSE_LOCAL --tcp_port 0 --query "SYSTEM START LISTEN TCP; -- { serverError BAD_ARGUMENTS }"
+$CLICKHOUSE_LOCAL --http_port 0 --query "SYSTEM START LISTEN HTTP; -- { serverError BAD_ARGUMENTS }"
+
 # SYSTEM START LISTEN must be idempotent: repeating it for an already-running listener is a no-op,
 # matching clickhouse-server behavior.
-$CLICKHOUSE_LOCAL --tcp_port 0 --query "
+$CLICKHOUSE_LOCAL --listen_host 127.0.0.1 --tcp_port 0 --query "
     SYSTEM START LISTEN TCP;
     SYSTEM START LISTEN TCP;
     SELECT 'idempotent_tcp_ok';
 "
-$CLICKHOUSE_LOCAL --http_port 0 --query "
+$CLICKHOUSE_LOCAL --listen_host 127.0.0.1 --http_port 0 --query "
     SYSTEM START LISTEN HTTP;
     SYSTEM START LISTEN HTTP;
     SELECT 'idempotent_http_ok';

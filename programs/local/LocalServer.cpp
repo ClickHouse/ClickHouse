@@ -506,6 +506,27 @@ void LocalServer::startServers(const ServerType & server_type)
 
     bool listen_try = listen_hosts.size() > 1;
 
+    /// `getServerPort` stores a single value per `port_name`, so an OS-assigned ephemeral
+    /// port (`port=0`) combined with multiple `listen_host` values would produce an
+    /// ambiguous mapping: each host would bind to a different ephemeral port and the last
+    /// `registerServerPort` call would silently overwrite the others. Reject this combination
+    /// up-front so the user picks an explicit `listen_host` when relying on `port=0`.
+    if (listen_hosts.size() > 1)
+    {
+        auto port_is_zero = [&](const char * port_name)
+        {
+            return config.has(port_name) && config.getInt(port_name) == 0;
+        };
+        if ((server_type.shouldStart(ServerType::Type::TCP) && port_is_zero("tcp_port"))
+            || (server_type.shouldStart(ServerType::Type::HTTP) && port_is_zero("http_port")))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Using port 0 (OS-assigned) with multiple listen_host values is not supported in clickhouse-local "
+                "because the port registry stores a single value per port_name. "
+                "Specify exactly one --listen_host when using --tcp_port 0 or --http_port 0.");
+        }
+    }
+
     if (!server_pool)
         server_pool = std::make_unique<Poco::ThreadPool>(3, 100);
 
