@@ -258,6 +258,20 @@ std::pair<String, time_t> MergeTreeLeaderElection::parseLeaseContent(const Strin
     try
     {
         JSON json(content);
+
+        /// Reject unknown payload versions explicitly so future format changes do not
+        /// silently let a node make leadership decisions on incompatible data. Treat
+        /// unknown versions as corrupted lease (same recovery path as a parse error).
+        Int64 version = json["version"].getInt();
+        if (version != 1)
+        {
+            LOG_WARNING(
+                getLogger("MergeTreeLeaderElection"),
+                "Unknown lease file version {}, treating as corrupted",
+                version);
+            return {"", 0};
+        }
+
         String file_leader_id = json["leader_id"].getString();
         time_t timestamp = json["timestamp"].getInt();
         return {file_leader_id, timestamp};
