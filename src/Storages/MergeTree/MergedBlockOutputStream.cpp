@@ -317,15 +317,15 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 written_files.emplace_back(std::move(file));
             }
 
-            if (new_part->minmax_idx->initialized)
+            if (const auto & minmax = new_part->getMinMaxIndex(); minmax && !minmax->hyperrectangle.empty())
             {
-                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
+                auto files = minmax->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
             else if (rows_count)
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not built for new non-empty part {}", new_part->name);
             }
 
             const auto & source_parts = new_part->getSourcePartsSet();

@@ -1,6 +1,8 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -19,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ColumnsHashing.h>
@@ -362,6 +365,32 @@ void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActions
     }
 }
 
+void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns, const Names & columns, const IColumnPermutation * perm_ptr = nullptr)
+{
+    for (const auto & column_name : columns)
+    {
+        if (block.has(column_name))
+            continue;
+
+        if (column_name == BlockNumberColumn::name)
+        {
+            block.insert(ColumnWithTypeAndName{BlockNumberColumn::type->createColumnConst(block.rows(), MergeTreePartInfo::MAX_BLOCK_NUMBER)->convertToFullColumnIfConst(), BlockNumberColumn::type, column_name});
+            block_columns.emplace_back(BlockNumberColumn::name, BlockNumberColumn::type);
+        }
+        else if (column_name == BlockOffsetColumn::name)
+        {
+            auto mutable_column = BlockOffsetColumn::type->createColumn();
+            auto & data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
+            data.resize_exact(block.rows());
+            for (size_t i = 0; i < block.rows(); ++i)
+                data[perm_ptr ? (*perm_ptr)[i] : i] = i;
+
+            block.insert(ColumnWithTypeAndName{std::move(mutable_column), BlockOffsetColumn::type, column_name});
+            block_columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
+        }
+    }
+}
+
 }
 
 void MergeTreeTemporaryPart::cancel()
@@ -380,6 +409,14 @@ void MergeTreeTemporaryPart::finalize()
 {
     for (auto & stream : streams)
         stream.finalizer.finish();
+
+    /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the
+    /// in-memory index so `getMinMaxIndex()` reloads from disk and applies the 0-level correction.
+    const auto metadata_snapshot = part->getMetadataSnapshot();
+    const auto data_settings = part->storage.getSettings();
+    for (const auto & [minmax_column, _] : MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings))
+        if (metadata_snapshot->isVirtualColumn(minmax_column))
+            part->setMinMaxIndex(nullptr);
 
     part->getDataPartStorage().precommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
@@ -614,8 +651,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const auto & global_settings = context->getSettingsRef();
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+
+    const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings);
+    materializeVirtualColumns(block, columns, minmax_columns.getNames());
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings));
+    minmax_idx->update(block, minmax_columns);
 
     const bool optimize_on_insert = !isPatchPartitionId(partition_id)
         && global_settings[Setting::optimize_on_insert]
@@ -831,7 +871,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
     new_data_part->partition = std::move(partition);
-    new_data_part->minmax_idx = std::move(minmax_idx);
+    new_data_part->setMinMaxIndex(std::move(minmax_idx));
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs

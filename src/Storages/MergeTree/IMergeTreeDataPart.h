@@ -357,7 +357,6 @@ public:
     {
         /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
         std::vector<Range> hyperrectangle;
-        bool initialized = false;
 
     public:
         MinMaxIndex() = default;
@@ -365,7 +364,6 @@ public:
         /// For month-based partitioning.
         MinMaxIndex(DayNum min_date, DayNum max_date)
             : hyperrectangle(1, Range(min_date, true, max_date, true))
-            , initialized(true)
         {
         }
 
@@ -387,7 +385,15 @@ public:
 
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
 
-    MinMaxIndexPtr minmax_idx;
+private:
+    mutable MinMaxIndexPtr minmax_idx;
+
+public:
+    /// Returns the per-part MinMaxIndex. Lazy-creates an empty one for temporary parts and lazy-loads from disk for committed parts.
+    const MinMaxIndexPtr & getMinMaxIndex() const;
+
+    /// Replace the in-memory MinMaxIndex pointer; pass nullptr to drop and force reload on next access.
+    void setMinMaxIndex(MinMaxIndexPtr minmax_index) const;
 
     Checksums checksums;
 

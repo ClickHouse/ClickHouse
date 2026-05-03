@@ -155,9 +155,22 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = part.storage.getSettings();
 
+    const auto & part_info = part.isProjectionPart() ? part.getParentPart()->info : part.info;
+    const bool correct_block_virtuals = !part_info.isPatch() && part_info.getBlocksCount() == 1;
+
     FormatSettings format_settings;
     for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(partition_key, data_settings))
     {
+        if (correct_block_virtuals)
+        {
+            if (column_name == BlockNumberColumn::name)
+            {
+                const Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, part);
+                hyperrectangle.emplace_back(block_number, true, block_number, true);
+                continue;
+            }
+        }
+
         const String file_name = "minmax_" + getFileColumnName(column_name, part.checksums) + ".idx";
 
         /// Treat missing columns as universe range so they don't prune; the file gets created on the next merge or mutation.
@@ -183,7 +196,6 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
 
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
-    initialized = true;
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
@@ -199,7 +211,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     Checksums & out_checksums,
     const MergeTreeSettingsPtr & storage_settings) const
 {
-    if (!initialized)
+    if (hyperrectangle.empty())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Attempt to store uninitialized MinMax index for part {}. This is a bug",
@@ -228,85 +240,47 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     return written_files;
 }
 
-/// Returns the full numeric range of `type` as a (min, max) Field pair if it has well-defined.
-static std::optional<std::pair<Field, Field>> tryGetUniverseRangeForType(const IDataType & type)
-{
-    WhichDataType which(type);
-    if (which.isUInt8())    return {{UInt64(0), UInt64(std::numeric_limits<UInt8>::max())}};
-    if (which.isUInt16())   return {{UInt64(0), UInt64(std::numeric_limits<UInt16>::max())}};
-    if (which.isUInt32())   return {{UInt64(0), UInt64(std::numeric_limits<UInt32>::max())}};
-    if (which.isUInt64())   return {{UInt64(0), UInt64(std::numeric_limits<UInt64>::max())}};
-    if (which.isInt8())     return {{Int64(std::numeric_limits<Int8>::min()), Int64(std::numeric_limits<Int8>::max())}};
-    if (which.isInt16())    return {{Int64(std::numeric_limits<Int16>::min()), Int64(std::numeric_limits<Int16>::max())}};
-    if (which.isInt32())    return {{Int64(std::numeric_limits<Int32>::min()), Int64(std::numeric_limits<Int32>::max())}};
-    if (which.isInt64())    return {{Int64(std::numeric_limits<Int64>::min()), Int64(std::numeric_limits<Int64>::max())}};
-    if (which.isFloat32())  return {{Float64(std::numeric_limits<Float32>::lowest()), Float64(std::numeric_limits<Float32>::max())}};
-    if (which.isFloat64())  return {{Float64(std::numeric_limits<Float64>::lowest()), Float64(std::numeric_limits<Float64>::max())}};
-    if (which.isDate())     return {{UInt64(0), UInt64(std::numeric_limits<UInt16>::max())}};
-    if (which.isDate32())   return {{Int64(std::numeric_limits<Int32>::min()), Int64(std::numeric_limits<Int32>::max())}};
-    if (which.isDateTime()) return {{UInt64(0), UInt64(std::numeric_limits<UInt32>::max())}};
-    return std::nullopt;
-}
-
 void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAndTypesList & columns_to_update)
 {
     if (block.rows() == 0)
         return;
 
-    if (!initialized)
+    if (hyperrectangle.empty())
         hyperrectangle.reserve(columns_to_update.size());
 
     size_t i = 0;
-    for (const auto & [column_name, column_type] : columns_to_update)
+    for (const auto & [column_name, _] : columns_to_update)
     {
         FieldRef min_value;
         FieldRef max_value;
-
-        if (auto column = block.findColumnOrSubcolumnByName(column_name))
-        {
-            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column->column.get()))
-                column_nullable->getExtremesNullLast(min_value, max_value, 0, column->column->size());
-            else
-                column->column->getExtremes(min_value, max_value, 0, column->column->size());
-        }
-        else if (auto universe = tryGetUniverseRangeForType(*column_type))
-        {
-            min_value = FieldRef(std::move(universe->first));
-            max_value = FieldRef(std::move(universe->second));
-        }
+        const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_name);
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
+            column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
         else
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Column {} of type {} is required by the part-level MinMax index but is not present "
-                "in the block, and its type has no well-defined universe range to fallback to. "
-                "There are only columns: {}. Required columns: {}",
-                column_name, column_type->getName(), block.dumpNames(), columns_to_update.getNames());
-        }
+            column.column->getExtremes(min_value, max_value, 0, column.column->size());
 
-        if (!initialized)
-            hyperrectangle.emplace_back(min_value, true, max_value, true);
-        else
+        if (i < hyperrectangle.size())
         {
             hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, min_value) ? hyperrectangle[i].left : min_value;
             hyperrectangle[i].right = accurateLess(hyperrectangle[i].right, max_value) ? max_value : hyperrectangle[i].right;
         }
+        else
+        {
+            hyperrectangle.emplace_back(min_value, true, max_value, true);
+        }
 
         ++i;
     }
-
-    initialized = true;
 }
 
 void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 {
-    if (!other.initialized)
+    if (other.hyperrectangle.empty())
         return;
 
-    if (!initialized)
+    if (hyperrectangle.empty())
     {
         hyperrectangle = other.hyperrectangle;
-        initialized = true;
     }
     else
     {
@@ -349,6 +323,30 @@ String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_
     if (checksums_.files.contains("minmax_" + hash + ".idx"))
         return hash;
     return stream_name;
+}
+
+const IMergeTreeDataPart::MinMaxIndexPtr & IMergeTreeDataPart::getMinMaxIndex() const
+{
+    if (is_temp || isEmpty())
+    {
+        if (!minmax_idx)
+            minmax_idx = std::make_shared<MinMaxIndex>();
+    }
+    else
+    {
+        if (!minmax_idx)
+        {
+            minmax_idx = std::make_shared<MinMaxIndex>();
+            minmax_idx->load(*this);
+        }
+    }
+
+    return minmax_idx;
+}
+
+void IMergeTreeDataPart::setMinMaxIndex(MinMaxIndexPtr minmax_index) const
+{
+    minmax_idx = std::move(minmax_index);
 }
 
 void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) const
@@ -472,8 +470,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     DimensionalMetrics::add(
         DimensionalMetrics::MergeTreeParts,
         {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
-
-    minmax_idx = std::make_shared<MinMaxIndex>();
 
     initializeIndexGranularityInfo(storage_settings);
 }
@@ -632,9 +628,9 @@ std::string_view IMergeTreeDataPart::stateString(MergeTreeDataPartState state)
 
 std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 {
-    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
+    if (storage.minmax_idx_date_column_pos != -1 && !info.isPatch() && !getMinMaxIndex()->hyperrectangle.empty())
     {
-        const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
+        const auto & hyperrectangle = getMinMaxIndex()->hyperrectangle[storage.minmax_idx_date_column_pos];
         return {
             DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.left.safeGet<UInt64>())),
             DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.right.safeGet<UInt64>()))};
@@ -644,9 +640,9 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 
 std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 {
-    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
+    if (storage.minmax_idx_time_column_pos != -1 && !info.isPatch() && !getMinMaxIndex()->hyperrectangle.empty())
     {
-        const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_time_column_pos];
+        const auto & hyperrectangle = getMinMaxIndex()->hyperrectangle[storage.minmax_idx_time_column_pos];
 
         /// The case of DateTime
         if (hyperrectangle.left.getType() == Field::Types::UInt64)
@@ -1667,21 +1663,23 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 
         const auto & date_lut = DateLUT::serverTimezoneInstance();
         partition = MergeTreePartition(date_lut.toNumYYYYMM(min_date));
-        minmax_idx = std::make_shared<MinMaxIndex>(min_date, max_date);
+        setMinMaxIndex(std::make_shared<MinMaxIndex>(min_date, max_date));
     }
     else
     {
         if (parent_part)
         {
-            /// Projection parts don't have minmax_idx, and it's always initialized
-            minmax_idx->initialized = !isEmpty();
+            /// Projection parts don't have their own minmax on disk; assign an empty one.
+            setMinMaxIndex(std::make_shared<MinMaxIndex>());
             return;
         }
 
         partition.load(*this);
 
+        auto idx = std::make_shared<MinMaxIndex>();
         if (!isEmpty())
-            minmax_idx->load(*this);
+            idx->load(*this);
+        setMinMaxIndex(std::move(idx));
     }
 
     String calculated_partition_id;

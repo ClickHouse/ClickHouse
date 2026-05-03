@@ -8723,9 +8723,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (part->isEmpty())
             continue;
 
-        if (!part->minmax_idx->initialized)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a non-empty part with uninitialized minmax_idx. It's a bug");
-
         filter_column_data.emplace_back();
 
         if (max_block_numbers_to_read)
@@ -8736,7 +8733,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         if (minmax_idx_condition
-            && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
+            && !minmax_idx_condition->checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         if (partition_pruner)
@@ -8774,14 +8771,14 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         ++pos;
     }
 
-    size_t minmax_idx_size = real_parts.front()->minmax_idx->hyperrectangle.size();
+    size_t minmax_idx_size = real_parts.front()->getMinMaxIndex()->hyperrectangle.size();
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
         if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
         {
             for (const auto & part : real_parts)
             {
-                const auto & range = part->minmax_idx->hyperrectangle[i];
+                const auto & range = part->getMinMaxIndex()->hyperrectangle[i];
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, range.left);
             }
@@ -8792,7 +8789,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & range = part->minmax_idx->hyperrectangle[i];
+                const auto & range = part->getMinMaxIndex()->hyperrectangle[i];
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, range.right);
             }
@@ -10644,7 +10641,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     new_data_part->partition = partition;
 
-    new_data_part->minmax_idx = std::move(minmax_idx);
+    new_data_part->setMinMaxIndex(std::move(minmax_idx));
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs

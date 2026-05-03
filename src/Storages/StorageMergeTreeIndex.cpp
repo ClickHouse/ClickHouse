@@ -114,17 +114,18 @@ protected:
             else if (minmax_header && minmax_header->has(column_name))
             {
                 size_t minmax_pos = minmax_header->getPositionByName(column_name);
-                if (minmax_pos >= part->minmax_idx->hyperrectangle.size())
+                const auto & hyperrectangle = part->getMinMaxIndex()->hyperrectangle;
+                if (minmax_pos >= hyperrectangle.size())
                     throw Exception(
                         ErrorCodes::CORRUPTED_DATA,
                         "Part {} has broken minmax_idx: size = {} but {} has pos = {}",
                         part->name,
-                        part->minmax_idx->hyperrectangle.size(),
+                        hyperrectangle.size(),
                         column_name,
                         minmax_pos);
 
                 auto column = column_type->createColumnConst(
-                    num_rows, Tuple{part->minmax_idx->hyperrectangle[minmax_pos].left, part->minmax_idx->hyperrectangle[minmax_pos].right});
+                    num_rows, Tuple{hyperrectangle[minmax_pos].left, hyperrectangle[minmax_pos].right});
                 result_columns[pos] = column->convertToFullColumnIfConst();
             }
             else if (column_name == part_name_column.name)

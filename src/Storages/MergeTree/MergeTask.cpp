@@ -747,7 +747,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             if (part->isEmpty())
                 continue;
 
-            global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
+            global_ctx->new_data_part->getMinMaxIndex()->merge(*part->getMinMaxIndex());
             const auto & result_statistics = global_ctx->gathered_data.statistics;
 
             if (result_statistics.empty())
@@ -1340,7 +1340,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
         if (global_ctx->merge_may_reduce_rows)
-            global_ctx->new_data_part->minmax_idx->update(block, global_ctx->minmax_idx_columns);
+            global_ctx->new_data_part->getMinMaxIndex()->update(block, global_ctx->minmax_idx_columns);
 
         calculateProjections(block, starting_offset);
 
