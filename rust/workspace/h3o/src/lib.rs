@@ -422,7 +422,11 @@ pub unsafe extern "C" fn cellToChildren(
     let (Some(cell), Some(res)) = (try_cell(h), try_resolution(child_res)) else {
         return E_FAILED;
     };
+    let max_size = cell.children_count(res) as usize;
     for (i, child) in cell.children(res).enumerate() {
+        if i >= max_size {
+            break;
+        }
         *children.add(i) = u64::from(child);
     }
     E_SUCCESS
