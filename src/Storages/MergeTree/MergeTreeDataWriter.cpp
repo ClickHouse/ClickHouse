@@ -1058,7 +1058,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if (((*data_settings)[MergeTreeSetting::optimize_row_order] || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by] &&!metadata_snapshot->hasSortingKey()))
+    if (((*data_settings)[MergeTreeSetting::optimize_row_order] || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by] && !metadata_snapshot->hasSortingKey()))
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
