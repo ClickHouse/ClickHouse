@@ -2463,7 +2463,7 @@ public:
                         mode = WriteMode::Append;
                     }
                 }
-                catch (...)
+                catch (...) /// Ok: tolerate concurrent removal between `existsFile` and `getFileSize`.
                 {
                     existing_size = 0;
                     mode = WriteMode::Rewrite;
