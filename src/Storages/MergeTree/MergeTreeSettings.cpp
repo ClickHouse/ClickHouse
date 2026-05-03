@@ -1857,6 +1857,10 @@ namespace ErrorCodes
     DECLARE(Bool, enable_block_offset_column, false, R"(
     Persists virtual column `_block_number` on merges.
     )", 0) \
+    DECLARE(Bool, extend_minmax_index_with_persisted_virtual_columns, false, R"(
+    When enabled, the per-part min-max index is extended with persisted virtual columns in addition to the partition-key columns.
+    This enables part-level pruning by these columns.
+    )", 0) \
     DECLARE(Bool, add_minmax_index_for_numeric_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all numeric columns
     of the table.
