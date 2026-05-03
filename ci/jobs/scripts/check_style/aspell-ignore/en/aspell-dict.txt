@@ -2289,6 +2289,7 @@ formatDateTime
 formatDateTimeInJoda
 formatDateTimeInJodaSyntax
 formatQuery
+formatQueryFromJSON
 formatQuerySingleLine
 formatReadableDecimalSize
 formatReadableQuantity
@@ -2962,6 +2963,7 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
+parseQueryToJSON
 parseReadableSize
 parseReadableSizeOrNull
 parseReadableSizeOrZero
@@ -3073,6 +3075,7 @@ privateKeyPassphraseHandler
 prlimit
 procfs
 profiler
+programmatically
 projectio
 proleptic
 prolog
