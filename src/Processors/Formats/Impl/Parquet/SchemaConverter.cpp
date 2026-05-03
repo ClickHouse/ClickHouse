@@ -886,6 +886,14 @@ void SchemaConverter::processPrimitiveColumn(
         return;
     }
 
+    if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
+    {
+        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
+        out_inferred_type = getGeoDataType(GeoType::Mixed);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo);
+        return;
+    }
+
     if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
         logical.__isset.ENUM || converted == CONV::UTF8 || converted == CONV::JSON ||
         converted == CONV::BSON || converted == CONV::ENUM)

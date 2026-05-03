@@ -112,6 +112,10 @@ namespace
                 return std::nullopt;
             }
         }
+        else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
+        {
+            return std::nullopt;
+        }
         else
         {
             /// For all other types except decimal binary representation
@@ -473,7 +477,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                     continue;
 
                 if (const auto type_id = name_and_type.type->getTypeId();
-                    type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array)
+                    type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
+                    || type_id == DB::TypeIndex::Variant)
                     continue;
 
                 auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
