@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- no-parallel: Uses the `future_set_from_subquery_skip_inplace_build` failpoint, which is global.
+--
 -- Regression test for non-destructive `buildOrderedSetInplace`.
 -- If the in-place build gives up after `build()` has prepared a plan,
 -- the delayed set-building path must still be able to execute that subquery.

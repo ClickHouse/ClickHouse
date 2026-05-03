@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- no-parallel: Uses the `future_set_from_subquery_skip_inplace_build` failpoint, which is global.
+--
 -- Regression test for preserving analyzer CTE planning on in-place set build fallback.
 
 DROP TABLE IF EXISTS 04094_data;
