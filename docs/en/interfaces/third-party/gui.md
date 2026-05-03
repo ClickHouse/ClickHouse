@@ -378,6 +378,17 @@ Key differentiators include:
 
 [CHouse UI Source Code](https://github.com/daun-gatal/chouse-ui)
 
+### clickhouse-flow {#clickhouse-flow}
+[clickhouse-flow](https://github.com/MikeAmputer/clickhouse-flow) is an open-source tool for visualizing data flows and dependencies between ClickHouse tables, views, and materialized views.
+
+Features:
+
+- Automatically builds a schema graph from ClickHouse metadata.
+- Visualizes data flows through materialized views.
+- Interactive UI for exploring schema structure.
+- Export diagrams as PDF or SVG for documentation and sharing.
+- Docker-based deployment for quick setup in development environments.
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}

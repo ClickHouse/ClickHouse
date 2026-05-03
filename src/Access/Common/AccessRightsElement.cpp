@@ -457,6 +457,11 @@ String AccessRightsElements::toStringWithoutOptions() const { return toStringImp
 void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
 {
     bool no_output = true;
+    /// Track which access flags have already been output within the current group
+    /// to avoid duplicate keywords after backward-compatible conversion
+    /// (e.g., READ ON FILE and WRITE ON FILE both become FILE after makeBackwardCompatible).
+    AccessFlags group_flags;
+
     for (size_t i = 0; i != size(); ++i)
     {
         auto element = (*this)[i];
@@ -466,7 +471,17 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
             continue;
 
-        for (const auto & keyword : keywords)
+        /// Deduplicate keywords only for table-wide grants (anyColumn()).
+        /// Column-scoped grants (e.g., SELECT(a), SELECT(b)) must output each
+        /// keyword+column combination even when the access flag is the same.
+        auto output_keywords = keywords;
+        if (element.anyColumn())
+        {
+            output_keywords = (element.access_flags - group_flags).toKeywords();
+            group_flags |= element.access_flags;
+        }
+
+        for (const auto & keyword : output_keywords)
         {
             if (!std::exchange(no_output, false))
                 buffer << ", ";
@@ -479,7 +494,10 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         bool next_element_on_same_db_and_table = false;
         if (i != size() - 1)
         {
-            const auto & next_element = (*this)[i + 1];
+            /// Compare backward-compatible versions of both elements so that
+            /// the parameter field (cleared by makeBackwardCompatible) matches on both sides.
+            auto next_element = (*this)[i + 1];
+            next_element.makeBackwardCompatible();
             if (element.sameDatabaseAndTableAndParameter(next_element))
             {
                 next_element_on_same_db_and_table = true;
@@ -490,6 +508,7 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         {
             buffer << " ";
             element.formatONClause(buffer);
+            group_flags = {};
         }
     }
 

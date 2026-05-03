@@ -78,14 +78,17 @@ SECRETS = [
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
     Secret.Config(
         name="woolenwolf_gh_app.installation_id",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
 ]
 
@@ -369,6 +372,7 @@ class JobNames:
     LIBFUZZER_TEST = "libFuzzer tests"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
+    CI_TESTS = "CI Tests"
 
 
 class ToolSet:
@@ -441,7 +445,6 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
-    PARSER_MEMORY_PROFILER = "PARSER_MEMORY_PROFILER"
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
@@ -607,11 +610,6 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
-    )
-    parser_memory_profiler = Artifact.Config(
-        name=ArtifactNames.PARSER_MEMORY_PROFILER,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/src/Parsers/examples/parser_memory_profiler",
     )
     toolchain_pgo_bolt_amd = Artifact.Config(
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,
