@@ -212,6 +212,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsBool projection_index_narrow_marks;
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool distributed_index_analysis_for_non_shared_merge_tree;
     extern const SettingsUInt64 preferred_block_size_bytes;
@@ -490,6 +491,11 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     Names required_columns,
     PoolSettings pool_settings)
 {
+    /// `projection_index_narrow_marks` is a no-op on this path: the parallel-replicas
+    /// pool coordinates mark ranges across replicas via the coordinator and never
+    /// consults `index_build_context` in its `getTask`. Wire narrowing into
+    /// `MergeTreeReadPoolParallelReplicas` before enabling it by default for queries
+    /// that hit this branch.
     const auto & client_info = context->getClientInfo();
 
     auto extension = ParallelReadingExtension{
@@ -584,8 +590,16 @@ Pipe ReadFromMergeTree::readFromPool(
     /** Do not use prefetched read pool if query is trivial limit query.
       * Because time spend during filling per thread tasks can be greater than whole query
       * execution for big tables with small limit.
+      *
+      * Also do not use it when `projection_index_narrow_marks` is enabled: the narrowing
+      * hook lives in MergeTreeReadPool / MergeTreeReadPoolInOrder and is not wired into
+      * MergeTreePrefetchedReadPool. Falling back to the non-prefetched pool here ensures
+      * the setting is honored on remote filesystem paths where the prefetched pool is the
+      * default; wiring into the prefetched pool is a follow-up.
       */
-    bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
+    bool use_prefetched_read_pool = query_info.trivial_limit == 0
+        && (allow_prefetched_remote || allow_prefetched_local)
+        && !settings[Setting::projection_index_narrow_marks];
 
     if (use_prefetched_read_pool)
     {
@@ -621,7 +635,8 @@ Pipe ReadFromMergeTree::readFromPool(
             pool_settings,
             block_size,
             context,
-            dataflow_cache_updater);
+            dataflow_cache_updater,
+            index_build_context);
     }
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
@@ -671,6 +686,9 @@ Pipe ReadFromMergeTree::readInOrder(
 
     if (is_parallel_reading_from_replicas)
     {
+        /// As in `readFromPoolParallelReplicas`, `projection_index_narrow_marks` is a
+        /// no-op here: the parallel-replicas in-order pool doesn't consult
+        /// `index_build_context` in its `getTask` either.
         const auto & client_info = context->getClientInfo();
         ParallelReadingExtension extension{
             all_ranges_callback.value(),
@@ -719,7 +737,8 @@ Pipe ReadFromMergeTree::readInOrder(
             pool_settings,
             block_size,
             context,
-            dataflow_cache_updater);
+            dataflow_cache_updater,
+            index_build_context);
     }
 
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan

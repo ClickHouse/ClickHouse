@@ -1,7 +1,19 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+
+#include <utility>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool projection_index_narrow_marks;
+}
 
 namespace ErrorCodes
 {
@@ -24,7 +36,8 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    const MergeTreeIndexBuildContextPtr & index_build_context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
         std::move(mutations_snapshot_),
@@ -42,7 +55,15 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     , has_limit_below_one_block(has_limit_below_one_block_)
     , read_type(read_type_)
     , updater(std::move(updater_))
+    , index_build_context(context_->getSettingsRef()[Setting::projection_index_narrow_marks] ? index_build_context_ : nullptr)
 {
+    if (index_build_context)
+    {
+        per_part_index_result_cache.resize(per_part_infos.size());
+        for (auto & slot : per_part_index_result_cache)
+            slot = std::make_unique<PartIndexResultCacheEntry>();
+    }
+
     per_part_mark_ranges.reserve(parts_ranges.size());
     for (const auto & part_with_ranges : parts_ranges)
         per_part_mark_ranges.push_back(part_with_ranges.ranges);
@@ -56,28 +77,77 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
             task_idx, per_part_infos.size());
 
     auto & all_mark_ranges = per_part_mark_ranges[task_idx];
-    if (all_mark_ranges.empty())
-        return nullptr;
 
-    MarkRanges mark_ranges_for_task;
-    if (read_type == MergeTreeReadType::InReverseOrder)
+    /// When the projection index narrows a popped range to empty, loop back to pop the
+    /// next range rather than returning nullptr -- nullptr means "no more work for this
+    /// part" and would prematurely terminate reading of remaining ranges. The consume-all
+    /// branch uses std::exchange so `all_mark_ranges` is reset to empty at the move site,
+    /// making the next iteration's empty() check well-defined (and keeping clang-tidy's
+    /// use-after-move analyzer happy).
+    while (true)
     {
-        /// Read ranges from right to left.
-        mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.back()));
-        all_mark_ranges.pop_back();
-    }
-    else if (has_limit_below_one_block)
-    {
-        /// If we need to read few rows, set one range per task to reduce number of read data.
-        mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.front()));
-        all_mark_ranges.pop_front();
-    }
-    else
-    {
-        mark_ranges_for_task = std::move(all_mark_ranges);
-    }
+        if (all_mark_ranges.empty())
+            return nullptr;
 
-    return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);
+        MarkRanges mark_ranges_for_task;
+        if (read_type == MergeTreeReadType::InReverseOrder)
+        {
+            /// Read ranges from right to left.
+            mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.back()));
+            all_mark_ranges.pop_back();
+        }
+        else if (has_limit_below_one_block)
+        {
+            /// If we need to read few rows, set one range per task to reduce number of read data.
+            mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.front()));
+            all_mark_ranges.pop_front();
+        }
+        else
+        {
+            mark_ranges_for_task = std::exchange(all_mark_ranges, {});
+        }
+
+        if (index_build_context)
+        {
+            const auto & data_part = per_part_infos[task_idx]->data_part;
+            const size_t min_marks_for_seek = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
+                reader_settings.merge_tree_min_rows_for_seek,
+                reader_settings.merge_tree_min_bytes_for_seek,
+                data_part->index_granularity_info.fixed_index_granularity,
+                data_part->index_granularity_info.index_granularity_bytes);
+
+            const size_t pre_narrow_marks = mark_ranges_for_task.getNumberOfMarks();
+            mark_ranges_for_task = narrowMarkRangesByProjectionIndex(
+                getCachedPartIndexResult(task_idx),
+                *data_part->index_granularity,
+                std::move(mark_ranges_for_task),
+                min_marks_for_seek);
+
+            /// See MergeTreeReadPool::getTask: account for pre-task pruning so the
+            /// per-part index entry is released when the part drains.
+            index_build_context->accountForNarrowedMarks(
+                per_part_infos[task_idx]->part_index_in_query,
+                data_part,
+                pre_narrow_marks - mark_ranges_for_task.getNumberOfMarks());
+
+            if (mark_ranges_for_task.empty())
+                continue;
+        }
+
+        return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);
+    }
+}
+
+MergeTreeIndexReadResultPtr MergeTreeReadPoolInOrder::getCachedPartIndexResult(size_t part_idx)
+{
+    auto & entry = *per_part_index_result_cache[part_idx];
+    std::call_once(entry.flag, [&]
+    {
+        entry.result = lookupProjectionIndexResult(
+            *index_build_context,
+            per_part_infos[part_idx]->part_index_in_query);
+    });
+    return entry.result;
 }
 
 }

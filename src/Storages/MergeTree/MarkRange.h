@@ -56,6 +56,14 @@ struct MarkRanges : public boost::container::devector<MarkRange, AllocatorWithMe
  */
 size_t getLastMark(const MarkRanges & ranges);
 
+/// Intersect two sorted, non-overlapping MarkRanges sequences.
+/// If min_marks_for_seek > 0, gaps smaller than this between surviving ranges
+/// are coalesced to avoid unnecessary disk seeks.
+MarkRanges intersectMarkRanges(
+    const MarkRanges & a,
+    const MarkRanges & b,
+    size_t min_marks_for_seek = 0);
+
 std::string toString(const MarkRanges & ranges);
 
 void assertSortedAndNonIntersecting(const MarkRanges & ranges);

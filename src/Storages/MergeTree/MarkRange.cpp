@@ -144,4 +144,49 @@ size_t MarkRangeHash::operator()(const MarkRange & range) const
     return hash.get64();
 }
 
+MarkRanges intersectMarkRanges(const MarkRanges & a, const MarkRanges & b, size_t min_marks_for_seek)
+{
+    /// Two-pointer merge assumes both sides are sorted and non-overlapping. The
+    /// min-gap coalescing below relies on that invariant to guarantee
+    /// `begin - result.back().end` cannot underflow. We use a cheap single-pass
+    /// check rather than `assertSortedAndNonIntersecting` (which sort-copies the
+    /// input) and gate it on debug/sanitizer builds so release isn't paying for
+    /// the scan on the hot path.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    auto debug_assert_sorted = [](const MarkRanges & ranges)
+    {
+        for (size_t i = 1; i < ranges.size(); ++i)
+            chassert(ranges[i - 1].end <= ranges[i].begin);
+    };
+    debug_assert_sorted(a);
+    debug_assert_sorted(b);
+#endif
+
+    MarkRanges result;
+    const auto * it_a = a.begin();
+    const auto * it_b = b.begin();
+
+    while (it_a != a.end() && it_b != b.end())
+    {
+        size_t begin = std::max(it_a->begin, it_b->begin);
+        size_t end = std::min(it_a->end, it_b->end);
+
+        if (begin < end)
+        {
+            if (min_marks_for_seek > 0 && !result.empty()
+                && begin - result.back().end <= min_marks_for_seek)
+                result.back().end = end;
+            else
+                result.emplace_back(begin, end);
+        }
+
+        if (it_a->end < it_b->end)
+            ++it_a;
+        else
+            ++it_b;
+    }
+
+    return result;
+}
+
 }

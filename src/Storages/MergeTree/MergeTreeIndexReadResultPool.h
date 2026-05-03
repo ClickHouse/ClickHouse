@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
+#include <mutex>
 #include <roaring/roaring.hh>
 
 namespace DB
@@ -118,6 +119,45 @@ struct ProjectionIndexBitmap
     bool appendToFilter(PaddedPODArray<UInt8> & filter, size_t starting_row, size_t num_rows) const;
 };
 
+/// Convert a ProjectionIndexBitmap (roaring bitmap of _parent_part_offset values)
+/// to MarkRanges by mapping each offset to its containing mark.
+MarkRanges bitmapToMarkRanges(
+    const ProjectionIndexBitmap & bitmap,
+    const MergeTreeIndexGranularity & index_granularity);
+
+struct MergeTreeIndexBuildContext;
+
+/// Look up the cached projection index result for a part, or nullptr if there is
+/// nothing to narrow by (no entry for the part, no projection reader, or the
+/// projection bitmap is null). Hot-path callers should cache the returned pointer
+/// per part to avoid repeating the hash-map lookups and registry mutex traffic on
+/// every batch.
+MergeTreeIndexReadResultPtr lookupProjectionIndexResult(
+    const MergeTreeIndexBuildContext & index_build_context,
+    size_t part_index_in_query);
+
+/// Narrow mark ranges using a projection index bitmap. Fast overload for callers
+/// that have already resolved the index result (e.g. via a per-part cache).
+/// Returns the input unchanged when there is no projection bitmap to narrow by.
+///
+/// `min_marks_for_seek` coalesces surviving ranges that sit within that many
+/// marks of the previous kept range, matching the seek-threshold semantics
+/// used elsewhere in the read path. Passing 0 disables coalescing.
+MarkRanges narrowMarkRangesByProjectionIndex(
+    const MergeTreeIndexReadResultPtr & index_result,
+    const MergeTreeIndexGranularity & index_granularity,
+    MarkRanges mark_ranges,
+    size_t min_marks_for_seek = 0);
+
+/// Convenience overload: looks up the index result and narrows in one call.
+/// Prefer the overload above in tight loops.
+MarkRanges narrowMarkRangesByProjectionIndex(
+    const MergeTreeIndexBuildContext & index_build_context,
+    size_t part_index_in_query,
+    const MergeTreeIndexGranularity & index_granularity,
+    MarkRanges mark_ranges,
+    size_t min_marks_for_seek = 0);
+
 class MergeTreeSelectProcessor;
 using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 class MergeTreeReadPoolProjectionIndex;
@@ -161,6 +201,15 @@ struct MergeTreeIndexReadResult
 {
     SkipIndexReadResultPtr skip_index_read_result;
     ProjectionIndexBitmapPtr projection_index_read_result;
+
+    /// Returns the projection bitmap converted to MarkRanges, computed and cached on
+    /// first call. Callers must ensure projection_index_read_result is non-null.
+    /// Thread-safe: concurrent callers will see the same cached result.
+    const MarkRanges & getProjectionMarkRanges(const MergeTreeIndexGranularity & index_granularity) const;
+
+private:
+    mutable std::once_flag projection_mark_ranges_once;
+    mutable MarkRanges projection_mark_ranges;
 };
 
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
