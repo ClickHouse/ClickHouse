@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 ASTPtr ASTCreateSQLFunctionQuery::clone() const
@@ -81,12 +82,14 @@ void ASTCreateSQLFunctionQuery::readJSON(const Poco::JSON::Object & json)
     children.clear();
 
     function_name = r.readChild("function_name");
-    if (function_name)
-        children.push_back(function_name);
+    if (!function_name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'function_name' for `CreateSQLFunctionQuery` during AST JSON deserialization");
+    children.push_back(function_name);
 
     function_core = r.readChild("function_core");
-    if (function_core)
-        children.push_back(function_core);
+    if (!function_core)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'function_core' for `CreateSQLFunctionQuery` during AST JSON deserialization");
+    children.push_back(function_core);
 }
 
 
