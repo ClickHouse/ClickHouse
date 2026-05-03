@@ -16,10 +16,10 @@ SELECT (1, 2) IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
 SET allow_experimental_nullable_tuple_type = 1;
 SELECT (1, 2) IN (SELECT CAST((1, 2), 'Nullable(Tuple(UInt8, UInt8))'));
 
--- `LowCardinality` is not a valid wrapper around `Tuple` (`DataTypeLowCardinality` only allows
--- numbers, strings, Date and DateTime), so we can't have `LowCardinality(Tuple(...))` directly.
--- Instead, exercise the `removeLowCardinalityAndNullable` unwrap on both sides with the
--- supported `LowCardinality` types to make sure the validation does not produce false positives.
+-- `Tuple` is not allowed inside `LowCardinality` (only types for which `canBeInsideLowCardinality`
+-- returns true are accepted), so we can't construct `LowCardinality(Tuple(...))` directly.
+-- Instead, exercise the `removeLowCardinalityAndNullable` unwrap on both sides with scalar
+-- `LowCardinality` values to make sure the validation does not produce false positives.
 SELECT toLowCardinality(1) IN (SELECT 1, 2); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 SELECT 1 IN (SELECT toLowCardinality(1));
 SELECT (1, 2) IN (SELECT toLowCardinality(1), toLowCardinality(2));
