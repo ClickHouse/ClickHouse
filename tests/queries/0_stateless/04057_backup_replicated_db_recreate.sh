@@ -79,9 +79,16 @@ do_backups &
 # Run database recreation in the foreground synchronously. Foreground execution
 # guarantees that recreate cycles actually complete and are not lost to the
 # background scheduler under randomized settings.
+#
+# Bound each `DROP DATABASE SYNC` with `max_execution_time`. Under flaky-check
+# stress (the test runs ~10 times back-to-back on a busy CI host), six backup
+# workers in tight submission loops can starve the foreground drop for the
+# entire 45-second window, leaving `RECREATE_COUNT == 0` and the regression
+# path untested. With a per-attempt cap, a stuck drop is killed and the loop
+# retries instead of consuming the whole budget on a single hang.
 RECREATE_COUNT=0
 while [[ $SECONDS -lt $TIMEOUT ]]; do
-    if $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1; then
+    if $CLICKHOUSE_CLIENT --max_execution_time=10 --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1; then
         RECREATE_COUNT=$((RECREATE_COUNT + 1))
     fi
     create_and_populate
