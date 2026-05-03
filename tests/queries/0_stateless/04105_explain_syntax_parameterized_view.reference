@@ -44,3 +44,10 @@ ALL INNER JOIN
     FROM numbers(_CAST(10, \'UInt64\'))
     WHERE number > 10
 ) AS `04105_pv` USING (number)
+SELECT t.number
+FROM
+(
+    SELECT number
+    FROM numbers(_CAST(10, \'UInt64\'))
+    WHERE number > 10
+) AS t

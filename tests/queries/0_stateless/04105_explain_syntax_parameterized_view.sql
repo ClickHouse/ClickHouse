@@ -34,6 +34,10 @@ EXPLAIN SYNTAX SELECT * FROM (SELECT number FROM 04105_pv(n = 12));
 -- Parameterized view in JOIN position should also be expanded.
 EXPLAIN SYNTAX SELECT * FROM 04105_join_target JOIN 04105_pv(n = 10) USING number;
 
+-- Explicit alias on the parameterized view must be preserved so the outer query
+-- can reference columns through the alias (e.g. `t.number`).
+EXPLAIN SYNTAX SELECT t.number FROM 04105_pv(n = 10) AS t;
+
 DROP TABLE 04105_join_target;
 DROP VIEW 04105_pv;
 DROP VIEW 04105_pv_multi;

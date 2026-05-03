@@ -28,7 +28,6 @@
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -148,11 +147,13 @@ namespace
 
             /// Replace the table function with a subquery in-place on this table expression,
             /// rather than using `StorageView::replaceWithSubquery` which only handles the
-            /// first table expression in the SELECT. The alias for the wrapping subquery is the
-            /// view's table name, so the rendered `EXPLAIN SYNTAX` keeps referring to the view.
-            ASTPtr view_identifier = make_intrusive<ASTTableIdentifier>(func->name);
-            DatabaseAndTableWithAlias db_table(view_identifier);
-            String alias = db_table.alias.empty() ? db_table.table : db_table.alias;
+            /// first table expression in the SELECT. Preserve the explicit alias from the
+            /// original table function (e.g. `... FROM my_pv(n=1) AS t`) so identifiers in
+            /// the outer query keep resolving; otherwise fall back to the view's table name
+            /// so the rendered `EXPLAIN SYNTAX` keeps referring to the view.
+            String alias = table_expr.table_function->tryGetAlias();
+            if (alias.empty())
+                alias = table_name;
 
             table_expr.table_function = nullptr;
             table_expr.subquery = make_intrusive<ASTSubquery>(std::move(view_query));
