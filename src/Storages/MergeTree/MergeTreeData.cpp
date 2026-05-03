@@ -8774,8 +8774,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         ++pos;
     }
 
-    size_t minmax_idx_size = real_parts.front()->getMinMaxIndex()->hyperrectangle.size();
-    for (size_t i = 0; i < minmax_idx_size; ++i)
+    size_t partitioning_columns_count = metadata_snapshot->getColumnsRequiredForPartitionKey().size();
+    for (size_t i = 0; i < partitioning_columns_count; ++i)
     {
         if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
         {
@@ -8858,6 +8858,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 "Cannot find column {} in minmax_count projection but query analysis still selects this projection. It's a bug",
                 name);
     }
+
     return res;
 }
 
