@@ -6,6 +6,8 @@
 #include <Common/likePatternToRegexp.h>
 #include <Common/typeid_cast.h>
 
+#include "config.h"
+
 #include <vector>
 
 
@@ -76,6 +78,20 @@ struct PatternInfo
         Array result;
         for (const auto & p : patterns)
             result.push_back(p.regexp);
+        return result;
+    }
+
+    /// Build a combined regexp pattern using alternation: (pattern1)|(pattern2)|...
+    /// Used as the `match` fallback when the binary is built without Vectorscan.
+    [[maybe_unused]] String getCombinedRegexp() const
+    {
+        String result;
+        for (const auto & p : patterns)
+        {
+            if (!result.empty())
+                result += "|";
+            result += "(" + p.regexp + ")";
+        }
         return result;
     }
 };
@@ -186,11 +202,18 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/)
                 }
                 else
                 {
+#if USE_VECTORSCAN
                     /// Use `multiMatchAny` for non-substring patterns. The old-analyzer entry point is
                     /// gated by `allow_hyperscan` in `TreeOptimizer`, so Hyperscan/Vectorscan is always
                     /// permitted here and `multiMatchAny` is significantly faster than `match` with
                     /// alternation in RE2.
                     match_fn = makeASTFunction("multiMatchAny", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getRegexps()}));
+#else
+                    /// `multiMatchAny` requires Vectorscan compiled in. When ClickHouse is built without
+                    /// it, the function throws `NOT_IMPLEMENTED` at execution time, so fall back to
+                    /// `match` with combined alternation.
+                    match_fn = makeASTFunction("match", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getCombinedRegexp()}));
+#endif
                 }
 
                 unique_elems[pos] = std::move(match_fn);

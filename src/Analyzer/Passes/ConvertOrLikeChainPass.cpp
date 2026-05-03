@@ -5,6 +5,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "config.h"
+
 #include <Common/likePatternToRegexp.h>
 
 #include <Core/Field.h>
@@ -240,7 +242,14 @@ public:
 
         /// Cache context for later use
         auto context = getContext();
+        /// `multiMatchAny` requires Vectorscan compiled in. When ClickHouse is built without it, the
+        /// function is registered but throws `NOT_IMPLEMENTED` at execution time, so we must not
+        /// generate it here regardless of the `allow_hyperscan` setting.
+#if USE_VECTORSCAN
         const bool allow_hyperscan = context->getSettingsRef()[Setting::allow_hyperscan];
+#else
+        const bool allow_hyperscan = false;
+#endif
 
         /// `indexHint(A) AND expr` restricts index analysis to ranges satisfying `A`, so wrapping the
         /// optimized chain in `indexHint(<LIKE subset>)` is only safe when every OR branch was a
