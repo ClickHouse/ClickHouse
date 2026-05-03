@@ -1,9 +1,13 @@
 #include <Functions/FunctionBaseAI.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <thread>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RemoteHostFilter.h>
+#include <Poco/URI.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -80,6 +84,9 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument to AI function must be a named collection (constant String)");
 
     String collection_name = col_const->getValue<String>();
+
+    getContext()->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
+
     const auto & named_collection = NamedCollectionFactory::instance().get(collection_name);
 
     config.provider = named_collection->getOrDefault<String>("provider", "");
@@ -136,6 +143,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     }
 
     auto config = resolveConfig(arguments);
+    getContext()->getRemoteHostFilter().checkURL(Poco::URI(config.endpoint));
     auto provider = createAIProvider(config.provider, config.endpoint, config.api_key, config.api_version);
     float temperature = resolveTemperature(arguments, config);
 
