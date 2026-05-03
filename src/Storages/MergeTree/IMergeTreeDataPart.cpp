@@ -262,22 +262,26 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
         FieldRef min_value;
         FieldRef max_value;
 
-        if (!block.has(column_name))
+        if (auto column = block.findColumnOrSubcolumnByName(column_name))
         {
-            if (auto universe = tryGetUniverseRangeForType(*column_type))
-            {
-                min_value = FieldRef(std::move(universe->first));
-                max_value = FieldRef(std::move(universe->second));
-            }
-        }
-
-        if (min_value.isNull() || max_value.isNull())
-        {
-            const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_name);
-            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
-                column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column->column.get()))
+                column_nullable->getExtremesNullLast(min_value, max_value, 0, column->column->size());
             else
-                column.column->getExtremes(min_value, max_value, 0, column.column->size());
+                column->column->getExtremes(min_value, max_value, 0, column->column->size());
+        }
+        else if (auto universe = tryGetUniverseRangeForType(*column_type))
+        {
+            min_value = FieldRef(std::move(universe->first));
+            max_value = FieldRef(std::move(universe->second));
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Column {} of type {} is required by the part-level MinMax index but is not present "
+                "in the block, and its type has no well-defined universe range to fallback to. "
+                "There are only columns: {}. Required columns: {}",
+                column_name, column_type->getName(), block.dumpNames(), columns_to_update.getNames());
         }
 
         if (!initialized)
