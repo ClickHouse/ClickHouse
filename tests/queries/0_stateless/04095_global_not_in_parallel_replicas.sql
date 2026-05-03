@@ -48,4 +48,9 @@ SYSTEM ENABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 -- `buildOrderedSetInplace` is actually called here.
 SELECT count() > 0 FROM null_in_pr WHERE idx global in (SELECT idx FROM null_in_pr WHERE dt = 2);
 
+-- Disable the failpoint so it does not leak into other tests in the same server process
+-- if a future planner change makes the assertion query above stop calling
+-- `buildOrderedSetInplace` (and therefore stop consuming the failpoint).
+SYSTEM DISABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
+
 DROP TABLE null_in_pr;
