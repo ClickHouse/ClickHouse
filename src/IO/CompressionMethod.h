@@ -4,6 +4,7 @@
 #include <string>
 
 #include <Core/Defines.h>
+#include <IO/SnappyMode.h>
 
 namespace DB
 {
@@ -34,13 +35,6 @@ enum class CompressionMethod : uint8_t
     Lz4,
     Bzip2,
     Snappy,
-};
-
-/// Controls which wire format is used for Snappy compression.
-enum class SnappyMode : uint8_t
-{
-    Basic,   /// Raw/Hadoop snappy block format (legacy ClickHouse behavior)
-    Framed,  /// Snappy framing format — the standard streaming format
 };
 
 /// How the compression method is named in HTTP.

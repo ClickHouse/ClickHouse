@@ -13,10 +13,10 @@
 #include <Core/ShortCircuitFunctionEvaluation.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Formats/FormatSettings.h>
-#include <IO/CompressionMethod.h>
 #include <IO/DistributedCacheLogMode.h>
 #include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/ReadMethod.h>
+#include <IO/SnappyMode.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
