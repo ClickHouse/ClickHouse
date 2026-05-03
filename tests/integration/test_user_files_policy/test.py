@@ -294,6 +294,40 @@ def test_local_insert_truncate_on_insert():
     assert result.strip() == "2"
 
 
+def test_local_schema_inference_from_disk():
+    """Schema inference must read through `IDisk` so it works for non-local backends.
+
+    Without disk-aware schema inference, `ReadBufferFromFileIterator` falls back to
+    `stat`/`ReadBufferFromFile` on the absolute disk path, which fails for object
+    storage. The local case still exercises the disk-aware code path because
+    `user_files_policy` is configured.
+    """
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo -e 'a,b\\n1,foo\\n2,bar' > /test_user_files_disk1/infer.csv",
+        ]
+    )
+
+    result = node_local.query(
+        "SELECT count() FROM file('infer.csv', 'CSVWithNames')"
+    )
+    assert result.strip() == "2"
+
+
+def test_s3_schema_inference_from_disk():
+    """Same as above for the S3-backed disk: schema inference must go through `IDisk`."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_infer.csv', 'CSVWithNames', 'a UInt64, b String') "
+        "SELECT number, toString(number) FROM numbers(3)"
+    )
+    result = node_s3.query(
+        "SELECT count() FROM file('s3_infer.csv', 'CSVWithNames')"
+    )
+    assert result.strip() == "3"
+
+
 def test_local_partitioned_insert_rejected():
     """`INSERT ... PARTITION BY` must be rejected with a clear error under user_files_policy
     until disk-aware partitioned writes are implemented (silent fall-through to the local

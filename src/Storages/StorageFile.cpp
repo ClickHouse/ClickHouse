@@ -944,9 +944,10 @@ namespace
             }
 
             String path;
-            struct stat file_stat;
+            const auto user_files_volume = getContext()->getUserFilesVolume();
+            const bool skip_empty = getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files];
 
-            do
+            while (true)
             {
                 if (current_index == paths.size())
                 {
@@ -966,17 +967,40 @@ namespace
                 }
 
                 path = paths[current_index++];
-                file_stat = getFileStat(path, false, -1, "File");
-            } while (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0);
 
-            /// For union mode, check cached columns only for current path, because schema can be different for different files.
-            if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::UNION)
-            {
-                if (auto cached_columns = tryGetColumnsFromCache({path}))
-                    return {nullptr, cached_columns, format};
+                if (user_files_volume)
+                {
+                    /// `paths` were produced by `getPathsListOnDisk` as `<disk_path>/<relative>`;
+                    /// recover the disk so we read through `IDisk` (works for non-local backends like `s3_plain`).
+                    auto [disk, relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+                    if (!disk)
+                        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", path);
+                    validateDiskRelativePathBoundary(disk, relative_path);
+                    if (skip_empty && disk->getFileSize(relative_path) == 0)
+                        continue;
+
+                    if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::UNION)
+                    {
+                        if (auto cached_columns = tryGetColumnsFromCache({path}))
+                            return {nullptr, cached_columns, format};
+                    }
+
+                    return {createReadBufferFromDisk(disk, relative_path, compression_method, getContext()), std::nullopt, format};
+                }
+
+                struct stat file_stat = getFileStat(path, false, -1, "File");
+                if (skip_empty && file_stat.st_size == 0)
+                    continue;
+
+                /// For union mode, check cached columns only for current path, because schema can be different for different files.
+                if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::UNION)
+                {
+                    if (auto cached_columns = tryGetColumnsFromCache({path}))
+                        return {nullptr, cached_columns, format};
+                }
+
+                return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt, format};
             }
-
-            return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt, format};
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -1017,6 +1041,16 @@ namespace
         {
             chassert(current_index > 0 && current_index <= paths.size());
             auto path = paths[current_index - 1];
+
+            if (auto user_files_volume = getContext()->getUserFilesVolume())
+            {
+                auto [disk, relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+                if (!disk)
+                    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", path);
+                validateDiskRelativePathBoundary(disk, relative_path);
+                return createReadBufferFromDisk(disk, relative_path, compression_method, getContext());
+            }
+
             auto file_stat = getFileStat(path, false, -1, "File");
             return createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
         }
@@ -1030,11 +1064,27 @@ namespace
 
             /// Check if the cache contains one of the paths.
             auto & schema_cache = StorageFile::getSchemaCache(context);
+            const auto user_files_volume = context->getUserFilesVolume();
             struct stat file_stat{};
             for (const auto & path : paths_)
             {
                 auto get_last_mod_time = [&]() -> std::optional<time_t>
                 {
+                    if (user_files_volume)
+                    {
+                        auto [disk, relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+                        if (!disk)
+                            return std::nullopt;
+                        try
+                        {
+                            return disk->getLastModified(relative_path).epochTime();
+                        }
+                        catch (...) // NOLINT(bugprone-empty-catch) Ok
+                        {
+                            return std::nullopt;
+                        }
+                    }
+
                     if (0 != stat(path.c_str(), &file_stat))
                         return std::nullopt;
 
