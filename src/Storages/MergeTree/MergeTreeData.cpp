@@ -2,6 +2,7 @@
 #include <Disks/DiskType.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
@@ -1219,6 +1220,29 @@ void MergeTreeData::setProperties(
         local_context);
 
     setInMemoryMetadata(new_metadata);
+
+    /// Invalidate the columns cache when columns are dropped or renamed: cache keys
+    /// identify columns by name, so a `RENAME a TO b; ADD COLUMN a` sequence could
+    /// otherwise serve stale data for the freshly added `a`.
+    if (!attach)
+    {
+        const auto & old_columns = old_metadata.columns;
+        const auto & new_columns = new_metadata.columns;
+        bool columns_dropped_or_renamed = false;
+        for (const auto & column : old_columns)
+        {
+            if (!new_columns.has(column.name))
+            {
+                columns_dropped_or_renamed = true;
+                break;
+            }
+        }
+        if (columns_dropped_or_renamed)
+        {
+            if (auto columns_cache = getContext()->getColumnsCache())
+                columns_cache->removeTable(getStorageID().uuid);
+        }
+    }
 
     std::lock_guard lock(patch_parts_metadata_mutex);
     patch_parts_metadata_cache.clear();

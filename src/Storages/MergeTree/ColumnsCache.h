@@ -166,6 +166,13 @@ public:
     /// Should be called when a part is dropped, merged, or mutated.
     void removePart(const UUID & table_uuid, const String & part_name);
 
+    /// Remove all cached entries for a specific table.
+    /// Should be called on column metadata changes such as `RENAME COLUMN` that
+    /// affect existing cache entries without rewriting parts. Cache keys identify
+    /// columns by name, so a `RENAME a TO b; ADD COLUMN a` sequence could otherwise
+    /// serve stale data for the freshly added `a`.
+    void removeTable(const UUID & table_uuid);
+
     /// Clear both the base cache and the interval index.
     /// Used by SYSTEM DROP COLUMNS CACHE.
     /// Holds interval_index_mutex across both operations so that a concurrent

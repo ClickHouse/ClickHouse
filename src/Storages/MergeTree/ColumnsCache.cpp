@@ -121,6 +121,32 @@ ColumnsCache::getIntersecting(
     return result;
 }
 
+void ColumnsCache::removeTable(const UUID & table_uuid)
+{
+    /// Lock ordering matches removePart: interval_index_mutex first, then the
+    /// CacheBase mutex (taken inside Base::remove). No lock-order cycle.
+    std::lock_guard lock(interval_index_mutex);
+
+    std::vector<PartIdentifier> parts_to_remove;
+    std::vector<Key> keys_to_remove;
+    for (const auto & [part_id, columns_map] : interval_index)
+    {
+        if (part_id.table_uuid != table_uuid)
+            continue;
+        parts_to_remove.push_back(part_id);
+        for (const auto & [_, intervals] : columns_map)
+        {
+            for (const auto & [_, key] : intervals)
+                keys_to_remove.push_back(key);
+        }
+    }
+
+    for (const auto & part_id : parts_to_remove)
+        interval_index.erase(part_id);
+    for (const auto & key : keys_to_remove)
+        Base::remove(key);
+}
+
 void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 {
     /// Hold interval_index_mutex across both the index erase and the Base::remove
