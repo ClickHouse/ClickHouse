@@ -3225,6 +3225,36 @@ void StorageMergeTree::assertNotReadonly() const
         leader_election_ptr->assertIsLeader();
 }
 
+Pipe StorageMergeTree::alterPartition(
+    const StorageMetadataPtr & metadata_snapshot,
+    const PartitionCommands & commands,
+    ContextPtr query_context)
+{
+    /// Defense-in-depth: enforce leader/readonly guard at the dispatcher level. The
+    /// per-command handlers that mutate shared data (`dropPart`, `dropPartition`,
+    /// `attachPartition`, `replacePartitionFrom`, `movePartitionToTable`) already call
+    /// `assertNotReadonly` themselves, but other commands dispatch into shared
+    /// `MergeTreeData` methods (`dropDetached`, `movePartitionToDisk`,
+    /// `movePartitionToVolume`) that do not, so a follower could otherwise mutate
+    /// shared object storage. `FREEZE`/`UNFREEZE` create or remove local hardlink
+    /// backups only and are allowed on followers.
+    for (const auto & command : commands)
+    {
+        switch (command.type)
+        {
+            case PartitionCommand::FREEZE_PARTITION:
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
+            case PartitionCommand::UNFREEZE_PARTITION:
+            case PartitionCommand::UNFREEZE_ALL_PARTITIONS:
+                continue;
+            default:
+                assertNotReadonly();
+                break;
+        }
+    }
+    return MergeTreeData::alterPartition(metadata_snapshot, commands, query_context);
+}
+
 void StorageMergeTree::assertCanCommitTransaction() const
 {
     if (leader_election_ptr)
