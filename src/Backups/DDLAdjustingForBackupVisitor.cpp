@@ -65,7 +65,6 @@ namespace
                 && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
             {
                 engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
-                engine.setNoEmptyArgs(true);
             }
         }
     }

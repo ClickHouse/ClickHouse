@@ -4,7 +4,6 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// public repo has dummy functions here for distributed processing, we use real implementations in private
 void tryMakeDistributedJoin(QueryPlan::Node &, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &) {}
 void tryMakeDistributedAggregation(QueryPlan::Node &, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &) {}
 void tryMakeDistributedSorting(QueryPlan::Node &, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &) {}

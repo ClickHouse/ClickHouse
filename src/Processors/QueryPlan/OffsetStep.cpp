@@ -1,6 +1,5 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/OffsetStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/OffsetTransform.h>
@@ -42,8 +41,7 @@ void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
 void OffsetStep::describeActions(FormatSettings & settings) const
 {
-    const auto & prefix = settings.detail_prefix;
-    settings.out << prefix << "Offset " << offset << '\n';
+    settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
 }
 
 void OffsetStep::describeActions(JSONBuilder::JSONMap & map) const

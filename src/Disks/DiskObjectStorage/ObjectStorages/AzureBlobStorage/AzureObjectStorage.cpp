@@ -168,13 +168,8 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     }
 }
 
-ObjectStorageIteratorPtr AzureObjectStorage::iterate(
-    const std::string & path_prefix,
-    size_t max_keys,
-    bool,
-    const std::optional<std::string> &) const
+ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool) const
 {
-    /// start_after is ignored; the resume-from-key optimization is only used for S3 for now.
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
 
@@ -575,10 +570,12 @@ void AzureObjectStorage::applyNewSettings(
 
     bool is_client_for_disk = client.get()->IsClientForDisk();
 
-    AzureBlobStorage::ConnectionParams params;
-    params.endpoint = AzureBlobStorage::processEndpoint(config, config_prefix);
-    params.auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix);
-    params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk);
+    AzureBlobStorage::ConnectionParams params
+    {
+        .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
+        .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+        .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk),
+    };
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
     client.set(std::move(new_client));
