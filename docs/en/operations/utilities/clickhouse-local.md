@@ -361,6 +361,10 @@ clickhouse-local \
 
 The `--listen_host`, `--tcp_port`, and `--http_port` options configure the bind address and ports. Default ports are `9000` for TCP and `8123` for HTTP.
 
+:::warning Security
+By default, `clickhouse-local` runs with the temporary users setup, so any listener it opens is unauthenticated. Bind to a loopback address (`127.0.0.1` or `::1`) unless you have explicitly configured users and access control via a custom `--users-config`. Listening on a non-loopback address without authentication exposes the local session to anyone who can reach the chosen port.
+:::
+
 ## Related Content {#related-content-1}
 
 - [Extracting, converting, and querying data in local files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
