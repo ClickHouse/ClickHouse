@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"parallel_replicas_prefer_local_replica", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."},
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+            {"allow_experimental_geo_types_in_iceberg", false, false, "New setting to allow parsing Iceberg geometry/geography fields as Geometry type."},
             {"output_format_parquet_use_custom_encoder", true, true, "Obsolete setting, the custom encoder is now always used."},
             {"output_format_parquet_version", "2.latest", "2.latest", "Obsolete setting, the custom encoder always writes Parquet V2.6+."},
             {"output_format_parquet_compliant_nested_types", true, true, "Obsolete setting, the custom encoder always uses compliant nested types."},
