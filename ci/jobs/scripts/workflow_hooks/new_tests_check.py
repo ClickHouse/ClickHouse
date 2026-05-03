@@ -130,14 +130,22 @@ def check():
     # Unit tests can't be auto-validated by re-running master HEAD (they
     # live in compiled C++ and the validation framework can't selectively
     # run them against the master binary). Adding new unit tests is
-    # accepted as proof on its own — same as before.
-    if has_unit:
-        print("New unit tests added - pass")
+    # accepted as proof on its own — but ONLY when no functional or
+    # integration regression tests were also added in the same PR.
+    #
+    # If the PR adds new functional/integration tests, those tests MUST
+    # validate on at least one arch (the bug reproduces on master HEAD and
+    # is fixed on the PR). Otherwise the unit-test shortcut would silently
+    # let an unvalidated FT/IT regression test through, weakening the
+    # contract this hook enforces. (Bot review on PR #103541, 2026-05-03.)
+    if has_unit and not has_ft and not has_it:
+        print("New unit tests added (no functional/integration tests) - pass")
         return True
 
-    # New functional or integration tests exist. The per-arch Bugfix
-    # Validation jobs ran them against master HEAD and the PR. We pass iff
-    # at least one per-arch job reported the bug as validated.
+    # New functional or integration tests exist (with or without an
+    # accompanying unit test). The per-arch Bugfix Validation jobs ran them
+    # against master HEAD and the PR. We pass iff at least one per-arch job
+    # reported the bug as validated.
     if any_bugfix_validation_passed():
         print(
             "At least one per-arch Bugfix Validation job validated the bug - pass"
