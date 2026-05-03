@@ -1498,6 +1498,12 @@ SELECT 'RT_rollback' AS t, formatQueryFromJSON(parseQueryToJSON('ROLLBACK'));
 
 -- BACKUP
 SELECT 'RT_backup' AS t, formatQueryFromJSON(parseQueryToJSON('BACKUP TABLE t TO Disk(\'default\', \'backup1\')'));
+SELECT 'RT_backup_rename_partitions' AS t, formatQueryFromJSON(parseQueryToJSON('BACKUP TABLE db.t AS db2.t2 PARTITIONS 1, 2 TO Disk(\'default\', \'b1\')'));
+SELECT 'RT_backup_database_except' AS t, formatQueryFromJSON(parseQueryToJSON('BACKUP DATABASE db EXCEPT TABLES t1, t2 TO Disk(\'d\', \'b\')'));
+SELECT 'RT_backup_all_except_databases' AS t, formatQueryFromJSON(parseQueryToJSON('BACKUP ALL EXCEPT DATABASES sys TO Disk(\'d\', \'b\')'));
+SELECT 'RT_backup_temporary_table' AS t, formatQueryFromJSON(parseQueryToJSON('BACKUP TEMPORARY TABLE t AS s TO Disk(\'d\', \'b\')'));
+SELECT 'RT_restore' AS t, formatQueryFromJSON(parseQueryToJSON('RESTORE TABLE t FROM Disk(\'d\', \'b\')'));
+SELECT 'RT_backup_with_base' AS t, formatQueryFromJSON(parseQueryToJSON('BACKUP TABLE t TO Disk(\'d\',\'b\') SETTINGS base_backup = Disk(\'d\',\'base\')'));
 
 -- Multiple JOINs
 SELECT 'RT_multi_join' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t1 JOIN t2 ON t1.id = t2.id JOIN t3 ON t2.id = t3.id'));

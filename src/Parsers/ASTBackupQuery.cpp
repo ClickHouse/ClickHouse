@@ -353,16 +353,164 @@ IAST::QueryKind ASTBackupQuery::getQueryKind() const
     return kind == Kind::BACKUP ? QueryKind::Backup : QueryKind::Restore;
 }
 
+namespace
+{
+    using Element = ASTBackupQuery::Element;
+    using ElementType = ASTBackupQuery::ElementType;
+
+    void writeElementJSON(const Element & e, JSONObjectWriter & w)
+    {
+        WriteBuffer & out = w.getOut();
+        const FormatSettings & fs = w.getFormatSettings();
+        out << "{\"type\":" << static_cast<Int64>(e.type);
+        if (!e.table_name.empty())
+        {
+            out << ",\"table_name\":";
+            writeJSONString(e.table_name, out, fs);
+        }
+        if (!e.database_name.empty())
+        {
+            out << ",\"database_name\":";
+            writeJSONString(e.database_name, out, fs);
+        }
+        if (!e.new_table_name.empty())
+        {
+            out << ",\"new_table_name\":";
+            writeJSONString(e.new_table_name, out, fs);
+        }
+        if (!e.new_database_name.empty())
+        {
+            out << ",\"new_database_name\":";
+            writeJSONString(e.new_database_name, out, fs);
+        }
+        if (e.partitions)
+        {
+            out << ",\"partitions\":[";
+            bool first = true;
+            for (const auto & p : *e.partitions)
+            {
+                if (!first) out << ',';
+                first = false;
+                p->writeJSON(out);
+            }
+            out << ']';
+        }
+        if (!e.except_tables.empty())
+        {
+            out << ",\"except_tables\":[";
+            bool first = true;
+            for (const auto & [db, tbl] : e.except_tables)
+            {
+                if (!first) out << ',';
+                first = false;
+                out << "{\"database\":";
+                writeJSONString(db, out, fs);
+                out << ",\"table\":";
+                writeJSONString(tbl, out, fs);
+                out << '}';
+            }
+            out << ']';
+        }
+        if (!e.except_databases.empty())
+        {
+            out << ",\"except_databases\":[";
+            bool first = true;
+            for (const auto & db : e.except_databases)
+            {
+                if (!first) out << ',';
+                first = false;
+                writeJSONString(db, out, fs);
+            }
+            out << ']';
+        }
+        out << '}';
+    }
+
+    Element readElementJSON(const Poco::JSON::Object & elem_obj, size_t element_index)
+    {
+        Element e;
+        Int64 type_value = elem_obj.getValue<Poco::Int64>("type");
+        auto type_opt = magic_enum::enum_cast<ElementType>(static_cast<std::underlying_type_t<ElementType>>(type_value));
+        if (!type_opt || static_cast<Int64>(*type_opt) != type_value)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE element type at index {}: {}", element_index, type_value);
+        e.type = *type_opt;
+        if (elem_obj.has("table_name"))
+            e.table_name = elem_obj.getValue<String>("table_name");
+        if (elem_obj.has("database_name"))
+            e.database_name = elem_obj.getValue<String>("database_name");
+        e.new_table_name = elem_obj.has("new_table_name") ? elem_obj.getValue<String>("new_table_name") : e.table_name;
+        e.new_database_name = elem_obj.has("new_database_name") ? elem_obj.getValue<String>("new_database_name") : e.database_name;
+        if (elem_obj.has("partitions"))
+        {
+            auto arr = elem_obj.getArray("partitions");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'partitions' is not a JSON array at element index {} during AST JSON deserialization", element_index);
+            ASTs partitions;
+            partitions.reserve(arr->size());
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                auto p_obj = arr->getObject(i);
+                if (!p_obj)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'partitions' array at element index {} during AST JSON deserialization", i, element_index);
+                partitions.push_back(IAST::createFromJSON(*p_obj));
+            }
+            e.partitions = std::move(partitions);
+        }
+        if (elem_obj.has("except_tables"))
+        {
+            auto arr = elem_obj.getArray("except_tables");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'except_tables' is not a JSON array at element index {} during AST JSON deserialization", element_index);
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                auto t_obj = arr->getObject(i);
+                if (!t_obj)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'except_tables' array at element index {} during AST JSON deserialization", i, element_index);
+                String db = t_obj->has("database") ? t_obj->getValue<String>("database") : String();
+                String tbl = t_obj->getValue<String>("table");
+                e.except_tables.emplace(std::move(db), std::move(tbl));
+            }
+        }
+        if (elem_obj.has("except_databases"))
+        {
+            auto arr = elem_obj.getArray("except_databases");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'except_databases' is not a JSON array at element index {} during AST JSON deserialization", element_index);
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                auto var = arr->get(i);
+                if (!var.isString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} of 'except_databases' at element index {} is not a string during AST JSON deserialization", i, element_index);
+                e.except_databases.insert(var.extract<String>());
+            }
+        }
+        return e;
+    }
+}
+
 void ASTBackupQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "BackupQuery");
     w.writeInt("kind", static_cast<Int64>(kind));
     w.writeChild("backup_name", backup_name);
     w.writeChild("base_backup_name", base_backup_name);
+    w.writeChild("base_snapshot_name", base_snapshot_name);
     w.writeChild("settings", settings);
     w.writeChild("cluster_host_ids", cluster_host_ids);
     if (!cluster.empty())
         w.writeString("cluster", cluster);
+    if (!elements.empty())
+    {
+        w.writeKey("elements");
+        WriteBuffer & buf = w.getOut();
+        buf << '[';
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            if (i > 0) buf << ',';
+            writeElementJSON(elements[i], w);
+        }
+        buf << ']';
+    }
     w.writeChildren(children);
 }
 
@@ -380,6 +528,9 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
     auto base_backup_name_child = r.readChild("base_backup_name");
     if (base_backup_name_child)
         set(base_backup_name, base_backup_name_child);
+    auto base_snapshot_name_child = r.readChild("base_snapshot_name");
+    if (base_snapshot_name_child)
+        set(base_snapshot_name, base_snapshot_name_child);
     settings = r.readChild("settings");
     if (settings)
         children.push_back(settings);
@@ -387,6 +538,20 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
     if (cluster_host_ids)
         children.push_back(cluster_host_ids);
     cluster = r.getString("cluster");
+    if (r.has("elements"))
+    {
+        auto arr = r.getArray("elements");
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'elements' is not a JSON array during AST JSON deserialization");
+        elements.reserve(arr->size());
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto elem_obj = arr->getObject(i);
+            if (!elem_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);
+            elements.push_back(readElementJSON(*elem_obj, i));
+        }
+    }
 }
 
 }

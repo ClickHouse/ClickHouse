@@ -255,7 +255,13 @@ RT_delete	DELETE FROM t WHERE id = 1
 RT_begin	BEGIN TRANSACTION
 RT_commit	COMMIT
 RT_rollback	ROLLBACK
-RT_backup	BACKUP  TO Disk(\'default\', \'backup1\')
+RT_backup	BACKUP TABLE t TO Disk(\'default\', \'backup1\')
+RT_backup_rename_partitions	BACKUP TABLE db.t AS db2.t2 PARTITIONS  1, 2 TO Disk(\'default\', \'b1\')
+RT_backup_database_except	BACKUP DATABASE db EXCEPT TABLES t1, t2 TO Disk(\'d\', \'b\')
+RT_backup_all_except_databases	BACKUP ALL EXCEPT DATABASE sys TO Disk(\'d\', \'b\')
+RT_backup_temporary_table	BACKUP TEMPORARY TABLE t AS s TO Disk(\'d\', \'b\')
+RT_restore	RESTORE TABLE t FROM Disk(\'d\', \'b\')
+RT_backup_with_base	BACKUP TABLE t TO Disk(\'d\', \'b\') SETTINGS base_backup = Disk(\'d\', \'base\')
 RT_multi_join	SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON t2.id = t3.id
 RT_aliases	SELECT a AS x, b AS y FROM t AS u
 RT_refresh	CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 HOUR ENGINE = MergeTree ORDER BY a AS SELECT 1 AS a
