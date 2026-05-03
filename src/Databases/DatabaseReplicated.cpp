@@ -1974,14 +1974,17 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
             /// by `DROP DATABASE` and a new `Replicated` database was created at the
             /// same Keeper path: that new database starts with `max_log_ptr = 0`,
             /// below whatever pointer this snapshot iteration had previously
-            /// observed. The backup operation still holds a reference to the old
+            /// observed. The caller still holds a reference to the old
             /// `DatabaseReplicated` in-memory object, but the metadata it would now
             /// read from Keeper belongs to a different, unrelated database. Refuse
-            /// to back up the dropped database rather than silently substituting
-            /// the new one.
+            /// to use the dropped database rather than silently substituting the
+            /// new one. This is reachable from any caller of
+            /// `getConsistentMetadataSnapshotImpl` (`getTablesForBackup`,
+            /// `recoverLostReplica`, `tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly`),
+            /// so the message is phrased without referring to a specific operation.
             throw Exception(
                 ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
-                "Cannot back up Replicated database: it was dropped and a new database was created at the same Keeper path during backup "
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
                 "(log pointer moved from {} to {})",
                 max_log_ptr, new_max_log_ptr);
         }
