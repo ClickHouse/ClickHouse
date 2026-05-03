@@ -217,6 +217,31 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int NETWORK_ERROR;
+    extern const int UNSUPPORTED_METHOD;
+}
+
+namespace
+{
+    /// `clickhouse-local` only manages `TCP` (native protocol) and `HTTP` listeners. Reject
+    /// other listener types up-front so `SYSTEM START/STOP LISTEN` for unsupported protocols
+    /// (e.g. `HTTPS`, `MYSQL`, `QUERIES CUSTOM`) gives a clear `UNSUPPORTED_METHOD` exception
+    /// rather than a misleading `NETWORK_ERROR` on start or a silent no-op on stop.
+    void validateLocalServerListenType(const ServerType & server_type)
+    {
+        switch (server_type.type)
+        {
+            case ServerType::Type::TCP:
+            case ServerType::Type::HTTP:
+            case ServerType::Type::QUERIES_ALL:
+            case ServerType::Type::QUERIES_DEFAULT:
+                return;
+            default:
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "SYSTEM START/STOP LISTEN in clickhouse-local supports only TCP and HTTP listeners "
+                    "(or QUERIES ALL / QUERIES DEFAULT covering them); got '{}'",
+                    ServerType::serverTypeToString(server_type.type));
+        }
+    }
 }
 
 void applySettingsOverridesForLocal(ContextMutablePtr context)
@@ -488,12 +513,15 @@ void LocalServer::tryInitPath()
 
 void LocalServer::stopServers(const ServerType & server_type)
 {
+    validateLocalServerListenType(server_type);
     DB::stopServers(servers, server_type, &logger());
 }
 
 
 void LocalServer::startServers(const ServerType & server_type)
 {
+    validateLocalServerListenType(server_type);
+
     const auto & config = getClientConfiguration();
     const Settings & settings = global_context->getSettingsRef();
 

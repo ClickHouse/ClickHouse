@@ -105,6 +105,15 @@ $CLICKHOUSE_LOCAL --listen_host 127.0.0.1 --http_port 0 --query "
     SELECT 'idempotent_http_ok';
 "
 
+# SYSTEM START/STOP LISTEN for protocols that clickhouse-local does not manage
+# (e.g. HTTPS, MYSQL, QUERIES CUSTOM) must fail with UNSUPPORTED_METHOD rather than
+# a misleading NETWORK_ERROR (start path) or a silent no-op (stop path).
+$CLICKHOUSE_LOCAL --query "SYSTEM START LISTEN HTTPS; -- { serverError UNSUPPORTED_METHOD }"
+$CLICKHOUSE_LOCAL --query "SYSTEM START LISTEN MYSQL; -- { serverError UNSUPPORTED_METHOD }"
+$CLICKHOUSE_LOCAL --query "SYSTEM START LISTEN QUERIES CUSTOM; -- { serverError UNSUPPORTED_METHOD }"
+$CLICKHOUSE_LOCAL --query "SYSTEM STOP LISTEN HTTPS; -- { serverError UNSUPPORTED_METHOD }"
+$CLICKHOUSE_LOCAL --query "SYSTEM STOP LISTEN MYSQL; -- { serverError UNSUPPORTED_METHOD }"
+
 # Various SYSTEM CLEAR CACHE queries should work in clickhouse-local
 $CLICKHOUSE_LOCAL --query "SYSTEM CLEAR DNS CACHE;"
 $CLICKHOUSE_LOCAL --query "SYSTEM CLEAR MARK CACHE;"
