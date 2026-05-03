@@ -39,3 +39,35 @@ FROM
 WHERE explain LIKE '%GradualResize%';
 
 DROP TABLE test_gradual_resize;
+
+-- Verify GradualResize works correctly together with `min_outstreams_per_resize_after_split`.
+-- The split-resize optimization reduces lock contention on `ExecutingGraph::Node::status_mutex`
+-- at high parallelism; we must make sure the pipeline still produces correct results when both
+-- knobs are enabled simultaneously.
+SET min_rows_per_stream_for_gradual_resize = 1000;
+SET min_bytes_per_stream_for_gradual_resize = 0;
+SET min_outstreams_per_resize_after_split = 4;
+SET max_threads = 16;
+
+SELECT k, count() AS c
+FROM (SELECT number % 10 AS k FROM numbers(100000))
+GROUP BY k
+ORDER BY k;
+
+-- Edge case: an active downstream output finishes early before all outputs are activated.
+-- LIMIT 1 closes the consumer almost immediately, so the active output transitions to
+-- Finished while the gradual ramp-up is still in progress. The remaining outputs must
+-- still receive data so the query terminates without deadlock.
+SET min_rows_per_stream_for_gradual_resize = 100;
+SET min_bytes_per_stream_for_gradual_resize = 0;
+SET min_outstreams_per_resize_after_split = 0;
+SET max_threads = 8;
+
+SELECT count() FROM
+(
+    SELECT k, sum(number) AS s
+    FROM (SELECT number % 1000 AS k, number FROM numbers(100000))
+    GROUP BY k
+    ORDER BY k
+    LIMIT 1
+);
