@@ -598,6 +598,12 @@ void MetadataStorageInMemoryTransaction::replaceFile(const std::string & path_fr
         if (it_from == metadata_storage.files.end())
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path_from);
 
+        /// Self-replace is a no-op. Without this guard the destination lookup would alias
+        /// `it_from`, the subsequent erase of `it_to` would invalidate `it_from`, and the move
+        /// from `it_from->second` would dereference an invalidated iterator (undefined behavior).
+        if (path_from == path_to)
+            return;
+
         auto it_to = metadata_storage.files.find(path_to);
         if (it_to != metadata_storage.files.end())
         {
@@ -634,6 +640,14 @@ void MetadataStorageInMemoryTransaction::createMetadataFile(const std::string & 
                     "Cannot create file {}: parent directory does not exist", path);
         }
 
+        /// Reject creating a file at a path that already exists as a directory. Disk-backed
+        /// metadata storage rejects this naturally because the underlying filesystem cannot
+        /// have a file and a directory with the same name; without this check, in-memory
+        /// metadata could represent that impossible state and confuse subsequent operations.
+        if (metadata_storage.directories.contains(path + "/"))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                "Cannot create file {}: a directory already exists at this path", path);
+
         auto it = metadata_storage.files.find(path);
         if (it != metadata_storage.files.end())
         {
@@ -661,6 +675,12 @@ void MetadataStorageInMemoryTransaction::addBlobToMetadata(const std::string & p
         auto * entry = metadata_storage.findFile(path);
         if (!entry)
         {
+            /// Reject implicit file creation at a path that already exists as a directory,
+            /// matching the same constraint enforced in `createMetadataFile`.
+            if (metadata_storage.directories.contains(path + "/"))
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                    "Cannot create file {}: a directory already exists at this path", path);
+
             /// Create new file entry if it doesn't exist
             metadata_storage.files[path] = MetadataStorageInMemory::FileEntry{};
             entry = &metadata_storage.files[path];
