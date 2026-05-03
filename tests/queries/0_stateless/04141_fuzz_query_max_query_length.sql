@@ -24,3 +24,13 @@ FROM (
 
 -- `max_query_length = 0` would otherwise enter an infinite loop in `FuzzQuerySource::createColumn`.
 SELECT * FROM fuzzQuery('SELECT 1', 0, 42); -- { serverError BAD_ARGUMENTS }
+
+-- Small positive caps (e.g. `1`) used to be another unbounded loop: no fuzzed AST ever fits
+-- the cap, so the inner loop would never increment `row_num`. With the per-row attempt budget,
+-- the source falls back to emitting the original query and always makes progress.
+SELECT count() AS rows_returned
+FROM (
+    SELECT query
+    FROM fuzzQuery('SELECT 1', 1, 42)
+    LIMIT 10
+);

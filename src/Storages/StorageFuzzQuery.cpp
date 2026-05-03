@@ -33,33 +33,61 @@ ColumnPtr FuzzQuerySource::createColumn()
     auto fuzz_base = query;
     size_t row_num = 0;
 
+    /// Per-row attempt budget: avoids unbounded loops when `max_query_length` is too small
+    /// for any fuzzed result to fit (e.g. cap = 1) or when fuzzing keeps producing identical
+    /// output. After the budget is exhausted, fall back to emitting the original (unfuzzed)
+    /// query so the loop always makes progress.
+    constexpr size_t max_attempts_per_row = 1024;
+
     while (row_num < block_size)
     {
-        ASTPtr new_query = fuzz_base->clone();
+        String text_to_emit;
+        bool produced = false;
 
-        auto base_before_fuzz = fuzz_base->formatForErrorMessage();
-        fuzzer.fuzzMain(new_query);
-        auto fuzzed_text = new_query->formatForErrorMessage();
-
-        if (base_before_fuzz == fuzzed_text)
-            continue;
-
-        /// AST is too long, will start from the original query.
-        if (fuzzed_text.size() > config.max_query_length)
+        if (!isCancelled())
         {
-            fuzz_base = query;
-            continue;
+            for (size_t attempt = 0; attempt < max_attempts_per_row; ++attempt)
+            {
+                ASTPtr new_query = fuzz_base->clone();
+
+                auto base_before_fuzz = fuzz_base->formatForErrorMessage();
+                fuzzer.fuzzMain(new_query);
+                auto fuzzed_text = new_query->formatForErrorMessage();
+
+                if (base_before_fuzz == fuzzed_text)
+                    continue;
+
+                /// AST is too long, will start from the original query.
+                if (fuzzed_text.size() > config.max_query_length)
+                {
+                    fuzz_base = query;
+                    continue;
+                }
+
+                text_to_emit = std::move(fuzzed_text);
+                fuzz_base = new_query;
+                produced = true;
+                break;
+            }
         }
 
-        IColumn::Offset next_offset = offset + fuzzed_text.size();
+        if (!produced)
+        {
+            /// Fallback: emit the original (unfuzzed) query. May exceed `max_query_length`
+            /// when the cap is too small for any fuzzed result, but emitting the original
+            /// is preferred over an unbounded loop.
+            text_to_emit = config.query;
+            fuzz_base = query;
+        }
+
+        IColumn::Offset next_offset = offset + text_to_emit.size();
         data_to.resize(next_offset);
 
-        std::copy(fuzzed_text.begin(), fuzzed_text.end(), &data_to[offset]);
+        std::copy(text_to_emit.begin(), text_to_emit.end(), &data_to[offset]);
 
         offsets_to[row_num] = next_offset;
 
         offset = next_offset;
-        fuzz_base = new_query;
         ++row_num;
     }
 
