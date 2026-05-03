@@ -71,7 +71,9 @@ SELECT toTypeName(generate_date_array('2016-10-05'::Date, '2016-10-08'::Date32))
 -- ARGUMENT_OUT_OF_BOUND errors
 -- Range too large (override max to a small value to trigger the error)
 SELECT generate_date_array('2000-01-01'::Date, '2100-01-01'::Date, INTERVAL 1 DAY) SETTINGS function_generate_date_array_max_elements_in_block = 100; -- { serverError ARGUMENT_OUT_OF_BOUND }
--- ILLEGAL_COLUMN errors (cannot happen, logical error)
+-- ILLEGAL_COLUMN errors
+-- Non-constant step (column reference) is not allowed
+SELECT generate_date_array('2024-01-01'::Date, '2024-01-07'::Date, toIntervalDay(number + 1)) FROM numbers(1); -- { serverError ILLEGAL_COLUMN }
 -- ILLEGAL_TYPE_OF_ARGUMENT errors
 -- Non-date argument types (DateTime, integers) are not supported
 SELECT generate_date_array(toDateTime('2016-10-05 00:00:00'), toDateTime('2016-10-08 00:00:00')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
