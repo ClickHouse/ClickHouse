@@ -457,7 +457,9 @@ for conn_index, c in enumerate(all_connections):
 
 # A setting rejected by every server is almost certainly a typo, not a
 # version skew, so fail loudly to preserve the original safety property.
-if len(dropped_per_connection) > 1:
+# This must also fire for single-server runs (len == 1), otherwise a typo
+# in XML would silently disappear instead of failing the test.
+if dropped_per_connection:
     rejected_everywhere = set.intersection(*dropped_per_connection)
     if rejected_everywhere:
         raise RuntimeError(
