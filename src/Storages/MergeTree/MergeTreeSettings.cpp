@@ -1869,7 +1869,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: tdigest, countmin, minmax, uniq.
+    Supported statistics types: tdigest, countmin, minmax, nullcount, uniq.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in

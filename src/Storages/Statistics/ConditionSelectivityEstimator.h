@@ -52,6 +52,8 @@ public:
         {
             /// Atoms of a Boolean expression.
             FUNCTION_IN_RANGE,
+            FUNCTION_IS_NULL,
+            FUNCTION_IS_NOT_NULL,
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -69,6 +71,10 @@ public:
         /// column not in range (a, b) ...
         /// we use 'not ranges' to estimate condition a != 1 and a != 2 better.
         ColumnRanges column_not_ranges;
+        /// columns checked with IS NULL predicate
+        std::unordered_set<String> null_check_columns;
+        /// columns checked with IS NOT NULL predicate
+        std::unordered_set<String> not_null_check_columns;
         bool finalized = false;
         Float64 selectivity = 0;
 
@@ -85,6 +91,7 @@ private:
         ColumnStatisticsPtr stats;
 
         Float64 estimateRanges(const PlainRanges & ranges) const;
+        Float64 estimateNotRanges(const PlainRanges & ranges) const;
         UInt64 estimateCardinality() const;
     };
 

@@ -1,0 +1,22 @@
+Test 1: IS NULL with nullcount (optimal: high_null first)
+0
+Test 2: IS NOT NULL with nullcount (optimal: high_null first)
+1
+Test 3: IS NULL + range with nullcount
+1
+Mixed predicates: IS NULL + range (col_low_null IS NULL AND c < 100)
+1
+Mixed predicates: IS NULL + range (col_high_null IS NULL AND c < 100)
+1
+Test 4: Nullable greater-than uses non-null row count
+1
+4
+Fallback: IS NOT NULL without nullcount keeps both conditions in prewhere
+1	1
+Fallback: IS NULL without nullcount keeps both conditions in prewhere
+1	1
+Actual counts for validation
+5000
+5000
+Fallback selectivity uses non-null row count (b before a)
+1

@@ -1174,7 +1174,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin']
+        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'nullcount']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen

@@ -1,4 +1,6 @@
 #include <Storages/Statistics/StatisticsMinMax.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -46,7 +48,34 @@ void StatisticsMinMax::build(const ColumnPtr & column)
             max = max_field;
     }
 
-    row_count += column->size();
+    auto full_column = column->convertToFullColumnIfSparse();
+
+    // Count non-NULL rows only. For Nullable columns, subtract NULL count from total size.
+    if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(full_column.get()))
+    {
+        row_count += full_column->size() - std::count(nullable_col->getNullMapData().begin(), nullable_col->getNullMapData().end(), 1);
+    }
+    else if (const auto * lc_col = checkAndGetColumn<ColumnLowCardinality>(full_column.get()))
+    {
+        if (lc_col->nestedIsNullable())
+        {
+            size_t null_index = lc_col->getDictionary().getNullValueIndex();
+            const auto & indexes = lc_col->getIndexes();
+            size_t null_rows = 0;
+            for (size_t i = 0; i < indexes.size(); ++i)
+                if (indexes.getUInt(i) == null_index)
+                    ++null_rows;
+            row_count += full_column->size() - null_rows;
+        }
+        else
+        {
+            row_count += full_column->size();
+        }
+    }
+    else
+    {
+        row_count += full_column->size();
+    }
 }
 
 void StatisticsMinMax::merge(const StatisticsPtr & other_stats)

@@ -20,6 +20,10 @@ enum class StatisticsFileVersion : UInt16
     V0 = 0,
     V1 = 1, /// modified the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
     V2 = 2, /// minmax statistics now serialize Field type and use Field instead of Float64
+    V3 = 3, /// per-type size prefix for forward compatibility (skip unknown stat types);
+             /// older ClickHouse versions reading a V3 file will throw an exception which is
+             /// caught by IMergeTreeDataPart and silently ignored (statistics for that column
+             /// are skipped), so there is no data corruption on downgrade.
 };
 
 class Field;
@@ -63,6 +67,7 @@ public:
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
 
+
 protected:
     SingleStatisticsDescription stat;
 };
@@ -73,10 +78,11 @@ using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
 struct Estimate
 {
     std::set<StatisticsType> types;
-    UInt64 rows_count = 0;
+    UInt64 rows_count = 0; /// Total rows including NULLs (from ColumnStatistics::rows).
     std::optional<UInt64> estimated_cardinality;
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
+    std::optional<UInt64> estimated_null_count;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
@@ -102,6 +108,11 @@ public:
     std::optional<Float64> estimateGreater(const Field & val) const;
     std::optional<Float64> estimateEqual(const Field & val) const;
     std::optional<Float64> estimateRange(const Range & range) const;
+
+    Float64 estimateIsNull() const;
+    Float64 estimateIsNotNull() const;
+    UInt64 getNonNullRowCount() const;
+    UInt64 getNullCount() const;
 
     Estimate getEstimate() const;
     String getNameForLogs() const;
@@ -154,8 +165,14 @@ public:
     ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
     ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
 
+    /// Try to create a single statistics object for the given type and data type.
+    /// Returns nullptr if the type is unknown or not supported for data_type.
+    StatisticsPtr tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const;
+
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);
+
+    bool isKnownType(StatisticsType type) const { return validators.contains(type); }
 
 protected:
     MergeTreeStatisticsFactory();

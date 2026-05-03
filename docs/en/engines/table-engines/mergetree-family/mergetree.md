@@ -1306,6 +1306,12 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     Syntax: `uniq`
 
+- `NullCount`
+
+    Tracks the number of `NULL` values in `Nullable` columns. Used for accurate selectivity estimation of `IS NULL`/`IS NOT NULL` predicates in PREWHERE optimization.
+
+    Syntax: `nullcount`
+
 - `CountMin`
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
@@ -1314,21 +1320,23 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
-|-----------|----------------------------------------------------|-----------------------|
-| CountMin  | ✔                                                  | ✔                     |
-| MinMax    | ✔                                                  | ✗                     |
-| TDigest   | ✔                                                  | ✗                     |
-| Uniq      | ✔                                                  | ✔                     |
+|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString | Nullable(*) / LowCardinality(Nullable(*)) |
+|-----------|----------------------------------------------------|-----------------------|--------------------------------------------------|
+| CountMin  | ✔                                                  | ✔                     | ✗                                                |
+| MinMax    | ✔                                                  | ✗                     | ✔                                                |
+| NullCount | ✗                                                  | ✗                     | ✔                                                |
+| TDigest   | ✔                                                  | ✗                     | ✔                                                |
+| Uniq      | ✔                                                  | ✔                     | ✔                                                |
 
 ### Supported operations {#supported-operations}
 
-|           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|-----------|-----------------------|------------------------------|
-| CountMin  | ✔                     | ✗                            |
-| MinMax    | ✗                     | ✔                            |
-| TDigest   | ✗                     | ✔                            |
-| Uniq      | ✔                     | ✗                            |
+|           | Equality filters (==) | Range filters (`>, >=, <, <=`) | `IS NULL` / `IS NOT NULL` |
+|-----------|-----------------------|------------------------------|----------------------------|
+| CountMin  | ✔                     | ✗                            | ✗                          |
+| MinMax    | ✗                     | ✔                            | ✗                          |
+| NullCount | ✗                     | ✗                            | ✔                          |
+| TDigest   | ✗                     | ✔                            | ✗                          |
+| Uniq      | ✔                     | ✗                            | ✗                          |
 
 ## Column-level settings {#column-level-settings}
 
