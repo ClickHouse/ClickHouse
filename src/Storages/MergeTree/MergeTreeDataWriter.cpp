@@ -365,7 +365,7 @@ void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActions
     }
 }
 
-void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns, const Names & columns, const IColumnPermutation * perm_ptr = nullptr)
+void materializeVirtualColumns(Block & block, const Names & columns, const IColumnPermutation * perm_ptr = nullptr)
 {
     for (const auto & column_name : columns)
     {
@@ -375,7 +375,6 @@ void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns,
         if (column_name == BlockNumberColumn::name)
         {
             block.insert(ColumnWithTypeAndName{BlockNumberColumn::type->createColumnConst(block.rows(), MergeTreePartInfo::MAX_BLOCK_NUMBER)->convertToFullColumnIfConst(), BlockNumberColumn::type, column_name});
-            block_columns.emplace_back(BlockNumberColumn::name, BlockNumberColumn::type);
         }
         else if (column_name == BlockOffsetColumn::name)
         {
@@ -386,7 +385,6 @@ void materializeVirtualColumns(Block & block, NamesAndTypesList & block_columns,
                 data[perm_ptr ? (*perm_ptr)[i] : i] = i;
 
             block.insert(ColumnWithTypeAndName{std::move(mutable_column), BlockOffsetColumn::type, column_name});
-            block_columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
         }
     }
 }
@@ -653,7 +651,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings);
-    materializeVirtualColumns(block, columns, minmax_columns.getNames());
+    materializeVirtualColumns(block, minmax_columns.getNames());
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, minmax_columns);
 
