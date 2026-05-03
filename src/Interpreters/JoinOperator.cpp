@@ -67,6 +67,7 @@ namespace Setting
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
+    extern const SettingsUInt64 max_bytes_before_external_join;
 
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
 }
@@ -87,6 +88,8 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_max_buckets;
+
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_join;
 
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_set_to_optimize_join;
 
@@ -148,6 +151,8 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     grace_hash_join_initial_buckets = query_settings[Setting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = query_settings[Setting::grace_hash_join_max_buckets];
 
+    max_bytes_before_external_join = query_settings[Setting::max_bytes_before_external_join];
+
     max_rows_in_set_to_optimize_join = query_settings[Setting::max_rows_in_set_to_optimize_join];
 
     collect_hash_table_stats_during_joins = query_settings[Setting::collect_hash_table_stats_during_joins];
@@ -193,6 +198,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 
     grace_hash_join_initial_buckets = settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = settings[QueryPlanSerializationSetting::grace_hash_join_max_buckets];
+
+    max_bytes_before_external_join = settings[QueryPlanSerializationSetting::max_bytes_before_external_join];
 
     max_rows_in_set_to_optimize_join = settings[QueryPlanSerializationSetting::max_rows_in_set_to_optimize_join];
 
@@ -244,6 +251,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets] = grace_hash_join_initial_buckets;
     settings[QueryPlanSerializationSetting::grace_hash_join_max_buckets] = grace_hash_join_max_buckets;
+
+    settings[QueryPlanSerializationSetting::max_bytes_before_external_join] = max_bytes_before_external_join;
 
     settings[QueryPlanSerializationSetting::max_rows_in_set_to_optimize_join] = max_rows_in_set_to_optimize_join;
 

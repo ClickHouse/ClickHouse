@@ -107,3 +107,5 @@ websocket-client==1.9.0
 wheel==0.46.3
 filelock==3.25.0
 kazoo @ git+https://github.com/ClickHouse/kazoo.git@879e0b0e4ae367a289847b43a531938f68770125
+apache-sedona==1.6.1
+shapely==2.1.0
