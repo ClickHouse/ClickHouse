@@ -186,64 +186,18 @@ private:
         return 0;
     }
 
-    /// Fast path for Day and Week intervals.
-    /// Element count is O(1) per row; the fill loop adds a plain integer offset — no branch, no calendar lookup.
-    template <typename T>
-    ColumnPtr executeGenericDays(
-        const IColumn * start_col,
-        const IColumn * end_col,
-        Int64 day_step, // weeks already converted to days by the caller
-        size_t input_rows_count) const
-    {
-        auto start_column = checkAndGetColumn<ColumnVector<T>>(start_col);
-        auto end_column = checkAndGetColumn<ColumnVector<T>>(end_col);
-        if (!start_column || !end_column)
-            return nullptr;
-
-        const auto & start_data = start_column->getData();
-        const auto & end_data = end_column->getData();
-
-        size_t total_values = 0;
-        PODArray<size_t> row_length(input_rows_count);
-
-        for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
-        {
-            row_length[row_idx] = getDaysCount(Int64(start_data[row_idx]), Int64(end_data[row_idx]), day_step);
-            total_values += row_length[row_idx];
-
-            if (total_values > max_elements)
-                throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "A call to function {} would produce {} array elements, which "
-                    "is greater than the allowed maximum of {}",
-                    getName(),
-                    total_values,
-                    max_elements);
-        }
-
-        auto data_col = ColumnVector<T>::create(total_values);
-        auto offsets_col = ColumnArray::ColumnOffsets::create(input_rows_count);
-        auto & out_data = data_col->getData();
-        auto & out_offsets = offsets_col->getData();
-
-        IColumn::Offset offset{};
-        for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
-        {
-            Int64 start = Int64(start_data[row_idx]);
-            size_t len = row_length[row_idx];
-            for (size_t idx = 0; idx < len; ++idx)
-                out_data[offset + idx] = static_cast<T>(start + Int64(idx) * day_step);
-            offset += len;
-            out_offsets[row_idx] = offset;
-        }
-
-        return ColumnArray::create(std::move(data_col), std::move(offsets_col));
-    }
-
-    /// Slow path for Month/Quarter/Year intervals (non-uniform day lengths).
-    /// Two-pass: first count with early exit on limit, then fill.
-    template <typename T>
-    ColumnPtr executeGenericCalendar(
+    /// Unified execute helper templated on date storage type T and on whether the
+    /// step is day-based (Day/Week) or calendar-based (Month/Quarter/Year).
+    ///
+    /// IsDayBased = true  — count is O(1) via getDaysCount; fill uses plain integer
+    ///                      arithmetic (start + idx * step).  interval_kind is ignored.
+    /// IsDayBased = false — count is iterative via getCalendarCount (throws on limit);
+    ///                      fill advances with addCalendarInterval.
+    ///
+    /// if constexpr eliminates the dead branch entirely at compile time, so both
+    /// instantiations have the same performance as the original separate functions.
+    template <typename T, bool IsDayBased>
+    ColumnPtr executeGeneric(
         const IColumn * start_col, const IColumn * end_col, Int64 step_value, IntervalKind interval_kind, size_t input_rows_count) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_col);
@@ -259,7 +213,14 @@ private:
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            row_length[row_idx] = getCalendarCount(start_data[row_idx], end_data[row_idx], step_value, interval_kind);
+            if constexpr (IsDayBased)
+            {
+                row_length[row_idx] = getDaysCount(Int64(start_data[row_idx]), Int64(end_data[row_idx]), step_value);
+            }
+            else
+            {
+                row_length[row_idx] = getCalendarCount(start_data[row_idx], end_data[row_idx], step_value, interval_kind);
+            }
             total_values += row_length[row_idx];
 
             if (total_values > max_elements)
@@ -285,13 +246,33 @@ private:
             for (size_t idx = 0; idx < len; ++idx)
             {
                 out_data[offset + idx] = current;
-                current = addCalendarInterval(current, interval_kind, step_value);
+                if constexpr (IsDayBased)
+                {
+                    current += step_value;
+                }
+                else
+                {
+                    current = addCalendarInterval(current, interval_kind, step_value);
+                }
             }
             offset += len;
             out_offsets[row_idx] = offset;
         }
 
         return ColumnArray::create(std::move(data_col), std::move(offsets_col));
+    }
+
+    template <typename T>
+    ColumnPtr executeGenericDays(const IColumn * start_col, const IColumn * end_col, Int64 step_value, size_t input_rows_count) const
+    {
+        return executeGeneric<T, true>(start_col, end_col, step_value, IntervalKind::Kind::Day, input_rows_count);
+    }
+
+    template <typename T>
+    ColumnPtr executeGenericCalendar(
+        const IColumn * start_col, const IColumn * end_col, Int64 step_value, IntervalKind interval_kind, size_t input_rows_count) const
+    {
+        return executeGeneric<T, false>(start_col, end_col, step_value, interval_kind, input_rows_count);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -361,19 +342,20 @@ private:
         {
             // Convert weeks to days once, outside any loop.
             Int64 day_step = step_value * (interval_kind == IntervalKind::Kind::Week ? 7 : 1);
-            if (!(res = executeGenericDays<UInt16>(start_col.get(), end_col.get(), day_step, input_rows_count)))
-                res = executeGenericDays<Int32>(start_col.get(), end_col.get(), day_step, input_rows_count);
+            if ((res = executeGenericDays<UInt16>(start_col.get(), end_col.get(), day_step, input_rows_count))
+                || (res = executeGenericDays<Int32>(start_col.get(), end_col.get(), day_step, input_rows_count)))
+                return res;
         }
         else
         {
-            if (!(res = executeGenericCalendar<UInt16>(start_col.get(), end_col.get(), step_value, interval_kind, input_rows_count)))
-                res = executeGenericCalendar<Int32>(start_col.get(), end_col.get(), step_value, interval_kind, input_rows_count);
+            if ((res = executeGenericCalendar<UInt16>(start_col.get(), end_col.get(), step_value, interval_kind, input_rows_count))
+                || (res = executeGenericCalendar<Int32>(start_col.get(), end_col.get(), step_value, interval_kind, input_rows_count)))
+            {
+                return res;
+            }
         }
 
-        if (!res)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} of argument of function {}", start_col->getName(), getName());
-
-        return res;
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} of argument of function {}", start_col->getName(), getName());
     }
 };
 
