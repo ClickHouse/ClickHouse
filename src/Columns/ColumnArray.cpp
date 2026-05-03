@@ -44,20 +44,28 @@ static constexpr size_t max_array_size_as_field = 1000000;
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
     : data(std::move(nested_column)), offsets(std::move(offsets_column))
 {
-    const ColumnOffsets * offsets_concrete = typeid_cast<const ColumnOffsets *>(offsets.get());
+    /// Use `std::as_const` for the read-only validation below: a non-const
+    /// `WrappedPtr::get`/`operator->` goes through `assumeMutableRef`, which now
+    /// `chassert(use_count() == 1)`. This constructor is reached from
+    /// `ColumnArray::create(const ColumnPtr &, const ColumnPtr &)` with shared inputs,
+    /// so `use_count()` is `> 1` and the assertion would fire.
+    const auto & const_offsets = std::as_const(offsets);
+    const auto & const_data = std::as_const(data);
+
+    const ColumnOffsets * offsets_concrete = typeid_cast<const ColumnOffsets *>(const_offsets.get());
 
     if (!offsets_concrete)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "offsets_column must be a ColumnUInt64");
 
-    if (!offsets_concrete->empty() && data && !data->empty())
+    if (!offsets_concrete->empty() && const_data && !const_data->empty())
     {
         Offset last_offset = offsets_concrete->getData().back();
 
         /// This will also prevent possible overflow in offset.
-        if (data->size() != last_offset)
+        if (const_data->size() != last_offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
-                data->size(), last_offset);
+                const_data->size(), last_offset);
     }
 
     /** NOTE
@@ -69,7 +77,11 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column)
     : data(std::move(nested_column))
 {
-    if (!data->empty())
+    /// `data->empty()` would go through `WrappedPtr::operator->` (non-const), which calls
+    /// `assumeMutableRef` and `chassert(use_count() == 1)`. Use the const overload via
+    /// `std::as_const` so callers like `ColumnArray::create(const ColumnPtr &)` that pass
+    /// a shared column (`use_count() > 1`) do not fire the assertion.
+    if (!std::as_const(data)->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not empty data passed to ColumnArray, but no offsets passed");
 
     offsets = ColumnOffsets::create();
