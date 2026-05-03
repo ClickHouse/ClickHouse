@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-random-settings
 # no-fasttest: relies on temporary files for external aggregation
+# no-random-settings: test asserts specific external-aggregation read_rows accounting; randomized
+#                     settings (e.g. group_by_two_level_threshold*, optimize_aggregation_in_order,
+#                     prefer_external_sort_block_bytes, session_timezone) can change the spill/merge
+#                     code path or reject queries outright, masking the assertion under test.
 
 # Test: exercises `SourceFromNativeStream::getReadProgress` returning nullopt.
 # Covers: src/Processors/Transforms/AggregatingTransform.cpp:143 — without this override,
