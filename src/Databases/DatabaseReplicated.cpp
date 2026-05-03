@@ -1899,7 +1899,21 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
         if (it == responses[1].names.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "max_log_ptr node not found in ZooKeeper path {}", zookeeper_path);
 
-        max_log_ptr = parse<UInt32>(responses[1].data[it - responses[1].names.begin()]);
+        UInt32 new_max_log_ptr = parse<UInt32>(responses[1].data[it - responses[1].names.begin()]);
+        if (max_log_ptr > new_max_log_ptr)
+        {
+            /// Same backwards-rollback check as the retry-loop branch below: if the
+            /// caller observed a higher pointer just before this call (typically by
+            /// reading `/max_log_ptr` themselves) but this read returns a lower one,
+            /// the only explanation is `DROP DATABASE` + recreate at the same Keeper
+            /// path. Refuse to substitute the new database's metadata for the old.
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(log pointer moved from {} to {})",
+                max_log_ptr, new_max_log_ptr);
+        }
+        max_log_ptr = new_max_log_ptr;
         LOG_DEBUG(log, "Got consistent metadata snapshot for log pointer {}", max_log_ptr);
         return table_name_to_metadata;
     }
