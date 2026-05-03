@@ -265,14 +265,13 @@ static ExpressionActionsPtr buildOverflowCheckExpression(
 
         return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
     }
-    catch (...)
+    catch (Exception & e)
     {
-        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-            "Failed to build overflow-check expression for TTL; "
+        e.addMessage(
+            "while building overflow-check expression for TTL; "
             "the TTL uses Date or DateTime columns whose widened counterparts (Date32 / DateTime64) "
-            "are not supported by one of the functions in the expression. "
-            "Original error: {}",
-            getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            "are not supported by one of the functions in the expression");
+        throw;
     }
 }
 
