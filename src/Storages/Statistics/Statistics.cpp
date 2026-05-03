@@ -361,7 +361,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
 
     if (version >= StatisticsFileVersion::V3)
     {
-        UInt64 rows_value;
+        UInt64 rows_value = 0;
         readIntBinary(rows_value, buf);
 
         auto result = std::make_shared<ColumnStatistics>(stats_desc);
@@ -372,7 +372,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
             if (!(stat_types_mask & (1ULL << i)))
                 continue;
 
-            UInt64 stat_size;
+            UInt64 stat_size = 0;
             readIntBinary(stat_size, buf);
 
             auto type = static_cast<StatisticsType>(i);

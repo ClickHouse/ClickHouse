@@ -685,7 +685,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     for (const auto & [column_name, ranges] : column_not_ranges)
     {
-        Float64 not_ranges_selectivity;
+        Float64 not_ranges_selectivity = 0;
         if (const auto * est = get_estimator(column_name))
             not_ranges_selectivity = est->estimateNotRanges(ranges);
         else
@@ -743,7 +743,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     for (const auto & column_name : null_check_columns)
     {
-        Float64 cur_selectivity;
+        Float64 cur_selectivity = 0;
         if (const auto * est = get_estimator(column_name))
             cur_selectivity = est->stats->estimateIsNull();
         else

@@ -554,7 +554,7 @@ TEST(Statistics, DeserializeV3SkipsTrailingBytes)
 
     ReadBufferFromString orig_buf(serialized);
 
-    UInt16 version_raw;
+    UInt16 version_raw = 0;
     readIntBinary(version_raw, orig_buf);
     ASSERT_EQ(version_raw, static_cast<UInt16>(StatisticsFileVersion::V3));
 
@@ -622,7 +622,7 @@ TEST(Statistics, DeserializeV3ThrowsOnOversizedStat)
     /// Parse the V3 header to find stat_size and stat_data
     ReadBufferFromString orig_buf(serialized);
 
-    UInt16 version_raw;
+    UInt16 version_raw = 0;
     readIntBinary(version_raw, orig_buf);
 
     UInt64 stat_types_mask = 0;
