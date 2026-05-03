@@ -9,8 +9,6 @@
 #include <boost/geometry/algorithms/envelope.hpp>
 #include <boost/geometry/geometries/box.hpp>
 
-#include <memory>
-
 namespace DB
 {
 
