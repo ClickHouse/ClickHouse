@@ -620,6 +620,20 @@ void MetadataStorageInMemoryTransaction::createMetadataFile(const std::string & 
 {
     operations.emplace_back([this, path, objects]()
     {
+        /// Match `MetadataStorageFromDisk` semantics (see `gtest_metadata_local_disk`
+        /// `TestNonExistingObjectsInTransaction`): refuse to create a file when its parent
+        /// directory does not exist. The disk-backed implementation fails when opening the
+        /// underlying metadata file; without this check, in-memory transactions can fabricate
+        /// orphan paths like `non-existing/file.txt` whose parent was never created.
+        auto last_slash = path.rfind('/');
+        if (last_slash != std::string::npos && last_slash > 0)
+        {
+            std::string parent = path.substr(0, last_slash + 1);
+            if (!metadata_storage.directories.contains(parent))
+                throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
+                    "Cannot create file {}: parent directory does not exist", path);
+        }
+
         auto it = metadata_storage.files.find(path);
         if (it != metadata_storage.files.end())
         {
