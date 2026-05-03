@@ -29,6 +29,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
