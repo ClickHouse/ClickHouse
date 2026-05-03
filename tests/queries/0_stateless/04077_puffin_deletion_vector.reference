@@ -1,0 +1,10 @@
+--- PuffinMetadata ---
+deletion-vector-v1	1	1	[]	4	34	
+--- Puffin: deleted rows array ---
+[2,5,7,100,65536]
+--- Puffin: ARRAY JOIN ---
+2
+5
+7
+100
+65536
