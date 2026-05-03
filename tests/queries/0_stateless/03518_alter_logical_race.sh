@@ -47,11 +47,15 @@ function thread_insert()
 
 TIMEOUT=10
 
-thread_alter h &
-thread_insert &
+pids=()
+thread_alter h & pids+=("$!")
+thread_insert  & pids+=("$!")
+thread_alter i & pids+=("$!")
+thread_insert  & pids+=("$!")
 
-thread_alter i &
-thread_insert &
-
-
-wait
+rc=0
+for pid in "${pids[@]}"
+do
+    wait "$pid" || rc=1
+done
+exit "$rc"
