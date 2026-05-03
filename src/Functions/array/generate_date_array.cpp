@@ -2,11 +2,13 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -17,6 +19,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/IntervalKind.h>
@@ -71,7 +75,35 @@ private:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Infer the smallest Date type that can represent a constant string argument.
+    ///
+    /// - If the column is a `ColumnConst`, the string value is parsed as a date and
+    ///   `DataTypeDate` is returned when the day number fits in [0, 65535] (the
+    ///   `UInt16` / `Date` range), or `DataTypeDate32` otherwise.
+    /// - If the column is non-constant (a full `ColumnString`), we cannot inspect
+    ///   the values at type-resolution time, so we conservatively return `DataTypeDate32`
+    ///   to avoid silent clamping for pre-1970 dates.
+    /// - If parsing fails, `DataTypeDate32` is returned; `castColumn` at execution time
+    ///   will surface a proper `CANNOT_PARSE_DATE` exception.
+    static DataTypePtr resolveStringArgType(const ColumnWithTypeAndName & col)
+    {
+        const auto * col_const = checkAndGetColumnConst<ColumnString>(col.column.get());
+        if (!col_const)
+            return std::make_shared<DataTypeDate32>();
+
+        const String & s = col_const->getValue<String>();
+        ReadBufferFromString buf(s);
+        ExtendedDayNum day_num;
+        if (!tryReadDateText(day_num, buf) || !buf.eof())
+            return std::make_shared<DataTypeDate32>();
+
+        /// DayNum (UInt16) covers 1970-01-01 .. 2149-06-06 (values 0..65535).
+        if (day_num >= 0 && day_num <= std::numeric_limits<UInt16>::max())
+            return std::make_shared<DataTypeDate>();
+        return std::make_shared<DataTypeDate32>();
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2 || arguments.size() > 3)
         {
@@ -80,22 +112,23 @@ private:
         }
 
         // If any argument is NULL, returns NULL
-        if (std::find_if(arguments.cbegin(), arguments.cend(), [](const auto & arg) { return arg->onlyNull(); }) != arguments.cend())
+        if (std::find_if(arguments.cbegin(), arguments.cend(), [](const auto & arg) { return arg.type->onlyNull(); }) != arguments.cend())
             return makeNullable(std::make_shared<DataTypeNothing>());
 
         DataTypes arg_types;
         for (size_t i = 0, size = arguments.size(); i < size; ++i)
         {
-            DataTypePtr type_no_nullable = removeNullable(arguments[i]);
+            DataTypePtr type_no_nullable = removeNullable(arguments[i].type);
             if (i == 2)
             {
                 if (!isInterval(type_no_nullable))
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of argument of function {}. Expected an interval type.",
-                        arguments[i]->getName(),
+                        arguments[i].type->getName(),
                         getName());
-                const auto * data_type_interval{checkAndGetDataType<DataTypeInterval>(type_no_nullable.get())};
+
+                const auto * data_type_interval = checkAndGetDataType<DataTypeInterval>(type_no_nullable.get());
                 switch (data_type_interval->getKind())
                 {
                     case IntervalKind::Kind::Day:
@@ -109,15 +142,24 @@ private:
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Illegal type {} of argument of function {}. Expected an interval type of day, week, month, quarter or year "
                             "kind.",
-                            arguments[i]->getName(),
+                            arguments[i].type->getName(),
                             getName());
                 }
             }
             else
             {
-                // Treat String as Date — strings will be cast to the resolved date type at execution time.
-                // This allows passing date strings directly without explicit casting.
-                DataTypePtr resolved = isString(type_no_nullable) ? std::make_shared<DataTypeDate>() : type_no_nullable;
+                DataTypePtr resolved;
+                if (isString(type_no_nullable))
+                {
+                    // For string arguments, inspect the constant value to pick the smallest
+                    // fitting date type (Date or Date32). Non-constant string columns default
+                    // to Date32 since their values are not visible at type-resolution time.
+                    resolved = resolveStringArgType(arguments[i]);
+                }
+                else
+                {
+                    resolved = type_no_nullable;
+                }
                 arg_types.push_back(resolved);
             }
         }
@@ -322,9 +364,6 @@ private:
             if (const auto * interval_type = checkAndGetDataType<DataTypeInterval>(removeNullable(arguments[2].type).get()))
                 interval_kind = interval_type->getKind();
 
-            // Argument 2 is declared always-constant via getArgumentsThatAreAlwaysConstant(),
-            // so it is guaranteed to arrive here as ColumnConst. All interval types are stored
-            // as Int64 internally, so getValue<Int64>() works without any extra cast.
             step_value = assert_cast<const ColumnConst &>(*arguments[2].column).getValue<Int64>();
 
             if (step_value == 0)
@@ -365,7 +404,7 @@ REGISTER_FUNCTION(GenerateDateArray)
     FunctionDocumentation::Description description = R"(
 Returns an array of dates from `start` to `end` (inclusive) incremented by `step`.
 
-- `start` and `end` accept `Date`, `Date32`, or a string literal that is implicitly cast to `Date`.
+- `start` and `end` accept `Date`, `Date32`, or a string literal that is implicitly cast to `Date` or `Date32` depending on the value.
 - When `start` and `end` have different types, the element type of the returned array is their least supertype (e.g. mixing `Date` and `Date32` yields `Array(Date32)`).
 - `step` must be a **constant** non-zero interval of kind `Day`, `Week`, `Month`, `Quarter`, or `Year`. It cannot be a column reference or a non-constant expression. When omitted, the default step is `INTERVAL 1 DAY`.
 - If `step` is positive the sequence is ascending. If `step` is negative the sequence is descending.
@@ -375,8 +414,12 @@ Returns an array of dates from `start` to `end` (inclusive) incremented by `step
     )";
     FunctionDocumentation::Syntax syntax = "generate_date_array(start, end[, step])";
     FunctionDocumentation::Arguments arguments = {
-        {"start", "The first date of the array. `Date`, `Date32`, or a string literal implicitly cast to `Date`."},
-        {"end", "The last date of the array (inclusive). `Date`, `Date32`, or a string literal implicitly cast to `Date`."},
+        {"start",
+         "The first date of the array. `Date`, `Date32`, or a string literal implicitly cast to `Date` or `Date32` depending on the "
+         "value."},
+        {"end",
+         "The last date of the array (inclusive). `Date`, `Date32`, or a string literal implicitly cast to `Date` or `Date32` depending on "
+         "the value."},
         {"step",
          "Optional. A **constant** interval between consecutive dates. Must be `IntervalDay`, `IntervalWeek`, `IntervalMonth`, "
          "`IntervalQuarter`, or `IntervalYear`. Must not be zero. Cannot be a column reference. Default value: `INTERVAL 1 DAY`."},
@@ -413,6 +456,11 @@ Returns an array of dates from `start` to `end` (inclusive) incremented by `step
 ┌─generate_date_array(NULL, '2024-01-05')─┐
 │ NULL                                    │
 └─────────────────────────────────────────┘
+        )"},
+        {"Pre-1970 string dates are inferred as Date32", "SELECT generate_date_array('1960-01-01', '1960-01-08');", R"(
+┌─generate_date_array('1960-01-01', '1960-01-08')───────────────────────────────────────────────────────────┐
+│ ['1960-01-01','1960-01-02','1960-01-03','1960-01-04','1960-01-05','1960-01-06','1960-01-07','1960-01-08'] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"},
         {"Generate an array column from a subquery (start/end from columns, constant step)",
          R"(

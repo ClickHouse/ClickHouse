@@ -49,6 +49,9 @@ FROM (
 /* String inputs (no explicit cast required) */
 -- Both strings, defaults to Array(Date)
 SELECT generate_date_array('2016-10-05', '2016-10-08') AS example;
+-- Strings are converted to Date32 if these do not fit into Date range (pre-1970), resulting in Array(Date32)
+SELECT generate_date_array('1960-01-01', '1960-01-08') AS example;
+SELECT toTypeName(generate_date_array('1960-01-01', '1960-01-08')) AS example;
 SELECT toTypeName(generate_date_array('2016-10-05', '2016-10-08')) AS type;
 -- String with explicit interval
 SELECT generate_date_array('2016-10-05', '2016-10-09', INTERVAL 2 DAY) AS example;
@@ -92,3 +95,5 @@ SELECT generate_date_array('2016-10-05'::Date, '2016-10-06'::Date, INTERVAL 1 DA
 SELECT generate_date_array('2016-10-05'::Date, '2016-10-06'::Date, INTERVAL 0 DAY); -- { serverError BAD_ARGUMENTS }
 -- NULL value (not NULL type) in arguments throws BAD_ARGUMENTS
 SELECT generate_date_array(NULL::Nullable(Date), '2016-10-06'::Date); -- { serverError BAD_ARGUMENTS }
+-- Cannot parse string arguments as dates
+SELECT generate_date_array('10000-01-01', '10000-01-01') AS example; -- { serverError CANNOT_PARSE_DATE }
