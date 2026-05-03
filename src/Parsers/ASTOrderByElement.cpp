@@ -8,6 +8,22 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+    int validateOrderByDirection(Int64 value, std::string_view field_name)
+    {
+        if (value != -1 && value != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Invalid '{}' value in JSON AST for OrderByElement: {} (must be -1 or 1)", field_name, value);
+        return static_cast<int>(value);
+    }
+}
+
 void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(direction);
@@ -111,8 +127,8 @@ void ASTStorageOrderByElement::writeJSON(WriteBuffer & out) const
 void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    direction = static_cast<int>(r.getInt("direction"));
-    nulls_direction = static_cast<int>(r.getInt("nulls_direction"));
+    direction = validateOrderByDirection(r.getInt("direction"), "direction");
+    nulls_direction = validateOrderByDirection(r.getInt("nulls_direction"), "nulls_direction");
     nulls_direction_was_explicitly_specified = r.getBool("nulls_direction_was_explicitly_specified");
     with_fill = r.getBool("with_fill");
 
@@ -138,7 +154,7 @@ void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
 void ASTStorageOrderByElement::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    direction = static_cast<int>(r.getInt("direction"));
+    direction = validateOrderByDirection(r.getInt("direction"), "direction");
     children = r.readChildren();
 }
 

@@ -33,3 +33,7 @@ SELECT formatQueryFromJSON('not json'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"NoSuchASTNode"}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"ExpressionList","children":[null]}'); -- { serverError BAD_ARGUMENTS }
+
+-- ASTOrderByElement: only direction values -1 and 1 are valid; reject others.
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t ORDER BY a ASC'), '"direction":1', '"direction":0')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t ORDER BY a ASC'), '"nulls_direction":1', '"nulls_direction":2')); -- { serverError BAD_ARGUMENTS }
