@@ -87,6 +87,7 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool read_in_order_through_join;
     bool correlated_subqueries_use_in_memory_buffer;
+    bool optimize_self_join_shared_scan = false;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
