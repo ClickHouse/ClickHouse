@@ -218,7 +218,6 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
         }
         ++i;
     }
-    idx->initialized = true;
     return idx;
 }
 
@@ -359,7 +358,6 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
             }
             /// Other types are not supported for minmax index, skip
         }
-        split_minmax_idxes[i]->initialized = true;
     }
 }
 
