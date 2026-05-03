@@ -1498,6 +1498,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "distributed_plan_max_rows_to_broadcast",
            "external_storage_max_read_rows",
            "function_range_max_elements_in_block",
+           "function_generate_date_array_max_elements_in_block",
            "group_by_two_level_threshold",
            "hnsw_candidate_list_size_for_search",
            "join_output_by_rowlist_perkey_rows_threshold",
